@@ -1,0 +1,53 @@
+[project]
+name = "pydantic-ai-orchestrator"
+version = "0.2.0"
+description = "Production-ready orchestration for Pydantic-based AI agents."
+authors = ["Your Name <your@email.com>"]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.11"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Libraries",
+]
+homepage = "https://github.com/yourorg/pydantic-ai-orchestrator"
+repository = "https://github.com/yourorg/pydantic-ai-orchestrator"
+
+[project.optional-dependencies]
+docs = ["mkdocs", "mkdocstrings[python]"]
+
+[tool.poetry]
+name = "pydantic-ai-orchestrator"
+version = "0.1.0"
+description = "Iterative generator-critic orchestrator built on PydanticAI"
+authors = []
+license = ""
+readme = ""
+packages = [{ include = "pydantic_ai_orchestrator" }]
+
+[tool.poetry.dependencies]
+python = ">=3.11,<4.0"
+pydantic-ai = "0.2.16"
+logfire = ">=0.3,<1"
+typer = { version = ">=0.9,<1", extras = ["all"] }
+python-dotenv = ">=1"
+
+[tool.poetry.group.dev.dependencies]
+pytest = ">=8.2"
+pytest-cov = ">=5"
+hypothesis = ">=6.103"
+ruff = ">=0.4.5"
+mypy = ">=1.10"
+pip-audit = ">=2.7"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+
+[tool.ruff]
+line-length = 100
+

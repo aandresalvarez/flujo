@@ -1,0 +1,13 @@
+site_name: pydantic-ai-orchestrator
+nav:
+  - Home: index.md
+  - Usage: usage.md
+  - Extending: extending.md
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            show_source: true
+            docstring_style: google 
