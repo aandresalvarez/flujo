@@ -1,8 +1,8 @@
 import pytest
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 from pydantic_ai_orchestrator.infra.agents import AsyncAgentWrapper, NoOpReflectionAgent, get_reflection_agent, LoggingReviewAgent
-from pydantic_ai_orchestrator.domain.models import Checklist
+
 from pydantic_ai_orchestrator.exceptions import OrchestratorRetryError
 
 @pytest.mark.asyncio

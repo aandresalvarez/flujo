@@ -26,8 +26,8 @@ def test_init_telemetry(monkeypatch, otlp_enabled, otlp_endpoint):
     monkeypatch.setattr("pydantic_ai_orchestrator.infra.telemetry.logfire.configure", logfire_configure)
     # Patch opentelemetry exporters if needed
     if otlp_enabled:
-        with patch("opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter") as otlp_exporter, \
-             patch("opentelemetry.sdk.trace.export.BatchSpanProcessor") as batch_span:
+        with patch("opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter") as _, \
+             patch("opentelemetry.sdk.trace.export.BatchSpanProcessor") as _:
             # Reload module to reset _initialized
             telemetry = reload_telemetry()
             telemetry.init_telemetry()
@@ -94,7 +94,7 @@ def test_init_telemetry_otlp_no_endpoint(monkeypatch):
     monkeypatch.setattr("pydantic_ai_orchestrator.infra.telemetry.logfire.configure", logfire_configure)
     exporter_mock = MagicMock()
     batch_processor_mock = MagicMock()
-    with patch("opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter", return_value=exporter_mock) as exporter_cls, \
+    with patch("opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter", return_value=exporter_mock) as _, \
          patch("opentelemetry.sdk.trace.export.BatchSpanProcessor", return_value=batch_processor_mock):
         telemetry = reload_telemetry()
         telemetry.init_telemetry()
