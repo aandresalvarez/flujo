@@ -79,4 +79,43 @@ async def test_logging_review_agent_error():
     base_agent.run.side_effect = Exception("fail")
     agent = LoggingReviewAgent(base_agent)
     with pytest.raises(Exception):
-        await agent.run("prompt") 
+        await agent.run("prompt")
+
+@pytest.mark.asyncio
+async def test_async_agent_wrapper_agent_failed_string():
+    agent = AsyncMock()
+    agent.run.return_value = "Agent failed after 3 attempts. Last error: foo"
+    wrapper = AsyncAgentWrapper(agent, max_retries=1)
+    with pytest.raises(OrchestratorRetryError):
+        await wrapper.run_async("prompt")
+
+@pytest.mark.asyncio
+async def test_logging_review_agent_run_async_fallback():
+    class NoAsyncAgent:
+        async def run(self, *args, **kwargs):
+            return "ok"
+    base_agent = NoAsyncAgent()
+    agent = LoggingReviewAgent(base_agent)
+    result = await agent._run_async("prompt")
+    assert result == "ok"
+
+@pytest.mark.asyncio
+async def test_logging_review_agent_run_async_non_callable():
+    class WeirdAgent:
+        run_async = "not callable"
+        async def run(self, *args, **kwargs):
+            return "ok"
+    base_agent = WeirdAgent()
+    agent = LoggingReviewAgent(base_agent)
+    result = await agent._run_async("prompt")
+    assert result == "ok"
+
+@pytest.mark.asyncio
+async def test_async_agent_wrapper_agent_failed_string_only():
+    class DummyAgent:
+        async def run(self, *args, **kwargs):
+            return "Agent failed after 2 attempts. Last error: foo"
+    wrapper = AsyncAgentWrapper(DummyAgent(), max_retries=1)
+    with pytest.raises(OrchestratorRetryError) as exc:
+        await wrapper.run_async("prompt")
+    assert "Agent failed after" in str(exc.value) 

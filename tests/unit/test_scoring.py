@@ -97,3 +97,42 @@ def test_redact_string_secret_not_in_text():
 def test_redact_string_secret_in_text():
     from pydantic_ai_orchestrator.utils.redact import redact_string
     assert redact_string("my key is sk-12345678abcdef", "sk-12345678abcdef") == "my key is [REDACTED]" 
+
+@pytest.mark.asyncio
+async def test_reward_scorer_score_no_output(monkeypatch):
+    from unittest.mock import AsyncMock
+    monkeypatch.setenv("ORCH_OPENAI_API_KEY", "sk-test")
+    # Patch settings.reward_enabled to True
+    import pydantic_ai_orchestrator.domain.scoring as scoring_mod
+    scoring_mod.settings.reward_enabled = True
+    scorer = RewardScorer()
+    # Return an object without 'output' attribute
+    class NoOutput:
+        pass
+    scorer.agent.run = AsyncMock(return_value=NoOutput())
+    result = await scorer.score("x")
+    assert result == 0.0 
+
+def test_ratio_score_all_passed():
+    from pydantic_ai_orchestrator.domain.models import Checklist, ChecklistItem
+    check = Checklist(items=[
+        ChecklistItem(description="a", passed=True),
+        ChecklistItem(description="b", passed=True),
+        ChecklistItem(description="c", passed=True),
+    ])
+    assert ratio_score(check) == 1.0
+
+def test_weighted_score_all_weights_present():
+    from pydantic_ai_orchestrator.domain.models import Checklist, ChecklistItem
+    check = Checklist(items=[
+        ChecklistItem(description="a", passed=True),
+        ChecklistItem(description="b", passed=True),
+        ChecklistItem(description="c", passed=True),
+    ])
+    weights = [
+        {"item": "a", "weight": 0.5},
+        {"item": "b", "weight": 0.3},
+        {"item": "c", "weight": 0.2},
+    ]
+    # All passed, so score = sum(weights) / sum(weights) = 1.0
+    assert weighted_score(check, weights) == pytest.approx(1.0) 
