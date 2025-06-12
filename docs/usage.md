@@ -9,6 +9,8 @@ orch bench --prompt "hi" --rounds 3
 orch --profile
 ```
 
+Benchmarking requires the optional `numpy` dependency. Install it with `pip install numpy` if not already available.
+
 ## API
 
 ```python
