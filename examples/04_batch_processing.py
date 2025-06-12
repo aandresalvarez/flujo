@@ -8,7 +8,9 @@ CSV schema:
     prompt,text
 """
 
-import csv, pathlib, time
+import csv
+import pathlib
+import time
 from pydantic_ai_orchestrator import Orchestrator, Task
 
 INPUT = pathlib.Path("prompts.csv")
