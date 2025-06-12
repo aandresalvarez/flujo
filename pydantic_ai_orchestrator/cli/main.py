@@ -2,13 +2,18 @@
 
 import typer
 import json
+import os
+import yaml
 from pydantic_ai_orchestrator.domain.models import Task
-from pydantic_ai_orchestrator.infra.agents import review_agent, solution_agent, validator_agent, reflection_agent
+from pydantic_ai_orchestrator.infra.agents import review_agent, solution_agent, validator_agent, get_reflection_agent
 from pydantic_ai_orchestrator.application.orchestrator import Orchestrator
-from pydantic_ai_orchestrator.infra.settings import settings
+from pydantic_ai_orchestrator.infra.settings import settings, SettingsError
 from importlib.metadata import version
 import logfire
 from typing_extensions import Annotated
+from rich.table import Table
+from rich.console import Console
+import numpy as np
 
 app = typer.Typer(rich_markup_mode="markdown")
 
@@ -19,29 +24,47 @@ def solve(
     k: Annotated[int, typer.Option(help="Number of solution variants to generate per iteration.")] = None,
     reflection: Annotated[bool, typer.Option(help="Enable/disable reflection agent.")] = None,
     scorer: Annotated[str, typer.Option(help="Scoring strategy: 'ratio', 'weighted', or 'reward'.")] = None,
+    weights_path: Annotated[str, typer.Option(help="Path to weights file (JSON or YAML)")] = None,
 ):
     """
     Solves a task using the multi-agent orchestrator.
 
     Command-line options override environment variables and settings defaults.
     """
-    # Override settings from CLI args if they are provided
-    if reflection is not None:
-        settings.reflection_enabled = reflection
-    if scorer:
-        settings.scorer = scorer
+    try:
+        # Override settings from CLI args if they are provided
+        if reflection is not None:
+            settings.reflection_enabled = reflection
+        if scorer:
+            settings.scorer = scorer
 
-    # The Orchestrator will use CLI args if provided, otherwise fall back to settings
-    orch = Orchestrator(
-        review_agent,
-        solution_agent,
-        validator_agent,
-        reflection_agent(), # Re-initialize to respect potential setting change
-        max_iters=max_iters,
-        k_variants=k,
-    )
-    best = orch.run(Task(prompt=prompt))
-    typer.echo(json.dumps(best.model_dump(), indent=2))
+        metadata = {}
+        if weights_path:
+            if not os.path.isfile(weights_path):
+                typer.echo(f"[red]Weights file not found: {weights_path}", err=True)
+                raise typer.Exit(1)
+            with open(weights_path, "r") as f:
+                if weights_path.endswith(('.yaml', '.yml')):
+                    weights = yaml.safe_load(f)
+                else:
+                    weights = json.load(f)
+            metadata["weights"] = weights
+
+        # The Orchestrator will use CLI args if provided, otherwise fall back to settings
+        orch = Orchestrator(
+            review_agent,
+            solution_agent,
+            validator_agent,
+            get_reflection_agent(),           # fresh instance honours settings
+            max_iters=max_iters,
+            k_variants=k,
+            reflection_limit=settings.reflection_limit,
+        )
+        best = orch.run_sync(Task(prompt=prompt, metadata=metadata))
+        typer.echo(json.dumps(best.model_dump(), indent=2))
+    except KeyboardInterrupt:
+        logfire.info("Aborted by user (KeyboardInterrupt). Closing spans and exiting.")
+        raise typer.Exit(130)
 
 @app.command()
 def version_cmd():
@@ -57,22 +80,37 @@ def show_config_cmd():
 def bench(prompt: str, rounds: int = 10):
     """Quick micro-benchmark of generation latency/score."""
     import time
-    orch = Orchestrator(review_agent, solution_agent, validator_agent, reflection_agent())
-    times = []
-    scores = []
-    for i in range(rounds):
-        with logfire.span("bench_round", idx=i):
-            start = time.time()
-            result = orch.run(Task(prompt=prompt))
-            times.append(time.time() - start)
-            scores.append(result.score)
-            logfire.info(f"Round {i+1} completed in {times[-1]:.2f}s with score {scores[-1]:.2f}")
+    try:
+        orch = Orchestrator(review_agent, solution_agent, validator_agent, get_reflection_agent())
+        times = []
+        scores = []
+        for i in range(rounds):
+            with logfire.span("bench_round", idx=i):
+                start = time.time()
+                result = orch.run_sync(Task(prompt=prompt))
+                times.append(time.time() - start)
+                scores.append(result.score)
+                logfire.info(f"Round {i+1} completed in {times[-1]:.2f}s with score {scores[-1]:.2f}")
 
-    avg_time = sum(times) / len(times)
-    avg_score = sum(scores) / len(scores)
-    typer.echo(f"\nBenchmark Complete ({rounds} rounds):")
-    typer.echo(f"  Avg latency: {avg_time:.2f}s")
-    typer.echo(f"  Avg score:   {avg_score:.2f}")
+        avg_time = sum(times) / len(times)
+        avg_score = sum(scores) / len(scores)
+        p50_time = float(np.percentile(times, 50))
+        p95_time = float(np.percentile(times, 95))
+        p50_score = float(np.percentile(scores, 50))
+        p95_score = float(np.percentile(scores, 95))
+
+        table = Table(title="Benchmark Results", show_lines=True)
+        table.add_column("Metric", style="bold")
+        table.add_column("Mean", justify="right")
+        table.add_column("p50", justify="right")
+        table.add_column("p95", justify="right")
+        table.add_row("Latency (s)", f"{avg_time:.2f}", f"{p50_time:.2f}", f"{p95_time:.2f}")
+        table.add_row("Score", f"{avg_score:.2f}", f"{p50_score:.2f}", f"{p95_score:.2f}")
+        console = Console()
+        console.print(table)
+    except KeyboardInterrupt:
+        logfire.info("Aborted by user (KeyboardInterrupt). Closing spans and exiting.")
+        raise typer.Exit(130)
 
 @app.callback()
 def main(profile: bool = typer.Option(False, "--profile", help="Enable Logfire STDOUT span viewer")):
@@ -81,4 +119,8 @@ def main(profile: bool = typer.Option(False, "--profile", help="Enable Logfire S
         logfire.configure(send_to_logfire=False, console=True)
 
 if __name__ == "__main__":
-    app() 
+    try:
+        app()
+    except SettingsError as e:
+        typer.echo(f"[red]Settings error: {e}", err=True)
+        raise typer.Exit(2) 

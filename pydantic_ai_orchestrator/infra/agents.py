@@ -2,18 +2,17 @@
 Agent prompt templates and agent factory utilities.
 """
 from pydantic_ai import Agent
-from tenacity import retry, wait_exponential, stop_after_attempt
 from typing import Type
-from .settings import settings
-from ..domain.models import Checklist
+from pydantic_ai_orchestrator.infra.settings import settings
+from pydantic_ai_orchestrator.domain.models import Checklist
+from pydantic_ai_orchestrator.exceptions import OrchestratorRetryError
+from tenacity import retry, stop_after_attempt, wait_random_exponential
+import asyncio
+import logfire
+import traceback
 
 # 1. Prompt Constants
-REVIEW_SYS = """You are an expert software engineer.
-Your task is to generate an objective, comprehensive, and actionable checklist of criteria to evaluate a solution for the user's request.
-The checklist should be detailed and cover all key aspects of a good solution.
-Focus on correctness, completeness, and best practices.
-Output a Checklist object.
-"""
+REVIEW_SYS = """You are an expert software engineer.\nYour task is to generate an objective, comprehensive, and actionable checklist of criteria to evaluate a solution for the user's request.\nThe checklist should be detailed and cover all key aspects of a good solution.\nFocus on correctness, completeness, and best practices.\n\nReturn **JSON only** that conforms to this schema:\nChecklist(items=[ChecklistItem(description:str, passed:bool|None, feedback:str|None)])\n\nExample:\n{\n  \"items\": [\n    {\"description\": \"The code is correct and runs without errors.\", \"passed\": null, \"feedback\": null},\n    {\"description\": \"The code follows best practices.\", \"passed\": null, \"feedback\": null}\n  ]\n}\n"""
 
 SOLUTION_SYS = """You are a world-class programmer.
 Your task is to provide a solution to the user's request.
@@ -21,12 +20,7 @@ Follow the user's instructions carefully and provide a high-quality, production-
 If you are given feedback on a previous attempt, use it to improve your solution.
 """
 
-VALIDATE_SYS = """You are a meticulous quality assurance engineer.
-Your task is to evaluate a given solution against a checklist of criteria.
-For each item in the checklist, you must determine if the solution passes or fails.
-If an item fails, you must provide clear and concise feedback on why it failed.
-Your response must be a Checklist object with the `passed` and `feedback` fields filled for every item.
-"""
+VALIDATE_SYS = """You are a meticulous QA engineer.\nReturn **JSON only** that conforms to this schema:\nChecklist(items=[ChecklistItem(description:str, passed:bool, feedback:str|None)])\nInput: {{ \"solution\": <string>, \"checklist\": <Checklist JSON> }}\nFor each item, fill `passed` & optional `feedback`.\n"""
 
 REFLECT_SYS = """You are a senior principal engineer and an expert in root cause analysis.
 You will be given a list of failed checklist items from a previous attempt.
@@ -41,37 +35,92 @@ def make_agent(
     model: str,
     system_prompt: str,
     output_type: Type,
-    max_retries: int = 2,
-    timeout: int = 90,
 ) -> Agent:
-    """Creates a pydantic_ai.Agent with retry logic."""
+    """Creates a pydantic_ai.Agent."""
     return Agent(
         model,
         system_prompt=system_prompt,
         output_type=output_type,
-        max_retries=max_retries,
-        timeout=timeout,
-        retry=retry(
-            wait=wait_exponential(multiplier=1, min=2, max=10),
-            stop=stop_after_attempt(max_retries),
+    )
+
+class AsyncAgentWrapper:
+    """Wraps an agent to expose .run_async with retry/timeout."""
+    def __init__(self, agent, max_retries=3, timeout=120, model_name=None):
+        self._agent = agent
+        self._max_retries = max_retries
+        self._timeout = timeout
+        self._model_name = model_name or getattr(agent, 'model', None)
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_random_exponential(multiplier=1, max=60),
+        retry_error_callback=lambda retry_state: OrchestratorRetryError(
+            f"Agent failed after {retry_state.attempt_number} attempts."
         ),
     )
+    async def _run_with_retry(self, *args, **kwargs):
+        try:
+            result = await asyncio.wait_for(self._agent.run(*args, **kwargs), timeout=self._timeout)
+            logfire.info(f"Raw LLM response: {result}")
+            # If the agent returns a string error message, raise as exception
+            if isinstance(result, str) and result.startswith("Agent failed after"):
+                raise OrchestratorRetryError(result)
+            return result
+        except Exception as e:
+            tb = traceback.format_exc()
+            logfire.error(f"Agent call failed with exception: {e}\nTraceback:\n{tb}")
+            raise
+
+    async def run_async(self, *args, **kwargs):
+        return await self._run_with_retry(*args, **kwargs)
+
+    async def run(self, *args, **kwargs):
+        return await self._run_with_retry(*args, **kwargs)
+
+def make_agent_async(
+    model: str,
+    system_prompt: str,
+    output_type: Type,
+    max_retries: int = 3,
+    timeout: int = 120,
+) -> AsyncAgentWrapper:
+    """
+    Creates a pydantic_ai.Agent and returns an AsyncAgentWrapper exposing .run_async.
+    """
+    agent = make_agent(model, system_prompt, output_type)
+    return AsyncAgentWrapper(agent, max_retries=max_retries, timeout=timeout, model_name=model)
 
 class NoOpReflectionAgent:
     """A stub agent that does nothing, used when reflection is disabled."""
-    def run_sync(self, *args, **kwargs):
-        return "" # Must return a string to be appended to memory
+    async def run(self, *args, **kwargs):
+        return ""
 
 # 3. Agent Instances
-review_agent = make_agent("openai:gpt-4o", REVIEW_SYS, Checklist)
-solution_agent = make_agent("openai:gpt-4o", SOLUTION_SYS, str)
-validator_agent = make_agent("openai:gpt-4o", VALIDATE_SYS, Checklist)
+review_agent = make_agent_async("openai:gpt-4o", REVIEW_SYS, Checklist)
+solution_agent = make_agent_async("openai:gpt-4o", SOLUTION_SYS, str)
+validator_agent = make_agent_async("openai:gpt-4o", VALIDATE_SYS, Checklist)
 
-def get_reflection_agent() -> Agent | NoOpReflectionAgent:
-    """Returns a real reflection agent or a no-op stub based on settings."""
-    if settings.reflection_enabled:
-        return make_agent("openai:gpt-4o", REFLECT_SYS, str)
-    else:
+def get_reflection_agent() -> AsyncAgentWrapper | NoOpReflectionAgent:
+    """Returns a new instance of the reflection agent, or a no-op if disabled."""
+    try:
+        agent = make_agent_async("openai:gpt-4o", REFLECT_SYS, str)
+        logfire.info("Reflection agent created successfully.")
+        return agent
+    except Exception as e:
+        logfire.error(f"Failed to create reflection agent: {e}")
         return NoOpReflectionAgent()
 
-reflection_agent = get_reflection_agent() 
+# Add a wrapper for review_agent to log API errors
+class LoggingReviewAgent:
+    def __init__(self, agent):
+        self.agent = agent
+    async def run(self, *args, **kwargs):
+        try:
+            result = await self.agent.run(*args, **kwargs)
+            logfire.info(f"Review agent result: {result}")
+            return result
+        except Exception as e:
+            logfire.error(f"Review agent API error: {e}")
+            raise
+
+review_agent = LoggingReviewAgent(review_agent) 

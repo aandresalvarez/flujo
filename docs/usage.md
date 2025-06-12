@@ -30,4 +30,27 @@ print(result)
 - Reward model stub included (extendable)
 
 ## Reflection
-- Reflection agent can be toggled via `ORCH_REFLECTION_ENABLED` 
+- Reflection agent can be toggled via `ORCH_REFLECTION_ENABLED`
+
+## Weighted Scoring
+
+You can provide weights for checklist items to customize the scoring logic. This is useful when some criteria are more important than others.
+
+Provide the weights via the `Task` metadata:
+
+```python
+from pydantic_ai_orchestrator import Orchestrator, Task
+
+orch = Orchestrator(...)
+task = Task(
+    prompt="Generate a Python class.",
+    metadata={
+        "weights": [
+            {"item": "Has a docstring", "weight": 0.7},
+            {"item": "Includes type hints", "weight": 0.3},
+        ]
+    }
+)
+result = orch.run_sync(task)
+```
+The `scorer` setting must be set to `"weighted"`.

@@ -3,21 +3,38 @@
 import logfire
 import platform
 from .settings import settings
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from opentelemetry.sdk.trace import SpanProcessor
 
 _initialized = False
 
-def init():
+def init_telemetry():
     """
     Initialize Logfire telemetry for the orchestrator.
-    Uses API key from settings, or runs in local mode if not set.
-    Idempotent: safe to call multiple times.
+    This function is idempotent and safe to call multiple times.
+    It configures logging based on application settings.
     """
     global _initialized
     if _initialized:
         return
+
+    additional_processors: list[SpanProcessor] = []
+    if settings.otlp_export_enabled:
+        from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+        from opentelemetry.sdk.trace import BatchSpanProcessor
+
+        exporter_args = {}
+        if settings.otlp_endpoint:
+            exporter_args["endpoint"] = settings.otlp_endpoint
+        
+        exporter = OTLPSpanExporter(**exporter_args)
+        additional_processors.append(BatchSpanProcessor(exporter))
+
     logfire.configure(
         service_name="pydantic_ai_orchestrator",
-        api_key=settings.logfire_api_key.get_secret_value() if settings.logfire_api_key else None,
-        attributes={"host": platform.node()},
+        send_to_logfire=settings.telemetry_export_enabled,
+        additional_span_processors=additional_processors,
     )
     _initialized = True 

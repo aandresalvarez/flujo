@@ -1,12 +1,15 @@
 """
 Pydantic AI Orchestrator package init.
 """
-from importlib.metadata import version
+try:
+    from importlib.metadata import version
+    __version__ = version("pydantic_ai_orchestrator")
+except Exception:
+    __version__ = "0.0.0"
 from .application.orchestrator import Orchestrator
 from .infra.settings import settings
-from .infra.telemetry import init as _init_telemetry
+from .infra.telemetry import init_telemetry
 
-__version__ = version("pydantic_ai_orchestrator")
 __all__ = ["Orchestrator", "settings"]
 
-_init_telemetry() 
+init_telemetry() 

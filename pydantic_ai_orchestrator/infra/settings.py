@@ -3,7 +3,7 @@
 from pydantic_settings import BaseSettings
 from pydantic import ValidationError, SecretStr, field_validator
 from typing import Optional, Literal
-import os
+from ..exceptions import SettingsError
 
 class Settings(BaseSettings):
     """
@@ -12,15 +12,28 @@ class Settings(BaseSettings):
     """
     openai_api_key: SecretStr
     logfire_api_key: Optional[SecretStr] = None
+    
+    # Feature Toggles
     reflection_enabled: bool = True
+    reward_enabled: bool = True
+    telemetry_export_enabled: bool = False
+    otlp_export_enabled: bool = False
+
+    # Orchestrator Tuning
     max_iters: int = 5
     k_variants: int = 3
+    reflection_limit: int = 3
     scorer: Literal["ratio", "weighted", "reward"] = "ratio"
     t_schedule: list[float] = [1.0, 0.8, 0.5, 0.2]
+    otlp_endpoint: Optional[str] = None
 
     class Config:
-        env_prefix = "ORCH_"
         env_file = ".env"
+        env_prefix = "ORCH_"
+        fields = {
+            "reflection_enabled": {"alias": "reflexion_enabled"},
+            "reward_enabled": {"alias": "reward"},
+        }
 
     @field_validator("t_schedule")
     def schedule_must_not_be_empty(cls, v):
@@ -32,5 +45,5 @@ class Settings(BaseSettings):
 try:
     settings = Settings()
 except ValidationError as e:
-    print(f"[FATAL] Invalid or missing environment variables for Settings:\n{e}")
-    raise SystemExit(1) 
+    # Use custom exception for better error handling downstream
+    raise SettingsError(f"Invalid or missing environment variables for Settings:\n{e}") 

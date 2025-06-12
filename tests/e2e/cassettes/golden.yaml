@@ -1,0 +1,351 @@
+interactions:
+- request:
+    body: '{"messages":[{"role":"system","content":"You are an expert software engineer.\nYour
+      task is to generate an objective, comprehensive, and actionable checklist of
+      criteria to evaluate a solution for the user''s request.\nThe checklist should
+      be detailed and cover all key aspects of a good solution.\nFocus on correctness,
+      completeness, and best practices.\n\nReturn **JSON only** that conforms to this
+      schema:\nChecklist(items=[ChecklistItem(description:str, passed:bool|None, feedback:str|None)])\n\nExample:\n{\n  \"items\":
+      [\n    {\"description\": \"The code is correct and runs without errors.\", \"passed\":
+      null, \"feedback\": null},\n    {\"description\": \"The code follows best practices.\",
+      \"passed\": null, \"feedback\": null}\n  ]\n}\n"},{"role":"user","content":"Write
+      a short haiku about a robot learning to paint."}],"model":"gpt-4o","stream":false,"tool_choice":"required","tools":[{"type":"function","function":{"name":"final_result","description":"A
+      checklist for evaluating a solution.","parameters":{"properties":{"items":{"items":{"$ref":"#/$defs/ChecklistItem"},"type":"array"}},"required":["items"],"type":"object","$defs":{"ChecklistItem":{"description":"A
+      single item in a checklist for evaluating a solution.","properties":{"description":{"description":"The
+      criterion to evaluate.","type":"string"},"passed":{"anyOf":[{"type":"boolean"},{"type":"null"}],"description":"Whether
+      the solution passes this criterion."},"feedback":{"anyOf":[{"type":"string"},{"type":"null"}],"description":"Feedback
+      if the criterion is not met."}},"required":["description"],"type":"object"}}}}}]}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate
+      authorization:
+      - Bearer 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
+      connection:
+      - keep-alive
+      content-length:
+      - '1602'
+      content-type:
+      - application/json
+      host:
+      - api.openai.com
+      user-agent:
+      - pydantic-ai/0.2.16
+      x-stainless-arch:
+      - arm64
+      x-stainless-async:
+      - async:asyncio
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - MacOS
+      x-stainless-package-version:
+      - 1.86.0
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.11.4
+    method: POST
+    uri: https://api.openai.com/v1/chat/completions
+  response:
+    body:
+      string: !!binary |
+        H4sIAAAAAAAAAwAAAP//rFRNbxMxEL3nV4x8TlCaNm2SIxUgAeKjgACx1WpiT3ZNvbaxZ0OjKP8d
+        2fnYtBTUQ/ewWvl55r0d+711D0BoJWYgZI0sG28Gz+urV9OXH76076by28fvV3R6+7W6fHlrPr4+
+        +yX6qcLNf5LkfdUz6RpviLWzW1gGQqbU9eTibHo+HY0n0ww0TpFJZZXnwZkbjIajs8FwMhie7wpr
+        pyVFMYMfPQCAdX4niVbRrZjBsL9faShGrEjMDpsARHAmrQiMUUdGy6LfgdJZJptU29aYI4CdM6VE
+        Yzri7bM++u7mhMaUV79ffP98Orz89OZySRM1nr8N4ef52/dHfNvWK58FLVorD/M5wg/rs3tkAMJi
+        s63VFk0ZKLaG79UDCAxV25DlpF2sC6GZmliI2Y91IRRFGbRPBIWYFeJzTVCjvmkBVU2BIrADrgnG
+        g4vBGOLKGJwbgsihldwGelaIfiE8xkiqELM8t0IsiNQc5c1uZdP/L1W+DHpJZgUSfeoaMyfX1BC4
+        BSAEN3cMhjBYbaskyqO2/BTsbaQIS73UCnSDFYUVoFVAS3dDEahxqQaks+nCkGX4rbkGDqh0QtDs
+        +nhHHFZPoUhHqAI2DbJOV2kF0oVAkrOuRaA8k+jJmDQLCsGF+CTn4OySVhEQItmYWXa+JUsxZvrk
+        GYXGWYKGMB3G45ivN+LOvdz0Hvq+PvJcoEUb0fxtRrTWMSb92Y3XO2RzML5xlQ9uHu+VJpvoWJeB
+        MGY/Hdu6txeSJYj2TnIIH1zjuWR3Q5l0NN7FjOiCrUNPTs93KDtG0wGnkz1wp2GpiFHnbDnEmURZ
+        k+pKu1jDVml3BPSOfv5vOQ/13g5A2+ox7TtASvJMqvSBlJZ3f7nbFigF/7+2HcacBYtIYakllawp
+        pANRtMB9hom4ikxNudC2ouCDzsEsFr4cXkwuTmiEaiJ6m94fAAAA//8DAHpARjShBgAA
+    headers:
+      CF-RAY:
+      - 94e5a7dacb0dd6b0-IAD
+      Connection:
+      - keep-alive
+      Content-Encoding:
+      - gzip
+      Content-Type:
+      - application/json
+      Date:
+      - Thu, 12 Jun 2025 01:43:12 GMT
+      Server:
+      - cloudflare
+      Set-Cookie:
+      - __cf_bm=xXAf5OfFoaYYPAhF2V9UtTyWy_kXDXd7eeYMPgxYALk-1749692592-1.0.1.1-nIkexp.1hyUcrQZahj7IvvTuLn4fVrS33EqRFf8LFj3ysERYwR2WW6eyT3ip1OJ1eBEXUfPJAqD6rLwvpHo9YriTRl0Sw5k5NDZLSQGaUAU;
+        path=/; expires=Thu, 12-Jun-25 02:13:12 GMT; domain=.api.openai.com; HttpOnly;
+        Secure; SameSite=None
+      - _cfuvid=FuhAA2gKTLIt.8dEBONndSN0wO222v9FHg6xLK6LMic-1749692592383-0.0.1.1-604800000;
+        path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      access-control-expose-headers:
+      - X-Request-ID
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+      openai-organization:
+      - user-vwovniamho1jpt8uq9wa3smx
+      openai-processing-ms:
+      - '2679'
+      openai-version:
+      - '2020-10-01'
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      x-envoy-upstream-service-time:
+      - '2683'
+      x-ratelimit-limit-requests:
+      - '10000'
+      x-ratelimit-limit-tokens:
+      - '2000000'
+      x-ratelimit-remaining-requests:
+      - '9999'
+      x-ratelimit-remaining-tokens:
+      - '1999814'
+      x-ratelimit-reset-requests:
+      - 6ms
+      x-ratelimit-reset-tokens:
+      - 5ms
+      x-request-id:
+      - req_47445b225c9a2f2701e3382fc6ebdc25
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"messages":[{"role":"system","content":"You are a world-class programmer.\nYour
+      task is to provide a solution to the user''s request.\nFollow the user''s instructions
+      carefully and provide a high-quality, production-ready solution.\nIf you are
+      given feedback on a previous attempt, use it to improve your solution.\n"},{"role":"user","content":"Write
+      a short haiku about a robot learning to paint.\n\nFeedback:\n"}],"model":"gpt-4o","stream":false}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate
+      authorization:
+      - Bearer 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
+      connection:
+      - keep-alive
+      content-length:
+      - '447'
+      content-type:
+      - application/json
+      cookie:
+      - __cf_bm=xXAf5OfFoaYYPAhF2V9UtTyWy_kXDXd7eeYMPgxYALk-1749692592-1.0.1.1-nIkexp.1hyUcrQZahj7IvvTuLn4fVrS33EqRFf8LFj3ysERYwR2WW6eyT3ip1OJ1eBEXUfPJAqD6rLwvpHo9YriTRl0Sw5k5NDZLSQGaUAU;
+        _cfuvid=FuhAA2gKTLIt.8dEBONndSN0wO222v9FHg6xLK6LMic-1749692592383-0.0.1.1-604800000
+      host:
+      - api.openai.com
+      user-agent:
+      - pydantic-ai/0.2.16
+      x-stainless-arch:
+      - arm64
+      x-stainless-async:
+      - async:asyncio
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - MacOS
+      x-stainless-package-version:
+      - 1.86.0
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.11.4
+    method: POST
+    uri: https://api.openai.com/v1/chat/completions
+  response:
+    body:
+      string: !!binary |
+        H4sIAAAAAAAAAwAAAP//jFLLbtswELzrKxY824HiuH4dkwIB2lMLBD20gcCQK5EJRbLcVdw2MNCP
+        6Bf2SwrKD8l9AL3wsLMz3JndlwJAWC02IJSRrNroptfm/e3rdPfOrLqnt218821bN8+f71xJ6sOj
+        mGRGeHhExUfWhQptdMg2+D2sEkrGrHq5nK8X69mr9VUPtEGjy7Qm8nQeprNyNp+Wq2m5OBBNsApJ
+        bOBjAQDw0r95RK/xi9hAOTlWWiSSDYrNqQlApOByRUgiSyw9i8kAquAZfT/1jU2qs0xguha2lg3o
+        hLKlCcAnf506MmA9SGiRpQMjvYbGWY308/uP3HITXEgEW2MpYgKZ+GL8U8K6I5mN+s65ESC9Dyxz
+        UL3H+wOyO7lyoYkpPNBvVFFbb8lUCSUFnx0Qhyh6dFcA3PfpdWeBiJhCG7ni8IT9d8vFXk4M6xrA
+        2SFZwYGlG+rrI+lMrdLI0joapS+UVAb1wBxWJTttwwgoRp7/HOZv2nvf1jf/Iz8ASmFk1FVMqK06
+        Nzy0JczH/K+2U8b9wIIwPVuFFVtMeQ8aa9m5/Z0J+kqMbVVb32CKye6PrY5VuVwtL3Em9UoUu+IX
+        AAAA//8DAFZmGQZ1AwAA
+    headers:
+      CF-RAY:
+      - 94e5a7f52c74d6b0-IAD
+      Connection:
+      - keep-alive
+      Content-Encoding:
+      - gzip
+      Content-Type:
+      - application/json
+      Date:
+      - Thu, 12 Jun 2025 01:43:14 GMT
+      Server:
+      - cloudflare
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      access-control-expose-headers:
+      - X-Request-ID
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+      openai-organization:
+      - user-vwovniamho1jpt8uq9wa3smx
+      openai-processing-ms:
+      - '606'
+      openai-version:
+      - '2020-10-01'
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      x-envoy-upstream-service-time:
+      - '611'
+      x-ratelimit-limit-requests:
+      - '10000'
+      x-ratelimit-limit-tokens:
+      - '2000000'
+      x-ratelimit-remaining-requests:
+      - '9999'
+      x-ratelimit-remaining-tokens:
+      - '1999912'
+      x-ratelimit-reset-requests:
+      - 6ms
+      x-ratelimit-reset-tokens:
+      - 2ms
+      x-request-id:
+      - req_1795046679988b0e587717cd87a28613
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"messages":[{"role":"system","content":"You are a meticulous QA engineer.\nReturn
+      **JSON only** that conforms to this schema:\nChecklist(items=[ChecklistItem(description:str,
+      passed:bool, feedback:str|None)])\nInput: {{ \"solution\": <string>, \"checklist\":
+      <Checklist JSON> }}\nFor each item, fill `passed` & optional `feedback`.\n"},{"role":"user","content":[{"text":"solution","type":"text"},{"text":"checklist","type":"text"}]}],"model":"gpt-4o","stream":false,"tool_choice":"required","tools":[{"type":"function","function":{"name":"final_result","description":"A
+      checklist for evaluating a solution.","parameters":{"properties":{"items":{"items":{"$ref":"#/$defs/ChecklistItem"},"type":"array"}},"required":["items"],"type":"object","$defs":{"ChecklistItem":{"description":"A
+      single item in a checklist for evaluating a solution.","properties":{"description":{"description":"The
+      criterion to evaluate.","type":"string"},"passed":{"anyOf":[{"type":"boolean"},{"type":"null"}],"description":"Whether
+      the solution passes this criterion."},"feedback":{"anyOf":[{"type":"string"},{"type":"null"}],"description":"Feedback
+      if the criterion is not met."}},"required":["description"],"type":"object"}}}}}]}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate
+      authorization:
+      - Bearer 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
+      connection:
+      - keep-alive
+      content-length:
+      - '1205'
+      content-type:
+      - application/json
+      cookie:
+      - __cf_bm=xXAf5OfFoaYYPAhF2V9UtTyWy_kXDXd7eeYMPgxYALk-1749692592-1.0.1.1-nIkexp.1hyUcrQZahj7IvvTuLn4fVrS33EqRFf8LFj3ysERYwR2WW6eyT3ip1OJ1eBEXUfPJAqD6rLwvpHo9YriTRl0Sw5k5NDZLSQGaUAU;
+        _cfuvid=FuhAA2gKTLIt.8dEBONndSN0wO222v9FHg6xLK6LMic-1749692592383-0.0.1.1-604800000
+      host:
+      - api.openai.com
+      user-agent:
+      - pydantic-ai/0.2.16
+      x-stainless-arch:
+      - arm64
+      x-stainless-async:
+      - async:asyncio
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - MacOS
+      x-stainless-package-version:
+      - 1.86.0
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.11.4
+    method: POST
+    uri: https://api.openai.com/v1/chat/completions
+  response:
+    body:
+      string: !!binary |
+        H4sIAAAAAAAAAwAAAP//rFRNb9NAEL3nV4z2kotTJaFNUx+pKKhIIJXSInBlTXYn9tL17rIf/VCU
+        /47WaWK3BAkBPljWvH3z3o5nZjUAYFKwHBivMfDGqtHr+uLt2auzyfXVxbvbefUV5fVDFF+O7fvX
+        1ZJliWEW34mHLeuAm8YqCtLoDcwdYaCUdXJ8eDI7mR6dHLVAYwSpRKtsGB2a0XQ8PRyN56Px7IlY
+        G8nJsxy+DQAAVu07WdSCHlgO42wbach7rIjlu0MAzBmVIgy9lz6gDizrQG50IJ1c66hUDwjGqJKj
+        Up3w5ln1vrs6oVLl9fnl1/nV1Q9RX9rP8eKIn86a++uF6eltUj/a1tAyar6rTw/fxfMXYgBMY7Ph
+        So2qdOSjCi/4AAxdFRvSIXlnq4LJQI0vWP5tVTBBnjtpk0DB8oJdkZPLRwg1gTcqpjhYZ+6kIA/n
+        nz5+ABODjQGMVo9wL0MNCLwmfqukD+CDizxERwXLCmbRexIFy4OLlBVsSSQWyG8Llqf6rrM9Bk5T
+        Lgg1BiDkdS93sg01ekAY9ljDDIYboWEGqAWgBtMiqGC4lRwe/LWjN9pHRzsRkMnBwhhFqOEOVSSQ
+        ep/Zf5fcuU+iJENNDrDtTTAuFVvq6j9YuFmzZz2zHuz7vunNg6Nl9Kh+HRTU2gRMF2kn5eYJWe+G
+        UpnKOrPwL6iphaWvS0fo217vj9xga6S1wOKzqWbWmcaGMphbakUns9kmK+uWTg+dHD2hwQRUHTCd
+        T7I9CUtBAWU797tVw5HXJDpqt3IwCml6wKB3+V/t7Mu9KYDU1Z+k7wDOyQYSpXUkJH9+5e6Yo7SU
+        f3dsV+bWMPPk7iSnMkhy6YcIWuJ2vzD/6AM15VLqipx1sl2abGnL8fH8eEJTFHM2WA9+AgAA//8D
+        AE1QSYA9BgAA
+    headers:
+      CF-RAY:
+      - 94e5a8024a5cd6b0-IAD
+      Connection:
+      - keep-alive
+      Content-Encoding:
+      - gzip
+      Content-Type:
+      - application/json
+      Date:
+      - Thu, 12 Jun 2025 01:43:17 GMT
+      Server:
+      - cloudflare
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      access-control-expose-headers:
+      - X-Request-ID
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+      openai-organization:
+      - user-vwovniamho1jpt8uq9wa3smx
+      openai-processing-ms:
+      - '1666'
+      openai-version:
+      - '2020-10-01'
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      x-envoy-upstream-service-time:
+      - '1669'
+      x-ratelimit-limit-requests:
+      - '10000'
+      x-ratelimit-limit-tokens:
+      - '2000000'
+      x-ratelimit-remaining-requests:
+      - '9999'
+      x-ratelimit-remaining-tokens:
+      - '1999921'
+      x-ratelimit-reset-requests:
+      - 6ms
+      x-ratelimit-reset-tokens:
+      - 2ms
+      x-request-id:
+      - req_a6f6c425a9ed767683d9ebfd48e848b4
+    status:
+      code: 200
+      message: OK
+version: 1

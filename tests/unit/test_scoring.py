@@ -37,5 +37,14 @@ def test_reward_scorer_init(monkeypatch):
     
     # Should fail without key
     monkeypatch.delenv("ORCH_OPENAI_API_KEY")
-    with pytest.raises(NotImplementedError):
-        RewardScorer() 
+    import pydantic_ai_orchestrator.domain.scoring as scoring
+    with pytest.raises((scoring.RewardModelUnavailable, scoring.FeatureDisabled)):
+        RewardScorer()
+
+def test_reward_scorer_returns_float(monkeypatch):
+    from types import SimpleNamespace
+    monkeypatch.setenv("ORCH_OPENAI_API_KEY", "sk-test")
+    scorer = RewardScorer()
+    from unittest.mock import patch
+    with patch.object(scorer.agent, "run", return_value=SimpleNamespace(output=0.77)):
+        assert scorer.score("x") == 0.77 

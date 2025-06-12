@@ -130,7 +130,7 @@ def process_target_folder(target_folder, folder_name, exclude_folders, allowed_e
         md_lines.append(f"## Folder: {folder_path}\n")
         if found_venv:
             md_lines.append(
-                f"> ℹ️ *Note: Contains a virtual environment folder (e.g., `venv`, `.venv`). Contents are excluded.*\n"
+                "> ℹ️ *Note: Contains a virtual environment folder (e.g., `venv`, `.venv`). Contents are excluded.*\n"
             )
         for filename in sorted(files):
             file_path = os.path.join(root, filename)

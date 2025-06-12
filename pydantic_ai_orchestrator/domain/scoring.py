@@ -1,10 +1,11 @@
 """Scoring logic for pydantic-ai-orchestrator.""" 
 
 from typing import List, Dict
-from .models import Checklist, ChecklistItem
+from .models import Checklist
 from pydantic_ai import Agent
 from ..infra.settings import settings
 import logfire
+from ..exceptions import RewardModelUnavailable, FeatureDisabled
 
 
 def ratio_score(check: Checklist) -> float:
@@ -41,22 +42,26 @@ def weighted_score(check: Checklist, weights: List[Dict[str, float]]) -> float:
 class RewardScorer:
     """
     Scores a solution using a reward model (LLM judge).
-    Raises NotImplementedError if the required API key is not configured.
+    Raises errors if the feature is disabled or the API key is missing.
     """
     def __init__(self):
+        if not settings.reward_enabled:
+            raise FeatureDisabled("RewardScorer is disabled by settings.")
         if not settings.openai_api_key:
-            raise NotImplementedError("OpenAI API key is required for RewardScorer.")
+            raise RewardModelUnavailable("OpenAI API key is required for RewardScorer.")
+        
         self.agent = Agent(
             "openai:gpt-4o-mini",
-            system_prompt="You are a reward model. You will be given a solution and you must return a score from 0.0 to 1.0.",
+            system_prompt="You are a reward model. You return a single float score from 0.0 to 1.0.",
             output_type=float,
         )
 
     @logfire.instrument("reward_score")
     def score(self, text: str) -> float:
-        """Calls the LLM judge to score the given text."""
+        """Calls the LLM judge to score the given text, returning its raw output."""
         try:
-            return self.agent.run_sync(text)
+            # The output of a pydantic-ai agent run is the parsed model, not an AgentResult
+            return self.agent.run(text).output
         except Exception as e:
             logfire.error(f"RewardScorer failed: {e}")
             return 0.0 

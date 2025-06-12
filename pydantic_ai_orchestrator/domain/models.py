@@ -1,32 +1,25 @@
 """Domain models for pydantic-ai-orchestrator.""" 
 
 from pydantic import BaseModel, Field
-from typing import List, Literal, Optional, Any
+from typing import List, Optional
 
 class Task(BaseModel):
-    """User-supplied job to solve."""
+    """Represents a task to be solved by the orchestrator."""
     prompt: str
     metadata: dict = Field(default_factory=dict)
 
 class ChecklistItem(BaseModel):
-    description: str
-    passed: Optional[bool] = None
-    feedback: Optional[str] = None     # reason if failed
-
-class ChecklistItemWeight(BaseModel):
-    """
-    Represents a checklist item and its associated weight for scoring.
-    """
-    item: str
-    weight: float
-    __slots__ = ("item", "weight")
+    """A single item in a checklist for evaluating a solution."""
+    description: str = Field(..., description="The criterion to evaluate.")
+    passed: Optional[bool] = Field(None, description="Whether the solution passes this criterion.")
+    feedback: Optional[str] = Field(None, description="Feedback if the criterion is not met.")
 
 class Checklist(BaseModel):
+    """A checklist for evaluating a solution."""
     items: List[ChecklistItem]
-    __slots__ = ("items",)
 
 class Candidate(BaseModel):
+    """Represents a potential solution and its evaluation metadata."""
     solution: str
     score: float
-    passed: List[str]
-    failed: List[str] 
+    checklist: Checklist 

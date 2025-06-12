@@ -1,4 +1,3 @@
-import os
 import pytest
 from pydantic import ValidationError
 from pydantic_ai_orchestrator.infra.settings import Settings

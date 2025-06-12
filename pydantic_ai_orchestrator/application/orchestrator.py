@@ -1,14 +1,15 @@
 """Orchestration logic for pydantic-ai-orchestrator.""" 
 
-from .temperature import temp_for_round
+from ..application.temperature import temp_for_round
 from ..domain.models import Task, Candidate, Checklist
 from ..domain.scoring import ratio_score, weighted_score, RewardScorer
-from ..infra.agents import Agent
+from ..exceptions import OrchestratorRetryError, FeatureDisabled
 from ..infra.settings import settings
+from pydantic_ai import Agent as PydanticAgent
 import logfire
-import random
-from typing import Optional, Callable
+from typing import Optional
 import asyncio
+from ..utils.redact import redact_string
 
 class Orchestrator:
     """
@@ -17,88 +18,106 @@ class Orchestrator:
     """
     def __init__(
         self,
-        review_agent: Agent,
-        solution_agent: Agent,
-        validator_agent: Agent,
-        reflection_agent: Agent,
+        review_agent: PydanticAgent,
+        solution_agent: PydanticAgent,
+        validator_agent: PydanticAgent,
+        reflection_agent: PydanticAgent,
         max_iters: Optional[int] = None,
         k_variants: Optional[int] = None,
-        scorer: Optional[Callable] = None,
+        reflection_limit: Optional[int] = None,
     ):
         self.review = review_agent
         self.solve = solution_agent
         self.validate = validator_agent
         self.reflect = reflection_agent
 
-        # Fallback to settings if specific values are not provided
         self.max_iters = max_iters if max_iters is not None else settings.max_iters
         self.k_variants = k_variants if k_variants is not None else settings.k_variants
-        
-        # Scorer selection logic
-        if scorer:
-            self.scorer = scorer
-        elif settings.scorer == "weighted":
-            # Assuming weights are passed in task metadata for this example
-            self.scorer = lambda check: weighted_score(check, check.metadata.get("weights", []))
-        elif settings.scorer == "reward":
-            self.scorer = RewardScorer().score
-        else: # ratio is the default
-            self.scorer = ratio_score
+        self.reflection_limit = reflection_limit if reflection_limit is not None else settings.reflection_limit
 
-    async def run_async(self, task: Task) -> Candidate:
-        """Asynchronously runs the full orchestration loop."""
+        self.reward_scorer = None
+        if settings.scorer == "reward":
+            try:
+                self.reward_scorer = RewardScorer()
+            except FeatureDisabled:
+                pass # It's ok if it's disabled, we just won't use it.
+
+    async def _run_internal(self, task: Task) -> Candidate:
         with logfire.span("orchestrator.run", task=task.prompt):
-            checklist = await self.review.run_async(task.prompt)
-            memory: list[str] = []
-            best: Candidate | None = None
+            try:
+                checklist_result = await self.review.run(task.prompt)
+                checklist = getattr(checklist_result, 'output', checklist_result)
+                if not isinstance(checklist, Checklist):
+                    raise OrchestratorRetryError(f"Review agent did not return a Checklist instance. Got: {type(checklist)} - {checklist}")
+            except Exception as e:
+                msg = f"Review agent failed after all retries: {e}"
+                msg = redact_string(msg, settings.openai_api_key.get_secret_value() if settings.openai_api_key else None)
+                msg = redact_string(msg, settings.logfire_api_key.get_secret_value() if settings.logfire_api_key else None)
+                raise OrchestratorRetryError(msg)
 
+            memory, best = [], None
             for i in range(self.max_iters):
                 with logfire.span("iteration", idx=i, memory_len=len(memory)) as iter_span:
                     prompt = f"{task.prompt}\n\nFeedback:\n{chr(10).join(memory)}"
-                    temp = temp_for_round(i)
-                    
-                    # Generate K variants in parallel
-                    solution_tasks = [self.solve.run_async(prompt, temperature=temp) for _ in range(self.k_variants)]
-                    raw_solutions = await asyncio.gather(*solution_tasks)
+                    tasks = [asyncio.create_task(self.solve.run(prompt, temperature=temp_for_round(i))) for _ in range(self.k_variants)]
+                    try:
+                        done, pending = await asyncio.wait(tasks, return_when=asyncio.ALL_COMPLETED, timeout=120)
+                        if pending:
+                            for t in pending:
+                                t.cancel()
+                            await asyncio.gather(*pending, return_exceptions=True)
+                            raise asyncio.TimeoutError("One or more solution variants timed out.")
+                        variant_results = [t.result() for t in done]
+                        variants = [getattr(v, 'output', v) for v in variant_results]
+                    except Exception as e:
+                        msg = f"Solution generation failed for iteration {i}: {e}"
+                        msg = redact_string(msg, settings.openai_api_key.get_secret_value() if settings.openai_api_key else None)
+                        msg = redact_string(msg, settings.logfire_api_key.get_secret_value() if settings.logfire_api_key else None)
+                        logfire.warn(msg)
+                        continue
 
-                    iter_candidates = []
-                    for raw_solution in raw_solutions:
-                        with logfire.span("validation"):
-                            judged_checklist = await self.validate.run_async(
-                                {"solution": raw_solution, "checklist": checklist}
-                            )
-                            score = self.scorer(judged_checklist)
-                            pass_rate = ratio_score(judged_checklist)
-
-                            logfire.info(f"Candidate score: {score:.2f}, pass_rate: {pass_rate:.2f}")
-                            iter_span.set_attribute("score", score)
-
-                            cand = Candidate(
-                                solution=raw_solution,
-                                checklist=judged_checklist,
-                                score=score,
-                                passed=[it.description for it in judged_checklist.items if it.passed],
-                                failed=[it.description for it in judged_checklist.items if not it.passed],
-                            )
-                            iter_candidates.append(cand)
-                            if best is None or cand.score > best.score:
-                                best = cand
-                            
-                            if pass_rate == 1.0:
-                                logfire.info("Perfect solution found, exiting early.")
-                                return best
-
-                    # Reflection on the best candidate of the iteration
-                    if self.reflect and best.failed and len(memory) < 3:
-                        with logfire.span("reflection"):
-                            reflection = await self.reflect.run_async(
-                                {"failed_items": best.failed}
-                            )
-                            if reflection:
-                                memory.append(reflection)
-
+                    for raw_solution in variants:
+                        # Guard: checklist must be a Checklist instance
+                        if not isinstance(checklist, Checklist):
+                            logfire.warn("Checklist is not a Checklist instance; skipping validation for this candidate.")
+                            continue
+                        try:
+                            judged_result = await self.validate.run({"solution": raw_solution, "checklist": checklist.model_copy(deep=True)})
+                            judged_checklist = getattr(judged_result, 'output', judged_result)
+                        except Exception as e:
+                            msg = f"Validation failed for a candidate: {e}"
+                            msg = redact_string(msg, settings.openai_api_key.get_secret_value() if settings.openai_api_key else None)
+                            msg = redact_string(msg, settings.logfire_api_key.get_secret_value() if settings.logfire_api_key else None)
+                            logfire.warn(msg)
+                            continue
+                        score = self._calculate_score(judged_checklist, raw_solution, task)
+                        iter_span.set_attribute("score", score)
+                        cand = Candidate(
+                            solution=raw_solution,
+                            checklist=judged_checklist,
+                            score=score,
+                        )
+                        if best is None or cand.score > best.score:
+                            best = cand
+                        if score == 1.0:
+                            return best
+                    failed_items = [it.description for it in best.checklist.items if not it.passed] if best else []
+                    if self.reflect and best and failed_items and len(memory) < self.reflection_limit:
+                        reflection_result = await self.reflect.run({"failed_items": failed_items})
+                        reflection = getattr(reflection_result, 'output', reflection_result)
+                        if reflection: memory.append(reflection)
             return best
 
-    def run(self, task: Task) -> Candidate:
-        """Synchronously runs the full orchestration loop."""
-        return asyncio.run(self.run_async(task)) 
+    async def run_async(self, task: Task) -> Candidate:
+        return await self._run_internal(task)
+
+    def run_sync(self, task: Task) -> Candidate:
+        return asyncio.run(self._run_internal(task))
+
+    def _calculate_score(self, checklist: Checklist, solution: str, task: Task) -> float:
+        if settings.scorer == "weighted":
+            weights = task.metadata.get("weights", [])
+            return weighted_score(checklist, weights)
+        if settings.scorer == "reward" and self.reward_scorer:
+            return self.reward_scorer.score(solution)
+        return ratio_score(checklist) 
