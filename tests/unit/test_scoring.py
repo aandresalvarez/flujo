@@ -55,6 +55,8 @@ async def test_reward_scorer_returns_float(monkeypatch):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    import pydantic_ai_orchestrator.domain.scoring as scoring_mod
+    scoring_mod.settings.openai_api_key = SecretStr("sk-test")
     scorer = RewardScorer()
     async def async_run(*args, **kwargs):
         return SimpleNamespace(output=0.77)
@@ -107,6 +109,7 @@ async def test_reward_scorer_score_no_output(monkeypatch):
     # Patch settings.reward_enabled to True
     import pydantic_ai_orchestrator.domain.scoring as scoring_mod
     scoring_mod.settings.reward_enabled = True
+    scoring_mod.settings.openai_api_key = SecretStr("sk-test")
     scorer = RewardScorer()
     # Return an object without 'output' attribute
     class NoOutput:
