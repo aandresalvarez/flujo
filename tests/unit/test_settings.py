@@ -19,5 +19,8 @@ def test_defaults(monkeypatch):
 
 def test_validation_error(monkeypatch):
     monkeypatch.delenv("ORCH_OPENAI_API_KEY", raising=False)
+    class TestSettings(Settings):
+        model_config = Settings.model_config.copy()
+        model_config["env_file"] = None
     with pytest.raises(ValidationError):
-        Settings() 
+        TestSettings() 

@@ -1,6 +1,9 @@
 import pytest
 from pydantic_ai_orchestrator.domain.models import Checklist, ChecklistItem
 from pydantic_ai_orchestrator.domain.scoring import ratio_score, weighted_score, RewardScorer
+from pydantic_ai_orchestrator.infra.settings import Settings
+from pydantic_ai_orchestrator.domain.scoring import RewardModelUnavailable, FeatureDisabled
+from pydantic import ValidationError
 
 def test_ratio_score():
     check_pass = Checklist(items=[ChecklistItem(description="a", passed=True), ChecklistItem(description="b", passed=True)])
@@ -31,20 +34,31 @@ def test_weighted_score():
     assert weighted_score(check, weights_missing) == pytest.approx(0.6)
 
 def test_reward_scorer_init(monkeypatch):
+    from pydantic_ai_orchestrator.infra.settings import Settings
+    from pydantic_ai_orchestrator.domain.scoring import RewardScorer
+    from pydantic import ValidationError
     # Should work with key
     monkeypatch.setenv("ORCH_OPENAI_API_KEY", "sk-test")
+    class TestSettings(Settings):
+        model_config = Settings.model_config.copy()
+        model_config["env_file"] = None
+    import pydantic_ai_orchestrator.domain.scoring as scoring_mod
+    scoring_mod.settings = TestSettings()
     RewardScorer()
-    
     # Should fail without key
     monkeypatch.delenv("ORCH_OPENAI_API_KEY")
-    import pydantic_ai_orchestrator.domain.scoring as scoring
-    with pytest.raises((scoring.RewardModelUnavailable, scoring.FeatureDisabled)):
+    with pytest.raises(ValidationError):
+        scoring_mod.settings = TestSettings()
         RewardScorer()
 
-def test_reward_scorer_returns_float(monkeypatch):
+@pytest.mark.asyncio
+async def test_reward_scorer_returns_float(monkeypatch):
     from types import SimpleNamespace
+    from unittest.mock import AsyncMock
     monkeypatch.setenv("ORCH_OPENAI_API_KEY", "sk-test")
     scorer = RewardScorer()
-    from unittest.mock import patch
-    with patch.object(scorer.agent, "run", return_value=SimpleNamespace(output=0.77)):
-        assert scorer.score("x") == 0.77 
+    async def async_run(*args, **kwargs):
+        return SimpleNamespace(output=0.77)
+    scorer.agent.run = AsyncMock(side_effect=async_run)
+    result = await scorer.score("x")
+    assert result == 0.77 

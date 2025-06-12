@@ -1,7 +1,7 @@
 """Settings and configuration for pydantic-ai-orchestrator.""" 
 
 from pydantic_settings import BaseSettings
-from pydantic import ValidationError, SecretStr, field_validator
+from pydantic import ValidationError, SecretStr, field_validator, ConfigDict, Field
 from typing import Optional, Literal
 from ..exceptions import SettingsError
 
@@ -14,8 +14,8 @@ class Settings(BaseSettings):
     logfire_api_key: Optional[SecretStr] = None
     
     # Feature Toggles
-    reflection_enabled: bool = True
-    reward_enabled: bool = True
+    reflection_enabled: bool = Field(True, alias="reflexion_enabled")
+    reward_enabled: bool = Field(True, alias="reward")
     telemetry_export_enabled: bool = False
     otlp_export_enabled: bool = False
 
@@ -27,13 +27,12 @@ class Settings(BaseSettings):
     t_schedule: list[float] = [1.0, 0.8, 0.5, 0.2]
     otlp_endpoint: Optional[str] = None
 
-    class Config:
-        env_file = ".env"
-        env_prefix = "ORCH_"
-        fields = {
-            "reflection_enabled": {"alias": "reflexion_enabled"},
-            "reward_enabled": {"alias": "reward"},
-        }
+    model_config = ConfigDict(
+        env_file=".env",
+        env_prefix="ORCH_",
+        alias_generator=None,
+        populate_by_name=True,
+    )
 
     @field_validator("t_schedule")
     def schedule_must_not_be_empty(cls, v):

@@ -8,7 +8,7 @@ from pydantic_ai_orchestrator.domain.models import Task
 from pydantic_ai_orchestrator.infra.agents import review_agent, solution_agent, validator_agent, get_reflection_agent
 from pydantic_ai_orchestrator.application.orchestrator import Orchestrator
 from pydantic_ai_orchestrator.infra.settings import settings, SettingsError
-from importlib.metadata import version
+from importlib.metadata import version, PackageNotFoundError
 import logfire
 from typing_extensions import Annotated
 from rich.table import Table
@@ -66,10 +66,19 @@ def solve(
         logfire.info("Aborted by user (KeyboardInterrupt). Closing spans and exiting.")
         raise typer.Exit(130)
 
-@app.command()
+@app.command(name="version-cmd")
 def version_cmd():
-    """Show package version."""
-    typer.echo(f"pydantic-ai-orchestrator version: {version('pydantic_ai_orchestrator')}")
+    """Print the package version."""
+    try:
+        try:
+            v = version("pydantic_ai_orchestrator")
+        except PackageNotFoundError:
+            v = "unknown"
+        except Exception:
+            v = "unknown"
+    except Exception:
+        v = "unknown"
+    print(f"pydantic-ai-orchestrator version: {v}")
 
 @app.command(name="show-config")
 def show_config_cmd():

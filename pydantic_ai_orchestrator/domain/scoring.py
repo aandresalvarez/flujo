@@ -57,11 +57,12 @@ class RewardScorer:
         )
 
     @logfire.instrument("reward_score")
-    def score(self, text: str) -> float:
-        """Calls the LLM judge to score the given text, returning its raw output."""
+    async def score(self, text: str) -> float:
+        """Calls the LLM judge to score the given text, returning its raw output. Async."""
         try:
             # The output of a pydantic-ai agent run is the parsed model, not an AgentResult
-            return self.agent.run(text).output
+            result = await self.agent.run(text)
+            return result.output
         except Exception as e:
             logfire.error(f"RewardScorer failed: {e}")
             return 0.0 
