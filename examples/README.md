@@ -8,7 +8,7 @@
 | **03_reward_scorer.py** | Using the reward-model scorer. |
 | **04_batch_processing.py** | Running many prompts from a CSV and exporting results. |
 
-Each script is standalone – activate your virtualenv, set `ORCH_OPENAI_API_KEY`, then:
+Each script is standalone – activate your virtualenv, set `OPENAI_API_KEY`, then:
 
 ```bash
 python examples/00_quickstart.py

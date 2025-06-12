@@ -33,21 +33,23 @@ Call `init_telemetry()` once at startup to configure logging and tracing for you
 
 ## Environment Variables
 
-- `ORCH_OPENAI_API_KEY` (required)
-- `ORCH_LOGFIRE_API_KEY` (optional)
-- `ORCH_REFLECTION_ENABLED` (default: true)
-- `ORCH_REWARD_ENABLED` (default: true) — toggles the reward model scorer on/off
-- `ORCH_MAX_ITERS`, `ORCH_K_VARIANTS`
-- `ORCH_TELEMETRY_EXPORT_ENABLED` (default: false)
-- `ORCH_OTLP_EXPORT_ENABLED` (default: false)
-- `ORCH_OTLP_ENDPOINT` (optional, e.g. https://otlp.example.com)
+- `OPENAI_API_KEY` (optional for OpenAI models)
+- `GOOGLE_API_KEY` (optional for Gemini models)
+- `ANTHROPIC_API_KEY` (optional for Claude models)
+- `LOGFIRE_API_KEY` (optional)
+- `REFLECTION_ENABLED` (default: true)
+- `REWARD_ENABLED` (default: true) — toggles the reward model scorer on/off
+- `MAX_ITERS`, `K_VARIANTS`
+- `TELEMETRY_EXPORT_ENABLED` (default: false)
+- `OTLP_EXPORT_ENABLED` (default: false)
+- `OTLP_ENDPOINT` (optional, e.g. https://otlp.example.com)
 
 ## OTLP Exporter (Tracing/Telemetry)
 
 If you want to export traces to an OTLP-compatible backend (such as OpenTelemetry Collector, Honeycomb, or Datadog), set the following environment variables:
 
-- `ORCH_OTLP_EXPORT_ENABLED=true` — Enable OTLP trace exporting
-- `ORCH_OTLP_ENDPOINT=https://your-otlp-endpoint` — (Optional) Custom OTLP endpoint URL
+- `OTLP_EXPORT_ENABLED=true` — Enable OTLP trace exporting
+- `OTLP_ENDPOINT=https://your-otlp-endpoint` — (Optional) Custom OTLP endpoint URL
 
 When enabled, the orchestrator will send traces using the OTLP HTTP exporter. This is useful for distributed tracing and observability in production environments.
 
@@ -56,7 +58,7 @@ When enabled, the orchestrator will send traces using the OTLP HTTP exporter. Th
 - Reward model stub included (extendable)
 
 ## Reflection
-- Reflection agent can be toggled via `ORCH_REFLECTION_ENABLED`
+- Reflection agent can be toggled via `REFLECTION_ENABLED`
 
 ## Weighted Scoring
 

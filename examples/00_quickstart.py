@@ -3,7 +3,7 @@
 ----------------
 Most basic usage: call the orchestrator once and print the result.
 Run with:
-    ORCH_OPENAI_API_KEY=sk-... python 00_quickstart.py
+    OPENAI_API_KEY=sk-... python 00_quickstart.py
 """
 from pydantic_ai_orchestrator import Orchestrator, Task
 from pydantic_ai_orchestrator.infra.agents import review_agent, solution_agent, validator_agent, get_reflection_agent

@@ -61,6 +61,7 @@ class RewardScorer:
             "openai:gpt-4o-mini",
             system_prompt="You are a reward model. You return a single float score from 0.0 to 1.0.",
             output_type=float,
+            api_key=settings.openai_api_key.get_secret_value(),
         )
 
     @logfire.instrument("reward_score")

@@ -26,7 +26,7 @@ Install and configure:
 ```bash
 pip install pydantic-ai-orchestrator
 cp .env.example .env  # then edit the file
-export ORCH_OPENAI_API_KEY=sk-...
+export OPENAI_API_KEY=sk-...
 orch solve "Write a haiku about AI."
 ```
 
@@ -80,10 +80,12 @@ For more examples, see the `examples` folder.
 
 ## Environment Variables
 
-* `ORCH_OPENAI_API_KEY` (**required**)
-* `ORCH_LOGFIRE_API_KEY` (optional)
-* `ORCH_REFLECTION_ENABLED` (default: `true`)
-* `ORCH_MAX_ITERS`, `ORCH_K_VARIANTS`
+* `OPENAI_API_KEY` (optional, for OpenAI models)
+* `GOOGLE_API_KEY` (optional, for Gemini models)
+* `ANTHROPIC_API_KEY` (optional, for Claude models)
+* `LOGFIRE_API_KEY` (optional)
+* `REFLECTION_ENABLED` (default: `true`)
+* `MAX_ITERS`, `K_VARIANTS`
 
 ## API Usage
 
@@ -145,7 +147,7 @@ The `examples` directory includes practical demonstrations:
 2. Set OpenAI API key:
 
 ```bash
-export ORCH_OPENAI_API_KEY='sk-...'
+export OPENAI_API_KEY='sk-...'
 ```
 
 3. Run examples:

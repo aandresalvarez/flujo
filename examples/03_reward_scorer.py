@@ -9,7 +9,7 @@ from pydantic_ai_orchestrator import Orchestrator, Task
 from pydantic_ai_orchestrator.infra.settings import settings
 
 # 🔑 Make sure you have a paid API key – the reward model is another call
-os.environ["ORCH_REWARD_ENABLED"] = "true"
+os.environ["REWARD_ENABLED"] = "true"
 settings.scorer = "reward"
 
 best = Orchestrator().run_sync(Task(prompt="Summarise the Zen of Python in two sentences."))

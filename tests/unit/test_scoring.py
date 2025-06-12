@@ -2,7 +2,7 @@ import pytest
 from pydantic_ai_orchestrator.domain.models import Checklist, ChecklistItem
 from pydantic_ai_orchestrator.domain.scoring import ratio_score, weighted_score, RewardScorer
 from pydantic_ai_orchestrator.infra.settings import Settings
-from pydantic import ValidationError
+from pydantic import ValidationError, SecretStr
 
 def test_ratio_score():
     check_pass = Checklist(items=[ChecklistItem(description="a", passed=True), ChecklistItem(description="b", passed=True)])
@@ -35,24 +35,26 @@ def test_weighted_score():
 def test_reward_scorer_init(monkeypatch):
     from pydantic_ai_orchestrator.domain.scoring import RewardScorer
     # Should work with key
-    monkeypatch.setenv("ORCH_OPENAI_API_KEY", "sk-test")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     class TestSettings(Settings):
         model_config = Settings.model_config.copy()
         model_config["env_file"] = None
+        openai_api_key: SecretStr | None = SecretStr("sk-test")
     import pydantic_ai_orchestrator.domain.scoring as scoring_mod
     scoring_mod.settings = TestSettings()
     RewardScorer()
     # Should fail without key
-    monkeypatch.delenv("ORCH_OPENAI_API_KEY")
-    with pytest.raises(ValidationError):
-        scoring_mod.settings = TestSettings()
+    monkeypatch.delenv("OPENAI_API_KEY")
+    scoring_mod.settings = TestSettings()
+    scoring_mod.settings.openai_api_key = None
+    with pytest.raises(scoring_mod.RewardModelUnavailable):
         RewardScorer()
 
 @pytest.mark.asyncio
 async def test_reward_scorer_returns_float(monkeypatch):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
-    monkeypatch.setenv("ORCH_OPENAI_API_KEY", "sk-test")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     scorer = RewardScorer()
     async def async_run(*args, **kwargs):
         return SimpleNamespace(output=0.77)
@@ -62,7 +64,7 @@ async def test_reward_scorer_returns_float(monkeypatch):
 
 def test_reward_scorer_disabled(monkeypatch):
     from pydantic_ai_orchestrator.domain.scoring import RewardScorer, FeatureDisabled
-    monkeypatch.setenv("ORCH_OPENAI_API_KEY", "sk-test")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     class TestSettings(Settings):
         model_config = Settings.model_config.copy()
         model_config["env_file"] = None
@@ -101,7 +103,7 @@ def test_redact_string_secret_in_text():
 @pytest.mark.asyncio
 async def test_reward_scorer_score_no_output(monkeypatch):
     from unittest.mock import AsyncMock
-    monkeypatch.setenv("ORCH_OPENAI_API_KEY", "sk-test")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     # Patch settings.reward_enabled to True
     import pydantic_ai_orchestrator.domain.scoring as scoring_mod
     scoring_mod.settings.reward_enabled = True
