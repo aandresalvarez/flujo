@@ -48,6 +48,14 @@ def solve(
                         weights = yaml.safe_load(f)
                     else:
                         weights = json.load(f)
+                if not isinstance(weights, list) or not all(
+                    isinstance(w, dict) and "item" in w and "weight" in w for w in weights
+                ):
+                    typer.echo(
+                        "[red]Weights file must be a list of objects with 'item' and 'weight'",
+                        err=True,
+                    )
+                    raise typer.Exit(1)
                 metadata["weights"] = weights
             except Exception as e:
                 typer.echo(f"[red]Error loading weights file: {e}", err=True)

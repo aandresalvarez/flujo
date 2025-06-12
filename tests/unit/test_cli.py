@@ -92,6 +92,21 @@ def test_cli_solve_weights_file_invalid_json(tmp_path):
     assert result.exit_code == 1
     assert "Error" in result.stdout or "Traceback" in result.stdout or result.stderr
 
+def test_cli_solve_weights_invalid_structure(tmp_path):
+    bad_file = tmp_path / "bad.json"
+    bad_file.write_text("{\"item\": \"a\", \"weight\": 1}")
+    result = runner.invoke(app, ["solve", "prompt", "--weights-path", str(bad_file)])
+    assert result.exit_code == 1
+    assert "list of objects" in result.stderr
+
+def test_cli_solve_weights_missing_keys(tmp_path):
+    weights = [{"item": "a"}]
+    file = tmp_path / "weights.json"
+    file.write_text(json.dumps(weights))
+    result = runner.invoke(app, ["solve", "prompt", "--weights-path", str(file)])
+    assert result.exit_code == 1
+    assert "list of objects" in result.stderr
+
 def test_cli_solve_keyboard_interrupt(monkeypatch):
     def raise_keyboard(*args, **kwargs):
         raise KeyboardInterrupt()
