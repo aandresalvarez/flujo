@@ -26,7 +26,14 @@ def weighted_score(check: Checklist, weights: List[Dict[str, float]]) -> float:
     if not check.items:
         return 0.0
 
-    weight_map = {w["item"]: w["weight"] for w in weights}
+    if not isinstance(weights, list):
+        raise ValueError("weights must be a list of dicts with 'item' and 'weight'")
+
+    weight_map = {}
+    for w in weights:
+        if not isinstance(w, dict) or "item" not in w or "weight" not in w:
+            raise ValueError("weights must be a list of dicts with 'item' and 'weight'")
+        weight_map[w["item"]] = w["weight"]
     total_weight = sum(weight_map.get(item.description, 1.0) for item in check.items)
     if total_weight == 0:
         return 0.0

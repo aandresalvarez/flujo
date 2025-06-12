@@ -135,4 +135,18 @@ def test_weighted_score_all_weights_present():
         {"item": "c", "weight": 0.2},
     ]
     # All passed, so score = sum(weights) / sum(weights) = 1.0
-    assert weighted_score(check, weights) == pytest.approx(1.0) 
+    assert weighted_score(check, weights) == pytest.approx(1.0)
+
+
+def test_weighted_score_invalid_weight_type():
+    from pydantic_ai_orchestrator.domain.models import Checklist, ChecklistItem
+    check = Checklist(items=[ChecklistItem(description="a", passed=True)])
+    with pytest.raises(ValueError):
+        weighted_score(check, ["not-a-dict"])
+
+
+def test_weighted_score_missing_keys():
+    from pydantic_ai_orchestrator.domain.models import Checklist, ChecklistItem
+    check = Checklist(items=[ChecklistItem(description="a", passed=True)])
+    with pytest.raises(ValueError):
+        weighted_score(check, [{"item": "a"}])
