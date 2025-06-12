@@ -9,6 +9,12 @@ orch bench --prompt "hi" --rounds 3
 orch --profile
 ```
 
+`orch bench` depends on `numpy`. Install with the optional `[bench]` extra:
+
+```bash
+pip install pydantic-ai-orchestrator[bench]
+```
+
 ## API
 
 ```python

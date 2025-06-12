@@ -43,7 +43,7 @@ orch solve "Write a haiku about AI."
 
 - `orch solve "prompt"` – Solve a task
 - `orch show-config` – Show current config (secrets masked)
-- `orch bench --prompt "hi" --rounds 5` – Benchmark
+- `orch bench --prompt "hi" --rounds 5` – Benchmark (requires `numpy`; install with `pip install pydantic-ai-orchestrator[bench]`)
 - `orch --profile` – Enable Logfire span viewer
 
 ## Environment Variables
