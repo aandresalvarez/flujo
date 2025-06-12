@@ -1,19 +1,21 @@
 [project]
 name = "pydantic_ai_orchestrator"
-version = "1.0.0rc1"
-description = "Production-ready orchestration for pydantic-ai agents"
+version = "0.1.0"
+description = "Production-ready orchestration for Pydantic-AI agents"
 authors = [ { name = "Your Org" } ]
 license = {text = "MIT"}
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-  "pydantic>=2.6",
+  "pydantic>=2.7",
   "pydantic-ai>=0.2.16",
   "pydantic-settings",
-  "tenacity",
-  "typer[all]",
-  "rich",
-  "logfire"
+  "tenacity>=8.2",
+  "typer[all]>=0.12",
+  "rich>=13.7",
+  "pyyaml>=6.0",
+  "logfire>=0.3",
+  # Add any other core dependencies here
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -41,9 +43,10 @@ dev = [
     "vcrpy",
     "rich"
 ]
+opentelemetry = ["opentelemetry-sdk>=1.26"]
 
 [build-system]
-requires = ["hatchling>=1.22"]
+requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.mypy]
