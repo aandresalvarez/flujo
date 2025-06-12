@@ -39,6 +39,7 @@ dev = [
     "mypy",
     "pip-audit",
     "pytest-cov",
+    "pytest-asyncio",
     "hypothesis",
     "vcrpy",
     "rich"
@@ -62,3 +63,4 @@ markers = [
     "e2e: marks tests as end-to-end (requires network access or VCR cassettes)",
 ]
 
+asyncio_mode = "auto"
