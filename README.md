@@ -22,6 +22,7 @@ pip install pydantic-ai-orchestrator
 
 ```bash
 pip install pydantic-ai-orchestrator
+cp .env.example .env  # then edit the file
 export ORCH_OPENAI_API_KEY=sk-...
 orch solve "Write a haiku about AI."
 ```

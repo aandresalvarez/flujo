@@ -1,4 +1,5 @@
 # Usage
+Copy `.env.example` to `.env` and add your API keys before running the CLI.
 
 ## CLI
 
