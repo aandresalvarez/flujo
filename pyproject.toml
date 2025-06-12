@@ -2,7 +2,7 @@
 name = "pydantic_ai_orchestrator"
 version = "0.1.0"
 description = "Production-ready orchestration for Pydantic-AI agents"
-authors = [ { name = "Your Org" } ]
+authors = [ { name = "Alvaro", email = "alvaro@example.com" } ]
 license = {text = "MIT"}
 readme = "README.md"
 requires-python = ">=3.11"

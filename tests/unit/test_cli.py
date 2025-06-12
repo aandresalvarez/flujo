@@ -89,8 +89,7 @@ def test_cli_solve_weights_file_invalid_json(tmp_path):
     bad_file = tmp_path / "bad.json"
     bad_file.write_text("not a json")
     result = runner.invoke(app, ["solve", "prompt", "--weights-path", str(bad_file)])
-    assert result.exit_code == 1 or result.exit_code == 2
-    # Should print a traceback or error
+    assert result.exit_code == 1
     assert "Error" in result.stdout or "Traceback" in result.stdout or result.stderr
 
 def test_cli_solve_keyboard_interrupt(monkeypatch):

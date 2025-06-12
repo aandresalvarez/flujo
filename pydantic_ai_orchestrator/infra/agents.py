@@ -129,6 +129,12 @@ class LoggingReviewAgent:
         self.run_async = self._run_async
         self._run_with_retry = getattr(agent, "_run_with_retry", None)
 
+    def __getattr__(self, name):
+        # Expose _run_with_retry and any other attributes from the wrapped agent
+        if hasattr(self.agent, name):
+            return getattr(self.agent, name)
+        raise AttributeError(f"{self.__class__.__name__!r} object has no attribute {name!r}")
+
     async def _run_inner(self, method, *args, **kwargs):
         try:
             result = await method(*args, **kwargs)
