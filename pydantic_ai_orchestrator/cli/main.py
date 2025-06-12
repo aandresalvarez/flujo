@@ -4,10 +4,21 @@ import typer
 import json
 import os
 import yaml
-from pydantic_ai_orchestrator.domain.models import Task
-from pydantic_ai_orchestrator.infra.agents import review_agent, solution_agent, validator_agent, get_reflection_agent
+from pydantic_ai_orchestrator.domain.models import Task, Checklist
+from pydantic_ai_orchestrator.infra.agents import (
+    review_agent,
+    solution_agent,
+    validator_agent,
+    get_reflection_agent,
+    make_agent_async,
+    REVIEW_SYS,
+    SOLUTION_SYS,
+    VALIDATE_SYS,
+    REFLECT_SYS,
+)
 from pydantic_ai_orchestrator.application.orchestrator import Orchestrator
 from pydantic_ai_orchestrator.infra.settings import settings, SettingsError
+from pydantic_ai_orchestrator.exceptions import ConfigurationError
 
 import logfire
 from typing_extensions import Annotated
@@ -24,6 +35,10 @@ def solve(
     reflection: Annotated[bool, typer.Option(help="Enable/disable reflection agent.")] = None,
     scorer: Annotated[str, typer.Option(help="Scoring strategy: 'ratio', 'weighted', or 'reward'.")] = None,
     weights_path: Annotated[str, typer.Option(help="Path to weights file (JSON or YAML)")] = None,
+    solution_model: Annotated[str, typer.Option(help="Model for the Solution agent.")] = None,
+    review_model: Annotated[str, typer.Option(help="Model for the Review agent.")] = None,
+    validator_model: Annotated[str, typer.Option(help="Model for the Validator agent.")] = None,
+    reflection_model: Annotated[str, typer.Option(help="Model for the Reflection agent.")] = None,
 ):
     """
     Solves a task using the multi-agent orchestrator.
@@ -61,18 +76,30 @@ def solve(
                 typer.echo(f"[red]Error loading weights file: {e}", err=True)
                 raise typer.Exit(1)
 
-        # The Orchestrator will use CLI args if provided, otherwise fall back to settings
+        sol_model = solution_model or settings.default_solution_model
+        rev_model = review_model or settings.default_review_model
+        val_model = validator_model or settings.default_validator_model
+        ref_model = reflection_model or settings.default_reflection_model
+
+        review = make_agent_async(rev_model, REVIEW_SYS, Checklist)
+        solution = make_agent_async(sol_model, SOLUTION_SYS, str)
+        validator = make_agent_async(val_model, VALIDATE_SYS, Checklist)
+        reflection_agent = get_reflection_agent(ref_model)
+
         orch = Orchestrator(
-            review_agent,
-            solution_agent,
-            validator_agent,
-            get_reflection_agent(),           # fresh instance honours settings
+            review,
+            solution,
+            validator,
+            reflection_agent,
             max_iters=max_iters,
             k_variants=k,
             reflection_limit=settings.reflection_limit,
         )
         best = orch.run_sync(Task(prompt=prompt, metadata=metadata))
         typer.echo(json.dumps(best.model_dump(), indent=2))
+    except ConfigurationError as e:
+        typer.echo(f"[red]Configuration Error: {e}[/red]", err=True)
+        raise typer.Exit(2)
     except KeyboardInterrupt:
         logfire.info("Aborted by user (KeyboardInterrupt). Closing spans and exiting.")
         raise typer.Exit(130)
@@ -143,6 +170,6 @@ def main(profile: bool = typer.Option(False, "--profile", help="Enable Logfire S
 if __name__ == "__main__":
     try:
         app()
-    except SettingsError as e:
+    except (SettingsError, ConfigurationError) as e:
         typer.echo(f"[red]Settings error: {e}", err=True)
-        raise typer.Exit(2) 
+        raise typer.Exit(2)

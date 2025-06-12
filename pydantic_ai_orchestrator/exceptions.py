@@ -18,4 +18,9 @@ class RewardModelUnavailable(OrchestratorError):
 
 class FeatureDisabled(OrchestratorError):
     """Raised when a disabled feature is invoked."""
-    pass 
+    pass
+
+# New exception for missing configuration
+class ConfigurationError(SettingsError):
+    """Raised when a required configuration for a provider is missing."""
+    pass

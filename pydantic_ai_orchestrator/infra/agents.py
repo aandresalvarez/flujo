@@ -5,7 +5,7 @@ from pydantic_ai import Agent
 from typing import Type
 from pydantic_ai_orchestrator.infra.settings import settings
 from pydantic_ai_orchestrator.domain.models import Checklist
-from pydantic_ai_orchestrator.exceptions import OrchestratorRetryError
+from pydantic_ai_orchestrator.exceptions import OrchestratorRetryError, ConfigurationError
 from tenacity import retry_if_exception_type, wait_random_exponential
 import asyncio
 import logfire
@@ -35,12 +35,37 @@ def make_agent(
     model: str,
     system_prompt: str,
     output_type: Type,
+    tools: list | None = None,
 ) -> Agent:
-    """Creates a pydantic_ai.Agent."""
+    """Creates a pydantic_ai.Agent, injecting the correct API key."""
+    provider_name = model.split(":")[0].lower()
+    api_key = None
+
+    if provider_name == "openai":
+        if not settings.openai_api_key:
+            raise ConfigurationError(
+                "To use OpenAI models, the OPENAI_API_KEY environment variable must be set."
+            )
+        api_key = settings.openai_api_key.get_secret_value()
+    elif provider_name in {"google-gla", "gemini"}:
+        if not settings.google_api_key:
+            raise ConfigurationError(
+                "To use Gemini models, the GOOGLE_API_KEY environment variable must be set."
+            )
+        api_key = settings.google_api_key.get_secret_value()
+    elif provider_name == "anthropic":
+        if not settings.anthropic_api_key:
+            raise ConfigurationError(
+                "To use Anthropic models, the ANTHROPIC_API_KEY environment variable must be set."
+            )
+        api_key = settings.anthropic_api_key.get_secret_value()
+
     return Agent(
         model,
         system_prompt=system_prompt,
         output_type=output_type,
+        api_key=api_key,
+        tools=tools or [],
     )
 
 class AsyncAgentWrapper:
@@ -93,7 +118,7 @@ def make_agent_async(
     output_type: Type,
     max_retries: int = 3,
     timeout: int = None,
-) -> AsyncAgentWrapper:
+    ) -> AsyncAgentWrapper:
     """
     Creates a pydantic_ai.Agent and returns an AsyncAgentWrapper exposing .run_async.
     """
@@ -106,16 +131,20 @@ class NoOpReflectionAgent:
         return ""
 
 # 3. Agent Instances
-review_agent = make_agent_async("openai:gpt-4o", REVIEW_SYS, Checklist)
-solution_agent = make_agent_async("openai:gpt-4o", SOLUTION_SYS, str)
-validator_agent = make_agent_async("openai:gpt-4o", VALIDATE_SYS, Checklist)
+try:
+    review_agent = make_agent_async(settings.default_review_model, REVIEW_SYS, Checklist)
+    solution_agent = make_agent_async(settings.default_solution_model, SOLUTION_SYS, str)
+    validator_agent = make_agent_async(settings.default_validator_model, VALIDATE_SYS, Checklist)
+except ConfigurationError:
+    review_agent = solution_agent = validator_agent = NoOpReflectionAgent()
 
-def get_reflection_agent() -> AsyncAgentWrapper | NoOpReflectionAgent:
+def get_reflection_agent(model: str | None = None) -> AsyncAgentWrapper | NoOpReflectionAgent:
     """Returns a new instance of the reflection agent, or a no-op if disabled."""
     if not settings.reflection_enabled:
         return NoOpReflectionAgent()
     try:
-        agent = make_agent_async("openai:gpt-4o", REFLECT_SYS, str)
+        model_name = model or settings.default_reflection_model
+        agent = make_agent_async(model_name, REFLECT_SYS, str)
         logfire.info("Reflection agent created successfully.")
         return agent
     except Exception as e:

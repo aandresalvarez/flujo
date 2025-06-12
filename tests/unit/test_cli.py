@@ -25,12 +25,27 @@ def test_cli_solve_happy_path(monkeypatch):
     def dummy_run_sync(self, task):
         return DummyCandidate()
     monkeypatch.setattr("pydantic_ai_orchestrator.cli.main.Orchestrator.run_sync", dummy_run_sync)
+    monkeypatch.setattr("pydantic_ai_orchestrator.cli.main.make_agent_async", lambda *a, **k: object())
     from pydantic_ai_orchestrator.cli.main import app
     result = runner.invoke(app, ["solve", "write a poem"])
     assert result.exit_code == 0
     assert '"solution": "mocked"' in result.stdout
 
+def test_cli_solve_custom_models(monkeypatch):
+    class DummyCandidate:
+        def model_dump(self):
+            return {"solution": "mocked", "score": 1.0}
+
+    def dummy_run_sync(self, task):
+        return DummyCandidate()
+
+    monkeypatch.setattr("pydantic_ai_orchestrator.cli.main.Orchestrator.run_sync", dummy_run_sync)
+    monkeypatch.setattr("pydantic_ai_orchestrator.cli.main.make_agent_async", lambda *a, **k: object())
+    result = runner.invoke(app, ["solve", "write", "--solution-model", "gemini:gemini-1.5-pro"])
+    assert result.exit_code == 0
+
 def test_cli_bench_command(monkeypatch):
+    pytest.importorskip("numpy")
     class DummyCandidate:
         score = 1.0
         def model_dump(self):
@@ -38,13 +53,14 @@ def test_cli_bench_command(monkeypatch):
     def dummy_run_sync(self, task):
         return DummyCandidate()
     monkeypatch.setattr("pydantic_ai_orchestrator.cli.main.Orchestrator.run_sync", dummy_run_sync)
+    monkeypatch.setattr("pydantic_ai_orchestrator.cli.main.make_agent_async", lambda *a, **k: object())
     from pydantic_ai_orchestrator.cli.main import app
     result = runner.invoke(app, ["bench", "test prompt", "--rounds", "2"])
     assert result.exit_code == 0
     assert "Benchmark Results" in result.stdout
 
 def test_cli_show_config_masks_secrets(monkeypatch):
-    monkeypatch.setenv("ORCH_OPENAI_API_KEY", "sk-secret")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-secret")
     # This requires re-importing settings or running CLI in a subprocess
     # For simplicity, we'll just check the output format.
     result = runner.invoke(app, ["show-config"])
@@ -68,6 +84,7 @@ def test_cli_solve_with_weights(monkeypatch):
     def dummy_run_sync(self, task):
         return DummyCandidate()
     monkeypatch.setattr("pydantic_ai_orchestrator.cli.main.Orchestrator.run_sync", dummy_run_sync)
+    monkeypatch.setattr("pydantic_ai_orchestrator.cli.main.make_agent_async", lambda *a, **k: object())
     from pydantic_ai_orchestrator.cli.main import app
     weights = [
         {"item": "Has a docstring", "weight": 0.7},
@@ -111,13 +128,16 @@ def test_cli_solve_keyboard_interrupt(monkeypatch):
     def raise_keyboard(*args, **kwargs):
         raise KeyboardInterrupt()
     monkeypatch.setattr("pydantic_ai_orchestrator.cli.main.Orchestrator.run_sync", raise_keyboard)
+    monkeypatch.setattr("pydantic_ai_orchestrator.cli.main.make_agent_async", lambda *a, **k: object())
     result = runner.invoke(app, ["solve", "prompt"])
     assert result.exit_code == 130
 
 def test_cli_bench_keyboard_interrupt(monkeypatch):
+    pytest.importorskip("numpy")
     def raise_keyboard(*args, **kwargs):
         raise KeyboardInterrupt()
     monkeypatch.setattr("pydantic_ai_orchestrator.cli.main.Orchestrator.run_sync", raise_keyboard)
+    monkeypatch.setattr("pydantic_ai_orchestrator.cli.main.make_agent_async", lambda *a, **k: object())
     result = runner.invoke(app, ["bench", "prompt"])
     assert result.exit_code == 130
 
@@ -132,3 +152,4 @@ def test_cli_main_callback_profile(monkeypatch):
     # Should not raise, just configure logfire
     result = runner.invoke(app, ["--profile"])
     assert result.exit_code == 0 or result.exit_code == 2 
+

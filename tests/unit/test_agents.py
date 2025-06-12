@@ -1,6 +1,7 @@
 import pytest
 import asyncio
 from unittest.mock import AsyncMock, patch
+from pydantic import SecretStr
 from pydantic_ai_orchestrator.infra.agents import AsyncAgentWrapper, NoOpReflectionAgent, get_reflection_agent, LoggingReviewAgent
 
 from pydantic_ai_orchestrator.exceptions import OrchestratorRetryError
@@ -118,4 +119,25 @@ async def test_async_agent_wrapper_agent_failed_string_only():
     wrapper = AsyncAgentWrapper(DummyAgent(), max_retries=1)
     with pytest.raises(OrchestratorRetryError) as exc:
         await wrapper.run_async("prompt")
-    assert "Agent failed after" in str(exc.value) 
+    assert "Agent failed after" in str(exc.value)
+
+
+def test_make_agent_async_injects_key(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    from pydantic_ai_orchestrator.infra import settings as settings_mod
+    settings_mod.settings.openai_api_key = SecretStr("test-key")
+    from pydantic_ai_orchestrator.infra.agents import make_agent_async
+
+    wrapper = make_agent_async("openai:gpt-4o", "sys", str)
+    assert wrapper is not None
+
+
+def test_make_agent_async_missing_key(monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    from pydantic_ai_orchestrator.infra import settings as settings_mod
+    settings_mod.settings.anthropic_api_key = None
+    from pydantic_ai_orchestrator.infra.agents import make_agent_async
+    from pydantic_ai_orchestrator.exceptions import ConfigurationError
+
+    with pytest.raises(ConfigurationError):
+        make_agent_async("anthropic:claude-3", "sys", str)

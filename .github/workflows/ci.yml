@@ -18,7 +18,7 @@ jobs:
       - name: Install pip, hatchling, and codecov
         run: |
           python -m pip install --upgrade pip
-          pip install hatchling ruff pytest pytest-cov codecov
+          pip install hatchling ruff pytest pytest-cov pytest-asyncio codecov
       - name: Install dependencies
         run: |
           pip install .[opentelemetry]

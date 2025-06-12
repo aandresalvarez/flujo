@@ -1,5 +1,9 @@
 import pytest
-import vcr
+try:
+    import vcr
+except Exception:  # pragma: no cover - skip if dependency missing
+    vcr = None
+    pytest.skip("vcrpy not installed", allow_module_level=True)
 from pydantic_ai_orchestrator.application.orchestrator import Orchestrator
 from pydantic_ai_orchestrator.domain.models import Task, Candidate
 from pydantic_ai_orchestrator.infra.agents import review_agent, solution_agent, validator_agent, get_reflection_agent
@@ -11,8 +15,9 @@ def scrub_auth(request):
 
 # Note: This test makes real API calls that are recorded to a cassette.
 # To re-record, delete the `golden.yaml` file and run the test with a valid
-# ORCH_OPENAI_API_KEY environment variable.
+# OPENAI_API_KEY environment variable.
 @pytest.mark.e2e
+@pytest.mark.skipif(vcr is None, reason="vcrpy not installed")
 @vcr.use_cassette("tests/e2e/cassettes/golden.yaml", before_record_request=scrub_auth)
 def test_golden_transcript():
     """
