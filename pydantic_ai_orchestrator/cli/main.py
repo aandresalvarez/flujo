@@ -8,12 +8,11 @@ from pydantic_ai_orchestrator.domain.models import Task
 from pydantic_ai_orchestrator.infra.agents import review_agent, solution_agent, validator_agent, get_reflection_agent
 from pydantic_ai_orchestrator.application.orchestrator import Orchestrator
 from pydantic_ai_orchestrator.infra.settings import settings, SettingsError
-from importlib.metadata import version, PackageNotFoundError
+
 import logfire
 from typing_extensions import Annotated
 from rich.table import Table
 from rich.console import Console
-import numpy as np
 
 app = typer.Typer(rich_markup_mode="markdown")
 
@@ -73,10 +72,11 @@ def solve(
 @app.command(name="version-cmd")
 def version_cmd():
     """Print the package version."""
+    import importlib.metadata as importlib_metadata
     try:
         try:
-            v = version("pydantic_ai_orchestrator")
-        except PackageNotFoundError:
+            v = importlib_metadata.version("pydantic_ai_orchestrator")
+        except importlib_metadata.PackageNotFoundError:
             v = "unknown"
         except Exception:
             v = "unknown"
@@ -93,6 +93,7 @@ def show_config_cmd():
 def bench(prompt: str, rounds: int = 10):
     """Quick micro-benchmark of generation latency/score."""
     import time
+    import numpy as np
     try:
         orch = Orchestrator(review_agent, solution_agent, validator_agent, get_reflection_agent())
         times = []
