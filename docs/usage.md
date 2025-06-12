@@ -23,6 +23,7 @@ print(result)
 - `ORCH_OPENAI_API_KEY` (required)
 - `ORCH_LOGFIRE_API_KEY` (optional)
 - `ORCH_REFLECTION_ENABLED` (default: true)
+- `ORCH_REWARD_ENABLED` (default: true) — toggles the reward model scorer on/off
 - `ORCH_MAX_ITERS`, `ORCH_K_VARIANTS`
 
 ## Scoring

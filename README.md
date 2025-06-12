@@ -1,5 +1,8 @@
 # pydantic-ai-orchestrator
 
+[![PyPI version](https://img.shields.io/pypi/v/pydantic-ai-orchestrator.svg)](https://pypi.org/project/pydantic-ai-orchestrator/)
+[![codecov](https://codecov.io/gh/yourorg/pydantic-ai-orchestrator/branch/main/graph/badge.svg)](https://codecov.io/gh/yourorg/pydantic-ai-orchestrator)
+
 Production-ready orchestration for Pydantic-based AI agents.
 
 ## Quick Start

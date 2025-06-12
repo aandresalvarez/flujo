@@ -6,7 +6,7 @@ from typing import Type
 from pydantic_ai_orchestrator.infra.settings import settings
 from pydantic_ai_orchestrator.domain.models import Checklist
 from pydantic_ai_orchestrator.exceptions import OrchestratorRetryError
-from tenacity import retry, stop_after_attempt, wait_random_exponential
+from tenacity import retry_if_exception_type, wait_random_exponential, RetryError
 import asyncio
 import logfire
 import traceback
@@ -51,25 +51,32 @@ class AsyncAgentWrapper:
         self._timeout = timeout
         self._model_name = model_name or getattr(agent, 'model', None)
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_random_exponential(multiplier=1, max=60),
-        retry_error_callback=lambda retry_state: OrchestratorRetryError(
-            f"Agent failed after {retry_state.attempt_number} attempts."
-        ),
-    )
     async def _run_with_retry(self, *args, **kwargs):
-        try:
-            result = await asyncio.wait_for(self._agent.run(*args, **kwargs), timeout=self._timeout)
-            logfire.info(f"Raw LLM response: {result}")
-            # If the agent returns a string error message, raise as exception
-            if isinstance(result, str) and result.startswith("Agent failed after"):
-                raise OrchestratorRetryError(result)
-            return result
-        except Exception as e:
-            tb = traceback.format_exc()
-            logfire.error(f"Agent call failed with exception: {e}\nTraceback:\n{tb}")
-            raise
+        from tenacity import AsyncRetrying, stop_after_attempt
+        temp = kwargs.pop("temperature", None)
+        if temp is not None:
+            kwargs.setdefault("generation_kwargs", {})["temperature"] = temp
+        attempt = 0
+        async for attempt_ctx in AsyncRetrying(
+            stop=stop_after_attempt(self._max_retries),
+            wait=wait_random_exponential(multiplier=1, max=60),
+            retry_error_callback=lambda retry_state: OrchestratorRetryError(
+                f"Agent failed after {retry_state.attempt_number} attempts."
+            ),
+            retry=retry_if_exception_type(Exception),
+            reraise=True,
+        ):
+            with attempt_ctx:
+                try:
+                    result = await asyncio.wait_for(self._agent.run(*args, **kwargs), timeout=self._timeout)
+                    logfire.info(f"Raw LLM response: {result}")
+                    if isinstance(result, str) and result.startswith("Agent failed after"):
+                        raise OrchestratorRetryError(result)
+                    return result
+                except Exception as e:
+                    tb = traceback.format_exc()
+                    logfire.error(f"Agent call failed with exception: {e}\nTraceback:\n{tb}")
+                    raise
 
     async def run_async(self, *args, **kwargs):
         return await self._run_with_retry(*args, **kwargs)
@@ -102,6 +109,8 @@ validator_agent = make_agent_async("openai:gpt-4o", VALIDATE_SYS, Checklist)
 
 def get_reflection_agent() -> AsyncAgentWrapper | NoOpReflectionAgent:
     """Returns a new instance of the reflection agent, or a no-op if disabled."""
+    if not settings.reflection_enabled:
+        return NoOpReflectionAgent()
     try:
         agent = make_agent_async("openai:gpt-4o", REFLECT_SYS, str)
         logfire.info("Reflection agent created successfully.")
@@ -114,6 +123,8 @@ def get_reflection_agent() -> AsyncAgentWrapper | NoOpReflectionAgent:
 class LoggingReviewAgent:
     def __init__(self, agent):
         self.agent = agent
+        self.run_async = self._run_async
+        self._run_with_retry = getattr(agent, "_run_with_retry", None)
     async def run(self, *args, **kwargs):
         try:
             result = await self.agent.run(*args, **kwargs)
@@ -121,6 +132,17 @@ class LoggingReviewAgent:
             return result
         except Exception as e:
             logfire.error(f"Review agent API error: {e}")
+            raise
+    async def _run_async(self, *args, **kwargs):
+        try:
+            if hasattr(self.agent, "run_async") and callable(getattr(self.agent, "run_async")):
+                result = await self.agent.run_async(*args, **kwargs)
+            else:
+                result = await self.run(*args, **kwargs)
+            logfire.info(f"Review agent result (async): {result}")
+            return result
+        except Exception as e:
+            logfire.error(f"Review agent API error (async): {e}")
             raise
 
 review_agent = LoggingReviewAgent(review_agent) 

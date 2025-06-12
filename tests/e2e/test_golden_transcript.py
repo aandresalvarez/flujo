@@ -4,11 +4,16 @@ from pydantic_ai_orchestrator.application.orchestrator import Orchestrator
 from pydantic_ai_orchestrator.domain.models import Task, Candidate
 from pydantic_ai_orchestrator.infra.agents import review_agent, solution_agent, validator_agent, get_reflection_agent
 
+def scrub_auth(request):
+    if 'authorization' in request.headers:
+        request.headers['authorization'] = ['Bearer [REDACTED]']
+    return request
+
 # Note: This test makes real API calls that are recorded to a cassette.
 # To re-record, delete the `golden.yaml` file and run the test with a valid
 # ORCH_OPENAI_API_KEY environment variable.
 @pytest.mark.e2e
-@vcr.use_cassette("tests/e2e/cassettes/golden.yaml")
+@vcr.use_cassette("tests/e2e/cassettes/golden.yaml", before_record_request=scrub_auth)
 def test_golden_transcript():
     """
     Runs a simple end-to-end test against the real OpenAI API (or a recording)

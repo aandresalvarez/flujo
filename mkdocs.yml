@@ -3,6 +3,11 @@ nav:
   - Home: index.md
   - Usage: usage.md
   - Extending: extending.md
+  - API Reference:
+      - Orchestrator: 'pydantic_ai_orchestrator.application.orchestrator'
+      - Settings: 'pydantic_ai_orchestrator.infra.settings'
+      - Agents: 'pydantic_ai_orchestrator.infra.agents'
+      - Scoring: 'pydantic_ai_orchestrator.domain.scoring'
 plugins:
   - search
   - mkdocstrings:

@@ -1,6 +1,6 @@
 """Orchestration logic for pydantic-ai-orchestrator.""" 
 
-from ..application.temperature import temp_for_round
+from .temperature import temp_for_round
 from ..domain.models import Task, Candidate, Checklist
 from ..domain.scoring import ratio_score, weighted_score, RewardScorer
 from ..exceptions import OrchestratorRetryError, FeatureDisabled
@@ -45,7 +45,7 @@ class Orchestrator:
     async def _run_internal(self, task: Task) -> Candidate:
         with logfire.span("orchestrator.run", task=task.prompt):
             try:
-                checklist_result = await self.review.run(task.prompt)
+                checklist_result = await asyncio.wait_for(self.review.run(task.prompt), timeout=settings.agent_timeout)
                 checklist = getattr(checklist_result, 'output', checklist_result)
                 if not isinstance(checklist, Checklist):
                     raise OrchestratorRetryError(f"Review agent did not return a Checklist instance. Got: {type(checklist)} - {checklist}")
@@ -82,15 +82,19 @@ class Orchestrator:
                             logfire.warn("Checklist is not a Checklist instance; skipping validation for this candidate.")
                             continue
                         try:
-                            judged_result = await self.validate.run({"solution": raw_solution, "checklist": checklist.model_copy(deep=True)})
+                            judged_result = await asyncio.wait_for(self.validate.run({"solution": raw_solution, "checklist": checklist.model_copy(deep=True)}), timeout=settings.agent_timeout)
                             judged_checklist = getattr(judged_result, 'output', judged_result)
+                            # Second guard: ensure judged_checklist is a Checklist instance
+                            if not isinstance(judged_checklist, Checklist):
+                                logfire.warn("Judged checklist is not a Checklist instance; skipping scoring for this candidate.")
+                                continue
                         except Exception as e:
                             msg = f"Validation failed for a candidate: {e}"
                             msg = redact_string(msg, settings.openai_api_key.get_secret_value() if settings.openai_api_key else None)
                             msg = redact_string(msg, settings.logfire_api_key.get_secret_value() if settings.logfire_api_key else None)
                             logfire.warn(msg)
                             continue
-                        score = self._calculate_score(judged_checklist, raw_solution, task)
+                        score = await self._calculate_score(judged_checklist, raw_solution, task)
                         iter_span.set_attribute("score", score)
                         cand = Candidate(
                             solution=raw_solution,
@@ -114,10 +118,10 @@ class Orchestrator:
     def run_sync(self, task: Task) -> Candidate:
         return asyncio.run(self._run_internal(task))
 
-    def _calculate_score(self, checklist: Checklist, solution: str, task: Task) -> float:
+    async def _calculate_score(self, checklist: Checklist, solution: str, task: Task) -> float:
         if settings.scorer == "weighted":
             weights = task.metadata.get("weights", [])
             return weighted_score(checklist, weights)
         if settings.scorer == "reward" and self.reward_scorer:
-            return self.reward_scorer.score(solution)
+            return await self.reward_scorer.score(solution)
         return ratio_score(checklist) 

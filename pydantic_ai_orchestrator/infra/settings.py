@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     
     # Feature Toggles
     reflection_enabled: bool = Field(True, alias="reflexion_enabled")
-    reward_enabled: bool = Field(True, alias="reward")
+    reward_enabled: bool = Field(True, alias="reward_enabled")
     telemetry_export_enabled: bool = False
     otlp_export_enabled: bool = False
 
@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     scorer: Literal["ratio", "weighted", "reward"] = "ratio"
     t_schedule: list[float] = [1.0, 0.8, 0.5, 0.2]
     otlp_endpoint: Optional[str] = None
+    agent_timeout: int = 60  # Timeout in seconds for agent calls
 
     model_config = ConfigDict(
         env_file=".env",

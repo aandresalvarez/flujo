@@ -1,11 +1,18 @@
 [project]
-name = "pydantic-ai-orchestrator"
-version = "0.2.0"
+name = "pydantic_ai_orchestrator"
+version = "0.0.0"
 description = "Production-ready orchestration for Pydantic-based AI agents."
 authors = ["Your Name <your@email.com>"]
 license = {text = "MIT"}
 readme = "README.md"
 requires-python = ">=3.11"
+dependencies = [
+  "pydantic_ai>=0.2.16",
+  "pydantic-settings>=2.0",
+  "logfire>=0.3",
+  "typer[all]>=0.12",
+  "tenacity>=8.2"
+]
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
@@ -17,8 +24,21 @@ classifiers = [
 homepage = "https://github.com/yourorg/pydantic-ai-orchestrator"
 repository = "https://github.com/yourorg/pydantic-ai-orchestrator"
 
+# CLI entrypoint
+[project.scripts]
+orch = "pydantic_ai_orchestrator.cli.main:app"
+
 [project.optional-dependencies]
 docs = ["mkdocs", "mkdocstrings[python]"]
+dev = [
+    "ruff",
+    "mypy",
+    "pip-audit",
+    "pytest-cov",
+    "hypothesis",
+    "vcrpy",
+    "rich"
+]
 
 [tool.poetry]
 name = "pydantic-ai-orchestrator"
@@ -36,6 +56,11 @@ logfire = ">=0.3,<1"
 typer = { version = ">=0.9,<1", extras = ["all"] }
 python-dotenv = ">=1"
 tenacity = "^9.1.2"
+rich = ">=14.0.0"
+vcrpy = ">=6.0.1"
+pydantic-settings = ">=2.0.0"
+typing-extensions = ">=4.0.0"
+numpy = ">=1.26.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=8.2"
