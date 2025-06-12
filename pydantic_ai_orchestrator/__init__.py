@@ -9,7 +9,8 @@ except Exception:
 from .application.orchestrator import Orchestrator
 from .infra.settings import settings
 from .infra.telemetry import init_telemetry
+from .domain.models import Task
 
-__all__ = ["Orchestrator", "settings"]
+__all__ = ["Orchestrator", "settings", "Task"]
 
 init_telemetry() 
