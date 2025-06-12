@@ -56,11 +56,17 @@ orch solve "Write a haiku about AI."
 ## API Usage
 
 ```python
-from pydantic_ai_orchestrator import Orchestrator
+from pydantic_ai_orchestrator import Orchestrator, init_telemetry
+
+# Initialize telemetry (optional)
+init_telemetry()
+
 orch = Orchestrator()
 result = orch.run_sync("Write a poem.")
 print(result)
 ```
+
+Call `init_telemetry()` once at startup to configure logging and tracing for your application.
 
 ## License
 MIT 
