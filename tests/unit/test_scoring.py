@@ -2,7 +2,6 @@ import pytest
 from pydantic_ai_orchestrator.domain.models import Checklist, ChecklistItem
 from pydantic_ai_orchestrator.domain.scoring import ratio_score, weighted_score, RewardScorer
 from pydantic_ai_orchestrator.infra.settings import Settings
-from pydantic_ai_orchestrator.domain.scoring import RewardModelUnavailable, FeatureDisabled
 from pydantic import ValidationError
 
 def test_ratio_score():
@@ -34,9 +33,7 @@ def test_weighted_score():
     assert weighted_score(check, weights_missing) == pytest.approx(0.6)
 
 def test_reward_scorer_init(monkeypatch):
-    from pydantic_ai_orchestrator.infra.settings import Settings
     from pydantic_ai_orchestrator.domain.scoring import RewardScorer
-    from pydantic import ValidationError
     # Should work with key
     monkeypatch.setenv("ORCH_OPENAI_API_KEY", "sk-test")
     class TestSettings(Settings):
@@ -62,3 +59,41 @@ async def test_reward_scorer_returns_float(monkeypatch):
     scorer.agent.run = AsyncMock(side_effect=async_run)
     result = await scorer.score("x")
     assert result == 0.77 
+
+def test_reward_scorer_disabled(monkeypatch):
+    from pydantic_ai_orchestrator.domain.scoring import RewardScorer, FeatureDisabled
+    monkeypatch.setenv("ORCH_OPENAI_API_KEY", "sk-test")
+    class TestSettings(Settings):
+        model_config = Settings.model_config.copy()
+        model_config["env_file"] = None
+        reward_enabled: bool = False
+        openai_api_key: str = "sk-test"
+    import pydantic_ai_orchestrator.domain.scoring as scoring_mod
+    scoring_mod.settings = TestSettings()
+    with pytest.raises(FeatureDisabled):
+        RewardScorer()
+
+def test_weighted_score_empty_weights():
+    from pydantic_ai_orchestrator.domain.models import Checklist, ChecklistItem
+    check = Checklist(items=[ChecklistItem(description="a", passed=True)])
+    assert weighted_score(check, []) == 1.0
+
+def test_weighted_score_total_weight_zero():
+    from pydantic_ai_orchestrator.domain.models import Checklist, ChecklistItem
+    check = Checklist(items=[ChecklistItem(description="a", passed=True)])
+    # All weights zero
+    weights = [{"item": "a", "weight": 0.0}]
+    assert weighted_score(check, weights) == 0.0
+
+def test_redact_string_no_secret():
+    from pydantic_ai_orchestrator.utils.redact import redact_string
+    assert redact_string("hello world", None) == "hello world"
+    assert redact_string("hello world", "") == "hello world"
+
+def test_redact_string_secret_not_in_text():
+    from pydantic_ai_orchestrator.utils.redact import redact_string
+    assert redact_string("hello world", "sk-12345678") == "hello world"
+
+def test_redact_string_secret_in_text():
+    from pydantic_ai_orchestrator.utils.redact import redact_string
+    assert redact_string("my key is sk-12345678abcdef", "sk-12345678abcdef") == "my key is [REDACTED]" 

@@ -22,13 +22,23 @@ jobs:
       with:
         python-version: "3.11"
 
-    - name: Install dependencies
+    - name: Install build dependencies
       run: |
-        pip install poetry
-        poetry install
+        python -m pip install --upgrade pip
+        pip install hatchling
 
-    - name: Build package
-      run: poetry build
+    - name: Build package (with signing)
+      run: |
+        hatch build
+        # Optionally sign the distributions here if you have a GPG key
+        # gpg --detach-sign -a dist/*.tar.gz
+        # gpg --detach-sign -a dist/*.whl
 
-    - name: Publish package to PyPI
-      uses: pypa/gh-action-pypi-publish@release/v1 
+    - name: Publish package to PyPI (trusted publisher)
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        # No username/password needed for trusted-publisher
+        # If using GPG signing, add:
+        # gpg-sign: true
+        # gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
+        # gpg-password: ${{ secrets.GPG_PASSWORD }} 

@@ -1,7 +1,6 @@
 """Telemetry and logging for pydantic-ai-orchestrator.""" 
 
 import logfire
-import platform
 from .settings import settings
 from typing import TYPE_CHECKING
 

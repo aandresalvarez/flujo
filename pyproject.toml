@@ -1,17 +1,19 @@
 [project]
 name = "pydantic_ai_orchestrator"
-version = "0.0.0"
-description = "Production-ready orchestration for Pydantic-based AI agents."
-authors = ["Your Name <your@email.com>"]
+version = "1.0.0rc1"
+description = "Production-ready orchestration for pydantic-ai agents"
+authors = [ { name = "Your Org" } ]
 license = {text = "MIT"}
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-  "pydantic_ai>=0.2.16",
-  "pydantic-settings>=2.0",
-  "logfire>=0.3",
-  "typer[all]>=0.12",
-  "tenacity>=8.2"
+  "pydantic>=2.6",
+  "pydantic-ai>=0.2.16",
+  "pydantic-settings",
+  "tenacity",
+  "typer[all]",
+  "rich",
+  "logfire"
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -40,35 +42,9 @@ dev = [
     "rich"
 ]
 
-[tool.poetry]
-name = "pydantic-ai-orchestrator"
-version = "0.1.0"
-description = "Iterative generator-critic orchestrator built on PydanticAI"
-authors = []
-license = ""
-readme = ""
-packages = [{ include = "pydantic_ai_orchestrator" }]
-
-[tool.poetry.dependencies]
-python = ">=3.11,<4.0"
-pydantic-ai = "0.2.16"
-logfire = ">=0.3,<1"
-typer = { version = ">=0.9,<1", extras = ["all"] }
-python-dotenv = ">=1"
-tenacity = "^9.1.2"
-rich = ">=14.0.0"
-vcrpy = ">=6.0.1"
-pydantic-settings = ">=2.0.0"
-typing-extensions = ">=4.0.0"
-numpy = ">=1.26.0"
-
-[tool.poetry.group.dev.dependencies]
-pytest = ">=8.2"
-pytest-cov = ">=5"
-hypothesis = ">=6.103"
-ruff = ">=0.4.5"
-mypy = ">=1.10"
-pip-audit = ">=2.7"
+[build-system]
+requires = ["hatchling>=1.22"]
+build-backend = "hatchling.build"
 
 [tool.mypy]
 python_version = "3.11"
@@ -76,10 +52,6 @@ strict = true
 
 [tool.ruff]
 line-length = 100
-
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
 
 [tool.pytest.ini_options]
 markers = [

@@ -6,7 +6,7 @@ from typing import Type
 from pydantic_ai_orchestrator.infra.settings import settings
 from pydantic_ai_orchestrator.domain.models import Checklist
 from pydantic_ai_orchestrator.exceptions import OrchestratorRetryError
-from tenacity import retry_if_exception_type, wait_random_exponential, RetryError
+from tenacity import retry_if_exception_type, wait_random_exponential
 import asyncio
 import logfire
 import traceback
@@ -45,10 +45,10 @@ def make_agent(
 
 class AsyncAgentWrapper:
     """Wraps an agent to expose .run_async with retry/timeout."""
-    def __init__(self, agent, max_retries=3, timeout=120, model_name=None):
+    def __init__(self, agent, max_retries=3, timeout=None, model_name=None):
         self._agent = agent
         self._max_retries = max_retries
-        self._timeout = timeout
+        self._timeout = timeout if timeout is not None else settings.agent_timeout
         self._model_name = model_name or getattr(agent, 'model', None)
 
     async def _run_with_retry(self, *args, **kwargs):
@@ -56,15 +56,17 @@ class AsyncAgentWrapper:
         temp = kwargs.pop("temperature", None)
         if temp is not None:
             kwargs.setdefault("generation_kwargs", {})["temperature"] = temp
-        attempt = 0
+        result = None
+        def raise_orchestrator_retry_error(retry_state):
+            raise OrchestratorRetryError(
+                f"Agent failed after {retry_state.attempt_number} attempts. Last error: {retry_state.outcome.exception()}"
+            )
         async for attempt_ctx in AsyncRetrying(
             stop=stop_after_attempt(self._max_retries),
             wait=wait_random_exponential(multiplier=1, max=60),
-            retry_error_callback=lambda retry_state: OrchestratorRetryError(
-                f"Agent failed after {retry_state.attempt_number} attempts."
-            ),
+            retry_error_callback=raise_orchestrator_retry_error,
             retry=retry_if_exception_type(Exception),
-            reraise=True,
+            reraise=False,
         ):
             with attempt_ctx:
                 try:
@@ -77,6 +79,7 @@ class AsyncAgentWrapper:
                     tb = traceback.format_exc()
                     logfire.error(f"Agent call failed with exception: {e}\nTraceback:\n{tb}")
                     raise
+        return result
 
     async def run_async(self, *args, **kwargs):
         return await self._run_with_retry(*args, **kwargs)
@@ -89,7 +92,7 @@ def make_agent_async(
     system_prompt: str,
     output_type: Type,
     max_retries: int = 3,
-    timeout: int = 120,
+    timeout: int = None,
 ) -> AsyncAgentWrapper:
     """
     Creates a pydantic_ai.Agent and returns an AsyncAgentWrapper exposing .run_async.
@@ -125,24 +128,23 @@ class LoggingReviewAgent:
         self.agent = agent
         self.run_async = self._run_async
         self._run_with_retry = getattr(agent, "_run_with_retry", None)
-    async def run(self, *args, **kwargs):
+
+    async def _run_inner(self, method, *args, **kwargs):
         try:
-            result = await self.agent.run(*args, **kwargs)
+            result = await method(*args, **kwargs)
             logfire.info(f"Review agent result: {result}")
             return result
         except Exception as e:
             logfire.error(f"Review agent API error: {e}")
             raise
+
+    async def run(self, *args, **kwargs):
+        return await self._run_inner(self.agent.run, *args, **kwargs)
+
     async def _run_async(self, *args, **kwargs):
-        try:
-            if hasattr(self.agent, "run_async") and callable(getattr(self.agent, "run_async")):
-                result = await self.agent.run_async(*args, **kwargs)
-            else:
-                result = await self.run(*args, **kwargs)
-            logfire.info(f"Review agent result (async): {result}")
-            return result
-        except Exception as e:
-            logfire.error(f"Review agent API error (async): {e}")
-            raise
+        if hasattr(self.agent, "run_async") and callable(getattr(self.agent, "run_async")):
+            return await self._run_inner(self.agent.run_async, *args, **kwargs)
+        else:
+            return await self.run(*args, **kwargs)
 
 review_agent = LoggingReviewAgent(review_agent) 

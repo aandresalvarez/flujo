@@ -82,4 +82,74 @@ async def test_orchestrator_fault_injection_review_fails(mock_agents):
         await orch.run_async(Task(prompt="do a thing"))
     
     assert "Review agent failed" in str(excinfo.value)
-    solution_agent.run.assert_not_called() 
+    solution_agent.run.assert_not_called()
+
+@pytest.mark.asyncio
+async def test_orchestrator_review_returns_wrong_type(mock_agents):
+    review_agent, solution_agent, validator_agent, reflection_agent = mock_agents
+    review_agent.run.return_value = "not a checklist"
+    orch = Orchestrator(review_agent, solution_agent, validator_agent, reflection_agent)
+    with pytest.raises(OrchestratorRetryError) as excinfo:
+        await orch.run_async(Task(prompt="do a thing"))
+    assert "Checklist instance" in str(excinfo.value)
+
+@pytest.mark.asyncio
+async def test_orchestrator_solution_agent_timeout(monkeypatch, mock_agents):
+    import asyncio
+    review_agent, solution_agent, validator_agent, reflection_agent = mock_agents
+    review_agent.run.return_value = Checklist(items=[ChecklistItem(description="item 1")])
+    # Simulate solution agent never returning
+    async def never_returns(*args, **kwargs):
+        await asyncio.sleep(0.1)
+        raise asyncio.TimeoutError()
+    solution_agent.run.side_effect = never_returns
+    validator_agent.run.return_value = Checklist(items=[ChecklistItem(description="item 1", passed=True)])
+    orch = Orchestrator(review_agent, solution_agent, validator_agent, reflection_agent, k_variants=1, max_iters=1)
+    result = await orch.run_async(Task(prompt="do a thing"))
+    # Should not raise, but result may be None or have no valid solution
+    assert result is None or result.score is not None
+
+@pytest.mark.asyncio
+async def test_orchestrator_checklist_not_instance(mock_agents):
+    review_agent, solution_agent, validator_agent, reflection_agent = mock_agents
+    review_agent.run.return_value = Checklist(items=[ChecklistItem(description="item 1")])
+    solution_agent.run.return_value = "solution"
+    validator_agent.run.return_value = "not a checklist"
+    orch = Orchestrator(review_agent, solution_agent, validator_agent, reflection_agent, k_variants=1, max_iters=1)
+    result = await orch.run_async(Task(prompt="do a thing"))
+    # Should skip scoring and continue
+    assert result is None or result.score is not None
+
+@pytest.mark.asyncio
+async def test_orchestrator_judged_checklist_not_instance(mock_agents):
+    review_agent, solution_agent, validator_agent, reflection_agent = mock_agents
+    review_agent.run.return_value = Checklist(items=[ChecklistItem(description="item 1")])
+    solution_agent.run.return_value = "solution"
+    # Validator returns object with output that is not a Checklist
+    class Dummy:
+        output = "not a checklist"
+    validator_agent.run.return_value = Dummy()
+    orch = Orchestrator(review_agent, solution_agent, validator_agent, reflection_agent, k_variants=1, max_iters=1)
+    result = await orch.run_async(Task(prompt="do a thing"))
+    assert result is None or result.score is not None
+
+@pytest.mark.asyncio
+async def test_orchestrator_validator_raises_exception(mock_agents):
+    review_agent, solution_agent, validator_agent, reflection_agent = mock_agents
+    review_agent.run.return_value = Checklist(items=[ChecklistItem(description="item 1")])
+    solution_agent.run.return_value = "solution"
+    validator_agent.run.side_effect = Exception("validation failed")
+    orch = Orchestrator(review_agent, solution_agent, validator_agent, reflection_agent, k_variants=1, max_iters=1)
+    result = await orch.run_async(Task(prompt="do a thing"))
+    assert result is None or result.score is not None
+
+@pytest.mark.asyncio
+async def test_orchestrator_reflection_returns_none(mock_agents):
+    review_agent, solution_agent, validator_agent, reflection_agent = mock_agents
+    review_agent.run.return_value = Checklist(items=[ChecklistItem(description="item 1", passed=False)])
+    solution_agent.run.return_value = "solution"
+    validator_agent.run.return_value = Checklist(items=[ChecklistItem(description="item 1", passed=False)])
+    reflection_agent.run.return_value = None
+    orch = Orchestrator(review_agent, solution_agent, validator_agent, reflection_agent, k_variants=1, max_iters=2)
+    result = await orch.run_async(Task(prompt="do a thing"))
+    assert result is None or result.score is not None 

@@ -43,12 +43,16 @@ def solve(
             if not os.path.isfile(weights_path):
                 typer.echo(f"[red]Weights file not found: {weights_path}", err=True)
                 raise typer.Exit(1)
-            with open(weights_path, "r") as f:
-                if weights_path.endswith(('.yaml', '.yml')):
-                    weights = yaml.safe_load(f)
-                else:
-                    weights = json.load(f)
-            metadata["weights"] = weights
+            try:
+                with open(weights_path, "r") as f:
+                    if weights_path.endswith((".yaml", ".yml")):
+                        weights = yaml.safe_load(f)
+                    else:
+                        weights = json.load(f)
+                metadata["weights"] = weights
+            except Exception as e:
+                typer.echo(f"[red]Error loading weights file: {e}", err=True)
+                raise typer.Exit(1)
 
         # The Orchestrator will use CLI args if provided, otherwise fall back to settings
         orch = Orchestrator(

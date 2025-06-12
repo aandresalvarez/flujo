@@ -1,9 +1,9 @@
 import pytest
 from pydantic import ValidationError
-from pydantic_ai_orchestrator.infra.settings import Settings, SettingsError
+from pydantic_ai_orchestrator.infra.settings import Settings
 
 def test_invalid_env_vars(monkeypatch):
-    from pydantic_ai_orchestrator.infra.settings import Settings
+    # from pydantic_ai_orchestrator.infra.settings import Settings  # removed redefinition
     import os
     for k in list(os.environ.keys()):
         if k.startswith("ORCH_"):

@@ -25,6 +25,18 @@ print(result)
 - `ORCH_REFLECTION_ENABLED` (default: true)
 - `ORCH_REWARD_ENABLED` (default: true) — toggles the reward model scorer on/off
 - `ORCH_MAX_ITERS`, `ORCH_K_VARIANTS`
+- `ORCH_TELEMETRY_EXPORT_ENABLED` (default: false)
+- `ORCH_OTLP_EXPORT_ENABLED` (default: false)
+- `ORCH_OTLP_ENDPOINT` (optional, e.g. https://otlp.example.com)
+
+## OTLP Exporter (Tracing/Telemetry)
+
+If you want to export traces to an OTLP-compatible backend (such as OpenTelemetry Collector, Honeycomb, or Datadog), set the following environment variables:
+
+- `ORCH_OTLP_EXPORT_ENABLED=true` — Enable OTLP trace exporting
+- `ORCH_OTLP_ENDPOINT=https://your-otlp-endpoint` — (Optional) Custom OTLP endpoint URL
+
+When enabled, the orchestrator will send traces using the OTLP HTTP exporter. This is useful for distributed tracing and observability in production environments.
 
 ## Scoring
 - Ratio and weighted scoring supported

@@ -61,7 +61,7 @@ class Orchestrator:
                     prompt = f"{task.prompt}\n\nFeedback:\n{chr(10).join(memory)}"
                     tasks = [asyncio.create_task(self.solve.run(prompt, temperature=temp_for_round(i))) for _ in range(self.k_variants)]
                     try:
-                        done, pending = await asyncio.wait(tasks, return_when=asyncio.ALL_COMPLETED, timeout=120)
+                        done, pending = await asyncio.wait(tasks, return_when=asyncio.ALL_COMPLETED, timeout=settings.agent_timeout)
                         if pending:
                             for t in pending:
                                 t.cancel()
@@ -109,7 +109,8 @@ class Orchestrator:
                     if self.reflect and best and failed_items and len(memory) < self.reflection_limit:
                         reflection_result = await self.reflect.run({"failed_items": failed_items})
                         reflection = getattr(reflection_result, 'output', reflection_result)
-                        if reflection: memory.append(reflection)
+                        if reflection:
+                            memory.append(reflection)
             return best
 
     async def run_async(self, task: Task) -> Candidate:
