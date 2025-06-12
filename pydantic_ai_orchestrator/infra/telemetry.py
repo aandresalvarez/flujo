@@ -19,7 +19,7 @@ def init_telemetry():
     if _initialized:
         return
 
-    additional_processors: list[SpanProcessor] = []
+    additional_processors: list['SpanProcessor'] = []
     if settings.otlp_export_enabled:
         from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
         from opentelemetry.sdk.trace import BatchSpanProcessor
