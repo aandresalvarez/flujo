@@ -1,39 +1,134 @@
-"""Telemetry and logging for pydantic-ai-orchestrator.""" 
-
-import logfire
-from .settings import settings
-from typing import TYPE_CHECKING
+import logging
+import sys
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, List
 
 if TYPE_CHECKING:
     from opentelemetry.sdk.trace import SpanProcessor
+    from .settings import Settings as TelemetrySettings
 
 _initialized = False
 
-def init_telemetry() -> None:
-    """
-    Initialize Logfire telemetry for the orchestrator.
-    This function is idempotent and safe to call multiple times.
-    It configures logging based on application settings.
-    """
-    global _initialized
+_fallback_logger = logging.getLogger("pydantic_ai_orchestrator")
+_fallback_logger.setLevel(logging.INFO)
+
+if not _fallback_logger.handlers:
+    info_handler = logging.StreamHandler(sys.stdout)
+    info_handler.setLevel(logging.INFO)
+    info_handler.addFilter(lambda record: record.levelno <= logging.WARNING)
+    info_formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
+    info_handler.setFormatter(info_formatter)
+    _fallback_logger.addHandler(info_handler)
+
+    error_handler = logging.StreamHandler(sys.stderr)
+    error_handler.setLevel(logging.ERROR)
+    error_formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
+    error_handler.setFormatter(error_formatter)
+    _fallback_logger.addHandler(error_handler)
+
+
+class _MockLogfireSpan:
+    def __enter__(self) -> "_MockLogfireSpan":
+        return self
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        pass
+
+    def set_attribute(self, key: str, value: Any) -> None:
+        pass
+
+
+class _MockLogfire:
+    def __init__(self, logger: logging.Logger):
+        self._logger = logger
+
+    def info(self, message: str, *args: Any, **kwargs: Any) -> None:
+        self._logger.info(message, *args, **kwargs)
+
+    def warn(self, message: str, *args: Any, **kwargs: Any) -> None:
+        self._logger.warning(message, *args, **kwargs)
+
+    def error(self, message: str, *args: Any, **kwargs: Any) -> None:
+        self._logger.error(message, *args, **kwargs)
+
+    def debug(self, message: str, *args: Any, **kwargs: Any) -> None:
+        self._logger.debug(message, *args, **kwargs)
+
+    def configure(self, *args: Any, **kwargs: Any) -> None:
+        self._logger.info(
+            "Logfire.configure called, but Logfire is mocked. Using standard Python logging."
+        )
+
+    def instrument(self, name: str, *args: Any, **kwargs: Any) -> Callable[[Any], Any]:
+        def decorator(func: Callable[[Any], Any]) -> Callable[[Any], Any]:
+            return func
+
+        return decorator
+
+    def span(self, name: str, *args: Any, **kwargs: Any) -> _MockLogfireSpan:
+        return _MockLogfireSpan()
+
+
+logfire = _MockLogfire(_fallback_logger)
+
+
+def init_telemetry(settings_obj: Optional["TelemetrySettings"] = None) -> None:
+    global _initialized, logfire
     if _initialized:
         return
 
-    additional_processors: list['SpanProcessor'] = []
-    if settings.otlp_export_enabled:
-        from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-        from opentelemetry.sdk.trace.export import BatchSpanProcessor
+    from .settings import settings as default_settings_obj
 
-        exporter_args: dict[str, object] = {}
-        if settings.otlp_endpoint:
-            exporter_args["endpoint"] = settings.otlp_endpoint
-        
-        exporter = OTLPSpanExporter(**exporter_args)  # type: ignore[arg-type]
-        additional_processors.append(BatchSpanProcessor(exporter))
+    settings_to_use = settings_obj if settings_obj is not None else default_settings_obj
 
-    logfire.configure(
-        service_name="pydantic_ai_orchestrator",
-        send_to_logfire=settings.telemetry_export_enabled,
-        additional_span_processors=additional_processors,
+    if settings_to_use.telemetry_export_enabled:
+        try:
+            import logfire as _actual_logfire
+
+            logfire = _actual_logfire
+
+            additional_processors: List["SpanProcessor"] = []
+            if settings_to_use.otlp_export_enabled:
+                from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
+                    OTLPSpanExporter,
+                )
+                from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+                exporter_args: Dict[str, Any] = {}
+                if settings_to_use.otlp_endpoint:
+                    exporter_args["endpoint"] = settings_to_use.otlp_endpoint
+
+                exporter = OTLPSpanExporter(**exporter_args)
+                additional_processors.append(BatchSpanProcessor(exporter))
+
+            logfire.configure(
+                service_name="pydantic_ai_orchestrator",
+                send_to_logfire=True,
+                additional_span_processors=additional_processors,
+                console=False,
+                api_key=(
+                    settings_to_use.logfire_api_key.get_secret_value()
+                    if settings_to_use.logfire_api_key
+                    else None
+                ),
+            )
+            _fallback_logger.info("Logfire initialized successfully (actual Logfire).")
+            _initialized = True
+            return
+        except ImportError:
+            _fallback_logger.warning(
+                "Logfire library not installed. Falling back to standard Python logging."
+            )
+        except Exception as e:
+            _fallback_logger.error(
+                f"Failed to configure Logfire: {e}. Falling back to standard Python logging."
+            )
+
+    _fallback_logger.info(
+        "Logfire telemetry is disabled or failed to initialize. Using standard Python logging."
     )
-    _initialized = True 
+    logfire = _MockLogfire(_fallback_logger)
+    _initialized = True

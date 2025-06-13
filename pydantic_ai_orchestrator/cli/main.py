@@ -1,4 +1,4 @@
-"""CLI entry point for pydantic-ai-orchestrator.""" 
+"""CLI entry point for pydantic-ai-orchestrator."""
 
 import typer
 import json
@@ -19,25 +19,47 @@ from pydantic_ai_orchestrator.application.orchestrator import Orchestrator
 from pydantic_ai_orchestrator.infra.settings import settings, SettingsError
 from pydantic_ai_orchestrator.exceptions import ConfigurationError
 
-import logfire
+from pydantic_ai_orchestrator.infra.telemetry import init_telemetry, logfire
 from typing_extensions import Annotated
 from rich.table import Table
 from rich.console import Console
 
 app = typer.Typer(rich_markup_mode="markdown")
 
+# Initialize telemetry at the start of CLI execution
+init_telemetry()
+
+
 @app.command()
 def solve(
     prompt: str,
-    max_iters: Annotated[int, typer.Option(help="Maximum number of iterations.")] = None,
-    k: Annotated[int, typer.Option(help="Number of solution variants to generate per iteration.")] = None,
-    reflection: Annotated[bool, typer.Option(help="Enable/disable reflection agent.")] = None,
-    scorer: Annotated[str, typer.Option(help="Scoring strategy: 'ratio', 'weighted', or 'reward'.")] = None,
-    weights_path: Annotated[str, typer.Option(help="Path to weights file (JSON or YAML)")] = None,
-    solution_model: Annotated[str, typer.Option(help="Model for the Solution agent.")] = None,
-    review_model: Annotated[str, typer.Option(help="Model for the Review agent.")] = None,
-    validator_model: Annotated[str, typer.Option(help="Model for the Validator agent.")] = None,
-    reflection_model: Annotated[str, typer.Option(help="Model for the Reflection agent.")] = None,
+    max_iters: Annotated[
+        int, typer.Option(help="Maximum number of iterations.")
+    ] = None,
+    k: Annotated[
+        int, typer.Option(help="Number of solution variants to generate per iteration.")
+    ] = None,
+    reflection: Annotated[
+        bool, typer.Option(help="Enable/disable reflection agent.")
+    ] = None,
+    scorer: Annotated[
+        str, typer.Option(help="Scoring strategy: 'ratio', 'weighted', or 'reward'.")
+    ] = None,
+    weights_path: Annotated[
+        str, typer.Option(help="Path to weights file (JSON or YAML)")
+    ] = None,
+    solution_model: Annotated[
+        str, typer.Option(help="Model for the Solution agent.")
+    ] = None,
+    review_model: Annotated[
+        str, typer.Option(help="Model for the Review agent.")
+    ] = None,
+    validator_model: Annotated[
+        str, typer.Option(help="Model for the Validator agent.")
+    ] = None,
+    reflection_model: Annotated[
+        str, typer.Option(help="Model for the Reflection agent.")
+    ] = None,
 ):
     """
     Solves a task using the multi-agent orchestrator.
@@ -63,7 +85,8 @@ def solve(
                     else:
                         weights = json.load(f)
                 if not isinstance(weights, list) or not all(
-                    isinstance(w, dict) and "item" in w and "weight" in w for w in weights
+                    isinstance(w, dict) and "item" in w and "weight" in w
+                    for w in weights
                 ):
                     typer.echo(
                         "[red]Weights file must be a list of objects with 'item' and 'weight'",
@@ -103,10 +126,12 @@ def solve(
         logfire.info("Aborted by user (KeyboardInterrupt). Closing spans and exiting.")
         raise typer.Exit(130)
 
+
 @app.command(name="version-cmd")
 def version_cmd():
     """Print the package version."""
     import importlib.metadata as importlib_metadata
+
     try:
         try:
             v = importlib_metadata.version("pydantic_ai_orchestrator")
@@ -118,18 +143,23 @@ def version_cmd():
         v = "unknown"
     print(f"pydantic-ai-orchestrator version: {v}")
 
+
 @app.command(name="show-config")
 def show_config_cmd():
     """Print effective Settings with secrets masked."""
     typer.echo(settings.model_dump(exclude={"openai_api_key", "logfire_api_key"}))
+
 
 @app.command()
 def bench(prompt: str, rounds: int = 10):
     """Quick micro-benchmark of generation latency/score."""
     import time
     import numpy as np
+
     try:
-        orch = Orchestrator(review_agent, solution_agent, validator_agent, get_reflection_agent())
+        orch = Orchestrator(
+            review_agent, solution_agent, validator_agent, get_reflection_agent()
+        )
         times = []
         scores = []
         for i in range(rounds):
@@ -138,7 +168,9 @@ def bench(prompt: str, rounds: int = 10):
                 result = orch.run_sync(Task(prompt=prompt))
                 times.append(time.time() - start)
                 scores.append(result.score)
-                logfire.info(f"Round {i+1} completed in {times[-1]:.2f}s with score {scores[-1]:.2f}")
+                logfire.info(
+                    f"Round {i+1} completed in {times[-1]:.2f}s with score {scores[-1]:.2f}"
+                )
 
         avg_time = sum(times) / len(times)
         avg_score = sum(scores) / len(scores)
@@ -152,19 +184,29 @@ def bench(prompt: str, rounds: int = 10):
         table.add_column("Mean", justify="right")
         table.add_column("p50", justify="right")
         table.add_column("p95", justify="right")
-        table.add_row("Latency (s)", f"{avg_time:.2f}", f"{p50_time:.2f}", f"{p95_time:.2f}")
-        table.add_row("Score", f"{avg_score:.2f}", f"{p50_score:.2f}", f"{p95_score:.2f}")
+        table.add_row(
+            "Latency (s)", f"{avg_time:.2f}", f"{p50_time:.2f}", f"{p95_time:.2f}"
+        )
+        table.add_row(
+            "Score", f"{avg_score:.2f}", f"{p50_score:.2f}", f"{p95_score:.2f}"
+        )
         console = Console()
         console.print(table)
     except KeyboardInterrupt:
         logfire.info("Aborted by user (KeyboardInterrupt). Closing spans and exiting.")
         raise typer.Exit(130)
 
+
 @app.callback()
-def main(profile: bool = typer.Option(False, "--profile", help="Enable Logfire STDOUT span viewer")):
+def main(
+    profile: bool = typer.Option(
+        False, "--profile", help="Enable Logfire STDOUT span viewer"
+    )
+):
     """pydantic-ai-orchestrator CLI entrypoint."""
     if profile:
         logfire.configure(send_to_logfire=False, console=True)
+
 
 if __name__ == "__main__":
     try:
