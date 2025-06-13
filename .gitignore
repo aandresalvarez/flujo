@@ -7,3 +7,7 @@ build/
 .pytest_cache/
 .env
 .venv
+.coverage
+.python-version
+settings.json
+poetry.lock
