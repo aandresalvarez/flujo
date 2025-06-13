@@ -13,7 +13,7 @@ class StubAgent:
         self.call_count = 0
         self.inputs: List[Any] = []
 
-    async def run(self, input_data: Any = None) -> Any:
+    async def run(self, input_data: Any = None, **_: Any) -> Any:
         self.inputs.append(input_data)
         idx = min(self.call_count, len(self.outputs) - 1)
         self.call_count += 1

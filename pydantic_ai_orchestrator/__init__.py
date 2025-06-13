@@ -20,6 +20,7 @@ from .domain import (
 )
 from .application.pipeline_runner import PipelineRunner, PipelineResult, StepResult
 from .testing.utils import StubAgent, DummyPlugin
+from .plugins.sql_validator import SQLSyntaxValidator
 
 from .infra.agents import (
     review_agent,
@@ -62,4 +63,5 @@ __all__ = [
     "StepResult",
     "StubAgent",
     "DummyPlugin",
+    "SQLSyntaxValidator",
 ]

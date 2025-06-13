@@ -94,12 +94,16 @@ class PipelineRunner:
     async def run_async(self, initial_input: Any) -> PipelineResult:
         data = initial_input
         result = PipelineResult()
-        for step in self.pipeline.steps:
-            with logfire.span(step.name):
-                step_result = await self._run_step(step, data)
-            result.step_history.append(step_result)
-            result.total_cost_usd += step_result.cost_usd
-            data = step_result.output
+        try:
+            for step in self.pipeline.steps:
+                with logfire.span(step.name):
+                    step_result = await self._run_step(step, data)
+                result.step_history.append(step_result)
+                result.total_cost_usd += step_result.cost_usd
+                data = step_result.output
+        except asyncio.CancelledError:
+            logfire.info("Pipeline cancelled")
+            return result
         return result
 
     def run(self, initial_input: Any) -> PipelineResult:

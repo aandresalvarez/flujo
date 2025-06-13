@@ -95,3 +95,14 @@ async def test_timeout_and_redirect_loop_detection():
     runner2 = PipelineRunner(step2)
     with pytest.raises(Exception):
         await runner2.run_async("p")
+
+
+async def test_pipeline_cancellation():
+    agent = StubAgent(["out"])
+    step = Step("s", agent)
+    runner = PipelineRunner(step)
+    task = asyncio.create_task(runner.run_async("prompt"))
+    await asyncio.sleep(0)
+    task.cancel()
+    result = await task
+    assert isinstance(result, PipelineResult)
