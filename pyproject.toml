@@ -1,67 +1,83 @@
+[build-system]
+requires      = ["hatchling"]        # any backend works; change if you prefer another
+build-backend = "hatchling.build"
+
+# --------------------------------------------------------------------------- #
+# Core project metadata (PEP 621)
+# --------------------------------------------------------------------------- #
 [project]
-name = "pydantic_ai_orchestrator"
-version = "0.1.0"
-description = "Production-ready orchestration for Pydantic-AI agents"
-authors = [ { name = "Alvaro", email = "alvaro@example.com" } ]
-license = {text = "MIT"}
-readme = "README.md"
-requires-python = ">=3.11"
+name            = "pydantic_ai_orchestrator"
+version         = "0.1.0"
+description     = "Production-ready orchestration for Pydantic-AI agents"
+readme          = "README.md"
+requires-python = ">=3.11,<4.0"
+
+authors = [
+  { name = "Alvaro", email = "alvaro@example.com" }
+]
+
+license = { text = "MIT" }
+
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Topic :: Software Development :: Libraries",
+]
+
+# Runtime dependencies
 dependencies = [
   "pydantic>=2.7",
   "pydantic-ai>=0.2.16",
   "pydantic-settings",
+  "python-dotenv>=1.0",
+  "pyyaml>=6.0",
   "tenacity>=8.2",
   "typer[all]>=0.12",
   "rich>=13.7",
-  "pyyaml>=6.0",
   "logfire>=0.3",
-  "python-dotenv>=1.0",
-  # Add any other core dependencies here
 ]
-classifiers = [
-    "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
-    "Development Status :: 4 - Beta",
-    "Intended Audience :: Developers",
-    "Topic :: Software Development :: Libraries",
-]
-homepage = "https://github.com/yourorg/pydantic-ai-orchestrator"
-repository = "https://github.com/yourorg/pydantic-ai-orchestrator"
 
-# CLI entrypoint
-[project.scripts]
-orch = "pydantic_ai_orchestrator.cli.main:app"
-
+# Optional dependency groups (install with: `pip install .[dev]`, `poetry install --with dev`, etc.)
 [project.optional-dependencies]
-docs = ["mkdocs", "mkdocstrings[python]"]
 dev = [
-    "ruff",
-    "mypy",
-    "pip-audit",
-    "pytest-cov",
-    "pytest-asyncio",
-    "hypothesis",
-    "vcrpy",
-    "rich"
+  "ruff",
+  "mypy",
+  "pip-audit",
+  "pytest",
+  "pytest-cov",
+  "pytest-asyncio[mode-auto]",
+  "hypothesis",
+  "vcrpy",
+  "rich",
 ]
+docs = ["mkdocs", "mkdocstrings[python]"]
 opentelemetry = ["opentelemetry-sdk>=1.26"]
 bench = ["numpy"]
 
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+# CLI entry point (install adds `orch` command to PATH)
+[project.scripts]
+orch = "pydantic_ai_orchestrator.cli.main:app"
 
+# Project links (PEP 621)
+[project.urls]
+Homepage   = "https://github.com/yourorg/pydantic-ai-orchestrator"
+Repository = "https://github.com/yourorg/pydantic-ai-orchestrator"
+
+# --------------------------------------------------------------------------- #
+# Tool-specific configuration
+# --------------------------------------------------------------------------- #
 [tool.mypy]
 python_version = "3.11"
-strict = true
+strict         = true
 
 [tool.ruff]
 line-length = 100
 
 [tool.pytest.ini_options]
-markers = [
-    "e2e: marks tests as end-to-end (requires network access or VCR cassettes)",
-]
-
 asyncio_mode = "auto"
+markers = [
+  "e2e: marks tests as end-to-end (requires network access or VCR cassettes)",
+]
