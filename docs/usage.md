@@ -1,5 +1,6 @@
 # Usage
 Copy `.env.example` to `.env` and add your API keys before running the CLI.
+Environment variables are loaded automatically from this file.
 
 ## CLI
 
