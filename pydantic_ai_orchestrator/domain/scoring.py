@@ -3,7 +3,7 @@
 from typing import List, Dict
 from .models import Checklist
 from pydantic_ai import Agent
-from ..infra.settings import settings
+import pydantic_ai_orchestrator.infra.settings as settings_mod
 from pydantic_ai_orchestrator.infra.telemetry import logfire
 from ..exceptions import RewardModelUnavailable, FeatureDisabled
 
@@ -51,6 +51,8 @@ class RewardScorer:
     """
 
     def __init__(self):
+        # Always fetch the current settings from the module to support monkeypatching in tests
+        settings = getattr(settings_mod, "settings")
         if not settings.reward_enabled:
             raise FeatureDisabled("RewardScorer is disabled by settings.")
         if not settings.openai_api_key:

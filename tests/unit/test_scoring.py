@@ -11,10 +11,10 @@ from pydantic import SecretStr
 
 def test_ratio_score():
     check_pass = Checklist(
-        items=[ChecklistItem(description="a", passed=True), ChecklistItem(description="b", passed=True)]
+        items=[ChecklistItem(description="a", passed=True, feedback=None), ChecklistItem(description="b", passed=True, feedback=None)]
     )
     check_fail = Checklist(
-        items=[ChecklistItem(description="a", passed=True), ChecklistItem(description="b", passed=False)]
+        items=[ChecklistItem(description="a", passed=True, feedback=None), ChecklistItem(description="b", passed=False, feedback=None)]
     )
     check_empty = Checklist(items=[])
 
@@ -26,9 +26,9 @@ def test_ratio_score():
 def test_weighted_score():
     check = Checklist(
         items=[
-            ChecklistItem(description="a", passed=True),
-            ChecklistItem(description="b", passed=False),
-            ChecklistItem(description="c", passed=True),
+            ChecklistItem(description="a", passed=True, feedback=None),
+            ChecklistItem(description="b", passed=False, feedback=None),
+            ChecklistItem(description="c", passed=True, feedback=None),
         ]
     )
     weights = [
@@ -47,18 +47,59 @@ def test_weighted_score():
 
 def test_reward_scorer_init(monkeypatch):
     from pydantic_ai_orchestrator.domain.scoring import RewardScorer, RewardModelUnavailable
-    import pydantic_ai_orchestrator.domain.scoring as scoring_mod
+    import pydantic_ai_orchestrator.infra.settings as settings_mod
 
+    monkeypatch.setenv("ORCH_REWARD_ENABLED", "true")
     # --- Test Success Case ---
-    enabled_settings = Settings(reward_enabled=True, openai_api_key=SecretStr("sk-test"))
-    monkeypatch.setattr(scoring_mod, "settings", enabled_settings)
+    enabled_settings = Settings(
+        reward_enabled=True,
+        openai_api_key=SecretStr("sk-test"),
+        google_api_key=None,
+        anthropic_api_key=None,
+        logfire_api_key=None,
+        reflection_enabled=True,
+        telemetry_export_enabled=False,
+        otlp_export_enabled=False,
+        default_solution_model="openai:gpt-4o",
+        default_review_model="openai:gpt-4o",
+        default_validator_model="openai:gpt-4o",
+        default_reflection_model="openai:gpt-4o",
+        max_iters=5,
+        k_variants=3,
+        reflection_limit=3,
+        scorer="ratio",
+        t_schedule=[1.0, 0.8, 0.5, 0.2],
+        otlp_endpoint=None,
+        agent_timeout=60
+    )
+    monkeypatch.setattr(settings_mod, "settings", enabled_settings)
     RewardScorer()  # Should not raise
 
     # --- Test Failure Case (Missing Key) ---
     monkeypatch.delenv("orch_openai_api_key", raising=False)
     monkeypatch.delenv("ORCH_OPENAI_API_KEY", raising=False)
-    disabled_settings = Settings(reward_enabled=True, openai_api_key=None)
-    monkeypatch.setattr(scoring_mod, "settings", disabled_settings)
+    disabled_settings = Settings(
+        reward_enabled=True,
+        openai_api_key=None,
+        google_api_key=None,
+        anthropic_api_key=None,
+        logfire_api_key=None,
+        reflection_enabled=True,
+        telemetry_export_enabled=False,
+        otlp_export_enabled=False,
+        default_solution_model="openai:gpt-4o",
+        default_review_model="openai:gpt-4o",
+        default_validator_model="openai:gpt-4o",
+        default_reflection_model="openai:gpt-4o",
+        max_iters=5,
+        k_variants=3,
+        reflection_limit=3,
+        scorer="ratio",
+        t_schedule=[1.0, 0.8, 0.5, 0.2],
+        otlp_endpoint=None,
+        agent_timeout=60
+    )
+    monkeypatch.setattr(settings_mod, "settings", disabled_settings)
     with pytest.raises(RewardModelUnavailable):
         RewardScorer()
 
@@ -67,10 +108,31 @@ def test_reward_scorer_init(monkeypatch):
 async def test_reward_scorer_returns_float(monkeypatch):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
-    import pydantic_ai_orchestrator.domain.scoring as scoring_mod
+    import pydantic_ai_orchestrator.infra.settings as settings_mod
 
-    test_settings = Settings(reward_enabled=True, openai_api_key=SecretStr("sk-test"))
-    monkeypatch.setattr(scoring_mod, "settings", test_settings)
+    monkeypatch.setenv("ORCH_REWARD_ENABLED", "true")
+    test_settings = Settings(
+        reward_enabled=True,
+        openai_api_key=SecretStr("sk-test"),
+        google_api_key=None,
+        anthropic_api_key=None,
+        logfire_api_key=None,
+        reflection_enabled=True,
+        telemetry_export_enabled=False,
+        otlp_export_enabled=False,
+        default_solution_model="openai:gpt-4o",
+        default_review_model="openai:gpt-4o",
+        default_validator_model="openai:gpt-4o",
+        default_reflection_model="openai:gpt-4o",
+        max_iters=5,
+        k_variants=3,
+        reflection_limit=3,
+        scorer="ratio",
+        t_schedule=[1.0, 0.8, 0.5, 0.2],
+        otlp_endpoint=None,
+        agent_timeout=60
+    )
+    monkeypatch.setattr(settings_mod, "settings", test_settings)
 
     scorer = RewardScorer()
     scorer.agent.run = AsyncMock(return_value=SimpleNamespace(output=0.77))
@@ -80,22 +142,42 @@ async def test_reward_scorer_returns_float(monkeypatch):
 
 def test_reward_scorer_disabled(monkeypatch):
     from pydantic_ai_orchestrator.domain.scoring import RewardScorer, FeatureDisabled
-    import pydantic_ai_orchestrator.domain.scoring as scoring_mod
+    import pydantic_ai_orchestrator.infra.settings as settings_mod
 
-    test_settings = Settings(reward_enabled=False)
-    monkeypatch.setattr(scoring_mod, "settings", test_settings)
+    test_settings = Settings(
+        reward_enabled=False,
+        openai_api_key=None,
+        google_api_key=None,
+        anthropic_api_key=None,
+        logfire_api_key=None,
+        reflection_enabled=True,
+        telemetry_export_enabled=False,
+        otlp_export_enabled=False,
+        default_solution_model="openai:gpt-4o",
+        default_review_model="openai:gpt-4o",
+        default_validator_model="openai:gpt-4o",
+        default_reflection_model="openai:gpt-4o",
+        max_iters=5,
+        k_variants=3,
+        reflection_limit=3,
+        scorer="ratio",
+        t_schedule=[1.0, 0.8, 0.5, 0.2],
+        otlp_endpoint=None,
+        agent_timeout=60
+    )
+    monkeypatch.setattr(settings_mod, "settings", test_settings)
 
     with pytest.raises(FeatureDisabled):
         RewardScorer()
 
 
 def test_weighted_score_empty_weights():
-    check = Checklist(items=[ChecklistItem(description="a", passed=True)])
+    check = Checklist(items=[ChecklistItem(description="a", passed=True, feedback=None)])
     assert weighted_score(check, []) == 1.0
 
 
 def test_weighted_score_total_weight_zero():
-    check = Checklist(items=[ChecklistItem(description="a", passed=True)])
+    check = Checklist(items=[ChecklistItem(description="a", passed=True, feedback=None)])
     weights = [{"item": "a", "weight": 0.0}]
     assert weighted_score(check, weights) == 0.0
 
@@ -122,10 +204,31 @@ def test_redact_string_secret_in_text():
 @pytest.mark.asyncio
 async def test_reward_scorer_score_no_output(monkeypatch):
     from unittest.mock import AsyncMock
-    import pydantic_ai_orchestrator.domain.scoring as scoring_mod
+    import pydantic_ai_orchestrator.infra.settings as settings_mod
 
-    test_settings = Settings(reward_enabled=True, openai_api_key=SecretStr("sk-test"))
-    monkeypatch.setattr(scoring_mod, "settings", test_settings)
+    monkeypatch.setenv("ORCH_REWARD_ENABLED", "true")
+    test_settings = Settings(
+        reward_enabled=True,
+        openai_api_key=SecretStr("sk-test"),
+        google_api_key=None,
+        anthropic_api_key=None,
+        logfire_api_key=None,
+        reflection_enabled=True,
+        telemetry_export_enabled=False,
+        otlp_export_enabled=False,
+        default_solution_model="openai:gpt-4o",
+        default_review_model="openai:gpt-4o",
+        default_validator_model="openai:gpt-4o",
+        default_reflection_model="openai:gpt-4o",
+        max_iters=5,
+        k_variants=3,
+        reflection_limit=3,
+        scorer="ratio",
+        t_schedule=[1.0, 0.8, 0.5, 0.2],
+        otlp_endpoint=None,
+        agent_timeout=60
+    )
+    monkeypatch.setattr(settings_mod, "settings", test_settings)
 
     scorer = RewardScorer()
     scorer.agent.run = AsyncMock(side_effect=Exception("LLM failed"))
@@ -136,9 +239,9 @@ async def test_reward_scorer_score_no_output(monkeypatch):
 def test_ratio_score_all_passed():
     check = Checklist(
         items=[
-            ChecklistItem(description="a", passed=True),
-            ChecklistItem(description="b", passed=True),
-            ChecklistItem(description="c", passed=True),
+            ChecklistItem(description="a", passed=True, feedback=None),
+            ChecklistItem(description="b", passed=True, feedback=None),
+            ChecklistItem(description="c", passed=True, feedback=None),
         ]
     )
     assert ratio_score(check) == 1.0
@@ -147,9 +250,9 @@ def test_ratio_score_all_passed():
 def test_weighted_score_all_weights_present():
     check = Checklist(
         items=[
-            ChecklistItem(description="a", passed=True),
-            ChecklistItem(description="b", passed=True),
-            ChecklistItem(description="c", passed=True),
+            ChecklistItem(description="a", passed=True, feedback=None),
+            ChecklistItem(description="b", passed=True, feedback=None),
+            ChecklistItem(description="c", passed=True, feedback=None),
         ]
     )
     weights = [
@@ -161,12 +264,12 @@ def test_weighted_score_all_weights_present():
 
 
 def test_weighted_score_invalid_weight_type():
-    check = Checklist(items=[ChecklistItem(description="a", passed=True)])
+    check = Checklist(items=[ChecklistItem(description="a", passed=True, feedback=None)])
     with pytest.raises(ValueError):
         weighted_score(check, ["not-a-dict"])
 
 
 def test_weighted_score_missing_keys():
-    check = Checklist(items=[ChecklistItem(description="a", passed=True)])
+    check = Checklist(items=[ChecklistItem(description="a", passed=True, feedback=None)])
     with pytest.raises(ValueError):
         weighted_score(check, [{"item": "a"}])
