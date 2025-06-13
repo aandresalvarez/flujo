@@ -5,8 +5,14 @@ Most basic usage: call the orchestrator once and print the result.
 Run with:
     OPENAI_API_KEY=sk-... python 00_quickstart.py
 """
-from pydantic_ai_orchestrator import Orchestrator, Task
-from pydantic_ai_orchestrator.infra.agents import review_agent, solution_agent, validator_agent, get_reflection_agent
+from pydantic_ai_orchestrator import (
+    Orchestrator,
+    Task,
+    review_agent,
+    solution_agent,
+    validator_agent,
+    get_reflection_agent,
+)
 
 # 1️⃣  Create a default orchestrator (uses GPT-4o for all agents)
 orch = Orchestrator(
@@ -22,9 +28,15 @@ task = Task(prompt="Write a short motivational haiku about debugging.")
 # 3️⃣  Synchronous, blocking call – returns a Candidate object
 best = orch.run_sync(task)
 
-# 4️⃣  Inspect the result
-print("Score:", best.score)
-print("\nSolution:\n", best.solution)
-print("\nChecklist:")
-for item in best.checklist.items:
-    print(f" • {item.description:<40}  =>  {item.passed}") 
+# 4️⃣  Inspect the result with null-safety
+if best:
+    print("Score:", best.score)
+    print("\nSolution:\n", best.solution)
+    print("\nChecklist:")
+    if best.checklist:
+        for item in best.checklist.items:
+            print(f" • {item.description:<40}  =>  {item.passed}")
+    else:
+        print("  No checklist was generated for this solution.")
+else:
+    print("No solution was found.")

@@ -4,9 +4,9 @@ import os
 import dotenv
 
 dotenv.load_dotenv()
-from pydantic_settings import BaseSettings
-from pydantic import ValidationError, SecretStr, field_validator, ConfigDict, Field
-from typing import Optional, Literal
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import ValidationError, SecretStr, field_validator, Field
+from typing import Optional, Literal, ClassVar
 from ..exceptions import SettingsError
 
 
@@ -48,16 +48,16 @@ class Settings(BaseSettings):
     otlp_endpoint: Optional[str] = None
     agent_timeout: int = Field(60, validation_alias="orch_agent_timeout")  # Timeout in seconds for agent calls
 
-    model_config = ConfigDict(
-        env_file=".env",
-        env_prefix="orch_",
-        alias_generator=None,
-        populate_by_name=True,
-        extra="ignore",
-    )
+    model_config: ClassVar[SettingsConfigDict] = {
+        "env_file": ".env",
+        "env_prefix": "orch_",
+        "alias_generator": None,
+        "populate_by_name": True,
+        "extra": "ignore",
+    }
 
     @field_validator("t_schedule")
-    def schedule_must_not_be_empty(cls, v):
+    def schedule_must_not_be_empty(cls, v: list[float]) -> list[float]:
         if not v:
             raise ValueError("t_schedule must not be empty")
         return v
@@ -65,7 +65,7 @@ class Settings(BaseSettings):
 
 # Singleton instance, fail fast if critical vars missing
 try:
-    settings = Settings()
+    settings = Settings()  # type: ignore[call-arg]
 except ValidationError as e:
     # Use custom exception for better error handling downstream
     raise SettingsError(f"Invalid or missing environment variables for Settings:\n{e}")

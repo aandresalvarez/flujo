@@ -2,10 +2,11 @@
 Agent prompt templates and agent factory utilities.
 """
 from pydantic_ai import Agent
-from typing import Type
+from typing import Type, Any
 import os
 from pydantic_ai_orchestrator.infra.settings import settings
 from pydantic_ai_orchestrator.domain.models import Checklist
+from pydantic_ai_orchestrator.domain.agent_protocol import AgentProtocol
 from pydantic_ai_orchestrator.exceptions import OrchestratorRetryError, ConfigurationError
 from tenacity import retry_if_exception_type, wait_random_exponential
 import asyncio
@@ -35,9 +36,9 @@ Your output should be a single string.
 def make_agent(
     model: str,
     system_prompt: str,
-    output_type: Type,
-    tools: list | None = None,
-) -> Agent:
+    output_type: Type[Any],
+    tools: list[Any] | None = None,
+) -> Agent[Any, Any]:
     """Creates a pydantic_ai.Agent, injecting the correct API key."""
     provider_name = model.split(":")[0].lower()
     api_key = None
@@ -63,29 +64,37 @@ def make_agent(
             )
         api_key = settings.anthropic_api_key.get_secret_value()
 
-    return Agent(
+    agent: Agent[Any, Any] = Agent(  # type: ignore[call-overload]
         model,
         system_prompt=system_prompt,
         output_type=output_type,
         api_key=api_key,
         tools=tools or [],
     )
+    return agent
 
 class AsyncAgentWrapper:
     """Wraps an agent to expose .run_async with retry/timeout."""
-    def __init__(self, agent, max_retries=3, timeout=None, model_name=None):
+
+    def __init__(
+        self,
+        agent: Agent[Any, Any],
+        max_retries: int = 3,
+        timeout: int | None = None,
+        model_name: str | None = None,
+    ) -> None:
         self._agent = agent
         self._max_retries = max_retries
         self._timeout = timeout if timeout is not None else settings.agent_timeout
-        self._model_name = model_name or getattr(agent, 'model', None)
+        self._model_name = model_name or getattr(agent, "model", None)
 
-    async def _run_with_retry(self, *args, **kwargs):
+    async def _run_with_retry(self, *args: Any, **kwargs: Any) -> Any:
         from tenacity import AsyncRetrying, stop_after_attempt
         temp = kwargs.pop("temperature", None)
         if temp is not None:
             kwargs.setdefault("generation_kwargs", {})["temperature"] = temp
-        result = None
-        def raise_orchestrator_retry_error(retry_state):
+        result: Any = None
+        def raise_orchestrator_retry_error(retry_state: Any) -> None:
             raise OrchestratorRetryError(
                 f"Agent failed after {retry_state.attempt_number} attempts. Last error: {retry_state.outcome.exception()}"
             )
@@ -109,18 +118,18 @@ class AsyncAgentWrapper:
                     raise
         return result
 
-    async def run_async(self, *args, **kwargs):
+    async def run_async(self, *args: Any, **kwargs: Any) -> Any:
         return await self._run_with_retry(*args, **kwargs)
 
-    async def run(self, *args, **kwargs):
+    async def run(self, *args: Any, **kwargs: Any) -> Any:
         return await self._run_with_retry(*args, **kwargs)
 
 def make_agent_async(
     model: str,
     system_prompt: str,
-    output_type: Type,
+    output_type: Type[Any],
     max_retries: int = 3,
-    timeout: int = None,
+    timeout: int | None = None,
     ) -> AsyncAgentWrapper:
     """
     Creates a pydantic_ai.Agent and returns an AsyncAgentWrapper exposing .run_async.
@@ -130,7 +139,7 @@ def make_agent_async(
 
 class NoOpReflectionAgent:
     """A stub agent that does nothing, used when reflection is disabled."""
-    async def run(self, *args, **kwargs):
+    async def run(self, *args: Any, **kwargs: Any) -> str:
         return ""
 
 # 3. Agent Instances
@@ -139,7 +148,7 @@ try:
     solution_agent = make_agent_async(settings.default_solution_model, SOLUTION_SYS, str)
     validator_agent = make_agent_async(settings.default_validator_model, VALIDATE_SYS, Checklist)
 except ConfigurationError:
-    review_agent = solution_agent = validator_agent = NoOpReflectionAgent()
+    review_agent = solution_agent = validator_agent = NoOpReflectionAgent()  # type: ignore[assignment]
 
 def get_reflection_agent(model: str | None = None) -> AsyncAgentWrapper | NoOpReflectionAgent:
     """Returns a new instance of the reflection agent, or a no-op if disabled."""
@@ -156,18 +165,18 @@ def get_reflection_agent(model: str | None = None) -> AsyncAgentWrapper | NoOpRe
 
 # Add a wrapper for review_agent to log API errors
 class LoggingReviewAgent:
-    def __init__(self, agent):
+    def __init__(self, agent: AgentProtocol[Any, Any]) -> None:
         self.agent = agent
         self.run_async = self._run_async
         self._run_with_retry = getattr(agent, "_run_with_retry", None)
 
-    def __getattr__(self, name):
+    def __getattr__(self, name: str) -> Any:
         # Expose _run_with_retry and any other attributes from the wrapped agent
         if hasattr(self.agent, name):
             return getattr(self.agent, name)
         raise AttributeError(f"{self.__class__.__name__!r} object has no attribute {name!r}")
 
-    async def _run_inner(self, method, *args, **kwargs):
+    async def _run_inner(self, method: Any, *args: Any, **kwargs: Any) -> Any:
         try:
             result = await method(*args, **kwargs)
             logfire.info(f"Review agent result: {result}")
@@ -176,13 +185,15 @@ class LoggingReviewAgent:
             logfire.error(f"Review agent API error: {e}")
             raise
 
-    async def run(self, *args, **kwargs):
+    async def run(self, *args: Any, **kwargs: Any) -> Any:
         return await self._run_inner(self.agent.run, *args, **kwargs)
 
-    async def _run_async(self, *args, **kwargs):
+    async def _run_async(self, *args: Any, **kwargs: Any) -> Any:
         if hasattr(self.agent, "run_async") and callable(getattr(self.agent, "run_async")):
             return await self._run_inner(self.agent.run_async, *args, **kwargs)
         else:
             return await self.run(*args, **kwargs)
 
-review_agent = LoggingReviewAgent(review_agent) 
+review_agent = LoggingReviewAgent(review_agent)  # type: ignore[assignment]
+
+

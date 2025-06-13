@@ -5,9 +5,15 @@ Demonstrates **weighted** checklist scoring.  Two items, different weights.
 """
 
 from pydantic_ai import Agent
-from pydantic_ai_orchestrator import Orchestrator, Task
+from pydantic_ai_orchestrator import (
+    Orchestrator,
+    Task,
+    make_agent_async,
+    solution_agent,
+    validator_agent,
+    get_reflection_agent,
+)
 from pydantic_ai_orchestrator.infra.settings import settings
-from pydantic_ai_orchestrator.infra.agents import make_agent_async, solution_agent, validator_agent, get_reflection_agent
 from pydantic_ai_orchestrator.domain.models import Checklist
 
 # 📝 Switch to weighted scoring – you can also set this in .env
@@ -57,6 +63,9 @@ best = orch.run_sync(task)
 print("\nSolution:\n", best.solution)
 print("\nWeighted score:", best.score)
 print("\nChecklist:")
-for item in best.checklist.items:
-    weight = next((w['weight'] for w in weights if w['item'] == item.description), 1.0)
-    print(f" • {item.description:<25} passed={item.passed}  weight={weight:.1f}") 
+if best.checklist:
+    for item in best.checklist.items:
+        weight = next((w['weight'] for w in weights if w['item'] == item.description), 1.0)
+        print(f" • {item.description:<25} passed={item.passed}  weight={weight:.1f}")
+else:
+    print("  No checklist was generated for this solution.")
