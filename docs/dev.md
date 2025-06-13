@@ -18,7 +18,8 @@ We welcome contributions! Please follow this guide.
     ```
 
 3.  **Set up environment**
-    Copy the `.env.example` to `.env` and fill in your API keys.
+    Copy the `.env.example` to `.env` and fill in your API keys. The CLI
+    will automatically load variables from this file using `python-dotenv`.
     ```bash
     cp .env.example .env
     # Now edit .env

@@ -1,4 +1,7 @@
-"""CLI entry point for pydantic-ai-orchestrator.""" 
+"""CLI entry point for pydantic-ai-orchestrator."""
+
+import dotenv
+dotenv.load_dotenv()
 
 import typer
 import json

@@ -26,7 +26,7 @@ Install and configure:
 ```bash
 pip install pydantic-ai-orchestrator
 cp .env.example .env  # then edit the file
-export OPENAI_API_KEY=sk-...
+# Environment variables in .env are loaded automatically
 orch solve "Write a haiku about AI."
 ```
 
@@ -79,6 +79,8 @@ For more examples, see the `examples` folder.
 * `orch --profile` – Enable Logfire span viewer
 
 ## Environment Variables
+Environment variables can be placed in a `.env` file and will be loaded
+automatically by the CLI using `python-dotenv`.
 
 * `OPENAI_API_KEY` (optional, for OpenAI models)
 * `GOOGLE_API_KEY` (optional, for Gemini models)

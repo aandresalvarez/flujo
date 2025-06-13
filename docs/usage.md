@@ -1,5 +1,6 @@
 # Usage
-Copy `.env.example` to `.env` and add your API keys before running the CLI.
+Copy `.env.example` to `.env` and add your API keys. The CLI automatically
+loads variables from this file using `python-dotenv`.
 
 ## CLI
 
