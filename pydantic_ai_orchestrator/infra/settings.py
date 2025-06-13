@@ -26,10 +26,18 @@ class Settings(BaseSettings):
     otlp_export_enabled: bool = Field(False, validation_alias="orch_otlp_export_enabled")
 
     # Default models for each agent
-    default_solution_model: str = "openai:gpt-4o"
-    default_review_model: str = "openai:gpt-4o"
-    default_validator_model: str = "openai:gpt-4o"
-    default_reflection_model: str = "openai:gpt-4o"
+    default_solution_model: str = Field(
+        "openai:gpt-4o", validation_alias="orch_default_solution_model"
+    )
+    default_review_model: str = Field(
+        "openai:gpt-4o", validation_alias="orch_default_review_model"
+    )
+    default_validator_model: str = Field(
+        "openai:gpt-4o", validation_alias="orch_default_validator_model"
+    )
+    default_reflection_model: str = Field(
+        "openai:gpt-4o", validation_alias="orch_default_reflection_model"
+    )
 
     # Orchestrator Tuning
     max_iters: int = 5
