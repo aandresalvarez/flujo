@@ -156,5 +156,22 @@ def test_cli_version_cmd_package_not_found(monkeypatch):
 def test_cli_main_callback_profile(monkeypatch):
     # Should not raise, just configure logfire
     result = runner.invoke(app, ["--profile"])
-    assert result.exit_code == 0 or result.exit_code == 2 
+    assert result.exit_code == 0 or result.exit_code == 2
+
+
+def test_cli_solve_configuration_error(monkeypatch):
+    """Test that configuration errors surface with exit code 2."""
+
+    def raise_config_error(*args, **kwargs):
+        from pydantic_ai_orchestrator.exceptions import ConfigurationError
+        raise ConfigurationError("Missing API key!")
+
+    monkeypatch.setattr(
+        "pydantic_ai_orchestrator.cli.main.make_agent_async",
+        raise_config_error,
+    )
+
+    result = runner.invoke(app, ["solve", "prompt"])
+    assert result.exit_code == 2
+    assert "Configuration Error: Missing API key!" in result.stderr
 
