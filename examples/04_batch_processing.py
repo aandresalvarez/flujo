@@ -12,11 +12,18 @@ import csv
 import pathlib
 import time
 from pydantic_ai_orchestrator import Orchestrator, Task
+from pydantic_ai_orchestrator.infra.agents import review_agent, solution_agent, validator_agent, get_reflection_agent
 
 INPUT = pathlib.Path("prompts.csv")
 OUTPUT = pathlib.Path("results.csv")
 
-orch = Orchestrator()
+# Create orchestrator with the required agents
+orch = Orchestrator(
+    review_agent,
+    solution_agent,
+    validator_agent,
+    get_reflection_agent()
+)
 
 with INPUT.open() as f_in, OUTPUT.open("w", newline="") as f_out:
     reader = csv.DictReader(f_in)

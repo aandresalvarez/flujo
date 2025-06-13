@@ -4,8 +4,11 @@
 Demonstrates **weighted** checklist scoring.  Two items, different weights.
 """
 
+from pydantic_ai import Agent
 from pydantic_ai_orchestrator import Orchestrator, Task
 from pydantic_ai_orchestrator.infra.settings import settings
+from pydantic_ai_orchestrator.infra.agents import make_agent_async, solution_agent, validator_agent, get_reflection_agent
+from pydantic_ai_orchestrator.domain.models import Checklist
 
 # 📝 Switch to weighted scoring – you can also set this in .env
 settings.scorer = "weighted"
@@ -15,13 +18,45 @@ weights = [
     {"item": "Uses type hints",      "weight": 0.3},
 ]
 
+# Create a custom review agent with our specific criteria
+CUSTOM_REVIEW_SYS = f"""You are an expert software engineer.
+Your task is to generate a checklist of criteria to evaluate a solution for the user's request.
+The checklist MUST include EXACTLY these items (copy them verbatim):
+1. "Includes a docstring"
+2. "Uses type hints"
+
+Return **JSON only** that conforms to this schema:
+Checklist(items=[ChecklistItem(description:str, passed:bool|None, feedback:str|None)])
+
+Example:
+{{
+  "items": [
+    {{"description": "Includes a docstring", "passed": null, "feedback": null}},
+    {{"description": "Uses type hints", "passed": null, "feedback": null}}
+  ]
+}}
+"""
+
+review_agent = make_agent_async(settings.default_review_model, CUSTOM_REVIEW_SYS, Checklist)
+
 task = Task(
     prompt="Write a Python function that reverses a string.",
     metadata={"weights": weights},
 )
 
-best = Orchestrator().run_sync(task)
+# Create orchestrator with the required agents
+orch = Orchestrator(
+    review_agent,
+    solution_agent,
+    validator_agent,
+    get_reflection_agent()
+)
 
-print("Weighted score:", best.score)
+best = orch.run_sync(task)
+
+print("\nSolution:\n", best.solution)
+print("\nWeighted score:", best.score)
+print("\nChecklist:")
 for item in best.checklist.items:
-    print(f"{item.description:<25} passed={item.passed}  weight={next((w['weight'] for w in weights if w['item']==item.description), 1.0)}") 
+    weight = next((w['weight'] for w in weights if w['item'] == item.description), 1.0)
+    print(f" • {item.description:<25} passed={item.passed}  weight={weight:.1f}") 

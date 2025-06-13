@@ -7,11 +7,20 @@ Enable the experimental reward-model scorer (extra LLM judge).
 import os
 from pydantic_ai_orchestrator import Orchestrator, Task
 from pydantic_ai_orchestrator.infra.settings import settings
+from pydantic_ai_orchestrator.infra.agents import review_agent, solution_agent, validator_agent, get_reflection_agent
 
 # 🔑 Make sure you have a paid API key – the reward model is another call
 os.environ["REWARD_ENABLED"] = "true"
 settings.scorer = "reward"
 
-best = Orchestrator().run_sync(Task(prompt="Summarise the Zen of Python in two sentences."))
+# Create orchestrator with the required agents
+orch = Orchestrator(
+    review_agent,
+    solution_agent,
+    validator_agent,
+    get_reflection_agent()
+)
+
+best = orch.run_sync(Task(prompt="Summarise the Zen of Python in two sentences."))
 print("Reward-model score:", best.score)
-print(best.solution) 
+print("\nSolution:\n", best.solution) 

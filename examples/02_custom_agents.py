@@ -6,12 +6,12 @@ to save tokens.
 """
 
 from pydantic_ai import Agent
-from pydantic_ai_orchestrator import Orchestrator
+from pydantic_ai_orchestrator import Orchestrator, Task
 from pydantic_ai_orchestrator.infra.agents import review_agent, validator_agent, get_reflection_agent
 
 # Build a single cheaper agent
 solution_agent = Agent(
-    "openai:gpt-3.5-turbo",
+    "openai:gpt-4.1-nano",
     system_prompt="You are an efficient programmer – output concise, correct code.",
     output_type=str,
 )
@@ -25,4 +25,6 @@ orch = Orchestrator(
     k_variants=1,
 )
 
-print(orch.run_sync("Write a limerick that scans.").solution) 
+# Wrap the prompt in a Task object
+task = Task(prompt="Write a limerick that scans.")
+print(orch.run_sync(task).solution) 
