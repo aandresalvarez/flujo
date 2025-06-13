@@ -17,7 +17,7 @@ from pydantic_ai_orchestrator import (
     review_agent,
     solution_agent,
     validator_agent,
-    get_reflection_agent,
+    reflection_agent,
 )
 
 INPUT = pathlib.Path("prompts.csv")
@@ -28,7 +28,7 @@ orch = Orchestrator(
     review_agent,
     solution_agent,
     validator_agent,
-    get_reflection_agent()
+    reflection_agent
 )
 
 with INPUT.open() as f_in, OUTPUT.open("w", newline="") as f_out:
@@ -51,4 +51,4 @@ with INPUT.open() as f_in, OUTPUT.open("w", newline="") as f_out:
             }
         )
 
-print(f"\nSaved results ➜ {OUTPUT}") 
+print(f"\nSaved results ➜ {OUTPUT}")

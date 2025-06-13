@@ -11,7 +11,7 @@ from pydantic_ai_orchestrator import (
     make_agent_async,
     solution_agent,
     validator_agent,
-    get_reflection_agent,
+    reflection_agent,
 )
 from pydantic_ai_orchestrator.infra.settings import settings
 from pydantic_ai_orchestrator.domain.models import Checklist
@@ -55,7 +55,7 @@ orch = Orchestrator(
     review_agent,
     solution_agent,
     validator_agent,
-    get_reflection_agent()
+    reflection_agent
 )
 
 best = orch.run_sync(task)

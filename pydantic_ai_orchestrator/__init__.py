@@ -16,6 +16,7 @@ from .infra.agents import (
     review_agent,
     solution_agent,
     validator_agent,
+    reflection_agent,
     get_reflection_agent,
     make_agent_async,
 )
@@ -33,6 +34,7 @@ __all__ = [
     "review_agent",
     "solution_agent",
     "validator_agent",
+    "reflection_agent",
     "get_reflection_agent",
     "make_agent_async",
     "OrchestratorError",
