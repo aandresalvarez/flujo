@@ -11,6 +11,7 @@ from .infra.settings import settings
 from .infra.telemetry import init_telemetry
 
 from .domain.models import Task, Candidate, Checklist, ChecklistItem
+from .domain import Step, Pipeline, StepConfig, PluginOutcome, ValidationPlugin
 
 from .infra.agents import (
     review_agent,
@@ -29,6 +30,11 @@ __all__ = [
     "Candidate",
     "Checklist",
     "ChecklistItem",
+    "Step",
+    "Pipeline",
+    "StepConfig",
+    "PluginOutcome",
+    "ValidationPlugin",
     "settings",
     "init_telemetry",
     "review_agent",

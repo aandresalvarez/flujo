@@ -20,6 +20,9 @@ def test_role_based_constructor():
     assert step.name == "review"
     assert step.agent is agent
 
+    vstep = Step.validate(agent)
+    assert vstep.name == "validate"
+
 
 def test_step_configuration():
     step = Step("A", max_retries=5)

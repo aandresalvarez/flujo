@@ -40,6 +40,11 @@ class Step(BaseModel):
     def solution(cls, agent: AgentProtocol[Any, Any], **config: Any) -> "Step":
         return cls("solution", agent, **config)
 
+    @classmethod
+    def validate(cls, agent: AgentProtocol[Any, Any], **config: Any) -> "Step":
+        """Construct a validation step using the provided agent."""
+        return cls("validate", agent, **config)
+
 
 class Pipeline(BaseModel):
     """A sequential pipeline of steps."""
