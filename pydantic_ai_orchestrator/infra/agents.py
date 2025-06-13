@@ -163,6 +163,9 @@ def get_reflection_agent(model: str | None = None) -> AsyncAgentWrapper | NoOpRe
         logfire.error(f"Failed to create reflection agent: {e}")
         return NoOpReflectionAgent()
 
+# Create a default instance for convenience and API consistency
+reflection_agent = get_reflection_agent()
+
 # Add a wrapper for review_agent to log API errors
 class LoggingReviewAgent:
     def __init__(self, agent: AgentProtocol[Any, Any]) -> None:

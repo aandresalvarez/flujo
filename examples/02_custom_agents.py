@@ -11,7 +11,7 @@ from pydantic_ai_orchestrator import (
     Task,
     review_agent,
     validator_agent,
-    get_reflection_agent,
+    reflection_agent,
 )
 
 # Build a single cheaper agent
@@ -25,11 +25,11 @@ orch = Orchestrator(
     review_agent=review_agent,          # keep the "review" step on GPT-4o
     solution_agent=solution_agent,      # cheaper generation
     validator_agent=validator_agent,
-    reflection_agent=get_reflection_agent(),
+    reflection_agent=reflection_agent,
     max_iters=2,
     k_variants=1,
 )
 
 # Wrap the prompt in a Task object
 task = Task(prompt="Write a limerick that scans.")
-print(orch.run_sync(task).solution) 
+print(orch.run_sync(task).solution)

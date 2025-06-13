@@ -11,7 +11,7 @@ from pydantic_ai_orchestrator import (
     review_agent,
     solution_agent,
     validator_agent,
-    get_reflection_agent,
+    reflection_agent,
 )
 from pydantic_ai_orchestrator.infra.settings import settings
 
@@ -24,9 +24,9 @@ orch = Orchestrator(
     review_agent,
     solution_agent,
     validator_agent,
-    get_reflection_agent()
+    reflection_agent
 )
 
 best = orch.run_sync(Task(prompt="Summarise the Zen of Python in two sentences."))
 print("Reward-model score:", best.score)
-print("\nSolution:\n", best.solution) 
+print("\nSolution:\n", best.solution)

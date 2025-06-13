@@ -20,15 +20,22 @@ pip install pydantic-ai-orchestrator[bench]
 ## API
 
 ```python
-from pydantic_ai_orchestrator import Orchestrator, init_telemetry
+from pydantic_ai_orchestrator import (
+    Orchestrator, Task, init_telemetry,
+    review_agent, solution_agent, validator_agent, reflection_agent
+)
 
 # Initialize telemetry (optional)
 init_telemetry()
 
-orch = Orchestrator()
-result = orch.run_sync("Write a poem.")
+# Create an orchestrator with default agents
+orch = Orchestrator(review_agent, solution_agent, validator_agent, reflection_agent)
+result = orch.run_sync(Task(prompt="Write a poem."))
 print(result)
 ```
+
+For custom reflection behavior, use the `get_reflection_agent()` factory to
+instantiate a reflection agent with a different model or configuration.
 
 Call `init_telemetry()` once at startup to configure logging and tracing for your application.
 

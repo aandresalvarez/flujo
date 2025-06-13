@@ -11,7 +11,7 @@ from pydantic_ai_orchestrator import (
     review_agent,
     solution_agent,
     validator_agent,
-    get_reflection_agent,
+    reflection_agent,
 )
 
 # 1️⃣  Create a default orchestrator (uses GPT-4o for all agents)
@@ -19,7 +19,7 @@ orch = Orchestrator(
     review_agent,
     solution_agent,
     validator_agent,
-    get_reflection_agent()
+    reflection_agent
 )
 
 # 2️⃣  Wrap your prompt in a Task (metadata optional)

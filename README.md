@@ -35,7 +35,7 @@ Example usage in Python:
 ```python
 from pydantic_ai_orchestrator import Orchestrator, Task
 from pydantic_ai_orchestrator.infra.agents import (
-    review_agent, solution_agent, validator_agent, get_reflection_agent
+    review_agent, solution_agent, validator_agent, reflection_agent
 )
 
 # Create orchestrator
@@ -43,7 +43,7 @@ orch = Orchestrator(
     review_agent,
     solution_agent,
     validator_agent,
-    get_reflection_agent()
+    reflection_agent
 )
 
 # Create task
