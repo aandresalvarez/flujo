@@ -35,7 +35,7 @@ def test_weighted_score():
 def test_reward_scorer_init(monkeypatch):
     from pydantic_ai_orchestrator.domain.scoring import RewardScorer
     # Should work with key
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.setenv("orch_openai_api_key", "sk-test")
     class TestSettings(Settings):
         model_config = Settings.model_config.copy()
         model_config["env_file"] = None
@@ -44,7 +44,7 @@ def test_reward_scorer_init(monkeypatch):
     scoring_mod.settings = TestSettings()
     RewardScorer()
     # Should fail without key
-    monkeypatch.delenv("OPENAI_API_KEY")
+    monkeypatch.delenv("orch_openai_api_key")
     scoring_mod.settings = TestSettings()
     scoring_mod.settings.openai_api_key = None
     with pytest.raises(scoring_mod.RewardModelUnavailable):
@@ -54,7 +54,7 @@ def test_reward_scorer_init(monkeypatch):
 async def test_reward_scorer_returns_float(monkeypatch):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.setenv("orch_openai_api_key", "sk-test")
     import pydantic_ai_orchestrator.domain.scoring as scoring_mod
     scoring_mod.settings.openai_api_key = SecretStr("sk-test")
     scorer = RewardScorer()
@@ -66,7 +66,7 @@ async def test_reward_scorer_returns_float(monkeypatch):
 
 def test_reward_scorer_disabled(monkeypatch):
     from pydantic_ai_orchestrator.domain.scoring import RewardScorer, FeatureDisabled
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.setenv("orch_openai_api_key", "sk-test")
     class TestSettings(Settings):
         model_config = Settings.model_config.copy()
         model_config["env_file"] = None
@@ -105,7 +105,7 @@ def test_redact_string_secret_in_text():
 @pytest.mark.asyncio
 async def test_reward_scorer_score_no_output(monkeypatch):
     from unittest.mock import AsyncMock
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.setenv("orch_openai_api_key", "sk-test")
     # Patch settings.reward_enabled to True
     import pydantic_ai_orchestrator.domain.scoring as scoring_mod
     scoring_mod.settings.reward_enabled = True

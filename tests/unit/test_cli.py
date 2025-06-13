@@ -1,3 +1,8 @@
+import os
+
+# Ensure API key exists before importing the CLI
+os.environ.setdefault("orch_openai_api_key", "test-key")
+
 from pydantic_ai_orchestrator.cli.main import app
 from typer.testing import CliRunner
 from unittest.mock import patch
@@ -60,7 +65,7 @@ def test_cli_bench_command(monkeypatch):
     assert "Benchmark Results" in result.stdout
 
 def test_cli_show_config_masks_secrets(monkeypatch):
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-secret")
+    monkeypatch.setenv("orch_openai_api_key", "sk-secret")
     # This requires re-importing settings or running CLI in a subprocess
     # For simplicity, we'll just check the output format.
     result = runner.invoke(app, ["show-config"])

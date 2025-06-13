@@ -1,7 +1,12 @@
+import os
 import pytest
 import asyncio
 from unittest.mock import AsyncMock, patch
 from pydantic import SecretStr
+
+# Ensure environment variable exists before agents are imported
+os.environ.setdefault("orch_openai_api_key", "test-key")
+
 from pydantic_ai_orchestrator.infra.agents import AsyncAgentWrapper, NoOpReflectionAgent, get_reflection_agent, LoggingReviewAgent
 
 from pydantic_ai_orchestrator.exceptions import OrchestratorRetryError
@@ -56,15 +61,18 @@ async def test_noop_reflection_agent():
     assert result == ""
 
 def test_get_reflection_agent_disabled(monkeypatch):
+    import importlib
+    import pydantic_ai_orchestrator.infra.agents as agents_mod
     monkeypatch.setattr("pydantic_ai_orchestrator.infra.settings.settings.reflection_enabled", False)
-    agent = get_reflection_agent()
-    assert isinstance(agent, NoOpReflectionAgent)
+    importlib.reload(agents_mod)
+    agent = agents_mod.get_reflection_agent()
+    assert agent.__class__.__name__ == "NoOpReflectionAgent"
 
 def test_get_reflection_agent_creation_failure(monkeypatch):
     monkeypatch.setattr("pydantic_ai_orchestrator.infra.settings.settings.reflection_enabled", True)
     with patch("pydantic_ai_orchestrator.infra.agents.make_agent_async", side_effect=Exception("fail")):
         agent = get_reflection_agent()
-        assert isinstance(agent, NoOpReflectionAgent)
+        assert agent.__class__.__name__ == "NoOpReflectionAgent"
 
 @pytest.mark.asyncio
 async def test_logging_review_agent_success():
@@ -123,7 +131,7 @@ async def test_async_agent_wrapper_agent_failed_string_only():
 
 
 def test_make_agent_async_injects_key(monkeypatch):
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("orch_openai_api_key", "test-key")
     from pydantic_ai_orchestrator.infra import settings as settings_mod
     settings_mod.settings.openai_api_key = SecretStr("test-key")
     from pydantic_ai_orchestrator.infra.agents import make_agent_async
@@ -133,7 +141,7 @@ def test_make_agent_async_injects_key(monkeypatch):
 
 
 def test_make_agent_async_missing_key(monkeypatch):
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("orch_anthropic_api_key", raising=False)
     from pydantic_ai_orchestrator.infra import settings as settings_mod
     settings_mod.settings.anthropic_api_key = None
     from pydantic_ai_orchestrator.infra.agents import make_agent_async
