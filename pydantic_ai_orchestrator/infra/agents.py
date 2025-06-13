@@ -3,6 +3,7 @@ Agent prompt templates and agent factory utilities.
 """
 from pydantic_ai import Agent
 from typing import Type
+import os
 from pydantic_ai_orchestrator.infra.settings import settings
 from pydantic_ai_orchestrator.domain.models import Checklist
 from pydantic_ai_orchestrator.exceptions import OrchestratorRetryError, ConfigurationError
@@ -47,6 +48,8 @@ def make_agent(
                 "To use OpenAI models, the OPENAI_API_KEY environment variable must be set."
             )
         api_key = settings.openai_api_key.get_secret_value()
+        # Ensure the OpenAI client can locate the key
+        os.environ.setdefault("OPENAI_API_KEY", api_key)
     elif provider_name in {"google-gla", "gemini"}:
         if not settings.google_api_key:
             raise ConfigurationError(
