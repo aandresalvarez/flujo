@@ -1,5 +1,3 @@
-import pytest
-from pydantic import ValidationError
 from pydantic_ai_orchestrator.infra.settings import Settings
 
 def test_env_var_precedence(monkeypatch):

@@ -1,13 +1,15 @@
 """Settings and configuration for pydantic-ai-orchestrator."""
 
 import os
+from typing import ClassVar, Literal, Optional
+
 import dotenv
+from pydantic import Field, SecretStr, ValidationError, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from ..exceptions import SettingsError
 
 dotenv.load_dotenv()
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import ValidationError, SecretStr, field_validator, Field
-from typing import Optional, Literal, ClassVar
-from ..exceptions import SettingsError
 
 
 class Settings(BaseSettings):

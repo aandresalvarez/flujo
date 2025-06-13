@@ -4,7 +4,6 @@
 Demonstrates **weighted** checklist scoring.  Two items, different weights.
 """
 
-from pydantic_ai import Agent
 from pydantic_ai_orchestrator import (
     Orchestrator,
     Task,
@@ -25,7 +24,7 @@ weights = [
 ]
 
 # Create a custom review agent with our specific criteria
-CUSTOM_REVIEW_SYS = f"""You are an expert software engineer.
+CUSTOM_REVIEW_SYS = """You are an expert software engineer.
 Your task is to generate a checklist of criteria to evaluate a solution for the user's request.
 The checklist MUST include EXACTLY these items (copy them verbatim):
 1. "Includes a docstring"
@@ -35,12 +34,12 @@ Return **JSON only** that conforms to this schema:
 Checklist(items=[ChecklistItem(description:str, passed:bool|None, feedback:str|None)])
 
 Example:
-{{
+{
   "items": [
-    {{"description": "Includes a docstring", "passed": null, "feedback": null}},
-    {{"description": "Uses type hints", "passed": null, "feedback": null}}
+    {"description": "Includes a docstring", "passed": null, "feedback": null},
+    {"description": "Uses type hints", "passed": null, "feedback": null}
   ]
-}}
+}
 """
 
 review_agent = make_agent_async(settings.default_review_model, CUSTOM_REVIEW_SYS, Checklist)

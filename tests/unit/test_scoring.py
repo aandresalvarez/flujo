@@ -2,7 +2,7 @@ import pytest
 from pydantic_ai_orchestrator.domain.models import Checklist, ChecklistItem
 from pydantic_ai_orchestrator.domain.scoring import ratio_score, weighted_score, RewardScorer
 from pydantic_ai_orchestrator.infra.settings import Settings
-from pydantic import ValidationError, SecretStr
+from pydantic import SecretStr
 
 def test_ratio_score():
     check_pass = Checklist(items=[ChecklistItem(description="a", passed=True), ChecklistItem(description="b", passed=True)])
