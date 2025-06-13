@@ -9,6 +9,33 @@ except Exception:
 from .application.orchestrator import Orchestrator
 from .infra.settings import settings
 from .infra.telemetry import init_telemetry
-from .domain.models import Task
 
-__all__ = ["Orchestrator", "settings", "Task", "init_telemetry"]
+from .domain.models import Task, Candidate, Checklist, ChecklistItem
+
+from .infra.agents import (
+    review_agent,
+    solution_agent,
+    validator_agent,
+    get_reflection_agent,
+    make_agent_async,
+)
+
+from .exceptions import OrchestratorError, ConfigurationError, SettingsError
+
+__all__ = [
+    "Orchestrator",
+    "Task",
+    "Candidate",
+    "Checklist",
+    "ChecklistItem",
+    "settings",
+    "init_telemetry",
+    "review_agent",
+    "solution_agent",
+    "validator_agent",
+    "get_reflection_agent",
+    "make_agent_async",
+    "OrchestratorError",
+    "ConfigurationError",
+    "SettingsError",
+]

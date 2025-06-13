@@ -1,12 +1,12 @@
 """Domain models for pydantic-ai-orchestrator.""" 
 
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Any
 
 class Task(BaseModel):
     """Represents a task to be solved by the orchestrator."""
     prompt: str
-    metadata: dict = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 class ChecklistItem(BaseModel):
     """A single item in a checklist for evaluating a solution."""
@@ -24,8 +24,14 @@ class Candidate(BaseModel):
     score: float
     checklist: Optional[Checklist] = Field(None, description="Checklist evaluation for this candidate.")
 
-    def __repr__(self):
-        return f"<Candidate score={self.score:.2f} solution={self.solution!r} checklist_items={len(self.checklist.items) if self.checklist else 0}>"
+    def __repr__(self) -> str:
+        return (
+            f"<Candidate score={self.score:.2f} solution={self.solution!r} "
+            f"checklist_items={len(self.checklist.items) if self.checklist else 0}>"
+        )
 
-    def __str__(self):
-        return f"Candidate(score={self.score:.2f}, solution={self.solution!r}, checklist_items={len(self.checklist.items) if self.checklist else 0})" 
+    def __str__(self) -> str:
+        return (
+            f"Candidate(score={self.score:.2f}, solution={self.solution!r}, "
+            f"checklist_items={len(self.checklist.items) if self.checklist else 0})"
+        )

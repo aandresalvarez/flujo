@@ -9,7 +9,7 @@ if TYPE_CHECKING:
 
 _initialized = False
 
-def init_telemetry():
+def init_telemetry() -> None:
     """
     Initialize Logfire telemetry for the orchestrator.
     This function is idempotent and safe to call multiple times.
@@ -22,13 +22,13 @@ def init_telemetry():
     additional_processors: list['SpanProcessor'] = []
     if settings.otlp_export_enabled:
         from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-        from opentelemetry.sdk.trace import BatchSpanProcessor
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
-        exporter_args = {}
+        exporter_args: dict[str, object] = {}
         if settings.otlp_endpoint:
             exporter_args["endpoint"] = settings.otlp_endpoint
         
-        exporter = OTLPSpanExporter(**exporter_args)
+        exporter = OTLPSpanExporter(**exporter_args)  # type: ignore[arg-type]
         additional_processors.append(BatchSpanProcessor(exporter))
 
     logfire.configure(

@@ -5,9 +5,9 @@ from ..domain.models import Task, Candidate, Checklist
 from ..domain.scoring import ratio_score, weighted_score, RewardScorer
 from ..exceptions import OrchestratorRetryError, FeatureDisabled
 from ..infra.settings import settings
-from pydantic_ai import Agent as PydanticAgent
+from ..domain.agent_protocol import AgentProtocol
 import logfire
-from typing import Optional
+from typing import Optional, Any
 import asyncio
 from ..utils.redact import redact_string
 
@@ -18,10 +18,10 @@ class Orchestrator:
     """
     def __init__(
         self,
-        review_agent: PydanticAgent,
-        solution_agent: PydanticAgent,
-        validator_agent: PydanticAgent,
-        reflection_agent: PydanticAgent,
+        review_agent: AgentProtocol[str, Any],
+        solution_agent: AgentProtocol[str, Any],
+        validator_agent: AgentProtocol[dict[str, Any], Any],
+        reflection_agent: AgentProtocol[dict[str, Any], Any],
         max_iters: Optional[int] = None,
         k_variants: Optional[int] = None,
         reflection_limit: Optional[int] = None,
@@ -38,11 +38,11 @@ class Orchestrator:
         self.reward_scorer = None
         if settings.scorer == "reward":
             try:
-                self.reward_scorer = RewardScorer()
+                self.reward_scorer = RewardScorer()  # type: ignore[misc]
             except FeatureDisabled:
                 pass # It's ok if it's disabled, we just won't use it.
 
-    async def _run_internal(self, task: Task) -> Candidate:
+    async def _run_internal(self, task: Task) -> Candidate | None:
         with logfire.span("orchestrator.run", task=task.prompt):
             try:
                 checklist_result = await asyncio.wait_for(self.review.run(task.prompt), timeout=settings.agent_timeout)
@@ -51,11 +51,12 @@ class Orchestrator:
                     raise OrchestratorRetryError(f"Review agent did not return a Checklist instance. Got: {type(checklist)} - {checklist}")
             except Exception as e:
                 msg = f"Review agent failed after all retries: {e}"
-                msg = redact_string(msg, settings.openai_api_key.get_secret_value() if settings.openai_api_key else None)
-                msg = redact_string(msg, settings.logfire_api_key.get_secret_value() if settings.logfire_api_key else None)
+                msg = redact_string(msg, settings.openai_api_key.get_secret_value() if settings.openai_api_key else "")
+                msg = redact_string(msg, settings.logfire_api_key.get_secret_value() if settings.logfire_api_key else "")
                 raise OrchestratorRetryError(msg)
 
-            memory, best = [], None
+            memory: list[str] = []
+            best: Candidate | None = None
             for i in range(self.max_iters):
                 with logfire.span("iteration", idx=i, memory_len=len(memory)) as iter_span:
                     prompt = f"{task.prompt}\n\nFeedback:\n{chr(10).join(memory)}"
@@ -71,8 +72,8 @@ class Orchestrator:
                         variants = [getattr(v, 'output', v) for v in variant_results]
                     except Exception as e:
                         msg = f"Solution generation failed for iteration {i}: {e}"
-                        msg = redact_string(msg, settings.openai_api_key.get_secret_value() if settings.openai_api_key else None)
-                        msg = redact_string(msg, settings.logfire_api_key.get_secret_value() if settings.logfire_api_key else None)
+                        msg = redact_string(msg, settings.openai_api_key.get_secret_value() if settings.openai_api_key else "")
+                        msg = redact_string(msg, settings.logfire_api_key.get_secret_value() if settings.logfire_api_key else "")
                         logfire.warn(msg)
                         continue
 
@@ -90,8 +91,8 @@ class Orchestrator:
                                 continue
                         except Exception as e:
                             msg = f"Validation failed for a candidate: {e}"
-                            msg = redact_string(msg, settings.openai_api_key.get_secret_value() if settings.openai_api_key else None)
-                            msg = redact_string(msg, settings.logfire_api_key.get_secret_value() if settings.logfire_api_key else None)
+                            msg = redact_string(msg, settings.openai_api_key.get_secret_value() if settings.openai_api_key else "")
+                            msg = redact_string(msg, settings.logfire_api_key.get_secret_value() if settings.logfire_api_key else "")
                             logfire.warn(msg)
                             continue
                         score = await self._calculate_score(judged_checklist, raw_solution, task)
@@ -105,7 +106,11 @@ class Orchestrator:
                             best = cand
                         if score == 1.0:
                             return best
-                    failed_items = [it.description for it in best.checklist.items if not it.passed] if best else []
+                    failed_items = (
+                        [it.description for it in best.checklist.items if not it.passed]
+                        if best and best.checklist
+                        else []
+                    )
                     if self.reflect and best and failed_items and len(memory) < self.reflection_limit:
                         reflection_result = await self.reflect.run({"failed_items": failed_items})
                         reflection = getattr(reflection_result, 'output', reflection_result)
@@ -113,10 +118,10 @@ class Orchestrator:
                             memory.append(reflection)
             return best
 
-    async def run_async(self, task: Task) -> Candidate:
+    async def run_async(self, task: Task) -> Candidate | None:
         return await self._run_internal(task)
 
-    def run_sync(self, task: Task) -> Candidate:
+    def run_sync(self, task: Task) -> Candidate | None:
         return asyncio.run(self._run_internal(task))
 
     async def _calculate_score(self, checklist: Checklist, solution: str, task: Task) -> float:
