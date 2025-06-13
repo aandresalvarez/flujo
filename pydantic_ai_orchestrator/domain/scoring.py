@@ -1,10 +1,10 @@
-"""Scoring logic for pydantic-ai-orchestrator.""" 
+"""Scoring logic for pydantic-ai-orchestrator."""
 
 from typing import List, Dict
 from .models import Checklist
 from pydantic_ai import Agent
 from ..infra.settings import settings
-import logfire
+from pydantic_ai_orchestrator.infra.telemetry import logfire
 from ..exceptions import RewardModelUnavailable, FeatureDisabled
 
 
@@ -39,9 +39,7 @@ def weighted_score(check: Checklist, weights: List[Dict[str, float]]) -> float:
         return 0.0
 
     score = sum(
-        weight_map.get(item.description, 1.0)
-        for item in check.items
-        if item.passed
+        weight_map.get(item.description, 1.0) for item in check.items if item.passed
     )
     return score / total_weight
 
@@ -51,12 +49,13 @@ class RewardScorer:
     Scores a solution using a reward model (LLM judge).
     Raises errors if the feature is disabled or the API key is missing.
     """
+
     def __init__(self):
         if not settings.reward_enabled:
             raise FeatureDisabled("RewardScorer is disabled by settings.")
         if not settings.openai_api_key:
             raise RewardModelUnavailable("OpenAI API key is required for RewardScorer.")
-        
+
         self.agent = Agent(
             "openai:gpt-4o-mini",
             system_prompt="You are a reward model. You return a single float score from 0.0 to 1.0.",
@@ -73,4 +72,4 @@ class RewardScorer:
             return result.output
         except Exception as e:
             logfire.error(f"RewardScorer failed: {e}")
-            return 0.0 
+            return 0.0
