@@ -23,6 +23,8 @@ We welcome contributions! Please follow this guide.
     cp .env.example .env
     # Now edit .env
     ```
+    The orchestrator automatically loads variables from this file using
+    `python-dotenv`, so you don't need to call `load_dotenv()` yourself.
 
 ## Running Tests
 

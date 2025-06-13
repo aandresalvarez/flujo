@@ -26,7 +26,7 @@ Install and configure:
 ```bash
 pip install pydantic-ai-orchestrator
 cp .env.example .env  # then edit the file
-export OPENAI_API_KEY=sk-...
+# Environment variables are loaded automatically
 orch solve "Write a haiku about AI."
 ```
 
@@ -86,6 +86,9 @@ For more examples, see the `examples` folder.
 * `LOGFIRE_API_KEY` (optional)
 * `REFLECTION_ENABLED` (default: `true`)
 * `MAX_ITERS`, `K_VARIANTS`
+
+Environment variables can be stored in a `.env` file. The CLI loads this file
+automatically using `python-dotenv`.
 
 ## API Usage
 
