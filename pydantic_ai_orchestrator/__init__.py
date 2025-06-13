@@ -11,7 +11,15 @@ from .infra.settings import settings
 from .infra.telemetry import init_telemetry
 
 from .domain.models import Task, Candidate, Checklist, ChecklistItem
-from .domain import Step, Pipeline, StepConfig, PluginOutcome, ValidationPlugin
+from .domain import (
+    Step,
+    Pipeline,
+    StepConfig,
+    PluginOutcome,
+    ValidationPlugin,
+)
+from .application.pipeline_runner import PipelineRunner, PipelineResult, StepResult
+from .testing.utils import StubAgent, DummyPlugin
 
 from .infra.agents import (
     review_agent,
@@ -35,6 +43,9 @@ __all__ = [
     "StepConfig",
     "PluginOutcome",
     "ValidationPlugin",
+    "PipelineRunner",
+    "PipelineResult",
+    "StepResult",
     "settings",
     "init_telemetry",
     "review_agent",
@@ -46,4 +57,9 @@ __all__ = [
     "OrchestratorError",
     "ConfigurationError",
     "SettingsError",
+    "PipelineRunner",
+    "PipelineResult",
+    "StepResult",
+    "StubAgent",
+    "DummyPlugin",
 ]

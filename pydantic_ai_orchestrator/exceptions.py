@@ -24,3 +24,8 @@ class FeatureDisabled(OrchestratorError):
 class ConfigurationError(SettingsError):
     """Raised when a required configuration for a provider is missing."""
     pass
+
+
+class InfiniteRedirectError(OrchestratorError):
+    """Raised when a redirect loop is detected in pipeline execution."""
+    pass
