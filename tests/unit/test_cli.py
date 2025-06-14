@@ -286,7 +286,7 @@ def test_cli_explain(tmp_path) -> None:
     assert "B" in result.stdout
 
 
-def test_cli_improve(monkeypatch, tmp_path) -> None:
+def test_cli_improve_output_formatting(monkeypatch, tmp_path) -> None:
     pipe = tmp_path / "pipe.py"
     pipe.write_text(
         "from pydantic_ai_orchestrator.domain import Step\n"
@@ -310,6 +310,44 @@ def test_cli_improve(monkeypatch, tmp_path) -> None:
 
     result = runner.invoke(app, ["improve", str(pipe), str(data)])
     assert result.exit_code == 0
+    assert "IMPROVEMENT REPORT" in result.stdout
+
+
+def test_cli_improve_json_output(monkeypatch, tmp_path) -> None:
+    pipe = tmp_path / "pipe.py"
+    pipe.write_text(
+        "from pydantic_ai_orchestrator.domain import Step\n"
+        "from pydantic_ai_orchestrator.testing.utils import StubAgent\n"
+        "pipeline = Step.solution(StubAgent(['a']))\n"
+    )
+    data = tmp_path / "data.py"
+    data.write_text(
+        "from pydantic_evals import Dataset, Case\ndataset = Dataset(cases=[Case(inputs='a')])\n"
+    )
+
+    from pydantic_ai_orchestrator.domain.models import ImprovementReport, ImprovementSuggestion, SuggestionType, PromptModificationDetail
+
+    async def dummy_eval(*a, **k):
+        return ImprovementReport(
+            suggestions=[
+                ImprovementSuggestion(
+                    target_step_name="A",
+                    suggestion_type=SuggestionType.PROMPT_MODIFICATION,
+                    failure_pattern_summary="f",
+                    detailed_explanation="d",
+                    prompt_modification_details=PromptModificationDetail(modification_instruction="m"),
+                )
+            ]
+        )
+
+    monkeypatch.setattr(
+        "pydantic_ai_orchestrator.cli.main.evaluate_and_improve",
+        dummy_eval,
+    )
+
+    result = runner.invoke(app, ["improve", str(pipe), str(data), "--json"])
+    assert result.exit_code == 0
+    assert '"suggestions"' in result.stdout
 
 
 def test_cli_help() -> None:

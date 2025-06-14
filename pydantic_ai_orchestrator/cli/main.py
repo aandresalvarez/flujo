@@ -28,6 +28,7 @@ from pydantic_ai_orchestrator.application.self_improvement import (
     SelfImprovementAgent,
     ImprovementReport,
 )
+from pydantic_ai_orchestrator.domain.models import ImprovementSuggestion
 from pydantic_ai_orchestrator.application.pipeline_runner import PipelineRunner
 from pydantic_ai_orchestrator.infra.settings import settings
 from pydantic_ai_orchestrator.exceptions import ConfigurationError, SettingsError
@@ -263,7 +264,11 @@ def bench(prompt: str, rounds: int = 10) -> None:
 
 
 @app.command()
-def improve(pipeline_path: str, dataset_path: str) -> None:
+def improve(
+    pipeline_path: str,
+    dataset_path: str,
+    json_output: Annotated[bool, typer.Option("--json", help="Output raw JSON instead of formatted table")] = False,
+) -> None:
     """
     Run evaluation and generate improvement suggestions.
     
@@ -297,7 +302,40 @@ def improve(pipeline_path: str, dataset_path: str) -> None:
     task_fn = functools.partial(run_pipeline_async, runner=runner)
     agent: SelfImprovementAgent = SelfImprovementAgent(self_improvement_agent)
     report: ImprovementReport = asyncio.run(evaluate_and_improve(task_fn, dataset, agent))
-    typer.echo(json.dumps(report.model_dump(), indent=2))
+    if json_output:
+        typer.echo(json.dumps(report.model_dump(), indent=2))
+        return
+
+    console = Console()
+    console.print("[bold]IMPROVEMENT REPORT[/bold]")
+    groups: Dict[str, List[ImprovementSuggestion]] = {}
+    for sugg in report.suggestions:
+        key = sugg.target_step_name or "Evaluation Suite"
+        groups.setdefault(key, []).append(sugg)
+
+    for step, suggestions in groups.items():
+        console.print(f"\n[bold cyan]Suggestions for {step}[/bold cyan]")
+        table = Table(show_header=True, header_style="bold magenta")
+        table.add_column("Failure Pattern")
+        table.add_column("Suggestion")
+        table.add_column("Impact", justify="center")
+        table.add_column("Effort", justify="center")
+        for s in suggestions:
+            detail = s.detailed_explanation
+            if s.prompt_modification_details:
+                detail += f"\nPrompt: {s.prompt_modification_details.modification_instruction}"
+            elif s.config_change_details:
+                parts = [f"{c.parameter_name}->{c.suggested_value}" for c in s.config_change_details]
+                detail += "\nConfig: " + ", ".join(parts)
+            elif s.suggested_new_eval_case_description:
+                detail += f"\nNew Case: {s.suggested_new_eval_case_description}"
+            table.add_row(
+                s.failure_pattern_summary,
+                f"{s.suggestion_type.name}: {detail}",
+                s.estimated_impact or "",
+                s.estimated_effort_to_implement or "",
+            )
+        console.print(table)
 
 
 @app.command()
