@@ -16,10 +16,10 @@ class Orchestrator:
 
     def __init__(
         self,
-        review_agent: AsyncAgentProtocol[Any],
-        solution_agent: AsyncAgentProtocol[Any],
-        validator_agent: AsyncAgentProtocol[Any],
-        reflection_agent: AsyncAgentProtocol[Any] | None = None,
+        review_agent: AsyncAgentProtocol[Any, Any],
+        solution_agent: AsyncAgentProtocol[Any, Any],
+        validator_agent: AsyncAgentProtocol[Any, Any],
+        reflection_agent: AsyncAgentProtocol[Any, Any] | None = None,
         max_iters: Optional[int] = None,
         k_variants: Optional[int] = None,
         reflection_limit: Optional[int] = None,

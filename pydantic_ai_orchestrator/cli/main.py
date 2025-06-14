@@ -41,7 +41,8 @@ import runpy
 # Type definitions for CLI
 WeightsType = List[Dict[str, Union[str, float]]]
 MetadataType = Dict[str, Any]
-ScorerType = Literal["ratio", "weighted", "reward"]
+
+ScorerChoices = ["ratio", "weighted", "reward"]
 
 app: typer.Typer = typer.Typer(rich_markup_mode="markdown")
 
@@ -58,7 +59,10 @@ def solve(
     ] = None,
     reflection: Annotated[Optional[bool], typer.Option(help="Enable/disable reflection agent.")] = None,
     scorer: Annotated[
-        Optional[ScorerType], typer.Option(help="Scoring strategy: 'ratio', 'weighted', or 'reward'.")
+        Optional[str],
+        typer.Option(
+            help="Scoring strategy: 'ratio', 'weighted', or 'reward'.",
+        ),
     ] = None,
     weights_path: Annotated[Optional[str], typer.Option(help="Path to weights file (JSON or YAML)")] = None,
     solution_model: Annotated[Optional[str], typer.Option(help="Model for the Solution agent.")] = None,
@@ -131,10 +135,18 @@ def solve(
         val_model: str = validator_model or settings.default_validator_model
         ref_model: str = reflection_model or settings.default_reflection_model
 
-        review: AsyncAgentProtocol[Checklist] = cast(AsyncAgentProtocol[Checklist], make_agent_async(rev_model, REVIEW_SYS, Checklist))
-        solution: AsyncAgentProtocol[str] = cast(AsyncAgentProtocol[str], make_agent_async(sol_model, SOLUTION_SYS, str))
-        validator: AsyncAgentProtocol[Checklist] = cast(AsyncAgentProtocol[Checklist], make_agent_async(val_model, VALIDATE_SYS, Checklist))
-        reflection_agent: AsyncAgentProtocol[str] = cast(AsyncAgentProtocol[str], get_reflection_agent(ref_model))
+        review: AsyncAgentProtocol[Any, Checklist] = cast(
+            AsyncAgentProtocol[Any, Checklist], make_agent_async(rev_model, REVIEW_SYS, Checklist)
+        )
+        solution: AsyncAgentProtocol[Any, str] = cast(
+            AsyncAgentProtocol[Any, str], make_agent_async(sol_model, SOLUTION_SYS, str)
+        )
+        validator: AsyncAgentProtocol[Any, Checklist] = cast(
+            AsyncAgentProtocol[Any, Checklist], make_agent_async(val_model, VALIDATE_SYS, Checklist)
+        )
+        reflection_agent: AsyncAgentProtocol[Any, str] = cast(
+            AsyncAgentProtocol[Any, str], get_reflection_agent(ref_model)
+        )
 
         orch: Orchestrator = Orchestrator(
             review,
