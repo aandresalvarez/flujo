@@ -7,9 +7,7 @@ from __future__ import annotations
 from typing import (
     Type,
     Any,
-    cast,
     Generic,
-    Union,
 )
 from pydantic_ai import Agent
 import os
@@ -27,7 +25,6 @@ from pydantic_ai_orchestrator.exceptions import (
 import asyncio
 from pydantic_ai_orchestrator.infra.telemetry import logfire
 import traceback
-from pydantic import BaseModel, Field
 from tenacity import AsyncRetrying, RetryError, stop_after_attempt, wait_exponential
 
 
@@ -255,7 +252,10 @@ def make_self_improvement_agent(model: str | None = None) -> AsyncAgentWrapper[A
 
 
 # Default instance used by high level API
-self_improvement_agent: AsyncAgentWrapper[Any, str] = make_self_improvement_agent()
+try:
+    self_improvement_agent: AsyncAgentProtocol[Any, str] = make_self_improvement_agent()
+except ConfigurationError:  # pragma: no cover - config may be missing in tests
+    self_improvement_agent = NoOpReflectionAgent()
 
 
 class LoggingReviewAgent(AsyncAgentProtocol[Any, Any]):

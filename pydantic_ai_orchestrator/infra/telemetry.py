@@ -1,6 +1,7 @@
 import logging
 import sys
 from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, List
+from typing import Any as _TypeAny  # local alias to avoid name clash
 
 if TYPE_CHECKING:
     from opentelemetry.sdk.trace import SpanProcessor
@@ -67,8 +68,6 @@ class _MockLogfire:
     def span(self, name: str, *args: Any, **kwargs: Any) -> _MockLogfireSpan:
         return _MockLogfireSpan()
 
-
-from typing import Any as _TypeAny  # local alias to avoid name clash
 
 # We initially set `logfire` to a mocked implementation. Once
 # `init_telemetry()` runs, we may replace it with the real `logfire` module.

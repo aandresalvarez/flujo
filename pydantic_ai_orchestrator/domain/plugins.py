@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable, Any
 from pydantic import BaseModel
-from .agent_protocol import AsyncAgentProtocol
 
 
 class PluginOutcome(BaseModel):
