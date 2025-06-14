@@ -35,9 +35,7 @@ def test_init_telemetry(monkeypatch, otlp_enabled, otlp_endpoint):
     monkeypatch.setattr(fake_logfire, "configure", logfire_configure)
     if otlp_enabled:
         with (
-            patch(
-                "opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter"
-            ) as _,
+            patch("opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter") as _,
             patch("opentelemetry.sdk.trace.export.BatchSpanProcessor") as _,
         ):
             telemetry.init_telemetry(settings_mock)

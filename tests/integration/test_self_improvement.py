@@ -17,7 +17,7 @@ class DummyAgent:
             '{"target_step_name": "solution", "failure_pattern": "error",'
             ' "suggested_change": "fix", "example_failing_cases": ["c1"],'
             ' "suggested_config_change": null, "suggested_new_test_case": null}'
-            ']}'
+            "]}"
         )
 
 

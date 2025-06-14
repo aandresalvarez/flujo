@@ -7,6 +7,7 @@ from pydantic_ai_orchestrator.infra.agents import (
     NoOpReflectionAgent,
 )
 
+
 def test_agents_conform_to_protocol():
     assert isinstance(review_agent, AgentProtocol)
     assert isinstance(solution_agent, AgentProtocol)

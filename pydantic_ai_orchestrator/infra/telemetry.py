@@ -15,17 +15,13 @@ if not _fallback_logger.handlers:
     info_handler = logging.StreamHandler(sys.stdout)
     info_handler.setLevel(logging.INFO)
     info_handler.addFilter(lambda record: record.levelno <= logging.WARNING)
-    info_formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
+    info_formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
     info_handler.setFormatter(info_formatter)
     _fallback_logger.addHandler(info_handler)
 
     error_handler = logging.StreamHandler(sys.stderr)
     error_handler.setLevel(logging.ERROR)
-    error_formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
+    error_formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
     error_handler.setFormatter(error_formatter)
     _fallback_logger.addHandler(error_handler)
 

@@ -1,1 +1,1 @@
-"""Infrastructure layer package.""" 
+"""Infrastructure layer package."""

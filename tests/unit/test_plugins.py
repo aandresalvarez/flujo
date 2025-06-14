@@ -10,4 +10,3 @@ class DummyPlugin:
 def test_plugin_protocol_instance():
     dummy = DummyPlugin()
     assert isinstance(dummy, ValidationPlugin)
-

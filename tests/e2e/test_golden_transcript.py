@@ -1,4 +1,5 @@
 import pytest
+
 try:
     import vcr
 except Exception:  # pragma: no cover - skip if dependency missing
@@ -15,10 +16,12 @@ from pydantic_ai_orchestrator.infra.agents import (
 
 pytest.skip("Skipping golden transcript", allow_module_level=True)
 
+
 def scrub_auth(request):
-    if 'authorization' in request.headers:
-        request.headers['authorization'] = ['Bearer [REDACTED]']
+    if "authorization" in request.headers:
+        request.headers["authorization"] = ["Bearer [REDACTED]"]
     return request
+
 
 # Note: This test makes real API calls that are recorded to a cassette.
 # To re-record, delete the `golden.yaml` file and run the test with a valid
@@ -40,6 +43,6 @@ def test_golden_transcript():
         max_iters=1,
     )
     result = orch.run_sync(Task(prompt="Write a short haiku about a robot learning to paint."))
-    
+
     assert isinstance(result, Candidate)
     assert isinstance(result.solution, str)

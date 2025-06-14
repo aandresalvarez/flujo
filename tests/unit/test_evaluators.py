@@ -4,9 +4,11 @@ from pydantic_evals.evaluators import EvaluatorContext
 
 
 def test_final_solution_evaluator_matches_expected():
-    pipeline_result = PipelineResult(step_history=[
-        StepResult(name="sol", output="hi"),
-    ])
+    pipeline_result = PipelineResult(
+        step_history=[
+            StepResult(name="sol", output="hi"),
+        ]
+    )
     ctx = EvaluatorContext(
         name="c1",
         inputs="hello",

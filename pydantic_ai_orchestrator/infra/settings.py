@@ -31,9 +31,7 @@ class Settings(BaseSettings):
     default_solution_model: str = Field(
         "openai:gpt-4o", validation_alias="orch_default_solution_model"
     )
-    default_review_model: str = Field(
-        "openai:gpt-4o", validation_alias="orch_default_review_model"
-    )
+    default_review_model: str = Field("openai:gpt-4o", validation_alias="orch_default_review_model")
     default_validator_model: str = Field(
         "openai:gpt-4o", validation_alias="orch_default_validator_model"
     )
@@ -48,7 +46,9 @@ class Settings(BaseSettings):
     scorer: Literal["ratio", "weighted", "reward"] = "ratio"
     t_schedule: list[float] = [1.0, 0.8, 0.5, 0.2]
     otlp_endpoint: Optional[str] = None
-    agent_timeout: int = Field(60, validation_alias="orch_agent_timeout")  # Timeout in seconds for agent calls
+    agent_timeout: int = Field(
+        60, validation_alias="orch_agent_timeout"
+    )  # Timeout in seconds for agent calls
 
     model_config: ClassVar[SettingsConfigDict] = {
         "env_file": ".env",

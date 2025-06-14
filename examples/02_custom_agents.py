@@ -22,8 +22,8 @@ solution_agent = Agent(
 )
 
 orch = Orchestrator(
-    review_agent=review_agent,          # keep the "review" step on GPT-4o
-    solution_agent=solution_agent,      # cheaper generation
+    review_agent=review_agent,  # keep the "review" step on GPT-4o
+    solution_agent=solution_agent,  # cheaper generation
     validator_agent=validator_agent,
     reflection_agent=reflection_agent,
     max_iters=2,

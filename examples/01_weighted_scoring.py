@@ -20,7 +20,7 @@ settings.scorer = "weighted"
 
 weights = [
     {"item": "Includes a docstring", "weight": 0.7},
-    {"item": "Uses type hints",      "weight": 0.3},
+    {"item": "Uses type hints", "weight": 0.3},
 ]
 
 # Create a custom review agent with our specific criteria
@@ -50,12 +50,7 @@ task = Task(
 )
 
 # Create orchestrator with the required agents
-orch = Orchestrator(
-    review_agent,
-    solution_agent,
-    validator_agent,
-    reflection_agent
-)
+orch = Orchestrator(review_agent, solution_agent, validator_agent, reflection_agent)
 
 best = orch.run_sync(task)
 
@@ -64,7 +59,7 @@ print("\nWeighted score:", best.score)
 print("\nChecklist:")
 if best.checklist:
     for item in best.checklist.items:
-        weight = next((w['weight'] for w in weights if w['item'] == item.description), 1.0)
+        weight = next((w["weight"] for w in weights if w["item"] == item.description), 1.0)
         print(f" • {item.description:<25} passed={item.passed}  weight={weight:.1f}")
 else:
     print("  No checklist was generated for this solution.")

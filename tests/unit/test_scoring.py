@@ -11,10 +11,16 @@ from pydantic import SecretStr
 
 def test_ratio_score():
     check_pass = Checklist(
-        items=[ChecklistItem(description="a", passed=True, feedback=None), ChecklistItem(description="b", passed=True, feedback=None)]
+        items=[
+            ChecklistItem(description="a", passed=True, feedback=None),
+            ChecklistItem(description="b", passed=True, feedback=None),
+        ]
     )
     check_fail = Checklist(
-        items=[ChecklistItem(description="a", passed=True, feedback=None), ChecklistItem(description="b", passed=False, feedback=None)]
+        items=[
+            ChecklistItem(description="a", passed=True, feedback=None),
+            ChecklistItem(description="b", passed=False, feedback=None),
+        ]
     )
     check_empty = Checklist(items=[])
 
@@ -70,7 +76,7 @@ def test_reward_scorer_init(monkeypatch):
         scorer="ratio",
         t_schedule=[1.0, 0.8, 0.5, 0.2],
         otlp_endpoint=None,
-        agent_timeout=60
+        agent_timeout=60,
     )
     monkeypatch.setattr(settings_mod, "settings", enabled_settings)
     RewardScorer()  # Should not raise
@@ -97,7 +103,7 @@ def test_reward_scorer_init(monkeypatch):
         scorer="ratio",
         t_schedule=[1.0, 0.8, 0.5, 0.2],
         otlp_endpoint=None,
-        agent_timeout=60
+        agent_timeout=60,
     )
     monkeypatch.setattr(settings_mod, "settings", disabled_settings)
     with pytest.raises(RewardModelUnavailable):
@@ -130,7 +136,7 @@ async def test_reward_scorer_returns_float(monkeypatch):
         scorer="ratio",
         t_schedule=[1.0, 0.8, 0.5, 0.2],
         otlp_endpoint=None,
-        agent_timeout=60
+        agent_timeout=60,
     )
     monkeypatch.setattr(settings_mod, "settings", test_settings)
 
@@ -163,7 +169,7 @@ def test_reward_scorer_disabled(monkeypatch):
         scorer="ratio",
         t_schedule=[1.0, 0.8, 0.5, 0.2],
         otlp_endpoint=None,
-        agent_timeout=60
+        agent_timeout=60,
     )
     monkeypatch.setattr(settings_mod, "settings", test_settings)
 
@@ -198,7 +204,9 @@ def test_redact_string_secret_not_in_text():
 def test_redact_string_secret_in_text():
     from pydantic_ai_orchestrator.utils.redact import redact_string
 
-    assert redact_string("my key is sk-12345678abcdef", "sk-12345678abcdef") == "my key is [REDACTED]"
+    assert (
+        redact_string("my key is sk-12345678abcdef", "sk-12345678abcdef") == "my key is [REDACTED]"
+    )
 
 
 @pytest.mark.asyncio
@@ -226,7 +234,7 @@ async def test_reward_scorer_score_no_output(monkeypatch):
         scorer="ratio",
         t_schedule=[1.0, 0.8, 0.5, 0.2],
         otlp_endpoint=None,
-        agent_timeout=60
+        agent_timeout=60,
     )
     monkeypatch.setattr(settings_mod, "settings", test_settings)
 

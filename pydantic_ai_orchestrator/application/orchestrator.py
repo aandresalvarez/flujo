@@ -47,4 +47,3 @@ class Orchestrator:
 
     def run_sync(self, task: Task) -> Candidate | None:
         return asyncio.run(self.run_async(task))
-

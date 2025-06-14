@@ -1,8 +1,10 @@
 """Defines the protocol for agent-like objects in the orchestrator."""
+
 from typing import Protocol, TypeVar, Any, Optional, runtime_checkable
 
 T_Input = TypeVar("T_Input", contravariant=True)
 T_Output = TypeVar("T_Output", covariant=True)
+
 
 @runtime_checkable
 class AgentProtocol(Protocol[T_Input, T_Output]):

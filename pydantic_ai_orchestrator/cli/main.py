@@ -42,33 +42,19 @@ init_telemetry()
 @app.command()
 def solve(
     prompt: str,
-    max_iters: Annotated[
-        int, typer.Option(help="Maximum number of iterations.")
-    ] = None,
+    max_iters: Annotated[int, typer.Option(help="Maximum number of iterations.")] = None,
     k: Annotated[
         int, typer.Option(help="Number of solution variants to generate per iteration.")
     ] = None,
-    reflection: Annotated[
-        bool, typer.Option(help="Enable/disable reflection agent.")
-    ] = None,
+    reflection: Annotated[bool, typer.Option(help="Enable/disable reflection agent.")] = None,
     scorer: Annotated[
         str, typer.Option(help="Scoring strategy: 'ratio', 'weighted', or 'reward'.")
     ] = None,
-    weights_path: Annotated[
-        str, typer.Option(help="Path to weights file (JSON or YAML)")
-    ] = None,
-    solution_model: Annotated[
-        str, typer.Option(help="Model for the Solution agent.")
-    ] = None,
-    review_model: Annotated[
-        str, typer.Option(help="Model for the Review agent.")
-    ] = None,
-    validator_model: Annotated[
-        str, typer.Option(help="Model for the Validator agent.")
-    ] = None,
-    reflection_model: Annotated[
-        str, typer.Option(help="Model for the Reflection agent.")
-    ] = None,
+    weights_path: Annotated[str, typer.Option(help="Path to weights file (JSON or YAML)")] = None,
+    solution_model: Annotated[str, typer.Option(help="Model for the Solution agent.")] = None,
+    review_model: Annotated[str, typer.Option(help="Model for the Review agent.")] = None,
+    validator_model: Annotated[str, typer.Option(help="Model for the Validator agent.")] = None,
+    reflection_model: Annotated[str, typer.Option(help="Model for the Reflection agent.")] = None,
 ):
     """
     Solves a task using the multi-agent orchestrator.
@@ -94,8 +80,7 @@ def solve(
                     else:
                         weights = json.load(f)
                 if not isinstance(weights, list) or not all(
-                    isinstance(w, dict) and "item" in w and "weight" in w
-                    for w in weights
+                    isinstance(w, dict) and "item" in w and "weight" in w for w in weights
                 ):
                     typer.echo(
                         "[red]Weights file must be a list of objects with 'item' and 'weight'",
@@ -166,9 +151,7 @@ def bench(prompt: str, rounds: int = 10):
     import numpy as np
 
     try:
-        orch = Orchestrator(
-            review_agent, solution_agent, validator_agent, get_reflection_agent()
-        )
+        orch = Orchestrator(review_agent, solution_agent, validator_agent, get_reflection_agent())
         times = []
         scores = []
         for i in range(rounds):
@@ -178,7 +161,7 @@ def bench(prompt: str, rounds: int = 10):
                 times.append(time.time() - start)
                 scores.append(result.score)
                 logfire.info(
-                    f"Round {i+1} completed in {times[-1]:.2f}s with score {scores[-1]:.2f}"
+                    f"Round {i + 1} completed in {times[-1]:.2f}s with score {scores[-1]:.2f}"
                 )
 
         avg_time = sum(times) / len(times)
@@ -193,12 +176,8 @@ def bench(prompt: str, rounds: int = 10):
         table.add_column("Mean", justify="right")
         table.add_column("p50", justify="right")
         table.add_column("p95", justify="right")
-        table.add_row(
-            "Latency (s)", f"{avg_time:.2f}", f"{p50_time:.2f}", f"{p95_time:.2f}"
-        )
-        table.add_row(
-            "Score", f"{avg_score:.2f}", f"{p50_score:.2f}", f"{p95_score:.2f}"
-        )
+        table.add_row("Latency (s)", f"{avg_time:.2f}", f"{p50_time:.2f}", f"{p95_time:.2f}")
+        table.add_row("Score", f"{avg_score:.2f}", f"{p50_score:.2f}", f"{p95_score:.2f}")
         console = Console()
         console.print(table)
     except KeyboardInterrupt:
@@ -250,9 +229,7 @@ def explain(path: str):
 
 @app.callback()
 def main(
-    profile: bool = typer.Option(
-        False, "--profile", help="Enable Logfire STDOUT span viewer"
-    )
+    profile: bool = typer.Option(False, "--profile", help="Enable Logfire STDOUT span viewer"),
 ):
     """pydantic-ai-orchestrator CLI entrypoint."""
     if profile:

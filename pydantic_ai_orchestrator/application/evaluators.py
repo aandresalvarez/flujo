@@ -14,4 +14,3 @@ class FinalSolutionEvaluator(Evaluator):
         if result.step_history:
             final_output = result.step_history[-1].output
         return final_output == ctx.expected_output
-

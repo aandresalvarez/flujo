@@ -12,4 +12,4 @@ def test_temp_schedule_from_settings(monkeypatch):
     monkeypatch.setattr(settings, "t_schedule", [0.9, 0.1])
     assert temp_for_round(0) == 0.9
     assert temp_for_round(1) == 0.1
-    assert temp_for_round(2) == 0.1 
+    assert temp_for_round(2) == 0.1

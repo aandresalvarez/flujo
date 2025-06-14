@@ -128,16 +128,12 @@ class AsyncAgentWrapper:
                         self._agent.run(*args, **kwargs), timeout=self._timeout
                     )
                     logfire.info(f"Raw LLM response: {result}")
-                    if isinstance(result, str) and result.startswith(
-                        "Agent failed after"
-                    ):
+                    if isinstance(result, str) and result.startswith("Agent failed after"):
                         raise OrchestratorRetryError(result)
                     return result
                 except Exception as e:
                     tb = traceback.format_exc()
-                    logfire.error(
-                        f"Agent call failed with exception: {e}\nTraceback:\n{tb}"
-                    )
+                    logfire.error(f"Agent call failed with exception: {e}\nTraceback:\n{tb}")
                     raise
         return result
 
@@ -159,9 +155,7 @@ def make_agent_async(
     Creates a pydantic_ai.Agent and returns an AsyncAgentWrapper exposing .run_async.
     """
     agent = make_agent(model, system_prompt, output_type)
-    return AsyncAgentWrapper(
-        agent, max_retries=max_retries, timeout=timeout, model_name=model
-    )
+    return AsyncAgentWrapper(agent, max_retries=max_retries, timeout=timeout, model_name=model)
 
 
 class NoOpReflectionAgent:
@@ -173,15 +167,9 @@ class NoOpReflectionAgent:
 
 # 3. Agent Instances
 try:
-    review_agent = make_agent_async(
-        settings.default_review_model, REVIEW_SYS, Checklist
-    )
-    solution_agent = make_agent_async(
-        settings.default_solution_model, SOLUTION_SYS, str
-    )
-    validator_agent = make_agent_async(
-        settings.default_validator_model, VALIDATE_SYS, Checklist
-    )
+    review_agent = make_agent_async(settings.default_review_model, REVIEW_SYS, Checklist)
+    solution_agent = make_agent_async(settings.default_solution_model, SOLUTION_SYS, str)
+    validator_agent = make_agent_async(settings.default_validator_model, VALIDATE_SYS, Checklist)
 except ConfigurationError:
     review_agent = solution_agent = validator_agent = NoOpReflectionAgent()  # type: ignore[assignment]
 
@@ -227,9 +215,7 @@ class LoggingReviewAgent:
         # Expose _run_with_retry and any other attributes from the wrapped agent
         if hasattr(self.agent, name):
             return getattr(self.agent, name)
-        raise AttributeError(
-            f"{self.__class__.__name__!r} object has no attribute {name!r}"
-        )
+        raise AttributeError(f"{self.__class__.__name__!r} object has no attribute {name!r}")
 
     async def _run_inner(self, method: Any, *args: Any, **kwargs: Any) -> Any:
         try:
@@ -244,9 +230,7 @@ class LoggingReviewAgent:
         return await self._run_inner(self.agent.run, *args, **kwargs)
 
     async def _run_async(self, *args: Any, **kwargs: Any) -> Any:
-        if hasattr(self.agent, "run_async") and callable(
-            getattr(self.agent, "run_async")
-        ):
+        if hasattr(self.agent, "run_async") and callable(getattr(self.agent, "run_async")):
             return await self._run_inner(self.agent.run_async, *args, **kwargs)
         else:
             return await self.run(*args, **kwargs)

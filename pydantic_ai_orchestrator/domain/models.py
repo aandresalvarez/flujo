@@ -1,28 +1,38 @@
-"""Domain models for pydantic-ai-orchestrator.""" 
+"""Domain models for pydantic-ai-orchestrator."""
 
 from typing import Any, List, Optional
 from pydantic import BaseModel, Field
 
+
 class Task(BaseModel):
     """Represents a task to be solved by the orchestrator."""
+
     prompt: str
     metadata: dict[str, Any] = Field(default_factory=dict)
 
+
 class ChecklistItem(BaseModel):
     """A single item in a checklist for evaluating a solution."""
+
     description: str = Field(..., description="The criterion to evaluate.")
     passed: Optional[bool] = Field(None, description="Whether the solution passes this criterion.")
     feedback: Optional[str] = Field(None, description="Feedback if the criterion is not met.")
 
+
 class Checklist(BaseModel):
     """A checklist for evaluating a solution."""
+
     items: List[ChecklistItem]
+
 
 class Candidate(BaseModel):
     """Represents a potential solution and its evaluation metadata."""
+
     solution: str
     score: float
-    checklist: Optional[Checklist] = Field(None, description="Checklist evaluation for this candidate.")
+    checklist: Optional[Checklist] = Field(
+        None, description="Checklist evaluation for this candidate."
+    )
 
     def __repr__(self) -> str:
         return (
@@ -56,6 +66,7 @@ class PipelineResult(BaseModel):
     step_history: List[StepResult] = Field(default_factory=list)
     total_cost_usd: float = 0.0
 
+
 class ImprovementSuggestion(BaseModel):
     """A single suggestion from the SelfImprovementAgent."""
 
@@ -71,4 +82,3 @@ class ImprovementReport(BaseModel):
     """Aggregated improvement suggestions returned by the agent."""
 
     suggestions: list[ImprovementSuggestion] = Field(default_factory=list)
-

@@ -5,6 +5,7 @@ Most basic usage: call the orchestrator once and print the result.
 Run with:
     OPENAI_API_KEY=sk-... python 00_quickstart.py
 """
+
 from pydantic_ai_orchestrator import (
     Orchestrator,
     Task,
@@ -15,12 +16,7 @@ from pydantic_ai_orchestrator import (
 )
 
 # 1️⃣  Create a default orchestrator (uses GPT-4o for all agents)
-orch = Orchestrator(
-    review_agent,
-    solution_agent,
-    validator_agent,
-    reflection_agent
-)
+orch = Orchestrator(review_agent, solution_agent, validator_agent, reflection_agent)
 
 # 2️⃣  Wrap your prompt in a Task (metadata optional)
 task = Task(prompt="Write a short motivational haiku about debugging.")

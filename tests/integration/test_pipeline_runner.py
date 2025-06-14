@@ -11,11 +11,13 @@ from pydantic_ai_orchestrator.domain.plugins import PluginOutcome
 
 async def test_runner_respects_max_retries():
     agent = StubAgent(["a", "b", "c"])
-    plugin = DummyPlugin([
-        PluginOutcome(success=False),
-        PluginOutcome(success=False),
-        PluginOutcome(success=True),
-    ])
+    plugin = DummyPlugin(
+        [
+            PluginOutcome(success=False),
+            PluginOutcome(success=False),
+            PluginOutcome(success=True),
+        ]
+    )
     step = Step("test", agent, max_retries=3, plugins=[plugin])
     pipeline = step
     runner = PipelineRunner(pipeline)
@@ -27,10 +29,12 @@ async def test_runner_respects_max_retries():
 
 async def test_feedback_enriches_prompt():
     sol_agent = StubAgent(["sol1", "sol2"])
-    plugin = DummyPlugin([
-        PluginOutcome(success=False, feedback="SQL Error: XYZ"),
-        PluginOutcome(success=True),
-    ])
+    plugin = DummyPlugin(
+        [
+            PluginOutcome(success=False, feedback="SQL Error: XYZ"),
+            PluginOutcome(success=True),
+        ]
+    )
     step = Step.solution(sol_agent, max_retries=2, plugins=[plugin])
     runner = PipelineRunner(step)
     await runner.run_async("SELECT *")
@@ -41,10 +45,12 @@ async def test_feedback_enriches_prompt():
 async def test_conditional_redirection():
     primary = StubAgent(["first"])
     fixit = StubAgent(["fixed"])
-    plugin = DummyPlugin([
-        PluginOutcome(success=False, redirect_to=fixit),
-        PluginOutcome(success=True),
-    ])
+    plugin = DummyPlugin(
+        [
+            PluginOutcome(success=False, redirect_to=fixit),
+            PluginOutcome(success=True),
+        ]
+    )
     step = Step("s", primary, max_retries=2, plugins=[plugin])
     pipeline = step
     runner = PipelineRunner(pipeline)
@@ -85,10 +91,12 @@ async def test_timeout_and_redirect_loop_detection():
     # Redirect loop
     a1 = StubAgent(["a1"])
     a2 = StubAgent(["a2"])
-    plugin_loop = DummyPlugin([
-        PluginOutcome(success=False, redirect_to=a2),
-        PluginOutcome(success=False, redirect_to=a1),
-    ])
+    plugin_loop = DummyPlugin(
+        [
+            PluginOutcome(success=False, redirect_to=a2),
+            PluginOutcome(success=False, redirect_to=a1),
+        ]
+    )
     step2 = Step("loop", a1, max_retries=3, plugins=[plugin_loop])
     runner2 = PipelineRunner(step2)
     with pytest.raises(Exception):

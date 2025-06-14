@@ -67,9 +67,7 @@ class PipelineRunner:
             # failure -> prepare for retry
             if redirect_to:
                 if redirect_to in visited:
-                    raise InfiniteRedirectError(
-                        f"Redirect loop detected in step {step.name}"
-                    )
+                    raise InfiniteRedirectError(f"Redirect loop detected in step {step.name}")
                 visited.add(redirect_to)
                 step.agent = redirect_to
             if feedback:

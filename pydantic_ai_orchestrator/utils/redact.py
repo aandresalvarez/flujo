@@ -2,6 +2,7 @@
 
 import re
 
+
 def redact_string(text: str, secret: str) -> str:
     """Replaces occurrences of a secret string or its prefix with a redacted placeholder."""
     if not text:
@@ -13,6 +14,7 @@ def redact_string(text: str, secret: str) -> str:
         text = text.replace(secret, "[REDACTED]")
     return text
 
+
 def redact_url_password(url: str) -> str:
     """Redacts the password from a URL."""
-    return re.sub(r"://[^@]+@", "://[REDACTED]@", url) 
+    return re.sub(r"://[^@]+@", "://[REDACTED]@", url)

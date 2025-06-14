@@ -24,12 +24,7 @@ INPUT = pathlib.Path("prompts.csv")
 OUTPUT = pathlib.Path("results.csv")
 
 # Create orchestrator with the required agents
-orch = Orchestrator(
-    review_agent,
-    solution_agent,
-    validator_agent,
-    reflection_agent
-)
+orch = Orchestrator(review_agent, solution_agent, validator_agent, reflection_agent)
 
 with INPUT.open() as f_in, OUTPUT.open("w", newline="") as f_out:
     reader = csv.DictReader(f_in)
