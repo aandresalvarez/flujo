@@ -58,6 +58,10 @@ class StepResult(BaseModel):
     token_counts: int = 0
     cost_usd: float = 0.0
     feedback: str | None = None
+    metadata_: dict[str, Any] | None = Field(
+        default=None,
+        description="Optional metadata about the step execution.",
+    )
 
 
 class PipelineResult(BaseModel):
@@ -67,9 +71,7 @@ class PipelineResult(BaseModel):
     total_cost_usd: float = 0.0
     final_pipeline_context: Optional[BaseModel] = Field(
         default=None,
-        description=(
-            "The final state of the typed pipeline context, if configured and used."
-        ),
+        description=("The final state of the typed pipeline context, if configured and used."),
     )
 
     model_config = {"arbitrary_types_allowed": True}

@@ -199,24 +199,24 @@ print(result.final_pipeline_context.counter)  # 2
 Each `run()` call gets a fresh context instance. Access the final state via
 `PipelineResult.final_pipeline_context`.
 
-### Conditional Steps
+### Conditional Branching
 
-Add conditional logic to your pipeline:
+Use `Step.branch_on()` to route to different sub-pipelines at runtime. See [ConditionalStep](pipeline_branching.md) for full details.
 
 ```python
-from pydantic_ai_orchestrator import conditional
+def choose_branch(out, ctx):
+    return "a" if "important" in out else "b"
 
-def needs_review(result):
-    return result.score < 0.8
-
-pipeline = (
-    Step.solution(solution_agent)
-    >> conditional(
-        needs_review,
-        Step.review(review_agent)
-    )
-    >> Step.validate(validator_agent)
+branch_step = Step.branch_on(
+    name="router",
+    condition_callable=choose_branch,
+    branches={
+        "a": Pipeline.from_step(Step("a_step", agent_a)),
+        "b": Pipeline.from_step(Step("b_step", agent_b)),
+    },
 )
+
+pipeline = Step.solution(solution_agent) >> branch_step >> Step.validate(validator_agent)
 ```
 
 ### Custom Step Factories

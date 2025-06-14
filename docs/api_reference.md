@@ -76,6 +76,15 @@ looping_step = Step.loop_until(
     loop_body_pipeline=Pipeline.from_step(Step.solution(solution_agent)),
     exit_condition_callable=lambda out, ctx: "done" in out,
 )
+# Conditional branching
+router = Step.branch_on(
+    name="router",
+    condition_callable=lambda out, ctx: out,
+    branches={
+        "a": Pipeline.from_step(Step("a", solution_agent)),
+        "b": Pipeline.from_step(Step("b", validator_agent)),
+    },
+)
 # See `pipeline_context.md` for details on using shared context.
 ```
 
