@@ -41,8 +41,9 @@ nav:
   - API Reference:
     - Overview: api_reference.md
     - Pipeline DSL: pipeline_dsl.md
-    - LoopStep: pipeline_looping.md
     - Typed Pipeline Context: pipeline_context.md
+    - Looping (LoopStep): pipeline_looping.md
+    - Branching (ConditionalStep): pipeline_branching.md
     - Scoring: scoring.md
     - Tools: tools.md
     - Telemetry: telemetry.md

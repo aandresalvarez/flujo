@@ -1,0 +1,27 @@
+"""
+06_typed_context.py
+-------------------
+Demonstrates sharing state across steps with Typed Pipeline Context.
+"""
+
+from pydantic import BaseModel
+from pydantic_ai_orchestrator import Step, PipelineRunner
+
+
+class Ctx(BaseModel):
+    count: int = 0
+
+
+async def increment(data: str, *, pipeline_context: Ctx | None = None) -> str:
+    if pipeline_context:
+        pipeline_context.count += 1
+    return data + "!"
+
+
+pipeline = Step("first", increment) >> Step("second", increment)
+runner = PipelineRunner(pipeline, context_model=Ctx)
+
+result = runner.run("hello")
+print("Final output:", result.step_history[-1].output)
+print("Final count:", result.final_pipeline_context.count)
+
