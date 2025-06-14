@@ -1,4 +1,4 @@
- # A Guided Tour of the AI Orchestrator
+# Tutorial: From Simple Orchestration to Custom AI Pipelines
 
 Welcome! This tutorial will guide you through using the `pydantic-ai-orchestrator` library, from your very first request to building advanced, custom AI workflows. We'll start with the basics and progressively build up to more complex examples.
 
@@ -12,7 +12,7 @@ Welcome! This tutorial will guide you through using the `pydantic-ai-orchestrato
 
 Before we write any code, let's understand the main components you'll be working with. Think of it like a chef learning about their ingredients before cooking.
 
-*   **The Orchestrator:** This is the "project manager" or "conductor." Its job is to manage a team of specialized AI **Agents** to accomplish a goal. It directs the workflow, handles retries, and ensures the final result is high-quality.
+*   **The Orchestrator (Class):** This is a high-level class for running a *standard, pre-defined workflow*. It coordinates a fixed team: a `review_agent` (planner), a `solution_agent` (doer), and a `validator_agent` (quality analyst), and optionally a `reflection_agent`. It's your quick start for this common pattern.
 
 *   **An Agent:** An **Agent** is a specialized AI model given a specific role and instructions (a "system prompt"). In the default pipeline we use three agents:
     1.  **`review_agent` (The Planner):** Looks at your request and creates a detailed checklist of what a "good" solution should look like.
@@ -20,6 +20,8 @@ Before we write any code, let's understand the main components you'll be working
     3.  **`validator_agent` (The Quality Analyst):** Takes the `solution_agent`'s work and grades it against the `review_agent`'s checklist.
 
 *   **A Task:** This is a simple object that holds your request. It's how you tell the **Orchestrator** what you want to achieve.
+
+*   **PipelineRunner, Pipeline, Step:** When you need more control than the standard `Orchestrator` workflow, you'll use the **Pipeline DSL**. A `Pipeline` is a sequence of `Step` objects executed by `PipelineRunner` to build fully custom multi-agent workflows.
 
 *   **A Candidate:** This is the final result produced by the Orchestrator. It contains the solution itself and the checklist used to grade it.
 
@@ -34,11 +36,19 @@ Let's start with the most straightforward use case: give the orchestrator a prom
 ```python
 # 📂 step_1_basic_usage.py
 from pydantic_ai_orchestrator import (
-    Orchestrator, Task, review_agent, solution_agent, validator_agent
+    Orchestrator, Task,
+    review_agent, solution_agent, validator_agent,
+    init_telemetry,
 )
 
-print("🤖 Assembling the AI agent team...")
-orch = Orchestrator(review_agent, solution_agent, validator_agent)
+init_telemetry()
+
+print("🤖 Assembling the AI agent team for the standard Orchestrator workflow...")
+orch = Orchestrator(
+    review_agent=review_agent,
+    solution_agent=solution_agent,
+    validator_agent=validator_agent,
+)
 
 print("📝 Defining task: 'Write a short, optimistic haiku about a rainy day.'")
 task = Task(prompt="Write a short, optimistic haiku about a rainy day.")
@@ -52,28 +62,33 @@ if best_candidate:
     print(f"\nSolution (the haiku):\n'{best_candidate.solution}'")
     if best_candidate.checklist:
         print("\nSelf-Correction Checklist:")
-        for item in best_candidate.checklist.items:
-            status = "✅ Passed" if item.passed else "❌ Failed"
-            print(f"  - {item.description:<45} {status}")
+for item in best_candidate.checklist.items:
+    status = "✅ Passed" if item.passed else "❌ Failed"
+    print(f"  - {item.description:<45} {status}")
 ```
-You've successfully orchestrated a team of AI agents to complete a creative task with built-in quality control.
+You've successfully orchestrated a team of AI agents to complete a creative task with built-in quality control. The `best_candidate` object represents the outcome of the entire Review → Solution → Validate process.
 
 ---
 
 
-## 3. The Budget-Aware Workflow: Mixing Agent Models
+## 2. The Budget-Aware Workflow: Customizing Agents for `Orchestrator`
 
 Professional AI workflows often involve a mix of models to balance cost, speed, and quality. Here, we'll use a **cheaper, faster model** for the initial draft (`solution_agent`) but retain the **smarter models** for the critical thinking roles (planning, quality control, and strategy).
 
 ```python
 # 📂 step_3_mixing_models.py
 from pydantic_ai_orchestrator import (
-    Orchestrator, Task, review_agent, validator_agent, make_agent_async
+    Orchestrator, Task, review_agent, validator_agent, make_agent_async, init_telemetry
 )
-print("🚀 Building a budget-aware workflow by mixing models...")
+init_telemetry()
+print("🚀 Building a workflow with a custom Solution Agent for the Orchestrator...")
 FAST_SOLUTION_PROMPT = "You are a creative but junior marketing copywriter. Write a catchy and concise slogan. Be quick and creative."
-fast_copywriter_agent = make_agent_async("openai:gpt-4.1-nano", FAST_SOLUTION_PROMPT, str)
-orch = Orchestrator(review_agent, fast_copywriter_agent, validator_agent)
+fast_copywriter_agent = make_agent_async("openai:gpt-4o-mini", FAST_SOLUTION_PROMPT, str)
+orch = Orchestrator(
+    review_agent=review_agent,
+    solution_agent=fast_copywriter_agent,
+    validator_agent=validator_agent,
+)
 task = Task(prompt="Write a slogan for a new brand of ultra-durable luxury coffee mugs.")
 best_candidate = orch.run_sync(task)
 # ... (printing logic)
@@ -82,7 +97,7 @@ This "cheap drafter, smart reviewer" pattern is a powerful way to get high-quali
 
 ---
 
-## 4. Outputting Structured Data: Pydantic Models
+## 3. Outputting Structured Data with a Custom Pipeline
 
 So far, our agents have only outputted simple strings. What if we need structured data, like JSON? The underlying `pydantic-ai` library excels at this. You can specify a Pydantic `BaseModel` as the `output_type` for an agent.
 
@@ -92,8 +107,11 @@ Let's build a workflow that extracts information from a block of text into a str
 # 📂 step_4_structured_output.py
 from pydantic import BaseModel, Field
 from pydantic_ai_orchestrator import (
-    Orchestrator, Task, make_agent_async, validator_agent
+    Step, PipelineRunner, make_agent_async, init_telemetry
 )
+from pydantic_ai_orchestrator.domain.models import Checklist
+
+init_telemetry()
 
 # 1. Define our desired output structure using a Pydantic model
 class ContactCard(BaseModel):
@@ -101,26 +119,39 @@ class ContactCard(BaseModel):
     email: str | None = Field(None, description="The person's email address.")
     company: str | None = Field(None, description="The company they work for.")
 
-# 2. Create a custom Solution Agent to extract information
+# 2. Define Agents for our custom pipeline
 print("🛠️ Creating a data-extraction agent...")
 EXTRACTION_PROMPT = "You are a data-entry expert. Extract contact information from the user's text and format it precisely according to the ContactCard schema. If a field is not present, omit it."
 extraction_agent = make_agent_async("openai:gpt-4o", EXTRACTION_PROMPT, ContactCard)
 
-# 3. Create a custom Review Agent that understands structured data
-REVIEW_PROMPT = "Generate a checklist to verify the extracted contact details. Check for name correctness, email validity, and company presence."
-custom_review_agent = make_agent_async("openai:gpt-4o", REVIEW_PROMPT, Checklist)
+REVIEW_PROMPT_FOR_EXTRACTION = "Generate a checklist to verify the extracted contact details. Check for name correctness, email validity, and company presence."
+review_agent_for_extraction = make_agent_async("openai:gpt-4o", REVIEW_PROMPT_FOR_EXTRACTION, Checklist)
 
-# 4. Assemble and run the orchestrator
-orch = Orchestrator(custom_review_agent, extraction_agent, validator_agent)
-unstructured_text = "Reach out to Jane Doe. She works at Innovate Corp and her email is jane.doe@example.com. She is the lead."
-task = Task(prompt=unstructured_text)
-best_candidate = orch.run_sync(task)
+VALIDATE_PROMPT_FOR_EXTRACTION = "You are a QA for data extraction. Use the checklist to verify the ContactCard."
+validator_agent_for_extraction = make_agent_async("openai:gpt-4o", VALIDATE_PROMPT_FOR_EXTRACTION, Checklist)
 
-if best_candidate:
-    # The solution is now a Pydantic model object, not just a string!
-    contact_card_solution = best_candidate.solution
-    print("\n✅ Successfully extracted structured data:")
-    print(contact_card_solution.model_dump_json(indent=2))
+# 3. Define the custom pipeline
+data_extraction_pipeline = (
+    Step.review(review_agent_for_extraction, name="PlanExtraction")
+    >> Step.solution(extraction_agent, name="ExtractContactInfo")
+    >> Step.validate(validator_agent_for_extraction, name="ValidateCard")
+)
+
+pipeline_runner = PipelineRunner(data_extraction_pipeline)
+unstructured_text = "Reach out to Jane Doe. She works at Innovate Corp and her email is jane.doe@example.com."
+
+print(f"📄 Running custom pipeline to extract from: '{unstructured_text}'")
+pipeline_result = pipeline_runner.run(unstructured_text)
+
+if pipeline_result.step_history and pipeline_result.step_history[1].success:
+    contact_card_solution = pipeline_result.step_history[1].output
+    if isinstance(contact_card_solution, ContactCard):
+        print("\n✅ Successfully extracted structured data (ContactCard object):")
+        print(contact_card_solution.model_dump_json(indent=2))
+    else:
+        print(f"\n⚠️ Expected ContactCard, got: {type(contact_card_solution)}")
+else:
+    print("\n❌ Custom pipeline failed to extract contact info.")
 ```
 
 #### **Expected Output:**
@@ -139,7 +170,7 @@ if best_candidate:
 
 ---
 
-## 5. The Grand Finale: A Fully Custom Team with Tools
+## 4. The Grand Finale: A Fully Custom Pipeline with Tools
 
 Now for the ultimate challenge. Let's build a workflow where **every agent is customized**, and our `solution_agent` can use **external tools** to get information it doesn't have.
 
@@ -226,7 +257,7 @@ This concludes our tour! You've journeyed from a simple prompt to a sophisticate
 -   Generate clean, **structured JSON** using Pydantic models.
 -   Empower agents with **external tools** to overcome their knowledge limitations.
 
-## 6. Building Custom Pipelines
+## 5. Building Custom Pipelines
 
 The new Pipeline DSL lets you compose your own workflow using `Step` objects. Execute the pipeline with `PipelineRunner`:
 

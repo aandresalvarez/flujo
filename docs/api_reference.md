@@ -6,60 +6,48 @@ This guide provides detailed documentation for all public interfaces in `pydanti
 
 ### Orchestrator
 
-The main orchestrator class that manages AI workflows.
+The `Orchestrator` class is a high-level facade for running a **standard, fixed
+multi-agent pipeline**: Review -> Solution -> Validate. It uses the agents you
+provide for these roles. For custom pipelines with different logic, see
+`PipelineRunner` and the `Step` DSL.
 
 ```python
 from pydantic_ai_orchestrator import Orchestrator
 
 orchestrator = Orchestrator(
-    model: str = "openai:gpt-4",  # Model identifier
-    temperature: float = 0.7,      # Model temperature
-    max_tokens: int = 1000,        # Max tokens per response
-    timeout: int = 30,             # Operation timeout in seconds
-    cache: bool = True,            # Enable response caching
-    telemetry: bool = True         # Enable telemetry
+    review_agent: AsyncAgentProtocol[Any, Any],
+    solution_agent: AsyncAgentProtocol[Any, Any],
+    validator_agent: AsyncAgentProtocol[Any, Any],
+    reflection_agent: Optional[AsyncAgentProtocol[Any, Any]] = None,
+    max_iters: Optional[int] = None,
+    k_variants: Optional[int] = None,
+    reflection_limit: Optional[int] = None,
 )
 ```
 
 #### Methods
 
 ```python
-# Run a task
-result = orchestrator.run(
-    prompt: str,                   # Task prompt
-    metadata: dict = None,         # Optional metadata
-    constraints: dict = None       # Optional constraints
-) -> Candidate
+# Run a task synchronously
+result = orchestrator.run_sync(Task(prompt="Generate a poem"))
 
-# Run multiple tasks
-results = orchestrator.run_batch(
-    prompts: list[str],            # List of prompts
-    metadata: list[dict] = None,   # Optional metadata list
-    constraints: list[dict] = None # Optional constraints list
-) -> list[Candidate]
-
-# Get orchestrator configuration
-config = orchestrator.get_config() -> dict
-
-# Update configuration
-orchestrator.update_config(
-    temperature: float = None,
-    max_tokens: int = None,
-    timeout: int = None,
-    cache: bool = None,
-    telemetry: bool = None
-) -> None
+# Run a task asynchronously
+candidate = await orchestrator.run_async(Task(prompt="Generate a poem"))
 ```
 
-### Pipeline
+### Pipeline DSL & `PipelineRunner`
 
-The pipeline DSL for creating custom workflows.
+The Pipeline DSL lets you create flexible, custom workflows and execute them
+with `PipelineRunner`.
 
 ```python
-from pydantic_ai_orchestrator import Step, PipelineRunner
+from pydantic_ai_orchestrator import (
+    Step, PipelineRunner, Task,
+    review_agent, solution_agent, validator_agent,
+)
 
 # Create a pipeline
-pipeline = (
+custom_pipeline = (
     Step.review(review_agent)      # Review step
     >> Step.solution(              # Solution step
         solution_agent,
@@ -71,37 +59,25 @@ pipeline = (
     )
 )
 
-# Create a runner
-runner = PipelineRunner(
-    pipeline,                      # Pipeline definition
-    timeout: int = 30,             # Pipeline timeout
-    retries: int = 2,              # Number of retries
-    telemetry: bool = True         # Enable telemetry
-)
+runner = PipelineRunner(custom_pipeline)
 ```
 
 #### Methods
 
 ```python
 # Run the pipeline
-result = runner.run(
-    prompt: str,                   # Task prompt
-    metadata: dict = None,         # Optional metadata
-    constraints: dict = None       # Optional constraints
-) -> Candidate
+pipeline_result = runner.run(
+    "Your initial prompt"  # Input for the first step
+)  # Returns PipelineResult
 
-# Run multiple tasks
-results = runner.run_batch(
-    prompts: list[str],            # List of prompts
-    metadata: list[dict] = None,   # Optional metadata list
-    constraints: list[dict] = None # Optional constraints list
-) -> list[Candidate]
+for step_res in pipeline_result.step_history:
+    print(step_res.name, step_res.success)
 
-# Get pipeline structure
-structure = pipeline.structure() -> dict
+# Inspect pipeline structure
+structure = custom_pipeline.structure()
 
-# Get runner configuration
-config = runner.get_config() -> dict
+# Access runner config
+config = runner.get_config()
 ```
 
 ### Agents

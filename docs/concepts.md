@@ -4,18 +4,26 @@ This guide explains the fundamental concepts that power `pydantic-ai-orchestrato
 
 ## The Orchestrator
 
-The **Orchestrator** is the central component that manages the entire AI workflow. Think of it as a project manager that:
-
-- Coordinates multiple AI agents
-- Manages the flow of information
-- Handles retries and quality control
-- Returns the best result
+The **`Orchestrator` class** is a central component that manages a **standard,
+pre-defined AI workflow**. Think of it as a project manager for a specific team
+structure: a Review Agent, a Solution Agent, and a Validator Agent (optionally
+followed by a Reflection Agent). It handles the flow of information between
+these fixed roles, manages retries based on their internal configuration, and
+aims to return the best `Candidate` solution from this standard process.
+For building custom workflows with different steps or logic, you would use the
+`Pipeline` DSL and `PipelineRunner`.
 
 ```python
-from pydantic_ai_orchestrator import Orchestrator
+from pydantic_ai_orchestrator import (
+    Orchestrator, review_agent, solution_agent, validator_agent
+)
 
-# Create an orchestrator with a team of agents
-orch = Orchestrator(review_agent, solution_agent, validator_agent)
+# Assemble the orchestrator with default agents
+orch = Orchestrator(
+    review_agent=review_agent,
+    solution_agent=solution_agent,
+    validator_agent=validator_agent,
+)
 ```
 
 ## Agents
@@ -94,10 +102,15 @@ if result:  # result is a Candidate
 
 ## The Pipeline DSL
 
-The Pipeline Domain-Specific Language (DSL) lets you create custom workflows using `Step` objects:
+The **Pipeline Domain-Specific Language (DSL)**, using `Step` objects and
+executed by `PipelineRunner`, is the primary way to create **flexible and custom
+multi-agent workflows**. This gives you full control over the sequence of
+operations, the agents used at each stage, and the integration of plugins.
 
 ```python
-from pydantic_ai_orchestrator import Step, PipelineRunner
+from pydantic_ai_orchestrator import (
+    Step, PipelineRunner, review_agent, solution_agent, validator_agent
+)
 
 # Define a pipeline
 pipeline = (
@@ -108,7 +121,9 @@ pipeline = (
 
 # Run it
 runner = PipelineRunner(pipeline)
-result = runner.run("Your prompt here")
+pipeline_result = runner.run("Your prompt here")
+for step_res in pipeline_result.step_history:
+    print(step_res.name, step_res.success)
 ```
 
 ### Step Types
