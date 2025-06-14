@@ -9,7 +9,7 @@ from pydantic_ai_orchestrator.infra.settings import Settings
 from pydantic import SecretStr
 
 
-def test_ratio_score():
+def test_ratio_score() -> None:
     check_pass = Checklist(
         items=[
             ChecklistItem(description="a", passed=True, feedback=None),
@@ -29,7 +29,7 @@ def test_ratio_score():
     assert ratio_score(check_empty) == 0.0
 
 
-def test_weighted_score():
+def test_weighted_score() -> None:
     check = Checklist(
         items=[
             ChecklistItem(description="a", passed=True, feedback=None),
@@ -51,7 +51,7 @@ def test_weighted_score():
     assert weighted_score(check, weights_missing) == pytest.approx(0.6)
 
 
-def test_reward_scorer_init(monkeypatch):
+def test_reward_scorer_init(monkeypatch) -> None:
     from pydantic_ai_orchestrator.domain.scoring import RewardScorer, RewardModelUnavailable
     import pydantic_ai_orchestrator.infra.settings as settings_mod
 
@@ -111,7 +111,7 @@ def test_reward_scorer_init(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_reward_scorer_returns_float(monkeypatch):
+async def test_reward_scorer_returns_float(monkeypatch) -> None:
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
     import pydantic_ai_orchestrator.infra.settings as settings_mod
@@ -146,7 +146,7 @@ async def test_reward_scorer_returns_float(monkeypatch):
     assert result == 0.77
 
 
-def test_reward_scorer_disabled(monkeypatch):
+def test_reward_scorer_disabled(monkeypatch) -> None:
     from pydantic_ai_orchestrator.domain.scoring import RewardScorer, FeatureDisabled
     import pydantic_ai_orchestrator.infra.settings as settings_mod
 
@@ -177,31 +177,31 @@ def test_reward_scorer_disabled(monkeypatch):
         RewardScorer()
 
 
-def test_weighted_score_empty_weights():
+def test_weighted_score_empty_weights() -> None:
     check = Checklist(items=[ChecklistItem(description="a", passed=True, feedback=None)])
     assert weighted_score(check, []) == 1.0
 
 
-def test_weighted_score_total_weight_zero():
+def test_weighted_score_total_weight_zero() -> None:
     check = Checklist(items=[ChecklistItem(description="a", passed=True, feedback=None)])
     weights = [{"item": "a", "weight": 0.0}]
     assert weighted_score(check, weights) == 0.0
 
 
-def test_redact_string_no_secret():
+def test_redact_string_no_secret() -> None:
     from pydantic_ai_orchestrator.utils.redact import redact_string
 
     assert redact_string("hello world", None) == "hello world"
     assert redact_string("hello world", "") == "hello world"
 
 
-def test_redact_string_secret_not_in_text():
+def test_redact_string_secret_not_in_text() -> None:
     from pydantic_ai_orchestrator.utils.redact import redact_string
 
     assert redact_string("hello world", "sk-12345678") == "hello world"
 
 
-def test_redact_string_secret_in_text():
+def test_redact_string_secret_in_text() -> None:
     from pydantic_ai_orchestrator.utils.redact import redact_string
 
     assert (
@@ -210,7 +210,7 @@ def test_redact_string_secret_in_text():
 
 
 @pytest.mark.asyncio
-async def test_reward_scorer_score_no_output(monkeypatch):
+async def test_reward_scorer_score_no_output(monkeypatch) -> None:
     from unittest.mock import AsyncMock
     import pydantic_ai_orchestrator.infra.settings as settings_mod
 
@@ -244,7 +244,7 @@ async def test_reward_scorer_score_no_output(monkeypatch):
     assert result == 0.0
 
 
-def test_ratio_score_all_passed():
+def test_ratio_score_all_passed() -> None:
     check = Checklist(
         items=[
             ChecklistItem(description="a", passed=True, feedback=None),
@@ -255,7 +255,7 @@ def test_ratio_score_all_passed():
     assert ratio_score(check) == 1.0
 
 
-def test_weighted_score_all_weights_present():
+def test_weighted_score_all_weights_present() -> None:
     check = Checklist(
         items=[
             ChecklistItem(description="a", passed=True, feedback=None),
@@ -271,13 +271,13 @@ def test_weighted_score_all_weights_present():
     assert weighted_score(check, weights) == pytest.approx(1.0)
 
 
-def test_weighted_score_invalid_weight_type():
+def test_weighted_score_invalid_weight_type() -> None:
     check = Checklist(items=[ChecklistItem(description="a", passed=True, feedback=None)])
     with pytest.raises(ValueError):
         weighted_score(check, ["not-a-dict"])
 
 
-def test_weighted_score_missing_keys():
+def test_weighted_score_missing_keys() -> None:
     check = Checklist(items=[ChecklistItem(description="a", passed=True, feedback=None)])
     with pytest.raises(ValueError):
         weighted_score(check, [{"item": "a"}])

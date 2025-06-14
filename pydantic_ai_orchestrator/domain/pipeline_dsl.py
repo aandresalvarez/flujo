@@ -17,7 +17,7 @@ class StepConfig(BaseModel):
     timeout_s: float | None = None
 
 
-class Step(Generic[InT, OutT], BaseModel):
+class Step(BaseModel, Generic[InT, OutT]):
     """Represents a single step in a pipeline."""
 
     name: str

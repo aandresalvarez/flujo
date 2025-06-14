@@ -12,10 +12,10 @@ from pydantic_ai_orchestrator.exceptions import (
     OrchestratorRetryError,
     ConfigurationError,
 )
-from tenacity import retry_if_exception_type, wait_random_exponential
 import asyncio
 from pydantic_ai_orchestrator.infra.telemetry import logfire
 import traceback
+from pydantic import BaseModel, Field
 
 # 1. Prompt Constants
 REVIEW_SYS = """You are an expert software engineer.\nYour task is to generate an objective, comprehensive, and actionable checklist of criteria to evaluate a solution for the user's request.\nThe checklist should be detailed and cover all key aspects of a good solution.\nFocus on correctness, completeness, and best practices.\n\nReturn **JSON only** that conforms to this schema:\nChecklist(items=[ChecklistItem(description:str, passed:bool|None, feedback:str|None)])\n\nExample:\n{\n  \"items\": [\n    {\"description\": \"The code is correct and runs without errors.\", \"passed\": null, \"feedback\": null},\n    {\"description\": \"The code follows best practices.\", \"passed\": null, \"feedback\": null}\n  ]\n}\n"""
@@ -88,7 +88,10 @@ def make_agent(
 
 
 class AsyncAgentWrapper:
-    """Wraps an agent to expose .run_async with retry/timeout."""
+    """
+    Wraps a pydantic_ai.Agent to provide an asynchronous interface
+    with retry and timeout capabilities.
+    """
 
     def __init__(
         self,
@@ -97,51 +100,60 @@ class AsyncAgentWrapper:
         timeout: int | None = None,
         model_name: str | None = None,
     ) -> None:
+        if not isinstance(max_retries, int):
+            raise TypeError(f"max_retries must be an integer, got {type(max_retries).__name__}.")
+        if max_retries < 0:
+            raise ValueError("max_retries must be a non-negative integer.")
+        if timeout is not None:
+            if not isinstance(timeout, int):
+                raise TypeError(f"timeout must be an integer or None, got {type(timeout).__name__}.")
+            if timeout <= 0:
+                raise ValueError("timeout must be a positive integer if specified.")
         self._agent = agent
         self._max_retries = max_retries
-        self._timeout = timeout if timeout is not None else settings.agent_timeout
-        self._model_name = model_name or getattr(agent, "model", None)
+        self._timeout_seconds: int | None = timeout if timeout is not None else settings.agent_timeout
+        self._model_name: str | None = model_name or getattr(agent, "model", "unknown_model")
 
     async def _run_with_retry(self, *args: Any, **kwargs: Any) -> Any:
-        from tenacity import AsyncRetrying, stop_after_attempt
-
         temp = kwargs.pop("temperature", None)
         if temp is not None:
-            kwargs.setdefault("generation_kwargs", {})["temperature"] = temp
-        result: Any = None
+            if "generation_kwargs" not in kwargs or not isinstance(kwargs.get("generation_kwargs"), dict):
+                kwargs["generation_kwargs"] = {}
+            kwargs["generation_kwargs"]["temperature"] = temp
+        attempt = 0
+        while attempt < self._max_retries:
+            attempt += 1
+            try:
+                raw_agent_response = await asyncio.wait_for(
+                    self._agent.run(*args, **kwargs),
+                    timeout=self._timeout_seconds,
+                )
+                logfire.info(f"Agent '{self._model_name}' raw response: {raw_agent_response}")
 
-        def raise_orchestrator_retry_error(retry_state: Any) -> None:
-            raise OrchestratorRetryError(
-                f"Agent failed after {retry_state.attempt_number} attempts. Last error: {retry_state.outcome.exception()}"
-            )
+                # Detect pydantic-ai failure string and treat as failure.
+                if isinstance(raw_agent_response, str) and raw_agent_response.startswith("Agent failed after"):
+                    raise OrchestratorRetryError(raw_agent_response)
 
-        async for attempt_ctx in AsyncRetrying(
-            stop=stop_after_attempt(self._max_retries),
-            wait=wait_random_exponential(multiplier=1, max=60),
-            retry_error_callback=raise_orchestrator_retry_error,
-            retry=retry_if_exception_type(Exception),
-            reraise=False,
-        ):
-            with attempt_ctx:
-                try:
-                    result = await asyncio.wait_for(
-                        self._agent.run(*args, **kwargs), timeout=self._timeout
-                    )
-                    logfire.info(f"Raw LLM response: {result}")
-                    if isinstance(result, str) and result.startswith("Agent failed after"):
-                        raise OrchestratorRetryError(result)
-                    return result
-                except Exception as e:
-                    tb = traceback.format_exc()
-                    logfire.error(f"Agent call failed with exception: {e}\nTraceback:\n{tb}")
-                    raise
-        return result
+                return raw_agent_response
+            except (asyncio.TimeoutError, Exception) as e:
+                tb = traceback.format_exc()
+                logfire.error(
+                    f"Agent '{self._model_name}' call failed on attempt {attempt} with exception: {type(e).__name__}({e})\nTraceback:\n{tb}"
+                )
+                if attempt >= self._max_retries:
+                    raise OrchestratorRetryError(
+                        f"Agent '{self._model_name}' failed after {attempt} attempts. Last error: {type(e).__name__}({e})"
+                    ) from e
+                # Exponential back-off (capped to 60s)
+                delay = min(2 ** (attempt - 1), 60)
+                await asyncio.sleep(delay)
+        return None
 
     async def run_async(self, *args: Any, **kwargs: Any) -> Any:
         return await self._run_with_retry(*args, **kwargs)
 
     async def run(self, *args: Any, **kwargs: Any) -> Any:
-        return await self._run_with_retry(*args, **kwargs)
+        return await self.run_async(*args, **kwargs)
 
 
 def make_agent_async(

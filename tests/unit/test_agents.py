@@ -1,7 +1,7 @@
 import os
 import pytest
 import asyncio
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, patch, MagicMock
 from pydantic import SecretStr
 
 # Ensure environment variable exists before agents are imported
@@ -15,10 +15,18 @@ from pydantic_ai_orchestrator.infra.agents import (
 )
 
 from pydantic_ai_orchestrator.exceptions import OrchestratorRetryError
+from pydantic_ai_orchestrator.infra.settings import settings
+
+
+@pytest.fixture
+def mock_pydantic_ai_agent() -> MagicMock:
+    agent = MagicMock()
+    agent.model = "test_model"
+    return agent
 
 
 @pytest.mark.asyncio
-async def test_async_agent_wrapper_success():
+async def test_async_agent_wrapper_success() -> None:
     agent = AsyncMock()
     agent.run.return_value = "ok"
     wrapper = AsyncAgentWrapper(agent)
@@ -27,7 +35,7 @@ async def test_async_agent_wrapper_success():
 
 
 @pytest.mark.asyncio
-async def test_async_agent_wrapper_retry_then_success():
+async def test_async_agent_wrapper_retry_then_success() -> None:
     agent = AsyncMock()
     agent.run.side_effect = [Exception("fail"), "ok"]
     wrapper = AsyncAgentWrapper(agent, max_retries=2)
@@ -36,20 +44,20 @@ async def test_async_agent_wrapper_retry_then_success():
 
 
 @pytest.mark.asyncio
-async def test_async_agent_wrapper_timeout():
+async def test_async_agent_wrapper_timeout() -> None:
     agent = AsyncMock()
 
     async def never_returns(*args, **kwargs):
-        await asyncio.sleep(0.05)
+        await asyncio.sleep(2)
 
     agent.run.side_effect = never_returns
-    wrapper = AsyncAgentWrapper(agent, timeout=0.01, max_retries=1)
+    wrapper = AsyncAgentWrapper(agent, timeout=1, max_retries=1)
     with pytest.raises(OrchestratorRetryError):
         await wrapper.run_async("prompt")
 
 
 @pytest.mark.asyncio
-async def test_async_agent_wrapper_exception():
+async def test_async_agent_wrapper_exception() -> None:
     agent = AsyncMock()
     agent.run.side_effect = Exception("fail")
     wrapper = AsyncAgentWrapper(agent, max_retries=1)
@@ -58,7 +66,7 @@ async def test_async_agent_wrapper_exception():
 
 
 @pytest.mark.asyncio
-async def test_async_agent_wrapper_temperature():
+async def test_async_agent_wrapper_temperature() -> None:
     agent = AsyncMock()
     agent.run.return_value = "ok"
     wrapper = AsyncAgentWrapper(agent)
@@ -68,13 +76,13 @@ async def test_async_agent_wrapper_temperature():
 
 
 @pytest.mark.asyncio
-async def test_noop_reflection_agent():
+async def test_noop_reflection_agent() -> None:
     agent = NoOpReflectionAgent()
     result = await agent.run()
     assert result == ""
 
 
-def test_get_reflection_agent_disabled(monkeypatch):
+def test_get_reflection_agent_disabled(monkeypatch) -> None:
     import importlib
     import pydantic_ai_orchestrator.infra.agents as agents_mod
 
@@ -86,7 +94,7 @@ def test_get_reflection_agent_disabled(monkeypatch):
     assert agent.__class__.__name__ == "NoOpReflectionAgent"
 
 
-def test_get_reflection_agent_creation_failure(monkeypatch):
+def test_get_reflection_agent_creation_failure(monkeypatch) -> None:
     monkeypatch.setattr("pydantic_ai_orchestrator.infra.settings.settings.reflection_enabled", True)
     with patch(
         "pydantic_ai_orchestrator.infra.agents.make_agent_async", side_effect=Exception("fail")
@@ -96,7 +104,7 @@ def test_get_reflection_agent_creation_failure(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_logging_review_agent_success():
+async def test_logging_review_agent_success() -> None:
     base_agent = AsyncMock()
     base_agent.run.return_value = "ok"
     agent = LoggingReviewAgent(base_agent)
@@ -105,7 +113,7 @@ async def test_logging_review_agent_success():
 
 
 @pytest.mark.asyncio
-async def test_logging_review_agent_error():
+async def test_logging_review_agent_error() -> None:
     base_agent = AsyncMock()
     base_agent.run.side_effect = Exception("fail")
     agent = LoggingReviewAgent(base_agent)
@@ -114,7 +122,7 @@ async def test_logging_review_agent_error():
 
 
 @pytest.mark.asyncio
-async def test_async_agent_wrapper_agent_failed_string():
+async def test_async_agent_wrapper_agent_failed_string() -> None:
     agent = AsyncMock()
     agent.run.return_value = "Agent failed after 3 attempts. Last error: foo"
     wrapper = AsyncAgentWrapper(agent, max_retries=1)
@@ -123,7 +131,7 @@ async def test_async_agent_wrapper_agent_failed_string():
 
 
 @pytest.mark.asyncio
-async def test_logging_review_agent_run_async_fallback():
+async def test_logging_review_agent_run_async_fallback() -> None:
     class NoAsyncAgent:
         async def run(self, *args, **kwargs):
             return "ok"
@@ -135,7 +143,7 @@ async def test_logging_review_agent_run_async_fallback():
 
 
 @pytest.mark.asyncio
-async def test_logging_review_agent_run_async_non_callable():
+async def test_logging_review_agent_run_async_non_callable() -> None:
     class WeirdAgent:
         run_async = "not callable"
 
@@ -149,7 +157,7 @@ async def test_logging_review_agent_run_async_non_callable():
 
 
 @pytest.mark.asyncio
-async def test_async_agent_wrapper_agent_failed_string_only():
+async def test_async_agent_wrapper_agent_failed_string_only() -> None:
     class DummyAgent:
         async def run(self, *args, **kwargs):
             return "Agent failed after 2 attempts. Last error: foo"
@@ -160,7 +168,7 @@ async def test_async_agent_wrapper_agent_failed_string_only():
     assert "Agent failed after" in str(exc.value)
 
 
-def test_make_agent_async_injects_key(monkeypatch):
+def test_make_agent_async_injects_key(monkeypatch) -> None:
     monkeypatch.setenv("orch_openai_api_key", "test-key")
     from pydantic_ai_orchestrator.infra import settings as settings_mod
 
@@ -171,7 +179,7 @@ def test_make_agent_async_injects_key(monkeypatch):
     assert wrapper is not None
 
 
-def test_make_agent_async_missing_key(monkeypatch):
+def test_make_agent_async_missing_key(monkeypatch) -> None:
     monkeypatch.delenv("orch_anthropic_api_key", raising=False)
     from pydantic_ai_orchestrator.infra import settings as settings_mod
 
@@ -181,3 +189,71 @@ def test_make_agent_async_missing_key(monkeypatch):
 
     with pytest.raises(ConfigurationError):
         make_agent_async("anthropic:claude-3", "sys", str)
+
+
+def test_async_agent_wrapper_timeout_validation() -> None:
+    """Test that AsyncAgentWrapper validates timeout parameter type."""
+    agent = AsyncMock()
+    with pytest.raises(TypeError, match="timeout must be an integer or None"):
+        AsyncAgentWrapper(agent, timeout="not a number")
+
+
+def test_async_agent_wrapper_with_dummy_agent() -> None:
+    class DummyAgent:
+        async def run(self, *args, **kwargs):
+            return "dummy"
+    wrapper = AsyncAgentWrapper(DummyAgent())
+    assert isinstance(wrapper, AsyncAgentWrapper)
+
+
+def test_async_agent_wrapper_init_valid_args(mock_pydantic_ai_agent: MagicMock) -> None:
+    wrapper = AsyncAgentWrapper(
+        agent=mock_pydantic_ai_agent,
+        max_retries=5,
+        timeout=10,
+        model_name="custom_test_model"
+    )
+    assert wrapper._max_retries == 5
+    assert wrapper._timeout_seconds == 10
+    assert wrapper._model_name == "custom_test_model"
+    assert wrapper._agent is mock_pydantic_ai_agent
+
+
+def test_async_agent_wrapper_init_default_timeout(mock_pydantic_ai_agent: MagicMock) -> None:
+    wrapper = AsyncAgentWrapper(agent=mock_pydantic_ai_agent)
+    assert wrapper._timeout_seconds == settings.agent_timeout
+
+
+def test_async_agent_wrapper_init_invalid_max_retries_type(mock_pydantic_ai_agent: MagicMock) -> None:
+    with pytest.raises(TypeError, match="max_retries must be an integer"):
+        AsyncAgentWrapper(agent=mock_pydantic_ai_agent, max_retries="not_an_int")
+
+
+def test_async_agent_wrapper_init_negative_max_retries_value(mock_pydantic_ai_agent: MagicMock) -> None:
+    with pytest.raises(ValueError, match="max_retries must be a non-negative integer"):
+        AsyncAgentWrapper(agent=mock_pydantic_ai_agent, max_retries=-1)
+
+
+def test_async_agent_wrapper_init_invalid_timeout_type(mock_pydantic_ai_agent: MagicMock) -> None:
+    with pytest.raises(TypeError, match="timeout must be an integer or None"):
+        AsyncAgentWrapper(agent=mock_pydantic_ai_agent, timeout="not_an_int")
+
+
+def test_async_agent_wrapper_init_non_positive_timeout_value(mock_pydantic_ai_agent: MagicMock) -> None:
+    with pytest.raises(ValueError, match="timeout must be a positive integer if specified"):
+        AsyncAgentWrapper(agent=mock_pydantic_ai_agent, timeout=0)
+    with pytest.raises(ValueError, match="timeout must be a positive integer if specified"):
+        AsyncAgentWrapper(agent=mock_pydantic_ai_agent, timeout=-10)
+
+
+@pytest.mark.asyncio
+async def test_async_agent_wrapper_runtime_timeout(mock_pydantic_ai_agent: MagicMock) -> None:
+    async def slow_run(*args, **kwargs):
+        await asyncio.sleep(2)
+        return "should_not_reach_here"
+    mock_pydantic_ai_agent.run = AsyncMock(side_effect=slow_run)
+    wrapper = AsyncAgentWrapper(agent=mock_pydantic_ai_agent, timeout=1, max_retries=1)
+    with pytest.raises(OrchestratorRetryError) as exc_info:
+        await wrapper.run_async("prompt")
+    assert "timed out" in str(exc_info.value).lower() or "TimeoutError" in str(exc_info.value)
+    mock_pydantic_ai_agent.run.assert_called_once()

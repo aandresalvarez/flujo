@@ -3,7 +3,7 @@ from pydantic_ai_orchestrator.domain.models import PipelineResult, StepResult
 from pydantic_evals.evaluators import EvaluatorContext
 
 
-def test_final_solution_evaluator_matches_expected():
+def test_final_solution_evaluator_matches_expected() -> None:
     pipeline_result = PipelineResult(
         step_history=[
             StepResult(name="sol", output="hi"),

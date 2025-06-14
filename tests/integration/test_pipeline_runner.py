@@ -9,7 +9,7 @@ from pydantic_ai_orchestrator.testing.utils import StubAgent, DummyPlugin
 from pydantic_ai_orchestrator.domain.plugins import PluginOutcome
 
 
-async def test_runner_respects_max_retries():
+async def test_runner_respects_max_retries() -> None:
     agent = StubAgent(["a", "b", "c"])
     plugin = DummyPlugin(
         [
@@ -27,7 +27,7 @@ async def test_runner_respects_max_retries():
     assert result.step_history[0].attempts == 3
 
 
-async def test_feedback_enriches_prompt():
+async def test_feedback_enriches_prompt() -> None:
     sol_agent = StubAgent(["sol1", "sol2"])
     plugin = DummyPlugin(
         [
@@ -42,7 +42,7 @@ async def test_feedback_enriches_prompt():
     assert "SQL Error: XYZ" in sol_agent.inputs[1]
 
 
-async def test_conditional_redirection():
+async def test_conditional_redirection() -> None:
     primary = StubAgent(["first"])
     fixit = StubAgent(["fixed"])
     plugin = DummyPlugin(
@@ -59,7 +59,7 @@ async def test_conditional_redirection():
     assert fixit.call_count == 1
 
 
-async def test_on_failure_called():
+async def test_on_failure_called() -> None:
     agent = StubAgent(["out"])
     plugin = DummyPlugin([PluginOutcome(success=False)])
     handler = Mock()
@@ -70,7 +70,7 @@ async def test_on_failure_called():
     handler.assert_called_once()
 
 
-async def test_timeout_and_redirect_loop_detection():
+async def test_timeout_and_redirect_loop_detection() -> None:
     async def slow_validate(data):
         await asyncio.sleep(0.05)
         return PluginOutcome(success=True)
@@ -103,7 +103,7 @@ async def test_timeout_and_redirect_loop_detection():
         await runner2.run_async("p")
 
 
-async def test_pipeline_cancellation():
+async def test_pipeline_cancellation() -> None:
     agent = StubAgent(["out"])
     step = Step("s", agent)
     runner = PipelineRunner(step)

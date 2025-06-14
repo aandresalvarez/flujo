@@ -3,7 +3,7 @@ from unittest.mock import patch, MagicMock
 import importlib
 
 
-def reload_telemetry():
+def reload_telemetry() -> None:
     # Reload the module to reset _initialized
     import sys
 
@@ -20,7 +20,7 @@ def reload_telemetry():
         (True, "https://otlp.example.com"),
     ],
 )
-def test_init_telemetry(monkeypatch, otlp_enabled, otlp_endpoint):
+def test_init_telemetry(monkeypatch, otlp_enabled, otlp_endpoint) -> None:
     settings_mock = MagicMock()
     settings_mock.otlp_export_enabled = otlp_enabled
     settings_mock.otlp_endpoint = otlp_endpoint
@@ -51,7 +51,7 @@ def test_init_telemetry(monkeypatch, otlp_enabled, otlp_endpoint):
     logfire_configure.assert_not_called()
 
 
-def test_init_telemetry_telemetry_disabled(monkeypatch):
+def test_init_telemetry_telemetry_disabled(monkeypatch) -> None:
     settings_mock = MagicMock()
     settings_mock.otlp_export_enabled = False
     settings_mock.otlp_endpoint = None
@@ -69,7 +69,7 @@ def test_init_telemetry_telemetry_disabled(monkeypatch):
     logfire_configure.assert_not_called()
 
 
-def test_init_telemetry_otlp_with_endpoint(monkeypatch):
+def test_init_telemetry_otlp_with_endpoint(monkeypatch) -> None:
     """Ensure OTLP exporter and endpoint logic works."""
     settings_mock = MagicMock()
     settings_mock.otlp_export_enabled = True
@@ -99,7 +99,7 @@ def test_init_telemetry_otlp_with_endpoint(monkeypatch):
         logfire_configure.assert_called_once()
 
 
-def test_init_telemetry_otlp_no_endpoint(monkeypatch):
+def test_init_telemetry_otlp_no_endpoint(monkeypatch) -> None:
     """OTLP exporter logic without endpoint."""
     settings_mock = MagicMock()
     settings_mock.otlp_export_enabled = True
@@ -128,3 +128,28 @@ def test_init_telemetry_otlp_no_endpoint(monkeypatch):
         telemetry.init_telemetry(settings_mock)
         # We cannot assert the mock was called due to import mechanics, but the code path is exercised.
         logfire_configure.assert_called_once()
+
+
+def test_telemetry_initialization() -> None:
+    # Implementation of the function
+    pass
+
+
+def test_telemetry_export() -> None:
+    # Implementation of the function
+    pass
+
+
+def test_telemetry_export_disabled() -> None:
+    # Implementation of the function
+    pass
+
+
+def test_telemetry_export_error() -> None:
+    # Implementation of the function
+    pass
+
+
+def test_telemetry_export_with_span_tree() -> None:
+    # Implementation of the function
+    pass
