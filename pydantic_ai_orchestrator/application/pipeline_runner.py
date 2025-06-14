@@ -12,7 +12,13 @@ from ..exceptions import (
     OrchestratorError,
     PipelineContextInitializationError,
 )
-from ..domain.pipeline_dsl import Pipeline, Step, LoopStep
+from ..domain.pipeline_dsl import (
+    Pipeline,
+    Step,
+    LoopStep,
+    ConditionalStep,
+    BranchKey,
+)
 from ..domain.plugins import PluginOutcome
 from ..domain.models import PipelineResult, StepResult
 
@@ -49,6 +55,8 @@ class PipelineRunner(Generic[RunnerInT, RunnerOutT]):
         visited: set[Any] = set()
         if isinstance(step, LoopStep):
             return await self._execute_loop_step(step, data, pipeline_context)
+        elif isinstance(step, ConditionalStep):
+            return await self._execute_conditional_step(step, data, pipeline_context)
 
         result = StepResult(name=step.name)
         original_agent = step.agent
@@ -131,7 +139,9 @@ class PipelineRunner(Generic[RunnerInT, RunnerOutT]):
         result.output = last_output
         result.success = False
         result.feedback = last_feedback
-        result.token_counts += getattr(last_output, "token_counts", 1) if last_output is not None else 0
+        result.token_counts += (
+            getattr(last_output, "token_counts", 1) if last_output is not None else 0
+        )
         result.cost_usd += getattr(last_output, "cost_usd", 0.0) if last_output is not None else 0.0
         return result
 
@@ -198,9 +208,7 @@ class PipelineRunner(Generic[RunnerInT, RunnerOutT]):
                     f"Error in exit_condition_callable for LoopStep '{loop_step.name}': {e}"
                 )
                 loop_overall_result.success = False
-                loop_overall_result.feedback = (
-                    f"Exit condition callable raised an exception: {e}"
-                )
+                loop_overall_result.feedback = f"Exit condition callable raised an exception: {e}"
                 break
 
             if should_exit:
@@ -250,9 +258,7 @@ class PipelineRunner(Generic[RunnerInT, RunnerOutT]):
                         f"Error in loop_output_mapper for LoopStep '{loop_step.name}': {e}"
                     )
                     loop_overall_result.success = False
-                    loop_overall_result.feedback = (
-                        f"Loop output mapper raised an exception: {e}"
-                    )
+                    loop_overall_result.feedback = f"Loop output mapper raised an exception: {e}"
                     loop_overall_result.output = None
             else:
                 loop_overall_result.output = last_successful_iteration_body_output
@@ -265,13 +271,125 @@ class PipelineRunner(Generic[RunnerInT, RunnerOutT]):
 
         return loop_overall_result
 
+    async def _execute_conditional_step(
+        self,
+        conditional_step: ConditionalStep,
+        conditional_step_input: Any,
+        pipeline_context: Optional[BaseModel],
+    ) -> StepResult:
+        conditional_overall_result = StepResult(name=conditional_step.name)
+        executed_branch_key: BranchKey | None = None
+        branch_output: Any = None
+        branch_succeeded = False
+
+        try:
+            branch_key_to_execute = conditional_step.condition_callable(
+                conditional_step_input, pipeline_context
+            )
+            logfire.info(
+                f"ConditionalStep '{conditional_step.name}': Condition evaluated to branch key '{branch_key_to_execute}'."
+            )
+            executed_branch_key = branch_key_to_execute
+
+            selected_branch_pipeline = conditional_step.branches.get(branch_key_to_execute)
+            if selected_branch_pipeline is None:
+                selected_branch_pipeline = conditional_step.default_branch_pipeline
+                if selected_branch_pipeline is None:
+                    err_msg = f"ConditionalStep '{conditional_step.name}': No branch found for key '{branch_key_to_execute}' and no default branch defined."
+                    logfire.warn(err_msg)
+                    conditional_overall_result.success = False
+                    conditional_overall_result.feedback = err_msg
+                    return conditional_overall_result
+                logfire.info(
+                    f"ConditionalStep '{conditional_step.name}': Executing default branch."
+                )
+            else:
+                logfire.info(
+                    f"ConditionalStep '{conditional_step.name}': Executing branch for key '{branch_key_to_execute}'."
+                )
+
+            if conditional_step.branch_input_mapper:
+                input_for_branch = conditional_step.branch_input_mapper(
+                    conditional_step_input, pipeline_context
+                )
+            else:
+                input_for_branch = conditional_step_input
+
+            current_branch_data = input_for_branch
+            branch_pipeline_failed_internally = False
+
+            for branch_s in selected_branch_pipeline.steps:
+                branch_step_result_obj = await self._run_step(
+                    branch_s, current_branch_data, pipeline_context
+                )
+
+                conditional_overall_result.latency_s += branch_step_result_obj.latency_s
+                conditional_overall_result.cost_usd += getattr(
+                    branch_step_result_obj, "cost_usd", 0.0
+                )
+                conditional_overall_result.token_counts += getattr(
+                    branch_step_result_obj, "token_counts", 0
+                )
+
+                if not branch_step_result_obj.success:
+                    logfire.warn(
+                        f"Step '{branch_s.name}' in branch '{branch_key_to_execute}' of ConditionalStep '{conditional_step.name}' failed."
+                    )
+                    branch_pipeline_failed_internally = True
+                    branch_output = branch_step_result_obj.output
+                    conditional_overall_result.feedback = f"Failure in branch '{branch_key_to_execute}', step '{branch_s.name}': {branch_step_result_obj.feedback}"
+                    break
+
+                current_branch_data = branch_step_result_obj.output
+
+            if not branch_pipeline_failed_internally:
+                branch_output = current_branch_data
+                branch_succeeded = True
+
+        except Exception as e:  # noqa: BLE001
+            logfire.error(
+                f"Error during ConditionalStep '{conditional_step.name}' execution: {e}",
+                exc_info=True,
+            )
+            conditional_overall_result.success = False
+            conditional_overall_result.feedback = (
+                f"Error executing conditional logic or branch: {e}"
+            )
+            return conditional_overall_result
+
+        conditional_overall_result.success = branch_succeeded
+        if branch_succeeded:
+            if conditional_step.branch_output_mapper:
+                try:
+                    conditional_overall_result.output = conditional_step.branch_output_mapper(
+                        branch_output, executed_branch_key, pipeline_context
+                    )
+                except Exception as e:  # noqa: BLE001
+                    logfire.error(
+                        f"Error in branch_output_mapper for ConditionalStep '{conditional_step.name}': {e}"
+                    )
+                    conditional_overall_result.success = False
+                    conditional_overall_result.feedback = (
+                        f"Branch output mapper raised an exception: {e}"
+                    )
+                    conditional_overall_result.output = None
+            else:
+                conditional_overall_result.output = branch_output
+        else:
+            conditional_overall_result.output = branch_output
+
+        conditional_overall_result.attempts = 1
+        if executed_branch_key is not None:
+            conditional_overall_result.metadata_ = conditional_overall_result.metadata_ or {}
+            conditional_overall_result.metadata_["executed_branch_key"] = str(executed_branch_key)
+
+        return conditional_overall_result
+
     async def run_async(self, initial_input: RunnerInT) -> PipelineResult:
         current_pipeline_context_instance: Optional[BaseModel] = None
         if self.context_model is not None:
             try:
-                current_pipeline_context_instance = self.context_model(
-                    **self.initial_context_data
-                )
+                current_pipeline_context_instance = self.context_model(**self.initial_context_data)
             except ValidationError as e:
                 logfire.error(
                     f"Pipeline context initialization failed for model {self.context_model.__name__}: {e}"
@@ -291,9 +409,7 @@ class PipelineRunner(Generic[RunnerInT, RunnerOutT]):
                 pipeline_result_obj.step_history.append(step_result)
                 pipeline_result_obj.total_cost_usd += step_result.cost_usd
                 if not step_result.success:
-                    logfire.warn(
-                        f"Step '{step.name}' failed. Halting pipeline execution."
-                    )
+                    logfire.warn(f"Step '{step.name}' failed. Halting pipeline execution.")
                     break
                 data = step_result.output
         except asyncio.CancelledError:

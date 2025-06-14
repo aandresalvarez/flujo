@@ -1,6 +1,6 @@
 """Domain layer package."""
 
-from .pipeline_dsl import Step, Pipeline, StepConfig, LoopStep
+from .pipeline_dsl import Step, Pipeline, StepConfig, LoopStep, ConditionalStep, BranchKey
 from .plugins import PluginOutcome, ValidationPlugin
 
 __all__ = [
@@ -8,6 +8,8 @@ __all__ = [
     "Pipeline",
     "StepConfig",
     "LoopStep",
+    "ConditionalStep",
+    "BranchKey",
     "PluginOutcome",
     "ValidationPlugin",
 ]

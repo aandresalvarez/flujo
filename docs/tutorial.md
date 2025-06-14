@@ -321,4 +321,28 @@ result = runner.run("hi")
 print(result.step_history[-1].output)  # 'hi!!!'
 ```
 
+### Conditional Branching with `ConditionalStep`
+
+Sometimes a pipeline should take different actions depending on earlier results. `ConditionalStep` lets you define that logic declaratively.
+
+```python
+def choose(out, ctx):
+    return "positive" if "!" in out else "neutral"
+
+branches = {
+    "positive": Pipeline.from_step(Step("yay", lambda x: x + " 😊")),
+    "neutral": Pipeline.from_step(Step("meh", lambda x: x)),
+}
+
+branch = Step.branch_on(
+    name="sentiment_router",
+    condition_callable=choose,
+    branches=branches,
+)
+
+pipeline = Step("start", fixer) >> branch
+runner = PipelineRunner(pipeline)
+print(runner.run("ok").step_history[-1].output)
+```
+
 You're now ready to build powerful and intelligent AI applications. Happy orchestrating

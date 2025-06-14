@@ -11,6 +11,8 @@ from typing import (
     Sequence,
     Type,
     TypeVar,
+    Dict,
+    Union,
 )
 from pydantic import BaseModel, Field, ConfigDict
 from .agent_protocol import AsyncAgentProtocol
@@ -28,6 +30,9 @@ SolInT = TypeVar("SolInT")
 SolOutT = TypeVar("SolOutT")
 ValInT = TypeVar("ValInT")
 ValOutT = TypeVar("ValOutT")
+
+# BranchKey type alias for ConditionalStep
+BranchKey = Any
 
 
 class StepConfig(BaseModel):
@@ -105,8 +110,6 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         self.plugins.append((plugin, priority))
         return self
 
-
-
     def on_failure(self, handler: Callable[[], None]) -> "Step[StepInT, StepOutT]":
         """Add a failure handler to this step."""
         self.failure_handlers.append(handler)
@@ -119,7 +122,9 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         loop_body_pipeline: "Pipeline[Any, Any]",
         exit_condition_callable: Callable[[Any, Optional[BaseModel]], bool],
         max_loops: int = 5,
-        initial_input_to_loop_body_mapper: Optional[Callable[[Any, Optional[BaseModel]], Any]] = None,
+        initial_input_to_loop_body_mapper: Optional[
+            Callable[[Any, Optional[BaseModel]], Any]
+        ] = None,
         iteration_input_mapper: Optional[Callable[[Any, Optional[BaseModel], int], Any]] = None,
         loop_output_mapper: Optional[Callable[[Any, Optional[BaseModel]], Any]] = None,
         **config_kwargs: Any,
@@ -135,6 +140,30 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             initial_input_to_loop_body_mapper=initial_input_to_loop_body_mapper,
             iteration_input_mapper=iteration_input_mapper,
             loop_output_mapper=loop_output_mapper,
+            **config_kwargs,
+        )
+
+    @classmethod
+    def branch_on(
+        cls,
+        name: str,
+        condition_callable: Callable[[Any, Optional[BaseModel]], BranchKey],
+        branches: Dict[BranchKey, "Pipeline[Any, Any]"],
+        default_branch_pipeline: Optional["Pipeline[Any, Any]"] = None,
+        branch_input_mapper: Optional[Callable[[Any, Optional[BaseModel]], Any]] = None,
+        branch_output_mapper: Optional[Callable[[Any, BranchKey, Optional[BaseModel]], Any]] = None,
+        **config_kwargs: Any,
+    ) -> "ConditionalStep":
+        """Factory method to create a :class:`ConditionalStep`."""
+        from .pipeline_dsl import ConditionalStep
+
+        return ConditionalStep(
+            name=name,
+            condition_callable=condition_callable,
+            branches=branches,
+            default_branch_pipeline=default_branch_pipeline,
+            branch_input_mapper=branch_input_mapper,
+            branch_output_mapper=branch_output_mapper,
             **config_kwargs,
         )
 
@@ -186,23 +215,15 @@ class LoopStep(Step[Any, Any]):
 
     initial_input_to_loop_body_mapper: Optional[Callable[[Any, Optional[BaseModel]], Any]] = Field(
         default=None,
-        description=(
-            "Callable to map LoopStep's input to the first iteration's body input."
-        ),
+        description=("Callable to map LoopStep's input to the first iteration's body input."),
     )
-    iteration_input_mapper: Optional[
-        Callable[[Any, Optional[BaseModel], int], Any]
-    ] = Field(
+    iteration_input_mapper: Optional[Callable[[Any, Optional[BaseModel], int], Any]] = Field(
         default=None,
-        description=(
-            "Callable to map previous iteration's body output to next iteration's input."
-        ),
+        description=("Callable to map previous iteration's body output to next iteration's input."),
     )
     loop_output_mapper: Optional[Callable[[Any, Optional[BaseModel]], Any]] = Field(
         default=None,
-        description=(
-            "Callable to map the final successful output to the LoopStep's output."
-        ),
+        description=("Callable to map the final successful output to the LoopStep's output."),
     )
 
     model_config = {"arbitrary_types_allowed": True}
@@ -217,9 +238,7 @@ class LoopStep(Step[Any, Any]):
         initial_input_to_loop_body_mapper: Optional[
             Callable[[Any, Optional[BaseModel]], Any]
         ] = None,
-        iteration_input_mapper: Optional[
-            Callable[[Any, Optional[BaseModel], int], Any]
-        ] = None,
+        iteration_input_mapper: Optional[Callable[[Any, Optional[BaseModel], int], Any]] = None,
         loop_output_mapper: Optional[Callable[[Any, Optional[BaseModel]], Any]] = None,
         **config_kwargs: Any,
     ) -> None:
@@ -239,6 +258,60 @@ class LoopStep(Step[Any, Any]):
             initial_input_to_loop_body_mapper=initial_input_to_loop_body_mapper,
             iteration_input_mapper=iteration_input_mapper,
             loop_output_mapper=loop_output_mapper,
+        )
+
+
+class ConditionalStep(Step[Any, Any]):
+    """A step that selects and executes a branch pipeline based on a condition."""
+
+    condition_callable: Callable[[Any, Optional[BaseModel]], BranchKey] = Field(
+        description=("Callable that returns a key to select a branch.")
+    )
+    branches: Dict[BranchKey, "Pipeline[Any, Any]"] = Field(
+        description="Mapping of branch keys to sub-pipelines."
+    )
+    default_branch_pipeline: Optional["Pipeline[Any, Any]"] = Field(
+        default=None,
+        description="Pipeline to execute when no branch key matches.",
+    )
+
+    branch_input_mapper: Optional[Callable[[Any, Optional[BaseModel]], Any]] = Field(
+        default=None,
+        description="Maps ConditionalStep input to branch input.",
+    )
+    branch_output_mapper: Optional[Callable[[Any, BranchKey, Optional[BaseModel]], Any]] = Field(
+        default=None,
+        description="Maps branch output to ConditionalStep output.",
+    )
+
+    model_config = {"arbitrary_types_allowed": True}
+
+    def __init__(
+        self,
+        *,
+        name: str,
+        condition_callable: Callable[[Any, Optional[BaseModel]], BranchKey],
+        branches: Dict[BranchKey, "Pipeline[Any, Any]"],
+        default_branch_pipeline: Optional["Pipeline[Any, Any]"] = None,
+        branch_input_mapper: Optional[Callable[[Any, Optional[BaseModel]], Any]] = None,
+        branch_output_mapper: Optional[Callable[[Any, BranchKey, Optional[BaseModel]], Any]] = None,
+        **config_kwargs: Any,
+    ) -> None:
+        if not branches:
+            raise ValueError("'branches' dictionary cannot be empty.")
+
+        BaseModel.__init__(
+            self,
+            name=name,
+            agent=None,
+            config=StepConfig(**config_kwargs),
+            plugins=[],
+            failure_handlers=[],
+            condition_callable=condition_callable,
+            branches=branches,
+            default_branch_pipeline=default_branch_pipeline,
+            branch_input_mapper=branch_input_mapper,
+            branch_output_mapper=branch_output_mapper,
         )
 
 
@@ -274,5 +347,14 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
     def __iter__(self) -> Iterator[Step[Any, Any]]:
         return iter(self.steps)
 
+
 # Explicit exports
-__all__ = ['Step', 'Pipeline', 'StepConfig', 'StepFactory', 'LoopStep']
+__all__ = [
+    "Step",
+    "Pipeline",
+    "StepConfig",
+    "StepFactory",
+    "LoopStep",
+    "ConditionalStep",
+    "BranchKey",
+]
