@@ -53,6 +53,7 @@ dev = [
   "hypothesis",
   "vcrpy",
   "rich",
+  "pytest-benchmark",
 ]
 docs = ["mkdocs", "mkdocstrings[python]"]
 opentelemetry = ["opentelemetry-sdk>=1.26"]

@@ -13,11 +13,14 @@ class PluginOutcome(BaseModel):
     success: bool
     feedback: str | None = None
     redirect_to: AgentProtocol | None = None
+    new_solution: Any | None = None
 
 
 @runtime_checkable
 class ValidationPlugin(Protocol):
     """Protocol that all validation plugins must implement."""
 
-    async def validate(self, data: dict[str, Any]) -> PluginOutcome:  # pragma: no cover - signature only
+    async def validate(
+        self, data: dict[str, Any]
+    ) -> PluginOutcome:  # pragma: no cover - signature only
         ...

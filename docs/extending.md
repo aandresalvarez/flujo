@@ -27,3 +27,21 @@ pipeline = (
 
 result = PipelineRunner(pipeline).run("Write a poem")
 ```
+
+### Creating Custom Step Factories with Pre-configured Plugins
+
+If you frequently use a step with the same set of plugins, you can create your own factory function:
+
+```python
+from pydantic_ai_orchestrator import Step
+from my_app.plugins import MyCustomValidator
+
+def ReusableSQLStep(agent, **config) -> Step:
+    '''A solution step that always includes MyCustomValidator.'''
+    step = Step.solution(agent, **config)
+    step.add_plugin(MyCustomValidator(), priority=10)
+    return step
+
+# Usage:
+pipeline = ReusableSQLStep(my_sql_agent) >> Step.validate(...)
+```

@@ -16,8 +16,6 @@ class InfiniteRedirectError(OrchestratorError):
     """Raised when a redirect loop is detected."""
 
 
-
-
 class PipelineRunner:
     """Execute a pipeline sequentially."""
 
@@ -40,7 +38,9 @@ class PipelineRunner:
             success = True
             feedback: str | None = None
             redirect_to = None
-            for plugin in step.plugins:
+            final_plugin_outcome: PluginOutcome | None = None
+            sorted_plugins = sorted(step.plugins, key=lambda p: p[1], reverse=True)
+            for plugin, _ in sorted_plugins:
                 try:
                     plugin_result: PluginOutcome = await asyncio.wait_for(
                         plugin.validate({"input": data, "output": output}),
@@ -52,6 +52,11 @@ class PipelineRunner:
                     success = False
                     feedback = plugin_result.feedback
                     redirect_to = plugin_result.redirect_to
+                    final_plugin_outcome = plugin_result
+                elif plugin_result.new_solution is not None:
+                    final_plugin_outcome = plugin_result
+            if final_plugin_outcome and final_plugin_outcome.new_solution is not None:
+                output = final_plugin_outcome.new_solution
             if success:
                 result.output = output
                 result.success = True
@@ -62,7 +67,9 @@ class PipelineRunner:
             # failure -> prepare for retry
             if redirect_to:
                 if redirect_to in visited:
-                    raise InfiniteRedirectError(f"Redirect loop detected in step {step.name}")
+                    raise InfiniteRedirectError(
+                        f"Redirect loop detected in step {step.name}"
+                    )
                 visited.add(redirect_to)
                 step.agent = redirect_to
             if feedback:
