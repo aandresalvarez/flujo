@@ -1,7 +1,7 @@
 """Domain models for pydantic-ai-orchestrator.""" 
 
+from typing import Any, List, Optional
 from pydantic import BaseModel, Field
-from typing import List, Optional, Any
 
 class Task(BaseModel):
     """Represents a task to be solved by the orchestrator."""
@@ -35,3 +35,23 @@ class Candidate(BaseModel):
             f"Candidate(score={self.score:.2f}, solution={self.solution!r}, "
             f"checklist_items={len(self.checklist.items) if self.checklist else 0})"
         )
+
+
+class StepResult(BaseModel):
+    """Result of executing a single pipeline step."""
+
+    name: str
+    output: Any | None = None
+    success: bool = True
+    attempts: int = 0
+    latency_s: float = 0.0
+    token_counts: int = 0
+    cost_usd: float = 0.0
+    feedback: str | None = None
+
+
+class PipelineResult(BaseModel):
+    """Aggregated result of running a pipeline."""
+
+    step_history: List[StepResult] = Field(default_factory=list)
+    total_cost_usd: float = 0.0

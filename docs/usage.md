@@ -23,20 +23,20 @@ pip install pydantic-ai-orchestrator[bench]
 ```python
 from pydantic_ai_orchestrator import (
     Orchestrator, Task, init_telemetry,
-    review_agent, solution_agent, validator_agent, reflection_agent
+    review_agent, solution_agent, validator_agent
 )
 
 # Initialize telemetry (optional)
 init_telemetry()
 
 # Create an orchestrator with default agents
-orch = Orchestrator(review_agent, solution_agent, validator_agent, reflection_agent)
+orch = Orchestrator(review_agent, solution_agent, validator_agent)
 result = orch.run_sync(Task(prompt="Write a poem."))
 print(result)
 ```
 
-For custom reflection behavior, use the `get_reflection_agent()` factory to
-instantiate a reflection agent with a different model or configuration.
+The default orchestrator does not include a reflection step.
+Use the `Step` API to build a custom pipeline if you need strategic reflection.
 
 Call `init_telemetry()` once at startup to configure logging and tracing for your application.
 
@@ -77,32 +77,9 @@ If you want to export traces to an OTLP-compatible backend (such as OpenTelemetr
 
 When enabled, the orchestrator will send traces using the OTLP HTTP exporter. This is useful for distributed tracing and observability in production environments.
 
-## Scoring
-- Ratio and weighted scoring supported
-- Reward model stub included (extendable)
+## Scoring Utilities
+Functions like `ratio_score` and `weighted_score` are available for custom workflows.
+The default orchestrator always returns a score of `1.0`.
 
 ## Reflection
-- Reflection agent can be toggled via `REFLECTION_ENABLED`
-
-## Weighted Scoring
-
-You can provide weights for checklist items to customize the scoring logic. This is useful when some criteria are more important than others.
-
-Provide the weights via the `Task` metadata:
-
-```python
-from pydantic_ai_orchestrator import Orchestrator, Task
-
-orch = Orchestrator(...)
-task = Task(
-    prompt="Generate a Python class.",
-    metadata={
-        "weights": [
-            {"item": "Has a docstring", "weight": 0.7},
-            {"item": "Includes type hints", "weight": 0.3},
-        ]
-    }
-)
-result = orch.run_sync(task)
-```
-The `scorer` setting must be set to `"weighted"`.
+Add a reflection step by composing your own pipeline with `Step` and running it with `PipelineRunner`.

@@ -3,10 +3,8 @@ from unittest.mock import Mock
 import pytest
 
 from pydantic_ai_orchestrator.domain import Step
-from pydantic_ai_orchestrator.application.pipeline_runner import (
-    PipelineRunner,
-    PipelineResult,
-)
+from pydantic_ai_orchestrator.application.pipeline_runner import PipelineRunner
+from pydantic_ai_orchestrator.domain.models import PipelineResult
 from pydantic_ai_orchestrator.testing.utils import StubAgent, DummyPlugin
 from pydantic_ai_orchestrator.domain.plugins import PluginOutcome
 

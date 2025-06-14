@@ -9,10 +9,11 @@ Production-ready orchestration for Pydantic-based AI agents.
 
 * Typed settings and secrets
 * Telemetry and observability
-* Pluggable scoring (ratio, weighted, reward-model)
+* Pluggable scoring utilities
 * CLI and API
-* Extensible agent and reflection system
+* Extensible agent system
 * **New:** Flexible pipeline DSL for custom workflows
+* **Simplified orchestrator** built on the PipelineRunner
 
 ## Installation
 
@@ -36,15 +37,15 @@ Example usage in Python:
 ```python
 from pydantic_ai_orchestrator import Orchestrator, Task
 from pydantic_ai_orchestrator.infra.agents import (
-    review_agent, solution_agent, validator_agent, reflection_agent
+    review_agent, solution_agent, validator_agent
 )
 
 # Create orchestrator
+# Orchestrator runs a simple review → solve → validate pipeline
 orch = Orchestrator(
     review_agent,
     solution_agent,
     validator_agent,
-    reflection_agent
 )
 
 # Create task
@@ -81,9 +82,8 @@ For more examples, see the `examples` folder.
 ## Architecture
 
 ```
-[CLI] --+--> [Orchestrator] --+--> [Agent(s)]
-        |                    |
-        +--> [Scoring]       +--> [Reflection Agent]
+[CLI] --+--> [Orchestrator] --+--> [PipelineRunner] --+--> [Agents]
+        |
         +--> [Telemetry]
 ```
 
@@ -116,7 +116,7 @@ automatically using `python-dotenv`.
 ```python
 from pydantic_ai_orchestrator import Orchestrator, Task, init_telemetry
 from pydantic_ai_orchestrator.infra.agents import (
-    OpenAIChat, DefaultReviewAgent, DefaultValidatorAgent, DefaultReflectionAgent
+    OpenAIChat, DefaultReviewAgent, DefaultValidatorAgent
 )
 from pydantic_ai_orchestrator.llm.openai.chat_completion import OpenAIChatCompletion
 
@@ -127,14 +127,12 @@ init_telemetry()
 solution_agent = OpenAIChat(llm_provider=OpenAIChatCompletion(model="gpt-3.5-turbo"))
 review_agent = DefaultReviewAgent()
 validator_agent = DefaultValidatorAgent()
-reflection_agent = DefaultReflectionAgent()
 
 # Create orchestrator
 orch = Orchestrator(
     review_agent=review_agent,
     solution_agent=solution_agent,
-    validator_agent=validator_agent,
-    reflection_agent=reflection_agent
+    validator_agent=validator_agent
 )
 
 # Define task
@@ -142,11 +140,9 @@ task = Task(prompt="Write a short story about a robot who learns to paint.")
 
 # Run task
 try:
-    best_candidate = orch.run_sync(task, k_variants=3)
+    best_candidate = orch.run_sync(task)
     if best_candidate:
         print("Best Solution:\n", best_candidate.solution)
-        print("\nScore:", best_candidate.score)
-        print("\nFeedback:\n", best_candidate.feedback)
     else:
         print("No solution found.")
 except Exception as e:

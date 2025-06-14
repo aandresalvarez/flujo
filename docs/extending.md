@@ -8,27 +8,22 @@ class MyAgent(Agent):
     ...
 ```
 
-## Customizing the Reflection Agent
+## Adding a Reflection Step
 
-While the library provides a default `reflection_agent`, you may want to use a
-different model or configuration for the reflection step. Use the factory
-function `get_reflection_agent()` to create a custom instance.
+The simplified orchestrator no longer performs reflection automatically. To
+incorporate strategic feedback, build a custom pipeline using `Step`:
 
 ```python
-from pydantic_ai_orchestrator import (
-    Orchestrator,
-    review_agent,
-    solution_agent,
-    validator_agent,
-    get_reflection_agent,  # Import the factory
+from pydantic_ai_orchestrator import Step, PipelineRunner, review_agent, solution_agent, validator_agent, get_reflection_agent
+
+reflection_agent = get_reflection_agent(model="anthropic:claude-3-haiku")
+
+pipeline = (
+    Step.review(review_agent)
+    >> Step.solution(solution_agent)
+    >> Step.validate(validator_agent)
+    >> Step.validate(reflection_agent)
 )
 
-custom_reflection_agent = get_reflection_agent(model="anthropic:claude-3-haiku")
-
-orch = Orchestrator(
-    review_agent,
-    solution_agent,
-    validator_agent,
-    reflection_agent=custom_reflection_agent,
-)
+result = PipelineRunner(pipeline).run("Write a poem")
 ```

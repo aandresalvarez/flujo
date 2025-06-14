@@ -2,34 +2,20 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any, List
+from typing import Any
 
-from pydantic import BaseModel, Field
 
 from ..infra.telemetry import logfire
 from ..exceptions import OrchestratorError
 from ..domain.pipeline_dsl import Pipeline, Step
-from ..domain.plugins import ValidationPlugin, PluginOutcome
+from ..domain.plugins import PluginOutcome
+from ..domain.models import PipelineResult, StepResult
 
 
 class InfiniteRedirectError(OrchestratorError):
     """Raised when a redirect loop is detected."""
 
 
-class StepResult(BaseModel):
-    name: str
-    output: Any | None = None
-    success: bool = True
-    attempts: int = 0
-    latency_s: float = 0.0
-    token_counts: int = 0
-    cost_usd: float = 0.0
-    feedback: str | None = None
-
-
-class PipelineResult(BaseModel):
-    step_history: List[StepResult] = Field(default_factory=list)
-    total_cost_usd: float = 0.0
 
 
 class PipelineRunner:
@@ -80,8 +66,10 @@ class PipelineRunner:
                 visited.add(redirect_to)
                 step.agent = redirect_to
             if feedback:
-                if isinstance(data, str):
-                    data = f"{data}\n{feedback}"
+                if isinstance(data, dict):
+                    data["feedback"] = data.get("feedback", "") + "\n" + feedback
+                else:
+                    data = f"{str(data)}\n{feedback}"
             for handler in step.failure_handlers:
                 handler()
         result.output = output
