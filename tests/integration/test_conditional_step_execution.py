@@ -160,3 +160,64 @@ async def test_condition_exception_fails_step() -> None:
     step_result = result.step_history[-1]
     assert step_result.success is False
     assert "boom" in step_result.feedback
+
+
+@pytest.mark.asyncio
+async def test_conditional_step_error_in_condition_callable() -> None:
+    branches = {"a": Pipeline.from_step(Step("a", StubAgent(["A"])))}
+
+    def bad_condition(_: str, __: BaseModel | None) -> str:
+        raise RuntimeError("cond err")
+
+    branch_step = Step.branch_on(
+        name="branch",
+        condition_callable=bad_condition,
+        branches=branches,
+    )
+    after = Step("after", StubAgent(["after"]))
+    runner = PipelineRunner(branch_step >> after)
+    result = await runner.run_async("in")
+    assert len(result.step_history) == 1
+    step_result = result.step_history[0]
+    assert step_result.success is False
+    assert "cond err" in step_result.feedback
+
+
+@pytest.mark.asyncio
+async def test_conditional_step_error_in_branch_input_mapper() -> None:
+    branches = {"a": Pipeline.from_step(Step("a", StubAgent(["A"])))}
+
+    def branch_input(_: str, __: BaseModel | None) -> str:
+        raise RuntimeError("input map err")
+
+    branch_step = Step.branch_on(
+        name="branch",
+        condition_callable=lambda out, ctx: "a",
+        branches=branches,
+        branch_input_mapper=branch_input,
+    )
+    runner = PipelineRunner(branch_step)
+    result = await runner.run_async("in")
+    step_result = result.step_history[-1]
+    assert step_result.success is False
+    assert "input map err" in step_result.feedback
+
+
+@pytest.mark.asyncio
+async def test_conditional_step_error_in_branch_output_mapper() -> None:
+    branches = {"a": Pipeline.from_step(Step("a", StubAgent([1])))}
+
+    def out_map(_: int, __: str, ___: BaseModel | None) -> int:
+        raise RuntimeError("output map err")
+
+    branch_step = Step.branch_on(
+        name="branch",
+        condition_callable=lambda out, ctx: "a",
+        branches=branches,
+        branch_output_mapper=out_map,
+    )
+    runner = PipelineRunner(branch_step)
+    result = await runner.run_async(0)
+    step_result = result.step_history[-1]
+    assert step_result.success is False
+    assert "output map err" in step_result.feedback

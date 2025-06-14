@@ -154,9 +154,19 @@ class PipelineRunner(Generic[RunnerInT, RunnerOutT]):
         loop_overall_result = StepResult(name=loop_step.name)
 
         if loop_step.initial_input_to_loop_body_mapper:
-            current_body_input = loop_step.initial_input_to_loop_body_mapper(
-                loop_step_initial_input, pipeline_context
-            )
+            try:
+                current_body_input = loop_step.initial_input_to_loop_body_mapper(
+                    loop_step_initial_input, pipeline_context
+                )
+            except Exception as e:  # noqa: BLE001
+                logfire.error(
+                    f"Error in initial_input_to_loop_body_mapper for LoopStep '{loop_step.name}': {e}"
+                )
+                loop_overall_result.success = False
+                loop_overall_result.feedback = (
+                    f"Initial input mapper raised an exception: {e}"
+                )
+                return loop_overall_result
         else:
             current_body_input = loop_step_initial_input
 
