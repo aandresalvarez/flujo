@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Optional, cast
+from typing import Any, Optional, cast, TYPE_CHECKING
 
-from ..infra.agents import AsyncAgentProtocol
+if TYPE_CHECKING:  # pragma: no cover - used for typing only
+    from ..infra.agents import AsyncAgentProtocol
 from ..domain.pipeline_dsl import Step
 from ..domain.models import Candidate, PipelineResult, Task
 from .pipeline_runner import PipelineRunner
@@ -16,10 +17,10 @@ class Orchestrator:
 
     def __init__(
         self,
-        review_agent: AsyncAgentProtocol[Any, Any],
-        solution_agent: AsyncAgentProtocol[Any, Any],
-        validator_agent: AsyncAgentProtocol[Any, Any],
-        reflection_agent: AsyncAgentProtocol[Any, Any] | None = None,
+        review_agent: "AsyncAgentProtocol[Any, Any]",
+        solution_agent: "AsyncAgentProtocol[Any, Any]",
+        validator_agent: "AsyncAgentProtocol[Any, Any]",
+        reflection_agent: "AsyncAgentProtocol[Any, Any]" | None = None,
         max_iters: Optional[int] = None,
         k_variants: Optional[int] = None,
         reflection_limit: Optional[int] = None,
