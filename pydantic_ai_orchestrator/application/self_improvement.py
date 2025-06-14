@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Callable, Awaitable, Iterable, Optional
+from typing import Any, Callable, Awaitable, Iterable
 
 from pydantic_evals.reporting import EvaluationReport, ReportCase
 

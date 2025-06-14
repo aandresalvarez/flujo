@@ -10,7 +10,6 @@ from typing import (
     Optional,
     Sequence,
     TypeVar,
-    cast,
 )
 from pydantic import BaseModel, Field, ConfigDict
 from .agent_protocol import AsyncAgentProtocol
@@ -92,14 +91,14 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
 
     validate = validate_step
 
-    def add_plugin(self, plugin: ValidationPlugin, priority: int = 0) -> "Step[InT, OutT]":
+    def add_plugin(self, plugin: ValidationPlugin, priority: int = 0) -> "Step[StepInT, StepOutT]":
         """Add a validation plugin to this step."""
         self.plugins.append((plugin, priority))
         return self
 
 
 
-    def on_failure(self, handler: Callable[[], None]) -> "Step[InT, OutT]":
+    def on_failure(self, handler: Callable[[], None]) -> "Step[StepInT, StepOutT]":
         """Add a failure handler to this step."""
         self.failure_handlers.append(handler)
         return self
