@@ -11,6 +11,16 @@ from .infra.settings import settings
 from .infra.telemetry import init_telemetry
 
 from .domain.models import Task, Candidate, Checklist, ChecklistItem
+from .domain import (
+    Step,
+    Pipeline,
+    StepConfig,
+    PluginOutcome,
+    ValidationPlugin,
+)
+from .application.pipeline_runner import PipelineRunner, PipelineResult, StepResult
+from .testing.utils import StubAgent, DummyPlugin
+from .plugins.sql_validator import SQLSyntaxValidator
 
 from .infra.agents import (
     review_agent,
@@ -29,6 +39,14 @@ __all__ = [
     "Candidate",
     "Checklist",
     "ChecklistItem",
+    "Step",
+    "Pipeline",
+    "StepConfig",
+    "PluginOutcome",
+    "ValidationPlugin",
+    "PipelineRunner",
+    "PipelineResult",
+    "StepResult",
     "settings",
     "init_telemetry",
     "review_agent",
@@ -40,4 +58,10 @@ __all__ = [
     "OrchestratorError",
     "ConfigurationError",
     "SettingsError",
+    "PipelineRunner",
+    "PipelineResult",
+    "StepResult",
+    "StubAgent",
+    "DummyPlugin",
+    "SQLSyntaxValidator",
 ]

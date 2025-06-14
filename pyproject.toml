@@ -38,6 +38,7 @@ dependencies = [
   "typer[all]>=0.12",
   "rich>=13.7",
   "logfire>=0.3",
+  "sqlvalidator>=0.0.8",
 ]
 
 # Optional dependency groups (install with: `pip install .[dev]`, `poetry install --with dev`, etc.)
