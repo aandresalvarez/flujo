@@ -31,28 +31,38 @@ Create a new file `hello_orchestrator.py`:
 ```python
 from pydantic_ai_orchestrator import (
     Orchestrator, Task,
-    review_agent, solution_agent, validator_agent
+    review_agent, solution_agent, validator_agent,
+    init_telemetry,
 )
 
-# Create an orchestrator with default agents
-orch = Orchestrator(review_agent, solution_agent, validator_agent)
+init_telemetry()
 
-# Define a simple task
+# Assemble the orchestrator with the default agents. It runs a fixed
+# Review -> Solution -> Validate workflow.
+orch = Orchestrator(
+    review_agent=review_agent,
+    solution_agent=solution_agent,
+    validator_agent=validator_agent,
+)
+
 task = Task(prompt="Write a haiku about programming")
 
-# Run the orchestrator
-result = orch.run_sync(task)
+best_candidate = orch.run_sync(task)
 
-# Print the result
-if result:
+if best_candidate:
     print("\n🎉 Best result:")
     print("-" * 40)
-    print(f"Solution:\n{result.solution}")
-    print("\nQuality Checklist:")
-    for item in result.checklist.items:
-        status = "✅" if item.passed else "❌"
-        print(f"{status} {item.description}")
+    print(f"Solution:\n{best_candidate.solution}")
+    if best_candidate.checklist:
+        print("\nQuality Checklist:")
+        for item in best_candidate.checklist.items:
+            status = "✅" if item.passed else "❌"
+            print(f"{status} {item.description}")
 ```
+
+The `Orchestrator` class provides a quick way to run this standard
+multi-agent workflow. For custom pipelines and advanced control, you'll
+use the `PipelineRunner` and `Step` DSL described later.
 
 ## 4. Run Your First Orchestration
 
@@ -123,18 +133,29 @@ code_agent = make_agent_async(
 ### Custom Pipeline
 
 ```python
-from pydantic_ai_orchestrator import Step, PipelineRunner
+from pydantic_ai_orchestrator import (
+    Step, PipelineRunner, Task,
+    review_agent, solution_agent, validator_agent,
+)
 
-# Create a custom pipeline
-pipeline = (
+# Define a custom pipeline (similar to the Orchestrator workflow)
+custom_pipeline = (
     Step.review(review_agent)
     >> Step.solution(solution_agent)
     >> Step.validate(validator_agent)
 )
 
-# Run it
-runner = PipelineRunner(pipeline)
-result = runner.run("Write a function to sort a list")
+runner = PipelineRunner(custom_pipeline)
+
+# The input to `run()` is the prompt for the first step.
+pipeline_result = runner.run("Write a function to sort a list")
+
+print("Pipeline steps and success states:")
+for step_result in pipeline_result.step_history:
+    print(f"  - {step_result.name}: {step_result.success}")
+
+if len(pipeline_result.step_history) > 1:
+    print("Solution output:\n", pipeline_result.step_history[1].output)
 ```
 
 ## Need Help?

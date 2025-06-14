@@ -23,20 +23,26 @@ pip install pydantic-ai-orchestrator[bench]
 ```python
 from pydantic_ai_orchestrator import (
     Orchestrator, Task, init_telemetry,
-    review_agent, solution_agent, validator_agent
+    review_agent, solution_agent, validator_agent,
 )
 
 # Initialize telemetry (optional)
 init_telemetry()
 
 # Create an orchestrator with default agents
-orch = Orchestrator(review_agent, solution_agent, validator_agent)
+orch = Orchestrator(
+    review_agent=review_agent,
+    solution_agent=solution_agent,
+    validator_agent=validator_agent,
+)
 result = orch.run_sync(Task(prompt="Write a poem."))
 print(result)
 ```
 
-The default orchestrator does not include a reflection step.
-Use the `Step` API to build a custom pipeline if you need strategic reflection.
+The default `Orchestrator` runs a fixed Review -> Solution -> Validate pipeline.
+It does not include a reflection step by default, but you can pass a
+`reflection_agent` to enable one. For fully custom workflows or more complex
+reflection logic, use the `Step` API with `PipelineRunner`.
 
 Call `init_telemetry()` once at startup to configure logging and tracing for your application.
 

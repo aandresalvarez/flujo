@@ -1,6 +1,9 @@
 # Pydantic AI Orchestrator
 
 A powerful Python library for orchestrating AI workflows using Pydantic models.
+The `pydantic-ai-orchestrator` package (repository hosted at
+[`github.com/aandresalvarez/rloop`](https://github.com/aandresalvarez/rloop))
+provides utilities to manage multi-agent pipelines with minimal setup.
 
 ## Features
 
@@ -24,40 +27,71 @@ pip install pydantic-ai-orchestrator
 ### Basic Usage
 
 ```python
-from pydantic_ai_orchestrator import Orchestrator
-
-# Create an orchestrator
-orchestrator = Orchestrator(
-    model="openai:gpt-4",
-    temperature=0.7
+from pydantic_ai_orchestrator import (
+    Orchestrator, Task,
+    review_agent, solution_agent, validator_agent,
+    init_telemetry,
 )
 
-# Run a task
-result = orchestrator.run(
-    "Write a Python function to calculate fibonacci numbers"
+# Optional: enable telemetry for your application
+init_telemetry()
+
+# Assemble an orchestrator with the library-provided agents. The class
+# runs a fixed pipeline: Review -> Solution -> Validate.
+orch = Orchestrator(
+    review_agent=review_agent,
+    solution_agent=solution_agent,
+    validator_agent=validator_agent,
 )
+
+# Define a task
+task = Task(prompt="Write a Python function to calculate Fibonacci numbers")
+
+# Run synchronously
+best_candidate = orch.run_sync(task)
 
 # Print the result
-print(result.solution)
+if best_candidate:
+    print("Solution:\n", best_candidate.solution)
+    if best_candidate.checklist:
+        print("\nQuality Checklist:")
+        for item in best_candidate.checklist.items:
+            status = "✅ Passed" if item.passed else "❌ Failed"
+            print(f"  - {item.description:<45} {status}")
+else:
+    print("No solution found.")
 ```
 
 ### Pipeline Example
 
 ```python
-from pydantic_ai_orchestrator import Step, PipelineRunner
+from pydantic_ai_orchestrator import (
+    Step, PipelineRunner, Task,
+    review_agent, solution_agent, validator_agent,
+)
 
-# Create a pipeline
-pipeline = (
+# Build a custom pipeline using the Step DSL. This mirrors the internal
+# workflow used by :class:`Orchestrator` but is fully configurable.
+custom_pipeline = (
     Step.review(review_agent)
     >> Step.solution(solution_agent)
     >> Step.validate(validator_agent)
 )
 
-# Create a runner
-runner = PipelineRunner(pipeline)
+pipeline_runner = PipelineRunner(custom_pipeline)
 
-# Run the pipeline
-result = runner.run("Generate a REST API using FastAPI")
+# Run synchronously; PipelineRunner returns a PipelineResult.
+pipeline_result = pipeline_runner.run(
+    "Generate a REST API using FastAPI for a to-do list application."
+)
+
+print("\nPipeline Execution History:")
+for step_res in pipeline_result.step_history:
+    print(f"- Step '{step_res.name}': Success={step_res.success}")
+
+if len(pipeline_result.step_history) > 1 and pipeline_result.step_history[1].success:
+    solution_output = pipeline_result.step_history[1].output
+    print("\nGenerated Solution:\n", solution_output)
 ```
 
 ## Documentation
