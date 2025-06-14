@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     default_reflection_model: str = Field(
         "openai:gpt-4o", validation_alias="orch_default_reflection_model"
     )
+    default_self_improvement_model: str = Field(
+        "openai:gpt-4o",
+        validation_alias="orch_default_self_improvement_model",
+        description="Default model to use for the SelfImprovementAgent.",
+    )
 
     # Orchestrator Tuning
     max_iters: int = 5

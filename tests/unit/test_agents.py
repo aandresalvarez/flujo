@@ -257,3 +257,41 @@ async def test_async_agent_wrapper_runtime_timeout(mock_pydantic_ai_agent: Magic
         await wrapper.run_async("prompt")
     assert "timed out" in str(exc_info.value).lower() or "TimeoutError" in str(exc_info.value)
     mock_pydantic_ai_agent.run.assert_called_once()
+
+
+def test_make_self_improvement_agent_uses_settings_default(monkeypatch) -> None:
+    called: dict[str, str] = {}
+
+    def fake_make(model: str, system_prompt: str, output_type: type) -> None:
+        called["model"] = model
+        return MagicMock()
+
+    monkeypatch.setattr(
+        "pydantic_ai_orchestrator.infra.agents.make_agent_async",
+        fake_make,
+    )
+    monkeypatch.setattr(
+        "pydantic_ai_orchestrator.infra.agents.settings.default_self_improvement_model",
+        "model_from_settings",
+    )
+    from pydantic_ai_orchestrator.infra.agents import make_self_improvement_agent
+
+    make_self_improvement_agent()
+    assert called["model"] == "model_from_settings"
+
+
+def test_make_self_improvement_agent_uses_override_model(monkeypatch) -> None:
+    called: dict[str, str] = {}
+
+    def fake_make(model: str, system_prompt: str, output_type: type) -> None:
+        called["model"] = model
+        return MagicMock()
+
+    monkeypatch.setattr(
+        "pydantic_ai_orchestrator.infra.agents.make_agent_async",
+        fake_make,
+    )
+    from pydantic_ai_orchestrator.infra.agents import make_self_improvement_agent
+
+    make_self_improvement_agent(model="override_model")
+    assert called["model"] == "override_model"

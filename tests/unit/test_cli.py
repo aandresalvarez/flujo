@@ -1,5 +1,6 @@
 import os
 import asyncio
+from typing import Any
 
 # Ensure API key exists before importing the CLI
 os.environ.setdefault("orch_openai_api_key", "test-key")
@@ -7,6 +8,7 @@ os.environ.setdefault("orch_openai_api_key", "test-key")
 from pydantic_ai_orchestrator.cli.main import app
 from typer.testing import CliRunner
 from unittest.mock import patch, MagicMock, AsyncMock
+from pathlib import Path
 import pytest
 import json
 
@@ -510,3 +512,94 @@ def test_cli_run_with_invalid_review_model_path() -> None:
         result = runner.invoke(app, ["solve", "test prompt", "--review-model", "/invalid/path"])
         assert result.exit_code == 2
         assert "Configuration Error" in result.stderr
+
+
+def test_cli_add_eval_case_prints_correct_case_string(tmp_path) -> None:
+    file = tmp_path / "data.py"
+    file.write_text("dataset = None")
+    result = runner.invoke(
+        app,
+        [
+            "add-eval-case",
+            "-d",
+            str(file),
+            "-n",
+            "my_new_test",
+            "-i",
+            "test input",
+            "-e",
+            "expected output",
+            "--metadata",
+            '{"tag":"new"}',
+        ],
+    )
+    assert result.exit_code == 0
+    assert "Case(name=\"my_new_test\"" in result.stdout
+
+
+def test_cli_add_eval_case_handles_missing_dataset_file_gracefully(tmp_path) -> None:
+    missing = tmp_path / "missing.py"
+    result = runner.invoke(
+        app,
+        ["add-eval-case", "-d", str(missing), "-n", "a", "-i", "b", "--expected", ""],
+    )
+    assert result.exit_code == 1
+    assert "Dataset file not found" in result.stdout
+
+
+def test_cli_add_eval_case_invalid_metadata_json(tmp_path) -> None:
+    file = tmp_path / "data.py"
+    file.write_text("dataset = None")
+    result = runner.invoke(
+        app,
+        [
+            "add-eval-case",
+            "-d",
+            str(file),
+            "-n",
+            "case",
+            "-i",
+            "x",
+            "--metadata",
+            "{not json}",
+            "--expected",
+            "",
+        ],
+    )
+    assert result.exit_code == 1
+    assert "Invalid JSON" in result.stdout
+
+
+def test_cli_improve_uses_custom_improvement_model(monkeypatch, tmp_path) -> None:
+    pipe = tmp_path / "pipe.py"
+    pipe.write_text(
+        "from pydantic_ai_orchestrator.domain import Step\n"
+        "from pydantic_ai_orchestrator.testing.utils import StubAgent\n"
+        "pipeline = Step.solution(StubAgent(['a']))\n"
+    )
+    data = tmp_path / "data.py"
+    data.write_text("from pydantic_evals import Dataset, Case\ndataset=Dataset(cases=[Case(inputs='a')])")
+
+    called: dict[str, Any] = {}
+
+    def fake_make(model: str | None = None):
+        called["model"] = model
+        class A:
+            async def run(self, p):
+                return "{}"
+        return A()
+
+    monkeypatch.setattr("pydantic_ai_orchestrator.cli.main.make_self_improvement_agent", fake_make)
+    from pydantic_ai_orchestrator.domain.models import ImprovementReport
+
+    monkeypatch.setattr(
+        "pydantic_ai_orchestrator.cli.main.evaluate_and_improve",
+        AsyncMock(return_value=ImprovementReport(suggestions=[])),
+    )
+
+    result = runner.invoke(
+        app,
+        ["improve", str(pipe), str(data), "--improvement-model", "custom"],
+    )
+    assert result.exit_code == 0
+    assert called["model"] == "custom"

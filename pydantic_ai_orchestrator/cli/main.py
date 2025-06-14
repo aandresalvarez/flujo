@@ -8,6 +8,7 @@ import typer
 import json
 import os
 import yaml
+from pathlib import Path
 from pydantic_ai_orchestrator.domain.models import Task, Checklist
 from pydantic_ai_orchestrator.infra.agents import (
     review_agent,
@@ -15,6 +16,7 @@ from pydantic_ai_orchestrator.infra.agents import (
     validator_agent,
     get_reflection_agent,
     make_agent_async,
+    make_self_improvement_agent,
     self_improvement_agent,
     REVIEW_SYS,
     SOLUTION_SYS,
@@ -263,10 +265,67 @@ def bench(prompt: str, rounds: int = 10) -> None:
         raise typer.Exit(130)
 
 
+@app.command(name="add-eval-case")
+def add_eval_case_cmd(
+    dataset_path: Path = typer.Option(
+        ..., "--dataset", "-d", help="Path to the Python file containing the Dataset object"
+    ),
+    case_name: str = typer.Option(..., "--name", "-n", prompt="Enter a unique name for the new evaluation case"),
+    inputs: str = typer.Option(..., "--inputs", "-i", prompt="Enter the primary input for this case"),
+    expected_output: Optional[str] = typer.Option(
+        None, "--expected", "-e", prompt="Enter the expected output (or skip)", show_default=False
+    ),
+    metadata_json: Optional[str] = typer.Option(None, "--metadata", "-m", help="JSON string for case metadata"),
+    dataset_variable_name: str = typer.Option("dataset", "--dataset-var", help="Name of the Dataset variable"),
+) -> None:
+    """Print a new Case(...) definition to manually add to a dataset file."""
+
+    if not dataset_path.exists() or not dataset_path.is_file():
+        typer.secho(f"Error: Dataset file not found at {dataset_path}", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+    case_parts = [f'Case(name="{case_name}", inputs="""{inputs}"""']
+    if expected_output is not None:
+        case_parts.append(f'expected_output="""{expected_output}"""')
+    if metadata_json:
+        try:
+            parsed = json.loads(metadata_json)
+            case_parts.append(f"metadata={parsed}")
+        except json.JSONDecodeError:
+            typer.secho(f"Error: Invalid JSON provided for metadata: {metadata_json}", fg=typer.colors.RED)
+            raise typer.Exit(1)
+    new_case_str = ", ".join(case_parts) + ")"
+
+    typer.echo(
+        f"\nPlease manually add the following line to the 'cases' list in {dataset_path} ({dataset_variable_name}):"
+    )
+    typer.secho(f"    {new_case_str}", fg=typer.colors.GREEN)
+
+    try:
+        with open(dataset_path, "r") as f:
+            content = f.read()
+        if dataset_variable_name not in content:
+            typer.secho(
+                f"Error: Could not find Dataset variable named '{dataset_variable_name}' in {dataset_path}",
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(1)
+    except Exception as e:
+        typer.secho(f"An error occurred: {e}", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+
 @app.command()
 def improve(
     pipeline_path: str,
     dataset_path: str,
+    improvement_agent_model: Annotated[
+        Optional[str],
+        typer.Option(
+            "--improvement-model",
+            help="LLM model to use for the SelfImprovementAgent",
+        ),
+    ] = None,
     json_output: Annotated[bool, typer.Option("--json", help="Output raw JSON instead of formatted table")] = False,
 ) -> None:
     """
@@ -300,8 +359,11 @@ def improve(
 
     runner: PipelineRunner = PipelineRunner(pipeline)
     task_fn = functools.partial(run_pipeline_async, runner=runner)
-    agent: SelfImprovementAgent = SelfImprovementAgent(self_improvement_agent)
-    report: ImprovementReport = asyncio.run(evaluate_and_improve(task_fn, dataset, agent))
+    _agent = make_self_improvement_agent(model=improvement_agent_model)
+    agent: SelfImprovementAgent = SelfImprovementAgent(_agent)
+    report: ImprovementReport = asyncio.run(
+        evaluate_and_improve(task_fn, dataset, agent, pipeline_definition=pipeline)
+    )
     if json_output:
         typer.echo(json.dumps(report.model_dump(), indent=2))
         return
@@ -389,6 +451,7 @@ __all__ = [
     'version_cmd',
     'show_config_cmd',
     'bench',
+    'add_eval_case_cmd',
     'improve',
     'explain',
     'main',

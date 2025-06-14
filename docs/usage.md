@@ -9,8 +9,12 @@ orch solve "Write a summary of this document."
 orch show-config
 orch bench --prompt "hi" --rounds 3
 orch explain path/to/pipeline.py
+orch add-eval-case -d my_evals.py -n new_case -i "input"
 orch --profile
 ```
+
+Use `orch improve --improvement-model MODEL` to override the model powering the
+self-improvement agent when generating suggestions.
 
 `orch bench` depends on `numpy`. Install with the optional `[bench]` extra:
 
