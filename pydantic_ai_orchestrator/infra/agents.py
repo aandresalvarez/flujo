@@ -16,6 +16,7 @@ import asyncio
 from pydantic_ai_orchestrator.infra.telemetry import logfire
 import traceback
 from pydantic import BaseModel, Field
+from tenacity import AsyncRetrying, RetryError, stop_after_attempt, wait_exponential
 
 # 1. Prompt Constants
 REVIEW_SYS = """You are an expert software engineer.\nYour task is to generate an objective, comprehensive, and actionable checklist of criteria to evaluate a solution for the user's request.\nThe checklist should be detailed and cover all key aspects of a good solution.\nFocus on correctness, completeness, and best practices.\n\nReturn **JSON only** that conforms to this schema:\nChecklist(items=[ChecklistItem(description:str, passed:bool|None, feedback:str|None)])\n\nExample:\n{\n  \"items\": [\n    {\"description\": \"The code is correct and runs without errors.\", \"passed\": null, \"feedback\": null},\n    {\"description\": \"The code follows best practices.\", \"passed\": null, \"feedback\": null}\n  ]\n}\n"""
@@ -120,34 +121,39 @@ class AsyncAgentWrapper:
             if "generation_kwargs" not in kwargs or not isinstance(kwargs.get("generation_kwargs"), dict):
                 kwargs["generation_kwargs"] = {}
             kwargs["generation_kwargs"]["temperature"] = temp
-        attempt = 0
-        while attempt < self._max_retries:
-            attempt += 1
-            try:
-                raw_agent_response = await asyncio.wait_for(
-                    self._agent.run(*args, **kwargs),
-                    timeout=self._timeout_seconds,
-                )
-                logfire.info(f"Agent '{self._model_name}' raw response: {raw_agent_response}")
 
-                # Detect pydantic-ai failure string and treat as failure.
-                if isinstance(raw_agent_response, str) and raw_agent_response.startswith("Agent failed after"):
-                    raise OrchestratorRetryError(raw_agent_response)
+        retryer = AsyncRetrying(
+            reraise=False,
+            stop=stop_after_attempt(self._max_retries),
+            wait=wait_exponential(max=60),
+        )
 
-                return raw_agent_response
-            except (asyncio.TimeoutError, Exception) as e:
-                tb = traceback.format_exc()
-                logfire.error(
-                    f"Agent '{self._model_name}' call failed on attempt {attempt} with exception: {type(e).__name__}({e})\nTraceback:\n{tb}"
-                )
-                if attempt >= self._max_retries:
-                    raise OrchestratorRetryError(
-                        f"Agent '{self._model_name}' failed after {attempt} attempts. Last error: {type(e).__name__}({e})"
-                    ) from e
-                # Exponential back-off (capped to 60s)
-                delay = min(2 ** (attempt - 1), 60)
-                await asyncio.sleep(delay)
-        return None
+        try:
+            async for attempt in retryer:
+                with attempt:
+                    raw_agent_response = await asyncio.wait_for(
+                        self._agent.run(*args, **kwargs),
+                        timeout=self._timeout_seconds,
+                    )
+                    logfire.info(
+                        f"Agent '{self._model_name}' raw response: {raw_agent_response}"
+                    )
+
+                    if isinstance(raw_agent_response, str) and raw_agent_response.startswith("Agent failed after"):
+                        raise OrchestratorRetryError(raw_agent_response)
+
+                    return raw_agent_response
+        except RetryError as e:
+            last_exc = e.last_attempt.exception()
+            raise OrchestratorRetryError(
+                f"Agent '{self._model_name}' failed after {self._max_retries} attempts. Last error: {type(last_exc).__name__}({last_exc})"
+            ) from last_exc
+        except Exception as e:
+            tb = traceback.format_exc()
+            logfire.error(
+                f"Agent '{self._model_name}' call failed on attempt {attempt.retry_state.attempt_number} with exception: {type(e).__name__}({e})\nTraceback:\n{tb}"
+            )
+            raise
 
     async def run_async(self, *args: Any, **kwargs: Any) -> Any:
         return await self._run_with_retry(*args, **kwargs)

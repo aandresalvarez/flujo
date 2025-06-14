@@ -21,7 +21,8 @@ class PipelineRunner:
 
     def __init__(self, pipeline: Pipeline | Step[Any, Any]):
         if isinstance(pipeline, Step):
-            pipeline = Pipeline(steps=[pipeline])
+            # Avoid Pydantic validation resetting Step configuration
+            pipeline = Pipeline.model_construct(steps=[pipeline])
         self.pipeline = pipeline
 
     async def _run_step(self, step: Step[Any, Any], data: Any) -> StepResult:
