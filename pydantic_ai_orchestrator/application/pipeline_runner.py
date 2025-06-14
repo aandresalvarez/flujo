@@ -329,9 +329,12 @@ class PipelineRunner(Generic[RunnerInT, RunnerOutT]):
             branch_pipeline_failed_internally = False
 
             for branch_s in selected_branch_pipeline.steps:
-                branch_step_result_obj = await self._run_step(
-                    branch_s, current_branch_data, pipeline_context
-                )
+                with logfire.span(
+                    f"ConditionalStep '{conditional_step.name}' Branch '{branch_key_to_execute}' - Step '{branch_s.name}'"
+                ):
+                    branch_step_result_obj = await self._run_step(
+                        branch_s, current_branch_data, pipeline_context
+                    )
 
                 conditional_overall_result.latency_s += branch_step_result_obj.latency_s
                 conditional_overall_result.cost_usd += getattr(
@@ -412,10 +415,16 @@ class PipelineRunner(Generic[RunnerInT, RunnerOutT]):
         pipeline_result_obj = PipelineResult()
         try:
             for step in self.pipeline.steps:
-                with logfire.span(step.name):
+                with logfire.span(step.name) as span:
                     step_result = await self._run_step(
                         step, data, pipeline_context=current_pipeline_context_instance
                     )
+                    if step_result.metadata_:
+                        for key, value in step_result.metadata_.items():
+                            try:
+                                span.set_attribute(key, value)
+                            except Exception:  # noqa: BLE001
+                                pass
                 pipeline_result_obj.step_history.append(step_result)
                 pipeline_result_obj.total_cost_usd += step_result.cost_usd
                 if not step_result.success:
