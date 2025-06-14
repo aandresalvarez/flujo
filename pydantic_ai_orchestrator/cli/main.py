@@ -11,11 +11,18 @@ from pydantic_ai_orchestrator.infra.agents import (
     validator_agent,
     get_reflection_agent,
     make_agent_async,
+    self_improvement_agent,
     REVIEW_SYS,
     SOLUTION_SYS,
     VALIDATE_SYS,
 )
 from pydantic_ai_orchestrator.application.orchestrator import Orchestrator
+from pydantic_ai_orchestrator.application.eval_adapter import run_pipeline_async
+from pydantic_ai_orchestrator.application.self_improvement import (
+    evaluate_and_improve,
+    SelfImprovementAgent,
+)
+from pydantic_ai_orchestrator.application.pipeline_runner import PipelineRunner
 from pydantic_ai_orchestrator.infra.settings import settings, SettingsError
 from pydantic_ai_orchestrator.exceptions import ConfigurationError
 
@@ -23,7 +30,7 @@ from pydantic_ai_orchestrator.infra.telemetry import init_telemetry, logfire
 from typing_extensions import Annotated
 from rich.table import Table
 from rich.console import Console
-from pydantic_ai_orchestrator.domain import Pipeline
+from pydantic_ai_orchestrator.domain import Pipeline, Step
 import runpy
 
 app = typer.Typer(rich_markup_mode="markdown")
@@ -197,6 +204,32 @@ def bench(prompt: str, rounds: int = 10):
     except KeyboardInterrupt:
         logfire.info("Aborted by user (KeyboardInterrupt). Closing spans and exiting.")
         raise typer.Exit(130)
+
+
+@app.command()
+def improve(pipeline_path: str, dataset_path: str):
+    """Run evaluation and generate improvement suggestions."""
+    import asyncio
+    import functools
+
+    try:
+        pipe_ns = runpy.run_path(pipeline_path)
+        dataset_ns = runpy.run_path(dataset_path)
+    except Exception as e:  # pragma: no cover - user error
+        typer.echo(f"[red]Failed to load file: {e}", err=True)
+        raise typer.Exit(1)
+
+    pipeline = pipe_ns.get("pipeline") or pipe_ns.get("PIPELINE")
+    dataset = dataset_ns.get("dataset") or dataset_ns.get("DATASET")
+    if not isinstance(pipeline, (Pipeline, Step)) or dataset is None:
+        typer.echo("[red]Invalid pipeline or dataset file", err=True)
+        raise typer.Exit(1)
+
+    runner = PipelineRunner(pipeline)
+    task_fn = functools.partial(run_pipeline_async, runner=runner)
+    agent = SelfImprovementAgent(self_improvement_agent)
+    report = asyncio.run(evaluate_and_improve(task_fn, dataset, agent))
+    typer.echo(json.dumps(report.model_dump(), indent=2))
 
 
 @app.command()
