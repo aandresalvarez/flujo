@@ -51,7 +51,9 @@ SELF_IMPROVE_SYS = """You are a debugging assistant specialized in AI pipelines.
     "You will receive step-by-step logs from failed evaluation cases and one" \
     " successful example. Analyze these to find root causes and suggest" \
     " concrete improvements. Consider pipeline prompts, step configuration" \
-    " parameters such as temperature, and the evaluation suite itself" \
+    " parameters such as temperature, retries, and timeout. Each step may" \
+    " include a SystemPromptSummary line showing a redacted snippet of its" \
+    " system prompt. Also consider the evaluation suite itself" \
     " (proposing new tests or evaluator tweaks). Return JSON ONLY matching" \
     " ImprovementReport(suggestions=[ImprovementSuggestion(...)])."\n\n" \
     "Here are some examples of desired input/output:\n\n" \
@@ -319,7 +321,7 @@ reflection_agent: AsyncAgentProtocol[Any, Any] | NoOpReflectionAgent = get_refle
 
 def make_self_improvement_agent(model: str | None = None) -> AsyncAgentWrapper[Any, str]:
     """Create the SelfImprovementAgent."""
-    model_name = model or settings.default_solution_model
+    model_name = model or settings.default_self_improvement_model
     return make_agent_async(model_name, SELF_IMPROVE_SYS, str)
 
 

@@ -55,6 +55,39 @@ class ImprovementSuggestion(BaseModel):
 5. Re-run the evaluation to see the improvement.
 
 Suggestions are advisory and may vary in quality depending on the underlying LLM.
+
+## Context for SelfImprovementAgent
+
+When building the prompt for the self-improvement agent, each step now includes
+its `StepConfig` parameters and a redacted summary of the step's system prompt.
+This gives the agent more insight into how your pipeline is configured and helps
+it provide targeted `CONFIG_ADJUSTMENT` or `PROMPT_MODIFICATION` suggestions.
+
+Example snippet of the context:
+
+```
+Case: test_sql_error
+- GenerateSQL: Output(content="SELEC * FROM t") (success=True)
+  Config(retries=1, timeout=30s)
+  SystemPromptSummary: "You are a SQL expert..."
+```
+
+## Acting on Suggestions: Adding New Evaluation Cases
+
+For suggestions of type `NEW_EVAL_CASE`, use the helper command:
+
+```bash
+orch add-eval-case -d path/to/my_evals.py -n test_new_case -i "user input"
+```
+
+The command prints a `Case(...)` definition that you can copy into your dataset
+file.
+
+## Configuring the Self-Improvement Agent
+
+The model used by the self-improvement agent can be changed via the
+`orch_default_self_improvement_model` setting or overridden at the CLI using
+`orch improve --improvement-model MODEL_NAME`.
 ### Interpreting Suggestion Types
 The `suggestion_type` field indicates how you might act on the advice:
 - **PROMPT_MODIFICATION** – adjust the text of a step's system prompt as described.

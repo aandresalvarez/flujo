@@ -53,3 +53,29 @@ async def test_build_context_for_self_improvement_agent():
     report = await dataset.evaluate(lambda x: run_pipeline_async(x, runner=runner))
     context = _build_context(report.cases, None)
     assert "Case: c1" in context
+
+
+@pytest.mark.asyncio
+async def test_self_improvement_context_includes_config_and_prompts(monkeypatch):
+    captured: dict[str, str] = {}
+
+    class CaptureAgent:
+        async def run(self, prompt: str) -> str:
+            captured["prompt"] = prompt
+            return json.dumps({"suggestions": []})
+
+    agent = StubAgent(["ok"])
+    agent.system_prompt = "Test prompt"
+    pipeline = Step.solution(agent, max_retries=5, timeout_s=30)
+    runner = PipelineRunner(pipeline)
+    dataset = Dataset(cases=[Case(inputs="i", expected_output="o")])
+
+    await evaluate_and_improve(
+        lambda x: run_pipeline_async(x, runner=runner),
+        dataset,
+        SelfImprovementAgent(CaptureAgent()),
+        pipeline_definition=pipeline,
+    )
+
+    assert "Config(retries=5" in captured["prompt"]
+    assert "SystemPromptSummary" in captured["prompt"]
