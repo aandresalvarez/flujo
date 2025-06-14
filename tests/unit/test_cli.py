@@ -1,5 +1,4 @@
 import os
-import types
 import asyncio
 
 # Ensure API key exists before importing the CLI
@@ -9,7 +8,6 @@ from pydantic_ai_orchestrator.cli.main import app
 from typer.testing import CliRunner
 from unittest.mock import patch, MagicMock, AsyncMock
 import pytest
-import tempfile
 import json
 
 runner = CliRunner()
@@ -109,7 +107,7 @@ def test_cli_version_command(monkeypatch) -> None:
 
 
 def test_cli_solve_with_weights(monkeypatch) -> None:
-    from unittest.mock import patch, MagicMock, AsyncMock
+    from unittest.mock import patch
     from pydantic_ai_orchestrator.domain.models import Task
 
     class DummyCandidate:
@@ -337,8 +335,7 @@ def test_cli_version() -> None:
 
 def test_cli_run() -> None:
     """Test basic run functionality with default settings."""
-    from unittest.mock import patch, MagicMock
-    from pydantic_ai_orchestrator.domain.models import Task
+    from unittest.mock import patch
 
     class DummyCandidate:
         def model_dump(self):
@@ -357,8 +354,7 @@ def test_cli_run() -> None:
 
 def test_cli_run_with_args() -> None:
     """Test run with various command line arguments."""
-    from unittest.mock import patch, MagicMock
-    from pydantic_ai_orchestrator.domain.models import Task
+    from unittest.mock import patch
 
     class DummyCandidate:
         def model_dump(self):

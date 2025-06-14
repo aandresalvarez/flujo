@@ -1,6 +1,5 @@
 from pydantic_ai_orchestrator.domain import Step, Pipeline
 from unittest.mock import AsyncMock
-from typing import Any
 
 
 def test_step_chaining_operator() -> None:
@@ -31,17 +30,24 @@ def test_step_configuration() -> None:
 
 
 def test_dsl() -> None:
-    a: int = 1
-    b: int = 2
+    step = Step("dummy")
+    assert step.name == "dummy"
 
 
 def test_dsl_with_step() -> None:
-    c: int = 3
+    step = Step("A")
+    pipeline = Pipeline.from_step(step)
+    assert list(pipeline) == [step]
 
 
 def test_dsl_with_agent() -> None:
-    step: Step[Any, Any]
+    agent = AsyncMock()
+    step = Step.review(agent)
+    assert step.agent is agent
 
 
 def test_dsl_with_agent_and_step() -> None:
-    step: Step[Any, Any]
+    agent = AsyncMock()
+    step = Step.solution(agent)
+    pipeline = step >> Step.validate(agent)
+    assert [s.agent for s in pipeline.steps] == [agent, agent]

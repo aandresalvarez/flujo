@@ -7,9 +7,7 @@ from __future__ import annotations
 from typing import (
     Type,
     Any,
-    cast,
     Generic,
-    Union,
 )
 from pydantic_ai import Agent
 import os
@@ -27,7 +25,6 @@ from pydantic_ai_orchestrator.exceptions import (
 import asyncio
 from pydantic_ai_orchestrator.infra.telemetry import logfire
 import traceback
-from pydantic import BaseModel, Field
 from tenacity import AsyncRetrying, RetryError, stop_after_attempt, wait_exponential
 
 

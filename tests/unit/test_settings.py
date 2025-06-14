@@ -1,4 +1,3 @@
-from typing import Optional
 from pydantic_ai_orchestrator.infra.settings import Settings
 from pydantic import SecretStr
 import os

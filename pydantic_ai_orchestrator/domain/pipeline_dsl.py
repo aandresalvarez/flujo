@@ -10,7 +10,6 @@ from typing import (
     Optional,
     Sequence,
     TypeVar,
-    cast,
 )
 from pydantic import BaseModel, Field, ConfigDict
 from .agent_protocol import AsyncAgentProtocol
@@ -20,6 +19,14 @@ from .plugins import ValidationPlugin
 StepInT = TypeVar("StepInT")
 StepOutT = TypeVar("StepOutT")
 NewOutT = TypeVar("NewOutT")
+
+SF_InT = TypeVar("SF_InT")
+SF_OutT = TypeVar("SF_OutT")
+ReviewOutT = TypeVar("ReviewOutT")
+SolInT = TypeVar("SolInT")
+SolOutT = TypeVar("SolOutT")
+ValInT = TypeVar("ValInT")
+ValOutT = TypeVar("ValOutT")
 
 
 class StepConfig(BaseModel):
@@ -92,14 +99,14 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
 
     validate = validate_step
 
-    def add_plugin(self, plugin: ValidationPlugin, priority: int = 0) -> "Step[InT, OutT]":
+    def add_plugin(self, plugin: ValidationPlugin, priority: int = 0) -> "Step[StepInT, StepOutT]":
         """Add a validation plugin to this step."""
         self.plugins.append((plugin, priority))
         return self
 
 
 
-    def on_failure(self, handler: Callable[[], None]) -> "Step[InT, OutT]":
+    def on_failure(self, handler: Callable[[], None]) -> "Step[StepInT, StepOutT]":
         """Add a failure handler to this step."""
         self.failure_handlers.append(handler)
         return self
@@ -107,29 +114,33 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
 
 class StepFactory:
     @staticmethod
-    def create[SF_InT, SF_OutT](
+    def create(
         name: str,
         agent: AsyncAgentProtocol[SF_InT, SF_OutT],
         **config: Any,
     ) -> Step[SF_InT, SF_OutT]:
+        """Create a fully configured :class:`Step`."""
         return Step[SF_InT, SF_OutT](name, agent, **config)
 
     @classmethod
-    def review[ReviewOutT](
+    def review(
         cls, agent: AsyncAgentProtocol[Any, ReviewOutT], **config: Any
     ) -> Step[Any, ReviewOutT]:
+        """Construct a review step using the provided agent."""
         return cls.create("review", agent, **config)
 
     @classmethod
-    def solution[SolInT, SolOutT](
+    def solution(
         cls, agent: AsyncAgentProtocol[SolInT, SolOutT], **config: Any
     ) -> Step[SolInT, SolOutT]:
+        """Construct a solution step using the provided agent."""
         return cls.create("solution", agent, **config)
 
     @classmethod
-    def validate[ValInT, ValOutT](
+    def validate(
         cls, agent: AsyncAgentProtocol[ValInT, ValOutT], **config: Any
     ) -> Step[ValInT, ValOutT]:
+        """Construct a validation step using the provided agent."""
         return cls.create("validate", agent, **config)
 
 

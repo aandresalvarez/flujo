@@ -3,12 +3,12 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Union, cast, Literal
+from typing import Any, Dict, List, Optional, Union, cast
 import typer
 import json
 import os
 import yaml
-from pydantic_ai_orchestrator.domain.models import Task, Checklist, Candidate
+from pydantic_ai_orchestrator.domain.models import Task, Checklist
 from pydantic_ai_orchestrator.infra.agents import (
     review_agent,
     solution_agent,
