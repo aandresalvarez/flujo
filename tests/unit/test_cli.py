@@ -175,3 +175,18 @@ def test_cli_solve_configuration_error(monkeypatch):
     assert result.exit_code == 2
     assert "Configuration Error: Missing API key!" in result.stderr
 
+
+def test_cli_explain(tmp_path):
+    from pydantic_ai_orchestrator.domain import Step
+
+    file = tmp_path / "pipe.py"
+    file.write_text(
+        "from pydantic_ai_orchestrator.domain import Step\n"
+        "pipeline = Step('A') >> Step('B')\n"
+    )
+
+    result = runner.invoke(app, ["explain", str(file)])
+    assert result.exit_code == 0
+    assert "A" in result.stdout
+    assert "B" in result.stdout
+

@@ -8,6 +8,7 @@ Production-ready orchestration for Pydantic-based AI agents.
 - Pluggable scoring (ratio, weighted, reward-model)
 - CLI and API
 - Extensible agent and reflection system
+- Flexible pipeline DSL and runner
 
 ## Installation
 

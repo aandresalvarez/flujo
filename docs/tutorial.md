@@ -265,4 +265,20 @@ This concludes our tour! You've journeyed from a simple prompt to a sophisticate
 -   Generate clean, **structured JSON** using Pydantic models.
 -   Empower agents with **external tools** to overcome their knowledge limitations.
 
+## 6. Building Custom Pipelines
+
+The new Pipeline DSL lets you compose your own workflow using `Step` objects. Execute the pipeline with `PipelineRunner`:
+
+```python
+from pydantic_ai_orchestrator import Step, PipelineRunner
+from pydantic_ai_orchestrator.plugins.sql_validator import SQLSyntaxValidator
+from pydantic_ai_orchestrator.testing.utils import StubAgent
+
+sql_step = Step.solution(StubAgent(["SELECT FROM"]))
+check_step = Step.validate(StubAgent([None]), plugins=[SQLSyntaxValidator()])
+runner = PipelineRunner(sql_step >> check_step)
+result = runner.run("SELECT FROM")
+print(result.step_history[-1].feedback)
+```
+
 You're now ready to build powerful and intelligent AI applications. Happy orchestrating
