@@ -14,15 +14,14 @@ Before we write any code, let's understand the main components you'll be working
 
 *   **The Orchestrator:** This is the "project manager" or "conductor." Its job is to manage a team of specialized AI **Agents** to accomplish a goal. It directs the workflow, handles retries, and ensures the final result is high-quality.
 
-*   **An Agent:** An **Agent** is a specialized AI model given a specific role and instructions (a "system prompt"). In our library, we have a team of four default agents:
+*   **An Agent:** An **Agent** is a specialized AI model given a specific role and instructions (a "system prompt"). In the default pipeline we use three agents:
     1.  **`review_agent` (The Planner):** Looks at your request and creates a detailed checklist of what a "good" solution should look like.
     2.  **`solution_agent` (The Doer):** The main worker. It takes your request and tries to produce a solution (e.g., write code, a poem, or an email).
     3.  **`validator_agent` (The Quality Analyst):** Takes the `solution_agent`'s work and grades it against the `review_agent`'s checklist.
-    4.  **`reflection_agent` (The Strategist):** If the work isn't perfect, this agent analyzes the failures and provides high-level feedback to guide the next attempt.
 
 *   **A Task:** This is a simple object that holds your request. It's how you tell the **Orchestrator** what you want to achieve.
 
-*   **A Candidate:** This is the final result produced by the Orchestrator. It contains the solution itself, its final score, and the checklist used to grade it.
+*   **A Candidate:** This is the final result produced by the Orchestrator. It contains the solution itself and the checklist used to grade it.
 
 Now that we know the players, let's see them in action!
 
@@ -35,11 +34,11 @@ Let's start with the most straightforward use case: give the orchestrator a prom
 ```python
 # 📂 step_1_basic_usage.py
 from pydantic_ai_orchestrator import (
-    Orchestrator, Task, review_agent, solution_agent, validator_agent, reflection_agent
+    Orchestrator, Task, review_agent, solution_agent, validator_agent
 )
 
 print("🤖 Assembling the AI agent team...")
-orch = Orchestrator(review_agent, solution_agent, validator_agent, reflection_agent)
+orch = Orchestrator(review_agent, solution_agent, validator_agent)
 
 print("📝 Defining task: 'Write a short, optimistic haiku about a rainy day.'")
 task = Task(prompt="Write a short, optimistic haiku about a rainy day.")
@@ -50,7 +49,6 @@ best_candidate = orch.run_sync(task)
 if best_candidate:
     print("\n🎉 Orchestrator finished! Here is the best result:")
     print("-" * 50)
-    print(f"Final Score: {best_candidate.score:.2f} / 1.00")
     print(f"\nSolution (the haiku):\n'{best_candidate.solution}'")
     if best_candidate.checklist:
         print("\nSelf-Correction Checklist:")
@@ -62,39 +60,6 @@ You've successfully orchestrated a team of AI agents to complete a creative task
 
 ---
 
-## 2. Taking Control: Weighted Scoring
-
-Sometimes, not all requirements are created equal. The orchestrator allows you to provide a **weighted checklist** to guide the scoring, giving you precise control over what "good" means. For this, we'll create our own custom `review_agent`.
-
-```python
-# 📂 step_2_weighted_scoring.py
-from pydantic_ai_orchestrator import (
-    Orchestrator, Task, settings, make_agent_async, solution_agent,
-    validator_agent, reflection_agent, Checklist
-)
-
-settings.scorer = "weighted"
-our_weights = [
-    {"item": "The function must have a docstring.", "weight": 0.7},
-    {"item": "The function must use type hints.", "weight": 0.3},
-]
-CUSTOM_REVIEW_PROMPT = """You are an expert software engineer. Your task is to generate a checklist with EXACTLY these two items: "The function must have a docstring." and "The function must use type hints.". Return JSON only."""
-print("📋 Creating a custom 'Planner' agent with weighted criteria...")
-custom_review_agent = make_agent_async(settings.default_review_model, CUSTOM_REVIEW_PROMPT, Checklist)
-orch = Orchestrator(custom_review_agent, solution_agent, validator_agent, reflection_agent)
-task = Task("Write a simple Python function that adds two numbers.", metadata={"weights": our_weights})
-best_candidate = orch.run_sync(task)
-# ... (printing logic is the same as the previous tutorial)
-```
-By setting `settings.scorer = "weighted"` and passing weights in the `Task`'s metadata, you have successfully influenced the AI's definition of quality. A solution that only includes a docstring will now score `0.70`.
-
-> **💡 Pro Tip: Scoring Strategies**
-> The orchestrator supports three scoring methods, which you can set via `settings.scorer`:
-> - **`"ratio"` (Default):** The score is the simple percentage of passed checklist items.
-> - **`"weighted"`:** The score is calculated based on the weights you provide.
-> - **`"reward"`:** An advanced mode where another AI model acts as a judge to give a holistic quality score from 0.0 to 1.0, ignoring the checklist.
-
----
 
 ## 3. The Budget-Aware Workflow: Mixing Agent Models
 
@@ -103,12 +68,12 @@ Professional AI workflows often involve a mix of models to balance cost, speed, 
 ```python
 # 📂 step_3_mixing_models.py
 from pydantic_ai_orchestrator import (
-    Orchestrator, Task, review_agent, validator_agent, reflection_agent, make_agent_async
+    Orchestrator, Task, review_agent, validator_agent, make_agent_async
 )
 print("🚀 Building a budget-aware workflow by mixing models...")
 FAST_SOLUTION_PROMPT = "You are a creative but junior marketing copywriter. Write a catchy and concise slogan. Be quick and creative."
 fast_copywriter_agent = make_agent_async("openai:gpt-4.1-nano", FAST_SOLUTION_PROMPT, str)
-orch = Orchestrator(review_agent, fast_copywriter_agent, validator_agent, reflection_agent)
+orch = Orchestrator(review_agent, fast_copywriter_agent, validator_agent)
 task = Task(prompt="Write a slogan for a new brand of ultra-durable luxury coffee mugs.")
 best_candidate = orch.run_sync(task)
 # ... (printing logic)
@@ -127,7 +92,7 @@ Let's build a workflow that extracts information from a block of text into a str
 # 📂 step_4_structured_output.py
 from pydantic import BaseModel, Field
 from pydantic_ai_orchestrator import (
-    Orchestrator, Task, make_agent_async, validator_agent, reflection_agent
+    Orchestrator, Task, make_agent_async, validator_agent
 )
 
 # 1. Define our desired output structure using a Pydantic model
@@ -146,7 +111,7 @@ REVIEW_PROMPT = "Generate a checklist to verify the extracted contact details. C
 custom_review_agent = make_agent_async("openai:gpt-4o", REVIEW_PROMPT, Checklist)
 
 # 4. Assemble and run the orchestrator
-orch = Orchestrator(custom_review_agent, extraction_agent, validator_agent, reflection_agent)
+orch = Orchestrator(custom_review_agent, extraction_agent, validator_agent)
 unstructured_text = "Reach out to Jane Doe. She works at Innovate Corp and her email is jane.doe@example.com. She is the lead."
 task = Task(prompt=unstructured_text)
 best_candidate = orch.run_sync(task)
@@ -183,7 +148,6 @@ Now for the ultimate challenge. Let's build a workflow where **every agent is cu
 1.  **Custom Planner:** A `review_agent` that knows what a good financial report looks like.
 2.  **Tool-Using Doer:** A `solution_agent` that can call a `get_stock_price` function.
 3.  **Custom Quality Analyst:** A `validator_agent` that is hyper-critical about financial data.
-4.  **Custom Strategist:** A `reflection_agent` focused on factual accuracy.
 
 ```python
 # 📂 step_5_advanced_tools.py
@@ -232,11 +196,9 @@ validator_agent = make_agent_async("openai:gpt-4o",
     "You are a senior auditor. Meticulously check the report against the checklist. Be extremely strict about factual data. If the price is a placeholder, fail it.",
     Checklist)
 
-# The Strategist: Focused on facts
-reflection_agent = get_reflection_agent("openai:gpt-4o-mini")
 
 # --- 3. Assemble and Run the Orchestrator ---
-orch = Orchestrator(review_agent, solution_agent, validator_agent, reflection_agent)
+orch = Orchestrator(review_agent, solution_agent, validator_agent)
 task = Task(prompt="Generate a stock report for Apple Inc. (AAPL).")
 
 print("🧠 Running advanced tool-based workflow...")
@@ -245,7 +207,6 @@ best_candidate = orch.run_sync(task)
 if best_candidate:
     print("\n🎉 Advanced workflow complete!")
     print(best_candidate.solution.model_dump_json(indent=2))
-    print("\nFinal Score:", best_candidate.score)
 ```
 
 #### **What You'll See:**

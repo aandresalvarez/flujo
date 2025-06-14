@@ -18,7 +18,8 @@ from .domain import (
     PluginOutcome,
     ValidationPlugin,
 )
-from .application.pipeline_runner import PipelineRunner, PipelineResult, StepResult
+from .application.pipeline_runner import PipelineRunner
+from .domain.models import PipelineResult, StepResult
 from .testing.utils import StubAgent, DummyPlugin
 from .plugins.sql_validator import SQLSyntaxValidator
 
@@ -58,9 +59,6 @@ __all__ = [
     "OrchestratorError",
     "ConfigurationError",
     "SettingsError",
-    "PipelineRunner",
-    "PipelineResult",
-    "StepResult",
     "StubAgent",
     "DummyPlugin",
     "SQLSyntaxValidator",
