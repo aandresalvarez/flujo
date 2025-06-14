@@ -8,6 +8,7 @@ Environment variables are loaded automatically from this file.
 orch solve "Write a summary of this document."
 orch show-config
 orch bench --prompt "hi" --rounds 3
+orch explain path/to/pipeline.py
 orch --profile
 ```
 
@@ -38,6 +39,21 @@ For custom reflection behavior, use the `get_reflection_agent()` factory to
 instantiate a reflection agent with a different model or configuration.
 
 Call `init_telemetry()` once at startup to configure logging and tracing for your application.
+
+### Pipeline DSL
+
+You can define custom workflows using the `Step` class and execute them with `PipelineRunner`:
+
+```python
+from pydantic_ai_orchestrator import Step, PipelineRunner
+from pydantic_ai_orchestrator.plugins.sql_validator import SQLSyntaxValidator
+from pydantic_ai_orchestrator.testing.utils import StubAgent
+
+solution_step = Step.solution(StubAgent(["SELECT FROM"]))
+validate_step = Step.validate(StubAgent([None]), plugins=[SQLSyntaxValidator()])
+pipeline = solution_step >> validate_step
+result = PipelineRunner(pipeline).run("SELECT FROM")
+```
 
 ## Environment Variables
 

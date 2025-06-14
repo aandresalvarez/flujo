@@ -7,6 +7,7 @@
 | **02_custom_agents.py** | Mixing models / replacing the solution agent. |
 | **03_reward_scorer.py** | Using the reward-model scorer. |
 | **04_batch_processing.py** | Running many prompts from a CSV and exporting results. |
+| **05_pipeline_sql.py** | DSL pipeline with SQL validation plugin. |
 
 Each script is standalone – activate your virtualenv, set `OPENAI_API_KEY`, then:
 
