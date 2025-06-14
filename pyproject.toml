@@ -81,11 +81,9 @@ Documentation = "https://aandresalvarez.github.io/rloop/" # Added link to your d
 python_version = "3.11"
 strict         = true
 
-# Focus type checking on the core library first. The CLI, tests, and example
-# scripts are excluded (they will be migrated to full strict typing later).
+# Focus type checking on the core library first. Examples are excluded as they are
+# meant to be educational and may not follow strict typing.
 exclude = [
-    "pydantic_ai_orchestrator/cli/.*",
-    "tests/.*",
     "examples/.*",
 ]
 

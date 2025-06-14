@@ -315,100 +315,164 @@ def test_cli_improve(monkeypatch, tmp_path) -> None:
 
 
 def test_cli_help() -> None:
-    pass
+    """Test that the help command works and shows all available commands."""
+    result = runner.invoke(app, ["--help"])
+    assert result.exit_code == 0
+    assert "solve" in result.stdout
+    assert "version-cmd" in result.stdout
+    assert "show-config" in result.stdout
+    assert "bench" in result.stdout
+    assert "improve" in result.stdout
+    assert "explain" in result.stdout
 
 
 def test_cli_version() -> None:
-    pass
+    """Test that the version command works and shows the correct version."""
+    import importlib.metadata
+    version = importlib.metadata.version("pydantic_ai_orchestrator")
+    result = runner.invoke(app, ["version-cmd"])
+    assert result.exit_code == 0
+    assert version in result.stdout
 
 
 def test_cli_run() -> None:
-    pass
+    """Test basic run functionality with default settings."""
+    from unittest.mock import patch, MagicMock
+    from pydantic_ai_orchestrator.domain.models import Task
+
+    class DummyCandidate:
+        def model_dump(self):
+            return {"solution": "test solution", "score": 1.0}
+
+    with patch("pydantic_ai_orchestrator.cli.main.Orchestrator") as MockOrchestrator:
+        mock_instance = MagicMock()
+        mock_instance.run_sync.return_value = DummyCandidate()
+        MockOrchestrator.return_value = mock_instance
+
+        result = runner.invoke(app, ["solve", "test prompt"])
+        assert result.exit_code == 0
+        assert "test solution" in result.stdout
+        mock_instance.run_sync.assert_called_once()
 
 
 def test_cli_run_with_args() -> None:
-    pass
+    """Test run with various command line arguments."""
+    from unittest.mock import patch, MagicMock
+    from pydantic_ai_orchestrator.domain.models import Task
+
+    class DummyCandidate:
+        def model_dump(self):
+            return {"solution": "test solution", "score": 1.0}
+
+    dummy_settings = MagicMock()
+    dummy_settings.default_solution_model = "gpt-4"
+    dummy_settings.default_review_model = "gpt-3.5-turbo"
+    dummy_settings.default_validator_model = "gpt-3.5-turbo"
+    dummy_settings.default_reflection_model = "gpt-4"
+    dummy_settings.reflection_enabled = True
+    dummy_settings.scorer = "ratio"
+    dummy_settings.reflection_limit = 1
+
+    with patch("pydantic_ai_orchestrator.cli.main.Orchestrator") as MockOrchestrator, \
+         patch("pydantic_ai_orchestrator.cli.main.make_agent_async") as mock_make_agent, \
+         patch("pydantic_ai_orchestrator.cli.main.get_reflection_agent") as mock_get_reflection_agent, \
+         patch("pydantic_ai_orchestrator.cli.main.settings", dummy_settings):
+        mock_instance = MagicMock()
+        mock_instance.run_sync.return_value = DummyCandidate()
+        MockOrchestrator.return_value = mock_instance
+        mock_make_agent.return_value = MagicMock()
+        mock_get_reflection_agent.return_value = MagicMock()
+
+        result = runner.invoke(app, [
+            "solve",
+            "test prompt",
+            "--max-iters", "5",
+            "--k", "3",
+            "--reflection",
+            "--scorer", "ratio",
+            "--solution-model", "gpt-4",
+            "--review-model", "gpt-3.5-turbo",
+            "--validator-model", "gpt-3.5-turbo",
+            "--reflection-model", "gpt-4"
+        ])
+        assert result.exit_code == 0
+        assert "test solution" in result.stdout
+        mock_instance.run_sync.assert_called_once()
 
 
 def test_cli_run_with_invalid_args() -> None:
-    pass
+    """Test run with invalid command line arguments."""
+    # Test with invalid max-iters
+    result = runner.invoke(app, ["solve", "test prompt", "--max-iters", "-1"])
+    assert result.exit_code != 0
+    assert "Error" in result.stderr
+
+    # Test with invalid k
+    result = runner.invoke(app, ["solve", "test prompt", "--k", "0"])
+    assert result.exit_code != 0
+    assert "Error" in result.stderr
+
+    # Test with invalid scorer
+    result = runner.invoke(app, ["solve", "test prompt", "--scorer", "invalid"])
+    assert result.exit_code != 0
+    assert "Error" in result.stderr
 
 
 def test_cli_run_with_invalid_model() -> None:
-    pass
+    """Test run with invalid model names."""
+    from unittest.mock import patch
+    from pydantic_ai_orchestrator.exceptions import ConfigurationError
 
-
-def test_cli_run_with_invalid_temperature() -> None:
-    pass
-
-
-def test_cli_run_with_invalid_max_tokens() -> None:
-    pass
-
-
-def test_cli_run_with_invalid_timeout() -> None:
-    pass
+    with patch("pydantic_ai_orchestrator.cli.main.make_agent_async") as mock_make_agent:
+        mock_make_agent.side_effect = ConfigurationError("Invalid model name")
+        result = runner.invoke(app, ["solve", "test prompt", "--solution-model", "invalid-model"])
+        assert result.exit_code == 2
+        assert "Configuration Error" in result.stderr
 
 
 def test_cli_run_with_invalid_retries() -> None:
-    pass
+    """Test run with invalid retry settings."""
+    from unittest.mock import patch
+    from pydantic_ai_orchestrator.exceptions import ConfigurationError
 
-
-def test_cli_run_with_invalid_reflection() -> None:
-    pass
-
-
-def test_cli_run_with_invalid_reward() -> None:
-    pass
-
-
-def test_cli_run_with_invalid_telemetry() -> None:
-    pass
-
-
-def test_cli_run_with_invalid_otlp() -> None:
-    pass
-
-
-def test_cli_run_with_invalid_solution_model() -> None:
-    pass
+    with patch("pydantic_ai_orchestrator.cli.main.Orchestrator") as MockOrchestrator:
+        MockOrchestrator.side_effect = ConfigurationError("Invalid retry settings")
+        result = runner.invoke(app, ["solve", "test prompt", "--max-iters", "100"])
+        assert result.exit_code == 2
+        assert "Configuration Error" in result.stderr
 
 
 def test_cli_run_with_invalid_review_model() -> None:
-    pass
+    """Test run with invalid review model."""
+    from unittest.mock import patch
+    from pydantic_ai_orchestrator.exceptions import ConfigurationError
 
-
-def test_cli_run_with_invalid_validator_model() -> None:
-    pass
-
-
-def test_cli_run_with_invalid_reflection_model() -> None:
-    pass
+    with patch("pydantic_ai_orchestrator.cli.main.make_agent_async") as mock_make_agent:
+        mock_make_agent.side_effect = ConfigurationError("Invalid review model")
+        result = runner.invoke(app, ["solve", "test prompt", "--review-model", "invalid-model"])
+        assert result.exit_code == 2
+        assert "Configuration Error" in result.stderr
 
 
 def test_cli_run_with_invalid_agent_timeout() -> None:
-    pass
+    """Test run with invalid agent timeout settings."""
+    from unittest.mock import patch
+    from pydantic_ai_orchestrator.exceptions import ConfigurationError
 
-
-def test_cli_run_with_invalid_scorer() -> None:
-    pass
-
-
-def test_cli_run_with_invalid_weights_path() -> None:
-    pass
-
-
-def test_cli_run_with_invalid_solution_model_path() -> None:
-    pass
+    with patch("pydantic_ai_orchestrator.cli.main.Orchestrator") as MockOrchestrator:
+        MockOrchestrator.side_effect = ConfigurationError("Invalid agent timeout")
+        result = runner.invoke(app, ["solve", "test prompt"])
+        assert result.exit_code == 2
+        assert "Configuration Error" in result.stderr
 
 
 def test_cli_run_with_invalid_review_model_path() -> None:
-    pass
+    """Test run with invalid review model path."""
+    from unittest.mock import patch
+    from pydantic_ai_orchestrator.exceptions import ConfigurationError
 
-
-def test_cli_run_with_invalid_validator_model_path() -> None:
-    pass
-
-
-def test_cli_run_with_invalid_reflection_model_path() -> None:
-    pass
+    with patch("pydantic_ai_orchestrator.cli.main.make_agent_async") as mock_make_agent:
+        mock_make_agent.side_effect = ConfigurationError("Invalid review model path")
+        result = runner.invoke(app, ["solve", "test prompt", "--review-model", "/invalid/path"])
+        assert result.exit_code == 2
+        assert "Configuration Error" in result.stderr

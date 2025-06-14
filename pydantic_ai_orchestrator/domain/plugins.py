@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable, Any
 from pydantic import BaseModel
-from .agent_protocol import AgentProtocol
+from ..infra.agents import AsyncAgentProtocol
 
 
 class PluginOutcome(BaseModel):
@@ -12,7 +12,7 @@ class PluginOutcome(BaseModel):
 
     success: bool
     feedback: str | None = None
-    redirect_to: AgentProtocol[Any, Any] | None = None
+    redirect_to: AsyncAgentProtocol[Any] | None = None
     new_solution: Any | None = None
 
 
@@ -22,5 +22,8 @@ class ValidationPlugin(Protocol):
 
     async def validate(
         self, data: dict[str, Any]
-    ) -> PluginOutcome:  # pragma: no cover - signature only
+    ) -> PluginOutcome:  # pragma: no cover - protocol signature only, cannot be covered by tests
         ...
+
+# Explicit exports
+__all__ = ['PluginOutcome', 'ValidationPlugin']

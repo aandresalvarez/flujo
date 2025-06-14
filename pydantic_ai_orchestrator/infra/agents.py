@@ -2,8 +2,10 @@
 Agent prompt templates and agent factory utilities.
 """
 
+from __future__ import annotations
+
+from typing import Type, Any, Protocol, runtime_checkable, TypeVar, cast, Generic, Union
 from pydantic_ai import Agent
-from typing import Type, Any
 import os
 from pydantic_ai_orchestrator.infra.settings import settings
 from pydantic_ai_orchestrator.domain.models import Checklist
@@ -17,6 +19,17 @@ from pydantic_ai_orchestrator.infra.telemetry import logfire
 import traceback
 from pydantic import BaseModel, Field
 from tenacity import AsyncRetrying, RetryError, stop_after_attempt, wait_exponential
+
+# Type variables for generic agent types
+T_co = TypeVar('T_co', covariant=True)  # For output types
+T_contra = TypeVar('T_contra', contravariant=True)  # For input types
+
+# Define a protocol for async agents
+@runtime_checkable
+class AsyncAgentProtocol(Protocol[T_co]):
+    """Protocol defining the interface for async agents."""
+    async def run(self, *args: Any, **kwargs: Any) -> T_co: ...
+    async def run_async(self, *args: Any, **kwargs: Any) -> T_co: ...
 
 # 1. Prompt Constants
 REVIEW_SYS = """You are an expert software engineer.\nYour task is to generate an objective, comprehensive, and actionable checklist of criteria to evaluate a solution for the user's request.\nThe checklist should be detailed and cover all key aspects of a good solution.\nFocus on correctness, completeness, and best practices.\n\nReturn **JSON only** that conforms to this schema:\nChecklist(items=[ChecklistItem(description:str, passed:bool|None, feedback:str|None)])\n\nExample:\n{\n  \"items\": [\n    {\"description\": \"The code is correct and runs without errors.\", \"passed\": null, \"feedback\": null},\n    {\"description\": \"The code follows best practices.\", \"passed\": null, \"feedback\": null}\n  ]\n}\n"""
@@ -78,6 +91,8 @@ def make_agent(
             )
         api_key = settings.anthropic_api_key.get_secret_value()
 
+    # The Agent constructor's type hints are not strict enough for mypy strict mode.
+    # See: https://github.com/pydantic/pydantic-ai/issues (file an issue if not present)
     agent: Agent[Any, Any] = Agent(  # type: ignore[call-overload]
         model,
         system_prompt=system_prompt,
@@ -88,7 +103,7 @@ def make_agent(
     return agent
 
 
-class AsyncAgentWrapper:
+class AsyncAgentWrapper(Generic[T_co], AsyncAgentProtocol[T_co]):
     """
     Wraps a pydantic_ai.Agent to provide an asynchronous interface
     with retry and timeout capabilities.
@@ -96,7 +111,7 @@ class AsyncAgentWrapper:
 
     def __init__(
         self,
-        agent: Agent[Any, Any],
+        agent: Agent[Any, T_co],
         max_retries: int = 3,
         timeout: int | None = None,
         model_name: str | None = None,
@@ -168,7 +183,7 @@ def make_agent_async(
     output_type: Type[Any],
     max_retries: int = 3,
     timeout: int | None = None,
-) -> AsyncAgentWrapper:
+) -> AsyncAgentWrapper[Any]:
     """
     Creates a pydantic_ai.Agent and returns an AsyncAgentWrapper exposing .run_async.
     """
@@ -176,25 +191,39 @@ def make_agent_async(
     return AsyncAgentWrapper(agent, max_retries=max_retries, timeout=timeout, model_name=model)
 
 
-class NoOpReflectionAgent:
+class NoOpReflectionAgent(AsyncAgentProtocol[str]):
     """A stub agent that does nothing, used when reflection is disabled."""
 
     async def run(self, *args: Any, **kwargs: Any) -> str:
         return ""
 
+    async def run_async(self, *args: Any, **kwargs: Any) -> str:
+        return ""
+
+
+class NoOpChecklistAgent(AsyncAgentProtocol[Checklist]):
+    """A stub agent that returns an empty Checklist, used as a fallback for checklist agents."""
+    async def run(self, *args: Any, **kwargs: Any) -> Checklist:
+        return Checklist(items=[])
+    async def run_async(self, *args: Any, **kwargs: Any) -> Checklist:
+        return Checklist(items=[])
+
 
 # 3. Agent Instances
 try:
-    review_agent = make_agent_async(settings.default_review_model, REVIEW_SYS, Checklist)
-    solution_agent = make_agent_async(settings.default_solution_model, SOLUTION_SYS, str)
-    validator_agent = make_agent_async(settings.default_validator_model, VALIDATE_SYS, Checklist)
+    review_agent: AsyncAgentProtocol[Checklist] = make_agent_async(settings.default_review_model, REVIEW_SYS, Checklist)
+    solution_agent: AsyncAgentProtocol[str] = make_agent_async(settings.default_solution_model, SOLUTION_SYS, str)
+    validator_agent: AsyncAgentProtocol[Checklist] = make_agent_async(settings.default_validator_model, VALIDATE_SYS, Checklist)
 except ConfigurationError:
-    review_agent = solution_agent = validator_agent = NoOpReflectionAgent()  # type: ignore[assignment]
+    # If configuration fails, use a no-op stub agent for all three
+    review_agent = NoOpChecklistAgent()
+    solution_agent = NoOpReflectionAgent()
+    validator_agent = NoOpChecklistAgent()
 
 
 def get_reflection_agent(
     model: str | None = None,
-) -> AsyncAgentWrapper | NoOpReflectionAgent:
+) -> AsyncAgentProtocol[Any] | NoOpReflectionAgent:
     """Returns a new instance of the reflection agent, or a no-op if disabled."""
     if not settings.reflection_enabled:
         return NoOpReflectionAgent()
@@ -209,31 +238,33 @@ def get_reflection_agent(
 
 
 # Create a default instance for convenience and API consistency
-reflection_agent = get_reflection_agent()
+reflection_agent: AsyncAgentProtocol[Any] | NoOpReflectionAgent = get_reflection_agent()
 
 
-def make_self_improvement_agent(model: str | None = None) -> AsyncAgentWrapper:
+def make_self_improvement_agent(model: str | None = None) -> AsyncAgentWrapper[str]:
     """Create the SelfImprovementAgent."""
     model_name = model or settings.default_solution_model
     return make_agent_async(model_name, SELF_IMPROVE_SYS, str)
 
 
 # Default instance used by high level API
-self_improvement_agent = make_self_improvement_agent()
+self_improvement_agent: AsyncAgentWrapper[str] = make_self_improvement_agent()
 
 
-# Add a wrapper for review_agent to log API errors
-class LoggingReviewAgent:
-    def __init__(self, agent: AgentProtocol[Any, Any]) -> None:
+class LoggingReviewAgent(AsyncAgentProtocol[Any]):
+    """Wrapper for review agent that adds logging."""
+    
+    def __init__(self, agent: AsyncAgentProtocol[Any]) -> None:
         self.agent = agent
-        self.run_async = self._run_async
-        self._run_with_retry = getattr(agent, "_run_with_retry", None)
 
-    def __getattr__(self, name: str) -> Any:
-        # Expose _run_with_retry and any other attributes from the wrapped agent
-        if hasattr(self.agent, name):
-            return getattr(self.agent, name)
-        raise AttributeError(f"{self.__class__.__name__!r} object has no attribute {name!r}")
+    async def run(self, *args: Any, **kwargs: Any) -> Any:
+        return await self._run_inner(self.agent.run, *args, **kwargs)
+
+    async def run_async(self, *args: Any, **kwargs: Any) -> Any:
+        if hasattr(self.agent, "run_async") and callable(getattr(self.agent, "run_async")):
+            return await self._run_inner(self.agent.run_async, *args, **kwargs)
+        else:
+            return await self.run(*args, **kwargs)
 
     async def _run_inner(self, method: Any, *args: Any, **kwargs: Any) -> Any:
         try:
@@ -244,14 +275,29 @@ class LoggingReviewAgent:
             logfire.error(f"Review agent API error: {e}")
             raise
 
-    async def run(self, *args: Any, **kwargs: Any) -> Any:
-        return await self._run_inner(self.agent.run, *args, **kwargs)
+# Update the review_agent assignment to use proper typing
+review_agent = LoggingReviewAgent(review_agent)
 
-    async def _run_async(self, *args: Any, **kwargs: Any) -> Any:
-        if hasattr(self.agent, "run_async") and callable(getattr(self.agent, "run_async")):
-            return await self._run_inner(self.agent.run_async, *args, **kwargs)
-        else:
-            return await self.run(*args, **kwargs)
-
-
-review_agent = LoggingReviewAgent(review_agent)  # type: ignore[assignment]
+# Explicit exports
+__all__ = [
+    'REVIEW_SYS',
+    'SOLUTION_SYS',
+    'VALIDATE_SYS',
+    'REFLECT_SYS',
+    'SELF_IMPROVE_SYS',
+    'make_agent',
+    'make_agent_async',
+    'AsyncAgentWrapper',
+    'NoOpReflectionAgent',
+    'get_reflection_agent',
+    'make_self_improvement_agent',
+    'review_agent',
+    'solution_agent',
+    'validator_agent',
+    'reflection_agent',
+    'self_improvement_agent',
+    'Agent',
+    'AsyncAgentProtocol',
+    'T_co',
+    'T_contra',
+]

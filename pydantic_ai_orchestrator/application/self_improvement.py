@@ -54,3 +54,10 @@ async def evaluate_and_improve(
     success = next((c for c in report.cases if all(s.success for s in c.output.step_history)), None)
     prompt = _build_context(failures, success)
     return await improvement_agent.run(prompt)
+
+
+__all__ = [
+    'SelfImprovementAgent',
+    'evaluate_and_improve',
+    'ImprovementReport',
+]

@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
-from ..domain.agent_protocol import AgentProtocol
+from ..infra.agents import AsyncAgentProtocol
 from ..domain.pipeline_dsl import Step
 from ..domain.models import Candidate, PipelineResult, Task
 from .pipeline_runner import PipelineRunner
@@ -16,10 +16,10 @@ class Orchestrator:
 
     def __init__(
         self,
-        review_agent: AgentProtocol[str, Any],
-        solution_agent: AgentProtocol[str, Any],
-        validator_agent: AgentProtocol[dict[str, Any], Any],
-        reflection_agent: AgentProtocol[dict[str, Any], Any] | None = None,
+        review_agent: AsyncAgentProtocol[Any],
+        solution_agent: AsyncAgentProtocol[Any],
+        validator_agent: AsyncAgentProtocol[Any],
+        reflection_agent: AsyncAgentProtocol[Any] | None = None,
         max_iters: Optional[int] = None,
         k_variants: Optional[int] = None,
         reflection_limit: Optional[int] = None,
@@ -27,9 +27,9 @@ class Orchestrator:
         _ = reflection_agent, max_iters, k_variants, reflection_limit
 
         pipeline = (
-            Step.review(review_agent, max_retries=3)
-            >> Step.solution(solution_agent, max_retries=3)
-            >> Step.validate(validator_agent, max_retries=3)
+            Step.review(cast(Any, review_agent), max_retries=3)
+            >> Step.solution(cast(Any, solution_agent), max_retries=3)
+            >> Step.validate_step(cast(Any, validator_agent), max_retries=3)
         )
         self.runner = PipelineRunner(pipeline)
 

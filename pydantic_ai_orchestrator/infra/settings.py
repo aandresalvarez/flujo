@@ -67,6 +67,8 @@ class Settings(BaseSettings):
 
 # Singleton instance, fail fast if critical vars missing
 try:
+    # The type ignore is needed due to https://github.com/pydantic/pydantic-settings/issues/138
+    # where ClassVar[SettingsConfigDict] is not recognized by mypy.
     settings = Settings()  # type: ignore[call-arg]
 except ValidationError as e:
     # Use custom exception for better error handling downstream

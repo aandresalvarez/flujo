@@ -60,8 +60,8 @@ class RewardScorer:
         if not settings.openai_api_key:
             raise RewardModelUnavailable("OpenAI API key is required for RewardScorer.")
 
-        # Ignore strict type checking on the Agent constructor for now – the upstream
-        # library does not yet ship precise type hints compatible with ``strict = true``.
+        # The Agent constructor's type hints are not strict enough for mypy strict mode.
+        # See: https://github.com/pydantic/pydantic-ai/issues (file an issue if not present)
         self.agent = Agent(  # type: ignore[call-overload]
             "openai:gpt-4o-mini",
             system_prompt="You are a reward model. You return a single float score from 0.0 to 1.0.",

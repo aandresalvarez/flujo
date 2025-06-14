@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import List, Any, Optional, Callable, Generic, TypeVar, Iterator
-from pydantic import BaseModel, Field
-from .agent_protocol import AgentProtocol
+from typing import List, Any, Optional, Callable, Generic, TypeVar, Iterator, cast, ClassVar, Generator
+from pydantic import BaseModel, Field, ConfigDict
+from ..infra.agents import AsyncAgentProtocol
 from .plugins import ValidationPlugin
 
 
@@ -21,19 +21,19 @@ class Step(BaseModel, Generic[InT, OutT]):
     """Represents a single step in a pipeline."""
 
     name: str
-    agent: Optional[Any] = None
+    agent: Optional[AsyncAgentProtocol[Any]] = None
     config: StepConfig = Field(default_factory=StepConfig)
     plugins: List[tuple[ValidationPlugin, int]] = Field(default_factory=list)
     failure_handlers: List[Callable[[], None]] = Field(default_factory=list)
 
-    model_config = {
+    model_config: ClassVar[ConfigDict] = {
         "arbitrary_types_allowed": True,
     }
 
     def __init__(
         self,
         name: str,
-        agent: Optional[Any] = None,
+        agent: Optional[AsyncAgentProtocol[Any]] = None,
         plugins: Optional[List[ValidationPlugin | tuple[ValidationPlugin, int]]] = None,
         on_failure: Optional[List[Callable[[], None]]] = None,
         **config: Any,
@@ -62,23 +62,27 @@ class Step(BaseModel, Generic[InT, OutT]):
         raise TypeError("Can only chain Step with Step or Pipeline")
 
     @classmethod
-    def review(cls, agent: AgentProtocol[Any, Any], **config: Any) -> "Step[Any, Any]":
+    def review(cls, agent: AsyncAgentProtocol[Any], **config: Any) -> "Step[Any, Any]":
+        """Construct a review step using the provided agent."""
         return cls("review", agent, **config)
 
     @classmethod
-    def solution(cls, agent: AgentProtocol[Any, Any], **config: Any) -> "Step[Any, Any]":
+    def solution(cls, agent: AsyncAgentProtocol[Any], **config: Any) -> "Step[Any, Any]":
+        """Construct a solution step using the provided agent."""
         return cls("solution", agent, **config)
 
     @classmethod
-    def validate(cls, agent: AgentProtocol[Any, Any], **config: Any) -> "Step[Any, Any]":  # type: ignore[override]
+    def validate_step(cls, agent: AsyncAgentProtocol[Any], **config: Any) -> "Step[Any, Any]":
         """Construct a validation step using the provided agent."""
         return cls("validate", agent, **config)
 
-    def add_plugin(self, plugin: ValidationPlugin, priority: int = 0) -> "Step[Any, Any]":
+    def add_plugin(self, plugin: ValidationPlugin, priority: int = 0) -> "Step[InT, OutT]":
+        """Add a validation plugin to this step."""
         self.plugins.append((plugin, priority))
         return self
 
-    def on_failure(self, handler: Callable[[], None]) -> "Step[Any, Any]":
+    def on_failure(self, handler: Callable[[], None]) -> "Step[InT, OutT]":
+        """Add a failure handler to this step."""
         self.failure_handlers.append(handler)
         return self
 
@@ -88,6 +92,10 @@ class Pipeline(BaseModel):
 
     steps: List[Step[Any, Any]]
 
+    model_config: ClassVar[ConfigDict] = {
+        "arbitrary_types_allowed": True,
+    }
+
     def __rshift__(self, other: Step[Any, Any] | "Pipeline") -> "Pipeline":
         if isinstance(other, Step):
             return Pipeline(steps=[*self.steps, other])
@@ -95,5 +103,8 @@ class Pipeline(BaseModel):
             return Pipeline(steps=[*self.steps, *other.steps])
         raise TypeError("Can only chain Pipeline with Step or Pipeline")
 
-    def __iter__(self) -> "Iterator[Step[Any, Any]]":  # type: ignore[override]  # pragma: no cover - convenience
-        return iter(self.steps)
+    def __iter__(self) -> Generator[tuple[str, Any], None, None]:
+        return super().__iter__()
+
+# Explicit exports
+__all__ = ['Step', 'Pipeline', 'StepConfig']
