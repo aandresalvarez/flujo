@@ -23,6 +23,8 @@ from pydantic_ai_orchestrator.infra.telemetry import init_telemetry, logfire
 from typing_extensions import Annotated
 from rich.table import Table
 from rich.console import Console
+from pydantic_ai_orchestrator.domain import Pipeline
+import runpy
 
 app = typer.Typer(rich_markup_mode="markdown")
 
@@ -195,6 +197,22 @@ def bench(prompt: str, rounds: int = 10):
     except KeyboardInterrupt:
         logfire.info("Aborted by user (KeyboardInterrupt). Closing spans and exiting.")
         raise typer.Exit(130)
+
+
+@app.command()
+def explain(path: str):
+    """Print a summary of a pipeline defined in a file."""
+    try:
+        ns = runpy.run_path(path)
+    except Exception as e:
+        typer.echo(f"[red]Failed to load pipeline file: {e}", err=True)
+        raise typer.Exit(1)
+    pipeline = ns.get("pipeline") or ns.get("PIPELINE")
+    if not isinstance(pipeline, Pipeline):
+        typer.echo("[red]No 'pipeline' variable of type Pipeline found", err=True)
+        raise typer.Exit(1)
+    for step in pipeline.steps:
+        typer.echo(step.name)
 
 
 @app.callback()

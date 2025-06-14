@@ -12,6 +12,7 @@ Production-ready orchestration for Pydantic-based AI agents.
 * Pluggable scoring (ratio, weighted, reward-model)
 * CLI and API
 * Extensible agent and reflection system
+* **New:** Flexible pipeline DSL for custom workflows
 
 ## Installation
 
@@ -56,6 +57,25 @@ best = orch.run_sync(task)
 print("Solution:\n", best.solution)
 ```
 
+### Pipeline DSL
+
+Use the `Step` and `PipelineRunner` classes to build custom workflows:
+
+```python
+from pydantic_ai_orchestrator import Step, PipelineRunner
+from pydantic_ai_orchestrator.plugins.sql_validator import SQLSyntaxValidator
+from pydantic_ai_orchestrator.testing.utils import StubAgent
+
+solution_agent = StubAgent(["SELECT FROM"])  # invalid SQL
+validator_agent = StubAgent([None])
+
+pipeline = Step.solution(solution_agent) >> Step.validate(
+    validator_agent, plugins=[SQLSyntaxValidator()]
+)
+runner = PipelineRunner(pipeline)
+result = runner.run("SELECT FROM")
+```
+
 For more examples, see the `examples` folder.
 
 ## Architecture
@@ -76,6 +96,7 @@ For more examples, see the `examples` folder.
 * `orch solve "prompt"` – Solve a task
 * `orch show-config` – Display config (secrets masked)
 * `orch bench --prompt "hi" --rounds 5` – Benchmark (requires `numpy`; install with `pip install pydantic-ai-orchestrator[bench]`)
+* `orch explain pipeline.py` – Print steps defined in a pipeline file
 * `orch --profile` – Enable Logfire span viewer
 
 ## Environment Variables
@@ -143,6 +164,7 @@ The `examples` directory includes practical demonstrations:
 | **02\_custom\_agents.py**    | Custom LLM or agent logic            |
 | **03\_reward\_scorer.py**    | Reward model scoring                 |
 | **04\_batch\_processing.py** | Batch processing of multiple prompts |
+| **05\_pipeline_sql.py**      | Pipeline DSL with SQL validation     |
 
 ### Running Examples
 
