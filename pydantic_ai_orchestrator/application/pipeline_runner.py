@@ -154,9 +154,19 @@ class PipelineRunner(Generic[RunnerInT, RunnerOutT]):
         loop_overall_result = StepResult(name=loop_step.name)
 
         if loop_step.initial_input_to_loop_body_mapper:
-            current_body_input = loop_step.initial_input_to_loop_body_mapper(
-                loop_step_initial_input, pipeline_context
-            )
+            try:
+                current_body_input = loop_step.initial_input_to_loop_body_mapper(
+                    loop_step_initial_input, pipeline_context
+                )
+            except Exception as e:  # noqa: BLE001
+                logfire.error(
+                    f"Error in initial_input_to_loop_body_mapper for LoopStep '{loop_step.name}': {e}"
+                )
+                loop_overall_result.success = False
+                loop_overall_result.feedback = (
+                    f"Initial input mapper raised an exception: {e}"
+                )
+                return loop_overall_result
         else:
             current_body_input = loop_step_initial_input
 
@@ -319,9 +329,12 @@ class PipelineRunner(Generic[RunnerInT, RunnerOutT]):
             branch_pipeline_failed_internally = False
 
             for branch_s in selected_branch_pipeline.steps:
-                branch_step_result_obj = await self._run_step(
-                    branch_s, current_branch_data, pipeline_context
-                )
+                with logfire.span(
+                    f"ConditionalStep '{conditional_step.name}' Branch '{branch_key_to_execute}' - Step '{branch_s.name}'"
+                ):
+                    branch_step_result_obj = await self._run_step(
+                        branch_s, current_branch_data, pipeline_context
+                    )
 
                 conditional_overall_result.latency_s += branch_step_result_obj.latency_s
                 conditional_overall_result.cost_usd += getattr(
@@ -402,10 +415,16 @@ class PipelineRunner(Generic[RunnerInT, RunnerOutT]):
         pipeline_result_obj = PipelineResult()
         try:
             for step in self.pipeline.steps:
-                with logfire.span(step.name):
+                with logfire.span(step.name) as span:
                     step_result = await self._run_step(
                         step, data, pipeline_context=current_pipeline_context_instance
                     )
+                    if step_result.metadata_:
+                        for key, value in step_result.metadata_.items():
+                            try:
+                                span.set_attribute(key, value)
+                            except Exception:  # noqa: BLE001
+                                pass
                 pipeline_result_obj.step_history.append(step_result)
                 pipeline_result_obj.total_cost_usd += step_result.cost_usd
                 if not step_result.success:

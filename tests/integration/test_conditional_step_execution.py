@@ -1,4 +1,5 @@
 import pytest
+from typing import Any
 from pydantic import BaseModel
 
 from pydantic_ai_orchestrator.domain import Step, Pipeline, ConditionalStep
@@ -102,7 +103,9 @@ async def test_condition_uses_context() -> None:
         branches=branches,
     )
     runner = PipelineRunner(
-        classify >> branch_step, context_model=FlagCtx, initial_context_data={"flag": "b"}
+        classify >> branch_step,
+        context_model=FlagCtx,
+        initial_context_data={"flag": "b"},
     )
     result = await runner.run_async("in")
     assert result.step_history[-1].output == "B"
@@ -160,3 +163,321 @@ async def test_condition_exception_fails_step() -> None:
     step_result = result.step_history[-1]
     assert step_result.success is False
     assert "boom" in step_result.feedback
+
+
+@pytest.mark.asyncio
+async def test_conditional_step_error_in_condition_callable() -> None:
+    branches = {"a": Pipeline.from_step(Step("a", StubAgent(["A"])))}
+
+    def bad_condition(_: str, __: BaseModel | None) -> str:
+        raise RuntimeError("cond err")
+
+    branch_step = Step.branch_on(
+        name="branch",
+        condition_callable=bad_condition,
+        branches=branches,
+    )
+    after = Step("after", StubAgent(["after"]))
+    runner = PipelineRunner(branch_step >> after)
+    result = await runner.run_async("in")
+    assert len(result.step_history) == 1
+    step_result = result.step_history[0]
+    assert step_result.success is False
+    assert "cond err" in step_result.feedback
+
+
+@pytest.mark.asyncio
+async def test_conditional_step_error_in_branch_input_mapper() -> None:
+    branches = {"a": Pipeline.from_step(Step("a", StubAgent(["A"])))}
+
+    def branch_input(_: str, __: BaseModel | None) -> str:
+        raise RuntimeError("input map err")
+
+    branch_step = Step.branch_on(
+        name="branch",
+        condition_callable=lambda out, ctx: "a",
+        branches=branches,
+        branch_input_mapper=branch_input,
+    )
+    runner = PipelineRunner(branch_step)
+    result = await runner.run_async("in")
+    step_result = result.step_history[-1]
+    assert step_result.success is False
+    assert "input map err" in step_result.feedback
+
+
+@pytest.mark.asyncio
+async def test_conditional_step_error_in_branch_output_mapper() -> None:
+    branches = {"a": Pipeline.from_step(Step("a", StubAgent([1])))}
+
+    def out_map(_: int, __: str, ___: BaseModel | None) -> int:
+        raise RuntimeError("output map err")
+
+    branch_step = Step.branch_on(
+        name="branch",
+        condition_callable=lambda out, ctx: "a",
+        branches=branches,
+        branch_output_mapper=out_map,
+    )
+    runner = PipelineRunner(branch_step)
+    result = await runner.run_async(0)
+    step_result = result.step_history[-1]
+    assert step_result.success is False
+    assert "output map err" in step_result.feedback
+
+
+@pytest.mark.asyncio
+async def test_conditional_step_branch_input_mapper_flow() -> None:
+    captured: list[tuple[int, BaseModel | None]] = []
+
+    def inp_map(inp: int, ctx: BaseModel | None) -> int:
+        captured.append((inp, ctx))
+        return inp + 1
+
+    agent = StubAgent([0])
+    branches = {"a": Pipeline.from_step(Step("a", agent))}
+    step = Step.branch_on(
+        name="cond_in_map",
+        condition_callable=lambda out, ctx: "a",
+        branches=branches,
+        branch_input_mapper=inp_map,
+    )
+    runner = PipelineRunner(step, context_model=FlagCtx)
+    await runner.run_async(1)
+    assert captured and captured[0][0] == 1
+    assert isinstance(captured[0][1], BaseModel)
+    assert agent.inputs[0] == 2
+
+
+@pytest.mark.asyncio
+async def test_conditional_step_branch_output_mapper_flow() -> None:
+    captured: list[tuple[int, str, BaseModel | None]] = []
+
+    def out_map(out: int, key: str, ctx: BaseModel | None) -> int:
+        captured.append((out, key, ctx))
+        return out * 10
+
+    agent = StubAgent([1])
+    branches = {"a": Pipeline.from_step(Step("a", agent))}
+    step = Step.branch_on(
+        name="cond_out_map",
+        condition_callable=lambda out, ctx: "a",
+        branches=branches,
+        branch_output_mapper=out_map,
+    )
+    runner = PipelineRunner(step, context_model=FlagCtx)
+    result = await runner.run_async(0)
+    step_result = result.step_history[-1]
+    assert step_result.output == 10
+    assert captured and captured[0][0] == 1 and captured[0][1] == "a"
+    assert isinstance(captured[0][2], BaseModel)
+
+
+@pytest.mark.asyncio
+async def test_conditional_step_mappers_with_context_modification() -> None:
+    class Ctx2(BaseModel):
+        val: int = 0
+
+    def inp_map(inp: int, ctx: Ctx2 | None) -> int:
+        if ctx:
+            ctx.val += 1
+        return inp
+
+    def out_map(out: int, key: str, ctx: Ctx2 | None) -> int:
+        if ctx:
+            ctx.val += 1
+        return out
+
+    agent = StubAgent([0])
+    branches = {"a": Pipeline.from_step(Step("a", agent))}
+    step = Step.branch_on(
+        name="cond_ctx_mod",
+        condition_callable=lambda out, ctx: "a",
+        branches=branches,
+        branch_input_mapper=inp_map,
+        branch_output_mapper=out_map,
+    )
+    runner = PipelineRunner(step, context_model=Ctx2)
+    result = await runner.run_async(0)
+    assert result.final_pipeline_context.val == 2
+
+
+@pytest.mark.asyncio
+async def test_conditional_step_default_mapper_behavior() -> None:
+    agent = StubAgent(["ok"])
+    branches = {"a": Pipeline.from_step(Step("a", agent))}
+    step = Step.branch_on(
+        name="cond_default_map",
+        condition_callable=lambda out, ctx: "a",
+        branches=branches,
+    )
+    runner = PipelineRunner(step)
+    result = await runner.run_async("hi")
+    step_result = result.step_history[-1]
+    assert agent.inputs[0] == "hi"
+    assert step_result.output == "ok"
+
+
+@pytest.mark.asyncio
+async def test_conditional_step_overall_span(monkeypatch) -> None:
+    spans: list[str] = []
+
+    class FakeSpan:
+        def __init__(self, name: str) -> None:
+            spans.append(name)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            pass
+
+    from unittest.mock import Mock
+    from pydantic_ai_orchestrator.infra import telemetry
+    from pydantic_ai_orchestrator.application import pipeline_runner as pr
+
+    mock_logfire = Mock(span=lambda name: FakeSpan(name))
+    monkeypatch.setattr(telemetry, "logfire", mock_logfire)
+    monkeypatch.setattr(pr, "logfire", mock_logfire)
+
+    branches = {"a": Pipeline.from_step(Step("a", StubAgent(["A"])))}
+    branch_step = Step.branch_on(
+        name="span_cond",
+        condition_callable=lambda out, ctx: "a",
+        branches=branches,
+    )
+    runner = PipelineRunner(branch_step)
+    await runner.run_async("in")
+    assert "span_cond" in spans
+
+
+@pytest.mark.asyncio
+async def test_conditional_step_branch_selection_logging_and_span_attributes(monkeypatch) -> None:
+    infos: list[str] = []
+    spans: list[str] = []
+    attrs: list[tuple[str, Any]] = []
+
+    class FakeSpan:
+        def __init__(self, name: str) -> None:
+            spans.append(name)
+            self._attrs: dict[str, Any] = {}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            pass
+
+        def set_attribute(self, key: str, value: Any) -> None:
+            attrs.append((key, value))
+            self._attrs[key] = value
+
+    from unittest.mock import Mock
+    from pydantic_ai_orchestrator.infra import telemetry
+    from pydantic_ai_orchestrator.application import pipeline_runner as pr
+
+    mock_logfire = Mock(
+        span=lambda name: FakeSpan(name),
+        info=lambda msg, *a, **k: infos.append(msg),
+        warn=lambda *a, **k: None,
+        error=lambda *a, **k: None,
+    )
+    monkeypatch.setattr(telemetry, "logfire", mock_logfire)
+    monkeypatch.setattr(pr, "logfire", mock_logfire)
+
+    branches = {"a": Pipeline.from_step(Step("step_a", StubAgent(["A"])))}
+    branch_step = Step.branch_on(
+        name="cond_span",
+        condition_callable=lambda out, ctx: "a",
+        branches=branches,
+    )
+    runner = PipelineRunner(branch_step)
+    await runner.run_async("in")
+    assert any("Condition evaluated to branch key 'a'" in m for m in infos)
+    assert any("Executing branch for key 'a'" in m for m in infos)
+    assert ("executed_branch_key", "a") in attrs
+    assert any("step_a" in s for s in spans)
+
+
+@pytest.mark.asyncio
+async def test_conditional_step_no_branch_match_logging(monkeypatch) -> None:
+    warns: list[str] = []
+
+    class FakeSpan:
+        def __init__(self, name: str) -> None:
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            pass
+
+        def set_attribute(self, key: str, value: Any) -> None:
+            pass
+
+    from unittest.mock import Mock
+    from pydantic_ai_orchestrator.infra import telemetry
+    from pydantic_ai_orchestrator.application import pipeline_runner as pr
+
+    mock_logfire = Mock(
+        span=lambda name: FakeSpan(name),
+        info=lambda *a, **k: None,
+        warn=lambda msg, *a, **k: warns.append(msg),
+        error=lambda *a, **k: None,
+    )
+    monkeypatch.setattr(telemetry, "logfire", mock_logfire)
+    monkeypatch.setattr(pr, "logfire", mock_logfire)
+
+    branches = {"a": Pipeline.from_step(Step("a", StubAgent(["A"])))}
+    step = Step.branch_on(
+        name="no_branch",
+        condition_callable=lambda out, ctx: "b",
+        branches=branches,
+    )
+    result = await PipelineRunner(step).run_async("in")
+    assert result.step_history[-1].success is False
+    assert any("No branch" in w for w in warns)
+
+
+@pytest.mark.asyncio
+async def test_conditional_step_error_logging_in_callables(monkeypatch) -> None:
+    errors: list[str] = []
+
+    class FakeSpan:
+        def __init__(self, name: str) -> None:
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            pass
+
+        def set_attribute(self, key: str, value: Any) -> None:
+            pass
+
+    from unittest.mock import Mock
+    from pydantic_ai_orchestrator.infra import telemetry
+    from pydantic_ai_orchestrator.application import pipeline_runner as pr
+
+    mock_logfire = Mock(
+        span=lambda name: FakeSpan(name),
+        info=lambda *a, **k: None,
+        warn=lambda *a, **k: None,
+        error=lambda msg, *a, **k: errors.append(msg),
+    )
+    monkeypatch.setattr(telemetry, "logfire", mock_logfire)
+    monkeypatch.setattr(pr, "logfire", mock_logfire)
+
+    def bad_condition(_: str, __: BaseModel | None) -> str:
+        raise RuntimeError("cond boom")
+
+    step = Step.branch_on(
+        name="cond_err",
+        condition_callable=bad_condition,
+        branches={"a": Pipeline.from_step(Step("a", StubAgent(["A"])))}
+    )
+    await PipelineRunner(step).run_async("in")
+    assert any("cond boom" in m for m in errors)
+
