@@ -9,6 +9,7 @@ from typing import (
     List,
     Optional,
     Sequence,
+    Type,
     TypeVar,
 )
 from pydantic import BaseModel, Field, ConfigDict
@@ -111,6 +112,32 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         self.failure_handlers.append(handler)
         return self
 
+    @classmethod
+    def loop_until(
+        cls,
+        name: str,
+        loop_body_pipeline: "Pipeline[Any, Any]",
+        exit_condition_callable: Callable[[Any, Optional[BaseModel]], bool],
+        max_loops: int = 5,
+        initial_input_to_loop_body_mapper: Optional[Callable[[Any, Optional[BaseModel]], Any]] = None,
+        iteration_input_mapper: Optional[Callable[[Any, Optional[BaseModel], int], Any]] = None,
+        loop_output_mapper: Optional[Callable[[Any, Optional[BaseModel]], Any]] = None,
+        **config_kwargs: Any,
+    ) -> "LoopStep":
+        """Factory method to create a :class:`LoopStep`."""
+        from .pipeline_dsl import LoopStep
+
+        return LoopStep(
+            name=name,
+            loop_body_pipeline=loop_body_pipeline,
+            exit_condition_callable=exit_condition_callable,
+            max_loops=max_loops,
+            initial_input_to_loop_body_mapper=initial_input_to_loop_body_mapper,
+            iteration_input_mapper=iteration_input_mapper,
+            loop_output_mapper=loop_output_mapper,
+            **config_kwargs,
+        )
+
 
 class StepFactory:
     @staticmethod
@@ -142,6 +169,77 @@ class StepFactory:
     ) -> Step[ValInT, ValOutT]:
         """Construct a validation step using the provided agent."""
         return cls.create("validate", agent, **config)
+
+
+class LoopStep(Step[Any, Any]):
+    """A specialized step that executes a pipeline in a loop."""
+
+    loop_body_pipeline: "Pipeline[Any, Any]" = Field(
+        description="The pipeline to execute in each iteration."
+    )
+    exit_condition_callable: Callable[[Any, Optional[BaseModel]], bool] = Field(
+        description=(
+            "Callable that takes (last_body_output, pipeline_context) and returns True to exit loop."
+        )
+    )
+    max_loops: int = Field(default=5, gt=0, description="Maximum number of iterations.")
+
+    initial_input_to_loop_body_mapper: Optional[Callable[[Any, Optional[BaseModel]], Any]] = Field(
+        default=None,
+        description=(
+            "Callable to map LoopStep's input to the first iteration's body input."
+        ),
+    )
+    iteration_input_mapper: Optional[
+        Callable[[Any, Optional[BaseModel], int], Any]
+    ] = Field(
+        default=None,
+        description=(
+            "Callable to map previous iteration's body output to next iteration's input."
+        ),
+    )
+    loop_output_mapper: Optional[Callable[[Any, Optional[BaseModel]], Any]] = Field(
+        default=None,
+        description=(
+            "Callable to map the final successful output to the LoopStep's output."
+        ),
+    )
+
+    model_config = {"arbitrary_types_allowed": True}
+
+    def __init__(
+        self,
+        *,
+        name: str,
+        loop_body_pipeline: "Pipeline[Any, Any]",
+        exit_condition_callable: Callable[[Any, Optional[BaseModel]], bool],
+        max_loops: int = 5,
+        initial_input_to_loop_body_mapper: Optional[
+            Callable[[Any, Optional[BaseModel]], Any]
+        ] = None,
+        iteration_input_mapper: Optional[
+            Callable[[Any, Optional[BaseModel], int], Any]
+        ] = None,
+        loop_output_mapper: Optional[Callable[[Any, Optional[BaseModel]], Any]] = None,
+        **config_kwargs: Any,
+    ) -> None:
+        if max_loops <= 0:
+            raise ValueError("max_loops must be a positive integer.")
+
+        BaseModel.__init__(
+            self,
+            name=name,
+            agent=None,
+            config=StepConfig(**config_kwargs),
+            plugins=[],
+            failure_handlers=[],
+            loop_body_pipeline=loop_body_pipeline,
+            exit_condition_callable=exit_condition_callable,
+            max_loops=max_loops,
+            initial_input_to_loop_body_mapper=initial_input_to_loop_body_mapper,
+            iteration_input_mapper=iteration_input_mapper,
+            loop_output_mapper=loop_output_mapper,
+        )
 
 
 PipeInT = TypeVar("PipeInT")
@@ -177,4 +275,4 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
         return iter(self.steps)
 
 # Explicit exports
-__all__ = ['Step', 'Pipeline', 'StepConfig', 'StepFactory']
+__all__ = ['Step', 'Pipeline', 'StepConfig', 'StepFactory', 'LoopStep']

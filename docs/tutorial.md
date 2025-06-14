@@ -296,4 +296,29 @@ final = runner.run("hi")
 print(final.final_pipeline_context.calls)  # 2
 ```
 
+### Iterative Loops with `LoopStep`
+
+Some workflows require repeating a set of steps until a condition is met. `LoopStep`
+lets you express this directly in the DSL.
+
+```python
+from pydantic_ai_orchestrator import Step, PipelineRunner, Pipeline
+
+async def fixer(data: str) -> str:
+    return data + "!"
+
+body = Pipeline.from_step(Step("fix", fixer))
+
+loop = Step.loop_until(
+    name="add_exclamation",
+    loop_body_pipeline=body,
+    exit_condition_callable=lambda out, ctx: out.endswith("!!!"),
+    max_loops=3,
+)
+
+runner = PipelineRunner(loop)
+result = runner.run("hi")
+print(result.step_history[-1].output)  # 'hi!!!'
+```
+
 You're now ready to build powerful and intelligent AI applications. Happy orchestrating
