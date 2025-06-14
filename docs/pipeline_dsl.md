@@ -157,6 +157,21 @@ pipeline = (
 )
 ```
 
+### Looping and Iteration
+
+Repeat a sub-pipeline until a condition is met using `Step.loop_until()`.
+See [LoopStep documentation](pipeline_looping.md) for full details.
+
+```python
+loop_step = Step.loop_until(
+    name="refine",
+    loop_body_pipeline=Pipeline.from_step(Step.solution(solution_agent)),
+    exit_condition_callable=lambda out, ctx: "done" in out,
+)
+
+pipeline = Step.review(review_agent) >> loop_step >> Step.validate(validator_agent)
+```
+
 ## Typed Pipeline Context
 
 `PipelineRunner` can share a mutable Pydantic model instance across all steps in

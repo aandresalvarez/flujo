@@ -70,6 +70,12 @@ runner_with_ctx = PipelineRunner(
     context_model=MyContext,
     initial_context_data={"counter": 0},
 )
+# Looping allows iterative execution of a sub-pipeline
+looping_step = Step.loop_until(
+    name="loop",
+    loop_body_pipeline=Pipeline.from_step(Step.solution(solution_agent)),
+    exit_condition_callable=lambda out, ctx: "done" in out,
+)
 # See `pipeline_context.md` for details on using shared context.
 ```
 

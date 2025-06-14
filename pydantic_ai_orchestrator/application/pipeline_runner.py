@@ -12,7 +12,7 @@ from ..exceptions import (
     OrchestratorError,
     PipelineContextInitializationError,
 )
-from ..domain.pipeline_dsl import Pipeline, Step
+from ..domain.pipeline_dsl import Pipeline, Step, LoopStep
 from ..domain.plugins import PluginOutcome
 from ..domain.models import PipelineResult, StepResult
 
@@ -47,6 +47,9 @@ class PipelineRunner(Generic[RunnerInT, RunnerOutT]):
         pipeline_context: Optional[BaseModel],
     ) -> StepResult:
         visited: set[Any] = set()
+        if isinstance(step, LoopStep):
+            return await self._execute_loop_step(step, data, pipeline_context)
+
         result = StepResult(name=step.name)
         original_agent = step.agent
         current_agent = original_agent
@@ -131,6 +134,136 @@ class PipelineRunner(Generic[RunnerInT, RunnerOutT]):
         result.token_counts += getattr(last_output, "token_counts", 1) if last_output is not None else 0
         result.cost_usd += getattr(last_output, "cost_usd", 0.0) if last_output is not None else 0.0
         return result
+
+    async def _execute_loop_step(
+        self,
+        loop_step: LoopStep,
+        loop_step_initial_input: Any,
+        pipeline_context: Optional[BaseModel],
+    ) -> StepResult:
+        loop_overall_result = StepResult(name=loop_step.name)
+
+        if loop_step.initial_input_to_loop_body_mapper:
+            current_body_input = loop_step.initial_input_to_loop_body_mapper(
+                loop_step_initial_input, pipeline_context
+            )
+        else:
+            current_body_input = loop_step_initial_input
+
+        last_successful_iteration_body_output: Any = None
+        final_body_output_of_last_iteration: Any = None
+        loop_exited_successfully_by_condition = False
+
+        for i in range(1, loop_step.max_loops + 1):
+            loop_overall_result.attempts = i
+            logfire.info(
+                f"LoopStep '{loop_step.name}': Starting Iteration {i}/{loop_step.max_loops}"
+            )
+
+            iteration_succeeded_fully = True
+            current_iteration_data_for_body_step = current_body_input
+
+            for body_s in loop_step.loop_body_pipeline.steps:
+                with logfire.span(
+                    f"LoopStep '{loop_step.name}' Iteration {i} - Body Step '{body_s.name}'"
+                ):
+                    body_step_result_obj = await self._run_step(
+                        body_s, current_iteration_data_for_body_step, pipeline_context
+                    )
+
+                loop_overall_result.latency_s += body_step_result_obj.latency_s
+                loop_overall_result.cost_usd += getattr(body_step_result_obj, "cost_usd", 0.0)
+                loop_overall_result.token_counts += getattr(body_step_result_obj, "token_counts", 0)
+
+                if not body_step_result_obj.success:
+                    logfire.warn(
+                        f"Body Step '{body_s.name}' in LoopStep '{loop_step.name}' (Iteration {i}) failed."
+                    )
+                    iteration_succeeded_fully = False
+                    final_body_output_of_last_iteration = body_step_result_obj.output
+                    break
+
+                current_iteration_data_for_body_step = body_step_result_obj.output
+
+            if iteration_succeeded_fully:
+                last_successful_iteration_body_output = current_iteration_data_for_body_step
+            final_body_output_of_last_iteration = current_iteration_data_for_body_step
+
+            try:
+                should_exit = loop_step.exit_condition_callable(
+                    final_body_output_of_last_iteration, pipeline_context
+                )
+            except Exception as e:
+                logfire.error(
+                    f"Error in exit_condition_callable for LoopStep '{loop_step.name}': {e}"
+                )
+                loop_overall_result.success = False
+                loop_overall_result.feedback = (
+                    f"Exit condition callable raised an exception: {e}"
+                )
+                break
+
+            if should_exit:
+                logfire.info(f"LoopStep '{loop_step.name}' exit condition met at iteration {i}.")
+                loop_overall_result.success = iteration_succeeded_fully
+                if not iteration_succeeded_fully:
+                    loop_overall_result.feedback = (
+                        "Loop exited by condition, but last iteration body failed."
+                    )
+                loop_exited_successfully_by_condition = True
+                break
+
+            if i < loop_step.max_loops:
+                if loop_step.iteration_input_mapper:
+                    try:
+                        current_body_input = loop_step.iteration_input_mapper(
+                            final_body_output_of_last_iteration, pipeline_context, i
+                        )
+                    except Exception as e:
+                        logfire.error(
+                            f"Error in iteration_input_mapper for LoopStep '{loop_step.name}': {e}"
+                        )
+                        loop_overall_result.success = False
+                        loop_overall_result.feedback = (
+                            f"Iteration input mapper raised an exception: {e}"
+                        )
+                        break
+                else:
+                    current_body_input = final_body_output_of_last_iteration
+        else:
+            logfire.warn(
+                f"LoopStep '{loop_step.name}' reached max_loops ({loop_step.max_loops}) without exit condition being met."
+            )
+            loop_overall_result.success = False
+            loop_overall_result.feedback = (
+                f"Reached max_loops ({loop_step.max_loops}) without meeting exit condition."
+            )
+
+        if loop_overall_result.success and loop_exited_successfully_by_condition:
+            if loop_step.loop_output_mapper:
+                try:
+                    loop_overall_result.output = loop_step.loop_output_mapper(
+                        last_successful_iteration_body_output, pipeline_context
+                    )
+                except Exception as e:
+                    logfire.error(
+                        f"Error in loop_output_mapper for LoopStep '{loop_step.name}': {e}"
+                    )
+                    loop_overall_result.success = False
+                    loop_overall_result.feedback = (
+                        f"Loop output mapper raised an exception: {e}"
+                    )
+                    loop_overall_result.output = None
+            else:
+                loop_overall_result.output = last_successful_iteration_body_output
+        else:
+            loop_overall_result.output = final_body_output_of_last_iteration
+            if not loop_overall_result.feedback:
+                loop_overall_result.feedback = (
+                    "Loop did not complete successfully or exit condition not met positively."
+                )
+
+        return loop_overall_result
 
     async def run_async(self, initial_input: RunnerInT) -> PipelineResult:
         current_pipeline_context_instance: Optional[BaseModel] = None
