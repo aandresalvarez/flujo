@@ -4,17 +4,17 @@ This guide outlines the standards and procedures for maintaining the official do
 
 ## 1. Our Documentation Stack: MkDocs + `mkdocstrings`
 
-We use a modern, industry-standard stack for our documentation, chosen for its simplicity, power, and tight integration with our Python codebase.
+We use a modern stack that is simple, powerful, and tightly integrated with our Python codebase.
 
 * **[MkDocs](https://www.mkdocs.org/):** A fast, simple, and beautiful static site generator. It builds our documentation site from the Markdown files located in the `/docs` directory.
 * **[`mkdocstrings`](https://mkdocstrings.github.io/):** A powerful MkDocs plugin that automatically generates professional API reference pages directly from the docstrings in our Python code. This ensures our API documentation is always in sync with the actual implementation.
 * **[GitHub Pages](https://pages.github.com/):** Free, reliable hosting for our static documentation site, deployed automatically via GitHub Actions.
 
-This stack is ideal because it leverages the Markdown files and Python docstrings we already maintain as part of our development process.
+This stack works well because it builds on the Markdown and docstrings we already maintain.
 
 ## 2. How to Contribute to the Documentation
 
-Contributing to the documentation is as important as contributing code. Follow these steps to make changes.
+Documentation contributions are just as valuable as code. Here's how to help.
 
 ### Step 1: Edit or Add Markdown Files
 
@@ -140,4 +140,4 @@ This automated process ensures that our documentation is always a perfect reflec
           # ... other API refs
     ```
 
-This new document formalizes the excellent advice you received and makes it a permanent, accessible part of your project's institutional knowledge.
+This guide captures our best practices so they're easy for everyone to find.
