@@ -34,6 +34,7 @@ def test_missing_api_key_allowed(monkeypatch) -> None:
 def test_settings_initialization() -> None:
     # Unset env var so constructor value is used
     os.environ.pop("orch_openai_api_key", None)
+    os.environ.pop("ORCH_OPENAI_API_KEY", None)
     settings = Settings(
         openai_api_key=SecretStr("test"),
         google_api_key=SecretStr("test"),
