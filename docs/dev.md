@@ -7,8 +7,8 @@ Thanks for helping improve **pydantic-ai-orchestrator**! Follow the steps below 
 ## 1  Clone the repository
 
 ```bash
-git clone https://github.com/yourorg/pydantic-ai-orchestrator.git
-cd pydantic-ai-orchestrator
+git clone https://github.com/aandresalvarez/rloop.git
+cd rloop
 ```
 
 ---
@@ -23,28 +23,37 @@ source .venv/bin/activate           # Windows: .venv\Scripts\activate
 python --version                    # should print 3.11.x
 ```
 
-*(If `python3.11` isn’t on your PATH, install it with Homebrew, pyenv, or python.org.)*
+*(If `python3.11` isn't on your PATH, install it with Homebrew, pyenv, or python.org.)*
 
 ---
 
 ## 3  Install dependencies in *editable* mode
 
-### Option A Poetry (recommended)
+The project supports multiple package managers. Choose your preferred one:
+
+### Option A  Poetry (recommended)
 
 ```bash
 pip install --upgrade poetry
-poetry install --with dev           # pulls in runtime + dev extras
-# Every subsequent command can be run via `poetry run …`
+make poetry-dev                     # installs runtime + dev + docs + bench extras
 ```
 
-### Option B Raw pip
+### Option B  UV (fastest)
 
 ```bash
-python -m pip install -e ".[dev]"   # editable install + dev extras
-# Commands below use `python -m` or `pipx run`; adapt as you prefer
+pip install --upgrade uv
+make uv-dev                         # fastest installation with uv
 ```
 
-Editable mode (`-e`) means any code change you make is picked up instantly without reinstalling.
+### Option C  Standard pip
+
+```bash
+make pip-dev                        # standard pip installation
+```
+
+All options install the package in editable mode (`-e`), meaning any code change you make is picked up instantly without reinstalling.
+
+> **Note:** Run `make help` to see all available commands and their descriptions.
 
 ---
 
@@ -61,41 +70,96 @@ The orchestrator auto-loads this file via **python-dotenv**—no code changes ne
 
 ## 5  Run the test suite
 
-```bash
-# Poetry users
-poetry run pytest                   # quick run
-poetry run pytest --cov=pydantic_ai_orchestrator  # with coverage report
+Choose your preferred test runner:
 
-# Plain venv users
-python -m pytest
-python -m pytest --cov=pydantic_ai_orchestrator
+```bash
+# Poetry
+make poetry-test                    # full test suite with coverage
+make poetry-test-fast              # quick run without coverage
+make poetry-test-unit              # unit tests only
+make poetry-test-e2e              # end-to-end tests only
+make poetry-test-bench            # benchmark tests only
+
+# UV (fastest)
+make uv-test                       # full test suite with coverage
+make uv-test-fast                 # quick run without coverage
+# ... (same options as poetry)
+
+# Standard pip (default)
+make test                         # full test suite with coverage
+make test-fast                    # quick run without coverage
+make test-unit                    # unit tests only
+make test-e2e                     # end-to-end tests only
+make test-bench                   # benchmark tests only
 ```
 
-Async tests are handled automatically by **pytest-asyncio** (asyncio\_mode = auto).
+Async tests are handled automatically by **pytest-asyncio** (asyncio_mode = auto).
 
 ---
 
-## 6  Lint, format, and type-check
+## 6  Code Quality Checks
+
+Run all quality checks at once:
 
 ```bash
-# Ruff — linter & formatter
-poetry run ruff check .
-poetry run ruff format .            # autofix formatting
-
-# MyPy — static types
-poetry run mypy .
+make quality                      # runs lint, format-check, type-check, and security
 ```
 
-*(Replace `poetry run …` with `python -m …` or `pipx run …` if you skipped Poetry.)*
+Or run individual checks:
+
+```bash
+# Linting and Formatting
+make lint                        # check code style with Ruff
+make format                      # format code automatically
+make format-check               # check formatting without changing files (for CI)
+
+# Type Checking
+make type-check                 # run static type checking with MyPy
+
+# Security
+make security                   # check for security vulnerabilities
+```
 
 ---
 
-## 7  Release flow (maintainers)
+## 7  Documentation
 
-1. Bump `version` in **pyproject.toml**.
+```bash
+make docs-serve                 # start local documentation server
+make docs-build                # build documentation
+```
+
+Visit http://127.0.0.1:8000 to view the docs locally.
+
+---
+
+## 8  Release flow (maintainers)
+
+1. Bump `version` in **pyproject.toml**
 2. `git commit -am "release: vX.Y.Z"`
 3. `git tag vX.Y.Z && git push --tags`
-4. GitHub Actions (`release.yml`) will build wheels and publish to PyPI automatically.
+4. GitHub Actions (`release.yml`) will build wheels and publish to PyPI automatically
+
+To build the package locally:
+
+```bash
+make build                     # build package using Hatch
+```
+
+---
+
+## 9  Cleanup
+
+When you need to clean up build artifacts or caches:
+
+```bash
+make clean                     # remove all build artifacts and caches
+make clean-pyc                # remove Python cache files only
+make clean-build             # remove build/dist artifacts only
+make clean-test             # remove test artifacts only
+make clean-docs            # remove built documentation only
+make clean-cache          # remove tool caches (Ruff, MyPy) only
+```
 
 ---
 
@@ -106,5 +170,13 @@ poetry run mypy .
 | `ERROR: Package requires a different Python`              | Activate a 3.11+ interpreter (`python --version`).                |
 | `async def functions are not natively supported` in tests | Ensure `pytest-asyncio` is installed (included in `[dev]` extra). |
 | Permission errors in `~/Library/Caches/pypoetry`          | `sudo chown -R $USER ~/Library/Caches/pypoetry` and rerun Poetry. |
+| Make command not found                                    | Install make: `brew install make` (macOS) or `apt install make` (Ubuntu) |
+| Tool-specific errors                                      | Run `make clean-cache` to clear tool caches and try again         |
+
+For more commands and options, run:
+
+```bash
+make help
+```
 
 Happy hacking! 🎉
