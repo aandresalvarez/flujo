@@ -45,6 +45,10 @@ from pydantic_ai_orchestrator import (
     Step, PipelineRunner, Task,
     review_agent, solution_agent, validator_agent,
 )
+from pydantic import BaseModel
+
+class MyContext(BaseModel):
+    counter: int = 0
 
 # Create a pipeline
 custom_pipeline = (
@@ -60,6 +64,12 @@ custom_pipeline = (
 )
 
 runner = PipelineRunner(custom_pipeline)
+# With a shared typed context
+runner_with_ctx = PipelineRunner(
+    custom_pipeline,
+    context_model=MyContext,
+    initial_context_data={"counter": 0},
+)
 ```
 
 #### Methods
@@ -78,6 +88,9 @@ structure = custom_pipeline.structure()
 
 # Access runner config
 config = runner.get_config()
+
+# Access final pipeline context
+final_ctx = pipeline_result.final_pipeline_context
 ```
 
 ### Agents

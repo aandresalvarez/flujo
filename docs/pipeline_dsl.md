@@ -157,6 +157,32 @@ pipeline = (
 )
 ```
 
+## Typed Pipeline Context
+
+`PipelineRunner` can share a mutable Pydantic model instance across all steps in
+a single run. Pass a context model when creating the runner and declare
+`pipeline_context` in your step functions or agents.
+
+```python
+from pydantic import BaseModel
+
+class MyContext(BaseModel):
+    counter: int = 0
+
+async def increment(data: str, *, pipeline_context: MyContext | None = None) -> str:
+    if pipeline_context:
+        pipeline_context.counter += 1
+    return data
+
+pipeline = Step("inc", increment) >> Step("read", increment)
+runner = PipelineRunner(pipeline, context_model=MyContext)
+result = runner.run("hi")
+print(result.final_pipeline_context.counter)  # 2
+```
+
+Each `run()` call gets a fresh context instance. Access the final state via
+`PipelineResult.final_pipeline_context`.
+
 ### Conditional Steps
 
 Add conditional logic to your pipeline:

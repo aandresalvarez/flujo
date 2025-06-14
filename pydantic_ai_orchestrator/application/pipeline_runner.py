@@ -2,11 +2,16 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any, Generic, TypeVar
+from typing import Any, Dict, Generic, Optional, Type, TypeVar
+
+from pydantic import BaseModel, ValidationError
 
 
 from ..infra.telemetry import logfire
-from ..exceptions import OrchestratorError
+from ..exceptions import (
+    OrchestratorError,
+    PipelineContextInitializationError,
+)
 from ..domain.pipeline_dsl import Pipeline, Step
 from ..domain.plugins import PluginOutcome
 from ..domain.models import PipelineResult, StepResult
@@ -23,12 +28,24 @@ RunnerOutT = TypeVar("RunnerOutT")
 class PipelineRunner(Generic[RunnerInT, RunnerOutT]):
     """Execute a pipeline sequentially."""
 
-    def __init__(self, pipeline: Pipeline[RunnerInT, RunnerOutT] | Step[RunnerInT, RunnerOutT]):
+    def __init__(
+        self,
+        pipeline: Pipeline[RunnerInT, RunnerOutT] | Step[RunnerInT, RunnerOutT],
+        context_model: Optional[Type[BaseModel]] = None,
+        initial_context_data: Optional[Dict[str, Any]] = None,
+    ) -> None:
         if isinstance(pipeline, Step):
             pipeline = Pipeline.from_step(pipeline)
-        self.pipeline = pipeline
+        self.pipeline: Pipeline[RunnerInT, RunnerOutT] = pipeline
+        self.context_model = context_model
+        self.initial_context_data: Dict[str, Any] = initial_context_data or {}
 
-    async def _run_step(self, step: Step[Any, Any], data: Any) -> StepResult:
+    async def _run_step(
+        self,
+        step: Step[Any, Any],
+        data: Any,
+        pipeline_context: Optional[BaseModel],
+    ) -> StepResult:
         visited: set[Any] = set()
         result = StepResult(name=step.name)
         original_agent = step.agent
@@ -41,7 +58,10 @@ class PipelineRunner(Generic[RunnerInT, RunnerOutT]):
                 raise OrchestratorError(f"Step {step.name} has no agent")
 
             start = time.monotonic()
-            output = await current_agent.run(data)
+            agent_kwargs = {}
+            if pipeline_context is not None:
+                agent_kwargs["pipeline_context"] = pipeline_context
+            output = await current_agent.run(data, **agent_kwargs)
             result.latency_s += time.monotonic() - start
             last_output = output
 
@@ -53,8 +73,11 @@ class PipelineRunner(Generic[RunnerInT, RunnerOutT]):
             sorted_plugins = sorted(step.plugins, key=lambda p: p[1], reverse=True)
             for plugin, _ in sorted_plugins:
                 try:
+                    plugin_kwargs = {}
+                    if pipeline_context is not None:
+                        plugin_kwargs["pipeline_context"] = pipeline_context
                     plugin_result: PluginOutcome = await asyncio.wait_for(
-                        plugin.validate({"input": data, "output": output}),
+                        plugin.validate({"input": data, "output": output}, **plugin_kwargs),
                         timeout=step.config.timeout_s,
                     )
                 except asyncio.TimeoutError as e:
@@ -110,19 +133,44 @@ class PipelineRunner(Generic[RunnerInT, RunnerOutT]):
         return result
 
     async def run_async(self, initial_input: RunnerInT) -> PipelineResult:
+        current_pipeline_context_instance: Optional[BaseModel] = None
+        if self.context_model is not None:
+            try:
+                current_pipeline_context_instance = self.context_model(
+                    **self.initial_context_data
+                )
+            except ValidationError as e:
+                logfire.error(
+                    f"Pipeline context initialization failed for model {self.context_model.__name__}: {e}"
+                )
+                raise PipelineContextInitializationError(
+                    f"Failed to initialize pipeline context with model {self.context_model.__name__} and initial data. Validation errors:\n{e}"
+                ) from e
+
         data = initial_input
-        result = PipelineResult()
+        pipeline_result_obj = PipelineResult()
         try:
             for step in self.pipeline.steps:
                 with logfire.span(step.name):
-                    step_result = await self._run_step(step, data)
-                result.step_history.append(step_result)
-                result.total_cost_usd += step_result.cost_usd
+                    step_result = await self._run_step(
+                        step, data, pipeline_context=current_pipeline_context_instance
+                    )
+                pipeline_result_obj.step_history.append(step_result)
+                pipeline_result_obj.total_cost_usd += step_result.cost_usd
+                if not step_result.success:
+                    logfire.warn(
+                        f"Step '{step.name}' failed. Halting pipeline execution."
+                    )
+                    break
                 data = step_result.output
         except asyncio.CancelledError:
             logfire.info("Pipeline cancelled")
-            return result
-        return result
+            return pipeline_result_obj
+
+        if current_pipeline_context_instance is not None:
+            pipeline_result_obj.final_pipeline_context = current_pipeline_context_instance
+
+        return pipeline_result_obj
 
     def run(self, initial_input: RunnerInT) -> PipelineResult:
         return asyncio.run(self.run_async(initial_input))

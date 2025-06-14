@@ -42,3 +42,9 @@ class InfiniteRedirectError(OrchestratorError):
     """Raised when a redirect loop is detected in pipeline execution."""
 
     pass
+
+
+class PipelineContextInitializationError(OrchestratorError):
+    """Raised when a typed pipeline context fails to initialize."""
+
+    pass

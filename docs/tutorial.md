@@ -273,4 +273,26 @@ result = runner.run("SELECT FROM")
 print(result.step_history[-1].feedback)
 ```
 
+### Using a Shared Typed Context
+
+`PipelineRunner` can share a Pydantic model instance across steps. This lets you
+accumulate data or pass configuration during a run.
+
+```python
+from pydantic import BaseModel
+
+class Stats(BaseModel):
+    calls: int = 0
+
+async def record(data: str, *, pipeline_context: Stats | None = None) -> str:
+    if pipeline_context:
+        pipeline_context.calls += 1
+    return data
+
+pipeline = Step("first", record) >> Step("second", record)
+runner = PipelineRunner(pipeline, context_model=Stats)
+final = runner.run("hi")
+print(final.final_pipeline_context.calls)  # 2
+```
+
 You're now ready to build powerful and intelligent AI applications. Happy orchestrating
