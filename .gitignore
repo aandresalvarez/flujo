@@ -11,3 +11,4 @@ build/
 .python-version
 settings.json
 poetry.lock
+site/ 

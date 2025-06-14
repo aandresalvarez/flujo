@@ -24,6 +24,11 @@ theme:
 
 nav:
   - Home: index.md
+  - Getting Started:
+    - Installation: installation.md
+    - Quickstart: quickstart.md
+    - Concepts: concepts.md
+    - Configuration: configuration.md
   - Usage: usage.md
   - Tutorial: tutorial.md
   - 'Intelligent Evals': intelligent_evals.md
@@ -31,17 +36,15 @@ nav:
   - Development:
     - 'Contributing Guide': dev.md
     - 'Documentation Guide': documentation_guide.md
+    - Contributing: contributing.md
   - 'Use Cases': use_cases.md
-  - 'FSD': FSD_v1.md
   - API Reference:
-      - Orchestrator: 'pydantic_ai_orchestrator.application.orchestrator'
-      - PipelineRunner: 'pydantic_ai_orchestrator.application.pipeline_runner'
-      - Self-Improvement: 'pydantic_ai_orchestrator.application.self_improvement'
-      - Models: 'pydantic_ai_orchestrator.domain.models'
-      - DSL: 'pydantic_ai_orchestrator.domain.pipeline_dsl'
-      - Agents: 'pydantic_ai_orchestrator.infra.agents'
-      - Settings: 'pydantic_ai_orchestrator.infra.settings'
-      - Scoring: 'pydantic_ai_orchestrator.domain.scoring'
+    - Overview: api_reference.md
+    - Pipeline DSL: pipeline_dsl.md
+    - Scoring: scoring.md
+    - Tools: tools.md
+    - Telemetry: telemetry.md
+    - Troubleshooting: troubleshooting.md
 
 plugins:
   - search
