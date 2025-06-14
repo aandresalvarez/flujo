@@ -65,6 +65,14 @@ class PipelineResult(BaseModel):
 
     step_history: List[StepResult] = Field(default_factory=list)
     total_cost_usd: float = 0.0
+    final_pipeline_context: Optional[BaseModel] = Field(
+        default=None,
+        description=(
+            "The final state of the typed pipeline context, if configured and used."
+        ),
+    )
+
+    model_config = {"arbitrary_types_allowed": True}
 
 
 class ImprovementSuggestion(BaseModel):

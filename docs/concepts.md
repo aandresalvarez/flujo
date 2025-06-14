@@ -107,6 +107,10 @@ executed by `PipelineRunner`, is the primary way to create **flexible and custom
 multi-agent workflows**. This gives you full control over the sequence of
 operations, the agents used at each stage, and the integration of plugins.
 
+`PipelineRunner` can also maintain a shared, typed context object for each run.
+Steps declare a `pipeline_context` parameter to access or modify this object. See
+[Typed Pipeline Context](pipeline_context.md) for full documentation.
+
 ```python
 from pydantic_ai_orchestrator import (
     Step, PipelineRunner, review_agent, solution_agent, validator_agent
