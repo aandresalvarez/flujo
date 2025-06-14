@@ -1,19 +1,48 @@
 site_name: pydantic-ai-orchestrator
+site_url: https://aandresalvarez.github.io/rloop/
+
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - toc.integrate
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+  language: en
+  palette:
+    - scheme: default
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - scheme: slate
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
 nav:
   - Home: index.md
   - Usage: usage.md
   - Tutorial: tutorial.md
-  - Use Cases: use_cases.md
-  - Intelligent Evals: intelligent_evals.md
+  - 'Intelligent Evals': intelligent_evals.md
   - Extending: extending.md
   - Development:
-      - Contributing Guide: dev.md
-      - Documentation Guide: documentation_guide.md
+    - 'Contributing Guide': dev.md
+    - 'Documentation Guide': documentation_guide.md
+  - 'Use Cases': use_cases.md
+  - 'FSD': FSD_v1.md
   - API Reference:
       - Orchestrator: 'pydantic_ai_orchestrator.application.orchestrator'
-      - Settings: 'pydantic_ai_orchestrator.infra.settings'
+      - PipelineRunner: 'pydantic_ai_orchestrator.application.pipeline_runner'
+      - Self-Improvement: 'pydantic_ai_orchestrator.application.self_improvement'
+      - Models: 'pydantic_ai_orchestrator.domain.models'
+      - DSL: 'pydantic_ai_orchestrator.domain.pipeline_dsl'
       - Agents: 'pydantic_ai_orchestrator.infra.agents'
+      - Settings: 'pydantic_ai_orchestrator.infra.settings'
       - Scoring: 'pydantic_ai_orchestrator.domain.scoring'
+
 plugins:
   - search
   - mkdocstrings:

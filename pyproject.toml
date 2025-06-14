@@ -1,5 +1,5 @@
 [build-system]
-requires      = ["hatchling"]        # any backend works; change if you prefer another
+requires      = ["hatchling"]
 build-backend = "hatchling.build"
 
 # --------------------------------------------------------------------------- #
@@ -7,7 +7,7 @@ build-backend = "hatchling.build"
 # --------------------------------------------------------------------------- #
 [project]
 name            = "pydantic_ai_orchestrator"
-version         = "0.1.0"
+version         = "0.2.0" # Version bumped for new features
 description     = "Production-ready orchestration for Pydantic-AI agents"
 readme          = "README.md"
 requires-python = ">=3.11,<4.0"
@@ -39,9 +39,10 @@ dependencies = [
   "rich>=13.7",
   "logfire>=0.3",
   "sqlvalidator>=0.0.8",
+  "pydantic-evals>=0.0.47", # Added for Intelligent Evals
 ]
 
-# Optional dependency groups (install with: `pip install .[dev]`, `poetry install --with dev`, etc.)
+# Optional dependency groups (install with: `pip install .[dev]`, etc.)
 [project.optional-dependencies]
 dev = [
   "ruff",
@@ -55,7 +56,11 @@ dev = [
   "rich",
   "pytest-benchmark",
 ]
-docs = ["mkdocs", "mkdocstrings[python]"]
+docs = [
+    "mkdocs",
+    "mkdocs-material", # Added for a professional theme
+    "mkdocstrings[python]",
+]
 opentelemetry = ["opentelemetry-sdk>=1.26"]
 bench = ["numpy"]
 
@@ -65,8 +70,9 @@ orch = "pydantic_ai_orchestrator.cli.main:app"
 
 # Project links (PEP 621)
 [project.urls]
-Homepage   = "https://github.com/yourorg/pydantic-ai-orchestrator"
-Repository = "https://github.com/yourorg/pydantic-ai-orchestrator"
+Homepage   = "https://github.com/aandresalvarez/rloop"
+Repository = "https://github.com/aandresalvarez/rloop"
+Documentation = "https://aandresalvarez.github.io/rloop/" # Added link to your docs
 
 # --------------------------------------------------------------------------- #
 # Tool-specific configuration
@@ -82,4 +88,5 @@ line-length = 100
 asyncio_mode = "auto"
 markers = [
   "e2e: marks tests as end-to-end (requires network access or VCR cassettes)",
+  "benchmark: marks tests as benchmarks (requires pytest-benchmark)",
 ]

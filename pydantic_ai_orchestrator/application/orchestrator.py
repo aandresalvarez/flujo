@@ -6,7 +6,7 @@ import asyncio
 from typing import Any, Optional
 
 from ..domain.agent_protocol import AgentProtocol
-from ..domain.pipeline_dsl import Pipeline, Step
+from ..domain.pipeline_dsl import Step
 from ..domain.models import Candidate, PipelineResult, Task
 from .pipeline_runner import PipelineRunner
 
