@@ -161,7 +161,8 @@ pipeline = (
 
 `PipelineRunner` can share a mutable Pydantic model instance across all steps in
 a single run. Pass a context model when creating the runner and declare
-`pipeline_context` in your step functions or agents.
+`pipeline_context` in your step functions or agents. See
+[Typed Pipeline Context](pipeline_context.md) for a full explanation.
 
 ```python
 from pydantic import BaseModel

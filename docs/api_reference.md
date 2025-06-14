@@ -70,6 +70,7 @@ runner_with_ctx = PipelineRunner(
     context_model=MyContext,
     initial_context_data={"counter": 0},
 )
+# See `pipeline_context.md` for details on using shared context.
 ```
 
 #### Methods

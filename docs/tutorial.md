@@ -276,7 +276,8 @@ print(result.step_history[-1].feedback)
 ### Using a Shared Typed Context
 
 `PipelineRunner` can share a Pydantic model instance across steps. This lets you
-accumulate data or pass configuration during a run.
+accumulate data or pass configuration during a run. See
+[Typed Pipeline Context](pipeline_context.md) for more details.
 
 ```python
 from pydantic import BaseModel

@@ -108,7 +108,8 @@ multi-agent workflows**. This gives you full control over the sequence of
 operations, the agents used at each stage, and the integration of plugins.
 
 `PipelineRunner` can also maintain a shared, typed context object for each run.
-Steps declare a `pipeline_context` parameter to access or modify this object.
+Steps declare a `pipeline_context` parameter to access or modify this object. See
+[Typed Pipeline Context](pipeline_context.md) for full documentation.
 
 ```python
 from pydantic_ai_orchestrator import (
