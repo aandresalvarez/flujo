@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable, Any
 from pydantic import BaseModel
-from ..infra.agents import AsyncAgentProtocol
+from .agent_protocol import AsyncAgentProtocol
 
 
 class PluginOutcome(BaseModel):
@@ -12,7 +12,7 @@ class PluginOutcome(BaseModel):
 
     success: bool
     feedback: str | None = None
-    redirect_to: AsyncAgentProtocol[Any] | None = None
+    redirect_to: Any | None = None
     new_solution: Any | None = None
 
 

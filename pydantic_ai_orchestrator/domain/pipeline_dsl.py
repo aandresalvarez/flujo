@@ -1,13 +1,25 @@
 from __future__ import annotations
 
-from typing import List, Any, Optional, Callable, Generic, TypeVar, Iterator, cast, ClassVar, Generator
+from typing import (
+    Any,
+    Callable,
+    ClassVar,
+    Generic,
+    Iterator,
+    List,
+    Optional,
+    Sequence,
+    TypeVar,
+    cast,
+)
 from pydantic import BaseModel, Field, ConfigDict
-from ..infra.agents import AsyncAgentProtocol
+from .agent_protocol import AsyncAgentProtocol
 from .plugins import ValidationPlugin
 
 
-InT = TypeVar("InT")
-OutT = TypeVar("OutT")
+StepInT = TypeVar("StepInT")
+StepOutT = TypeVar("StepOutT")
+NewOutT = TypeVar("NewOutT")
 
 
 class StepConfig(BaseModel):
@@ -17,11 +29,11 @@ class StepConfig(BaseModel):
     timeout_s: float | None = None
 
 
-class Step(BaseModel, Generic[InT, OutT]):
+class Step(BaseModel, Generic[StepInT, StepOutT]):
     """Represents a single step in a pipeline."""
 
     name: str
-    agent: Optional[AsyncAgentProtocol[Any]] = None
+    agent: Any | None = Field(default=None)
     config: StepConfig = Field(default_factory=StepConfig)
     plugins: List[tuple[ValidationPlugin, int]] = Field(default_factory=list)
     failure_handlers: List[Callable[[], None]] = Field(default_factory=list)
@@ -33,7 +45,7 @@ class Step(BaseModel, Generic[InT, OutT]):
     def __init__(
         self,
         name: str,
-        agent: Optional[AsyncAgentProtocol[Any]] = None,
+        agent: Optional[AsyncAgentProtocol[StepInT, StepOutT]] = None,
         plugins: Optional[List[ValidationPlugin | tuple[ValidationPlugin, int]]] = None,
         on_failure: Optional[List[Callable[[], None]]] = None,
         **config: Any,
@@ -54,32 +66,38 @@ class Step(BaseModel, Generic[InT, OutT]):
             failure_handlers=on_failure or [],
         )
 
-    def __rshift__(self, other: "Step[OutT, Any]" | "Pipeline") -> "Pipeline":
+    def __rshift__(
+        self, other: "Step[StepOutT, NewOutT]" | "Pipeline[StepOutT, NewOutT]"
+    ) -> "Pipeline[StepInT, NewOutT]":
         if isinstance(other, Step):
-            return Pipeline(steps=[self, other])
+            return Pipeline.from_step(self) >> other
         if isinstance(other, Pipeline):
-            return Pipeline(steps=[self, *other.steps])
+            return Pipeline.from_step(self) >> other
         raise TypeError("Can only chain Step with Step or Pipeline")
 
     @classmethod
-    def review(cls, agent: AsyncAgentProtocol[Any], **config: Any) -> "Step[Any, Any]":
+    def review(cls, agent: AsyncAgentProtocol[Any, Any], **config: Any) -> "Step[Any, Any]":
         """Construct a review step using the provided agent."""
         return cls("review", agent, **config)
 
     @classmethod
-    def solution(cls, agent: AsyncAgentProtocol[Any], **config: Any) -> "Step[Any, Any]":
+    def solution(cls, agent: AsyncAgentProtocol[Any, Any], **config: Any) -> "Step[Any, Any]":
         """Construct a solution step using the provided agent."""
         return cls("solution", agent, **config)
 
     @classmethod
-    def validate_step(cls, agent: AsyncAgentProtocol[Any], **config: Any) -> "Step[Any, Any]":
+    def validate_step(cls, agent: AsyncAgentProtocol[Any, Any], **config: Any) -> "Step[Any, Any]":
         """Construct a validation step using the provided agent."""
         return cls("validate", agent, **config)
+
+    validate = validate_step
 
     def add_plugin(self, plugin: ValidationPlugin, priority: int = 0) -> "Step[InT, OutT]":
         """Add a validation plugin to this step."""
         self.plugins.append((plugin, priority))
         return self
+
+
 
     def on_failure(self, handler: Callable[[], None]) -> "Step[InT, OutT]":
         """Add a failure handler to this step."""
@@ -87,24 +105,65 @@ class Step(BaseModel, Generic[InT, OutT]):
         return self
 
 
-class Pipeline(BaseModel):
+class StepFactory:
+    @staticmethod
+    def create[SF_InT, SF_OutT](
+        name: str,
+        agent: AsyncAgentProtocol[SF_InT, SF_OutT],
+        **config: Any,
+    ) -> Step[SF_InT, SF_OutT]:
+        return Step[SF_InT, SF_OutT](name, agent, **config)
+
+    @classmethod
+    def review[ReviewOutT](
+        cls, agent: AsyncAgentProtocol[Any, ReviewOutT], **config: Any
+    ) -> Step[Any, ReviewOutT]:
+        return cls.create("review", agent, **config)
+
+    @classmethod
+    def solution[SolInT, SolOutT](
+        cls, agent: AsyncAgentProtocol[SolInT, SolOutT], **config: Any
+    ) -> Step[SolInT, SolOutT]:
+        return cls.create("solution", agent, **config)
+
+    @classmethod
+    def validate[ValInT, ValOutT](
+        cls, agent: AsyncAgentProtocol[ValInT, ValOutT], **config: Any
+    ) -> Step[ValInT, ValOutT]:
+        return cls.create("validate", agent, **config)
+
+
+PipeInT = TypeVar("PipeInT")
+PipeOutT = TypeVar("PipeOutT")
+NewPipeOutT = TypeVar("NewPipeOutT")
+
+
+class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
     """A sequential pipeline of steps."""
 
-    steps: List[Step[Any, Any]]
+    steps: Sequence[Step[Any, Any]]
 
     model_config: ClassVar[ConfigDict] = {
         "arbitrary_types_allowed": True,
     }
 
-    def __rshift__(self, other: Step[Any, Any] | "Pipeline") -> "Pipeline":
+    @classmethod
+    def from_step(cls, step: Step[PipeInT, PipeOutT]) -> "Pipeline[PipeInT, PipeOutT]":
+        return cls[PipeInT, PipeOutT].model_construct(steps=[step])
+
+    def __rshift__(
+        self, other: Step[PipeOutT, NewPipeOutT] | "Pipeline[PipeOutT, NewPipeOutT]"
+    ) -> "Pipeline[PipeInT, NewPipeOutT]":
         if isinstance(other, Step):
-            return Pipeline(steps=[*self.steps, other])
+            new_steps = list(self.steps) + [other]
+            return Pipeline[PipeInT, NewPipeOutT](steps=new_steps)
         if isinstance(other, Pipeline):
-            return Pipeline(steps=[*self.steps, *other.steps])
+            new_steps = list(self.steps) + list(other.steps)
+            return Pipeline[PipeInT, NewPipeOutT](steps=new_steps)
         raise TypeError("Can only chain Pipeline with Step or Pipeline")
 
-    def __iter__(self) -> Generator[tuple[str, Any], None, None]:
-        return super().__iter__()
+    def __iter__(self) -> Iterator[Step[Any, Any]]:
+        return iter(self.steps)
 
 # Explicit exports
-__all__ = ['Step', 'Pipeline', 'StepConfig']
+__all__ = ['Step', 'Pipeline', 'StepConfig', 'StepFactory']

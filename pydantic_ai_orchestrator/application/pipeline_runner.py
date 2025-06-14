@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any
+from typing import Any, Generic, TypeVar
 
 
 from ..infra.telemetry import logfire
@@ -16,13 +16,16 @@ class InfiniteRedirectError(OrchestratorError):
     """Raised when a redirect loop is detected."""
 
 
-class PipelineRunner:
+RunnerInT = TypeVar("RunnerInT")
+RunnerOutT = TypeVar("RunnerOutT")
+
+
+class PipelineRunner(Generic[RunnerInT, RunnerOutT]):
     """Execute a pipeline sequentially."""
 
-    def __init__(self, pipeline: Pipeline | Step[Any, Any]):
+    def __init__(self, pipeline: Pipeline[RunnerInT, RunnerOutT] | Step[RunnerInT, RunnerOutT]):
         if isinstance(pipeline, Step):
-            # Avoid Pydantic validation resetting Step configuration
-            pipeline = Pipeline.model_construct(steps=[pipeline])
+            pipeline = Pipeline.from_step(pipeline)
         self.pipeline = pipeline
 
     async def _run_step(self, step: Step[Any, Any], data: Any) -> StepResult:
@@ -106,7 +109,7 @@ class PipelineRunner:
         result.cost_usd += getattr(last_output, "cost_usd", 0.0) if last_output is not None else 0.0
         return result
 
-    async def run_async(self, initial_input: Any) -> PipelineResult:
+    async def run_async(self, initial_input: RunnerInT) -> PipelineResult:
         data = initial_input
         result = PipelineResult()
         try:
@@ -121,5 +124,5 @@ class PipelineRunner:
             return result
         return result
 
-    def run(self, initial_input: Any) -> PipelineResult:
+    def run(self, initial_input: RunnerInT) -> PipelineResult:
         return asyncio.run(self.run_async(initial_input))
