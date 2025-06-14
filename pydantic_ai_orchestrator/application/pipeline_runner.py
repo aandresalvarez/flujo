@@ -19,26 +19,33 @@ class InfiniteRedirectError(OrchestratorError):
 class PipelineRunner:
     """Execute a pipeline sequentially."""
 
-    def __init__(self, pipeline: Pipeline | Step):
+    def __init__(self, pipeline: Pipeline | Step[Any, Any]):
         if isinstance(pipeline, Step):
             pipeline = Pipeline(steps=[pipeline])
         self.pipeline = pipeline
 
-    async def _run_step(self, step: Step, data: Any) -> StepResult:
+    async def _run_step(self, step: Step[Any, Any], data: Any) -> StepResult:
         visited: set[Any] = set()
         result = StepResult(name=step.name)
+        original_agent = step.agent
+        current_agent = original_agent
+        last_feedback = None
+        last_output = None
         for attempt in range(1, step.config.max_retries + 1):
             result.attempts = attempt
-            agent = step.agent
-            if agent is None:
+            if current_agent is None:
                 raise OrchestratorError(f"Step {step.name} has no agent")
+
             start = time.monotonic()
-            output = await agent.run(data)
+            output = await current_agent.run(data)
             result.latency_s += time.monotonic() - start
+            last_output = output
+
             success = True
             feedback: str | None = None
             redirect_to = None
             final_plugin_outcome: PluginOutcome | None = None
+
             sorted_plugins = sorted(step.plugins, key=lambda p: p[1], reverse=True)
             for plugin, _ in sorted_plugins:
                 try:
@@ -48,15 +55,19 @@ class PipelineRunner:
                     )
                 except asyncio.TimeoutError as e:
                     raise TimeoutError(f"Plugin timeout in step {step.name}") from e
+
                 if not plugin_result.success:
                     success = False
                     feedback = plugin_result.feedback
                     redirect_to = plugin_result.redirect_to
                     final_plugin_outcome = plugin_result
-                elif plugin_result.new_solution is not None:
+                if plugin_result.new_solution is not None:
                     final_plugin_outcome = plugin_result
+
             if final_plugin_outcome and final_plugin_outcome.new_solution is not None:
                 output = final_plugin_outcome.new_solution
+                last_output = output
+
             if success:
                 result.output = output
                 result.success = True
@@ -64,24 +75,34 @@ class PipelineRunner:
                 result.token_counts += getattr(output, "token_counts", 1)
                 result.cost_usd += getattr(output, "cost_usd", 0.0)
                 return result
-            # failure -> prepare for retry
+
+            # Call failure handlers on each failed attempt
+            for handler in step.failure_handlers:
+                handler()
+
+            # Handle redirection for next attempt
             if redirect_to:
                 if redirect_to in visited:
                     raise InfiniteRedirectError(f"Redirect loop detected in step {step.name}")
                 visited.add(redirect_to)
-                step.agent = redirect_to
+                current_agent = redirect_to
+            else:
+                current_agent = original_agent
+
+            # Update input with feedback for next attempt
             if feedback:
                 if isinstance(data, dict):
                     data["feedback"] = data.get("feedback", "") + "\n" + feedback
                 else:
                     data = f"{str(data)}\n{feedback}"
-            for handler in step.failure_handlers:
-                handler()
-        result.output = output
+            last_feedback = feedback
+
+        # If we get here, all retries failed
+        result.output = last_output
         result.success = False
-        result.feedback = feedback
-        result.token_counts += getattr(output, "token_counts", 1)
-        result.cost_usd += getattr(output, "cost_usd", 0.0)
+        result.feedback = last_feedback
+        result.token_counts += getattr(last_output, "token_counts", 1) if last_output is not None else 0
+        result.cost_usd += getattr(last_output, "cost_usd", 0.0) if last_output is not None else 0.0
         return result
 
     async def run_async(self, initial_input: Any) -> PipelineResult:

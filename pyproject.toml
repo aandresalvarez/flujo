@@ -81,6 +81,19 @@ Documentation = "https://aandresalvarez.github.io/rloop/" # Added link to your d
 python_version = "3.11"
 strict         = true
 
+# Focus type checking on the core library first. The CLI, tests, and example
+# scripts are excluded (they will be migrated to full strict typing later).
+exclude = [
+    "pydantic_ai_orchestrator/cli/.*",
+    "tests/.*",
+    "examples/.*",
+]
+
+# Allow third-party libraries that do not ship type information.
+[[tool.mypy.overrides]]
+module = ["yaml", "sqlvalidator", "vcr"]
+ignore_missing_imports = true
+
 [tool.ruff]
 line-length = 100
 

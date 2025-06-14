@@ -68,7 +68,12 @@ class _MockLogfire:
         return _MockLogfireSpan()
 
 
-logfire = _MockLogfire(_fallback_logger)
+from typing import Any as _TypeAny  # local alias to avoid name clash
+
+# We initially set `logfire` to a mocked implementation. Once
+# `init_telemetry()` runs, we may replace it with the real `logfire` module.
+# Annotate as `_TypeAny` so that MyPy accepts this reassignment.
+logfire: _TypeAny = _MockLogfire(_fallback_logger)
 
 
 def init_telemetry(settings_obj: Optional["TelemetrySettings"] = None) -> None:

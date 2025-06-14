@@ -1,6 +1,6 @@
 """Scoring logic for pydantic-ai-orchestrator."""
 
-from typing import List, Dict
+from typing import List, Dict, Any
 from .models import Checklist
 from pydantic_ai import Agent
 import pydantic_ai_orchestrator.infra.settings as settings_mod
@@ -18,7 +18,7 @@ def ratio_score(check: Checklist) -> float:
     return passed / len(check.items)
 
 
-def weighted_score(check: Checklist, weights: List[Dict[str, float]]) -> float:
+def weighted_score(check: Checklist, weights: List[Dict[str, Any]]) -> float:
     """
     Computes a weighted score for a checklist.
     `weights` is a list of dicts, e.g., [{"item": "description", "weight": 0.7}]
@@ -29,11 +29,15 @@ def weighted_score(check: Checklist, weights: List[Dict[str, float]]) -> float:
     if not isinstance(weights, list):
         raise ValueError("weights must be a list of dicts with 'item' and 'weight'")
 
-    weight_map = {}
+    weight_map: Dict[str, float] = {}
     for w in weights:
-        if not isinstance(w, dict) or "item" not in w or "weight" not in w:
+        if (
+            not isinstance(w, dict)
+            or not isinstance(w.get("item"), str)
+            or not isinstance(w.get("weight"), (int, float))
+        ):
             raise ValueError("weights must be a list of dicts with 'item' and 'weight'")
-        weight_map[w["item"]] = w["weight"]
+        weight_map[str(w["item"])] = float(w["weight"])
     total_weight = sum(weight_map.get(item.description, 1.0) for item in check.items)
     if total_weight == 0:
         return 0.0
@@ -48,7 +52,7 @@ class RewardScorer:
     Raises errors if the feature is disabled or the API key is missing.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         # Always fetch the current settings from the module to support monkeypatching in tests
         settings = getattr(settings_mod, "settings")
         if not settings.reward_enabled:
@@ -56,20 +60,22 @@ class RewardScorer:
         if not settings.openai_api_key:
             raise RewardModelUnavailable("OpenAI API key is required for RewardScorer.")
 
-        self.agent = Agent(
+        # Ignore strict type checking on the Agent constructor for now – the upstream
+        # library does not yet ship precise type hints compatible with ``strict = true``.
+        self.agent = Agent(  # type: ignore[call-overload]
             "openai:gpt-4o-mini",
             system_prompt="You are a reward model. You return a single float score from 0.0 to 1.0.",
             output_type=float,
             api_key=settings.openai_api_key.get_secret_value(),
         )
 
-    @logfire.instrument("reward_score")
+    @logfire.instrument("reward_score")  # type: ignore[misc]
     async def score(self, text: str) -> float:
         """Calls the LLM judge to score the given text, returning its raw output. Async."""
         try:
             # The output of a pydantic-ai agent run is the parsed model, not an AgentResult
-            result = await self.agent.run(text)
-            return result.output
+            result: Any = await self.agent.run(text)
+            return float(result.output)
         except Exception as e:
             logfire.error(f"RewardScorer failed: {e}")
             return 0.0

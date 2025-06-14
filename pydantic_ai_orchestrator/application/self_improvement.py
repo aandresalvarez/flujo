@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Callable, Awaitable, Iterable
+from typing import Any, Callable, Awaitable, Iterable, Optional
 
 from pydantic_evals.reporting import EvaluationReport, ReportCase
 
@@ -16,7 +16,7 @@ from ..domain.models import (
 class SelfImprovementAgent:
     """Agent that analyzes failures and suggests improvements."""
 
-    def __init__(self, agent):
+    def __init__(self, agent: Any):
         self._agent = agent
 
     async def run(self, prompt: str) -> ImprovementReport:
@@ -45,7 +45,7 @@ def _build_context(failures: Iterable[ReportCase], success: ReportCase | None) -
 
 async def evaluate_and_improve(
     task_function: Callable[[Any], Awaitable[PipelineResult]],
-    dataset,
+    dataset: Any,
     improvement_agent: SelfImprovementAgent,
 ) -> ImprovementReport:
     """Run dataset evaluation and return improvement suggestions."""

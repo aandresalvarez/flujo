@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List, Any, Optional, Callable, Generic, TypeVar
+from typing import List, Any, Optional, Callable, Generic, TypeVar, Iterator
 from pydantic import BaseModel, Field
 from .agent_protocol import AgentProtocol
 from .plugins import ValidationPlugin
@@ -37,7 +37,7 @@ class Step(BaseModel, Generic[InT, OutT]):
         plugins: Optional[List[ValidationPlugin | tuple[ValidationPlugin, int]]] = None,
         on_failure: Optional[List[Callable[[], None]]] = None,
         **config: Any,
-    ) -> None:  # type: ignore[override]
+    ) -> None:
         plugin_list: List[tuple[ValidationPlugin, int]] = []
         if plugins:
             for p in plugins:
@@ -54,7 +54,7 @@ class Step(BaseModel, Generic[InT, OutT]):
             failure_handlers=on_failure or [],
         )
 
-    def __rshift__(self, other: Step[OutT, Any] | "Pipeline") -> "Pipeline":
+    def __rshift__(self, other: "Step[OutT, Any]" | "Pipeline") -> "Pipeline":
         if isinstance(other, Step):
             return Pipeline(steps=[self, other])
         if isinstance(other, Pipeline):
@@ -62,23 +62,23 @@ class Step(BaseModel, Generic[InT, OutT]):
         raise TypeError("Can only chain Step with Step or Pipeline")
 
     @classmethod
-    def review(cls, agent: AgentProtocol[Any, Any], **config: Any) -> "Step":
+    def review(cls, agent: AgentProtocol[Any, Any], **config: Any) -> "Step[Any, Any]":
         return cls("review", agent, **config)
 
     @classmethod
-    def solution(cls, agent: AgentProtocol[Any, Any], **config: Any) -> "Step":
+    def solution(cls, agent: AgentProtocol[Any, Any], **config: Any) -> "Step[Any, Any]":
         return cls("solution", agent, **config)
 
     @classmethod
-    def validate(cls, agent: AgentProtocol[Any, Any], **config: Any) -> "Step":
+    def validate(cls, agent: AgentProtocol[Any, Any], **config: Any) -> "Step[Any, Any]":  # type: ignore[override]
         """Construct a validation step using the provided agent."""
         return cls("validate", agent, **config)
 
-    def add_plugin(self, plugin: ValidationPlugin, priority: int = 0) -> "Step":
+    def add_plugin(self, plugin: ValidationPlugin, priority: int = 0) -> "Step[Any, Any]":
         self.plugins.append((plugin, priority))
         return self
 
-    def on_failure(self, handler: Callable[[], None]) -> "Step":
+    def on_failure(self, handler: Callable[[], None]) -> "Step[Any, Any]":
         self.failure_handlers.append(handler)
         return self
 
@@ -86,14 +86,14 @@ class Step(BaseModel, Generic[InT, OutT]):
 class Pipeline(BaseModel):
     """A sequential pipeline of steps."""
 
-    steps: List[Step]
+    steps: List[Step[Any, Any]]
 
-    def __rshift__(self, other: Step | "Pipeline") -> "Pipeline":
+    def __rshift__(self, other: Step[Any, Any] | "Pipeline") -> "Pipeline":
         if isinstance(other, Step):
             return Pipeline(steps=[*self.steps, other])
         if isinstance(other, Pipeline):
             return Pipeline(steps=[*self.steps, *other.steps])
         raise TypeError("Can only chain Pipeline with Step or Pipeline")
 
-    def __iter__(self):  # pragma: no cover - convenience
+    def __iter__(self) -> "Iterator[Step[Any, Any]]":  # type: ignore[override]  # pragma: no cover - convenience
         return iter(self.steps)

@@ -12,7 +12,7 @@ class PluginOutcome(BaseModel):
 
     success: bool
     feedback: str | None = None
-    redirect_to: AgentProtocol | None = None
+    redirect_to: AgentProtocol[Any, Any] | None = None
     new_solution: Any | None = None
 
 

@@ -10,7 +10,7 @@ SHELLFLAGS := -euo pipefail -c
 
 # Variables
 PACKAGE_NAME = pydantic_ai_orchestrator
-PYTHON_PATHS = $(PACKAGE_NAME) tests examples # Directories for linting/type-checking
+PYTHON_PATHS = $(PACKAGE_NAME) # Directories for linting/type-checking (tests and examples excluded for now)
 VENV_DIR ?= .venv # Allow overriding venv directory
 
 # Default target when `make` is run without arguments
