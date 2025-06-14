@@ -7,14 +7,10 @@ provides utilities to manage multi-agent pipelines with minimal setup.
 
 ## Features
 
-- 🤖 **AI Agent Management**: Create and manage AI agents with different roles and capabilities
-- 🔄 **Pipeline DSL**: Build complex AI workflows using a simple domain-specific language
-- 🛠️ **Tool Integration**: Extend agent capabilities with custom tools
-- 📊 **Quality Control**: Built-in validation and scoring mechanisms
-- 📈 **Telemetry**: Monitor performance and usage with built-in metrics
-- 🔒 **Type Safety**: Leverage Pydantic for runtime type checking and validation
-- 🚀 **Async Support**: Built-in support for asynchronous operations
-- 📚 **Extensive Documentation**: Comprehensive guides and examples
+- 📦 **Pydantic Native** – agents, tools, and pipeline context are all defined with Pydantic models for reliable type safety.
+- 🔁 **Opinionated & Flexible** – the `Orchestrator` gives you a ready‑made workflow while the DSL lets you build any pipeline.
+- 🏗️ **Production Ready** – retries, telemetry, and quality controls help you ship reliable systems.
+- 🧠 **Intelligent Evals** – automated scoring and self‑improvement powered by LLMs.
 
 ## Quick Start
 
@@ -129,12 +125,17 @@ if len(pipeline_result.step_history) > 1 and pipeline_result.step_history[1].suc
 
 Check out the [examples directory](examples/) for more usage examples:
 
-- [Basic Usage](examples/basic.py): Simple orchestrator usage
-- [Pipeline Example](examples/pipeline.py): Custom pipeline creation
-- [Tool Integration](examples/tools.py): Using tools with agents
-- [Async Operations](examples/async.py): Asynchronous workflows
-- [Quality Control](examples/quality.py): Validation and scoring
-- [Telemetry](examples/telemetry.py): Monitoring and metrics
+| Script | What it shows |
+| ------ | ------------- |
+| [**00_quickstart.py**](examples/00_quickstart.py) | Minimal, single-task run (ratio scorer). |
+| [**01_weighted_scoring.py**](examples/01_weighted_scoring.py) | Passing custom checklist weights. |
+| [**02_custom_agents.py**](examples/02_custom_agents.py) | Mixing models or replacing the solution agent. |
+| [**03_reward_scorer.py**](examples/03_reward_scorer.py) | Using the reward-model scorer. |
+| [**04_batch_processing.py**](examples/04_batch_processing.py) | Running many prompts from a CSV and exporting results. |
+| [**05_pipeline_sql.py**](examples/05_pipeline_sql.py) | DSL pipeline with SQL validation plugin. |
+| [**06_typed_context.py**](examples/06_typed_context.py) | Sharing state across steps using TypedPipelineContext. |
+| [**07_loop_step.py**](examples/07_loop_step.py) | Iterative refinement with LoopStep. |
+| [**08_branch_step.py**](examples/08_branch_step.py) | Conditional routing with ConditionalStep. |
 
 ## Requirements
 

@@ -110,6 +110,7 @@ operations, the agents used at each stage, and the integration of plugins.
 `PipelineRunner` can also maintain a shared, typed context object for each run.
 Steps declare a `pipeline_context` parameter to access or modify this object. See
 [Typed Pipeline Context](pipeline_context.md) for full documentation.
+The built-in [**Orchestrator**](#the-orchestrator) uses this DSL under the hood. When you need different logic, you can use the same tools directly. The DSL also supports advanced constructs like [**LoopStep**](pipeline_looping.md) for iteration and [**ConditionalStep**](pipeline_branching.md) for branching workflows.
 
 ```python
 from pydantic_ai_orchestrator import (
