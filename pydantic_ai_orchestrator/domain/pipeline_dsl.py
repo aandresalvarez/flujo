@@ -1,9 +1,13 @@
 from __future__ import annotations
 
-from typing import List, Any, Optional, Callable
+from typing import List, Any, Optional, Callable, Generic, TypeVar
 from pydantic import BaseModel, Field
 from .agent_protocol import AgentProtocol
 from .plugins import ValidationPlugin
+
+
+InT = TypeVar("InT")
+OutT = TypeVar("OutT")
 
 
 class StepConfig(BaseModel):
@@ -13,13 +17,13 @@ class StepConfig(BaseModel):
     timeout_s: float | None = None
 
 
-class Step(BaseModel):
+class Step(Generic[InT, OutT], BaseModel):
     """Represents a single step in a pipeline."""
 
     name: str
     agent: Optional[Any] = None
     config: StepConfig = Field(default_factory=StepConfig)
-    plugins: List[ValidationPlugin] = Field(default_factory=list)
+    plugins: List[tuple[ValidationPlugin, int]] = Field(default_factory=list)
     failure_handlers: List[Callable[[], None]] = Field(default_factory=list)
 
     model_config = {
@@ -30,19 +34,27 @@ class Step(BaseModel):
         self,
         name: str,
         agent: Optional[Any] = None,
-        plugins: Optional[List[ValidationPlugin]] = None,
+        plugins: Optional[List[ValidationPlugin | tuple[ValidationPlugin, int]]] = None,
         on_failure: Optional[List[Callable[[], None]]] = None,
         **config: Any,
     ) -> None:  # type: ignore[override]
+        plugin_list: List[tuple[ValidationPlugin, int]] = []
+        if plugins:
+            for p in plugins:
+                if isinstance(p, tuple):
+                    plugin_list.append(p)
+                else:
+                    plugin_list.append((p, 0))
+
         super().__init__(
             name=name,
             agent=agent,
             config=StepConfig(**config),
-            plugins=plugins or [],
+            plugins=plugin_list,
             failure_handlers=on_failure or [],
         )
 
-    def __rshift__(self, other: Step | "Pipeline") -> "Pipeline":
+    def __rshift__(self, other: Step[OutT, Any] | "Pipeline") -> "Pipeline":
         if isinstance(other, Step):
             return Pipeline(steps=[self, other])
         if isinstance(other, Pipeline):
@@ -62,8 +74,8 @@ class Step(BaseModel):
         """Construct a validation step using the provided agent."""
         return cls("validate", agent, **config)
 
-    def add_plugin(self, plugin: ValidationPlugin) -> "Step":
-        self.plugins.append(plugin)
+    def add_plugin(self, plugin: ValidationPlugin, priority: int = 0) -> "Step":
+        self.plugins.append((plugin, priority))
         return self
 
     def on_failure(self, handler: Callable[[], None]) -> "Step":
