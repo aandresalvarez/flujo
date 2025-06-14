@@ -169,7 +169,9 @@ async def test_loop_step_body_failure_with_robust_exit_condition() -> None:
     body = Pipeline.from_step(bad_step)
 
     loop = Step.loop_until(
-        name="loop_body_fail", loop_body_pipeline=body, exit_condition_callable=lambda out, ctx: True
+        name="loop_body_fail",
+        loop_body_pipeline=body,
+        exit_condition_callable=lambda out, ctx: True,
     )
     runner = PipelineRunner(loop)
     result = await runner.run_async("in")
@@ -197,3 +199,158 @@ async def test_loop_step_body_failure_causing_exit_condition_error() -> None:
     step_result = result.step_history[-1]
     assert step_result.success is False
     assert "exception" in (step_result.feedback or "").lower()
+
+
+@pytest.mark.asyncio
+async def test_loop_step_initial_input_mapper_flow() -> None:
+    recorded: list[tuple[int, Ctx | None]] = []
+
+    def initial_map(inp: int, ctx: Ctx | None) -> int:
+        recorded.append((inp, ctx))
+        return inp + 5
+
+    body_agent = StubAgent([0])
+    body = Pipeline.from_step(Step("body", body_agent))
+    loop = Step.loop_until(
+        name="loop_init_map",
+        loop_body_pipeline=body,
+        exit_condition_callable=lambda out, ctx: True,
+        initial_input_to_loop_body_mapper=initial_map,
+    )
+    runner = PipelineRunner(loop, context_model=Ctx)
+    await runner.run_async(1)
+    assert recorded and recorded[0][0] == 1
+    assert isinstance(recorded[0][1], Ctx)
+    assert body_agent.inputs[0] == 6
+
+
+@pytest.mark.asyncio
+async def test_loop_step_iteration_input_mapper_flow() -> None:
+    calls: list[tuple[int, int]] = []
+
+    def iter_map(out: int, ctx: Ctx | None, iteration: int) -> int:
+        calls.append((out, iteration))
+        return out + 1
+
+    body_agent = StubAgent([1, 3])
+    body = Pipeline.from_step(Step("body", body_agent))
+    loop = Step.loop_until(
+        name="loop_iter_flow",
+        loop_body_pipeline=body,
+        exit_condition_callable=lambda out, ctx: out >= 3,
+        max_loops=3,
+        iteration_input_mapper=iter_map,
+    )
+    runner = PipelineRunner(loop, context_model=Ctx)
+    result = await runner.run_async(0)
+    step_result = result.step_history[-1]
+    assert calls == [(1, 1)]
+    assert body_agent.inputs == [0, 2]
+    assert step_result.attempts == 2
+
+
+@pytest.mark.asyncio
+async def test_loop_step_loop_output_mapper_flow() -> None:
+    received: list[tuple[int, Ctx | None]] = []
+
+    def out_map(last: int, ctx: Ctx | None) -> int:
+        received.append((last, ctx))
+        return last * 10
+
+    body = Pipeline.from_step(Step("inc", IncrementAgent()))
+    loop = Step.loop_until(
+        name="loop_out_flow",
+        loop_body_pipeline=body,
+        exit_condition_callable=lambda out, ctx: out >= 1,
+        loop_output_mapper=out_map,
+    )
+    runner = PipelineRunner(loop, context_model=Ctx)
+    result = await runner.run_async(0)
+    step_result = result.step_history[-1]
+    assert step_result.output == 10
+    assert received and received[0][0] == 1
+    assert isinstance(received[0][1], Ctx)
+
+
+@pytest.mark.asyncio
+async def test_loop_step_mappers_with_context_modification() -> None:
+    class Ctx2(BaseModel):
+        val: int = 0
+
+    def initial_map(inp: int, ctx: Ctx2 | None) -> int:
+        if ctx:
+            ctx.val += 1
+        return inp
+
+    def iter_map(out: int, ctx: Ctx2 | None, i: int) -> int:
+        if ctx:
+            ctx.val += 1
+        return out
+
+    def out_map(out: int, ctx: Ctx2 | None) -> int:
+        if ctx:
+            ctx.val += 1
+        return out
+
+    body = Pipeline.from_step(Step("inc", IncrementAgent()))
+    loop = Step.loop_until(
+        name="loop_ctx_mod",
+        loop_body_pipeline=body,
+        exit_condition_callable=lambda out, ctx: ctx and ctx.val >= 2,
+        initial_input_to_loop_body_mapper=initial_map,
+        iteration_input_mapper=iter_map,
+        loop_output_mapper=out_map,
+    )
+    runner = PipelineRunner(loop, context_model=Ctx2)
+    result = await runner.run_async(0)
+    assert result.final_pipeline_context.val == 3
+
+
+@pytest.mark.asyncio
+async def test_loop_step_default_mapper_behavior() -> None:
+    body_agent = StubAgent([1, 2])
+    body = Pipeline.from_step(Step("body", body_agent))
+    loop = Step.loop_until(
+        name="loop_default_map",
+        loop_body_pipeline=body,
+        exit_condition_callable=lambda out, ctx: out >= 2,
+        max_loops=3,
+    )
+    runner = PipelineRunner(loop)
+    result = await runner.run_async(0)
+    step_result = result.step_history[-1]
+    assert body_agent.inputs == [0, 1]
+    assert step_result.output == 2
+
+
+@pytest.mark.asyncio
+async def test_loop_step_overall_span(monkeypatch) -> None:
+    spans: list[str] = []
+
+    class FakeSpan:
+        def __init__(self, name: str) -> None:
+            spans.append(name)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            pass
+
+    from unittest.mock import Mock
+    from pydantic_ai_orchestrator.infra import telemetry
+    from pydantic_ai_orchestrator.application import pipeline_runner as pr
+
+    mock_logfire = Mock(span=lambda name: FakeSpan(name))
+    monkeypatch.setattr(telemetry, "logfire", mock_logfire)
+    monkeypatch.setattr(pr, "logfire", mock_logfire)
+
+    body = Pipeline.from_step(Step("inc", IncrementAgent()))
+    loop = Step.loop_until(
+        name="span_loop",
+        loop_body_pipeline=body,
+        exit_condition_callable=lambda out, ctx: True,
+    )
+    runner = PipelineRunner(loop)
+    await runner.run_async(0)
+    assert "span_loop" in spans
