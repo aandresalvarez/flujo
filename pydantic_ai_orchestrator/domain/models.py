@@ -55,3 +55,20 @@ class PipelineResult(BaseModel):
 
     step_history: List[StepResult] = Field(default_factory=list)
     total_cost_usd: float = 0.0
+
+class ImprovementSuggestion(BaseModel):
+    """A single suggestion from the SelfImprovementAgent."""
+
+    target_step_name: str
+    failure_pattern: str
+    suggested_change: str
+    example_failing_cases: list[str] = Field(default_factory=list)
+    suggested_config_change: str | None = None
+    suggested_new_test_case: str | None = None
+
+
+class ImprovementReport(BaseModel):
+    """Aggregated improvement suggestions returned by the agent."""
+
+    suggestions: list[ImprovementSuggestion] = Field(default_factory=list)
+

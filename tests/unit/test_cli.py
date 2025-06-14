@@ -190,3 +190,29 @@ def test_cli_explain(tmp_path):
     assert "A" in result.stdout
     assert "B" in result.stdout
 
+
+def test_cli_improve(monkeypatch, tmp_path):
+    pipe = tmp_path / "pipe.py"
+    pipe.write_text(
+        "from pydantic_ai_orchestrator.domain import Step\n"
+        "from pydantic_ai_orchestrator.testing.utils import StubAgent\n"
+        "pipeline = Step.solution(StubAgent(['a']))\n"
+    )
+    data = tmp_path / "data.py"
+    data.write_text(
+        "from pydantic_evals import Dataset, Case\n" "dataset = Dataset(cases=[Case(inputs='a')])\n"
+    )
+
+    from pydantic_ai_orchestrator.domain.models import ImprovementReport
+
+    async def dummy_eval(*a, **k):
+        return ImprovementReport(suggestions=[])
+
+    monkeypatch.setattr(
+        "pydantic_ai_orchestrator.cli.main.evaluate_and_improve",
+        dummy_eval,
+    )
+
+    result = runner.invoke(app, ["improve", str(pipe), str(data)])
+    assert result.exit_code == 0
+

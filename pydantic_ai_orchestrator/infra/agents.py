@@ -36,6 +36,14 @@ Do not repeat the failed items, but instead provide a new perspective on how to 
 Your output should be a single string.
 """
 
+SELF_IMPROVE_SYS = """You are a debugging assistant specialized in AI pipelines.\n" \
+    "You will receive step-by-step logs from failed evaluation cases and one" \
+    " successful example. Analyze these to find root causes and suggest" \
+    " concrete improvements. Consider pipeline prompts, step configuration" \
+    " parameters such as temperature, and the evaluation suite itself" \
+    " (proposing new tests or evaluator tweaks). Return JSON ONLY matching" \
+    " ImprovementReport(suggestions=[ImprovementSuggestion(...)])."""
+
 
 # 2. Agent Factory
 def make_agent(
@@ -196,6 +204,16 @@ def get_reflection_agent(
 
 # Create a default instance for convenience and API consistency
 reflection_agent = get_reflection_agent()
+
+
+def make_self_improvement_agent(model: str | None = None) -> AsyncAgentWrapper:
+    """Create the SelfImprovementAgent."""
+    model_name = model or settings.default_solution_model
+    return make_agent_async(model_name, SELF_IMPROVE_SYS, str)
+
+
+# Default instance used by high level API
+self_improvement_agent = make_self_improvement_agent()
 
 
 # Add a wrapper for review_agent to log API errors

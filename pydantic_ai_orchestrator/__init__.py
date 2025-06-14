@@ -19,6 +19,8 @@ from .domain import (
     ValidationPlugin,
 )
 from .application.pipeline_runner import PipelineRunner
+from .application.eval_adapter import run_pipeline_async
+from .application.self_improvement import evaluate_and_improve, SelfImprovementAgent
 from .domain.models import PipelineResult, StepResult
 from .testing.utils import StubAgent, DummyPlugin
 from .plugins.sql_validator import SQLSyntaxValidator
@@ -46,6 +48,9 @@ __all__ = [
     "PluginOutcome",
     "ValidationPlugin",
     "PipelineRunner",
+    "run_pipeline_async",
+    "evaluate_and_improve",
+    "SelfImprovementAgent",
     "PipelineResult",
     "StepResult",
     "settings",

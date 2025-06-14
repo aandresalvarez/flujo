@@ -3,6 +3,7 @@ nav:
   - Home: index.md
   - Usage: usage.md
   - Use Cases: use_cases.md
+  - Intelligent Evals: intelligent_evals.md
   - Extending: extending.md
   - API Reference:
       - Orchestrator: 'pydantic_ai_orchestrator.application.orchestrator'
