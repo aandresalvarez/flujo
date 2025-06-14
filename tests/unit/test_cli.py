@@ -177,7 +177,6 @@ def test_cli_solve_configuration_error(monkeypatch):
 
 
 def test_cli_explain(tmp_path):
-    from pydantic_ai_orchestrator.domain import Step
 
     file = tmp_path / "pipe.py"
     file.write_text(

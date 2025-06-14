@@ -1,6 +1,6 @@
 """Utilities for integrating PipelineRunner with pydantic-evals."""
 
-from typing import Any, Callable, Awaitable
+from typing import Any
 
 from .pipeline_runner import PipelineRunner
 from ..domain.models import PipelineResult

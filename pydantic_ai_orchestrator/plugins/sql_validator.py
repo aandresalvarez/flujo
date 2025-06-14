@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 from sqlvalidator import parse
 
-from ..domain.plugins import ValidationPlugin, PluginOutcome
+from ..domain.plugins import PluginOutcome
 
 
 class SQLSyntaxValidator:
