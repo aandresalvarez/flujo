@@ -252,7 +252,10 @@ def make_self_improvement_agent(model: str | None = None) -> AsyncAgentWrapper[A
 
 
 # Default instance used by high level API
-self_improvement_agent: AsyncAgentWrapper[Any, str] = make_self_improvement_agent()
+try:
+    self_improvement_agent: AsyncAgentProtocol[Any, str] = make_self_improvement_agent()
+except ConfigurationError:  # pragma: no cover - config may be missing in tests
+    self_improvement_agent = NoOpReflectionAgent()
 
 
 class LoggingReviewAgent(AsyncAgentProtocol[Any, Any]):
