@@ -1,14 +1,74 @@
+# Python build artifacts
 __pycache__/
 *.py[cod]
+*.so
 *.egg
 *.egg-info/
-.dist/
+dist/
 build/
+.eggs/
+*.egg-info/
+.installed.cfg
+*.egg-info/
+
+# Testing and coverage
 .pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+.pytest_cache/
+coverage/
+
+# Environment and virtual environments
 .env
 .venv
-.coverage
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
 .python-version
+.python-version.bak
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Project specific
+site/
 settings.json
-poetry.lock
+.ruff_cache/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Distribution / packaging
+.Python
+*.manifest
+*.spec
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# Logs and databases
+*.log
+*.sqlite
+*.db
+
+# Documentation
+docs/_build/
 site/ 
