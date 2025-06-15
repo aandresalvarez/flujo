@@ -38,7 +38,8 @@ PYTEST_BENCH_CMD = $(PYTEST_CMD) -m benchmark
         quality lint format format-check type-check security \
         docs-serve docs-build \
         build clean clean-pyc clean-build clean-test clean-docs \
-        requirements package publish publish-test clean-package
+        requirements package publish publish-test clean-package \
+        docker-build docker-dev docker-test docker-docs docker-poetry docker-uv docker-clean
 
 #------------------------------------------------------------------------------------
 # Help
@@ -53,7 +54,16 @@ help:
 	@echo "    make poetry-dev       - Set up dev environment with Poetry"
 	@echo "    make pip-dev          - Set up dev environment with pip"
 	@echo "    make uv-dev           - Set up dev environment with uv (fastest)"
-	@echo "    make requirements     - Generate requirements.txt from poetry.lock (for non-poetry users)"
+	@echo "    make requirements     - Generate requirements.txt from poetry.lock"
+	@echo ""
+	@echo "  Docker Development (Optional):"
+	@echo "    make docker-build     - Build Docker development image"
+	@echo "    make docker-dev       - Start development environment in Docker"
+	@echo "    make docker-test      - Run tests in Docker"
+	@echo "    make docker-docs      - Serve documentation in Docker"
+	@echo "    make docker-poetry    - Run Poetry commands in Docker"
+	@echo "    make docker-uv        - Run UV commands in Docker"
+	@echo "    make docker-clean     - Clean up Docker resources"
 	@echo ""
 	@echo "  Code Quality (use 'make quality' to run all):"
 	@echo "    make lint             - Check code style with Ruff"
@@ -291,4 +301,36 @@ clean-mypy:
 	rm -rf .mypy_cache/
 
 clean-cache: clean-ruff clean-mypy
-	@echo "All tool caches removed." 
+	@echo "All tool caches removed."
+
+#------------------------------------------------------------------------------------
+# Docker Commands
+#------------------------------------------------------------------------------------
+docker-build:
+	@echo "Building Docker development image..."
+	docker-compose build
+
+docker-dev:
+	@echo "Starting development environment in Docker..."
+	docker-compose run --rm dev
+
+docker-test:
+	@echo "Running tests in Docker..."
+	docker-compose run --rm test
+
+docker-docs:
+	@echo "Serving documentation in Docker..."
+	docker-compose run --rm docs
+
+docker-poetry:
+	@echo "Running Poetry commands in Docker..."
+	docker-compose run --rm poetry
+
+docker-uv:
+	@echo "Running UV commands in Docker..."
+	docker-compose run --rm uv
+
+docker-clean:
+	@echo "Cleaning up Docker resources..."
+	docker-compose down -v
+	docker system prune -f 
