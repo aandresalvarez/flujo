@@ -11,19 +11,19 @@ from typing import (
 )
 from pydantic_ai import Agent
 import os
-from pydantic_ai_orchestrator.infra.settings import settings
-from pydantic_ai_orchestrator.domain.models import Checklist
-from pydantic_ai_orchestrator.domain.agent_protocol import (
+from flujo.infra.settings import settings
+from flujo.domain.models import Checklist
+from flujo.domain.agent_protocol import (
     AsyncAgentProtocol,
     AgentInT,
     AgentOutT,
 )
-from pydantic_ai_orchestrator.exceptions import (
+from flujo.exceptions import (
     OrchestratorRetryError,
     ConfigurationError,
 )
 import asyncio
-from pydantic_ai_orchestrator.infra.telemetry import logfire
+from flujo.infra.telemetry import logfire
 import traceback
 from tenacity import AsyncRetrying, RetryError, stop_after_attempt, wait_exponential
 

@@ -1,9 +1,8 @@
-from pydantic_ai_orchestrator.domain.models import (
+from flujo.domain.models import (
     ImprovementSuggestion,
     ImprovementReport,
     SuggestionType,
     PromptModificationDetail,
-    ConfigChangeDetail,
 )
 
 

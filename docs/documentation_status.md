@@ -5,7 +5,7 @@
 
 ## Overview
 
-This report provides a comprehensive review of the `pydantic-ai-orchestrator` documentation status and updates made to align with the current codebase (v0.2.0).
+This report provides a comprehensive review of the `flujo` documentation status and updates made to align with the current codebase (v0.2.0).
 
 ## Documentation Review Summary
 
@@ -28,13 +28,13 @@ The documentation has been systematically reviewed and updated to reflect the cu
 - ✅ **UPDATED**: Fixed CLI command syntax (removed incorrect `--prompt` flag)
 - ✅ **UPDATED**: Added reflection agent to examples (was missing)
 - ✅ **UPDATED**: Added all available CLI commands:
-  - `orch solve`
-  - `orch bench` 
-  - `orch show-config`
-  - `orch version-cmd`
-  - `orch explain`
-  - `orch improve`
-  - `orch add-eval-case`
+  - `flujo solve`
+  - `flujo bench` 
+  - `flujo show-config`
+  - `flujo version-cmd`
+  - `flujo explain`
+  - `flujo improve`
+  - `flujo add-eval-case`
 - ✅ **UPDATED**: Fixed orchestrator instantiation to include reflection agent
 - ✅ **UPDATED**: Corrected internal links to API reference
 
@@ -67,9 +67,9 @@ The documentation has been systematically reviewed and updated to reflect the cu
 ## Verified Components
 
 ### ✅ Project Structure Alignment
-- **Main Package**: `pydantic_ai_orchestrator/` - Confirmed present
+- **Main Package**: `flujo/` - Confirmed present
 - **Examples**: All 9 example files confirmed present and referenced correctly
-- **CLI Module**: `pydantic_ai_orchestrator/cli/main.py` - Confirmed with all documented commands
+- **CLI Module**: `flujo/cli/main.py` - Confirmed with all documented commands
 - **Core Models**: All documented data models exist in `domain/models.py`
 
 ### ✅ Version Information
@@ -82,7 +82,7 @@ The documentation has been systematically reviewed and updated to reflect the cu
 - **Settings**: All documented settings confirmed in codebase
 
 ### ✅ CLI Commands Verification
-All documented CLI commands verified in `pydantic_ai_orchestrator/cli/main.py`:
+All documented CLI commands verified in `flujo/cli/main.py`:
 
 | Command | Status | Description |
 |---------|--------|-------------|
@@ -184,4 +184,4 @@ The documentation is now **fully aligned** with the current codebase (v0.2.0). A
 - ✅ Environment setup enhanced
 - ✅ Installation guide improved
 
-The documentation is now production-ready and accurately represents the current state of the `pydantic-ai-orchestrator` project.
+The documentation is now production-ready and accurately represents the current state of the `flujo` project.

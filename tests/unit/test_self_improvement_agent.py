@@ -1,7 +1,7 @@
 import json
 import pytest
-from pydantic_ai_orchestrator.infra.agents import SELF_IMPROVE_SYS
-from pydantic_ai_orchestrator.application.self_improvement import SelfImprovementAgent, ImprovementReport
+from flujo.infra.agents import SELF_IMPROVE_SYS
+from flujo.application.self_improvement import SelfImprovementAgent, ImprovementReport
 
 
 class DummyAgent:

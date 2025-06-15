@@ -1,4 +1,4 @@
-# Examples – pydantic-ai-orchestrator
+# Examples – flujo
 
 | File | What it shows |
 |------|---------------|

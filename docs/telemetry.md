@@ -1,6 +1,6 @@
 # Telemetry and Observability
 
-This guide explains how to use the built-in telemetry and observability features of `pydantic-ai-orchestrator`.
+This guide explains how to use the built-in telemetry and observability features of `flujo`.
 
 ## Overview
 
@@ -17,7 +17,7 @@ The orchestrator includes comprehensive telemetry for:
 Enable basic telemetry with one line:
 
 ```python
-from pydantic_ai_orchestrator import init_telemetry
+from flujo import init_telemetry
 
 # Initialize with default settings
 init_telemetry()
@@ -153,7 +153,7 @@ The orchestrator tracks:
 ### Cost Reports
 
 ```python
-from pydantic_ai_orchestrator import get_cost_report
+from flujo import get_cost_report
 
 # Get cost report
 report = get_cost_report(
@@ -195,7 +195,7 @@ Export metrics to Prometheus:
 
 ```python
 from prometheus_client import start_http_server
-from pydantic_ai_orchestrator import init_telemetry
+from flujo import init_telemetry
 
 # Start Prometheus metrics server
 start_http_server(8000)

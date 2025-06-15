@@ -22,7 +22,7 @@ The `ConditionalStep` succeeds when the selected branch completes successfully. 
 ## Example
 
 ```python
-from pydantic_ai_orchestrator.domain import Step, Pipeline
+from flujo.domain import Step, Pipeline
 
 async def classify(x: str) -> str:
     return "numbers" if x.isdigit() else "text"

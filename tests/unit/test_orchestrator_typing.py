@@ -1,5 +1,5 @@
-from pydantic_ai_orchestrator.domain.agent_protocol import AgentProtocol
-from pydantic_ai_orchestrator.infra.agents import (
+from flujo.domain.agent_protocol import AgentProtocol
+from flujo.infra.agents import (
     review_agent,
     solution_agent,
     validator_agent,

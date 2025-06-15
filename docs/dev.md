@@ -1,6 +1,6 @@
 # Contributing & Local Dev Guide
 
-Thanks for helping improve **pydantic-ai-orchestrator**! This guide will help you set up a fully-featured development environment for Python 3.11+.
+Thanks for helping improve **flujo**! This guide will help you set up a fully-featured development environment for Python 3.11+.
 
 ---
 

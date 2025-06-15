@@ -1,5 +1,5 @@
 # type: ignore
-"""CLI entry point for pydantic-ai-orchestrator."""
+"""CLI entry point for flujo."""
 
 from __future__ import annotations
 
@@ -9,8 +9,8 @@ import json
 import os
 import yaml
 from pathlib import Path
-from pydantic_ai_orchestrator.domain.models import Task, Checklist
-from pydantic_ai_orchestrator.infra.agents import (
+from flujo.domain.models import Task, Checklist
+from flujo.infra.agents import (
     make_agent_async,
     make_self_improvement_agent,
     REVIEW_SYS,
@@ -18,24 +18,24 @@ from pydantic_ai_orchestrator.infra.agents import (
     VALIDATE_SYS,
     get_reflection_agent,
 )
-from pydantic_ai_orchestrator.application.orchestrator import Orchestrator
-from pydantic_ai_orchestrator.application.eval_adapter import run_pipeline_async
-from pydantic_ai_orchestrator.application.self_improvement import (
+from flujo.application.orchestrator import Orchestrator
+from flujo.application.eval_adapter import run_pipeline_async
+from flujo.application.self_improvement import (
     evaluate_and_improve,
     SelfImprovementAgent,
     ImprovementReport,
 )
-from pydantic_ai_orchestrator.domain.models import ImprovementSuggestion
-from pydantic_ai_orchestrator.application.pipeline_runner import PipelineRunner
-from pydantic_ai_orchestrator.infra.settings import settings
-from pydantic_ai_orchestrator.exceptions import ConfigurationError, SettingsError
-from pydantic_ai_orchestrator.infra.telemetry import init_telemetry, logfire
+from flujo.domain.models import ImprovementSuggestion
+from flujo.application.pipeline_runner import PipelineRunner
+from flujo.infra.settings import settings
+from flujo.exceptions import ConfigurationError, SettingsError
+from flujo.infra.telemetry import init_telemetry, logfire
 from typing_extensions import Annotated
 from rich.table import Table
 from rich.console import Console
-from pydantic_ai_orchestrator.domain import Pipeline, Step
+from flujo.domain import Pipeline, Step
 import runpy
-from pydantic_ai_orchestrator.domain.agent_protocol import AsyncAgentProtocol
+from flujo.domain.agent_protocol import AsyncAgentProtocol
 
 # Type definitions for CLI
 WeightsType = List[Dict[str, Union[str, float]]]
@@ -195,14 +195,14 @@ def version_cmd() -> None:
 
     try:
         try:
-            v: str = importlib_metadata.version("pydantic_ai_orchestrator")
+            v: str = importlib_metadata.version("flujo")
         except importlib_metadata.PackageNotFoundError:
             v = "unknown"
         except Exception:
             v = "unknown"
     except Exception:
         v = "unknown"
-    print(f"pydantic-ai-orchestrator version: {v}")
+    print(f"flujo version: {v}")
 
 
 @app.command(name="show-config")
@@ -464,7 +464,7 @@ def main(
     ] = False,
 ) -> None:
     """
-    CLI entry point for pydantic-ai-orchestrator.
+    CLI entry point for flujo.
 
     Args:
         profile: Enable Logfire STDOUT span viewer for profiling

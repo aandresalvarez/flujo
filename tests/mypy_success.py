@@ -1,5 +1,5 @@
-from pydantic_ai_orchestrator.domain import Step
-from pydantic_ai_orchestrator.testing.utils import StubAgent
+from flujo.domain import Step
+from flujo.testing.utils import StubAgent
 from pydantic import BaseModel
 
 

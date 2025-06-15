@@ -1,4 +1,4 @@
-"""Domain models for pydantic-ai-orchestrator."""
+"""Domain models for flujo."""
 
 from typing import Any, List, Optional, Literal
 from pydantic import BaseModel, Field

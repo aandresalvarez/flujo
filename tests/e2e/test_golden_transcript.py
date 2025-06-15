@@ -5,9 +5,9 @@ try:
 except Exception:  # pragma: no cover - skip if dependency missing
     vcr = None
     pytest.skip("vcrpy not installed", allow_module_level=True)
-from pydantic_ai_orchestrator.application.orchestrator import Orchestrator
-from pydantic_ai_orchestrator.domain.models import Task, Candidate
-from pydantic_ai_orchestrator.infra.agents import (
+from flujo.application.orchestrator import Orchestrator
+from flujo.domain.models import Task, Candidate
+from flujo.infra.agents import (
     review_agent,
     solution_agent,
     validator_agent,

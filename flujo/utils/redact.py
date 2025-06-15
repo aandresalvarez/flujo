@@ -25,7 +25,7 @@ def summarize_and_redact_prompt(prompt_text: str, max_length: int = 200) -> str:
     if not prompt_text:
         return ""
 
-    from pydantic_ai_orchestrator.infra.settings import settings
+    from flujo.infra.settings import settings
 
     text = prompt_text
     for secret in (

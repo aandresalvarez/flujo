@@ -9,7 +9,7 @@ if TYPE_CHECKING:
 
 _initialized = False
 
-_fallback_logger = logging.getLogger("pydantic_ai_orchestrator")
+_fallback_logger = logging.getLogger("flujo")
 _fallback_logger.setLevel(logging.INFO)
 
 if not _fallback_logger.handlers:
@@ -105,7 +105,7 @@ def init_telemetry(settings_obj: Optional["TelemetrySettings"] = None) -> None:
                 additional_processors.append(BatchSpanProcessor(exporter))
 
             logfire.configure(
-                service_name="pydantic_ai_orchestrator",
+                service_name="flujo",
                 send_to_logfire=True,
                 additional_span_processors=additional_processors,
                 console=False,

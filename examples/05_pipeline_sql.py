@@ -4,9 +4,9 @@
 Demonstrates the Pipeline DSL and SQL validator plugin.
 """
 
-from pydantic_ai_orchestrator import Step, PipelineRunner
-from pydantic_ai_orchestrator.plugins.sql_validator import SQLSyntaxValidator
-from pydantic_ai_orchestrator.testing.utils import StubAgent
+from flujo import Step, PipelineRunner
+from flujo.plugins.sql_validator import SQLSyntaxValidator
+from flujo.testing.utils import StubAgent
 
 # Solution agent that returns an invalid SQL statement
 solution = StubAgent(["SELECT FROM"])

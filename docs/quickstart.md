@@ -1,11 +1,11 @@
 # Quickstart Guide
 
-Get up and running with `pydantic-ai-orchestrator` in 5 minutes!
+Get up and running with `flujo` in 5 minutes!
 
 ## 1. Install the Package
 
 ```bash
-pip install pydantic-ai-orchestrator
+pip install flujo
 ```
 
 ## 2. Set Up Your API Keys
@@ -29,7 +29,7 @@ OPENAI_API_KEY=your_key_here
 Create a new file `hello_orchestrator.py`:
 
 ```python
-from pydantic_ai_orchestrator import (
+from flujo import (
     Orchestrator, Task,
     review_agent, solution_agent, validator_agent, reflection_agent,
     init_telemetry,
@@ -39,7 +39,7 @@ init_telemetry()
 
 # Assemble the orchestrator with the default agents. It runs a fixed
 # Review -> Solution -> Validate -> Reflection workflow.
-orch = Orchestrator(
+flujo = Orchestrator(
     review_agent=review_agent,
     solution_agent=solution_agent,
     validator_agent=validator_agent,
@@ -77,25 +77,25 @@ The package includes a command-line interface for quick tasks:
 
 ```bash
 # Solve a simple task
-orch solve "Write a function to calculate fibonacci numbers"
+flujo solve "Write a function to calculate fibonacci numbers"
 
 # Show your current configuration
-orch show-config
+flujo show-config
 
 # Run a quick benchmark
-orch bench "Write a hello world program" --rounds 3
+flujo bench "Write a hello world program" --rounds 3
 
 # Check version
-orch version-cmd
+flujo version-cmd
 
 # Explain a pipeline structure
-orch explain path/to/pipeline.py
+flujo explain path/to/pipeline.py
 
 # Generate improvement suggestions
-orch improve path/to/pipeline.py path/to/dataset.py
+flujo improve path/to/pipeline.py path/to/dataset.py
 
 # Add evaluation case (interactive)
-orch add-eval-case --dataset path/to/dataset.py
+flujo add-eval-case --dataset path/to/dataset.py
 ```
 
 ## 6. Next Steps
@@ -112,7 +112,7 @@ Now that you've got the basics working, you can:
 ### Using Different Models
 
 ```python
-from pydantic_ai_orchestrator import make_agent_async
+from flujo import make_agent_async
 
 # Create a custom agent with a specific model
 custom_agent = make_agent_async(
@@ -122,7 +122,7 @@ custom_agent = make_agent_async(
 )
 
 # Use it in your orchestrator
-orch = Orchestrator(
+flujo = Orchestrator(
     review_agent=custom_agent, 
     solution_agent=solution_agent, 
     validator_agent=validator_agent,
@@ -151,7 +151,7 @@ code_agent = make_agent_async(
 ### Custom Pipeline
 
 ```python
-from pydantic_ai_orchestrator import (
+from flujo import (
     Step, PipelineRunner, Task,
     review_agent, solution_agent, validator_agent,
 )

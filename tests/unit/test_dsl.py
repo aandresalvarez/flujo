@@ -1,4 +1,4 @@
-from pydantic_ai_orchestrator.domain import Step, Pipeline
+from flujo.domain import Step, Pipeline
 from unittest.mock import AsyncMock
 
 

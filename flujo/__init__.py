@@ -1,11 +1,11 @@
 """
-Pydantic AI Orchestrator package init.
+Flujo package init.
 """
 
 try:
     from importlib.metadata import version
 
-    __version__ = version("pydantic_ai_orchestrator")
+    __version__ = version("flujo")
 except Exception:
     __version__ = "0.0.0"
 from .application.orchestrator import Orchestrator

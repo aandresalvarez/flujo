@@ -1,6 +1,6 @@
-from pydantic_ai_orchestrator.application.orchestrator import Orchestrator
-from pydantic_ai_orchestrator.domain.models import Task, Candidate
-from pydantic_ai_orchestrator.testing.utils import StubAgent
+from flujo.application.orchestrator import Orchestrator
+from flujo.domain.models import Task, Candidate
+from flujo.testing.utils import StubAgent
 
 
 async def test_orchestrator_runs_pipeline():

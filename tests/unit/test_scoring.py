@@ -1,11 +1,11 @@
 import pytest
-from pydantic_ai_orchestrator.domain.models import Checklist, ChecklistItem
-from pydantic_ai_orchestrator.domain.scoring import (
+from flujo.domain.models import Checklist, ChecklistItem
+from flujo.domain.scoring import (
     ratio_score,
     weighted_score,
     RewardScorer,
 )
-from pydantic_ai_orchestrator.infra.settings import Settings
+from flujo.infra.settings import Settings
 from pydantic import SecretStr
 
 
@@ -52,8 +52,8 @@ def test_weighted_score() -> None:
 
 
 def test_reward_scorer_init(monkeypatch) -> None:
-    from pydantic_ai_orchestrator.domain.scoring import RewardScorer, RewardModelUnavailable
-    import pydantic_ai_orchestrator.infra.settings as settings_mod
+    from flujo.domain.scoring import RewardScorer, RewardModelUnavailable
+    import flujo.infra.settings as settings_mod
 
     monkeypatch.setenv("ORCH_REWARD_ENABLED", "true")
     # --- Test Success Case ---
@@ -114,7 +114,7 @@ def test_reward_scorer_init(monkeypatch) -> None:
 async def test_reward_scorer_returns_float(monkeypatch) -> None:
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
-    import pydantic_ai_orchestrator.infra.settings as settings_mod
+    import flujo.infra.settings as settings_mod
 
     monkeypatch.setenv("ORCH_REWARD_ENABLED", "true")
     test_settings = Settings(
@@ -147,8 +147,8 @@ async def test_reward_scorer_returns_float(monkeypatch) -> None:
 
 
 def test_reward_scorer_disabled(monkeypatch) -> None:
-    from pydantic_ai_orchestrator.domain.scoring import RewardScorer, FeatureDisabled
-    import pydantic_ai_orchestrator.infra.settings as settings_mod
+    from flujo.domain.scoring import RewardScorer, FeatureDisabled
+    import flujo.infra.settings as settings_mod
 
     test_settings = Settings(
         reward_enabled=False,
@@ -189,20 +189,20 @@ def test_weighted_score_total_weight_zero() -> None:
 
 
 def test_redact_string_no_secret() -> None:
-    from pydantic_ai_orchestrator.utils.redact import redact_string
+    from flujo.utils.redact import redact_string
 
     assert redact_string("hello world", None) == "hello world"
     assert redact_string("hello world", "") == "hello world"
 
 
 def test_redact_string_secret_not_in_text() -> None:
-    from pydantic_ai_orchestrator.utils.redact import redact_string
+    from flujo.utils.redact import redact_string
 
     assert redact_string("hello world", "sk-12345678") == "hello world"
 
 
 def test_redact_string_secret_in_text() -> None:
-    from pydantic_ai_orchestrator.utils.redact import redact_string
+    from flujo.utils.redact import redact_string
 
     assert (
         redact_string("my key is sk-12345678abcdef", "sk-12345678abcdef") == "my key is [REDACTED]"
@@ -212,7 +212,7 @@ def test_redact_string_secret_in_text() -> None:
 @pytest.mark.asyncio
 async def test_reward_scorer_score_no_output(monkeypatch) -> None:
     from unittest.mock import AsyncMock
-    import pydantic_ai_orchestrator.infra.settings as settings_mod
+    import flujo.infra.settings as settings_mod
 
     monkeypatch.setenv("ORCH_REWARD_ENABLED", "true")
     test_settings = Settings(

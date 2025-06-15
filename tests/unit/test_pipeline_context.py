@@ -1,10 +1,10 @@
 import pytest
 from pydantic import BaseModel
 
-from pydantic_ai_orchestrator.application.pipeline_runner import PipelineRunner
-from pydantic_ai_orchestrator.domain import Step
-from pydantic_ai_orchestrator.exceptions import PipelineContextInitializationError
-from pydantic_ai_orchestrator.domain.plugins import PluginOutcome
+from flujo.application.pipeline_runner import PipelineRunner
+from flujo.domain import Step
+from flujo.exceptions import PipelineContextInitializationError
+from flujo.domain.plugins import PluginOutcome
 
 
 class Ctx(BaseModel):

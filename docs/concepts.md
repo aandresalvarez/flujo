@@ -1,6 +1,6 @@
 # Core Concepts
 
-This guide explains the fundamental concepts that power `pydantic-ai-orchestrator`. Understanding these concepts will help you build more effective AI workflows.
+This guide explains the fundamental concepts that power `flujo`. Understanding these concepts will help you build more effective AI workflows.
 
 ## The Orchestrator
 
@@ -14,12 +14,12 @@ For building custom workflows with different steps or logic, you would use the
 `Pipeline` DSL and `PipelineRunner`.
 
 ```python
-from pydantic_ai_orchestrator import (
+from flujo import (
     Orchestrator, review_agent, solution_agent, validator_agent, reflection_agent
 )
 
 # Assemble the orchestrator with default agents
-orch = Orchestrator(
+flujo = Orchestrator(
     review_agent=review_agent,
     solution_agent=solution_agent,
     validator_agent=validator_agent,
@@ -62,7 +62,7 @@ The library provides four default agents:
 ### Creating Custom Agents
 
 ```python
-from pydantic_ai_orchestrator import make_agent_async
+from flujo import make_agent_async
 
 custom_agent = make_agent_async(
     "openai:gpt-4",  # Model
@@ -79,7 +79,7 @@ A **Task** represents a single request to the orchestrator. It contains:
 - Optional metadata for additional context
 
 ```python
-from pydantic_ai_orchestrator import Task
+from flujo import Task
 
 task = Task(
     prompt="Write a function to calculate prime numbers",
@@ -120,7 +120,7 @@ Steps declare a `pipeline_context` parameter to access or modify this object. Se
 The built-in [**Orchestrator**](#the-orchestrator) uses this DSL under the hood. When you need different logic, you can use the same tools directly. The DSL also supports advanced constructs like [**LoopStep**](pipeline_looping.md) for iteration and [**ConditionalStep**](pipeline_branching.md) for branching workflows.
 
 ```python
-from pydantic_ai_orchestrator import (
+from flujo import (
     Step, PipelineRunner, review_agent, solution_agent, validator_agent
 )
 
@@ -163,7 +163,7 @@ for step_res in pipeline_result.step_history:
 For iterative refinement:
 
 ```python
-from pydantic_ai_orchestrator import Step, Pipeline
+from flujo import Step, Pipeline
 
 loop_step = Step.loop_until(
     name="refinement_loop",
@@ -196,7 +196,7 @@ The orchestrator uses scoring to evaluate and select the best solution. Scoring 
 - **Model-based**: Using an AI model to evaluate quality
 
 ```python
-from pydantic_ai_orchestrator.domain.scoring import ratio_score, weighted_score
+from flujo.domain.scoring import ratio_score, weighted_score
 
 # Simple ratio scoring (default)
 score = ratio_score(checklist)
@@ -244,8 +244,8 @@ agent = make_agent_async(
 Plugins extend pipeline functionality, particularly for validation:
 
 ```python
-from pydantic_ai_orchestrator import ValidationPlugin, PluginOutcome
-from pydantic_ai_orchestrator.plugins import SQLSyntaxValidator
+from flujo import ValidationPlugin, PluginOutcome
+from flujo.plugins import SQLSyntaxValidator
 
 # Use built-in SQL validator
 sql_validator = SQLSyntaxValidator()
@@ -266,8 +266,8 @@ pipeline = Step.validate(validator_agent, plugins=[sql_validator, CustomValidato
 The library includes intelligent evaluation capabilities:
 
 ```python
-from pydantic_ai_orchestrator import evaluate_and_improve, SelfImprovementAgent
-from pydantic_ai_orchestrator.infra.agents import make_self_improvement_agent
+from flujo import evaluate_and_improve, SelfImprovementAgent
+from flujo.infra.agents import make_self_improvement_agent
 
 # Create improvement agent
 improvement_agent = SelfImprovementAgent(make_self_improvement_agent())
@@ -296,7 +296,7 @@ The orchestrator includes built-in telemetry for:
 - Distributed tracing
 
 ```python
-from pydantic_ai_orchestrator import init_telemetry
+from flujo import init_telemetry
 
 # Initialize telemetry
 init_telemetry()
@@ -312,7 +312,7 @@ init_telemetry()
 Settings can be controlled via environment variables or the settings object:
 
 ```python
-from pydantic_ai_orchestrator import settings
+from flujo import settings
 
 # Access current settings
 print(f"Default solution model: {settings.default_solution_model}")

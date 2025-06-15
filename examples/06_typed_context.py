@@ -5,7 +5,7 @@ Demonstrates sharing state across steps with Typed Pipeline Context.
 """
 
 from pydantic import BaseModel
-from pydantic_ai_orchestrator import Step, PipelineRunner
+from flujo import Step, PipelineRunner
 
 
 class Ctx(BaseModel):

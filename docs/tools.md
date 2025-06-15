@@ -1,6 +1,6 @@
 # Tools Guide
 
-This guide explains how to use and create tools that allow AI agents to interact with external systems in `pydantic-ai-orchestrator`.
+This guide explains how to use and create tools that allow AI agents to interact with external systems in `flujo`.
 
 ## Overview
 
@@ -48,7 +48,7 @@ agent = make_agent_async(
 ### Using Tools in a Pipeline
 
 ```python
-from pydantic_ai_orchestrator import Step, PipelineRunner
+from flujo import Step, PipelineRunner
 
 # Create a pipeline with tools
 pipeline = (

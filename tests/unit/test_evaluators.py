@@ -1,5 +1,5 @@
-from pydantic_ai_orchestrator.application.evaluators import FinalSolutionEvaluator
-from pydantic_ai_orchestrator.domain.models import PipelineResult, StepResult
+from flujo.application.evaluators import FinalSolutionEvaluator
+from flujo.domain.models import PipelineResult, StepResult
 from pydantic_evals.evaluators import EvaluatorContext
 
 

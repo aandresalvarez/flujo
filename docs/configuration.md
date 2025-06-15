@@ -1,6 +1,6 @@
 # Configuration Guide
 
-This guide explains all configuration options available in `pydantic-ai-orchestrator`.
+This guide explains all configuration options available in `flujo`.
 
 ## Environment Variables
 
@@ -58,7 +58,7 @@ You can also configure the orchestrator programmatically:
 ### Basic Configuration
 
 ```python
-from pydantic_ai_orchestrator import Orchestrator, Task
+from flujo import Orchestrator, Task
 
 # Create an orchestrator with custom settings
 orch = Orchestrator(
@@ -73,7 +73,7 @@ orch = Orchestrator(
 ### Telemetry Configuration
 
 ```python
-from pydantic_ai_orchestrator import init_telemetry
+from flujo import init_telemetry
 
 # Initialize with custom settings
 init_telemetry(
@@ -88,7 +88,7 @@ init_telemetry(
 ### Model Selection
 
 ```python
-from pydantic_ai_orchestrator import make_agent_async
+from flujo import make_agent_async
 
 # Use different models for different agents
 review_agent = make_agent_async(
@@ -125,7 +125,7 @@ agent = make_agent_async(
 ### Step Configuration
 
 ```python
-from pydantic_ai_orchestrator import Step, PipelineRunner
+from flujo import Step, PipelineRunner
 
 # Configure individual steps
 pipeline = (
@@ -156,7 +156,7 @@ runner = PipelineRunner(
 ### Custom Scoring
 
 ```python
-from pydantic_ai_orchestrator import weighted_score
+from flujo import weighted_score
 
 # Define custom weights
 weights = {

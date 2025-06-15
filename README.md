@@ -1,7 +1,7 @@
-# Pydantic AI Orchestrator
+# Flujo
 
 A powerful Python library for orchestrating AI workflows using Pydantic models.
-The `pydantic-ai-orchestrator` package (repository hosted at
+The `flujo` package (repository hosted at
 [`github.com/aandresalvarez/rloop`](https://github.com/aandresalvarez/rloop))
 provides utilities to manage multi-agent pipelines with minimal setup.
 
@@ -17,13 +17,13 @@ provides utilities to manage multi-agent pipelines with minimal setup.
 ### Installation
 
 ```bash
-pip install pydantic-ai-orchestrator
+pip install flujo
 ```
 
 ### Basic Usage
 
 ```python
-from pydantic_ai_orchestrator import (
+from flujo import (
     Orchestrator, Task,
     review_agent, solution_agent, validator_agent,
     init_telemetry,
@@ -34,7 +34,7 @@ init_telemetry()
 
 # Assemble an orchestrator with the library-provided agents. The class
 # runs a fixed pipeline: Review -> Solution -> Validate.
-orch = Orchestrator(
+flujo = Orchestrator(
     review_agent=review_agent,
     solution_agent=solution_agent,
     validator_agent=validator_agent,
@@ -61,7 +61,7 @@ else:
 ### Pipeline Example
 
 ```python
-from pydantic_ai_orchestrator import (
+from flujo import (
     Step, PipelineRunner, Task,
     review_agent, solution_agent, validator_agent,
 )
@@ -149,7 +149,7 @@ Check out the [examples directory](examples/) for more usage examples:
 ### Basic Installation
 
 ```bash
-pip install pydantic-ai-orchestrator
+pip install flujo
 ```
 
 ### Development Installation
@@ -175,7 +175,7 @@ We welcome contributions! Please see our [Contributing Guide](docs/contributing.
 
 ## Support
 
-- [Documentation](https://pydantic-ai-orchestrator.readthedocs.io/)
+- [Documentation](https://flujo.readthedocs.io/)
 - [Issue Tracker](https://github.com/aandresalvarez/rloop/issues)
 - [Discussions](https://github.com/aandresalvarez/rloop/discussions)
 - [Discord](https://discord.gg/...)
@@ -197,9 +197,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 If you use this project in your research, please cite:
 
 ```bibtex
-@software{pydantic_ai_orchestrator,
+@software{flujo,
   author = {Alvaro Andres Alvarez},
-  title = {Pydantic AI Orchestrator},
+  title = {Flujo},
   year = {2024},
   url = {https://github.com/aandresalvarez/rloop}
 }

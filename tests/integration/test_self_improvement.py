@@ -1,13 +1,13 @@
 import json
 import pytest
-from pydantic_ai_orchestrator.application.self_improvement import (
+from flujo.application.self_improvement import (
     evaluate_and_improve,
     SelfImprovementAgent,
 )
-from pydantic_ai_orchestrator.application.pipeline_runner import PipelineRunner
-from pydantic_ai_orchestrator.application.eval_adapter import run_pipeline_async
-from pydantic_ai_orchestrator.domain import Step
-from pydantic_ai_orchestrator.testing.utils import StubAgent
+from flujo.application.pipeline_runner import PipelineRunner
+from flujo.application.eval_adapter import run_pipeline_async
+from flujo.domain import Step
+from flujo.testing.utils import StubAgent
 from pydantic_evals import Dataset, Case
 
 
@@ -46,7 +46,7 @@ async def test_e2e_self_improvement_with_mocked_llm_suggestions():
 
 @pytest.mark.asyncio
 async def test_build_context_for_self_improvement_agent():
-    from pydantic_ai_orchestrator.application.self_improvement import _build_context
+    from flujo.application.self_improvement import _build_context
     pr = Step.solution(StubAgent(["ok"]))
     runner = PipelineRunner(pr)
     dataset = Dataset(cases=[Case(name="c1", inputs="i", expected_output="o")])

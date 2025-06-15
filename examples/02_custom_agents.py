@@ -6,7 +6,7 @@ to save tokens.
 """
 
 from pydantic_ai import Agent
-from pydantic_ai_orchestrator import (
+from flujo import (
     Orchestrator,
     Task,
     review_agent,

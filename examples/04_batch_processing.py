@@ -11,7 +11,7 @@ CSV schema:
 import csv
 import pathlib
 import time
-from pydantic_ai_orchestrator import (
+from flujo import (
     Orchestrator,
     Task,
     review_agent,

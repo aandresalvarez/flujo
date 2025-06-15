@@ -1,6 +1,6 @@
 # Scoring Guide
 
-This guide explains how to use and customize the scoring system in `pydantic-ai-orchestrator`.
+This guide explains how to use and customize the scoring system in `flujo`.
 
 ## Overview
 
@@ -18,7 +18,7 @@ The orchestrator includes several scoring mechanisms:
 The simplest scoring method counts passed checklist items:
 
 ```python
-from pydantic_ai_orchestrator import ratio_score
+from flujo import ratio_score
 
 # Calculate a simple pass/fail ratio
 score = ratio_score(checklist)
@@ -30,7 +30,7 @@ score = ratio_score(checklist)
 Assign different weights to checklist items:
 
 ```python
-from pydantic_ai_orchestrator import weighted_score
+from flujo import weighted_score
 
 # Define weights for different criteria
 weights = {
@@ -50,7 +50,7 @@ score = weighted_score(checklist, weights)
 Use an AI model to evaluate quality:
 
 ```python
-from pydantic_ai_orchestrator import make_agent_async, model_score
+from flujo import make_agent_async, model_score
 
 # Create a scoring agent
 scorer_agent = make_agent_async(
@@ -239,8 +239,8 @@ pipeline = (
 ### Code Generation Scoring
 
 ```python
-from pydantic_ai_orchestrator import Step, PipelineRunner
-from pydantic_ai_orchestrator.plugins import (
+from flujo import Step, PipelineRunner
+from flujo.plugins import (
     SQLSyntaxValidator,
     CodeStyleValidator
 )

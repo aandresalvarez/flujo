@@ -1,6 +1,6 @@
 # Tutorial: From Simple Orchestration to Custom AI Pipelines
 
-Welcome! This tutorial will guide you through using the `pydantic-ai-orchestrator` library, from your very first request to building advanced, custom AI workflows. We'll start with the basics and progressively build up to more complex examples.
+Welcome! This tutorial will guide you through using the `flujo` library, from your very first request to building advanced, custom AI workflows. We'll start with the basics and progressively build up to more complex examples.
 
 **Before You Begin:**
 *   You should have a basic understanding of Python.
@@ -35,7 +35,7 @@ Let's start with the most straightforward use case: give the orchestrator a prom
 
 ```python
 # 📂 step_1_basic_usage.py
-from pydantic_ai_orchestrator import (
+from flujo import (
     Orchestrator, Task,
     review_agent, solution_agent, validator_agent,
     init_telemetry,
@@ -44,7 +44,7 @@ from pydantic_ai_orchestrator import (
 init_telemetry()
 
 print("🤖 Assembling the AI agent team for the standard Orchestrator workflow...")
-orch = Orchestrator(
+flujo = Orchestrator(
     review_agent=review_agent,
     solution_agent=solution_agent,
     validator_agent=validator_agent,
@@ -77,14 +77,14 @@ Professional AI workflows often involve a mix of models to balance cost, speed, 
 
 ```python
 # 📂 step_3_mixing_models.py
-from pydantic_ai_orchestrator import (
+from flujo import (
     Orchestrator, Task, review_agent, validator_agent, make_agent_async, init_telemetry
 )
 init_telemetry()
 print("🚀 Building a workflow with a custom Solution Agent for the Orchestrator...")
 FAST_SOLUTION_PROMPT = "You are a creative but junior marketing copywriter. Write a catchy and concise slogan. Be quick and creative."
 fast_copywriter_agent = make_agent_async("openai:gpt-4o-mini", FAST_SOLUTION_PROMPT, str)
-orch = Orchestrator(
+flujo = Orchestrator(
     review_agent=review_agent,
     solution_agent=fast_copywriter_agent,
     validator_agent=validator_agent,
@@ -106,10 +106,10 @@ Let's build a workflow that extracts information from a block of text into a str
 ```python
 # 📂 step_4_structured_output.py
 from pydantic import BaseModel, Field
-from pydantic_ai_orchestrator import (
+from flujo import (
     Step, PipelineRunner, make_agent_async, init_telemetry
 )
-from pydantic_ai_orchestrator.domain.models import Checklist
+from flujo.domain.models import Checklist
 
 init_telemetry()
 
@@ -185,7 +185,7 @@ Now for the ultimate challenge. Let's build a workflow where **every agent is cu
 import random
 from pydantic import BaseModel
 from pydantic_ai import Tool
-from pydantic_ai_orchestrator import * # Import all for convenience
+from flujo import * # Import all for convenience
 
 # --- 1. Define the Tool ---
 # This is a fake stock price function for our example.
@@ -229,7 +229,7 @@ validator_agent = make_agent_async("openai:gpt-4o",
 
 
 # --- 3. Assemble and Run the Orchestrator ---
-orch = Orchestrator(review_agent, solution_agent, validator_agent)
+flujo = Orchestrator(review_agent, solution_agent, validator_agent)
 task = Task(prompt="Generate a stock report for Apple Inc. (AAPL).")
 
 print("🧠 Running advanced tool-based workflow...")
@@ -262,9 +262,9 @@ This concludes our tour! You've journeyed from a simple prompt to a sophisticate
 The new Pipeline DSL lets you compose your own workflow using `Step` objects. Execute the pipeline with `PipelineRunner`:
 
 ```python
-from pydantic_ai_orchestrator import Step, PipelineRunner
-from pydantic_ai_orchestrator.plugins.sql_validator import SQLSyntaxValidator
-from pydantic_ai_orchestrator.testing.utils import StubAgent
+from flujo import Step, PipelineRunner
+from flujo.plugins.sql_validator import SQLSyntaxValidator
+from flujo.testing.utils import StubAgent
 
 sql_step = Step.solution(StubAgent(["SELECT FROM"]))
 check_step = Step.validate(StubAgent([None]), plugins=[SQLSyntaxValidator()])
@@ -302,7 +302,7 @@ Some workflows require repeating a set of steps until a condition is met. `LoopS
 lets you express this directly in the DSL.
 
 ```python
-from pydantic_ai_orchestrator import Step, PipelineRunner, Pipeline
+from flujo import Step, PipelineRunner, Pipeline
 
 async def fixer(data: str) -> str:
     return data + "!"

@@ -1,4 +1,4 @@
-# Makefile for pydantic-ai-orchestrator
+# Makefile for flujo
 
 # Shell to use, with flags for robustness:
 # -e: exit immediately if a command exits with a non-zero status.
@@ -9,7 +9,7 @@ SHELL := /bin/bash
 SHELLFLAGS := -euo pipefail -c
 
 # Variables
-PACKAGE_NAME = pydantic_ai_orchestrator
+PACKAGE_NAME = flujo
 PYTHON_PATHS = $(PACKAGE_NAME) # Directories for linting/type-checking (tests and examples excluded for now)
 VENV_DIR ?= .venv # Allow overriding venv directory
 
@@ -45,7 +45,7 @@ PYTEST_BENCH_CMD = $(PYTEST_CMD) -m benchmark
 # Help
 #------------------------------------------------------------------------------------
 help:
-	@echo "pydantic-ai-orchestrator Makefile"
+	@echo "flujo Makefile"
 	@echo "---------------------------------"
 	@echo "Targets:"
 	@echo ""

@@ -1,7 +1,7 @@
 import pytest
-from pydantic_ai_orchestrator.domain import Step
-from pydantic_ai_orchestrator.application.pipeline_runner import PipelineRunner
-from pydantic_ai_orchestrator.testing.utils import StubAgent
+from flujo.domain import Step
+from flujo.application.pipeline_runner import PipelineRunner
+from flujo.testing.utils import StubAgent
 
 pytest.importorskip("pytest_benchmark")
 

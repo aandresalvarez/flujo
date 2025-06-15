@@ -4,7 +4,7 @@
 Demonstrates using LoopStep for iterative refinement.
 """
 
-from pydantic_ai_orchestrator import Step, Pipeline, PipelineRunner
+from flujo import Step, Pipeline, PipelineRunner
 
 
 async def add_exclamation(data: str) -> str:

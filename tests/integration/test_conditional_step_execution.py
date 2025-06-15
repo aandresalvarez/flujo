@@ -2,10 +2,10 @@ import pytest
 from typing import Any
 from pydantic import BaseModel
 
-from pydantic_ai_orchestrator.domain import Step, Pipeline, ConditionalStep
-from pydantic_ai_orchestrator.application.pipeline_runner import PipelineRunner
-from pydantic_ai_orchestrator.testing.utils import StubAgent, DummyPlugin
-from pydantic_ai_orchestrator.domain.plugins import PluginOutcome
+from flujo.domain import Step, Pipeline
+from flujo.application.pipeline_runner import PipelineRunner
+from flujo.testing.utils import StubAgent, DummyPlugin
+from flujo.domain.plugins import PluginOutcome
 
 
 class EchoAgent:
@@ -333,8 +333,8 @@ async def test_conditional_step_overall_span(monkeypatch) -> None:
             pass
 
     from unittest.mock import Mock
-    from pydantic_ai_orchestrator.infra import telemetry
-    from pydantic_ai_orchestrator.application import pipeline_runner as pr
+    from flujo.infra import telemetry
+    from flujo.application import pipeline_runner as pr
 
     mock_logfire = Mock(span=lambda name: FakeSpan(name))
     monkeypatch.setattr(telemetry, "logfire", mock_logfire)
@@ -373,8 +373,8 @@ async def test_conditional_step_branch_selection_logging_and_span_attributes(mon
             self._attrs[key] = value
 
     from unittest.mock import Mock
-    from pydantic_ai_orchestrator.infra import telemetry
-    from pydantic_ai_orchestrator.application import pipeline_runner as pr
+    from flujo.infra import telemetry
+    from flujo.application import pipeline_runner as pr
 
     mock_logfire = Mock(
         span=lambda name: FakeSpan(name),
@@ -417,8 +417,8 @@ async def test_conditional_step_no_branch_match_logging(monkeypatch) -> None:
             pass
 
     from unittest.mock import Mock
-    from pydantic_ai_orchestrator.infra import telemetry
-    from pydantic_ai_orchestrator.application import pipeline_runner as pr
+    from flujo.infra import telemetry
+    from flujo.application import pipeline_runner as pr
 
     mock_logfire = Mock(
         span=lambda name: FakeSpan(name),
@@ -458,8 +458,8 @@ async def test_conditional_step_error_logging_in_callables(monkeypatch) -> None:
             pass
 
     from unittest.mock import Mock
-    from pydantic_ai_orchestrator.infra import telemetry
-    from pydantic_ai_orchestrator.application import pipeline_runner as pr
+    from flujo.infra import telemetry
+    from flujo.application import pipeline_runner as pr
 
     mock_logfire = Mock(
         span=lambda name: FakeSpan(name),

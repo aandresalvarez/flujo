@@ -7,9 +7,9 @@ def reload_telemetry() -> None:
     # Reload the module to reset _initialized
     import sys
 
-    if "pydantic_ai_orchestrator.infra.telemetry" in sys.modules:
-        del sys.modules["pydantic_ai_orchestrator.infra.telemetry"]
-    return importlib.import_module("pydantic_ai_orchestrator.infra.telemetry")
+    if "flujo.infra.telemetry" in sys.modules:
+        del sys.modules["flujo.infra.telemetry"]
+    return importlib.import_module("flujo.infra.telemetry")
 
 
 @pytest.mark.parametrize(

@@ -1,5 +1,5 @@
 import pytest
-from pydantic_ai_orchestrator.domain import Step, Pipeline, ConditionalStep
+from flujo.domain import Step, Pipeline, ConditionalStep
 
 
 def test_conditional_step_init_validation() -> None:

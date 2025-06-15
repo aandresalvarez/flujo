@@ -4,7 +4,7 @@
 Demonstrates ConditionalStep for routing to different pipelines.
 """
 
-from pydantic_ai_orchestrator import Step, Pipeline, PipelineRunner
+from flujo import Step, Pipeline, PipelineRunner
 
 
 def classify(text: str) -> str:

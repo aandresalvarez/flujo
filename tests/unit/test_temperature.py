@@ -1,5 +1,5 @@
-from pydantic_ai_orchestrator.application.temperature import temp_for_round
-from pydantic_ai_orchestrator.infra.settings import settings
+from flujo.application.temperature import temp_for_round
+from flujo.infra.settings import settings
 
 
 def test_temp_schedule_from_settings(monkeypatch) -> None:

@@ -2,10 +2,10 @@ import pytest
 from typing import Any
 from pydantic import BaseModel
 
-from pydantic_ai_orchestrator.application.pipeline_runner import PipelineRunner
-from pydantic_ai_orchestrator.domain import Step, Pipeline, LoopStep
-from pydantic_ai_orchestrator.testing.utils import StubAgent, DummyPlugin
-from pydantic_ai_orchestrator.domain.plugins import PluginOutcome
+from flujo.application.pipeline_runner import PipelineRunner
+from flujo.domain import Step, Pipeline
+from flujo.testing.utils import StubAgent, DummyPlugin
+from flujo.domain.plugins import PluginOutcome
 
 
 class IncrementAgent:
@@ -339,8 +339,8 @@ async def test_loop_step_overall_span(monkeypatch) -> None:
             pass
 
     from unittest.mock import Mock
-    from pydantic_ai_orchestrator.infra import telemetry
-    from pydantic_ai_orchestrator.application import pipeline_runner as pr
+    from flujo.infra import telemetry
+    from flujo.application import pipeline_runner as pr
 
     mock_logfire = Mock(span=lambda name: FakeSpan(name))
     monkeypatch.setattr(telemetry, "logfire", mock_logfire)
@@ -378,8 +378,8 @@ async def test_loop_step_iteration_spans_and_logging(monkeypatch) -> None:
             pass
 
     from unittest.mock import Mock
-    from pydantic_ai_orchestrator.infra import telemetry
-    from pydantic_ai_orchestrator.application import pipeline_runner as pr
+    from flujo.infra import telemetry
+    from flujo.application import pipeline_runner as pr
 
     mock_logfire = Mock(
         span=lambda name: FakeSpan(name),
@@ -402,8 +402,8 @@ async def test_loop_step_iteration_spans_and_logging(monkeypatch) -> None:
     assert "LoopStep 'loop_log': Starting Iteration 1/2" in infos
     assert "LoopStep 'loop_log': Starting Iteration 2/2" in infos
     assert "LoopStep 'loop_log' exit condition met at iteration 2." in infos
-    assert f"LoopStep 'loop_log' Iteration 1 - Body Step 'inc'" in spans
-    assert f"LoopStep 'loop_log' Iteration 2 - Body Step 'inc'" in spans
+    assert "LoopStep 'loop_log' Iteration 1 - Body Step 'inc'" in spans
+    assert "LoopStep 'loop_log' Iteration 2 - Body Step 'inc'" in spans
     assert not warns
 
 
@@ -425,8 +425,8 @@ async def test_loop_step_error_logging_in_callables(monkeypatch) -> None:
             pass
 
     from unittest.mock import Mock
-    from pydantic_ai_orchestrator.infra import telemetry
-    from pydantic_ai_orchestrator.application import pipeline_runner as pr
+    from flujo.infra import telemetry
+    from flujo.application import pipeline_runner as pr
 
     mock_logfire = Mock(
         span=lambda name: FakeSpan(name),

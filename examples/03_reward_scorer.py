@@ -5,7 +5,7 @@ Enable the experimental reward-model scorer (extra LLM judge).
 """
 
 import os
-from pydantic_ai_orchestrator import (
+from flujo import (
     Orchestrator,
     Task,
     review_agent,
@@ -13,7 +13,7 @@ from pydantic_ai_orchestrator import (
     validator_agent,
     reflection_agent,
 )
-from pydantic_ai_orchestrator.infra.settings import settings
+from flujo.infra.settings import settings
 
 # 🔑 Make sure you have a paid API key – the reward model is another call
 os.environ["REWARD_ENABLED"] = "true"

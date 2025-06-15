@@ -1,4 +1,4 @@
-# Extending pydantic-ai-orchestrator
+# Extending flujo
 
 ## Adding a Custom Agent
 
@@ -14,7 +14,7 @@ The simplified orchestrator no longer performs reflection automatically. To
 incorporate strategic feedback, build a custom pipeline using `Step`:
 
 ```python
-from pydantic_ai_orchestrator import Step, PipelineRunner, review_agent, solution_agent, validator_agent, get_reflection_agent
+from flujo import Step, PipelineRunner, review_agent, solution_agent, validator_agent, get_reflection_agent
 
 reflection_agent = get_reflection_agent(model="anthropic:claude-3-haiku")
 
@@ -33,7 +33,7 @@ result = PipelineRunner(pipeline).run("Write a poem")
 If you frequently use a step with the same set of plugins, you can create your own factory function:
 
 ```python
-from pydantic_ai_orchestrator import Step
+from flujo import Step
 from my_app.plugins import MyCustomValidator
 
 def ReusableSQLStep(agent, **config) -> Step:

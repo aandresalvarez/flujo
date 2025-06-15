@@ -1,6 +1,6 @@
-"""Temperature schedule logic for pydantic-ai-orchestrator."""
+"""Temperature schedule logic for flujo."""
 
-from pydantic_ai_orchestrator.infra.settings import settings
+from flujo.infra.settings import settings
 
 
 def temp_for_round(round_i: int) -> float:

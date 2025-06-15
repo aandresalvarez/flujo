@@ -1,10 +1,10 @@
-# pydantic-ai-orchestrator
+# flujo
 
 Production-ready orchestration for Pydantic-based AI agents with intelligent evaluation and self-improvement capabilities.
 
 ## Overview
 
-The `pydantic-ai-orchestrator` is a powerful Python library that provides a structured approach to building and managing multi-agent AI workflows. Built on top of Pydantic for type safety and data validation, it offers both high-level orchestration patterns and flexible pipeline construction tools.
+The `flujo` is a powerful Python library that provides a structured approach to building and managing multi-agent AI workflows. Built on top of Pydantic for type safety and data validation, it offers both high-level orchestration patterns and flexible pipeline construction tools.
 
 ## Features
 
@@ -20,13 +20,13 @@ The `pydantic-ai-orchestrator` is a powerful Python library that provides a stru
 ### Installation
 
 ```bash
-pip install pydantic-ai-orchestrator
+pip install flujo
 ```
 
 ### Basic Usage
 
 ```python
-from pydantic_ai_orchestrator import (
+from flujo import (
     Orchestrator, Task,
     review_agent, solution_agent, validator_agent, reflection_agent,
     init_telemetry,
@@ -36,7 +36,7 @@ from pydantic_ai_orchestrator import (
 init_telemetry()
 
 # Create orchestrator with default agents
-orch = Orchestrator(
+flujo = Orchestrator(
     review_agent=review_agent,
     solution_agent=solution_agent,
     validator_agent=validator_agent,
@@ -56,16 +56,16 @@ if result:
 
 ```bash
 # Solve a task quickly
-orch solve "Create a REST API for a todo app"
+flujo solve "Create a REST API for a todo app"
 
 # Run benchmarks
-orch bench "Write a sorting algorithm" --rounds 5
+flujo bench "Write a sorting algorithm" --rounds 5
 
 # Show configuration
-orch show-config
+flujo show-config
 
 # Generate improvement suggestions
-orch improve pipeline.py dataset.py
+flujo improve pipeline.py dataset.py
 ```
 
 ## Core Concepts
@@ -111,7 +111,7 @@ Choose your path based on your needs:
 - **📚 Documentation**: Complete guides and API reference
 - **🐛 Issues**: [GitHub Issues](https://github.com/aandresalvarez/rloop/issues)
 - **💬 Discussions**: [GitHub Discussions](https://github.com/aandresalvarez/rloop/discussions)
-- **📦 Package**: [PyPI](https://pypi.org/project/pydantic-ai-orchestrator/)
+- **📦 Package**: [PyPI](https://pypi.org/project/flujo/)
 
 ## License
 
