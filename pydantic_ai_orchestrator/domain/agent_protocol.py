@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Protocol, TypeVar, Any, Optional, runtime_checkable
+from typing import Protocol, TypeVar, Any, runtime_checkable
 
 AgentInT = TypeVar("AgentInT", contravariant=True)
 AgentOutT = TypeVar("AgentOutT", covariant=True)

@@ -30,7 +30,9 @@ class SelfImprovementAgent:
         return ImprovementReport.model_validate_json(data)
 
 
-def _find_step(pipeline: Pipeline[Any, Any] | Step[Any, Any] | None, name: str) -> Step[Any, Any] | None:
+def _find_step(
+    pipeline: Pipeline[Any, Any] | Step[Any, Any] | None, name: str
+) -> Step[Any, Any] | None:
     if pipeline is None:
         return None
     if isinstance(pipeline, Step):

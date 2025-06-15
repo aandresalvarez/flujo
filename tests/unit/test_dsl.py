@@ -20,8 +20,9 @@ def test_role_based_constructor() -> None:
     assert step.name == "review"
     assert step.agent is agent
 
-    vstep = Step.validate(agent)
+    vstep = Step.validate_step(agent)
     assert vstep.name == "validate"
+    assert vstep.agent is agent
 
 
 def test_step_configuration() -> None:
@@ -37,7 +38,7 @@ def test_dsl() -> None:
 def test_dsl_with_step() -> None:
     step = Step("A")
     pipeline = Pipeline.from_step(step)
-    assert list(pipeline) == [step]
+    assert pipeline.steps == [step]
 
 
 def test_dsl_with_agent() -> None:
@@ -49,5 +50,9 @@ def test_dsl_with_agent() -> None:
 def test_dsl_with_agent_and_step() -> None:
     agent = AsyncMock()
     step = Step.solution(agent)
-    pipeline = step >> Step.validate(agent)
-    assert [s.agent for s in pipeline.steps] == [agent, agent]
+    pipeline = step >> Step.validate_step(agent)
+    assert len(pipeline.steps) == 2
+    assert pipeline.steps[0].name == step.name
+    assert pipeline.steps[0].agent is step.agent
+    assert pipeline.steps[1].name == "validate"
+    assert pipeline.steps[1].agent is agent

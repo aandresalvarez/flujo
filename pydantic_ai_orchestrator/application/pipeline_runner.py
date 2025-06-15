@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any, Dict, Generic, Optional, Type, TypeVar, cast
+from typing import Any, Dict, Generic, Optional, Type, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
