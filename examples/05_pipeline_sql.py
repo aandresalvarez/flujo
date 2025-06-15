@@ -4,7 +4,7 @@
 Demonstrates the Pipeline DSL and SQL validator plugin.
 """
 
-from flujo import Step, PipelineRunner
+from flujo import Step, Flujo
 from flujo.plugins.sql_validator import SQLSyntaxValidator
 from flujo.testing.utils import StubAgent
 
@@ -17,7 +17,7 @@ solution_step = Step.solution(solution)
 validation_step = Step.validate(validator, plugins=[SQLSyntaxValidator()])
 
 pipeline = solution_step >> validation_step
-runner = PipelineRunner(pipeline)
+runner = Flujo(pipeline)
 
 result = runner.run("SELECT FROM")
 for step_result in result.step_history:

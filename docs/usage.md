@@ -25,16 +25,17 @@ pip install flujo[bench]
 ## API
 
 ```python
+from flujo.recipes import Default
 from flujo import (
-    Orchestrator, Task, init_telemetry,
+    Flujo, Task, init_telemetry,
     review_agent, solution_agent, validator_agent,
 )
 
 # Initialize telemetry (optional)
 init_telemetry()
 
-# Create an orchestrator with default agents
-orch = Orchestrator(
+# Create the default recipe with built-in agents
+orch = Default(
     review_agent=review_agent,
     solution_agent=solution_agent,
     validator_agent=validator_agent,
@@ -43,26 +44,26 @@ result = orch.run_sync(Task(prompt="Write a poem."))
 print(result)
 ```
 
-The default `Orchestrator` runs a fixed Review -> Solution -> Validate pipeline.
-It does not include a reflection step by default, but you can pass a
+The `Default` recipe runs a fixed Review → Solution → Validate pipeline. It does
+not include a reflection step by default, but you can pass a
 `reflection_agent` to enable one. For fully custom workflows or more complex
-reflection logic, use the `Step` API with `PipelineRunner`.
+reflection logic, use the `Step` API with the `Flujo` engine.
 
 Call `init_telemetry()` once at startup to configure logging and tracing for your application.
 
 ### Pipeline DSL
 
-You can define custom workflows using the `Step` class and execute them with `PipelineRunner`:
+You can define custom workflows using the `Step` class and execute them with `Flujo`:
 
 ```python
-from flujo import Step, PipelineRunner
+from flujo import Step, Flujo
 from flujo.plugins.sql_validator import SQLSyntaxValidator
 from flujo.testing.utils import StubAgent
 
 solution_step = Step.solution(StubAgent(["SELECT FROM"]))
 validate_step = Step.validate(StubAgent([None]), plugins=[SQLSyntaxValidator()])
 pipeline = solution_step >> validate_step
-result = PipelineRunner(pipeline).run("SELECT FROM")
+result = Flujo(pipeline).run("SELECT FROM")
 ```
 
 ## Environment Variables
@@ -92,4 +93,4 @@ Functions like `ratio_score` and `weighted_score` are available for custom workf
 The default orchestrator always returns a score of `1.0`.
 
 ## Reflection
-Add a reflection step by composing your own pipeline with `Step` and running it with `PipelineRunner`.
+Add a reflection step by composing your own pipeline with `Step` and running it with `Flujo`.

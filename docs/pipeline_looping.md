@@ -50,7 +50,7 @@ loop_step = Step.loop_until(
 
 ```python
 pipeline = Step.solution(agent_a) >> loop_step
-runner = PipelineRunner(pipeline, context_model=Ctx)
+runner = Flujo(pipeline, context_model=Ctx)
 result = runner.run(0)
 print(result.step_history[-1].output)
 print(result.final_pipeline_context.counter)

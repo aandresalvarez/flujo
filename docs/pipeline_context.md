@@ -1,6 +1,6 @@
 # Typed Pipeline Context
 
-`PipelineRunner` can maintain a mutable Pydantic model instance that is shared across every step during a single run. This feature is sometimes called the *pipeline scratchpad* or *shared context*.
+`Flujo` can maintain a mutable Pydantic model instance that is shared across every step during a single run. This feature is sometimes called the *pipeline scratchpad* or *shared context*.
 
 ## Why use a context?
 
@@ -21,7 +21,7 @@ class MyContext(BaseModel):
 ## Initializing the runner
 
 ```python
-runner = PipelineRunner(
+runner = Flujo(
     pipeline,
     context_model=MyContext,
     initial_context_data={"user_query": "hello"},

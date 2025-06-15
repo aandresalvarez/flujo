@@ -4,7 +4,7 @@
 Demonstrates ConditionalStep for routing to different pipelines.
 """
 
-from flujo import Step, Pipeline, PipelineRunner
+from flujo import Step, Pipeline, Flujo
 
 
 def classify(text: str) -> str:
@@ -21,7 +21,7 @@ branch_step = Step.branch_on(
 )
 
 pipeline = Step("classify", classify) >> branch_step
-runner = PipelineRunner(pipeline)
+runner = Flujo(pipeline)
 
 result = runner.run("hello!")
 print("Final output:", result.step_history[-1].output)

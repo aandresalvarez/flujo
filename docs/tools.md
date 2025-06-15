@@ -48,7 +48,7 @@ agent = make_agent_async(
 ### Using Tools in a Pipeline
 
 ```python
-from flujo import Step, PipelineRunner
+from flujo import Step, Flujo
 
 # Create a pipeline with tools
 pipeline = (
@@ -61,7 +61,7 @@ pipeline = (
 )
 
 # Run it
-runner = PipelineRunner(pipeline)
+runner = Flujo(pipeline)
 result = runner.run("What's the weather in Paris?")
 ```
 

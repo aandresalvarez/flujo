@@ -5,8 +5,8 @@ Enable the experimental reward-model scorer (extra LLM judge).
 """
 
 import os
+from flujo.recipes import Default
 from flujo import (
-    Orchestrator,
     Task,
     review_agent,
     solution_agent,
@@ -20,7 +20,7 @@ os.environ["REWARD_ENABLED"] = "true"
 settings.scorer = "reward"
 
 # Create orchestrator with the required agents
-orch = Orchestrator(review_agent, solution_agent, validator_agent, reflection_agent)
+orch = Default(review_agent, solution_agent, validator_agent, reflection_agent)
 
 best = orch.run_sync(Task(prompt="Summarise the Zen of Python in two sentences."))
 print("Reward-model score:", best.score)

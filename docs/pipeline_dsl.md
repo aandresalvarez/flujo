@@ -16,7 +16,7 @@ The Pipeline DSL lets you:
 ### Creating a Pipeline
 
 ```python
-from flujo import Step, PipelineRunner
+from flujo import Step, Flujo
 from flujo.infra.agents import (
     review_agent, solution_agent, validator_agent
 )
@@ -29,7 +29,7 @@ pipeline = (
 )
 
 # Run it
-runner = PipelineRunner(pipeline)
+runner = Flujo(pipeline)
 result = runner.run("Write a function to sort a list")
 ```
 
@@ -174,7 +174,7 @@ pipeline = Step.review(review_agent) >> loop_step >> Step.validate(validator_age
 
 ## Typed Pipeline Context
 
-`PipelineRunner` can share a mutable Pydantic model instance across all steps in
+a `Flujo` runner can share a mutable Pydantic model instance across all steps in
 a single run. Pass a context model when creating the runner and declare
 `pipeline_context` in your step functions or agents. See
 [Typed Pipeline Context](pipeline_context.md) for a full explanation.
@@ -191,7 +191,7 @@ async def increment(data: str, *, pipeline_context: MyContext | None = None) -> 
     return data
 
 pipeline = Step("inc", increment) >> Step("read", increment)
-runner = PipelineRunner(pipeline, context_model=MyContext)
+runner = Flujo(pipeline, context_model=MyContext)
 result = runner.run("hi")
 print(result.final_pipeline_context.counter)  # 2
 ```
@@ -252,7 +252,7 @@ step = Step.solution(
 )
 
 # Configure retries at the pipeline level
-runner = PipelineRunner(
+runner = Flujo(
     pipeline,
     max_retries=3,
     retry_on_error=True
@@ -306,7 +306,7 @@ pipeline = (
 ### Code Generation Pipeline
 
 ```python
-from flujo import Step, PipelineRunner
+from flujo import Step, Flujo
 from flujo.plugins import (
     SQLSyntaxValidator,
     CodeStyleValidator
@@ -326,7 +326,7 @@ pipeline = (
 )
 
 # Run it
-runner = PipelineRunner(pipeline)
+runner = Flujo(pipeline)
 result = runner.run("Write a SQL query to find active users")
 ```
 
@@ -351,7 +351,7 @@ pipeline = (
 )
 
 # Run it
-runner = PipelineRunner(pipeline)
+runner = Flujo(pipeline)
 result = runner.run("Write a blog post about AI")
 ```
 

@@ -134,7 +134,7 @@ pipeline = (
 )
 
 # Configure the runner with custom scoring
-runner = PipelineRunner(
+runner = Flujo(
     pipeline,
     scorer=lambda c: weighted_score(c, {
         "review_score": 0.3,
@@ -239,7 +239,7 @@ pipeline = (
 ### Code Generation Scoring
 
 ```python
-from flujo import Step, PipelineRunner
+from flujo import Step, Flujo
 from flujo.plugins import (
     SQLSyntaxValidator,
     CodeStyleValidator

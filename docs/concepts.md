@@ -2,24 +2,23 @@
 
 This guide explains the fundamental concepts that power `flujo`. Understanding these concepts will help you build more effective AI workflows.
 
-## The Orchestrator
+## The Default Recipe
 
-The **`Orchestrator` class** is a central component that manages a **standard,
+The **`Default` recipe** is a high-level helper that manages a **standard,
 pre-defined AI workflow**. Think of it as a project manager for a specific team
 structure: a Review Agent, a Solution Agent, a Validator Agent, and optionally a
-Reflection Agent. It handles the flow of information between
-these fixed roles, manages retries based on their internal configuration, and
-aims to return the best `Candidate` solution from this standard process.
-For building custom workflows with different steps or logic, you would use the
-`Pipeline` DSL and `PipelineRunner`.
+Reflection Agent. It handles the flow of information between these fixed roles,
+manages retries based on their internal configuration, and returns the best
+`Candidate` from this standard process. For building custom workflows with
+different steps or logic, you would use the `Pipeline` DSL and the `Flujo`
+engine.
 
 ```python
-from flujo import (
-    Orchestrator, review_agent, solution_agent, validator_agent, reflection_agent
-)
+from flujo.recipes import Default
+from flujo import review_agent, solution_agent, validator_agent, reflection_agent
 
-# Assemble the orchestrator with default agents
-flujo = Orchestrator(
+# Assemble the default recipe with the built-in agents
+recipe = Default(
     review_agent=review_agent,
     solution_agent=solution_agent,
     validator_agent=validator_agent,
@@ -109,19 +108,19 @@ if result:  # result is a Candidate
 ## The Pipeline DSL
 
 The **Pipeline Domain-Specific Language (DSL)**, using `Step` objects and
-executed by `PipelineRunner`, is the primary way to create **flexible and custom
+executed by `Flujo`, is the primary way to create **flexible and custom
 multi-agent workflows**. This gives you full control over the sequence of
 operations, the agents used at each stage, and the integration of plugins.
 
-`PipelineRunner` can also maintain a shared, typed context object for each run.
+`Flujo` can also maintain a shared, typed context object for each run.
 Steps declare a `pipeline_context` parameter to access or modify this object. See
 [Typed Pipeline Context](pipeline_context.md) for full documentation.
 
-The built-in [**Orchestrator**](#the-orchestrator) uses this DSL under the hood. When you need different logic, you can use the same tools directly. The DSL also supports advanced constructs like [**LoopStep**](pipeline_looping.md) for iteration and [**ConditionalStep**](pipeline_branching.md) for branching workflows.
+The built-in [**Default recipe**](#the-default-recipe) uses this DSL under the hood. When you need different logic, you can use the same tools directly through the `Flujo` engine. The DSL also supports advanced constructs like [**LoopStep**](pipeline_looping.md) for iteration and [**ConditionalStep**](pipeline_branching.md) for branching workflows.
 
 ```python
 from flujo import (
-    Step, PipelineRunner, review_agent, solution_agent, validator_agent
+    Step, Flujo, review_agent, solution_agent, validator_agent
 )
 
 # Define a pipeline
@@ -132,7 +131,7 @@ pipeline = (
 )
 
 # Run it
-runner = PipelineRunner(pipeline)
+runner = Flujo(pipeline)
 pipeline_result = runner.run("Your prompt here")
 for step_res in pipeline_result.step_history:
     print(f"Step: {step_res.name}, Success: {step_res.success}")
