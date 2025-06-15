@@ -1,182 +1,219 @@
 # Contributing & Local Dev Guide
 
-Thanks for helping improve **pydantic-ai-orchestrator**! Follow the steps below to get a fully-featured development environment running on **Python 3.11+** in minutes.
+Thanks for helping improve **pydantic-ai-orchestrator**! This guide will help you set up a fully-featured development environment for Python 3.11+.
 
 ---
 
-## 1  Clone the repository
+## 1. Clone and Setup
 
 ```bash
+# Clone the repository
 git clone https://github.com/aandresalvarez/rloop.git
 cd rloop
-```
 
----
-
-## 2  Create / activate a Python 3.11 virtual-env
-
-> **Why?** Keeping deps isolated avoids system-level conflicts and matches CI.
-
-```bash
+# Create and activate a Python 3.11 virtual environment
 python3.11 -m venv .venv
 source .venv/bin/activate           # Windows: .venv\Scripts\activate
 python --version                    # should print 3.11.x
 ```
 
-*(If `python3.11` isn't on your PATH, install it with Homebrew, pyenv, or python.org.)*
+> **Note:** If `python3.11` isn't available, install it via:
+> - macOS: `brew install python@3.11`
+> - Linux: Use your distribution's package manager
+> - Windows: Download from python.org
+> - Or use pyenv: `pyenv install 3.11.x`
 
 ---
 
-## 3  Install dependencies in *editable* mode
+## 2. Development Environment Setup
 
 The project supports multiple package managers. Choose your preferred one:
 
-### Option A  Poetry (recommended)
-
+### Option A: Poetry (Recommended)
 ```bash
+# Install Poetry
 pip install --upgrade poetry
-make poetry-dev                     # installs runtime + dev + docs + bench extras
+
+# Install dependencies (includes runtime, dev, docs, and bench extras)
+make poetry-dev
 ```
 
-### Option B  UV (fastest)
-
+### Option B: UV (Fastest)
 ```bash
+# Install UV
 pip install --upgrade uv
-make uv-dev                         # fastest installation with uv
+
+# Install dependencies
+make uv-dev
 ```
 
-### Option C  Standard pip
-
+### Option C: Standard pip
 ```bash
-make pip-dev                        # standard pip installation
+# Install dependencies
+make pip-dev
 ```
 
-All options install the package in editable mode (`-e`), meaning any code change you make is picked up instantly without reinstalling.
-
-> **Note:** Run `make help` to see all available commands and their descriptions.
+> **Important Notes:**
+> - All options install the package in editable mode (`-e`)
+> - Code changes are picked up instantly without reinstalling
+> - `poetry.lock` is tracked in git for reproducible builds
+> - Run `make help` to see all available commands
 
 ---
 
-## 4  Configure environment variables
+## 3. Environment Configuration
 
 ```bash
+# Copy the example environment file
 cp .env.example .env
-# add your OpenAI / Cohere / Vertex, etc. keys to .env
+
+# Add your API keys to .env
+# - OpenAI
+# - Cohere
+# - Vertex AI
+# - Other providers as needed
 ```
 
-The orchestrator auto-loads this file via **python-dotenv**—no code changes needed.
+The orchestrator automatically loads this file via **python-dotenv**.
 
 ---
 
-## 5  Run the test suite
+## 4. Testing
 
-Choose your preferred test runner:
+The project includes comprehensive tests with different runners:
 
+### Full Test Suite
 ```bash
-# Poetry
-make poetry-test                    # full test suite with coverage
-make poetry-test-fast              # quick run without coverage
-make poetry-test-unit              # unit tests only
-make poetry-test-e2e              # end-to-end tests only
-make poetry-test-bench            # benchmark tests only
+# With Poetry
+make poetry-test                    # includes coverage report
+make poetry-test-fast              # without coverage
 
-# UV (fastest)
-make uv-test                       # full test suite with coverage
-make uv-test-fast                 # quick run without coverage
-# ... (same options as poetry)
+# With UV (fastest)
+make uv-test                       # includes coverage
+make uv-test-fast                 # without coverage
 
-# Standard pip (default)
-make test                         # full test suite with coverage
-make test-fast                    # quick run without coverage
-make test-unit                    # unit tests only
-make test-e2e                     # end-to-end tests only
-make test-bench                   # benchmark tests only
+# With pip (default)
+make test                         # includes coverage
+make test-fast                    # without coverage
 ```
 
-Async tests are handled automatically by **pytest-asyncio** (asyncio_mode = auto).
+### Specific Test Types
+```bash
+# Unit Tests
+make test-unit                    # or poetry-test-unit / uv-test-unit
+
+# End-to-End Tests
+make test-e2e                     # or poetry-test-e2e / uv-test-e2e
+
+# Benchmark Tests
+make test-bench                   # or poetry-test-bench / uv-test-bench
+```
+
+> **Note:** Async tests are handled automatically by **pytest-asyncio**
 
 ---
 
-## 6  Code Quality Checks
+## 5. Code Quality
 
-Run all quality checks at once:
-
+### All-in-One Quality Check
 ```bash
-make quality                      # runs lint, format-check, type-check, and security
+make quality                      # runs all quality checks
 ```
 
-Or run individual checks:
-
+### Individual Quality Checks
 ```bash
-# Linting and Formatting
-make lint                        # check code style with Ruff
-make format                      # format code automatically
-make format-check               # check formatting without changing files (for CI)
+# Code Style
+make lint                        # check with Ruff
+make format                      # format code
+make format-check               # check formatting (CI)
 
-# Type Checking
-make type-check                 # run static type checking with MyPy
+# Type Safety
+make type-check                 # static type checking with MyPy
 
 # Security
-make security                   # check for security vulnerabilities
+make security                   # vulnerability check with pip-audit
 ```
 
 ---
 
-## 7  Documentation
+## 6. Documentation
 
 ```bash
-make docs-serve                 # start local documentation server
-make docs-build                # build documentation
-```
+# Local Development
+make docs-serve                 # start docs server at http://127.0.0.1:8000
 
-Visit http://127.0.0.1:8000 to view the docs locally.
+# Build
+make docs-build                # generate static site
+```
 
 ---
 
-## 8  Release flow (maintainers)
+## 7. Package Management
 
-1. Bump `version` in **pyproject.toml**
-2. `git commit -am "release: vX.Y.Z"`
-3. `git tag vX.Y.Z && git push --tags`
-4. GitHub Actions (`release.yml`) will build wheels and publish to PyPI automatically
-
-To build the package locally:
-
+### Building
 ```bash
-make build                     # build package using Hatch
+# Build package
+make package                   # creates wheel and sdist in dist/
+
+# Clean build artifacts
+make clean-package            # removes build artifacts
 ```
 
----
-
-## 9  Cleanup
-
-When you need to clean up build artifacts or caches:
-
+### Publishing (Maintainers Only)
 ```bash
-make clean                     # remove all build artifacts and caches
-make clean-pyc                # remove Python cache files only
-make clean-build             # remove build/dist artifacts only
-make clean-test             # remove test artifacts only
-make clean-docs            # remove built documentation only
-make clean-cache          # remove tool caches (Ruff, MyPy) only
+# Test PyPI
+make publish-test             # builds and uploads to TestPyPI
+
+# PyPI
+make publish                  # builds and uploads to PyPI
+```
+
+> **Release Process:**
+> 1. Update version in `pyproject.toml`
+> 2. `git commit -am "release: vX.Y.Z"`
+> 3. `git tag vX.Y.Z && git push --tags`
+> 4. GitHub Actions will handle the release
+
+---
+
+## 8. Maintenance
+
+### Cleanup Commands
+```bash
+# Comprehensive cleanup
+make clean                     # removes all artifacts and caches
+
+# Selective cleanup
+make clean-pyc                # Python cache files
+make clean-build             # build/dist artifacts
+make clean-test             # test artifacts
+make clean-docs            # documentation
+make clean-cache          # tool caches (Ruff, MyPy)
+```
+
+### Cache Management
+```bash
+# Clear specific tool caches
+make clean-ruff             # Ruff cache
+make clean-mypy            # MyPy cache
+make clean-cache          # All tool caches
 ```
 
 ---
 
-### Troubleshooting tips
+## Troubleshooting
 
-| Issue                                                     | Fix                                                               |
-| --------------------------------------------------------- | ----------------------------------------------------------------- |
-| `ERROR: Package requires a different Python`              | Activate a 3.11+ interpreter (`python --version`).                |
-| `async def functions are not natively supported` in tests | Ensure `pytest-asyncio` is installed (included in `[dev]` extra). |
-| Permission errors in `~/Library/Caches/pypoetry`          | `sudo chown -R $USER ~/Library/Caches/pypoetry` and rerun Poetry. |
-| Make command not found                                    | Install make: `brew install make` (macOS) or `apt install make` (Ubuntu) |
-| Tool-specific errors                                      | Run `make clean-cache` to clear tool caches and try again         |
+| Issue | Solution |
+|-------|----------|
+| `ERROR: Package requires a different Python` | Ensure Python 3.11+ is active (`python --version`) |
+| Async test failures | Verify `pytest-asyncio` is installed (included in `[dev]`) |
+| Poetry cache permission errors | `sudo chown -R $USER ~/Library/Caches/pypoetry` |
+| Make not found | Install: `brew install make` (macOS) or `apt install make` (Ubuntu) |
+| Tool-specific errors | Run `make clean-cache` and retry |
 
-For more commands and options, run:
-
+For all available commands:
 ```bash
 make help
 ```
 
-Happy hacking! 🎉
+Happy coding! 🚀
