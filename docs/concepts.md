@@ -6,8 +6,8 @@ This guide explains the fundamental concepts that power `pydantic-ai-orchestrato
 
 The **`Orchestrator` class** is a central component that manages a **standard,
 pre-defined AI workflow**. Think of it as a project manager for a specific team
-structure: a Review Agent, a Solution Agent, and a Validator Agent (optionally
-followed by a Reflection Agent). It handles the flow of information between
+structure: a Review Agent, a Solution Agent, a Validator Agent, and optionally a
+Reflection Agent. It handles the flow of information between
 these fixed roles, manages retries based on their internal configuration, and
 aims to return the best `Candidate` solution from this standard process.
 For building custom workflows with different steps or logic, you would use the
@@ -15,7 +15,7 @@ For building custom workflows with different steps or logic, you would use the
 
 ```python
 from pydantic_ai_orchestrator import (
-    Orchestrator, review_agent, solution_agent, validator_agent
+    Orchestrator, review_agent, solution_agent, validator_agent, reflection_agent
 )
 
 # Assemble the orchestrator with default agents
@@ -23,6 +23,7 @@ orch = Orchestrator(
     review_agent=review_agent,
     solution_agent=solution_agent,
     validator_agent=validator_agent,
+    reflection_agent=reflection_agent,  # Optional but recommended
 )
 ```
 
@@ -36,7 +37,7 @@ orch = Orchestrator(
 
 ### Default Agents
 
-The library provides three default agents:
+The library provides four default agents:
 
 1. **Review Agent** (`review_agent`)
    - Role: Creates a quality checklist
@@ -52,6 +53,11 @@ The library provides three default agents:
    - Role: Evaluates the solution
    - Output: `Checklist` model
    - Purpose: Quality control
+
+4. **Reflection Agent** (`reflection_agent`)
+   - Role: Provides improvement suggestions and meta-analysis
+   - Output: String
+   - Purpose: Self-improvement and iteration guidance
 
 ### Creating Custom Agents
 
@@ -70,8 +76,7 @@ custom_agent = make_agent_async(
 A **Task** represents a single request to the orchestrator. It contains:
 
 - The prompt (what you want to achieve)
-- Optional metadata
-- Optional constraints
+- Optional metadata for additional context
 
 ```python
 from pydantic_ai_orchestrator import Task
@@ -87,17 +92,18 @@ task = Task(
 A **Candidate** is a potential solution produced by the orchestrator. It includes:
 
 - The solution itself
-- A quality checklist
-- Metadata about the generation process
+- A quality score (0.0 to 1.0)
+- A quality checklist evaluation
 
 ```python
 result = orch.run_sync(task)
 if result:  # result is a Candidate
     print(f"Solution: {result.solution}")
     print(f"Quality Score: {result.score}")
-    print("Checklist:")
-    for item in result.checklist.items:
-        print(f"- {item.description}: {'✅' if item.passed else '❌'}")
+    if result.checklist:
+        print("Checklist:")
+        for item in result.checklist.items:
+            print(f"- {item.description}: {'✅' if item.passed else '❌'}")
 ```
 
 ## The Pipeline DSL
@@ -110,6 +116,7 @@ operations, the agents used at each stage, and the integration of plugins.
 `PipelineRunner` can also maintain a shared, typed context object for each run.
 Steps declare a `pipeline_context` parameter to access or modify this object. See
 [Typed Pipeline Context](pipeline_context.md) for full documentation.
+
 The built-in [**Orchestrator**](#the-orchestrator) uses this DSL under the hood. When you need different logic, you can use the same tools directly. The DSL also supports advanced constructs like [**LoopStep**](pipeline_looping.md) for iteration and [**ConditionalStep**](pipeline_branching.md) for branching workflows.
 
 ```python
@@ -128,7 +135,7 @@ pipeline = (
 runner = PipelineRunner(pipeline)
 pipeline_result = runner.run("Your prompt here")
 for step_res in pipeline_result.step_history:
-    print(step_res.name, step_res.success)
+    print(f"Step: {step_res.name}, Success: {step_res.success}")
 ```
 
 ### Step Types
@@ -143,23 +150,58 @@ for step_res in pipeline_result.step_history:
 
 3. **Validation Steps**
    - Verify the solution
-   - Apply custom validation rules
+   - Apply custom validation rules using plugins
+
+4. **Custom Steps**
+   - Any agent can be used in a step
+   - Flexible configuration and tool integration
+
+### Advanced Pipeline Constructs
+
+#### Loop Steps
+
+For iterative refinement:
+
+```python
+from pydantic_ai_orchestrator import Step, Pipeline
+
+loop_step = Step.loop_until(
+    name="refinement_loop",
+    loop_body_pipeline=Pipeline.from_step(Step.solution(solution_agent)),
+    exit_condition_callable=lambda output, context: "done" in output.lower(),
+)
+```
+
+#### Conditional Steps
+
+For branching logic:
+
+```python
+router_step = Step.branch_on(
+    name="content_router",
+    condition_callable=lambda output, context: "code" if "function" in output else "text",
+    branches={
+        "code": Pipeline.from_step(Step.solution(code_agent)),
+        "text": Pipeline.from_step(Step.solution(text_agent)),
+    },
+)
+```
 
 ## Scoring
 
-The orchestrator uses scoring to evaluate and select the best solution. Scoring can be:
+The orchestrator uses scoring to evaluate and select the best solution. Scoring strategies include:
 
-- **Ratio-based**: Simple pass/fail ratio
+- **Ratio-based**: Simple pass/fail ratio from checklist items
 - **Weighted**: Different criteria have different importance
 - **Model-based**: Using an AI model to evaluate quality
 
 ```python
-from pydantic_ai_orchestrator import ratio_score, weighted_score
+from pydantic_ai_orchestrator.domain.scoring import ratio_score, weighted_score
 
-# Simple ratio scoring
+# Simple ratio scoring (default)
 score = ratio_score(checklist)
 
-# Weighted scoring
+# Weighted scoring with custom weights
 weights = {
     "correctness": 0.5,
     "readability": 0.3,
@@ -197,6 +239,53 @@ agent = make_agent_async(
 )
 ```
 
+## Plugins
+
+Plugins extend pipeline functionality, particularly for validation:
+
+```python
+from pydantic_ai_orchestrator import ValidationPlugin, PluginOutcome
+from pydantic_ai_orchestrator.plugins import SQLSyntaxValidator
+
+# Use built-in SQL validator
+sql_validator = SQLSyntaxValidator()
+
+# Create custom plugin
+class CustomValidator(ValidationPlugin):
+    def validate(self, output: Any, context: Any) -> PluginOutcome:
+        if self.is_valid(output):
+            return PluginOutcome(passed=True)
+        return PluginOutcome(passed=False, feedback="Validation failed")
+
+# Use in pipeline
+pipeline = Step.validate(validator_agent, plugins=[sql_validator, CustomValidator()])
+```
+
+## Self-Improvement & Evaluation
+
+The library includes intelligent evaluation capabilities:
+
+```python
+from pydantic_ai_orchestrator import evaluate_and_improve, SelfImprovementAgent
+from pydantic_ai_orchestrator.infra.agents import make_self_improvement_agent
+
+# Create improvement agent
+improvement_agent = SelfImprovementAgent(make_self_improvement_agent())
+
+# Generate improvement suggestions
+report = await evaluate_and_improve(
+    task_fn=your_task_function,
+    dataset=your_evaluation_dataset,
+    agent=improvement_agent,
+    pipeline_definition=your_pipeline
+)
+
+# Review suggestions
+for suggestion in report.suggestions:
+    print(f"Issue: {suggestion.failure_pattern_summary}")
+    print(f"Fix: {suggestion.detailed_explanation}")
+```
+
 ## Telemetry
 
 The orchestrator includes built-in telemetry for:
@@ -212,10 +301,27 @@ from pydantic_ai_orchestrator import init_telemetry
 # Initialize telemetry
 init_telemetry()
 
-# Enable OTLP export
-import os
-os.environ["OTLP_EXPORT_ENABLED"] = "true"
-os.environ["OTLP_ENDPOINT"] = "https://your-otlp-endpoint"
+# Configure via environment variables:
+# TELEMETRY_EXPORT_ENABLED=true
+# OTLP_EXPORT_ENABLED=true
+# OTLP_ENDPOINT=https://your-otlp-endpoint
+```
+
+## Configuration
+
+Settings can be controlled via environment variables or the settings object:
+
+```python
+from pydantic_ai_orchestrator import settings
+
+# Access current settings
+print(f"Default solution model: {settings.default_solution_model}")
+print(f"Reflection enabled: {settings.reflection_enabled}")
+
+# Environment variables (in .env file):
+# ORCH_DEFAULT_SOLUTION_MODEL=openai:gpt-4o
+# REFLECTION_ENABLED=true
+# AGENT_TIMEOUT=60
 ```
 
 ## Best Practices
@@ -223,12 +329,12 @@ os.environ["OTLP_ENDPOINT"] = "https://your-otlp-endpoint"
 1. **Agent Design**
    - Give clear, specific system prompts
    - Use appropriate output types
-   - Include relevant tools
+   - Include relevant tools when needed
 
 2. **Pipeline Design**
    - Start simple, add complexity as needed
    - Use validation steps for quality control
-   - Consider cost and performance
+   - Consider cost and performance implications
 
 3. **Error Handling**
    - Implement proper retry logic
@@ -240,9 +346,14 @@ os.environ["OTLP_ENDPOINT"] = "https://your-otlp-endpoint"
    - Implement caching where possible
    - Monitor and optimize costs
 
+5. **Quality Control**
+   - Use reflection agents for self-improvement
+   - Implement custom validation plugins
+   - Monitor quality metrics over time
+
 ## Next Steps
 
 - Try the [Tutorial](tutorial.md) for hands-on examples
 - Explore [Use Cases](use_cases.md) for inspiration
-- Read the [API Reference](usage.md) for details
-- Learn about [Custom Agents](extending.md) 
+- Read the [API Reference](api_reference.md) for details
+- Learn about [Custom Components](extending.md) 

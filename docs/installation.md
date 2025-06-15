@@ -21,17 +21,20 @@ pip install pydantic-ai-orchestrator
 The package includes several optional extras that provide additional functionality:
 
 ```bash
-# For development (includes testing tools)
+# For development (includes testing tools, linting, etc.)
 pip install "pydantic-ai-orchestrator[dev]"
 
-# For benchmarking
+# For benchmarking (includes numpy for statistical analysis)
 pip install "pydantic-ai-orchestrator[bench]"
 
-# For documentation
+# For documentation building
 pip install "pydantic-ai-orchestrator[docs]"
 
+# For OpenTelemetry support
+pip install "pydantic-ai-orchestrator[opentelemetry]"
+
 # Install all extras
-pip install "pydantic-ai-orchestrator[all]"
+pip install "pydantic-ai-orchestrator[dev,docs,opentelemetry,bench]"
 ```
 
 ## Development Installation
@@ -47,8 +50,8 @@ cd rloop
 python3.11 -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
-# Install in editable mode with all extras
-pip install -e ".[all]"
+# Install in editable mode with development extras
+pip install -e ".[dev]"
 ```
 
 ## Environment Setup
@@ -60,18 +63,51 @@ pip install -e ".[all]"
 
 2. Add your API keys to `.env`:
    ```env
+   # Required: At least one provider key
    OPENAI_API_KEY=your_key_here
    ANTHROPIC_API_KEY=your_key_here
    GOOGLE_API_KEY=your_key_here
+   
+   # Optional: Logfire for advanced telemetry
+   # LOGFIRE_API_KEY=your_logfire_key
+   
+   # Optional: Configuration overrides
+   REFLECTION_ENABLED=true
+   REWARD_ENABLED=false
+   AGENT_TIMEOUT=60
+   TELEMETRY_EXPORT_ENABLED=false
+   
+   # Optional: Model overrides
+   ORCH_DEFAULT_SOLUTION_MODEL=openai:gpt-4o
+   ORCH_DEFAULT_REVIEW_MODEL=openai:gpt-4o
+   ORCH_DEFAULT_VALIDATOR_MODEL=openai:gpt-4o
+   ORCH_DEFAULT_REFLECTION_MODEL=openai:gpt-4o
    ```
 
 ## Verifying Installation
 
 To verify your installation:
 
+```bash
+# Check version
+orch version-cmd
+
+# Test basic functionality
+orch solve "Write a hello world function in Python"
+
+# Show current configuration
+orch show-config
+```
+
+You can also verify programmatically:
+
 ```python
-from pydantic_ai_orchestrator import Orchestrator
-print(Orchestrator.__version__)  # Should print the installed version
+import pydantic_ai_orchestrator
+print(f"Version: {pydantic_ai_orchestrator.__version__}")
+
+# Test basic import
+from pydantic_ai_orchestrator import Orchestrator, Task
+print("✅ Installation successful!")
 ```
 
 ## Troubleshooting
@@ -84,10 +120,20 @@ print(Orchestrator.__version__)  # Should print the installed version
 
 2. **Missing Dependencies**
    - Try reinstalling with: `pip install --upgrade pydantic-ai-orchestrator`
+   - For development: `pip install -e ".[dev]"`
 
 3. **API Key Issues**
    - Verify your `.env` file exists and contains valid API keys
    - Check that the keys are properly formatted
+   - Ensure at least one provider key (OpenAI, Anthropic, or Google) is set
+
+4. **Import Errors**
+   - Make sure you're in the correct virtual environment
+   - Try: `pip list | grep pydantic-ai-orchestrator`
+
+5. **Permission Errors**
+   - On Unix systems, you might need: `pip install --user pydantic-ai-orchestrator`
+   - Or use a virtual environment (recommended)
 
 ### Getting Help
 

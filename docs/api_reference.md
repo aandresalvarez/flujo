@@ -7,7 +7,7 @@ This guide provides detailed documentation for all public interfaces in `pydanti
 ### Orchestrator
 
 The `Orchestrator` class is a high-level facade for running a **standard, fixed
-multi-agent pipeline**: Review -> Solution -> Validate. It uses the agents you
+multi-agent pipeline**: Review -> Solution -> Validate -> Reflection. It uses the agents you
 provide for these roles. For custom pipelines with different logic, see
 `PipelineRunner` and the `Step` DSL.
 
@@ -15,10 +15,10 @@ provide for these roles. For custom pipelines with different logic, see
 from pydantic_ai_orchestrator import Orchestrator
 
 orchestrator = Orchestrator(
-    review_agent: AsyncAgentProtocol[Any, Any],
-    solution_agent: AsyncAgentProtocol[Any, Any],
-    validator_agent: AsyncAgentProtocol[Any, Any],
-    reflection_agent: Optional[AsyncAgentProtocol[Any, Any]] = None,
+    review_agent: AsyncAgentProtocol[Any, Checklist],
+    solution_agent: AsyncAgentProtocol[Any, str],
+    validator_agent: AsyncAgentProtocol[Any, Checklist],
+    reflection_agent: Optional[AsyncAgentProtocol[Any, str]] = None,
     max_iters: Optional[int] = None,
     k_variants: Optional[int] = None,
     reflection_limit: Optional[int] = None,
@@ -59,7 +59,7 @@ custom_pipeline = (
     )
     >> Step.validate(              # Validation step
         validator_agent,
-        criteria=["quality", "correctness"]
+        plugins=[plugin1]          # Optional validation plugins
     )
 )
 
@@ -70,22 +70,23 @@ runner_with_ctx = PipelineRunner(
     context_model=MyContext,
     initial_context_data={"counter": 0},
 )
-# Looping allows iterative execution of a sub-pipeline
+
+# Advanced constructs
 looping_step = Step.loop_until(
-    name="loop",
+    name="refinement_loop",
     loop_body_pipeline=Pipeline.from_step(Step.solution(solution_agent)),
-    exit_condition_callable=lambda out, ctx: "done" in out,
+    exit_condition_callable=lambda out, ctx: "done" in out.lower(),
 )
+
 # Conditional branching
 router = Step.branch_on(
     name="router",
-    condition_callable=lambda out, ctx: out,
+    condition_callable=lambda out, ctx: "code" if "function" in out else "text",
     branches={
-        "a": Pipeline.from_step(Step("a", solution_agent)),
-        "b": Pipeline.from_step(Step("b", validator_agent)),
+        "code": Pipeline.from_step(Step.solution(solution_agent)),
+        "text": Pipeline.from_step(Step.validate(validator_agent)),
     },
 )
-# See `pipeline_context.md` for details on using shared context.
 ```
 
 #### Methods
@@ -96,124 +97,63 @@ pipeline_result = runner.run(
     "Your initial prompt"  # Input for the first step
 )  # Returns PipelineResult
 
+# Access step results
 for step_res in pipeline_result.step_history:
-    print(step_res.name, step_res.success)
+    print(f"Step: {step_res.name}, Success: {step_res.success}")
 
-# Inspect pipeline structure
-structure = custom_pipeline.structure()
+# Get total cost
+total_cost = pipeline_result.total_cost_usd
 
-# Access runner config
-config = runner.get_config()
-
-# Access final pipeline context
+# Access final pipeline context (if using typed context)
 final_ctx = pipeline_result.final_pipeline_context
 ```
 
 ### Agents
 
-Agent creation and configuration.
+Agent creation and configuration utilities.
 
 ```python
 from pydantic_ai_orchestrator import make_agent_async
 
-# Create an agent
+# Create a custom agent
 agent = make_agent_async(
-    model: str,                    # Model identifier
+    model: str,                    # Model identifier (e.g., "openai:gpt-4")
     system_prompt: str,            # System prompt
-    output_type: type,             # Output type
-    tools: list[Tool] = None,      # Optional tools
-    temperature: float = 0.7,      # Model temperature
-    max_tokens: int = 1000,        # Max tokens per response
-    timeout: int = 30              # Operation timeout
+    output_type: type,             # Output type (str, Pydantic model, etc.)
+    tools: Optional[List[Tool]] = None,  # Optional tools
+)
+
+# Pre-built agents
+from pydantic_ai_orchestrator import (
+    review_agent,
+    solution_agent,
+    validator_agent,
+    reflection_agent,
+    get_reflection_agent,
 )
 ```
 
-#### Methods
+#### Default Agents
 
-```python
-# Run the agent
-result = await agent.run(
-    prompt: str,                   # Task prompt
-    metadata: dict = None,         # Optional metadata
-    constraints: dict = None       # Optional constraints
-) -> Any
-
-# Get agent configuration
-config = agent.get_config() -> dict
-
-# Update configuration
-agent.update_config(
-    temperature: float = None,
-    max_tokens: int = None,
-    timeout: int = None
-) -> None
-```
-
-### Tools
-
-Tool creation and configuration.
-
-```python
-from pydantic_ai import Tool, ToolConfig
-
-# Create a tool
-tool = Tool(
-    function: Callable,            # Tool function
-    timeout: int = 10,             # Tool timeout
-    retries: int = 2,              # Number of retries
-    backoff_factor: float = 1.5,   # Backoff between retries
-    rate_limit: int = None,        # Calls per minute
-    cache_ttl: int = None,         # Cache TTL in seconds
-    validate_input: bool = True,   # Validate input types
-    validate_output: bool = True,  # Validate output type
-    debug: bool = False            # Enable debugging
-)
-
-# Or with advanced configuration
-config = ToolConfig(
-    timeout=10,
-    retries=2,
-    backoff_factor=1.5,
-    rate_limit=100,
-    cache_ttl=300,
-    validate_input=True,
-    validate_output=True
-)
-tool = Tool(function, config=config)
-```
-
-#### Methods
-
-```python
-# Run the tool
-result = tool.run(
-    *args,                         # Positional arguments
-    **kwargs                       # Keyword arguments
-) -> Any
-
-# Run asynchronously
-result = await tool.run_async(
-    *args,                         # Positional arguments
-    **kwargs                       # Keyword arguments
-) -> Any
-
-# Get tool configuration
-config = tool.get_config() -> ToolConfig
-
-# Update configuration
-tool.update_config(
-    timeout: int = None,
-    retries: int = None,
-    backoff_factor: float = None,
-    rate_limit: int = None,
-    cache_ttl: int = None,
-    validate_input: bool = None,
-    validate_output: bool = None,
-    debug: bool = None
-) -> None
-```
+- **`review_agent`**: Creates quality checklists (outputs `Checklist`)
+- **`solution_agent`**: Generates solutions (outputs `str`)
+- **`validator_agent`**: Validates solutions (outputs `Checklist`)
+- **`reflection_agent`**: Provides reflection and improvement suggestions (outputs `str`)
 
 ## Data Models
+
+### Task
+
+Represents a task to be solved by the orchestrator.
+
+```python
+from pydantic_ai_orchestrator import Task
+
+task = Task(
+    prompt: str,                   # The task prompt
+    metadata: Dict[str, Any] = {}  # Optional metadata
+)
+```
 
 ### Candidate
 
@@ -223,202 +163,233 @@ Represents a solution produced by the orchestrator.
 from pydantic_ai_orchestrator import Candidate
 
 candidate = Candidate(
-    solution: Any,                 # The solution
-    quality_checklist: dict,       # Quality assessment
-    metadata: dict,                # Additional metadata
-    score: float,                  # Quality score
-    model: str,                    # Model used
-    tokens: int,                   # Tokens used
-    duration: float                # Duration in seconds
+    solution: str,                 # The solution
+    score: float,                  # Quality score (0.0 to 1.0)
+    checklist: Optional[Checklist] = None,  # Quality assessment
 )
 ```
 
-#### Methods
+### Checklist & ChecklistItem
+
+Quality evaluation structures.
 
 ```python
-# Get candidate as dict
-data = candidate.dict() -> dict
+from pydantic_ai_orchestrator import Checklist, ChecklistItem
 
-# Get candidate as JSON
-json = candidate.json() -> str
+item = ChecklistItem(
+    description: str,              # What is being checked
+    passed: Optional[bool] = None, # Whether it passed
+    feedback: Optional[str] = None # Feedback if failed
+)
 
-# Get quality score
-score = candidate.get_score() -> float
-
-# Get quality checklist
-checklist = candidate.get_checklist() -> dict
-```
-
-### Task
-
-Represents a task to be processed by the orchestrator.
-
-```python
-from pydantic_ai_orchestrator import Task
-
-task = Task(
-    prompt: str,                   # Task prompt
-    metadata: dict = None,         # Optional metadata
-    constraints: dict = None       # Optional constraints
+checklist = Checklist(
+    items: List[ChecklistItem]     # List of checklist items
 )
 ```
 
-#### Methods
+### Pipeline Results
+
+Results from pipeline execution.
 
 ```python
-# Get task as dict
-data = task.dict() -> dict
+from pydantic_ai_orchestrator import PipelineResult, StepResult
 
-# Get task as JSON
-json = task.json() -> str
+step_result = StepResult(
+    name: str,                     # Step name
+    output: Any = None,            # Step output
+    success: bool = True,          # Whether step succeeded
+    attempts: int = 0,             # Number of attempts
+    latency_s: float = 0.0,        # Execution time
+    token_counts: int = 0,         # Token usage
+    cost_usd: float = 0.0,         # Cost in USD
+    feedback: Optional[str] = None, # Error feedback
+    metadata_: Optional[Dict[str, Any]] = None,  # Additional metadata
+)
 
-# Get task constraints
-constraints = task.get_constraints() -> dict
+pipeline_result = PipelineResult(
+    step_history: List[StepResult] = [],  # All step results
+    total_cost_usd: float = 0.0,          # Total cost
+    final_pipeline_context: Optional[BaseModel] = None,  # Final context
+)
 ```
 
-## Telemetry
+## Self-Improvement & Evaluation
 
-### Initialization
+### Evaluation Functions
+
+```python
+from pydantic_ai_orchestrator import run_pipeline_async, evaluate_and_improve
+
+# Run pipeline evaluation
+result = await run_pipeline_async(
+    inputs: str,                   # Input prompt
+    runner: PipelineRunner,        # Pipeline runner
+    **kwargs                       # Additional arguments
+)
+
+# Generate improvement suggestions
+report = await evaluate_and_improve(
+    task_fn: Callable,             # Task function
+    dataset: Any,                  # Evaluation dataset
+    agent: SelfImprovementAgent,   # Improvement agent
+    pipeline_definition: Optional[Pipeline] = None,  # Pipeline definition
+)
+```
+
+### Improvement Models
+
+```python
+from pydantic_ai_orchestrator import (
+    SelfImprovementAgent,
+    ImprovementReport,
+    ImprovementSuggestion,
+)
+
+# Create improvement agent
+improvement_agent = SelfImprovementAgent(
+    agent: AsyncAgentProtocol[Any, str]  # Underlying agent
+)
+
+# Improvement suggestion structure
+suggestion = ImprovementSuggestion(
+    target_step_name: Optional[str],     # Target step
+    suggestion_type: SuggestionType,     # Type of suggestion
+    failure_pattern_summary: str,        # What failed
+    detailed_explanation: str,           # Detailed explanation
+    estimated_impact: Optional[str],     # Impact estimate
+    estimated_effort_to_implement: Optional[str],  # Effort estimate
+)
+
+# Improvement report
+report = ImprovementReport(
+    suggestions: List[ImprovementSuggestion]  # All suggestions
+)
+```
+
+## Configuration & Settings
+
+### Settings
+
+```python
+from pydantic_ai_orchestrator import settings
+
+# Access current settings
+current_settings = settings
+
+# Key settings properties:
+# - default_solution_model: str
+# - default_review_model: str  
+# - default_validator_model: str
+# - default_reflection_model: str
+# - reflection_enabled: bool
+# - scorer: str
+# - agent_timeout: int
+# - telemetry_export_enabled: bool
+```
+
+### Telemetry
 
 ```python
 from pydantic_ai_orchestrator import init_telemetry
 
-init_telemetry(
-    enable_export: bool = True,    # Enable metric export
-    export_endpoint: str = None,   # Export endpoint
-    service_name: str = "orchestrator",  # Service name
-    environment: str = "development"      # Environment
+# Initialize telemetry
+init_telemetry()
+
+# Telemetry is automatically enabled for all operations
+# Use environment variables to configure:
+# - TELEMETRY_EXPORT_ENABLED=true
+# - OTLP_EXPORT_ENABLED=true
+# - OTLP_ENDPOINT=https://your-endpoint
+```
+
+## Plugins & Extensions
+
+### Validation Plugins
+
+```python
+from pydantic_ai_orchestrator import ValidationPlugin, PluginOutcome
+from pydantic_ai_orchestrator.plugins import SQLSyntaxValidator
+
+# Use built-in SQL validator
+sql_validator = SQLSyntaxValidator()
+
+# Create custom validation plugin
+class MyPlugin(ValidationPlugin):
+    def validate(self, output: Any, context: Any) -> PluginOutcome:
+        # Custom validation logic
+        if self.is_valid(output):
+            return PluginOutcome(passed=True)
+        return PluginOutcome(passed=False, feedback="Validation failed")
+```
+
+### Testing Utilities
+
+```python
+from pydantic_ai_orchestrator.testing import StubAgent, DummyPlugin
+
+# Create stub agent for testing
+stub_agent = StubAgent(
+    return_value="test response",
+    output_type=str
 )
+
+# Create dummy plugin for testing
+dummy_plugin = DummyPlugin(should_pass=True)
 ```
 
-### Metrics
-
-```python
-from pydantic_ai_orchestrator import get_metrics
-
-# Get all metrics
-metrics = get_metrics() -> dict
-
-# Get specific metric
-value = get_metrics("task_duration") -> float
-```
-
-### Tracing
-
-```python
-from pydantic_ai_orchestrator import enable_tracing, get_traces
-
-# Enable tracing
-with enable_tracing():
-    result = orchestrator.run("prompt")
-
-# Get traces
-traces = get_traces() -> list[dict]
-```
-
-## Utilities
-
-### Model Management
-
-```python
-from pydantic_ai_orchestrator import list_available_models
-
-# List available models
-models = list_available_models() -> list[str]
-
-# Check model availability
-is_available = is_model_available("openai:gpt-4") -> bool
-```
-
-### Error Handling
-
-```python
-from pydantic_ai_orchestrator import get_error_details
-
-# Get detailed error info
-details = get_error_details(error) -> dict
-```
-
-### Profiling
-
-```python
-from pydantic_ai_orchestrator import enable_profiling
-
-# Enable profiling
-with enable_profiling():
-    result = orchestrator.run("prompt")
-```
-
-## Constants
-
-### Model Identifiers
+## Exceptions
 
 ```python
 from pydantic_ai_orchestrator import (
-    OPENAI_MODELS,
-    ANTHROPIC_MODELS,
-    GOOGLE_MODELS
+    OrchestratorError,
+    ConfigurationError,
+    SettingsError,
 )
 
-# Available models
-print(OPENAI_MODELS)    # ["gpt-4", "gpt-3.5-turbo", ...]
-print(ANTHROPIC_MODELS) # ["claude-3-opus", "claude-3-sonnet", ...]
-print(GOOGLE_MODELS)    # ["gemini-pro", ...]
+# Base exception for all orchestrator errors
+try:
+    result = orchestrator.run_sync(task)
+except OrchestratorError as e:
+    print(f"Orchestrator error: {e}")
+
+# Configuration-specific errors
+except ConfigurationError as e:
+    print(f"Configuration error: {e}")
+
+# Settings-specific errors  
+except SettingsError as e:
+    print(f"Settings error: {e}")
 ```
 
-### Configuration
+## Command Line Interface
 
-```python
-from pydantic_ai_orchestrator import (
-    DEFAULT_TIMEOUT,
-    DEFAULT_MAX_TOKENS,
-    DEFAULT_TEMPERATURE,
-    DEFAULT_RETRIES
-)
+The package provides a comprehensive CLI:
 
-# Default values
-print(DEFAULT_TIMEOUT)      # 30
-print(DEFAULT_MAX_TOKENS)   # 1000
-print(DEFAULT_TEMPERATURE)  # 0.7
-print(DEFAULT_RETRIES)      # 2
+```bash
+# Main commands
+orch solve "prompt"              # Solve a task
+orch bench "prompt" --rounds 5   # Benchmark performance
+orch show-config                 # Show configuration
+orch version-cmd                 # Show version
+
+# Advanced commands
+orch improve pipeline.py dataset.py     # Generate improvements
+orch explain pipeline.py                # Explain pipeline structure
+orch add-eval-case --dataset dataset.py # Add evaluation case
 ```
 
-## Type Definitions
+## Best Practices
 
-### Common Types
-
-```python
-from typing import (
-    Any,                # Any type
-    Dict,              # Dictionary type
-    List,              # List type
-    Optional,          # Optional type
-    Union,             # Union type
-    Callable           # Callable type
-)
-
-# Common type aliases
-ModelIdentifier = str
-QualityScore = float
-TokenCount = int
-Duration = float
-```
-
-### Custom Types
-
-```python
-from pydantic_ai_orchestrator import (
-    Candidate,         # Solution candidate
-    Task,             # Task definition
-    Tool,             # Tool definition
-    ToolConfig,       # Tool configuration
-    Orchestrator,     # Main orchestrator
-    PipelineRunner    # Pipeline runner
-)
-```
+1. **Always use async contexts** when possible for better performance
+2. **Implement proper error handling** using the provided exception types
+3. **Use typed pipeline contexts** for complex workflows
+4. **Enable telemetry** for production deployments
+5. **Implement custom validation plugins** for domain-specific requirements
+6. **Use the CLI** for quick testing and benchmarking
 
 ## Next Steps
 
-- Read the [Usage Guide](usage.md)
-- Check [Advanced Topics](extending.md)
-- Explore [Use Cases](use_cases.md) 
+- Explore [Pipeline DSL Guide](pipeline_dsl.md) for advanced workflows
+- Read [Intelligent Evals](intelligent_evals.md) for evaluation strategies
+- Check [Telemetry Guide](telemetry.md) for monitoring setup
+- Review [Extending Guide](extending.md) for custom components 

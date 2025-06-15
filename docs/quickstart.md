@@ -31,18 +31,19 @@ Create a new file `hello_orchestrator.py`:
 ```python
 from pydantic_ai_orchestrator import (
     Orchestrator, Task,
-    review_agent, solution_agent, validator_agent,
+    review_agent, solution_agent, validator_agent, reflection_agent,
     init_telemetry,
 )
 
 init_telemetry()
 
 # Assemble the orchestrator with the default agents. It runs a fixed
-# Review -> Solution -> Validate workflow.
+# Review -> Solution -> Validate -> Reflection workflow.
 orch = Orchestrator(
     review_agent=review_agent,
     solution_agent=solution_agent,
     validator_agent=validator_agent,
+    reflection_agent=reflection_agent,
 )
 
 task = Task(prompt="Write a haiku about programming")
@@ -82,7 +83,19 @@ orch solve "Write a function to calculate fibonacci numbers"
 orch show-config
 
 # Run a quick benchmark
-orch bench --prompt "Write a hello world program" --rounds 3
+orch bench "Write a hello world program" --rounds 3
+
+# Check version
+orch version-cmd
+
+# Explain a pipeline structure
+orch explain path/to/pipeline.py
+
+# Generate improvement suggestions
+orch improve path/to/pipeline.py path/to/dataset.py
+
+# Add evaluation case (interactive)
+orch add-eval-case --dataset path/to/dataset.py
 ```
 
 ## 6. Next Steps
@@ -91,7 +104,7 @@ Now that you've got the basics working, you can:
 
 1. Read the [Tutorial](tutorial.md) for a deeper dive
 2. Explore [Use Cases](use_cases.md) for inspiration
-3. Check out the [API Reference](usage.md) for more features
+3. Check out the [API Reference](api_reference.md) for more features
 4. Learn about [Custom Agents](extending.md) to build your own workflows
 
 ## Common Patterns
@@ -109,7 +122,12 @@ custom_agent = make_agent_async(
 )
 
 # Use it in your orchestrator
-orch = Orchestrator(custom_agent, solution_agent, validator_agent)
+orch = Orchestrator(
+    review_agent=custom_agent, 
+    solution_agent=solution_agent, 
+    validator_agent=validator_agent,
+    reflection_agent=reflection_agent
+)
 ```
 
 ### Structured Output
