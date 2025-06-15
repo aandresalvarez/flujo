@@ -76,4 +76,4 @@ result = runner.run("hi")
 print(result.final_pipeline_context.counter)
 ```
 
-For a complete example, see the [Typed Pipeline Context section](pipeline_dsl.md#typed-pipeline-context) of the Pipeline DSL guide. A runnable demonstration is available in [examples/06_typed_context.py](../examples/06_typed_context.py).
+For a complete example, see the [Typed Pipeline Context section](pipeline_dsl.md#typed-pipeline-context) of the Pipeline DSL guide. A runnable demonstration is available in [this script on GitHub](https://github.com/aandresalvarez/rloop/blob/main/examples/06_typed_context.py).
