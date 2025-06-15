@@ -1,3 +1,7 @@
+<div align="center">
+  <img src="assets/flujo.png" alt="Flujo Logo" width="180"/>
+</div>
+
 # Flujo
 
 A powerful Python library for orchestrating AI workflows using Pydantic models.
