@@ -18,7 +18,7 @@ from flujo.infra.agents import (
     VALIDATE_SYS,
     get_reflection_agent,
 )
-from flujo.application.orchestrator import Orchestrator
+from flujo.recipes import Default
 from flujo.application.eval_adapter import run_pipeline_async
 from flujo.application.self_improvement import (
     evaluate_and_improve,
@@ -26,7 +26,7 @@ from flujo.application.self_improvement import (
     ImprovementReport,
 )
 from flujo.domain.models import ImprovementSuggestion
-from flujo.application.pipeline_runner import PipelineRunner
+from flujo.application.flujo_engine import Flujo
 from flujo.infra.settings import settings
 from flujo.exceptions import ConfigurationError, SettingsError
 from flujo.infra.telemetry import init_telemetry, logfire
@@ -160,7 +160,7 @@ def solve(
             AsyncAgentProtocol[Any, str], get_reflection_agent(ref_model)
         )
 
-        orch: Orchestrator = Orchestrator(
+        orch: Default = Default(
             review,
             solution,
             validator,
@@ -240,7 +240,7 @@ def bench(prompt: str, rounds: int = 10) -> None:
         validator_agent = make_agent_async(
             settings.default_validator_model, VALIDATE_SYS, Checklist
         )
-        orch: Orchestrator = Orchestrator(
+        orch: Default = Default(
             review_agent, solution_agent, validator_agent, get_reflection_agent()
         )
         times: List[float] = []
@@ -385,7 +385,7 @@ def improve(
         typer.echo("[red]Invalid pipeline or dataset file", err=True)
         raise typer.Exit(1)
 
-    runner: PipelineRunner = PipelineRunner(pipeline)
+    runner: Flujo = Flujo(pipeline)
     task_fn = functools.partial(run_pipeline_async, runner=runner)
     _agent = make_self_improvement_agent(model=improvement_agent_model)
     agent: SelfImprovementAgent = SelfImprovementAgent(_agent)

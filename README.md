@@ -8,7 +8,7 @@ provides utilities to manage multi-agent pipelines with minimal setup.
 ## Features
 
 - 📦 **Pydantic Native** – agents, tools, and pipeline context are all defined with Pydantic models for reliable type safety.
-- 🔁 **Opinionated & Flexible** – the `Orchestrator` gives you a ready‑made workflow while the DSL lets you build any pipeline.
+- 🔁 **Opinionated & Flexible** – the `Default` recipe gives you a ready‑made workflow while the DSL lets you build any pipeline.
 - 🏗️ **Production Ready** – retries, telemetry, and quality controls help you ship reliable systems.
 - 🧠 **Intelligent Evals** – automated scoring and self‑improvement powered by LLMs.
 
@@ -23,8 +23,9 @@ pip install flujo
 ### Basic Usage
 
 ```python
+from flujo.recipes import Default
 from flujo import (
-    Orchestrator, Task,
+    Task,
     review_agent, solution_agent, validator_agent,
     init_telemetry,
 )
@@ -34,7 +35,7 @@ init_telemetry()
 
 # Assemble an orchestrator with the library-provided agents. The class
 # runs a fixed pipeline: Review -> Solution -> Validate.
-flujo = Orchestrator(
+flujo = Default(
     review_agent=review_agent,
     solution_agent=solution_agent,
     validator_agent=validator_agent,
@@ -62,21 +63,21 @@ else:
 
 ```python
 from flujo import (
-    Step, PipelineRunner, Task,
+    Step, Flujo, Task,
     review_agent, solution_agent, validator_agent,
 )
 
 # Build a custom pipeline using the Step DSL. This mirrors the internal
-# workflow used by :class:`Orchestrator` but is fully configurable.
+# workflow used by :class:`Default` but is fully configurable.
 custom_pipeline = (
     Step.review(review_agent)
     >> Step.solution(solution_agent)
     >> Step.validate(validator_agent)
 )
 
-pipeline_runner = PipelineRunner(custom_pipeline)
+pipeline_runner = Flujo(custom_pipeline)
 
-# Run synchronously; PipelineRunner returns a PipelineResult.
+# Run synchronously; Flujo returns a PipelineResult.
 pipeline_result = pipeline_runner.run(
     "Generate a REST API using FastAPI for a to-do list application."
 )

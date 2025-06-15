@@ -12,18 +12,18 @@ Welcome! This tutorial will guide you through using the `flujo` library, from yo
 
 Before we write any code, let's understand the main components you'll be working with. Think of it like a chef learning about their ingredients before cooking.
 
-*   **The Orchestrator (Class):** This is a high-level class for running a *standard, pre-defined workflow*. It coordinates a fixed team: a `review_agent` (planner), a `solution_agent` (doer), and a `validator_agent` (quality analyst), and optionally a `reflection_agent`. It's your quick start for this common pattern.
+*   **The Default Recipe (Class):** This is a high-level helper for running a *standard, pre-defined workflow*. It coordinates a fixed team: a `review_agent` (planner), a `solution_agent` (doer), and a `validator_agent` (quality analyst), and optionally a `reflection_agent`. It's your quick start for this common pattern.
 
 *   **An Agent:** An **Agent** is a specialized AI model given a specific role and instructions (a "system prompt"). In the default pipeline we use three agents:
     1.  **`review_agent` (The Planner):** Looks at your request and creates a detailed checklist of what a "good" solution should look like.
     2.  **`solution_agent` (The Doer):** The main worker. It takes your request and tries to produce a solution (e.g., write code, a poem, or an email).
     3.  **`validator_agent` (The Quality Analyst):** Takes the `solution_agent`'s work and grades it against the `review_agent`'s checklist.
 
-*   **A Task:** This is a simple object that holds your request. It's how you tell the **Orchestrator** what you want to achieve.
+*   **A Task:** This is a simple object that holds your request. It's how you tell the **Default** recipe what you want to achieve.
 
-*   **PipelineRunner, Pipeline, Step:** When you need more control than the standard `Orchestrator` workflow, you'll use the **Pipeline DSL**. A `Pipeline` is a sequence of `Step` objects executed by `PipelineRunner` to build fully custom multi-agent workflows.
+*   **Flujo, Pipeline, Step:** When you need more control than the standard `Default` workflow, you'll use the **Pipeline DSL**. A `Pipeline` is a sequence of `Step` objects executed by `Flujo` to build fully custom multi-agent workflows.
 
-*   **A Candidate:** This is the final result produced by the Orchestrator. It contains the solution itself and the checklist used to grade it.
+*   **A Candidate:** This is the final result produced by the Default recipe. It contains the solution itself and the checklist used to grade it.
 
 Now that we know the players, let's see them in action!
 
@@ -35,16 +35,17 @@ Let's start with the most straightforward use case: give the orchestrator a prom
 
 ```python
 # 📂 step_1_basic_usage.py
+from flujo.recipes import Default
 from flujo import (
-    Orchestrator, Task,
+    Task,
     review_agent, solution_agent, validator_agent,
     init_telemetry,
 )
 
 init_telemetry()
 
-print("🤖 Assembling the AI agent team for the standard Orchestrator workflow...")
-flujo = Orchestrator(
+print("🤖 Assembling the AI agent team for the standard Default workflow...")
+orch = Default(
     review_agent=review_agent,
     solution_agent=solution_agent,
     validator_agent=validator_agent,
@@ -53,11 +54,11 @@ flujo = Orchestrator(
 print("📝 Defining task: 'Write a short, optimistic haiku about a rainy day.'")
 task = Task(prompt="Write a short, optimistic haiku about a rainy day.")
 
-print("🧠 Running the orchestrator...")
+print("🧠 Running the workflow...")
 best_candidate = orch.run_sync(task)
 
 if best_candidate:
-    print("\n🎉 Orchestrator finished! Here is the best result:")
+    print("\n🎉 Workflow finished! Here is the best result:")
     print("-" * 50)
     print(f"\nSolution (the haiku):\n'{best_candidate.solution}'")
     if best_candidate.checklist:
@@ -71,20 +72,19 @@ You've successfully orchestrated a team of AI agents to complete a creative task
 ---
 
 
-## 2. The Budget-Aware Workflow: Customizing Agents for `Orchestrator`
+## 2. The Budget-Aware Workflow: Customizing Agents for `Default`
 
 Professional AI workflows often involve a mix of models to balance cost, speed, and quality. Here, we'll use a **cheaper, faster model** for the initial draft (`solution_agent`) but retain the **smarter models** for the critical thinking roles (planning, quality control, and strategy).
 
 ```python
 # 📂 step_3_mixing_models.py
-from flujo import (
-    Orchestrator, Task, review_agent, validator_agent, make_agent_async, init_telemetry
-)
+from flujo.recipes import Default
+from flujo import Task, review_agent, validator_agent, make_agent_async, init_telemetry
 init_telemetry()
-print("🚀 Building a workflow with a custom Solution Agent for the Orchestrator...")
+print("🚀 Building a workflow with a custom Solution Agent for the Default recipe...")
 FAST_SOLUTION_PROMPT = "You are a creative but junior marketing copywriter. Write a catchy and concise slogan. Be quick and creative."
 fast_copywriter_agent = make_agent_async("openai:gpt-4o-mini", FAST_SOLUTION_PROMPT, str)
-flujo = Orchestrator(
+flujo = Default(
     review_agent=review_agent,
     solution_agent=fast_copywriter_agent,
     validator_agent=validator_agent,
@@ -107,7 +107,7 @@ Let's build a workflow that extracts information from a block of text into a str
 # 📂 step_4_structured_output.py
 from pydantic import BaseModel, Field
 from flujo import (
-    Step, PipelineRunner, make_agent_async, init_telemetry
+    Step, Flujo, make_agent_async, init_telemetry
 )
 from flujo.domain.models import Checklist
 
@@ -137,7 +137,7 @@ data_extraction_pipeline = (
     >> Step.validate(validator_agent_for_extraction, name="ValidateCard")
 )
 
-pipeline_runner = PipelineRunner(data_extraction_pipeline)
+pipeline_runner = Flujo(data_extraction_pipeline)
 unstructured_text = "Reach out to Jane Doe. She works at Innovate Corp and her email is jane.doe@example.com."
 
 print(f"📄 Running custom pipeline to extract from: '{unstructured_text}'")
@@ -228,8 +228,8 @@ validator_agent = make_agent_async("openai:gpt-4o",
     Checklist)
 
 
-# --- 3. Assemble and Run the Orchestrator ---
-flujo = Orchestrator(review_agent, solution_agent, validator_agent)
+# --- 3. Assemble and Run the Default Recipe ---
+flujo = Default(review_agent, solution_agent, validator_agent)
 task = Task(prompt="Generate a stock report for Apple Inc. (AAPL).")
 
 print("🧠 Running advanced tool-based workflow...")
@@ -250,7 +250,7 @@ This confirms that the `solution_agent` recognized it needed information, called
 ---
 
 This concludes our tour! You've journeyed from a simple prompt to a sophisticated, tool-using AI system. You've learned to:
--   Understand the core concepts of **Orchestrators and Agents**.
+-   Understand the core concepts of **Default recipes and Agents**.
 -   Run a basic multi-agent task and interpret its self-correction process.
 -   Control the definition of quality using **weighted scoring**.
 -   Optimize workflows by **mixing different AI models**.
@@ -259,23 +259,23 @@ This concludes our tour! You've journeyed from a simple prompt to a sophisticate
 
 ## 5. Building Custom Pipelines
 
-The new Pipeline DSL lets you compose your own workflow using `Step` objects. Execute the pipeline with `PipelineRunner`:
+The new Pipeline DSL lets you compose your own workflow using `Step` objects. Execute the pipeline with `Flujo`:
 
 ```python
-from flujo import Step, PipelineRunner
+from flujo import Step, Flujo
 from flujo.plugins.sql_validator import SQLSyntaxValidator
 from flujo.testing.utils import StubAgent
 
 sql_step = Step.solution(StubAgent(["SELECT FROM"]))
 check_step = Step.validate(StubAgent([None]), plugins=[SQLSyntaxValidator()])
-runner = PipelineRunner(sql_step >> check_step)
+runner = Flujo(sql_step >> check_step)
 result = runner.run("SELECT FROM")
 print(result.step_history[-1].feedback)
 ```
 
 ### Using a Shared Typed Context
 
-`PipelineRunner` can share a Pydantic model instance across steps. This lets you
+`Flujo` can share a Pydantic model instance across steps. This lets you
 accumulate data or pass configuration during a run. See
 [Typed Pipeline Context](pipeline_context.md) for more details.
 
@@ -291,7 +291,7 @@ async def record(data: str, *, pipeline_context: Stats | None = None) -> str:
     return data
 
 pipeline = Step("first", record) >> Step("second", record)
-runner = PipelineRunner(pipeline, context_model=Stats)
+runner = Flujo(pipeline, context_model=Stats)
 final = runner.run("hi")
 print(final.final_pipeline_context.calls)  # 2
 ```
@@ -302,7 +302,7 @@ Some workflows require repeating a set of steps until a condition is met. `LoopS
 lets you express this directly in the DSL.
 
 ```python
-from flujo import Step, PipelineRunner, Pipeline
+from flujo import Step, Flujo, Pipeline
 
 async def fixer(data: str) -> str:
     return data + "!"
@@ -316,7 +316,7 @@ loop = Step.loop_until(
     max_loops=3,
 )
 
-runner = PipelineRunner(loop)
+runner = Flujo(loop)
 result = runner.run("hi")
 print(result.step_history[-1].output)  # 'hi!!!'
 ```
@@ -341,7 +341,7 @@ branch = Step.branch_on(
 )
 
 pipeline = Step("start", fixer) >> branch
-runner = PipelineRunner(pipeline)
+runner = Flujo(pipeline)
 print(runner.run("ok").step_history[-1].output)
 ```
 

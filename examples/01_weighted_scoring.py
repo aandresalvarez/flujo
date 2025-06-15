@@ -4,8 +4,8 @@
 Demonstrates **weighted** checklist scoring.  Two items, different weights.
 """
 
+from flujo.recipes import Default
 from flujo import (
-    Orchestrator,
     Task,
     make_agent_async,
     solution_agent,
@@ -49,8 +49,8 @@ task = Task(
     metadata={"weights": weights},
 )
 
-# Create orchestrator with the required agents
-orch = Orchestrator(review_agent, solution_agent, validator_agent, reflection_agent)
+# Create the default recipe with the required agents
+orch = Default(review_agent, solution_agent, validator_agent, reflection_agent)
 
 best = orch.run_sync(task)
 

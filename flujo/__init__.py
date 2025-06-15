@@ -8,7 +8,8 @@ try:
     __version__ = version("flujo")
 except Exception:
     __version__ = "0.0.0"
-from .application.orchestrator import Orchestrator
+from .application.flujo_engine import Flujo
+from .recipes import Default
 from .infra.settings import settings
 from .infra.telemetry import init_telemetry
 
@@ -20,7 +21,6 @@ from .domain import (
     PluginOutcome,
     ValidationPlugin,
 )
-from .application.pipeline_runner import PipelineRunner
 from .application.eval_adapter import run_pipeline_async
 from .application.self_improvement import evaluate_and_improve, SelfImprovementAgent
 from .domain.models import PipelineResult, StepResult
@@ -39,7 +39,8 @@ from .infra.agents import (
 from .exceptions import OrchestratorError, ConfigurationError, SettingsError
 
 __all__ = [
-    "Orchestrator",
+    "Flujo",
+    "Default",
     "Task",
     "Candidate",
     "Checklist",
@@ -49,7 +50,6 @@ __all__ = [
     "StepConfig",
     "PluginOutcome",
     "ValidationPlugin",
-    "PipelineRunner",
     "run_pipeline_async",
     "evaluate_and_improve",
     "SelfImprovementAgent",

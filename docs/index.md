@@ -9,7 +9,7 @@ The `flujo` is a powerful Python library that provides a structured approach to 
 ## Features
 
 - **🔧 Pydantic Native** – Everything from agents to pipeline context is defined with Pydantic models for reliable type safety
-- **🎯 Opinionated & Flexible** – Start with the built-in `Orchestrator` for common patterns or compose custom flows using the Pipeline DSL
+- **🎯 Opinionated & Flexible** – Start with the built-in `Default` recipe for common patterns or compose custom flows using the Pipeline DSL
 - **🚀 Production Ready** – Built-in retries, telemetry, scoring, and quality controls help you deploy reliable systems
 - **🧠 Intelligent Evals** – Automated evaluation and self-improvement powered by LLMs
 - **⚡ High Performance** – Async-first design with efficient concurrent execution
@@ -26,8 +26,9 @@ pip install flujo
 ### Basic Usage
 
 ```python
+from flujo.recipes import Default
 from flujo import (
-    Orchestrator, Task,
+    Task,
     review_agent, solution_agent, validator_agent, reflection_agent,
     init_telemetry,
 )
@@ -35,8 +36,8 @@ from flujo import (
 # Initialize telemetry (optional)
 init_telemetry()
 
-# Create orchestrator with default agents
-flujo = Orchestrator(
+# Create the default recipe with built-in agents
+orch = Default(
     review_agent=review_agent,
     solution_agent=solution_agent,
     validator_agent=validator_agent,
@@ -70,7 +71,7 @@ flujo improve pipeline.py dataset.py
 
 ## Core Concepts
 
-- **Orchestrator**: High-level coordinator for standard multi-agent workflows
+- **Default recipe**: High-level coordinator for standard multi-agent workflows
 - **Pipeline DSL**: Flexible system for building custom agent workflows
 - **Agents**: Specialized AI models with specific roles (review, solution, validation, reflection)
 - **Tasks**: Input specifications with prompts and metadata
@@ -82,7 +83,7 @@ flujo improve pipeline.py dataset.py
 
 The library follows a clean architecture with clear separation of concerns:
 
-- **Application Layer**: Orchestrator, PipelineRunner, and high-level coordination
+- **Application Layer**: Default recipe, Flujo engine, and high-level coordination
 - **Domain Layer**: Core models, pipeline DSL, and business logic
 - **Infrastructure Layer**: Agents, settings, telemetry, and external integrations
 - **CLI Layer**: Command-line interface for common operations

@@ -6,8 +6,8 @@ to save tokens.
 """
 
 from pydantic_ai import Agent
+from flujo.recipes import Default
 from flujo import (
-    Orchestrator,
     Task,
     review_agent,
     validator_agent,
@@ -21,7 +21,7 @@ solution_agent = Agent(
     output_type=str,
 )
 
-orch = Orchestrator(
+orch = Default(
     review_agent=review_agent,  # keep the "review" step on GPT-4o
     solution_agent=solution_agent,  # cheaper generation
     validator_agent=validator_agent,

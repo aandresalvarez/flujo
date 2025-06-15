@@ -2,7 +2,7 @@ import pytest
 from typing import Any
 from pydantic import BaseModel
 
-from flujo.application.pipeline_runner import PipelineRunner
+from flujo.application.flujo_engine import Flujo
 from flujo.domain import Step, Pipeline
 from flujo.testing.utils import StubAgent, DummyPlugin
 from flujo.domain.plugins import PluginOutcome
@@ -22,7 +22,7 @@ async def test_basic_loop_until_condition_met() -> None:
         exit_condition_callable=lambda out, ctx: out >= 3,
         max_loops=5,
     )
-    runner = PipelineRunner(loop)
+    runner = Flujo(loop)
     result = await runner.run_async(0)
     step_result = result.step_history[-1]
     assert step_result.success is True
@@ -39,7 +39,7 @@ async def test_loop_max_loops_reached() -> None:
         exit_condition_callable=lambda out, ctx: out > 10,
         max_loops=2,
     )
-    runner = PipelineRunner(loop)
+    runner = Flujo(loop)
     result = await runner.run_async(0)
     step_result = result.step_history[-1]
     assert step_result.success is False
@@ -65,7 +65,7 @@ async def test_loop_with_context_modification() -> None:
         exit_condition_callable=lambda out, ctx: ctx and ctx.counter >= 2,
         max_loops=5,
     )
-    runner = PipelineRunner(loop, context_model=Ctx)
+    runner = Flujo(loop, context_model=Ctx)
     result = await runner.run_async(0)
     step_result = result.step_history[-1]
     assert step_result.success is True
@@ -86,7 +86,7 @@ async def test_loop_step_error_in_exit_condition_callable() -> None:
         max_loops=3,
     )
     after = Step("after", IncrementAgent())
-    runner = PipelineRunner(loop >> after, context_model=Ctx)
+    runner = Flujo(loop >> after, context_model=Ctx)
     result = await runner.run_async(0)
     assert len(result.step_history) == 1
     step_result = result.step_history[0]
@@ -109,7 +109,7 @@ async def test_loop_step_error_in_initial_input_mapper() -> None:
         initial_input_to_loop_body_mapper=bad_initial_mapper,
     )
     after = Step("after", IncrementAgent())
-    runner = PipelineRunner(loop >> after, context_model=Ctx)
+    runner = Flujo(loop >> after, context_model=Ctx)
     result = await runner.run_async(0)
     assert len(result.step_history) == 1
     step_result = result.step_history[0]
@@ -132,7 +132,7 @@ async def test_loop_step_error_in_iteration_input_mapper() -> None:
         max_loops=3,
         iteration_input_mapper=iteration_mapper,
     )
-    runner = PipelineRunner(loop, context_model=Ctx)
+    runner = Flujo(loop, context_model=Ctx)
     result = await runner.run_async(0)
     step_result = result.step_history[-1]
     assert step_result.success is False
@@ -155,7 +155,7 @@ async def test_loop_step_error_in_loop_output_mapper() -> None:
         loop_output_mapper=bad_output_mapper,
     )
     after = Step("after", IncrementAgent())
-    runner = PipelineRunner(loop >> after, context_model=Ctx)
+    runner = Flujo(loop >> after, context_model=Ctx)
     result = await runner.run_async(0)
     assert len(result.step_history) == 1
     step_result = result.step_history[0]
@@ -174,7 +174,7 @@ async def test_loop_step_body_failure_with_robust_exit_condition() -> None:
         loop_body_pipeline=body,
         exit_condition_callable=lambda out, ctx: True,
     )
-    runner = PipelineRunner(loop)
+    runner = Flujo(loop)
     result = await runner.run_async("in")
     step_result = result.step_history[-1]
     assert step_result.success is False
@@ -195,7 +195,7 @@ async def test_loop_step_body_failure_causing_exit_condition_error() -> None:
         loop_body_pipeline=body,
         exit_condition_callable=exit_condition,
     )
-    runner = PipelineRunner(loop)
+    runner = Flujo(loop)
     result = await runner.run_async("in")
     step_result = result.step_history[-1]
     assert step_result.success is False
@@ -218,7 +218,7 @@ async def test_loop_step_initial_input_mapper_flow() -> None:
         exit_condition_callable=lambda out, ctx: True,
         initial_input_to_loop_body_mapper=initial_map,
     )
-    runner = PipelineRunner(loop, context_model=Ctx)
+    runner = Flujo(loop, context_model=Ctx)
     await runner.run_async(1)
     assert recorded and recorded[0][0] == 1
     assert isinstance(recorded[0][1], Ctx)
@@ -242,7 +242,7 @@ async def test_loop_step_iteration_input_mapper_flow() -> None:
         max_loops=3,
         iteration_input_mapper=iter_map,
     )
-    runner = PipelineRunner(loop, context_model=Ctx)
+    runner = Flujo(loop, context_model=Ctx)
     result = await runner.run_async(0)
     step_result = result.step_history[-1]
     assert calls == [(1, 1)]
@@ -265,7 +265,7 @@ async def test_loop_step_loop_output_mapper_flow() -> None:
         exit_condition_callable=lambda out, ctx: out >= 1,
         loop_output_mapper=out_map,
     )
-    runner = PipelineRunner(loop, context_model=Ctx)
+    runner = Flujo(loop, context_model=Ctx)
     result = await runner.run_async(0)
     step_result = result.step_history[-1]
     assert step_result.output == 10
@@ -302,7 +302,7 @@ async def test_loop_step_mappers_with_context_modification() -> None:
         iteration_input_mapper=iter_map,
         loop_output_mapper=out_map,
     )
-    runner = PipelineRunner(loop, context_model=Ctx2)
+    runner = Flujo(loop, context_model=Ctx2)
     result = await runner.run_async(0)
     assert result.final_pipeline_context.val == 3
 
@@ -317,7 +317,7 @@ async def test_loop_step_default_mapper_behavior() -> None:
         exit_condition_callable=lambda out, ctx: out >= 2,
         max_loops=3,
     )
-    runner = PipelineRunner(loop)
+    runner = Flujo(loop)
     result = await runner.run_async(0)
     step_result = result.step_history[-1]
     assert body_agent.inputs == [0, 1]
@@ -340,7 +340,7 @@ async def test_loop_step_overall_span(monkeypatch) -> None:
 
     from unittest.mock import Mock
     from flujo.infra import telemetry
-    from flujo.application import pipeline_runner as pr
+    from flujo.application import flujo_engine as pr
 
     mock_logfire = Mock(span=lambda name: FakeSpan(name))
     monkeypatch.setattr(telemetry, "logfire", mock_logfire)
@@ -352,7 +352,7 @@ async def test_loop_step_overall_span(monkeypatch) -> None:
         loop_body_pipeline=body,
         exit_condition_callable=lambda out, ctx: True,
     )
-    runner = PipelineRunner(loop)
+    runner = Flujo(loop)
     await runner.run_async(0)
     assert "span_loop" in spans
 
@@ -379,7 +379,7 @@ async def test_loop_step_iteration_spans_and_logging(monkeypatch) -> None:
 
     from unittest.mock import Mock
     from flujo.infra import telemetry
-    from flujo.application import pipeline_runner as pr
+    from flujo.application import flujo_engine as pr
 
     mock_logfire = Mock(
         span=lambda name: FakeSpan(name),
@@ -397,7 +397,7 @@ async def test_loop_step_iteration_spans_and_logging(monkeypatch) -> None:
         exit_condition_callable=lambda out, ctx: out >= 2,
         max_loops=2,
     )
-    runner = PipelineRunner(loop)
+    runner = Flujo(loop)
     await runner.run_async(0)
     assert "LoopStep 'loop_log': Starting Iteration 1/2" in infos
     assert "LoopStep 'loop_log': Starting Iteration 2/2" in infos
@@ -426,7 +426,7 @@ async def test_loop_step_error_logging_in_callables(monkeypatch) -> None:
 
     from unittest.mock import Mock
     from flujo.infra import telemetry
-    from flujo.application import pipeline_runner as pr
+    from flujo.application import flujo_engine as pr
 
     mock_logfire = Mock(
         span=lambda name: FakeSpan(name),
@@ -448,6 +448,6 @@ async def test_loop_step_error_logging_in_callables(monkeypatch) -> None:
         iteration_input_mapper=bad_iter,
         max_loops=3,
     )
-    runner = PipelineRunner(loop, context_model=Ctx)
+    runner = Flujo(loop, context_model=Ctx)
     await runner.run_async(0)
     assert any("Error in iteration_input_mapper for LoopStep 'loop_err_log'" in m for m in errors)

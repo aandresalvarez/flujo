@@ -31,7 +31,7 @@ RunnerInT = TypeVar("RunnerInT")
 RunnerOutT = TypeVar("RunnerOutT")
 
 
-class PipelineRunner(Generic[RunnerInT, RunnerOutT]):
+class Flujo(Generic[RunnerInT, RunnerOutT]):
     """Execute a pipeline sequentially."""
 
     def __init__(

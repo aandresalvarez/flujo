@@ -1,7 +1,7 @@
 import pytest
 from pydantic import BaseModel
 
-from flujo.application.pipeline_runner import PipelineRunner
+from flujo.application.flujo_engine import Flujo
 from flujo.domain import Step
 from flujo.exceptions import PipelineContextInitializationError
 from flujo.domain.plugins import PluginOutcome
@@ -60,7 +60,7 @@ class KwargsPlugin:
 async def test_context_initialization_and_access() -> None:
     agent = CaptureAgent()
     step = Step("s", agent)
-    runner = PipelineRunner(step, context_model=Ctx, initial_context_data={"num": 1})
+    runner = Flujo(step, context_model=Ctx, initial_context_data={"num": 1})
     result = await runner.run_async("in")
     assert isinstance(agent.seen, Ctx)
     assert result.final_pipeline_context.num == 1
@@ -68,7 +68,7 @@ async def test_context_initialization_and_access() -> None:
 
 @pytest.mark.asyncio
 async def test_context_initialization_failure() -> None:
-    runner = PipelineRunner(Step("s", CaptureAgent()), context_model=Ctx, initial_context_data={"num": "bad"})
+    runner = Flujo(Step("s", CaptureAgent()), context_model=Ctx, initial_context_data={"num": "bad"})
     with pytest.raises(PipelineContextInitializationError):
         await runner.run_async("in")
 
@@ -76,7 +76,7 @@ async def test_context_initialization_failure() -> None:
 @pytest.mark.asyncio
 async def test_context_mutation_between_steps() -> None:
     pipeline = Step("inc", IncAgent()) >> Step("read", ReadAgent())
-    runner = PipelineRunner(pipeline, context_model=Ctx)
+    runner = Flujo(pipeline, context_model=Ctx)
     result = await runner.run_async("x")
     assert result.step_history[-1].output == 1
     assert result.final_pipeline_context.num == 1
@@ -85,7 +85,7 @@ async def test_context_mutation_between_steps() -> None:
 @pytest.mark.asyncio
 async def test_context_isolated_per_run() -> None:
     step = Step("inc", IncAgent())
-    runner = PipelineRunner(step, context_model=Ctx)
+    runner = Flujo(step, context_model=Ctx)
     r1 = await runner.run_async("a")
     r2 = await runner.run_async("b")
     assert r1.final_pipeline_context.num == 1
@@ -98,7 +98,7 @@ async def test_plugin_receives_context_and_strict_plugin_errors() -> None:
     kwargs_plugin = KwargsPlugin()
     strict_plugin = StrictPlugin()
     step = Step("s", CaptureAgent(), plugins=[(ctx_plugin, 0), (kwargs_plugin, 0), (strict_plugin, 0)])
-    runner = PipelineRunner(step, context_model=Ctx)
+    runner = Flujo(step, context_model=Ctx)
     with pytest.raises(TypeError):
         await runner.run_async("in")
     # Context plugin ran before the TypeError

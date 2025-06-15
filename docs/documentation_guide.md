@@ -136,7 +136,7 @@ This automated process ensures that our documentation is always a perfect reflec
         - Contributing Guide: dev.md
         - Documentation Guide: documentation_guide.md # <-- Add this line
       - API Reference:
-          - Orchestrator: 'flujo.application.orchestrator'
+          - Default: 'flujo.recipes.default'
           # ... other API refs
     ```
 

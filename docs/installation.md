@@ -106,7 +106,8 @@ import flujo
 print(f"Version: {flujo.__version__}")
 
 # Test basic import
-from flujo import Orchestrator, Task
+from flujo.recipes import Default
+from flujo import Task
 print("✅ Installation successful!")
 ```
 

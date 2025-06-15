@@ -109,9 +109,9 @@ This guide helps you resolve common issues when using `flujo`.
 
 2. Verify model configuration:
    ```python
-   from flujo import Orchestrator
-   
-   orchestrator = Orchestrator(
+   from flujo.recipes import Default
+
+   orchestrator = Default(
        model="openai:gpt-4",
        temperature=0.7
    )
@@ -136,7 +136,7 @@ This guide helps you resolve common issues when using `flujo`.
 
 2. Check step configuration:
    ```python
-   from flujo import Step, PipelineRunner
+   from flujo import Step, Flujo
    
    pipeline = (
        Step.review(review_agent)
@@ -209,7 +209,7 @@ This guide helps you resolve common issues when using `flujo`.
 
 3. Optimize configuration:
    ```python
-   orchestrator = Orchestrator(
+   orchestrator = Default(
        model="openai:gpt-4",
        max_tokens=1000,  # Limit token usage
        timeout=30,       # Set reasonable timeout

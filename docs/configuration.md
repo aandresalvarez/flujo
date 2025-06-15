@@ -58,10 +58,11 @@ You can also configure the orchestrator programmatically:
 ### Basic Configuration
 
 ```python
-from flujo import Orchestrator, Task
+from flujo.recipes import Default
+from flujo import Task
 
-# Create an orchestrator with custom settings
-orch = Orchestrator(
+# Create the default recipe with custom settings
+orch = Default(
     review_agent,
     solution_agent,
     validator_agent,
@@ -125,7 +126,7 @@ agent = make_agent_async(
 ### Step Configuration
 
 ```python
-from flujo import Step, PipelineRunner
+from flujo import Step, Flujo
 
 # Configure individual steps
 pipeline = (
@@ -143,7 +144,7 @@ pipeline = (
 
 ```python
 # Configure the pipeline runner
-runner = PipelineRunner(
+runner = Flujo(
     pipeline,
     max_parallel=2,  # Maximum parallel executions
     timeout=60,      # Overall timeout

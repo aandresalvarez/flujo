@@ -46,7 +46,7 @@ The documentation has been systematically reviewed and updated to reflect the cu
 - ✅ **UPDATED**: Added CLI-based verification steps
 
 #### `docs/api_reference.md` - API Documentation
-- ✅ **UPDATED**: Fixed Orchestrator workflow description (now includes Reflection step)
+- ✅ **UPDATED**: Fixed Default recipe workflow description (now includes Reflection step)
 - ✅ **UPDATED**: Corrected agent type annotations and signatures
 - ✅ **UPDATED**: Updated Pipeline DSL examples with actual API
 - ✅ **UPDATED**: Removed non-existent methods and classes
@@ -95,7 +95,7 @@ All documented CLI commands verified in `flujo/cli/main.py`:
 | `add-eval-case` | ✅ Verified | Add evaluation cases |
 
 ### ✅ Core API Components Verified
-- **Orchestrator Class**: ✅ Confirmed with correct signature including reflection agent
+- **Default Recipe Class**: ✅ Confirmed with correct signature including reflection agent
 - **Pipeline DSL**: ✅ All documented step types and constructs verified
 - **Data Models**: ✅ Task, Candidate, Checklist, ChecklistItem all confirmed
 - **Agents**: ✅ All four default agents confirmed (review, solution, validator, reflection)

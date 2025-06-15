@@ -1,4 +1,4 @@
-from flujo.application.orchestrator import Orchestrator
+from flujo.recipes import Default
 from flujo.domain.models import Task, Candidate
 from flujo.testing.utils import StubAgent
 
@@ -7,7 +7,7 @@ async def test_orchestrator_runs_pipeline():
     review = StubAgent(["checklist"])
     solve = StubAgent(["solution"])
     validate = StubAgent(["validated"])
-    orch = Orchestrator(review, solve, validate, None)
+    orch = Default(review, solve, validate, None)
 
     result = await orch.run_async(Task(prompt="do"))
 

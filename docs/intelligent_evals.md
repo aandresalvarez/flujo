@@ -7,13 +7,13 @@ This guide explains how to run automated evaluations and use the self-improvemen
 ```python
 from flujo.application.eval_adapter import run_pipeline_async
 from flujo.application.self_improvement import evaluate_and_improve, SelfImprovementAgent
-from flujo.application.pipeline_runner import PipelineRunner
+from flujo import Flujo
 from flujo.domain import Step
 from pydantic_evals import Dataset, Case
 from flujo.infra.agents import self_improvement_agent
 
 pipeline = Step.solution(lambda x: x)
-runner = PipelineRunner(pipeline)
+runner = Flujo(pipeline)
 dataset = Dataset(cases=[Case(inputs="hi", expected_output="hi")])
 agent = SelfImprovementAgent(self_improvement_agent)
 report = await evaluate_and_improve(

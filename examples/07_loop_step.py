@@ -4,7 +4,7 @@
 Demonstrates using LoopStep for iterative refinement.
 """
 
-from flujo import Step, Pipeline, PipelineRunner
+from flujo import Step, Pipeline, Flujo
 
 
 async def add_exclamation(data: str) -> str:
@@ -20,7 +20,7 @@ loop_step = Step.loop_until(
     max_loops=5,
 )
 
-runner = PipelineRunner(loop_step)
+runner = Flujo(loop_step)
 result = runner.run("hi")
 print("Final output:", result.step_history[-1].output)
 

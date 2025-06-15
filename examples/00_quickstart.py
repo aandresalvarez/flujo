@@ -6,8 +6,8 @@ Run with:
     OPENAI_API_KEY=sk-... python 00_quickstart.py
 """
 
+from flujo.recipes import Default
 from flujo import (
-    Orchestrator,
     Task,
     review_agent,
     solution_agent,
@@ -15,8 +15,8 @@ from flujo import (
     reflection_agent,
 )
 
-# 1️⃣  Create a default orchestrator (uses GPT-4o for all agents)
-orch = Orchestrator(review_agent, solution_agent, validator_agent, reflection_agent)
+# 1️⃣  Create a default recipe (uses GPT-4o for all agents)
+orch = Default(review_agent, solution_agent, validator_agent, reflection_agent)
 
 # 2️⃣  Wrap your prompt in a Task (metadata optional)
 task = Task(prompt="Write a short motivational haiku about debugging.")

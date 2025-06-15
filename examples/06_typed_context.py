@@ -5,7 +5,7 @@ Demonstrates sharing state across steps with Typed Pipeline Context.
 """
 
 from pydantic import BaseModel
-from flujo import Step, PipelineRunner
+from flujo import Step, Flujo
 
 
 class Ctx(BaseModel):
@@ -19,7 +19,7 @@ async def increment(data: str, *, pipeline_context: Ctx | None = None) -> str:
 
 
 pipeline = Step("first", increment) >> Step("second", increment)
-runner = PipelineRunner(pipeline, context_model=Ctx)
+runner = Flujo(pipeline, context_model=Ctx)
 
 result = runner.run("hello")
 print("Final output:", result.step_history[-1].output)
