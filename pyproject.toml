@@ -24,7 +24,11 @@ classifiers = [
   "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
-  "Topic :: Software Development :: Libraries",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Topic :: Software Development :: Libraries :: Application Frameworks",
+  "Typing :: Typed",
 ]
 
 # Runtime dependencies
@@ -55,6 +59,8 @@ dev = [
   "vcrpy",
   "rich",
   "pytest-benchmark",
+  "build",     # Added for package building
+  "twine",     # Added for package uploading
 ]
 docs = [
     "mkdocs",
@@ -70,9 +76,11 @@ orch = "pydantic_ai_orchestrator.cli.main:app"
 
 # Project links (PEP 621)
 [project.urls]
-Homepage   = "https://github.com/aandresalvarez/rloop"
-Repository = "https://github.com/aandresalvarez/rloop"
-Documentation = "https://aandresalvarez.github.io/rloop/" # Added link to your docs
+Homepage      = "https://github.com/aandresalvarez/rloop"
+Repository    = "https://github.com/aandresalvarez/rloop"
+Documentation = "https://aandresalvarez.github.io/rloop/"
+Bug Tracker   = "https://github.com/aandresalvarez/rloop/issues"
+Changelog     = "https://github.com/aandresalvarez/rloop/blob/main/CHANGELOG.md"
 
 # --------------------------------------------------------------------------- #
 # Tool-specific configuration
@@ -101,3 +109,26 @@ markers = [
   "e2e: marks tests as end-to-end (requires network access or VCR cassettes)",
   "benchmark: marks tests as benchmarks (requires pytest-benchmark)",
 ]
+
+# --------------------------------------------------------------------------- #
+# Build system configuration
+# --------------------------------------------------------------------------- #
+[tool.hatch.build.targets.wheel]
+packages = ["pydantic_ai_orchestrator"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "pydantic_ai_orchestrator",
+    "tests",
+    "docs",
+    "examples",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "pyproject.toml",
+]
+
+[tool.hatch.build.targets.wheel.shared-data]
+"README.md" = "share/doc/pydantic-ai-orchestrator/README.md"
+"LICENSE" = "share/doc/pydantic-ai-orchestrator/LICENSE"
+"CHANGELOG.md" = "share/doc/pydantic-ai-orchestrator/CHANGELOG.md"

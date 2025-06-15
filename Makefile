@@ -38,7 +38,7 @@ PYTEST_BENCH_CMD = $(PYTEST_CMD) -m benchmark
         quality lint format format-check type-check security \
         docs-serve docs-build \
         build clean clean-pyc clean-build clean-test clean-docs \
-        requirements
+        requirements package publish publish-test clean-package
 
 #------------------------------------------------------------------------------------
 # Help
@@ -73,8 +73,14 @@ help:
 	@echo "    make poetry-test      - Run all tests with coverage using Poetry"
 	@echo "    make uv-test-fast     - Run tests without coverage using uv"
 	@echo ""
+	@echo "  Packaging & Publishing:"
+	@echo "    make build            - Build the package using Hatch (legacy)"
+	@echo "    make package          - Build wheel and sdist using python-build"
+	@echo "    make publish-test     - Build and upload to TestPyPI"
+	@echo "    make publish          - Build and upload to PyPI"
+	@echo "    make clean-package    - Remove package build artifacts"
+	@echo ""
 	@echo "  Build & All-in-One:"
-	@echo "    make build            - Build the package using Hatch"
 	@echo "    make all              - Run lint, type-check, tests (pip), and build docs"
 	@echo ""
 	@echo "  Documentation:"
@@ -231,9 +237,31 @@ docs-build:
 	mkdocs build
 
 #------------------------------------------------------------------------------------
+# Packaging & Publishing
+#------------------------------------------------------------------------------------
+package:
+	@echo "Building wheel and sdist with python-build..."
+	python -m pip install --upgrade build > /dev/null
+	python -m build --sdist --wheel --outdir dist
+
+publish-test: package
+	@echo "Uploading to TestPyPI..."
+	python -m pip install --upgrade twine > /dev/null
+	twine upload -r testpypi dist/*
+
+publish: package
+	@echo "Uploading to PyPI..."
+	python -m pip install --upgrade twine > /dev/null
+	twine upload dist/*
+
+clean-package: clean-build
+	@echo "Removing package build artifacts..."
+	rm -rf *.egg-info/ .eggs/ build/ dist/
+
+#------------------------------------------------------------------------------------
 # Cleanup
 #------------------------------------------------------------------------------------
-clean: clean-build clean-pyc clean-test clean-docs
+clean: clean-build clean-pyc clean-test clean-docs clean-package
 	@echo "All build artifacts, caches, and .pyc files removed."
 
 clean-pyc:
