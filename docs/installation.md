@@ -1,6 +1,6 @@
 # Installation Guide
 
-This guide will help you install and set up `pydantic-ai-orchestrator` for your project.
+This guide will help you install and set up `flujo` for your project.
 
 ## Prerequisites
 
@@ -13,7 +13,7 @@ This guide will help you install and set up `pydantic-ai-orchestrator` for your 
 The simplest way to install the package is using pip:
 
 ```bash
-pip install pydantic-ai-orchestrator
+pip install flujo
 ```
 
 ## Installation with Extras
@@ -22,19 +22,19 @@ The package includes several optional extras that provide additional functionali
 
 ```bash
 # For development (includes testing tools, linting, etc.)
-pip install "pydantic-ai-orchestrator[dev]"
+pip install "flujo[dev]"
 
 # For benchmarking (includes numpy for statistical analysis)
-pip install "pydantic-ai-orchestrator[bench]"
+pip install "flujo[bench]"
 
 # For documentation building
-pip install "pydantic-ai-orchestrator[docs]"
+pip install "flujo[docs]"
 
 # For OpenTelemetry support
-pip install "pydantic-ai-orchestrator[opentelemetry]"
+pip install "flujo[opentelemetry]"
 
 # Install all extras
-pip install "pydantic-ai-orchestrator[dev,docs,opentelemetry,bench]"
+pip install "flujo[dev,docs,opentelemetry,bench]"
 ```
 
 ## Development Installation
@@ -90,23 +90,23 @@ To verify your installation:
 
 ```bash
 # Check version
-orch version-cmd
+flujo version-cmd
 
 # Test basic functionality
-orch solve "Write a hello world function in Python"
+flujo solve "Write a hello world function in Python"
 
 # Show current configuration
-orch show-config
+flujo show-config
 ```
 
 You can also verify programmatically:
 
 ```python
-import pydantic_ai_orchestrator
-print(f"Version: {pydantic_ai_orchestrator.__version__}")
+import flujo
+print(f"Version: {flujo.__version__}")
 
 # Test basic import
-from pydantic_ai_orchestrator import Orchestrator, Task
+from flujo import Orchestrator, Task
 print("✅ Installation successful!")
 ```
 
@@ -119,7 +119,7 @@ print("✅ Installation successful!")
    - Check with: `python --version`
 
 2. **Missing Dependencies**
-   - Try reinstalling with: `pip install --upgrade pydantic-ai-orchestrator`
+   - Try reinstalling with: `pip install --upgrade flujo`
    - For development: `pip install -e ".[dev]"`
 
 3. **API Key Issues**
@@ -129,10 +129,10 @@ print("✅ Installation successful!")
 
 4. **Import Errors**
    - Make sure you're in the correct virtual environment
-   - Try: `pip list | grep pydantic-ai-orchestrator`
+   - Try: `pip list | grep flujo`
 
 5. **Permission Errors**
-   - On Unix systems, you might need: `pip install --user pydantic-ai-orchestrator`
+   - On Unix systems, you might need: `pip install --user flujo`
    - Or use a virtual environment (recommended)
 
 ### Getting Help

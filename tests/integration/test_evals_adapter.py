@@ -1,9 +1,9 @@
 import pytest
-from pydantic_ai_orchestrator.application.eval_adapter import run_pipeline_async
-from pydantic_ai_orchestrator.application.pipeline_runner import PipelineRunner
-from pydantic_ai_orchestrator.domain import Step
-from pydantic_ai_orchestrator.domain.models import PipelineResult
-from pydantic_ai_orchestrator.testing.utils import StubAgent
+from flujo.application.eval_adapter import run_pipeline_async
+from flujo.application.pipeline_runner import PipelineRunner
+from flujo.domain import Step
+from flujo.domain.models import PipelineResult
+from flujo.testing.utils import StubAgent
 from pydantic_evals import Dataset, Case
 
 

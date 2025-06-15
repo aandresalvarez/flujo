@@ -1,10 +1,10 @@
-"""Scoring logic for pydantic-ai-orchestrator."""
+"""Scoring logic for flujo."""
 
 from typing import List, Dict, Any
 from .models import Checklist
 from pydantic_ai import Agent
-import pydantic_ai_orchestrator.infra.settings as settings_mod
-from pydantic_ai_orchestrator.infra.telemetry import logfire
+import flujo.infra.settings as settings_mod
+from flujo.infra.telemetry import logfire
 from ..exceptions import RewardModelUnavailable, FeatureDisabled
 
 

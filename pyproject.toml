@@ -6,9 +6,9 @@ build-backend = "hatchling.build"
 # Core project metadata (PEP 621)
 # --------------------------------------------------------------------------- #
 [project]
-name            = "pydantic_ai_orchestrator"
+name            = "flujo"
 version         = "0.2.0" # Version bumped for new features
-description     = "Production-ready orchestration for Pydantic-AI agents"
+description     = "Production-ready orchestration for AI agents, built with Pydantic."
 readme          = "README.md"
 requires-python = ">=3.11,<4.0"
 
@@ -70,9 +70,9 @@ docs = [
 opentelemetry = ["opentelemetry-sdk>=1.26"]
 bench = ["numpy"]
 
-# CLI entry point (install adds `orch` command to PATH)
+# CLI entry point (install adds `flujo` command to PATH)
 [project.scripts]
-orch = "pydantic_ai_orchestrator.cli.main:app"
+flujo = "flujo.cli.main:app"
 
 # Project links (PEP 621)
 [project.urls]
@@ -114,11 +114,11 @@ markers = [
 # Build system configuration
 # --------------------------------------------------------------------------- #
 [tool.hatch.build.targets.wheel]
-packages = ["pydantic_ai_orchestrator"]
+packages = ["flujo"]
 
 [tool.hatch.build.targets.sdist]
 include = [
-    "pydantic_ai_orchestrator",
+    "flujo",
     "tests",
     "docs",
     "examples",
@@ -129,6 +129,6 @@ include = [
 ]
 
 [tool.hatch.build.targets.wheel.shared-data]
-"README.md" = "share/doc/pydantic-ai-orchestrator/README.md"
-"LICENSE" = "share/doc/pydantic-ai-orchestrator/LICENSE"
-"CHANGELOG.md" = "share/doc/pydantic-ai-orchestrator/CHANGELOG.md"
+"README.md" = "share/doc/flujo/README.md"
+"LICENSE" = "share/doc/flujo/LICENSE"
+"CHANGELOG.md" = "share/doc/flujo/CHANGELOG.md"

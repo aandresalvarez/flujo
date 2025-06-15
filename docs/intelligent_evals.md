@@ -5,12 +5,12 @@ This guide explains how to run automated evaluations and use the self-improvemen
 ## Quick start
 
 ```python
-from pydantic_ai_orchestrator.application.eval_adapter import run_pipeline_async
-from pydantic_ai_orchestrator.application.self_improvement import evaluate_and_improve, SelfImprovementAgent
-from pydantic_ai_orchestrator.application.pipeline_runner import PipelineRunner
-from pydantic_ai_orchestrator.domain import Step
+from flujo.application.eval_adapter import run_pipeline_async
+from flujo.application.self_improvement import evaluate_and_improve, SelfImprovementAgent
+from flujo.application.pipeline_runner import PipelineRunner
+from flujo.domain import Step
 from pydantic_evals import Dataset, Case
-from pydantic_ai_orchestrator.infra.agents import self_improvement_agent
+from flujo.infra.agents import self_improvement_agent
 
 pipeline = Step.solution(lambda x: x)
 runner = PipelineRunner(pipeline)
@@ -49,7 +49,7 @@ class ImprovementSuggestion(BaseModel):
 ## End-to-end Example
 
 1. Define a simple pipeline and dataset with a failing case.
-2. Run `orch improve pipeline.py data.py`.
+2. Run `flujo improve pipeline.py data.py`.
 3. Review the suggestions printed in the formatted table.
 4. Apply one of the suggested prompt tweaks.
 5. Re-run the evaluation to see the improvement.
@@ -77,7 +77,7 @@ Case: test_sql_error
 For suggestions of type `NEW_EVAL_CASE`, use the helper command:
 
 ```bash
-orch add-eval-case -d path/to/my_evals.py -n test_new_case -i "user input"
+flujo add-eval-case -d path/to/my_evals.py -n test_new_case -i "user input"
 ```
 
 The command prints a `Case(...)` definition that you can copy into your dataset
@@ -87,7 +87,7 @@ file.
 
 The model used by the self-improvement agent can be changed via the
 `orch_default_self_improvement_model` setting or overridden at the CLI using
-`orch improve --improvement-model MODEL_NAME`.
+`flujo improve --improvement-model MODEL_NAME`.
 ### Interpreting Suggestion Types
 The `suggestion_type` field indicates how you might act on the advice:
 - **PROMPT_MODIFICATION** – adjust the text of a step's system prompt as described.

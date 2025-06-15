@@ -1,8 +1,8 @@
-from pydantic_ai_orchestrator.infra.settings import Settings
+from flujo.infra.settings import Settings
 
 
 def test_invalid_env_vars(monkeypatch):
-    # from pydantic_ai_orchestrator.infra.settings import Settings  # removed redefinition
+    # from flujo.infra.settings import Settings  # removed redefinition
     import os
 
     for k in list(os.environ.keys()):
@@ -15,7 +15,7 @@ def test_invalid_env_vars(monkeypatch):
             monkeypatch.delenv(k, raising=False)
     # Patch env_file to None for this test instance
     import importlib
-    import pydantic_ai_orchestrator.infra.settings as settings_mod
+    import flujo.infra.settings as settings_mod
 
     importlib.reload(settings_mod)
 

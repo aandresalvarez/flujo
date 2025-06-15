@@ -1,6 +1,6 @@
 # Troubleshooting Guide
 
-This guide helps you resolve common issues when using `pydantic-ai-orchestrator`.
+This guide helps you resolve common issues when using `flujo`.
 
 ## Installation Issues
 
@@ -32,7 +32,7 @@ This guide helps you resolve common issues when using `pydantic-ai-orchestrator`
 
 4. Install with verbose output:
    ```bash
-   pip install -v pydantic-ai-orchestrator
+   pip install -v flujo
    ```
 
 5. Check system dependencies:
@@ -103,13 +103,13 @@ This guide helps you resolve common issues when using `pydantic-ai-orchestrator`
 **Solutions:**
 1. Check model availability:
    ```python
-   from pydantic_ai_orchestrator import list_available_models
+   from flujo import list_available_models
    print(list_available_models())
    ```
 
 2. Verify model configuration:
    ```python
-   from pydantic_ai_orchestrator import Orchestrator
+   from flujo import Orchestrator
    
    orchestrator = Orchestrator(
        model="openai:gpt-4",
@@ -136,7 +136,7 @@ This guide helps you resolve common issues when using `pydantic-ai-orchestrator`
 
 2. Check step configuration:
    ```python
-   from pydantic_ai_orchestrator import Step, PipelineRunner
+   from flujo import Step, PipelineRunner
    
    pipeline = (
        Step.review(review_agent)
@@ -192,7 +192,7 @@ This guide helps you resolve common issues when using `pydantic-ai-orchestrator`
 **Solutions:**
 1. Profile execution:
    ```python
-   from pydantic_ai_orchestrator import enable_profiling
+   from flujo import enable_profiling
    
    with enable_profiling():
        result = orchestrator.run("prompt")
@@ -229,7 +229,7 @@ This guide helps you resolve common issues when using `pydantic-ai-orchestrator`
 **Solutions:**
 1. Check telemetry configuration:
    ```python
-   from pydantic_ai_orchestrator import init_telemetry
+   from flujo import init_telemetry
    
    init_telemetry(
        enable_export=True,
@@ -239,7 +239,7 @@ This guide helps you resolve common issues when using `pydantic-ai-orchestrator`
 
 2. Verify metrics:
    ```python
-   from pydantic_ai_orchestrator import get_metrics
+   from flujo import get_metrics
    
    metrics = get_metrics()
    print(metrics)
@@ -255,7 +255,7 @@ This guide helps you resolve common issues when using `pydantic-ai-orchestrator`
 **Solutions:**
 1. Enable tracing:
    ```python
-   from pydantic_ai_orchestrator import enable_tracing
+   from flujo import enable_tracing
    
    with enable_tracing():
        result = orchestrator.run("prompt")
@@ -263,7 +263,7 @@ This guide helps you resolve common issues when using `pydantic-ai-orchestrator`
 
 2. Check trace export:
    ```python
-   from pydantic_ai_orchestrator import get_traces
+   from flujo import get_traces
    
    traces = get_traces()
    print(traces)
@@ -325,12 +325,12 @@ import logging
 logging.basicConfig(level=logging.DEBUG)
 
 # Enable profiling
-from pydantic_ai_orchestrator import enable_profiling
+from flujo import enable_profiling
 with enable_profiling():
     result = orchestrator.run("prompt")
 
 # Get detailed error info
-from pydantic_ai_orchestrator import get_error_details
+from flujo import get_error_details
 details = get_error_details(error)
 print(details)
 ```

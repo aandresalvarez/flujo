@@ -1,6 +1,6 @@
 # Use Cases
 
-Here are some use cases for the `pydantic-ai-orchestrator` library:
+Here are some use cases for the `flujo` library:
 
 1.  **Automated Code Generation:** Generate code snippets or entire functions based on natural language prompts. The library can use different agents for generating, reviewing, and validating the code.
 2.  **Text Summarization:** Summarize long documents or articles into concise summaries. The reward model scorer can be used to ensure the quality of the summary.

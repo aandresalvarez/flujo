@@ -20,7 +20,7 @@ A single context instance is passed into every iteration. The loop body can modi
 
 ```python
 from pydantic import BaseModel
-from pydantic_ai_orchestrator.domain import Step, Pipeline
+from flujo.domain import Step, Pipeline
 
 class Ctx(BaseModel):
     counter: int = 0

@@ -4,7 +4,7 @@
 Demonstrates **weighted** checklist scoring.  Two items, different weights.
 """
 
-from pydantic_ai_orchestrator import (
+from flujo import (
     Orchestrator,
     Task,
     make_agent_async,
@@ -12,8 +12,8 @@ from pydantic_ai_orchestrator import (
     validator_agent,
     reflection_agent,
 )
-from pydantic_ai_orchestrator.infra.settings import settings
-from pydantic_ai_orchestrator.domain.models import Checklist
+from flujo.infra.settings import settings
+from flujo.domain.models import Checklist
 
 # 📝 Switch to weighted scoring – you can also set this in .env
 settings.scorer = "weighted"

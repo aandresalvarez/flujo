@@ -5,10 +5,9 @@ from typing import Any
 # Ensure API key exists before importing the CLI
 os.environ.setdefault("orch_openai_api_key", "test-key")
 
-from pydantic_ai_orchestrator.cli.main import app
+from flujo.cli.main import app
 from typer.testing import CliRunner
 from unittest.mock import patch, MagicMock, AsyncMock
-from pathlib import Path
 import pytest
 import json
 
@@ -18,7 +17,7 @@ runner = CliRunner()
 @pytest.fixture
 def mock_orchestrator() -> None:
     """Fixture to mock the Orchestrator and its methods."""
-    with patch("pydantic_ai_orchestrator.cli.main.Orchestrator") as MockOrchestrator:
+    with patch("flujo.cli.main.Orchestrator") as MockOrchestrator:
         mock_instance = MockOrchestrator.return_value
 
         class DummyCandidate:
@@ -37,11 +36,11 @@ def test_cli_solve_happy_path(monkeypatch) -> None:
     def dummy_run_sync(self, task):
         return DummyCandidate()
 
-    monkeypatch.setattr("pydantic_ai_orchestrator.cli.main.Orchestrator.run_sync", dummy_run_sync)
+    monkeypatch.setattr("flujo.cli.main.Orchestrator.run_sync", dummy_run_sync)
     monkeypatch.setattr(
-        "pydantic_ai_orchestrator.cli.main.make_agent_async", lambda *a, **k: object()
+        "flujo.cli.main.make_agent_async", lambda *a, **k: object()
     )
-    from pydantic_ai_orchestrator.cli.main import app
+    from flujo.cli.main import app
 
     result = runner.invoke(app, ["solve", "write a poem"])
     assert result.exit_code == 0
@@ -56,9 +55,9 @@ def test_cli_solve_custom_models(monkeypatch) -> None:
     def dummy_run_sync(self, task):
         return DummyCandidate()
 
-    monkeypatch.setattr("pydantic_ai_orchestrator.cli.main.Orchestrator.run_sync", dummy_run_sync)
+    monkeypatch.setattr("flujo.cli.main.Orchestrator.run_sync", dummy_run_sync)
     monkeypatch.setattr(
-        "pydantic_ai_orchestrator.cli.main.make_agent_async", lambda *a, **k: object()
+        "flujo.cli.main.make_agent_async", lambda *a, **k: object()
     )
     result = runner.invoke(app, ["solve", "write", "--solution-model", "gemini:gemini-1.5-pro"])
     assert result.exit_code == 0
@@ -76,11 +75,11 @@ def test_cli_bench_command(monkeypatch) -> None:
     def dummy_run_sync(self, task):
         return DummyCandidate()
 
-    monkeypatch.setattr("pydantic_ai_orchestrator.cli.main.Orchestrator.run_sync", dummy_run_sync)
+    monkeypatch.setattr("flujo.cli.main.Orchestrator.run_sync", dummy_run_sync)
     monkeypatch.setattr(
-        "pydantic_ai_orchestrator.cli.main.make_agent_async", lambda *a, **k: object()
+        "flujo.cli.main.make_agent_async", lambda *a, **k: object()
     )
-    from pydantic_ai_orchestrator.cli.main import app
+    from flujo.cli.main import app
 
     result = runner.invoke(app, ["bench", "test prompt", "--rounds", "2"])
     assert result.exit_code == 0
@@ -101,16 +100,16 @@ def test_cli_version_command(monkeypatch) -> None:
     # import importlib.metadata  # removed unused import
     monkeypatch.setattr("importlib.metadata.version", lambda name: "1.2.3")
     monkeypatch.setattr("importlib.metadata.PackageNotFoundError", Exception)
-    from pydantic_ai_orchestrator.cli.main import app
+    from flujo.cli.main import app
 
     result = runner.invoke(app, ["version-cmd"])
     assert result.exit_code == 0
-    assert "pydantic-ai-orchestrator version" in result.stdout
+    assert "flujo version" in result.stdout
 
 
 def test_cli_solve_with_weights(monkeypatch) -> None:
     from unittest.mock import patch
-    from pydantic_ai_orchestrator.domain.models import Task
+    from flujo.domain.models import Task
 
     class DummyCandidate:
         score = 1.0
@@ -121,7 +120,7 @@ def test_cli_solve_with_weights(monkeypatch) -> None:
     mock_agent = AsyncMock()
     mock_agent.run.return_value = "mocked agent output"
 
-    with patch("pydantic_ai_orchestrator.cli.main.Orchestrator") as MockOrchestrator:
+    with patch("flujo.cli.main.Orchestrator") as MockOrchestrator:
         # Create a mock instance with a proper run_sync method
         mock_instance = MagicMock()
         async def mock_run_async(task: Task) -> DummyCandidate:
@@ -135,11 +134,11 @@ def test_cli_solve_with_weights(monkeypatch) -> None:
 
         # Patch make_agent_async to return our mock agent
         monkeypatch.setattr(
-            "pydantic_ai_orchestrator.cli.main.make_agent_async",
+            "flujo.cli.main.make_agent_async",
             lambda *a, **k: mock_agent
         )
 
-        from pydantic_ai_orchestrator.cli.main import app
+        from flujo.cli.main import app
         import tempfile
         import json
         import os
@@ -219,9 +218,9 @@ def test_cli_solve_keyboard_interrupt(monkeypatch) -> None:
     def raise_keyboard(*args, **kwargs):
         raise KeyboardInterrupt()
 
-    monkeypatch.setattr("pydantic_ai_orchestrator.cli.main.Orchestrator.run_sync", raise_keyboard)
+    monkeypatch.setattr("flujo.cli.main.Orchestrator.run_sync", raise_keyboard)
     monkeypatch.setattr(
-        "pydantic_ai_orchestrator.cli.main.make_agent_async", lambda *a, **k: object()
+        "flujo.cli.main.make_agent_async", lambda *a, **k: object()
     )
     result = runner.invoke(app, ["solve", "prompt"])
     assert result.exit_code == 130
@@ -233,9 +232,9 @@ def test_cli_bench_keyboard_interrupt(monkeypatch) -> None:
     def raise_keyboard(*args, **kwargs):
         raise KeyboardInterrupt()
 
-    monkeypatch.setattr("pydantic_ai_orchestrator.cli.main.Orchestrator.run_sync", raise_keyboard)
+    monkeypatch.setattr("flujo.cli.main.Orchestrator.run_sync", raise_keyboard)
     monkeypatch.setattr(
-        "pydantic_ai_orchestrator.cli.main.make_agent_async", lambda *a, **k: object()
+        "flujo.cli.main.make_agent_async", lambda *a, **k: object()
     )
     result = runner.invoke(app, ["bench", "prompt"])
     assert result.exit_code == 130
@@ -245,7 +244,7 @@ def test_cli_version_cmd_package_not_found(monkeypatch) -> None:
     monkeypatch.setattr(
         "importlib.metadata.version", lambda name: (_ for _ in ()).throw(Exception("fail"))
     )
-    from pydantic_ai_orchestrator.cli.main import app
+    from flujo.cli.main import app
 
     result = runner.invoke(app, ["version-cmd"])
     assert result.exit_code == 0
@@ -262,12 +261,12 @@ def test_cli_solve_configuration_error(monkeypatch) -> None:
     """Test that configuration errors surface with exit code 2."""
 
     def raise_config_error(*args, **kwargs):
-        from pydantic_ai_orchestrator.exceptions import ConfigurationError
+        from flujo.exceptions import ConfigurationError
 
         raise ConfigurationError("Missing API key!")
 
     monkeypatch.setattr(
-        "pydantic_ai_orchestrator.cli.main.make_agent_async",
+        "flujo.cli.main.make_agent_async",
         raise_config_error,
     )
 
@@ -279,7 +278,7 @@ def test_cli_solve_configuration_error(monkeypatch) -> None:
 def test_cli_explain(tmp_path) -> None:
     file = tmp_path / "pipe.py"
     file.write_text(
-        "from pydantic_ai_orchestrator.domain import Step\npipeline = Step('A') >> Step('B')\n"
+        "from flujo.domain import Step\npipeline = Step('A') >> Step('B')\n"
     )
 
     result = runner.invoke(app, ["explain", str(file)])
@@ -291,8 +290,8 @@ def test_cli_explain(tmp_path) -> None:
 def test_cli_improve_output_formatting(monkeypatch, tmp_path) -> None:
     pipe = tmp_path / "pipe.py"
     pipe.write_text(
-        "from pydantic_ai_orchestrator.domain import Step\n"
-        "from pydantic_ai_orchestrator.testing.utils import StubAgent\n"
+        "from flujo.domain import Step\n"
+        "from flujo.testing.utils import StubAgent\n"
         "pipeline = Step.solution(StubAgent(['a']))\n"
     )
     data = tmp_path / "data.py"
@@ -300,13 +299,13 @@ def test_cli_improve_output_formatting(monkeypatch, tmp_path) -> None:
         "from pydantic_evals import Dataset, Case\ndataset = Dataset(cases=[Case(inputs='a')])\n"
     )
 
-    from pydantic_ai_orchestrator.domain.models import ImprovementReport
+    from flujo.domain.models import ImprovementReport
 
     async def dummy_eval(*a, **k):
         return ImprovementReport(suggestions=[])
 
     monkeypatch.setattr(
-        "pydantic_ai_orchestrator.cli.main.evaluate_and_improve",
+        "flujo.cli.main.evaluate_and_improve",
         dummy_eval,
     )
 
@@ -318,8 +317,8 @@ def test_cli_improve_output_formatting(monkeypatch, tmp_path) -> None:
 def test_cli_improve_json_output(monkeypatch, tmp_path) -> None:
     pipe = tmp_path / "pipe.py"
     pipe.write_text(
-        "from pydantic_ai_orchestrator.domain import Step\n"
-        "from pydantic_ai_orchestrator.testing.utils import StubAgent\n"
+        "from flujo.domain import Step\n"
+        "from flujo.testing.utils import StubAgent\n"
         "pipeline = Step.solution(StubAgent(['a']))\n"
     )
     data = tmp_path / "data.py"
@@ -327,7 +326,7 @@ def test_cli_improve_json_output(monkeypatch, tmp_path) -> None:
         "from pydantic_evals import Dataset, Case\ndataset = Dataset(cases=[Case(inputs='a')])\n"
     )
 
-    from pydantic_ai_orchestrator.domain.models import ImprovementReport, ImprovementSuggestion, SuggestionType, PromptModificationDetail
+    from flujo.domain.models import ImprovementReport, ImprovementSuggestion, SuggestionType, PromptModificationDetail
 
     async def dummy_eval(*a, **k):
         return ImprovementReport(
@@ -343,7 +342,7 @@ def test_cli_improve_json_output(monkeypatch, tmp_path) -> None:
         )
 
     monkeypatch.setattr(
-        "pydantic_ai_orchestrator.cli.main.evaluate_and_improve",
+        "flujo.cli.main.evaluate_and_improve",
         dummy_eval,
     )
 
@@ -364,10 +363,12 @@ def test_cli_help() -> None:
     assert "explain" in result.stdout
 
 
-def test_cli_version() -> None:
+def test_cli_version(monkeypatch) -> None:
     """Test that the version command works and shows the correct version."""
     import importlib.metadata
-    version = importlib.metadata.version("pydantic_ai_orchestrator")
+
+    monkeypatch.setattr(importlib.metadata, "version", lambda name: "0.2.0")
+    version = importlib.metadata.version("flujo")
     result = runner.invoke(app, ["version-cmd"])
     assert result.exit_code == 0
     assert version in result.stdout
@@ -381,7 +382,7 @@ def test_cli_run() -> None:
         def model_dump(self):
             return {"solution": "test solution", "score": 1.0}
 
-    with patch("pydantic_ai_orchestrator.cli.main.Orchestrator") as MockOrchestrator:
+    with patch("flujo.cli.main.Orchestrator") as MockOrchestrator:
         mock_instance = MagicMock()
         mock_instance.run_sync.return_value = DummyCandidate()
         MockOrchestrator.return_value = mock_instance
@@ -409,10 +410,10 @@ def test_cli_run_with_args() -> None:
     dummy_settings.scorer = "ratio"
     dummy_settings.reflection_limit = 1
 
-    with patch("pydantic_ai_orchestrator.cli.main.Orchestrator") as MockOrchestrator, \
-         patch("pydantic_ai_orchestrator.cli.main.make_agent_async") as mock_make_agent, \
-         patch("pydantic_ai_orchestrator.cli.main.get_reflection_agent") as mock_get_reflection_agent, \
-         patch("pydantic_ai_orchestrator.cli.main.settings", dummy_settings):
+    with patch("flujo.cli.main.Orchestrator") as MockOrchestrator, \
+         patch("flujo.cli.main.make_agent_async") as mock_make_agent, \
+         patch("flujo.cli.main.get_reflection_agent") as mock_get_reflection_agent, \
+         patch("flujo.cli.main.settings", dummy_settings):
         mock_instance = MagicMock()
         mock_instance.run_sync.return_value = DummyCandidate()
         MockOrchestrator.return_value = mock_instance
@@ -457,9 +458,9 @@ def test_cli_run_with_invalid_args() -> None:
 def test_cli_run_with_invalid_model() -> None:
     """Test run with invalid model names."""
     from unittest.mock import patch
-    from pydantic_ai_orchestrator.exceptions import ConfigurationError
+    from flujo.exceptions import ConfigurationError
 
-    with patch("pydantic_ai_orchestrator.cli.main.make_agent_async") as mock_make_agent:
+    with patch("flujo.cli.main.make_agent_async") as mock_make_agent:
         mock_make_agent.side_effect = ConfigurationError("Invalid model name")
         result = runner.invoke(app, ["solve", "test prompt", "--solution-model", "invalid-model"])
         assert result.exit_code == 2
@@ -469,9 +470,9 @@ def test_cli_run_with_invalid_model() -> None:
 def test_cli_run_with_invalid_retries() -> None:
     """Test run with invalid retry settings."""
     from unittest.mock import patch
-    from pydantic_ai_orchestrator.exceptions import ConfigurationError
+    from flujo.exceptions import ConfigurationError
 
-    with patch("pydantic_ai_orchestrator.cli.main.Orchestrator") as MockOrchestrator:
+    with patch("flujo.cli.main.Orchestrator") as MockOrchestrator:
         MockOrchestrator.side_effect = ConfigurationError("Invalid retry settings")
         result = runner.invoke(app, ["solve", "test prompt", "--max-iters", "100"])
         assert result.exit_code == 2
@@ -481,9 +482,9 @@ def test_cli_run_with_invalid_retries() -> None:
 def test_cli_run_with_invalid_review_model() -> None:
     """Test run with invalid review model."""
     from unittest.mock import patch
-    from pydantic_ai_orchestrator.exceptions import ConfigurationError
+    from flujo.exceptions import ConfigurationError
 
-    with patch("pydantic_ai_orchestrator.cli.main.make_agent_async") as mock_make_agent:
+    with patch("flujo.cli.main.make_agent_async") as mock_make_agent:
         mock_make_agent.side_effect = ConfigurationError("Invalid review model")
         result = runner.invoke(app, ["solve", "test prompt", "--review-model", "invalid-model"])
         assert result.exit_code == 2
@@ -493,9 +494,9 @@ def test_cli_run_with_invalid_review_model() -> None:
 def test_cli_run_with_invalid_agent_timeout() -> None:
     """Test run with invalid agent timeout settings."""
     from unittest.mock import patch
-    from pydantic_ai_orchestrator.exceptions import ConfigurationError
+    from flujo.exceptions import ConfigurationError
 
-    with patch("pydantic_ai_orchestrator.cli.main.Orchestrator") as MockOrchestrator:
+    with patch("flujo.cli.main.Orchestrator") as MockOrchestrator:
         MockOrchestrator.side_effect = ConfigurationError("Invalid agent timeout")
         result = runner.invoke(app, ["solve", "test prompt"])
         assert result.exit_code == 2
@@ -505,9 +506,9 @@ def test_cli_run_with_invalid_agent_timeout() -> None:
 def test_cli_run_with_invalid_review_model_path() -> None:
     """Test run with invalid review model path."""
     from unittest.mock import patch
-    from pydantic_ai_orchestrator.exceptions import ConfigurationError
+    from flujo.exceptions import ConfigurationError
 
-    with patch("pydantic_ai_orchestrator.cli.main.make_agent_async") as mock_make_agent:
+    with patch("flujo.cli.main.make_agent_async") as mock_make_agent:
         mock_make_agent.side_effect = ConfigurationError("Invalid review model path")
         result = runner.invoke(app, ["solve", "test prompt", "--review-model", "/invalid/path"])
         assert result.exit_code == 2
@@ -573,8 +574,8 @@ def test_cli_add_eval_case_invalid_metadata_json(tmp_path) -> None:
 def test_cli_improve_uses_custom_improvement_model(monkeypatch, tmp_path) -> None:
     pipe = tmp_path / "pipe.py"
     pipe.write_text(
-        "from pydantic_ai_orchestrator.domain import Step\n"
-        "from pydantic_ai_orchestrator.testing.utils import StubAgent\n"
+        "from flujo.domain import Step\n"
+        "from flujo.testing.utils import StubAgent\n"
         "pipeline = Step.solution(StubAgent(['a']))\n"
     )
     data = tmp_path / "data.py"
@@ -589,11 +590,11 @@ def test_cli_improve_uses_custom_improvement_model(monkeypatch, tmp_path) -> Non
                 return "{}"
         return A()
 
-    monkeypatch.setattr("pydantic_ai_orchestrator.cli.main.make_self_improvement_agent", fake_make)
-    from pydantic_ai_orchestrator.domain.models import ImprovementReport
+    monkeypatch.setattr("flujo.cli.main.make_self_improvement_agent", fake_make)
+    from flujo.domain.models import ImprovementReport
 
     monkeypatch.setattr(
-        "pydantic_ai_orchestrator.cli.main.evaluate_and_improve",
+        "flujo.cli.main.evaluate_and_improve",
         AsyncMock(return_value=ImprovementReport(suggestions=[])),
     )
 

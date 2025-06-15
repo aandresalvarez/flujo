@@ -1,6 +1,6 @@
 # API Reference
 
-This guide provides detailed documentation for all public interfaces in `pydantic-ai-orchestrator`.
+This guide provides detailed documentation for all public interfaces in `flujo`.
 
 ## Core Components
 
@@ -12,7 +12,7 @@ provide for these roles. For custom pipelines with different logic, see
 `PipelineRunner` and the `Step` DSL.
 
 ```python
-from pydantic_ai_orchestrator import Orchestrator
+from flujo import Orchestrator
 
 orchestrator = Orchestrator(
     review_agent: AsyncAgentProtocol[Any, Checklist],
@@ -41,7 +41,7 @@ The Pipeline DSL lets you create flexible, custom workflows and execute them
 with `PipelineRunner`.
 
 ```python
-from pydantic_ai_orchestrator import (
+from flujo import (
     Step, PipelineRunner, Task,
     review_agent, solution_agent, validator_agent,
 )
@@ -113,7 +113,7 @@ final_ctx = pipeline_result.final_pipeline_context
 Agent creation and configuration utilities.
 
 ```python
-from pydantic_ai_orchestrator import make_agent_async
+from flujo import make_agent_async
 
 # Create a custom agent
 agent = make_agent_async(
@@ -124,7 +124,7 @@ agent = make_agent_async(
 )
 
 # Pre-built agents
-from pydantic_ai_orchestrator import (
+from flujo import (
     review_agent,
     solution_agent,
     validator_agent,
@@ -147,7 +147,7 @@ from pydantic_ai_orchestrator import (
 Represents a task to be solved by the orchestrator.
 
 ```python
-from pydantic_ai_orchestrator import Task
+from flujo import Task
 
 task = Task(
     prompt: str,                   # The task prompt
@@ -160,7 +160,7 @@ task = Task(
 Represents a solution produced by the orchestrator.
 
 ```python
-from pydantic_ai_orchestrator import Candidate
+from flujo import Candidate
 
 candidate = Candidate(
     solution: str,                 # The solution
@@ -174,7 +174,7 @@ candidate = Candidate(
 Quality evaluation structures.
 
 ```python
-from pydantic_ai_orchestrator import Checklist, ChecklistItem
+from flujo import Checklist, ChecklistItem
 
 item = ChecklistItem(
     description: str,              # What is being checked
@@ -192,7 +192,7 @@ checklist = Checklist(
 Results from pipeline execution.
 
 ```python
-from pydantic_ai_orchestrator import PipelineResult, StepResult
+from flujo import PipelineResult, StepResult
 
 step_result = StepResult(
     name: str,                     # Step name
@@ -218,7 +218,7 @@ pipeline_result = PipelineResult(
 ### Evaluation Functions
 
 ```python
-from pydantic_ai_orchestrator import run_pipeline_async, evaluate_and_improve
+from flujo import run_pipeline_async, evaluate_and_improve
 
 # Run pipeline evaluation
 result = await run_pipeline_async(
@@ -239,7 +239,7 @@ report = await evaluate_and_improve(
 ### Improvement Models
 
 ```python
-from pydantic_ai_orchestrator import (
+from flujo import (
     SelfImprovementAgent,
     ImprovementReport,
     ImprovementSuggestion,
@@ -271,7 +271,7 @@ report = ImprovementReport(
 ### Settings
 
 ```python
-from pydantic_ai_orchestrator import settings
+from flujo import settings
 
 # Access current settings
 current_settings = settings
@@ -290,7 +290,7 @@ current_settings = settings
 ### Telemetry
 
 ```python
-from pydantic_ai_orchestrator import init_telemetry
+from flujo import init_telemetry
 
 # Initialize telemetry
 init_telemetry()
@@ -307,8 +307,8 @@ init_telemetry()
 ### Validation Plugins
 
 ```python
-from pydantic_ai_orchestrator import ValidationPlugin, PluginOutcome
-from pydantic_ai_orchestrator.plugins import SQLSyntaxValidator
+from flujo import ValidationPlugin, PluginOutcome
+from flujo.plugins import SQLSyntaxValidator
 
 # Use built-in SQL validator
 sql_validator = SQLSyntaxValidator()
@@ -325,7 +325,7 @@ class MyPlugin(ValidationPlugin):
 ### Testing Utilities
 
 ```python
-from pydantic_ai_orchestrator.testing import StubAgent, DummyPlugin
+from flujo.testing import StubAgent, DummyPlugin
 
 # Create stub agent for testing
 stub_agent = StubAgent(
@@ -340,7 +340,7 @@ dummy_plugin = DummyPlugin(should_pass=True)
 ## Exceptions
 
 ```python
-from pydantic_ai_orchestrator import (
+from flujo import (
     OrchestratorError,
     ConfigurationError,
     SettingsError,
@@ -367,15 +367,15 @@ The package provides a comprehensive CLI:
 
 ```bash
 # Main commands
-orch solve "prompt"              # Solve a task
-orch bench "prompt" --rounds 5   # Benchmark performance
-orch show-config                 # Show configuration
-orch version-cmd                 # Show version
+flujo solve "prompt"              # Solve a task
+flujo bench "prompt" --rounds 5   # Benchmark performance
+flujo show-config                 # Show configuration
+flujo version-cmd                 # Show version
 
 # Advanced commands
-orch improve pipeline.py dataset.py     # Generate improvements
-orch explain pipeline.py                # Explain pipeline structure
-orch add-eval-case --dataset dataset.py # Add evaluation case
+flujo improve pipeline.py dataset.py     # Generate improvements
+flujo explain pipeline.py                # Explain pipeline structure
+flujo add-eval-case --dataset dataset.py # Add evaluation case
 ```
 
 ## Best Practices

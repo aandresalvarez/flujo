@@ -5,27 +5,27 @@ Environment variables are loaded automatically from this file.
 ## CLI
 
 ```bash
-orch solve "Write a summary of this document."
-orch show-config
-orch bench --prompt "hi" --rounds 3
-orch explain path/to/pipeline.py
-orch add-eval-case -d my_evals.py -n new_case -i "input"
-orch --profile
+flujo solve "Write a summary of this document."
+flujo show-config
+flujo bench --prompt "hi" --rounds 3
+flujo explain path/to/pipeline.py
+flujo add-eval-case -d my_evals.py -n new_case -i "input"
+flujo --profile
 ```
 
-Use `orch improve --improvement-model MODEL` to override the model powering the
+Use `flujo improve --improvement-model MODEL` to override the model powering the
 self-improvement agent when generating suggestions.
 
-`orch bench` depends on `numpy`. Install with the optional `[bench]` extra:
+`flujo bench` depends on `numpy`. Install with the optional `[bench]` extra:
 
 ```bash
-pip install pydantic-ai-orchestrator[bench]
+pip install flujo[bench]
 ```
 
 ## API
 
 ```python
-from pydantic_ai_orchestrator import (
+from flujo import (
     Orchestrator, Task, init_telemetry,
     review_agent, solution_agent, validator_agent,
 )
@@ -55,9 +55,9 @@ Call `init_telemetry()` once at startup to configure logging and tracing for you
 You can define custom workflows using the `Step` class and execute them with `PipelineRunner`:
 
 ```python
-from pydantic_ai_orchestrator import Step, PipelineRunner
-from pydantic_ai_orchestrator.plugins.sql_validator import SQLSyntaxValidator
-from pydantic_ai_orchestrator.testing.utils import StubAgent
+from flujo import Step, PipelineRunner
+from flujo.plugins.sql_validator import SQLSyntaxValidator
+from flujo.testing.utils import StubAgent
 
 solution_step = Step.solution(StubAgent(["SELECT FROM"]))
 validate_step = Step.validate(StubAgent([None]), plugins=[SQLSyntaxValidator()])

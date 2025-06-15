@@ -1,4 +1,4 @@
-"""Settings and configuration for pydantic-ai-orchestrator."""
+"""Settings and configuration for flujo."""
 
 import os
 from typing import ClassVar, Literal, Optional

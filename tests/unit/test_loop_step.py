@@ -1,6 +1,6 @@
 import pytest
 
-from pydantic_ai_orchestrator.domain import Step, Pipeline, LoopStep
+from flujo.domain import Step, Pipeline, LoopStep
 
 
 def test_loop_step_init_validation() -> None:

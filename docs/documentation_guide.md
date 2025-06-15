@@ -1,6 +1,6 @@
 # Documentation Guide
 
-This guide outlines the standards and procedures for maintaining the official documentation for `pydantic-ai-orchestrator`. Our goal is to provide clear, comprehensive, and up-to-date documentation for users and contributors.
+This guide outlines the standards and procedures for maintaining the official documentation for `flujo`. Our goal is to provide clear, comprehensive, and up-to-date documentation for users and contributors.
 
 ## 1. Our Documentation Stack: MkDocs + `mkdocstrings`
 
@@ -25,7 +25,7 @@ All narrative documentation (tutorials, guides, specifications) lives in the `/d
 
 ### Step 2: Update Python Docstrings for API Reference
 
-Our API reference is generated automatically. To improve it, you must edit the docstrings directly in the Python source code (e.g., in `pydantic_ai_orchestrator/domain/pipeline_dsl.py`).
+Our API reference is generated automatically. To improve it, you must edit the docstrings directly in the Python source code (e.g., in `flujo/domain/pipeline_dsl.py`).
 
 We follow the **Google Python Style Guide** for docstrings. A good docstring includes:
 * A one-line summary.
@@ -125,7 +125,7 @@ This automated process ensures that our documentation is always a perfect reflec
 
     ```yaml
     # in mkdocs.yml
-    site_name: pydantic-ai-orchestrator
+    site_name: flujo
     nav:
       - Home: index.md
       - Usage: usage.md
@@ -136,7 +136,7 @@ This automated process ensures that our documentation is always a perfect reflec
         - Contributing Guide: dev.md
         - Documentation Guide: documentation_guide.md # <-- Add this line
       - API Reference:
-          - Orchestrator: 'pydantic_ai_orchestrator.application.orchestrator'
+          - Orchestrator: 'flujo.application.orchestrator'
           # ... other API refs
     ```
 

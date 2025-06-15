@@ -1,10 +1,10 @@
 import pytest
 from pydantic import BaseModel
 
-from pydantic_ai_orchestrator.application.pipeline_runner import PipelineRunner
-from pydantic_ai_orchestrator.domain import Step, Pipeline
-from pydantic_ai_orchestrator.testing.utils import StubAgent, DummyPlugin
-from pydantic_ai_orchestrator.domain.plugins import PluginOutcome
+from flujo.application.pipeline_runner import PipelineRunner
+from flujo.domain import Step, Pipeline
+from flujo.testing.utils import StubAgent, DummyPlugin
+from flujo.domain.plugins import PluginOutcome
 
 
 class IncrementAgent:

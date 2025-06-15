@@ -1,4 +1,4 @@
-from pydantic_ai_orchestrator.infra.settings import Settings
+from flujo.infra.settings import Settings
 from pydantic import SecretStr
 import os
 
@@ -23,7 +23,7 @@ def test_missing_api_key_allowed(monkeypatch) -> None:
     monkeypatch.delenv("orch_openai_api_key", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     import importlib
-    import pydantic_ai_orchestrator.infra.settings as settings_mod
+    import flujo.infra.settings as settings_mod
 
     importlib.reload(settings_mod)
     s = Settings()

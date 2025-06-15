@@ -6,7 +6,7 @@ Run with:
     OPENAI_API_KEY=sk-... python 00_quickstart.py
 """
 
-from pydantic_ai_orchestrator import (
+from flujo import (
     Orchestrator,
     Task,
     review_agent,

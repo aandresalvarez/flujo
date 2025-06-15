@@ -1,6 +1,6 @@
 # Pipeline DSL Guide
 
-The Pipeline Domain-Specific Language (DSL) is a powerful way to create custom AI workflows in `pydantic-ai-orchestrator`. This guide explains how to use it effectively.
+The Pipeline Domain-Specific Language (DSL) is a powerful way to create custom AI workflows in `flujo`. This guide explains how to use it effectively.
 
 ## Overview
 
@@ -16,8 +16,8 @@ The Pipeline DSL lets you:
 ### Creating a Pipeline
 
 ```python
-from pydantic_ai_orchestrator import Step, PipelineRunner
-from pydantic_ai_orchestrator.infra.agents import (
+from flujo import Step, PipelineRunner
+from flujo.infra.agents import (
     review_agent, solution_agent, validator_agent
 )
 
@@ -116,7 +116,7 @@ Validation steps verify the solution:
 validate_step = Step.validate(validator_agent)
 
 # With custom scoring
-from pydantic_ai_orchestrator import weighted_score
+from flujo import weighted_score
 
 weights = {
     "correctness": 0.6,
@@ -129,7 +129,7 @@ validate_step = Step.validate(
 )
 
 # With plugins
-from pydantic_ai_orchestrator.plugins import SQLSyntaxValidator
+from flujo.plugins import SQLSyntaxValidator
 
 validate_step = Step.validate(
     validator_agent,
@@ -144,7 +144,7 @@ validate_step = Step.validate(
 Run steps in parallel:
 
 ```python
-from pydantic_ai_orchestrator import parallel
+from flujo import parallel
 
 # Run multiple solution steps in parallel
 pipeline = (
@@ -262,7 +262,7 @@ runner = PipelineRunner(
 ### Error Recovery
 
 ```python
-from pydantic_ai_orchestrator import fallback
+from flujo import fallback
 
 # Add fallback steps
 pipeline = (
@@ -306,8 +306,8 @@ pipeline = (
 ### Code Generation Pipeline
 
 ```python
-from pydantic_ai_orchestrator import Step, PipelineRunner
-from pydantic_ai_orchestrator.plugins import (
+from flujo import Step, PipelineRunner
+from flujo.plugins import (
     SQLSyntaxValidator,
     CodeStyleValidator
 )

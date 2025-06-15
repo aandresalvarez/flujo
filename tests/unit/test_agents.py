@@ -7,15 +7,15 @@ from pydantic import SecretStr
 # Ensure environment variable exists before agents are imported
 os.environ.setdefault("orch_openai_api_key", "test-key")
 
-from pydantic_ai_orchestrator.infra.agents import (
+from flujo.infra.agents import (
     AsyncAgentWrapper,
     NoOpReflectionAgent,
     get_reflection_agent,
     LoggingReviewAgent,
 )
 
-from pydantic_ai_orchestrator.exceptions import OrchestratorRetryError
-from pydantic_ai_orchestrator.infra.settings import settings
+from flujo.exceptions import OrchestratorRetryError
+from flujo.infra.settings import settings
 
 
 @pytest.fixture
@@ -84,10 +84,10 @@ async def test_noop_reflection_agent() -> None:
 
 def test_get_reflection_agent_disabled(monkeypatch) -> None:
     import importlib
-    import pydantic_ai_orchestrator.infra.agents as agents_mod
+    import flujo.infra.agents as agents_mod
 
     monkeypatch.setattr(
-        "pydantic_ai_orchestrator.infra.settings.settings.reflection_enabled", False
+        "flujo.infra.settings.settings.reflection_enabled", False
     )
     importlib.reload(agents_mod)
     agent = agents_mod.get_reflection_agent()
@@ -95,9 +95,9 @@ def test_get_reflection_agent_disabled(monkeypatch) -> None:
 
 
 def test_get_reflection_agent_creation_failure(monkeypatch) -> None:
-    monkeypatch.setattr("pydantic_ai_orchestrator.infra.settings.settings.reflection_enabled", True)
+    monkeypatch.setattr("flujo.infra.settings.settings.reflection_enabled", True)
     with patch(
-        "pydantic_ai_orchestrator.infra.agents.make_agent_async", side_effect=Exception("fail")
+        "flujo.infra.agents.make_agent_async", side_effect=Exception("fail")
     ):
         agent = get_reflection_agent()
         assert agent.__class__.__name__ == "NoOpReflectionAgent"
@@ -170,10 +170,10 @@ async def test_async_agent_wrapper_agent_failed_string_only() -> None:
 
 def test_make_agent_async_injects_key(monkeypatch) -> None:
     monkeypatch.setenv("orch_openai_api_key", "test-key")
-    from pydantic_ai_orchestrator.infra import settings as settings_mod
+    from flujo.infra import settings as settings_mod
 
     settings_mod.settings.openai_api_key = SecretStr("test-key")
-    from pydantic_ai_orchestrator.infra.agents import make_agent_async
+    from flujo.infra.agents import make_agent_async
 
     wrapper = make_agent_async("openai:gpt-4o", "sys", str)
     assert wrapper is not None
@@ -181,11 +181,11 @@ def test_make_agent_async_injects_key(monkeypatch) -> None:
 
 def test_make_agent_async_missing_key(monkeypatch) -> None:
     monkeypatch.delenv("orch_anthropic_api_key", raising=False)
-    from pydantic_ai_orchestrator.infra import settings as settings_mod
+    from flujo.infra import settings as settings_mod
 
     settings_mod.settings.anthropic_api_key = None
-    from pydantic_ai_orchestrator.infra.agents import make_agent_async
-    from pydantic_ai_orchestrator.exceptions import ConfigurationError
+    from flujo.infra.agents import make_agent_async
+    from flujo.exceptions import ConfigurationError
 
     with pytest.raises(ConfigurationError):
         make_agent_async("anthropic:claude-3", "sys", str)
@@ -267,14 +267,14 @@ def test_make_self_improvement_agent_uses_settings_default(monkeypatch) -> None:
         return MagicMock()
 
     monkeypatch.setattr(
-        "pydantic_ai_orchestrator.infra.agents.make_agent_async",
+        "flujo.infra.agents.make_agent_async",
         fake_make,
     )
     monkeypatch.setattr(
-        "pydantic_ai_orchestrator.infra.agents.settings.default_self_improvement_model",
+        "flujo.infra.agents.settings.default_self_improvement_model",
         "model_from_settings",
     )
-    from pydantic_ai_orchestrator.infra.agents import make_self_improvement_agent
+    from flujo.infra.agents import make_self_improvement_agent
 
     make_self_improvement_agent()
     assert called["model"] == "model_from_settings"
@@ -288,10 +288,10 @@ def test_make_self_improvement_agent_uses_override_model(monkeypatch) -> None:
         return MagicMock()
 
     monkeypatch.setattr(
-        "pydantic_ai_orchestrator.infra.agents.make_agent_async",
+        "flujo.infra.agents.make_agent_async",
         fake_make,
     )
-    from pydantic_ai_orchestrator.infra.agents import make_self_improvement_agent
+    from flujo.infra.agents import make_self_improvement_agent
 
     make_self_improvement_agent(model="override_model")
     assert called["model"] == "override_model"
