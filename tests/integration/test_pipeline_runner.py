@@ -3,7 +3,7 @@ from unittest.mock import Mock
 import pytest
 
 from flujo.domain import Step
-from flujo.application.pipeline_runner import PipelineRunner
+from flujo.application.flujo_engine import Flujo
 from flujo.domain.models import PipelineResult
 from flujo.testing.utils import StubAgent, DummyPlugin
 from flujo.domain.plugins import PluginOutcome
@@ -20,7 +20,7 @@ async def test_runner_respects_max_retries() -> None:
     )
     step = Step("test", agent, max_retries=3, plugins=[plugin])
     pipeline = step
-    runner = PipelineRunner(pipeline)
+    runner = Flujo(pipeline)
     result = await runner.run_async("in")
     assert agent.call_count == 3
     assert isinstance(result, PipelineResult)
@@ -36,7 +36,7 @@ async def test_feedback_enriches_prompt() -> None:
         ]
     )
     step = Step.solution(sol_agent, max_retries=2, plugins=[plugin])
-    runner = PipelineRunner(step)
+    runner = Flujo(step)
     await runner.run_async("SELECT *")
     assert sol_agent.call_count == 2
     assert "SQL Error: XYZ" in sol_agent.inputs[1]
@@ -53,7 +53,7 @@ async def test_conditional_redirection() -> None:
     )
     step = Step("s", primary, max_retries=2, plugins=[plugin])
     pipeline = step
-    runner = PipelineRunner(pipeline)
+    runner = Flujo(pipeline)
     await runner.run_async("prompt")
     assert primary.call_count == 1
     assert fixit.call_count == 1
@@ -65,7 +65,7 @@ async def test_on_failure_called() -> None:
     handler = Mock()
     step = Step("s", agent, max_retries=1, plugins=[plugin])
     step.on_failure(handler)
-    runner = PipelineRunner(step)
+    runner = Flujo(step)
     await runner.run_async("prompt")
     handler.assert_called_once()
 
@@ -82,7 +82,7 @@ async def test_timeout_and_redirect_loop_detection() -> None:
     plugin = SlowPlugin()
     agent = StubAgent(["ok"])
     step = Step("s", agent, plugins=[plugin], max_retries=1, timeout_s=0.01)
-    runner = PipelineRunner(step)
+    runner = Flujo(step)
     try:
         await runner.run_async("prompt")
     except TimeoutError:
@@ -98,7 +98,7 @@ async def test_timeout_and_redirect_loop_detection() -> None:
         ]
     )
     step2 = Step("loop", a1, max_retries=3, plugins=[plugin_loop])
-    runner2 = PipelineRunner(step2)
+    runner2 = Flujo(step2)
     with pytest.raises(Exception):
         await runner2.run_async("p")
 
@@ -106,7 +106,7 @@ async def test_timeout_and_redirect_loop_detection() -> None:
 async def test_pipeline_cancellation() -> None:
     agent = StubAgent(["out"])
     step = Step("s", agent)
-    runner = PipelineRunner(step)
+    runner = Flujo(step)
     task = asyncio.create_task(runner.run_async("prompt"))
     await asyncio.sleep(0)
     task.cancel()

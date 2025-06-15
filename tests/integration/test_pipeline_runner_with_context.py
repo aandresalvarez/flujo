@@ -1,7 +1,7 @@
 import pytest
 from pydantic import BaseModel
 
-from flujo.application.pipeline_runner import PipelineRunner
+from flujo.application.flujo_engine import Flujo
 from flujo.domain import Step
 from flujo.testing.utils import StubAgent
 
@@ -21,7 +21,7 @@ class AddOneAgent:
 async def test_pipeline_runner_shared_context_flow() -> None:
     step1 = Step("a", AddOneAgent())
     step2 = Step("b", AddOneAgent())
-    runner = PipelineRunner(step1 >> step2, context_model=Ctx, initial_context_data={"count": 0})
+    runner = Flujo(step1 >> step2, context_model=Ctx, initial_context_data={"count": 0})
     result = await runner.run_async(1)
     assert result.final_pipeline_context.count == 2
     assert result.step_history[-1].output == 3
@@ -31,6 +31,6 @@ async def test_pipeline_runner_shared_context_flow() -> None:
 async def test_existing_agents_without_context() -> None:
     agent = StubAgent(["ok"])
     step = Step("s", agent)
-    runner = PipelineRunner(step)
+    runner = Flujo(step)
     result = await runner.run_async("hi")
     assert result.step_history[0].output == "ok"

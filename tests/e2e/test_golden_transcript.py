@@ -5,7 +5,7 @@ try:
 except Exception:  # pragma: no cover - skip if dependency missing
     vcr = None
     pytest.skip("vcrpy not installed", allow_module_level=True)
-from flujo.application.orchestrator import Orchestrator
+from flujo.recipes import Default
 from flujo.domain.models import Task, Candidate
 from flujo.infra.agents import (
     review_agent,
@@ -34,7 +34,7 @@ def test_golden_transcript():
     Runs a simple end-to-end test against the real OpenAI API (or a recording)
     to ensure the entire orchestration flow produces a valid, scored candidate.
     """
-    orch = Orchestrator(
+    orch = Default(
         review_agent,
         solution_agent,
         validator_agent,

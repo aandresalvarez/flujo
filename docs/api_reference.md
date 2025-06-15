@@ -4,17 +4,17 @@ This guide provides detailed documentation for all public interfaces in `flujo`.
 
 ## Core Components
 
-### Orchestrator
+### Default Recipe
 
-The `Orchestrator` class is a high-level facade for running a **standard, fixed
+`flujo.recipes.Default` is a high-level facade for running a **standard, fixed
 multi-agent pipeline**: Review -> Solution -> Validate -> Reflection. It uses the agents you
 provide for these roles. For custom pipelines with different logic, see
-`PipelineRunner` and the `Step` DSL.
+`Flujo` and the `Step` DSL.
 
 ```python
-from flujo import Orchestrator
+from flujo.recipes import Default
 
-orchestrator = Orchestrator(
+orchestrator = Default(
     review_agent: AsyncAgentProtocol[Any, Checklist],
     solution_agent: AsyncAgentProtocol[Any, str],
     validator_agent: AsyncAgentProtocol[Any, Checklist],
@@ -35,14 +35,14 @@ result = orchestrator.run_sync(Task(prompt="Generate a poem"))
 candidate = await orchestrator.run_async(Task(prompt="Generate a poem"))
 ```
 
-### Pipeline DSL & `PipelineRunner`
+### Pipeline DSL & `Flujo`
 
 The Pipeline DSL lets you create flexible, custom workflows and execute them
-with `PipelineRunner`.
+with `Flujo`.
 
 ```python
 from flujo import (
-    Step, PipelineRunner, Task,
+    Step, Flujo, Task,
     review_agent, solution_agent, validator_agent,
 )
 from pydantic import BaseModel
@@ -63,9 +63,9 @@ custom_pipeline = (
     )
 )
 
-runner = PipelineRunner(custom_pipeline)
+runner = Flujo(custom_pipeline)
 # With a shared typed context
-runner_with_ctx = PipelineRunner(
+runner_with_ctx = Flujo(
     custom_pipeline,
     context_model=MyContext,
     initial_context_data={"counter": 0},
@@ -223,7 +223,7 @@ from flujo import run_pipeline_async, evaluate_and_improve
 # Run pipeline evaluation
 result = await run_pipeline_async(
     inputs: str,                   # Input prompt
-    runner: PipelineRunner,        # Pipeline runner
+    runner: Flujo,                 # Pipeline runner
     **kwargs                       # Additional arguments
 )
 

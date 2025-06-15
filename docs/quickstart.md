@@ -29,8 +29,9 @@ OPENAI_API_KEY=your_key_here
 Create a new file `hello_orchestrator.py`:
 
 ```python
+from flujo.recipes import Default
 from flujo import (
-    Orchestrator, Task,
+    Task,
     review_agent, solution_agent, validator_agent, reflection_agent,
     init_telemetry,
 )
@@ -39,7 +40,7 @@ init_telemetry()
 
 # Assemble the orchestrator with the default agents. It runs a fixed
 # Review -> Solution -> Validate -> Reflection workflow.
-flujo = Orchestrator(
+flujo = Default(
     review_agent=review_agent,
     solution_agent=solution_agent,
     validator_agent=validator_agent,
@@ -61,9 +62,9 @@ if best_candidate:
             print(f"{status} {item.description}")
 ```
 
-The `Orchestrator` class provides a quick way to run this standard
+The `Default` recipe provides a quick way to run this standard
 multi-agent workflow. For custom pipelines and advanced control, you'll
-use the `PipelineRunner` and `Step` DSL described later.
+use the `Flujo` engine and `Step` DSL described later.
 
 ## 4. Run Your First Orchestration
 
@@ -122,7 +123,7 @@ custom_agent = make_agent_async(
 )
 
 # Use it in your orchestrator
-flujo = Orchestrator(
+flujo = Default(
     review_agent=custom_agent, 
     solution_agent=solution_agent, 
     validator_agent=validator_agent,
@@ -152,18 +153,18 @@ code_agent = make_agent_async(
 
 ```python
 from flujo import (
-    Step, PipelineRunner, Task,
+    Step, Flujo, Task,
     review_agent, solution_agent, validator_agent,
 )
 
-# Define a custom pipeline (similar to the Orchestrator workflow)
+# Define a custom pipeline (similar to the Default workflow)
 custom_pipeline = (
     Step.review(review_agent)
     >> Step.solution(solution_agent)
     >> Step.validate(validator_agent)
 )
 
-runner = PipelineRunner(custom_pipeline)
+runner = Flujo(custom_pipeline)
 
 # The input to `run()` is the prompt for the first step.
 pipeline_result = runner.run("Write a function to sort a list")
