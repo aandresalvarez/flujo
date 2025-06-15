@@ -45,7 +45,7 @@ flujo = Default(
 task = Task(prompt="Write a Python function to calculate Fibonacci numbers")
 
 # Run synchronously
-best_candidate = orch.run_sync(task)
+best_candidate = flujo.run_sync(task)
 
 # Print the result
 if best_candidate:

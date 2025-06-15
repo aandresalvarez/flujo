@@ -49,7 +49,7 @@ flujo = Default(
 
 task = Task(prompt="Write a haiku about programming")
 
-best_candidate = orch.run_sync(task)
+best_candidate = flujo.run_sync(task)
 
 if best_candidate:
     print("\n🎉 Best result:")
