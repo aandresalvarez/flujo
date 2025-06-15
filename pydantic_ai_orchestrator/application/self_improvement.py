@@ -30,7 +30,7 @@ class SelfImprovementAgent:
         return ImprovementReport.model_validate_json(data)
 
 
-def _find_step(pipeline: Pipeline | Step | None, name: str) -> Step | None:
+def _find_step(pipeline: Pipeline[Any, Any] | Step[Any, Any] | None, name: str) -> Step[Any, Any] | None:
     if pipeline is None:
         return None
     if isinstance(pipeline, Step):
@@ -44,7 +44,7 @@ def _find_step(pipeline: Pipeline | Step | None, name: str) -> Step | None:
 def _build_context(
     failures: Iterable[ReportCase],
     success: ReportCase | None,
-    pipeline_definition: Pipeline | Step | None = None,
+    pipeline_definition: Pipeline[Any, Any] | Step[Any, Any] | None = None,
 ) -> str:
     lines: list[str] = []
     for case in failures:
@@ -56,7 +56,7 @@ def _build_context(
             if step_obj is not None:
                 cfg = step_obj.config
                 lines.append(f"  Config(retries={cfg.max_retries}, timeout={cfg.timeout_s}s)")
-                if getattr(step_obj.agent, "system_prompt", None):
+                if step_obj.agent is not None:
                     summary = summarize_and_redact_prompt(step_obj.agent.system_prompt)
                     lines.append(f'  SystemPromptSummary: "{summary}"')
     if success:
@@ -68,7 +68,7 @@ def _build_context(
             if step_obj is not None:
                 cfg = step_obj.config
                 lines.append(f"  Config(retries={cfg.max_retries}, timeout={cfg.timeout_s}s)")
-                if getattr(step_obj.agent, "system_prompt", None):
+                if step_obj.agent is not None:
                     summary = summarize_and_redact_prompt(step_obj.agent.system_prompt)
                     lines.append(f'  SystemPromptSummary: "{summary}"')
     return "\n".join(lines)
@@ -78,7 +78,7 @@ async def evaluate_and_improve(
     task_function: Callable[[Any], Awaitable[PipelineResult]],
     dataset: Any,
     improvement_agent: SelfImprovementAgent,
-    pipeline_definition: Optional[Pipeline | Step] = None,
+    pipeline_definition: Optional[Pipeline[Any, Any] | Step[Any, Any]] = None,
 ) -> ImprovementReport:
     """Run dataset evaluation and return improvement suggestions."""
     report: EvaluationReport = await dataset.evaluate(task_function)

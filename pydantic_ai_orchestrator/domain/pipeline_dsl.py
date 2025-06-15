@@ -101,8 +101,6 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         """Construct a validation step using the provided agent."""
         return cls("validate", agent, **config)
 
-    validate = validate_step
-
     def add_plugin(self, plugin: ValidationPlugin, priority: int = 0) -> "Step[StepInT, StepOutT]":
         """Add a validation plugin to this step."""
         self.plugins.append((plugin, priority))
@@ -329,7 +327,7 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
 
     @classmethod
     def from_step(cls, step: Step[PipeInT, PipeOutT]) -> "Pipeline[PipeInT, PipeOutT]":
-        return cls[PipeInT, PipeOutT].model_construct(steps=[step])
+        return cls.model_construct(steps=[step])
 
     def __rshift__(
         self, other: Step[PipeOutT, NewPipeOutT] | "Pipeline[PipeOutT, NewPipeOutT]"
@@ -342,7 +340,7 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
             return Pipeline[PipeInT, NewPipeOutT](steps=new_steps)
         raise TypeError("Can only chain Pipeline with Step or Pipeline")
 
-    def __iter__(self) -> Iterator[Step[Any, Any]]:
+    def iter_steps(self) -> Iterator[Step[Any, Any]]:
         return iter(self.steps)
 
 

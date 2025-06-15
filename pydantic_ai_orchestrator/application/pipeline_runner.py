@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any, Dict, Generic, Optional, Type, TypeVar
+from typing import Any, Dict, Generic, Optional, Type, TypeVar, cast
 
 from pydantic import BaseModel, ValidationError
 
@@ -409,7 +409,7 @@ class PipelineRunner(Generic[RunnerInT, RunnerOutT]):
                     f"Failed to initialize pipeline context with model {self.context_model.__name__} and initial data. Validation errors:\n{e}"
                 ) from e
 
-        data = initial_input
+        data: Optional[RunnerInT] = initial_input
         pipeline_result_obj = PipelineResult()
         try:
             for step in self.pipeline.steps:
@@ -428,7 +428,8 @@ class PipelineRunner(Generic[RunnerInT, RunnerOutT]):
                 if not step_result.success:
                     logfire.warn(f"Step '{step.name}' failed. Halting pipeline execution.")
                     break
-                data = step_result.output
+                step_output: Optional[RunnerInT] = step_result.output
+                data = step_output
         except asyncio.CancelledError:
             logfire.info("Pipeline cancelled")
             return pipeline_result_obj

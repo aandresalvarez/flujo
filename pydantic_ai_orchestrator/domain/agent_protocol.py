@@ -23,13 +23,13 @@ T_Input = TypeVar("T_Input", contravariant=True)
 class AgentProtocol(AsyncAgentProtocol[T_Input, AgentOutT], Protocol[T_Input, AgentOutT]):
     """Essential interface for all agent types used by the Orchestrator."""
 
-    async def run(self, input_data: Optional[T_Input] = None, **kwargs: Any) -> AgentOutT:
+    async def run(self, data: T_Input, **kwargs: Any) -> AgentOutT:
         """Asynchronously run the agent with the given input and return a result."""
         ...
 
-    async def run_async(self, input_data: Optional[T_Input] = None, **kwargs: Any) -> AgentOutT:
+    async def run_async(self, data: T_Input, **kwargs: Any) -> AgentOutT:
         """Alias for run() to maintain compatibility with AsyncAgentProtocol."""
-        return await self.run(input_data, **kwargs)
+        return await self.run(data, **kwargs)
 
 
 # Explicit exports
