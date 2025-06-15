@@ -55,14 +55,10 @@ def _build_context(
             step_obj = _find_step(pipeline_definition, step.name)
             if step_obj is not None:
                 cfg = step_obj.config
-                lines.append(
-                    f"  Config(retries={cfg.max_retries}, timeout={cfg.timeout_s}s)"
-                )
+                lines.append(f"  Config(retries={cfg.max_retries}, timeout={cfg.timeout_s}s)")
                 if getattr(step_obj.agent, "system_prompt", None):
-                    summary = summarize_and_redact_prompt(
-                        step_obj.agent.system_prompt
-                    )
-                    lines.append(f"  SystemPromptSummary: \"{summary}\"")
+                    summary = summarize_and_redact_prompt(step_obj.agent.system_prompt)
+                    lines.append(f'  SystemPromptSummary: "{summary}"')
     if success:
         lines.append("Successful example:")
         pr = success.output
@@ -71,14 +67,10 @@ def _build_context(
             step_obj = _find_step(pipeline_definition, step.name)
             if step_obj is not None:
                 cfg = step_obj.config
-                lines.append(
-                    f"  Config(retries={cfg.max_retries}, timeout={cfg.timeout_s}s)"
-                )
+                lines.append(f"  Config(retries={cfg.max_retries}, timeout={cfg.timeout_s}s)")
                 if getattr(step_obj.agent, "system_prompt", None):
-                    summary = summarize_and_redact_prompt(
-                        step_obj.agent.system_prompt
-                    )
-                    lines.append(f"  SystemPromptSummary: \"{summary}\"")
+                    summary = summarize_and_redact_prompt(step_obj.agent.system_prompt)
+                    lines.append(f'  SystemPromptSummary: "{summary}"')
     return "\n".join(lines)
 
 
@@ -97,7 +89,7 @@ async def evaluate_and_improve(
 
 
 __all__ = [
-    'SelfImprovementAgent',
-    'evaluate_and_improve',
-    'ImprovementReport',
+    "SelfImprovementAgent",
+    "evaluate_and_improve",
+    "ImprovementReport",
 ]

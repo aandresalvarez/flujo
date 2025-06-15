@@ -193,18 +193,24 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
             raise ValueError("max_retries must be a non-negative integer.")
         if timeout is not None:
             if not isinstance(timeout, int):
-                raise TypeError(f"timeout must be an integer or None, got {type(timeout).__name__}.")
+                raise TypeError(
+                    f"timeout must be an integer or None, got {type(timeout).__name__}."
+                )
             if timeout <= 0:
                 raise ValueError("timeout must be a positive integer if specified.")
         self._agent = agent
         self._max_retries = max_retries
-        self._timeout_seconds: int | None = timeout if timeout is not None else settings.agent_timeout
+        self._timeout_seconds: int | None = (
+            timeout if timeout is not None else settings.agent_timeout
+        )
         self._model_name: str | None = model_name or getattr(agent, "model", "unknown_model")
 
     async def _run_with_retry(self, *args: Any, **kwargs: Any) -> Any:
         temp = kwargs.pop("temperature", None)
         if temp is not None:
-            if "generation_kwargs" not in kwargs or not isinstance(kwargs.get("generation_kwargs"), dict):
+            if "generation_kwargs" not in kwargs or not isinstance(
+                kwargs.get("generation_kwargs"), dict
+            ):
                 kwargs["generation_kwargs"] = {}
             kwargs["generation_kwargs"]["temperature"] = temp
 
@@ -221,11 +227,11 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                         self._agent.run(*args, **kwargs),
                         timeout=self._timeout_seconds,
                     )
-                    logfire.info(
-                        f"Agent '{self._model_name}' raw response: {raw_agent_response}"
-                    )
+                    logfire.info(f"Agent '{self._model_name}' raw response: {raw_agent_response}")
 
-                    if isinstance(raw_agent_response, str) and raw_agent_response.startswith("Agent failed after"):
+                    if isinstance(raw_agent_response, str) and raw_agent_response.startswith(
+                        "Agent failed after"
+                    ):
                         raise OrchestratorRetryError(raw_agent_response)
 
                     return raw_agent_response
@@ -274,6 +280,7 @@ class NoOpReflectionAgent(AsyncAgentProtocol[Any, str]):
 
 class NoOpChecklistAgent(AsyncAgentProtocol[Any, Checklist]):
     """A stub agent that returns an empty Checklist, used as a fallback for checklist agents."""
+
     async def run(self, data: Any | None = None, **kwargs: Any) -> Checklist:
         return Checklist(items=[])
 
@@ -334,7 +341,7 @@ except ConfigurationError:  # pragma: no cover - config may be missing in tests
 
 class LoggingReviewAgent(AsyncAgentProtocol[Any, Any]):
     """Wrapper for review agent that adds logging."""
-    
+
     def __init__(self, agent: AsyncAgentProtocol[Any, Any]) -> None:
         self.agent = agent
 
@@ -359,29 +366,30 @@ class LoggingReviewAgent(AsyncAgentProtocol[Any, Any]):
             logfire.error(f"Review agent API error: {e}")
             raise
 
+
 # Update the review_agent assignment to use proper typing
 review_agent = LoggingReviewAgent(review_agent)
 
 # Explicit exports
 __all__ = [
-    'REVIEW_SYS',
-    'SOLUTION_SYS',
-    'VALIDATE_SYS',
-    'REFLECT_SYS',
-    'SELF_IMPROVE_SYS',
-    'make_agent',
-    'make_agent_async',
-    'AsyncAgentWrapper',
-    'NoOpReflectionAgent',
-    'get_reflection_agent',
-    'make_self_improvement_agent',
-    'review_agent',
-    'solution_agent',
-    'validator_agent',
-    'reflection_agent',
-    'self_improvement_agent',
-    'Agent',
-    'AsyncAgentProtocol',
-    'AgentInT',
-    'AgentOutT',
+    "REVIEW_SYS",
+    "SOLUTION_SYS",
+    "VALIDATE_SYS",
+    "REFLECT_SYS",
+    "SELF_IMPROVE_SYS",
+    "make_agent",
+    "make_agent_async",
+    "AsyncAgentWrapper",
+    "NoOpReflectionAgent",
+    "get_reflection_agent",
+    "make_self_improvement_agent",
+    "review_agent",
+    "solution_agent",
+    "validator_agent",
+    "reflection_agent",
+    "self_improvement_agent",
+    "Agent",
+    "AsyncAgentProtocol",
+    "AgentInT",
+    "AgentOutT",
 ]

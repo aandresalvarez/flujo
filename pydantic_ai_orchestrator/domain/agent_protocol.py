@@ -10,11 +10,11 @@ AgentOutT = TypeVar("AgentOutT", covariant=True)
 
 @runtime_checkable
 class AsyncAgentProtocol(Protocol[AgentInT, AgentOutT]):
-    async def run(self, data: AgentInT, **kwargs: Any) -> AgentOutT:
-        ...
+    async def run(self, data: AgentInT, **kwargs: Any) -> AgentOutT: ...
 
     async def run_async(self, data: AgentInT, **kwargs: Any) -> AgentOutT:
         return await self.run(data, **kwargs)
+
 
 T_Input = TypeVar("T_Input", contravariant=True)
 
@@ -31,5 +31,6 @@ class AgentProtocol(AsyncAgentProtocol[T_Input, AgentOutT], Protocol[T_Input, Ag
         """Alias for run() to maintain compatibility with AsyncAgentProtocol."""
         return await self.run(input_data, **kwargs)
 
+
 # Explicit exports
-__all__ = ['AgentProtocol', 'AsyncAgentProtocol', 'T_Input', 'AgentInT', 'AgentOutT']
+__all__ = ["AgentProtocol", "AsyncAgentProtocol", "T_Input", "AgentInT", "AgentOutT"]

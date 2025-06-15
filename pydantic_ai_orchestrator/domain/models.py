@@ -106,9 +106,16 @@ class ImprovementSuggestion(BaseModel):
         None,
         description="The name of the pipeline step the suggestion primarily targets. Optional if suggestion is global or for an eval case.",
     )
-    suggestion_type: SuggestionType = Field(..., description="The general category of the suggested improvement.")
-    failure_pattern_summary: str = Field(..., description="A concise summary of the observed failure pattern.")
-    detailed_explanation: str = Field(..., description="A more detailed explanation of the issue and the rationale behind the suggestion.")
+    suggestion_type: SuggestionType = Field(
+        ..., description="The general category of the suggested improvement."
+    )
+    failure_pattern_summary: str = Field(
+        ..., description="A concise summary of the observed failure pattern."
+    )
+    detailed_explanation: str = Field(
+        ...,
+        description="A more detailed explanation of the issue and the rationale behind the suggestion.",
+    )
 
     prompt_modification_details: Optional[PromptModificationDetail] = Field(
         None, description="Details for a prompt modification suggestion."

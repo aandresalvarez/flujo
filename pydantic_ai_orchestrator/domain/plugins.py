@@ -24,5 +24,6 @@ class ValidationPlugin(Protocol):
     ) -> PluginOutcome:  # pragma: no cover - protocol signature only, cannot be covered by tests
         ...
 
+
 # Explicit exports
-__all__ = ['PluginOutcome', 'ValidationPlugin']
+__all__ = ["PluginOutcome", "ValidationPlugin"]

@@ -11,17 +11,12 @@ import yaml
 from pathlib import Path
 from pydantic_ai_orchestrator.domain.models import Task, Checklist
 from pydantic_ai_orchestrator.infra.agents import (
-    review_agent,
-    solution_agent,
-    validator_agent,
-    get_reflection_agent,
     make_agent_async,
     make_self_improvement_agent,
-    self_improvement_agent,
     REVIEW_SYS,
     SOLUTION_SYS,
     VALIDATE_SYS,
-    AsyncAgentProtocol,
+    get_reflection_agent,
 )
 from pydantic_ai_orchestrator.application.orchestrator import Orchestrator
 from pydantic_ai_orchestrator.application.eval_adapter import run_pipeline_async
@@ -40,6 +35,7 @@ from rich.table import Table
 from rich.console import Console
 from pydantic_ai_orchestrator.domain import Pipeline, Step
 import runpy
+from pydantic_ai_orchestrator.domain.agent_protocol import AsyncAgentProtocol
 
 # Type definitions for CLI
 WeightsType = List[Dict[str, Union[str, float]]]
@@ -60,18 +56,28 @@ def solve(
     k: Annotated[
         Optional[int], typer.Option(help="Number of solution variants to generate per iteration.")
     ] = None,
-    reflection: Annotated[Optional[bool], typer.Option(help="Enable/disable reflection agent.")] = None,
+    reflection: Annotated[
+        Optional[bool], typer.Option(help="Enable/disable reflection agent.")
+    ] = None,
     scorer: Annotated[
         Optional[str],
         typer.Option(
             help="Scoring strategy: 'ratio', 'weighted', or 'reward'.",
         ),
     ] = None,
-    weights_path: Annotated[Optional[str], typer.Option(help="Path to weights file (JSON or YAML)")] = None,
-    solution_model: Annotated[Optional[str], typer.Option(help="Model for the Solution agent.")] = None,
+    weights_path: Annotated[
+        Optional[str], typer.Option(help="Path to weights file (JSON or YAML)")
+    ] = None,
+    solution_model: Annotated[
+        Optional[str], typer.Option(help="Model for the Solution agent.")
+    ] = None,
     review_model: Annotated[Optional[str], typer.Option(help="Model for the Review agent.")] = None,
-    validator_model: Annotated[Optional[str], typer.Option(help="Model for the Validator agent.")] = None,
-    reflection_model: Annotated[Optional[str], typer.Option(help="Model for the Reflection agent.")] = None,
+    validator_model: Annotated[
+        Optional[str], typer.Option(help="Model for the Validator agent.")
+    ] = None,
+    reflection_model: Annotated[
+        Optional[str], typer.Option(help="Model for the Reflection agent.")
+    ] = None,
 ) -> None:
     """
     Solves a task using the multi-agent orchestrator.
@@ -101,7 +107,10 @@ def solve(
             typer.echo("[red]Error: --k must be a positive integer[/red]", err=True)
             raise typer.Exit(2)
         if scorer is not None and scorer not in {"ratio", "weighted", "reward"}:
-            typer.echo("[red]Error: --scorer must be one of 'ratio', 'weighted', or 'reward'[/red]", err=True)
+            typer.echo(
+                "[red]Error: --scorer must be one of 'ratio', 'weighted', or 'reward'[/red]",
+                err=True,
+            )
             raise typer.Exit(2)
         # Override settings from CLI args if they are provided
         if reflection is not None:
@@ -178,7 +187,7 @@ def solve(
 def version_cmd() -> None:
     """
     Print the package version.
-    
+
     Returns:
         None: Prints version to stdout
     """
@@ -200,7 +209,7 @@ def version_cmd() -> None:
 def show_config_cmd() -> None:
     """
     Print effective Settings with secrets masked.
-    
+
     Returns:
         None: Prints configuration to stdout
     """
@@ -211,14 +220,14 @@ def show_config_cmd() -> None:
 def bench(prompt: str, rounds: int = 10) -> None:
     """
     Quick micro-benchmark of generation latency/score.
-    
+
     Args:
         prompt: The prompt to benchmark
         rounds: Number of benchmark rounds to run
-        
+
     Returns:
         None: Prints benchmark results to stdout
-        
+
     Raises:
         KeyboardInterrupt: If the benchmark is interrupted by the user
     """
@@ -226,7 +235,14 @@ def bench(prompt: str, rounds: int = 10) -> None:
     import numpy as np
 
     try:
-        orch: Orchestrator = Orchestrator(review_agent, solution_agent, validator_agent, get_reflection_agent())
+        review_agent = make_agent_async(settings.default_review_model, REVIEW_SYS, Checklist)
+        solution_agent = make_agent_async(settings.default_solution_model, SOLUTION_SYS, str)
+        validator_agent = make_agent_async(
+            settings.default_validator_model, VALIDATE_SYS, Checklist
+        )
+        orch: Orchestrator = Orchestrator(
+            review_agent, solution_agent, validator_agent, get_reflection_agent()
+        )
         times: List[float] = []
         scores: List[float] = []
         for i in range(rounds):
@@ -270,13 +286,21 @@ def add_eval_case_cmd(
     dataset_path: Path = typer.Option(
         ..., "--dataset", "-d", help="Path to the Python file containing the Dataset object"
     ),
-    case_name: str = typer.Option(..., "--name", "-n", prompt="Enter a unique name for the new evaluation case"),
-    inputs: str = typer.Option(..., "--inputs", "-i", prompt="Enter the primary input for this case"),
+    case_name: str = typer.Option(
+        ..., "--name", "-n", prompt="Enter a unique name for the new evaluation case"
+    ),
+    inputs: str = typer.Option(
+        ..., "--inputs", "-i", prompt="Enter the primary input for this case"
+    ),
     expected_output: Optional[str] = typer.Option(
         None, "--expected", "-e", prompt="Enter the expected output (or skip)", show_default=False
     ),
-    metadata_json: Optional[str] = typer.Option(None, "--metadata", "-m", help="JSON string for case metadata"),
-    dataset_variable_name: str = typer.Option("dataset", "--dataset-var", help="Name of the Dataset variable"),
+    metadata_json: Optional[str] = typer.Option(
+        None, "--metadata", "-m", help="JSON string for case metadata"
+    ),
+    dataset_variable_name: str = typer.Option(
+        "dataset", "--dataset-var", help="Name of the Dataset variable"
+    ),
 ) -> None:
     """Print a new Case(...) definition to manually add to a dataset file."""
 
@@ -292,7 +316,9 @@ def add_eval_case_cmd(
             parsed = json.loads(metadata_json)
             case_parts.append(f"metadata={parsed}")
         except json.JSONDecodeError:
-            typer.secho(f"Error: Invalid JSON provided for metadata: {metadata_json}", fg=typer.colors.RED)
+            typer.secho(
+                f"Error: Invalid JSON provided for metadata: {metadata_json}", fg=typer.colors.RED
+            )
             raise typer.Exit(1)
     new_case_str = ", ".join(case_parts) + ")"
 
@@ -326,18 +352,20 @@ def improve(
             help="LLM model to use for the SelfImprovementAgent",
         ),
     ] = None,
-    json_output: Annotated[bool, typer.Option("--json", help="Output raw JSON instead of formatted table")] = False,
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Output raw JSON instead of formatted table")
+    ] = False,
 ) -> None:
     """
     Run evaluation and generate improvement suggestions.
-    
+
     Args:
         pipeline_path: Path to the pipeline definition file
         dataset_path: Path to the dataset definition file
-        
+
     Returns:
         None: Prints improvement report to stdout
-        
+
     Raises:
         typer.Exit: If there is an error loading the pipeline or dataset files
     """
@@ -387,7 +415,9 @@ def improve(
             if s.prompt_modification_details:
                 detail += f"\nPrompt: {s.prompt_modification_details.modification_instruction}"
             elif s.config_change_details:
-                parts = [f"{c.parameter_name}->{c.suggested_value}" for c in s.config_change_details]
+                parts = [
+                    f"{c.parameter_name}->{c.suggested_value}" for c in s.config_change_details
+                ]
                 detail += "\nConfig: " + ", ".join(parts)
             elif s.suggested_new_eval_case_description:
                 detail += f"\nNew Case: {s.suggested_new_eval_case_description}"
@@ -404,13 +434,13 @@ def improve(
 def explain(path: str) -> None:
     """
     Print a summary of a pipeline defined in a file.
-    
+
     Args:
         path: Path to the pipeline definition file
-        
+
     Returns:
         None: Prints pipeline step names to stdout
-        
+
     Raises:
         typer.Exit: If there is an error loading the pipeline file
     """
@@ -429,14 +459,16 @@ def explain(path: str) -> None:
 
 @app.callback()
 def main(
-    profile: Annotated[bool, typer.Option("--profile", help="Enable Logfire STDOUT span viewer")] = False,
+    profile: Annotated[
+        bool, typer.Option("--profile", help="Enable Logfire STDOUT span viewer")
+    ] = False,
 ) -> None:
     """
     CLI entry point for pydantic-ai-orchestrator.
-    
+
     Args:
         profile: Enable Logfire STDOUT span viewer for profiling
-        
+
     Returns:
         None
     """
@@ -446,15 +478,15 @@ def main(
 
 # Explicit exports
 __all__ = [
-    'app',
-    'solve',
-    'version_cmd',
-    'show_config_cmd',
-    'bench',
-    'add_eval_case_cmd',
-    'improve',
-    'explain',
-    'main',
+    "app",
+    "solve",
+    "version_cmd",
+    "show_config_cmd",
+    "bench",
+    "add_eval_case_cmd",
+    "improve",
+    "explain",
+    "main",
 ]
 
 

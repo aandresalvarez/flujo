@@ -163,9 +163,7 @@ class PipelineRunner(Generic[RunnerInT, RunnerOutT]):
                     f"Error in initial_input_to_loop_body_mapper for LoopStep '{loop_step.name}': {e}"
                 )
                 loop_overall_result.success = False
-                loop_overall_result.feedback = (
-                    f"Initial input mapper raised an exception: {e}"
-                )
+                loop_overall_result.feedback = f"Initial input mapper raised an exception: {e}"
                 return loop_overall_result
         else:
             current_body_input = loop_step_initial_input

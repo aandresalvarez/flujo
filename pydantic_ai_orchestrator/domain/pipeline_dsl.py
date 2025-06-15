@@ -9,10 +9,8 @@ from typing import (
     List,
     Optional,
     Sequence,
-    Type,
     TypeVar,
     Dict,
-    Union,
 )
 from pydantic import BaseModel, Field, ConfigDict
 from .agent_protocol import AsyncAgentProtocol
