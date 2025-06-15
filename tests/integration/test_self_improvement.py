@@ -4,7 +4,7 @@ from flujo.application.self_improvement import (
     evaluate_and_improve,
     SelfImprovementAgent,
 )
-from flujo.application.pipeline_runner import PipelineRunner
+from flujo.application.flujo_engine import Flujo
 from flujo.application.eval_adapter import run_pipeline_async
 from flujo.domain import Step
 from flujo.testing.utils import StubAgent
@@ -33,7 +33,7 @@ class DummyAgent:
 async def test_e2e_self_improvement_with_mocked_llm_suggestions():
     agent = StubAgent(["ok"])
     pipeline = Step.solution(agent)
-    runner = PipelineRunner(pipeline)
+    runner = Flujo(pipeline)
     dataset = Dataset(cases=[Case(inputs="hi", expected_output="wrong")])
     report = await evaluate_and_improve(
         lambda x: run_pipeline_async(x, runner=runner),
@@ -48,7 +48,7 @@ async def test_e2e_self_improvement_with_mocked_llm_suggestions():
 async def test_build_context_for_self_improvement_agent():
     from flujo.application.self_improvement import _build_context
     pr = Step.solution(StubAgent(["ok"]))
-    runner = PipelineRunner(pr)
+    runner = Flujo(pr)
     dataset = Dataset(cases=[Case(name="c1", inputs="i", expected_output="o")])
     report = await dataset.evaluate(lambda x: run_pipeline_async(x, runner=runner))
     context = _build_context(report.cases, None)
@@ -67,7 +67,7 @@ async def test_self_improvement_context_includes_config_and_prompts(monkeypatch)
     agent = StubAgent(["ok"])
     agent.system_prompt = "Test prompt"
     pipeline = Step.solution(agent, max_retries=5, timeout_s=30)
-    runner = PipelineRunner(pipeline)
+    runner = Flujo(pipeline)
     dataset = Dataset(cases=[Case(inputs="i", expected_output="o")])
 
     await evaluate_and_improve(

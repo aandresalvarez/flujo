@@ -16,9 +16,9 @@ runner = CliRunner()
 
 @pytest.fixture
 def mock_orchestrator() -> None:
-    """Fixture to mock the Orchestrator and its methods."""
-    with patch("flujo.cli.main.Orchestrator") as MockOrchestrator:
-        mock_instance = MockOrchestrator.return_value
+    """Fixture to mock the Default and its methods."""
+    with patch("flujo.cli.main.Default") as MockDefault:
+        mock_instance = MockDefault.return_value
 
         class DummyCandidate:
             def model_dump(self):
@@ -36,7 +36,7 @@ def test_cli_solve_happy_path(monkeypatch) -> None:
     def dummy_run_sync(self, task):
         return DummyCandidate()
 
-    monkeypatch.setattr("flujo.cli.main.Orchestrator.run_sync", dummy_run_sync)
+    monkeypatch.setattr("flujo.cli.main.Default.run_sync", dummy_run_sync)
     monkeypatch.setattr(
         "flujo.cli.main.make_agent_async", lambda *a, **k: object()
     )
@@ -55,7 +55,7 @@ def test_cli_solve_custom_models(monkeypatch) -> None:
     def dummy_run_sync(self, task):
         return DummyCandidate()
 
-    monkeypatch.setattr("flujo.cli.main.Orchestrator.run_sync", dummy_run_sync)
+    monkeypatch.setattr("flujo.cli.main.Default.run_sync", dummy_run_sync)
     monkeypatch.setattr(
         "flujo.cli.main.make_agent_async", lambda *a, **k: object()
     )
@@ -75,7 +75,7 @@ def test_cli_bench_command(monkeypatch) -> None:
     def dummy_run_sync(self, task):
         return DummyCandidate()
 
-    monkeypatch.setattr("flujo.cli.main.Orchestrator.run_sync", dummy_run_sync)
+    monkeypatch.setattr("flujo.cli.main.Default.run_sync", dummy_run_sync)
     monkeypatch.setattr(
         "flujo.cli.main.make_agent_async", lambda *a, **k: object()
     )
@@ -120,7 +120,7 @@ def test_cli_solve_with_weights(monkeypatch) -> None:
     mock_agent = AsyncMock()
     mock_agent.run.return_value = "mocked agent output"
 
-    with patch("flujo.cli.main.Orchestrator") as MockOrchestrator:
+    with patch("flujo.cli.main.Default") as MockDefault:
         # Create a mock instance with a proper run_sync method
         mock_instance = MagicMock()
         async def mock_run_async(task: Task) -> DummyCandidate:
@@ -130,7 +130,7 @@ def test_cli_solve_with_weights(monkeypatch) -> None:
             return DummyCandidate()
         mock_instance.run_async = mock_run_async
         mock_instance.run_sync = MagicMock(side_effect=lambda task: asyncio.run(mock_run_async(task)))
-        MockOrchestrator.return_value = mock_instance
+        MockDefault.return_value = mock_instance
 
         # Patch make_agent_async to return our mock agent
         monkeypatch.setattr(
@@ -166,8 +166,8 @@ def test_cli_solve_with_weights(monkeypatch) -> None:
 
             assert result.exit_code == 0, f"CLI command failed. Output: {result.stdout}, Error: {result.stderr}"
 
-            # Verify Orchestrator was called with correct arguments
-            MockOrchestrator.assert_called_once()
+            # Verify Default was called with correct arguments
+            MockDefault.assert_called_once()
             mock_instance.run_sync.assert_called_once()
             
             # Verify the task passed to run_sync
@@ -218,7 +218,7 @@ def test_cli_solve_keyboard_interrupt(monkeypatch) -> None:
     def raise_keyboard(*args, **kwargs):
         raise KeyboardInterrupt()
 
-    monkeypatch.setattr("flujo.cli.main.Orchestrator.run_sync", raise_keyboard)
+    monkeypatch.setattr("flujo.cli.main.Default.run_sync", raise_keyboard)
     monkeypatch.setattr(
         "flujo.cli.main.make_agent_async", lambda *a, **k: object()
     )
@@ -232,7 +232,7 @@ def test_cli_bench_keyboard_interrupt(monkeypatch) -> None:
     def raise_keyboard(*args, **kwargs):
         raise KeyboardInterrupt()
 
-    monkeypatch.setattr("flujo.cli.main.Orchestrator.run_sync", raise_keyboard)
+    monkeypatch.setattr("flujo.cli.main.Default.run_sync", raise_keyboard)
     monkeypatch.setattr(
         "flujo.cli.main.make_agent_async", lambda *a, **k: object()
     )
@@ -382,10 +382,10 @@ def test_cli_run() -> None:
         def model_dump(self):
             return {"solution": "test solution", "score": 1.0}
 
-    with patch("flujo.cli.main.Orchestrator") as MockOrchestrator:
+    with patch("flujo.cli.main.Default") as MockDefault:
         mock_instance = MagicMock()
         mock_instance.run_sync.return_value = DummyCandidate()
-        MockOrchestrator.return_value = mock_instance
+        MockDefault.return_value = mock_instance
 
         result = runner.invoke(app, ["solve", "test prompt"])
         assert result.exit_code == 0
@@ -410,13 +410,13 @@ def test_cli_run_with_args() -> None:
     dummy_settings.scorer = "ratio"
     dummy_settings.reflection_limit = 1
 
-    with patch("flujo.cli.main.Orchestrator") as MockOrchestrator, \
+    with patch("flujo.cli.main.Default") as MockDefault, \
          patch("flujo.cli.main.make_agent_async") as mock_make_agent, \
          patch("flujo.cli.main.get_reflection_agent") as mock_get_reflection_agent, \
          patch("flujo.cli.main.settings", dummy_settings):
         mock_instance = MagicMock()
         mock_instance.run_sync.return_value = DummyCandidate()
-        MockOrchestrator.return_value = mock_instance
+        MockDefault.return_value = mock_instance
         mock_make_agent.return_value = MagicMock()
         mock_get_reflection_agent.return_value = MagicMock()
 
@@ -472,8 +472,8 @@ def test_cli_run_with_invalid_retries() -> None:
     from unittest.mock import patch
     from flujo.exceptions import ConfigurationError
 
-    with patch("flujo.cli.main.Orchestrator") as MockOrchestrator:
-        MockOrchestrator.side_effect = ConfigurationError("Invalid retry settings")
+    with patch("flujo.cli.main.Default") as MockDefault:
+        MockDefault.side_effect = ConfigurationError("Invalid retry settings")
         result = runner.invoke(app, ["solve", "test prompt", "--max-iters", "100"])
         assert result.exit_code == 2
         assert "Configuration Error" in result.stderr
@@ -496,8 +496,8 @@ def test_cli_run_with_invalid_agent_timeout() -> None:
     from unittest.mock import patch
     from flujo.exceptions import ConfigurationError
 
-    with patch("flujo.cli.main.Orchestrator") as MockOrchestrator:
-        MockOrchestrator.side_effect = ConfigurationError("Invalid agent timeout")
+    with patch("flujo.cli.main.Default") as MockDefault:
+        MockDefault.side_effect = ConfigurationError("Invalid agent timeout")
         result = runner.invoke(app, ["solve", "test prompt"])
         assert result.exit_code == 2
         assert "Configuration Error" in result.stderr

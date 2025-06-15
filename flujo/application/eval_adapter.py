@@ -1,15 +1,15 @@
-"""Utilities for integrating PipelineRunner with pydantic-evals."""
+"""Utilities for integrating :class:`Flujo` with pydantic-evals."""
 
 from typing import Any
 
-from .pipeline_runner import PipelineRunner
+from .flujo_engine import Flujo
 from ..domain.models import PipelineResult
 
 
-async def run_pipeline_async(inputs: Any, *, runner: PipelineRunner[Any, Any]) -> PipelineResult:
-    """Adapter to run a PipelineRunner as a pydantic-evals task."""
+async def run_pipeline_async(inputs: Any, *, runner: Flujo[Any, Any]) -> PipelineResult:
+    """Adapter to run a :class:`Flujo` engine as a pydantic-evals task."""
     return await runner.run_async(inputs)
 
 
 # Example usage:
-# runner: PipelineRunner[Any, Any] = PipelineRunner(your_pipeline_or_step)
+# runner: Flujo[Any, Any] = Flujo(your_pipeline_or_step)
