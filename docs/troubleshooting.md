@@ -347,7 +347,7 @@ print(details)
    - [Discussions](https://github.com/aandresalvarez/rloop/discussions)
 
 3. **Development**
-   - [Contributing Guide](contributing.md)
+   - [Contributing Guide](dev.md)
    - [Development Guide](dev.md)
 
 ### 3. Reporting Issues

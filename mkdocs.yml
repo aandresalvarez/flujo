@@ -36,7 +36,7 @@ nav:
   - Development:
     - 'Contributing Guide': dev.md
     - 'Documentation Guide': documentation_guide.md
-    - Contributing: contributing.md
+    - 'Documentation Status': documentation_status.md
   - 'Use Cases': use_cases.md
   - API Reference:
     - Overview: api_reference.md
