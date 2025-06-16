@@ -21,13 +21,6 @@ StepInT = TypeVar("StepInT")
 StepOutT = TypeVar("StepOutT")
 NewOutT = TypeVar("NewOutT")
 
-SF_InT = TypeVar("SF_InT")
-SF_OutT = TypeVar("SF_OutT")
-ReviewOutT = TypeVar("ReviewOutT")
-SolInT = TypeVar("SolInT")
-SolOutT = TypeVar("SolOutT")
-ValInT = TypeVar("ValInT")
-ValOutT = TypeVar("ValOutT")
 
 # BranchKey type alias for ConditionalStep
 BranchKey = Any
@@ -162,38 +155,6 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             branch_output_mapper=branch_output_mapper,
             **config_kwargs,
         )
-
-
-class StepFactory:
-    @staticmethod
-    def create(
-        name: str,
-        agent: AsyncAgentProtocol[SF_InT, SF_OutT],
-        **config: Any,
-    ) -> Step[SF_InT, SF_OutT]:
-        """Create a fully configured :class:`Step`."""
-        return Step[SF_InT, SF_OutT](name, agent, **config)
-
-    @classmethod
-    def review(
-        cls, agent: AsyncAgentProtocol[Any, ReviewOutT], **config: Any
-    ) -> Step[Any, ReviewOutT]:
-        """Construct a review step using the provided agent."""
-        return cls.create("review", agent, **config)
-
-    @classmethod
-    def solution(
-        cls, agent: AsyncAgentProtocol[SolInT, SolOutT], **config: Any
-    ) -> Step[SolInT, SolOutT]:
-        """Construct a solution step using the provided agent."""
-        return cls.create("solution", agent, **config)
-
-    @classmethod
-    def validate(
-        cls, agent: AsyncAgentProtocol[ValInT, ValOutT], **config: Any
-    ) -> Step[ValInT, ValOutT]:
-        """Construct a validation step using the provided agent."""
-        return cls.create("validate", agent, **config)
 
 
 class LoopStep(Step[Any, Any]):
@@ -349,7 +310,6 @@ __all__ = [
     "Step",
     "Pipeline",
     "StepConfig",
-    "StepFactory",
     "LoopStep",
     "ConditionalStep",
     "BranchKey",

@@ -60,14 +60,15 @@ async def test_conditional_redirection() -> None:
     assert fixit.call_count == 1
 
 
-async def test_on_failure_called() -> None:
+async def test_on_failure_called_with_fluent_api() -> None:
     agent = StubAgent(["out"])
     plugin = DummyPlugin([PluginOutcome(success=False)])
     handler = Mock()
-    step = Step("s", agent, max_retries=1, plugins=[plugin])
-    step.on_failure(handler)
+
+    step = Step("s", agent, max_retries=1, plugins=[plugin]).on_failure(handler)
     runner = Flujo(step)
     await runner.run_async("prompt")
+
     handler.assert_called_once()
 
 
