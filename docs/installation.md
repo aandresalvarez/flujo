@@ -78,10 +78,10 @@ pip install -e ".[dev]"
    TELEMETRY_EXPORT_ENABLED=false
    
    # Optional: Model overrides
-   ORCH_DEFAULT_SOLUTION_MODEL=openai:gpt-4o
-   ORCH_DEFAULT_REVIEW_MODEL=openai:gpt-4o
-   ORCH_DEFAULT_VALIDATOR_MODEL=openai:gpt-4o
-   ORCH_DEFAULT_REFLECTION_MODEL=openai:gpt-4o
+   DEFAULT_SOLUTION_MODEL=openai:gpt-4o
+   DEFAULT_REVIEW_MODEL=openai:gpt-4o
+   DEFAULT_VALIDATOR_MODEL=openai:gpt-4o
+   DEFAULT_REFLECTION_MODEL=openai:gpt-4o
    ```
 
 ## Verifying Installation
