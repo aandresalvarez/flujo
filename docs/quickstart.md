@@ -181,4 +181,4 @@ if len(pipeline_result.step_history) > 1:
 
 - Check the [Troubleshooting Guide](troubleshooting.md)
 - Join our [Discord Community](https://discord.gg/your-server)
-- Open an [Issue](https://github.com/aandresalvarez/rloop/issues) 
+- Open an [Issue](https://github.com/aandresalvarez/flujo/issues)
