@@ -23,6 +23,9 @@ jobs:
       with:
         fetch-depth: 0  # Needed for changelog generation
 
+    - name: Check out main branch
+      run: git checkout main
+
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
