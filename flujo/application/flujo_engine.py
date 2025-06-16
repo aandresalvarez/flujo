@@ -502,13 +502,19 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
                 pipeline_result,
             )
 
-    async def run_async(self, initial_input: RunnerInT) -> PipelineResult:
+    async def run_async(
+        self,
+        initial_input: RunnerInT,
+        *,
+        initial_context_data: Optional[Dict[str, Any]] = None,
+    ) -> PipelineResult:
         current_pipeline_context_instance: Optional[BaseModel] = None
         if self.context_model is not None:
             try:
-                current_pipeline_context_instance = self.context_model(
-                    **self.initial_context_data
-                )
+                context_data = {**self.initial_context_data}
+                if initial_context_data:
+                    context_data.update(initial_context_data)
+                current_pipeline_context_instance = self.context_model(**context_data)
             except ValidationError as e:
                 logfire.error(
                     f"Pipeline context initialization failed for model {self.context_model.__name__}: {e}"
@@ -598,5 +604,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
 
         return pipeline_result_obj
 
-    def run(self, initial_input: RunnerInT) -> PipelineResult:
-        return asyncio.run(self.run_async(initial_input))
+    def run(
+        self, initial_input: RunnerInT, *, initial_context_data: Optional[Dict[str, Any]] = None
+    ) -> PipelineResult:
+        return asyncio.run(self.run_async(initial_input, initial_context_data=initial_context_data))
