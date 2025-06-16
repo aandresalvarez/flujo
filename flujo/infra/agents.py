@@ -164,7 +164,7 @@ def make_agent(
 
     # The Agent constructor's type hints are not strict enough for mypy strict mode.
     # See: https://github.com/pydantic/pydantic-ai/issues (file an issue if not present)
-    agent: Agent[Any, Any] = Agent(  # type: ignore[call-overload]
+    agent: Agent[Any, Any] = Agent(
         model,
         system_prompt=system_prompt,
         output_type=output_type,
@@ -174,7 +174,9 @@ def make_agent(
     return agent
 
 
-class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentInT, AgentOutT]):
+class AsyncAgentWrapper(
+    Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentInT, AgentOutT]
+):
     """
     Wraps a pydantic_ai.Agent to provide an asynchronous interface
     with retry and timeout capabilities.
@@ -188,7 +190,9 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
         model_name: str | None = None,
     ) -> None:
         if not isinstance(max_retries, int):
-            raise TypeError(f"max_retries must be an integer, got {type(max_retries).__name__}.")
+            raise TypeError(
+                f"max_retries must be an integer, got {type(max_retries).__name__}."
+            )
         if max_retries < 0:
             raise ValueError("max_retries must be a non-negative integer.")
         if timeout is not None:
@@ -203,7 +207,9 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
         self._timeout_seconds: int | None = (
             timeout if timeout is not None else settings.agent_timeout
         )
-        self._model_name: str | None = model_name or getattr(agent, "model", "unknown_model")
+        self._model_name: str | None = model_name or getattr(
+            agent, "model", "unknown_model"
+        )
 
     async def _run_with_retry(self, *args: Any, **kwargs: Any) -> Any:
         temp = kwargs.pop("temperature", None)
@@ -227,11 +233,13 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                         self._agent.run(*args, **kwargs),
                         timeout=self._timeout_seconds,
                     )
-                    logfire.info(f"Agent '{self._model_name}' raw response: {raw_agent_response}")
+                    logfire.info(
+                        f"Agent '{self._model_name}' raw response: {raw_agent_response}"
+                    )
 
-                    if isinstance(raw_agent_response, str) and raw_agent_response.startswith(
-                        "Agent failed after"
-                    ):
+                    if isinstance(
+                        raw_agent_response, str
+                    ) and raw_agent_response.startswith("Agent failed after"):
                         raise OrchestratorRetryError(raw_agent_response)
 
                     return raw_agent_response
@@ -265,7 +273,9 @@ def make_agent_async(
     Creates a pydantic_ai.Agent and returns an AsyncAgentWrapper exposing .run_async.
     """
     agent = make_agent(model, system_prompt, output_type)
-    return AsyncAgentWrapper(agent, max_retries=max_retries, timeout=timeout, model_name=model)
+    return AsyncAgentWrapper(
+        agent, max_retries=max_retries, timeout=timeout, model_name=model
+    )
 
 
 class NoOpReflectionAgent(AsyncAgentProtocol[Any, str]):
@@ -323,10 +333,14 @@ def get_reflection_agent(
 
 
 # Create a default instance for convenience and API consistency
-reflection_agent: AsyncAgentProtocol[Any, Any] | NoOpReflectionAgent = get_reflection_agent()
+reflection_agent: AsyncAgentProtocol[Any, Any] | NoOpReflectionAgent = (
+    get_reflection_agent()
+)
 
 
-def make_self_improvement_agent(model: str | None = None) -> AsyncAgentWrapper[Any, str]:
+def make_self_improvement_agent(
+    model: str | None = None,
+) -> AsyncAgentWrapper[Any, str]:
     """Create the SelfImprovementAgent."""
     model_name = model or settings.default_self_improvement_model
     return make_agent_async(model_name, SELF_IMPROVE_SYS, str)
@@ -349,7 +363,9 @@ class LoggingReviewAgent(AsyncAgentProtocol[Any, Any]):
         return await self._run_inner(self.agent.run, *args, **kwargs)
 
     async def _run_async(self, *args: Any, **kwargs: Any) -> Any:
-        if hasattr(self.agent, "run_async") and callable(getattr(self.agent, "run_async")):
+        if hasattr(self.agent, "run_async") and callable(
+            getattr(self.agent, "run_async")
+        ):
             return await self._run_inner(self.agent.run_async, *args, **kwargs)
         else:
             return await self.run(*args, **kwargs)

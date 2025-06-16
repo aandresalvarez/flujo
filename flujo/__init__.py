@@ -22,6 +22,7 @@ from .domain import (
     ValidationPlugin,
     AppResources,
 )
+from .domain.types import HookCallable
 from .application.eval_adapter import run_pipeline_async
 from .application.self_improvement import evaluate_and_improve, SelfImprovementAgent
 from .domain.models import PipelineResult, StepResult, UsageLimits
@@ -42,6 +43,7 @@ from .exceptions import (
     ConfigurationError,
     SettingsError,
     UsageLimitExceededError,
+    PipelineAbortSignal,
 )
 
 __all__ = [
@@ -62,6 +64,8 @@ __all__ = [
     "SelfImprovementAgent",
     "PipelineResult",
     "StepResult",
+    "HookCallable",
+    "PipelineAbortSignal",
     "settings",
     "init_telemetry",
     "review_agent",

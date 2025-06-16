@@ -11,6 +11,9 @@ repos:
     rev: v1.10.0
     hooks:
       - id: mypy
+        additional_dependencies:
+          - pydantic
+          - pydantic-settings
   - repo: https://github.com/Yelp/detect-secrets
     rev: v1.4.0
     hooks:
