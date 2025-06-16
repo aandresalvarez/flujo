@@ -4,8 +4,10 @@ import os
 
 
 def test_env_var_precedence(monkeypatch) -> None:
-    monkeypatch.setenv("orch_openai_api_key", "sk-test")
-    monkeypatch.setenv("orch_reflection_enabled", "false")
+    # Legacy API key name should still be honored
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("ORCH_OPENAI_API_KEY", "sk-test")
+    monkeypatch.setenv("REFLECTION_ENABLED", "false")
     s = Settings()
     assert s.openai_api_key.get_secret_value() == "sk-test"
     assert s.reflection_enabled is False
@@ -19,8 +21,16 @@ def test_defaults(monkeypatch) -> None:
     assert s.logfire_api_key is None
 
 
+def test_logfire_legacy_alias(monkeypatch) -> None:
+    monkeypatch.delenv("LOGFIRE_API_KEY", raising=False)
+    monkeypatch.setenv("ORCH_LOGFIRE_API_KEY", "legacy")
+    s = Settings()
+    assert s.logfire_api_key.get_secret_value() == "legacy"
+    assert "logfire" not in s.provider_api_keys
+
+
 def test_missing_api_key_allowed(monkeypatch) -> None:
-    monkeypatch.delenv("orch_openai_api_key", raising=False)
+    monkeypatch.delenv("ORCH_OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     import importlib
     import flujo.infra.settings as settings_mod
@@ -30,10 +40,10 @@ def test_missing_api_key_allowed(monkeypatch) -> None:
     assert isinstance(s, Settings)
 
 
-def test_settings_initialization() -> None:
+def test_settings_initialization(monkeypatch) -> None:
     # Unset env var so constructor value is used
-    os.environ.pop("orch_openai_api_key", None)
-    os.environ.pop("ORCH_OPENAI_API_KEY", None)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("ORCH_OPENAI_API_KEY", raising=False)
     settings = Settings(
         openai_api_key=SecretStr("test"),
         google_api_key=SecretStr("test"),

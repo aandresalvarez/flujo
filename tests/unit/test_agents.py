@@ -4,9 +4,6 @@ import asyncio
 from unittest.mock import AsyncMock, patch, MagicMock
 from pydantic import SecretStr
 
-# Ensure environment variable exists before agents are imported
-os.environ.setdefault("orch_openai_api_key", "test-key")
-
 from flujo.infra.agents import (
     AsyncAgentWrapper,
     NoOpReflectionAgent,
@@ -169,10 +166,10 @@ async def test_async_agent_wrapper_agent_failed_string_only() -> None:
 
 
 def test_make_agent_async_injects_key(monkeypatch) -> None:
-    monkeypatch.setenv("orch_openai_api_key", "test-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     from flujo.infra import settings as settings_mod
 
-    settings_mod.settings.openai_api_key = SecretStr("test-key")
+    monkeypatch.setattr(settings_mod.settings, "openai_api_key", SecretStr("test-key"))
     from flujo.infra.agents import make_agent_async
 
     wrapper = make_agent_async("openai:gpt-4o", "sys", str)
@@ -180,7 +177,8 @@ def test_make_agent_async_injects_key(monkeypatch) -> None:
 
 
 def test_make_agent_async_missing_key(monkeypatch) -> None:
-    monkeypatch.delenv("orch_anthropic_api_key", raising=False)
+    monkeypatch.delenv("ORCH_ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     from flujo.infra import settings as settings_mod
 
     settings_mod.settings.anthropic_api_key = None
