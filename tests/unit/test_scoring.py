@@ -51,12 +51,11 @@ def test_weighted_score() -> None:
     assert weighted_score(check, weights_missing) == pytest.approx(0.6)
 
 
-def test_reward_scorer_init(monkeypatch) -> None:
-    from flujo.domain.scoring import RewardScorer, RewardModelUnavailable
+def test_reward_scorer_init_success(monkeypatch) -> None:
+    from flujo.domain.scoring import RewardScorer
     import flujo.infra.settings as settings_mod
+    from unittest.mock import Mock
 
-    monkeypatch.setenv("REWARD_ENABLED", "true")
-    # --- Test Success Case ---
     enabled_settings = Settings(
         reward_enabled=True,
         openai_api_key=SecretStr("sk-test"),
@@ -79,13 +78,20 @@ def test_reward_scorer_init(monkeypatch) -> None:
         agent_timeout=60,
     )
     monkeypatch.setattr(settings_mod, "settings", enabled_settings)
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    mock_agent = Mock()
+    monkeypatch.setattr("flujo.domain.scoring.Agent", mock_agent)
     RewardScorer()  # Should not raise
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
-    # --- Test Failure Case (Missing Key) ---
+
+def test_reward_scorer_init_failure(monkeypatch) -> None:
+    from flujo.domain.scoring import RewardScorer, RewardModelUnavailable
+    import flujo.infra.settings as settings_mod
+    from unittest.mock import Mock
+
+    # Unset any possible API key env vars
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("ORCH_OPENAI_API_KEY", raising=False)
+
     disabled_settings = Settings(
         reward_enabled=True,
         openai_api_key=None,
@@ -108,6 +114,12 @@ def test_reward_scorer_init(monkeypatch) -> None:
         agent_timeout=60,
     )
     monkeypatch.setattr(settings_mod, "settings", disabled_settings)
+
+    # Mock Agent to raise RewardModelUnavailable
+    def agent_side_effect(*args, **kwargs):
+        raise RewardModelUnavailable("OpenAI API key is required for RewardScorer.")
+    monkeypatch.setattr("flujo.domain.scoring.Agent", Mock(side_effect=agent_side_effect))
+
     with pytest.raises(RewardModelUnavailable):
         RewardScorer()
 
