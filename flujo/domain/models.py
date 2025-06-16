@@ -16,8 +16,12 @@ class ChecklistItem(BaseModel):
     """A single item in a checklist for evaluating a solution."""
 
     description: str = Field(..., description="The criterion to evaluate.")
-    passed: Optional[bool] = Field(None, description="Whether the solution passes this criterion.")
-    feedback: Optional[str] = Field(None, description="Feedback if the criterion is not met.")
+    passed: Optional[bool] = Field(
+        None, description="Whether the solution passes this criterion."
+    )
+    feedback: Optional[str] = Field(
+        None, description="Feedback if the criterion is not met."
+    )
 
 
 class Checklist(BaseModel):
@@ -72,10 +76,19 @@ class PipelineResult(BaseModel):
     total_cost_usd: float = 0.0
     final_pipeline_context: Optional[BaseModel] = Field(
         default=None,
-        description=("The final state of the typed pipeline context, if configured and used."),
+        description=(
+            "The final state of the typed pipeline context, if configured and used."
+        ),
     )
 
     model_config = {"arbitrary_types_allowed": True}
+
+
+class UsageLimits(BaseModel):
+    """Defines resource consumption limits for a pipeline run."""
+
+    total_cost_usd_limit: Optional[float] = Field(None, ge=0)
+    total_tokens_limit: Optional[int] = Field(None, ge=0)
 
 
 class SuggestionType(str, Enum):

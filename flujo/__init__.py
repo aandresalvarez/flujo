@@ -24,7 +24,7 @@ from .domain import (
 )
 from .application.eval_adapter import run_pipeline_async
 from .application.self_improvement import evaluate_and_improve, SelfImprovementAgent
-from .domain.models import PipelineResult, StepResult
+from .domain.models import PipelineResult, StepResult, UsageLimits
 from .testing.utils import StubAgent, DummyPlugin
 from .plugins.sql_validator import SQLSyntaxValidator
 
@@ -37,7 +37,12 @@ from .infra.agents import (
     make_agent_async,
 )
 
-from .exceptions import OrchestratorError, ConfigurationError, SettingsError
+from .exceptions import (
+    OrchestratorError,
+    ConfigurationError,
+    SettingsError,
+    UsageLimitExceededError,
+)
 
 __all__ = [
     "Flujo",
@@ -68,7 +73,9 @@ __all__ = [
     "OrchestratorError",
     "ConfigurationError",
     "SettingsError",
+    "UsageLimitExceededError",
     "StubAgent",
     "DummyPlugin",
     "SQLSyntaxValidator",
+    "UsageLimits",
 ]

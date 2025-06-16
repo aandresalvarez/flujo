@@ -40,6 +40,7 @@ nav:
   - 'Use Cases': use_cases.md
   - Cookbook:
     - 'Using Resources': cookbook/using_resources.md
+    - 'Cost Control': cookbook/cost_control.md
   - Migration:
     - 'v0.3.7': migration/v0.3.7.md
   - API Reference:
