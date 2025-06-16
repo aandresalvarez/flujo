@@ -1,24 +1,56 @@
 """
-05_pipeline_sql.py
--------------------
-Demonstrates the Pipeline DSL and SQL validator plugin.
+Demonstrates building a custom pipeline with the Flujo engine and DSL (`Step`).
+This example uses a built-in `Plugin` to validate the syntax of generated SQL.
+Plugins are a powerful way to add custom, non-LLM logic to your workflows.
+For more details, see docs/extending.md.
 """
+import asyncio
+from typing import Any, cast
 
-from flujo import Step, Flujo
-from flujo.plugins.sql_validator import SQLSyntaxValidator
+from flujo import Flujo, Step, Pipeline
+from flujo.plugins import SQLSyntaxValidator
 from flujo.testing.utils import StubAgent
 
-# Solution agent that returns an invalid SQL statement
-solution = StubAgent(["SELECT FROM"])
-# Validator agent doesn't matter for syntax check
-validator = StubAgent([None])
+# To deterministically demonstrate the plugin, we'll use a `StubAgent` that
+# always produces invalid SQL. In a real app, this would be a powerful LLM agent.
+sql_agent = StubAgent(["SELEC * FRM users WHERE id = 1;"])  # Intentionally incorrect SQL
 
-solution_step = Step.solution(solution)
-validation_step = Step.validate(validator, plugins=[SQLSyntaxValidator()])
+# A simple agent for the validation step. The real work is done by the plugin.
+validation_agent = StubAgent([None])
 
-pipeline = solution_step >> validation_step
-runner = Flujo(pipeline)
+# 1. Create a solution step with our SQL-generating agent.
+solution_step = Step("GenerateSQL", agent=cast(Any, sql_agent))
 
-result = runner.run("SELECT FROM")
-for step_result in result.step_history:
-    print(step_result.name, step_result.success, step_result.feedback)
+# 2. Create a validation step and attach the `SQLSyntaxValidator` plugin.
+#    The plugin runs *after* the agent and checks its output. If the plugin
+#    finds an issue, it will mark the step as failed and provide feedback.
+validation_step = Step(
+    "ValidateSQL",
+    agent=cast(Any, validation_agent),
+    plugins=[SQLSyntaxValidator()],
+)
+
+# 3. Compose the steps into a pipeline using the '>>' operator.
+sql_pipeline = solution_step >> validation_step
+
+# 4. Create a Flujo runner for our custom pipeline.
+runner = Flujo(sql_pipeline)
+
+print("🧠 Running a custom SQL generation and validation pipeline...")
+result = asyncio.run(runner.run_async("Generate a query to select all users."))
+
+# 5. Inspect the results from the pipeline's `step_history`.
+solution_result = result.step_history[0]
+validation_result = result.step_history[1]
+
+print(f"\n🔍 SQL Generation Step ('{solution_result.name}'):")
+print(f"  - Success: {solution_result.success}")
+print(f"  - Output: '{solution_result.output}'")
+
+print(f"\n🔍 SQL Validation Step ('{validation_result.name}'):")
+print(f"  - Success: {validation_result.success}")
+if not validation_result.success:
+    print(f"  - Feedback from Plugin: {validation_result.feedback}")
+
+if not validation_result.success:
+    print("\n\n🎉 The SQLSyntaxValidator plugin correctly identified the invalid SQL!")
