@@ -108,6 +108,8 @@ make test-e2e                     # or poetry-test-e2e / uv-test-e2e
 # Benchmark Tests
 make test-bench                   # or poetry-test-bench / uv-test-bench
 ```
+Run the benchmark suite to measure the framework's internal overhead and catch
+performance regressions introduced by new code.
 
 > **Note:** Async tests are handled automatically by **pytest-asyncio**
 
