@@ -7,10 +7,13 @@ def test_invalid_env_vars(monkeypatch):
 
     for k in list(os.environ.keys()):
         if k in {
+            "ORCH_OPENAI_API_KEY",
+            "ORCH_GOOGLE_API_KEY",
+            "ORCH_ANTHROPIC_API_KEY",
+            "OPENAI_API_KEY",
             "orch_openai_api_key",
             "orch_google_api_key",
             "orch_anthropic_api_key",
-            "OPENAI_API_KEY",
         }:
             monkeypatch.delenv(k, raising=False)
     # Patch env_file to None for this test instance
