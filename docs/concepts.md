@@ -318,7 +318,7 @@ print(f"Default solution model: {settings.default_solution_model}")
 print(f"Reflection enabled: {settings.reflection_enabled}")
 
 # Environment variables (in .env file):
-# ORCH_DEFAULT_SOLUTION_MODEL=openai:gpt-4o
+# DEFAULT_SOLUTION_MODEL=openai:gpt-4o
 # REFLECTION_ENABLED=true
 # AGENT_TIMEOUT=60
 ```

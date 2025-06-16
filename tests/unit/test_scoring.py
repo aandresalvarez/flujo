@@ -55,7 +55,7 @@ def test_reward_scorer_init(monkeypatch) -> None:
     from flujo.domain.scoring import RewardScorer, RewardModelUnavailable
     import flujo.infra.settings as settings_mod
 
-    monkeypatch.setenv("ORCH_REWARD_ENABLED", "true")
+    monkeypatch.setenv("REWARD_ENABLED", "true")
     # --- Test Success Case ---
     enabled_settings = Settings(
         reward_enabled=True,
@@ -79,10 +79,12 @@ def test_reward_scorer_init(monkeypatch) -> None:
         agent_timeout=60,
     )
     monkeypatch.setattr(settings_mod, "settings", enabled_settings)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     RewardScorer()  # Should not raise
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
     # --- Test Failure Case (Missing Key) ---
-    monkeypatch.delenv("orch_openai_api_key", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("ORCH_OPENAI_API_KEY", raising=False)
     disabled_settings = Settings(
         reward_enabled=True,
@@ -116,7 +118,7 @@ async def test_reward_scorer_returns_float(monkeypatch) -> None:
     from unittest.mock import AsyncMock
     import flujo.infra.settings as settings_mod
 
-    monkeypatch.setenv("ORCH_REWARD_ENABLED", "true")
+    monkeypatch.setenv("REWARD_ENABLED", "true")
     test_settings = Settings(
         reward_enabled=True,
         openai_api_key=SecretStr("sk-test"),
@@ -139,11 +141,13 @@ async def test_reward_scorer_returns_float(monkeypatch) -> None:
         agent_timeout=60,
     )
     monkeypatch.setattr(settings_mod, "settings", test_settings)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
 
     scorer = RewardScorer()
     scorer.agent.run = AsyncMock(return_value=SimpleNamespace(output=0.77))
     result = await scorer.score("x")
     assert result == 0.77
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
 
 def test_reward_scorer_disabled(monkeypatch) -> None:
@@ -172,6 +176,7 @@ def test_reward_scorer_disabled(monkeypatch) -> None:
         agent_timeout=60,
     )
     monkeypatch.setattr(settings_mod, "settings", test_settings)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
 
     with pytest.raises(FeatureDisabled):
         RewardScorer()
@@ -214,7 +219,7 @@ async def test_reward_scorer_score_no_output(monkeypatch) -> None:
     from unittest.mock import AsyncMock
     import flujo.infra.settings as settings_mod
 
-    monkeypatch.setenv("ORCH_REWARD_ENABLED", "true")
+    monkeypatch.setenv("REWARD_ENABLED", "true")
     test_settings = Settings(
         reward_enabled=True,
         openai_api_key=SecretStr("sk-test"),
@@ -237,11 +242,13 @@ async def test_reward_scorer_score_no_output(monkeypatch) -> None:
         agent_timeout=60,
     )
     monkeypatch.setattr(settings_mod, "settings", test_settings)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
 
     scorer = RewardScorer()
     scorer.agent.run = AsyncMock(side_effect=Exception("LLM failed"))
     result = await scorer.score("x")
     assert result == 0.0
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
 
 def test_ratio_score_all_passed() -> None:

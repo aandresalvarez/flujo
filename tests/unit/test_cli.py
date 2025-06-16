@@ -2,8 +2,7 @@ import os
 import asyncio
 from typing import Any
 
-# Ensure API key exists before importing the CLI
-os.environ.setdefault("orch_openai_api_key", "test-key")
+# Tests require an API key; a fixture sets it for each test
 
 from flujo.cli.main import app
 from typer.testing import CliRunner
@@ -12,6 +11,19 @@ import pytest
 import json
 
 runner = CliRunner()
+
+
+@pytest.fixture(autouse=True)
+def _set_api_key(monkeypatch) -> None:
+    """Ensure OPENAI_API_KEY is present for CLI commands."""
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    import importlib
+    import flujo.infra.settings as settings_mod
+    importlib.reload(settings_mod)
+    import flujo.infra.agents as agents_mod
+    importlib.reload(agents_mod)
+    import flujo.cli.main as cli_main
+    cli_main.settings = settings_mod.settings
 
 
 @pytest.fixture
@@ -87,7 +99,7 @@ def test_cli_bench_command(monkeypatch) -> None:
 
 
 def test_cli_show_config_masks_secrets(monkeypatch) -> None:
-    monkeypatch.setenv("orch_openai_api_key", "sk-secret")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-secret")
     # This requires re-importing settings or running CLI in a subprocess
     # For simplicity, we'll just check the output format.
     result = runner.invoke(app, ["show-config"])

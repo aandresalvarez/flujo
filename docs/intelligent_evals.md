@@ -86,7 +86,7 @@ file.
 ## Configuring the Self-Improvement Agent
 
 The model used by the self-improvement agent can be changed via the
-`orch_default_self_improvement_model` setting or overridden at the CLI using
+`default_self_improvement_model` setting or overridden at the CLI using
 `flujo improve --improvement-model MODEL_NAME`.
 ### Interpreting Suggestion Types
 The `suggestion_type` field indicates how you might act on the advice:
