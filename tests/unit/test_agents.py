@@ -10,6 +10,7 @@ from flujo.infra.agents import (
     get_reflection_agent,
     LoggingReviewAgent,
 )
+from flujo.domain.models import Checklist, ChecklistItem
 
 from flujo.exceptions import OrchestratorRetryError
 from flujo.infra.settings import settings
@@ -293,3 +294,29 @@ def test_make_self_improvement_agent_uses_override_model(monkeypatch) -> None:
 
     make_self_improvement_agent(model="override_model")
     assert called["model"] == "override_model"
+
+
+@pytest.mark.asyncio
+async def test_async_agent_wrapper_serializes_pydantic_input() -> None:
+    mock_agent = AsyncMock()
+    wrapper = AsyncAgentWrapper(mock_agent)
+    checklist = Checklist(items=[ChecklistItem(description="a")])
+    await wrapper.run_async(checklist)
+    mock_agent.run.assert_called_once_with(checklist.model_dump())
+
+
+@pytest.mark.asyncio
+async def test_async_agent_wrapper_passthrough_non_model() -> None:
+    mock_agent = AsyncMock()
+    wrapper = AsyncAgentWrapper(mock_agent)
+    await wrapper.run_async("hi")
+    mock_agent.run.assert_called_once_with("hi")
+
+
+@pytest.mark.asyncio
+async def test_async_agent_wrapper_serializes_pydantic_kwarg() -> None:
+    mock_agent = AsyncMock()
+    wrapper = AsyncAgentWrapper(mock_agent)
+    checklist = Checklist(items=[ChecklistItem(description="a")])
+    await wrapper.run_async(data=checklist)
+    mock_agent.run.assert_called_once_with(data=checklist.model_dump())
