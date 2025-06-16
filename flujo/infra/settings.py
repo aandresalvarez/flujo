@@ -1,10 +1,10 @@
 """Settings and configuration for flujo."""
 
 import os
-from typing import ClassVar, Literal, Optional
+from typing import ClassVar, Dict, Literal, Optional
 
 import dotenv
-from pydantic import Field, SecretStr, ValidationError, field_validator
+from pydantic import Field, SecretStr, ValidationError, field_validator, AliasChoices, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from ..exceptions import SettingsError
@@ -13,55 +13,96 @@ dotenv.load_dotenv()
 
 
 class Settings(BaseSettings):
-    """Application settings loaded from environment variables."""
+    """Application settings loaded from environment variables. Standard names are preferred."""
 
-    # API keys are optional to allow starting without them
-    openai_api_key: Optional[SecretStr] = Field(None, validation_alias="orch_openai_api_key")
-    google_api_key: Optional[SecretStr] = Field(None, validation_alias="orch_google_api_key")
-    anthropic_api_key: Optional[SecretStr] = Field(None, validation_alias="orch_anthropic_api_key")
-    logfire_api_key: Optional[SecretStr] = Field(None, validation_alias="orch_logfire_api_key")
+    # --- API Keys (with backward compatibility) ---
+    openai_api_key: Optional[SecretStr] = Field(
+        None,
+        validation_alias=AliasChoices(
+            "OPENAI_API_KEY",
+            "ORCH_OPENAI_API_KEY",
+            "orch_openai_api_key",
+        ),
+    )
+    google_api_key: Optional[SecretStr] = Field(
+        None,
+        validation_alias=AliasChoices(
+            "GOOGLE_API_KEY",
+            "ORCH_GOOGLE_API_KEY",
+            "orch_google_api_key",
+        ),
+    )
+    anthropic_api_key: Optional[SecretStr] = Field(
+        None,
+        validation_alias=AliasChoices(
+            "ANTHROPIC_API_KEY",
+            "ORCH_ANTHROPIC_API_KEY",
+            "orch_anthropic_api_key",
+        ),
+    )
+    logfire_api_key: Optional[SecretStr] = Field(
+        None,
+        validation_alias=AliasChoices(
+            "LOGFIRE_API_KEY",
+            "ORCH_LOGFIRE_API_KEY",
+            "orch_logfire_api_key",
+        ),
+    )
 
-    # Feature Toggles
-    reflection_enabled: bool = Field(True, validation_alias="orch_reflection_enabled")
-    reward_enabled: bool = Field(True, validation_alias="orch_reward_enabled")
-    telemetry_export_enabled: bool = Field(False, validation_alias="orch_telemetry_export_enabled")
-    otlp_export_enabled: bool = Field(False, validation_alias="orch_otlp_export_enabled")
+    # --- Dynamic dictionary for other provider keys ---
+    provider_api_keys: Dict[str, SecretStr] = Field(default_factory=dict)
 
-    # Default models for each agent
-    default_solution_model: str = Field(
-        "openai:gpt-4o", validation_alias="orch_default_solution_model"
-    )
-    default_review_model: str = Field("openai:gpt-4o", validation_alias="orch_default_review_model")
-    default_validator_model: str = Field(
-        "openai:gpt-4o", validation_alias="orch_default_validator_model"
-    )
-    default_reflection_model: str = Field(
-        "openai:gpt-4o", validation_alias="orch_default_reflection_model"
-    )
+    # --- Feature Toggles ---
+    reflection_enabled: bool = True
+    reward_enabled: bool = True
+    telemetry_export_enabled: bool = False
+    otlp_export_enabled: bool = False
+
+    # --- Default models for each agent ---
+    default_solution_model: str = "openai:gpt-4o"
+    default_review_model: str = "openai:gpt-4o"
+    default_validator_model: str = "openai:gpt-4o"
+    default_reflection_model: str = "openai:gpt-4o"
     default_self_improvement_model: str = Field(
         "openai:gpt-4o",
-        validation_alias="orch_default_self_improvement_model",
         description="Default model to use for the SelfImprovementAgent.",
     )
 
-    # Orchestrator Tuning
+    # --- Orchestrator Tuning ---
     max_iters: int = 5
     k_variants: int = 3
     reflection_limit: int = 3
     scorer: Literal["ratio", "weighted", "reward"] = "ratio"
     t_schedule: list[float] = [1.0, 0.8, 0.5, 0.2]
     otlp_endpoint: Optional[str] = None
-    agent_timeout: int = Field(
-        60, validation_alias="orch_agent_timeout"
-    )  # Timeout in seconds for agent calls
+    agent_timeout: int = 60  # Timeout in seconds for agent calls
 
     model_config: ClassVar[SettingsConfigDict] = {
         "env_file": ".env",
-        "env_prefix": "orch_",
-        "alias_generator": None,
         "populate_by_name": True,
         "extra": "ignore",
     }
+
+    @model_validator(mode="after")
+    def load_dynamic_api_keys(self) -> "Settings":
+        """Load any additional *_API_KEY variables from the environment."""
+        handled_keys = {
+            "OPENAI_API_KEY",
+            "ORCH_OPENAI_API_KEY",
+            "GOOGLE_API_KEY",
+            "ORCH_GOOGLE_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "ORCH_ANTHROPIC_API_KEY",
+            "LOGFIRE_API_KEY",
+            "ORCH_LOGFIRE_API_KEY",
+        }
+        for key, value in os.environ.items():
+            upper_key = key.upper()
+            if upper_key.endswith("_API_KEY") and upper_key not in handled_keys:
+                provider_name = upper_key.removesuffix("_API_KEY").lower()
+                if value:
+                    self.provider_api_keys[provider_name] = SecretStr(value)
+        return self
 
     @field_validator("t_schedule")
     def schedule_must_not_be_empty(cls, v: list[float]) -> list[float]:
