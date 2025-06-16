@@ -60,3 +60,10 @@ class UsageLimitExceededError(OrchestratorError):
     def __init__(self, message: str, result: "PipelineResult") -> None:
         super().__init__(message)
         self.result = result
+
+
+class PipelineAbortSignal(Exception):
+    """Special exception hooks can raise to stop a pipeline gracefully."""
+
+    def __init__(self, message: str = "Pipeline aborted by hook.") -> None:
+        super().__init__(message)

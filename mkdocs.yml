@@ -41,8 +41,10 @@ nav:
   - Cookbook:
     - 'Using Resources': cookbook/using_resources.md
     - 'Cost Control': cookbook/cost_control.md
+    - 'Lifecycle Hooks': cookbook/lifecycle_hooks.md
   - Migration:
     - 'v0.3.7': migration/v0.3.7.md
+    - 'v0.3.8': migration/v0.3.8.md
   - API Reference:
     - Overview: api_reference.md
     - Pipeline DSL: pipeline_dsl.md
