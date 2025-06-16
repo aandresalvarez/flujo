@@ -401,7 +401,7 @@ write_tool = Tool(write_file)
 ### Getting Help
 
 - Check the [Troubleshooting Guide](troubleshooting.md)
-- Search [existing issues](https://github.com/aandresalvarez/rloop/issues)
+- Search [existing issues](https://github.com/aandresalvarez/flujo/issues)
 - Create a new issue if needed
 
 ## Next Steps
