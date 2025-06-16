@@ -39,7 +39,8 @@ PYTEST_BENCH_CMD = $(PYTEST_CMD) -m benchmark
         docs-serve docs-build \
         build clean clean-pyc clean-build clean-test clean-docs \
         requirements package publish publish-test clean-package \
-        docker-build docker-dev docker-test docker-docs docker-poetry docker-uv docker-clean
+        docker-build docker-dev docker-test docker-docs docker-poetry docker-uv docker-clean \
+        release release-create release-list release-view release-delete release-download
 
 #------------------------------------------------------------------------------------
 # Help
@@ -267,6 +268,53 @@ publish: package
 clean-package: clean-build
 	@echo "Removing package build artifacts..."
 	rm -rf *.egg-info/ .eggs/ build/ dist/
+
+#------------------------------------------------------------------------------------
+# Release Management
+#------------------------------------------------------------------------------------
+# Get version from pyproject.toml
+VERSION := $(shell grep '^version =' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+RELEASE_TAG := v$(VERSION)
+
+# Release management targets
+.PHONY: release release-create release-list release-view release-delete release-download
+
+# Create a new release with the current version
+release: package release-create
+
+release-create:
+	@echo "Creating GitHub release $(RELEASE_TAG)..."
+	@if [ -z "$(RELEASE_NOTES)" ]; then \
+		echo "Error: RELEASE_NOTES environment variable is required"; \
+		echo "Usage: make release-create RELEASE_NOTES='Your release notes'"; \
+		exit 1; \
+	fi
+	gh release create $(RELEASE_TAG) \
+		--title "Release $(RELEASE_TAG)" \
+		--notes "$(RELEASE_NOTES)" \
+		dist/flujo-$(VERSION)-py3-none-any.whl \
+		dist/flujo-$(VERSION).tar.gz
+
+# List all releases
+release-list:
+	@echo "Listing all releases..."
+	gh release list
+
+# View details of a specific release (defaults to current version)
+release-view:
+	@echo "Viewing release $(RELEASE_TAG)..."
+	gh release view $(RELEASE_TAG)
+
+# Delete a release (requires confirmation)
+release-delete:
+	@echo "WARNING: This will delete the release $(RELEASE_TAG) and all its assets"
+	@echo "Are you sure? [y/N] " && read ans && [ $${ans:-N} = y ]
+	gh release delete $(RELEASE_TAG)
+
+# Download assets from a release
+release-download:
+	@echo "Downloading assets from release $(RELEASE_TAG)..."
+	gh release download $(RELEASE_TAG)
 
 #------------------------------------------------------------------------------------
 # Cleanup

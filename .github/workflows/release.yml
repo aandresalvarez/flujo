@@ -1,8 +1,11 @@
 name: Publish to PyPI
 
 on:
+  push:
+    tags:
+      - 'v*'  # Triggers on version tags
   release:
-    types: [published]
+    types: [published]  # Keeps existing release trigger
 
 jobs:
   build-and-publish:
@@ -12,33 +15,47 @@ jobs:
       name: pypi
       url: https://pypi.org/p/flujo
     permissions:
-      id-token: write
+      id-token: write  # Needed for trusted publishing
+      contents: read   # Needed for reading release info
 
     steps:
     - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Needed for changelog generation
 
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: "3.11"
 
-    - name: Install build dependencies
+    - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install hatchling
+        make pip-dev
 
-    - name: Build package (with signing)
-      run: |
-        hatch build
-        # Optionally sign the distributions here if you have a GPG key
-        # gpg --detach-sign -a dist/*.tar.gz
-        # gpg --detach-sign -a dist/*.whl
+    - name: Run tests
+      run: make test
 
-    - name: Publish package to PyPI (trusted publisher)
+    - name: Build package
+      run: make package
+
+    - name: Generate changelog
+      id: changelog
+      uses: TriPSs/conventional-changelog-action@v3
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        version-file: './pyproject.toml'
+        output-file: 'CHANGELOG.md'
+        skip-version-file: true
+        skip-commit: true
+        release-count: 0
+        tag-prefix: 'v'
+
+    - name: Publish package to PyPI
       uses: pypa/gh-action-pypi-publish@release/v1
       with:
-        # No username/password needed for trusted-publisher
-        # If using GPG signing, add:
+        # Using trusted publisher authentication
+        # If using GPG signing, uncomment:
         # gpg-sign: true
         # gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
         # gpg-password: ${{ secrets.GPG_PASSWORD }} 

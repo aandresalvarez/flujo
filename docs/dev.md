@@ -168,11 +168,260 @@ make publish-test             # builds and uploads to TestPyPI
 make publish                  # builds and uploads to PyPI
 ```
 
-> **Release Process:**
-> 1. Update version in `pyproject.toml`
-> 2. `git commit -am "release: vX.Y.Z"`
-> 3. `git tag vX.Y.Z && git push --tags`
-> 4. GitHub Actions will handle the release
+### GitHub Releases (Private Distribution)
+```bash
+# Create a new release (builds package and creates release)
+make release RELEASE_NOTES="Your release notes here"
+
+# Manage releases
+make release-list            # list all releases
+make release-view           # view current release details
+make release-download      # download current release assets
+make release-delete       # delete current release (requires confirmation)
+```
+
+> **Release Process Options:**
+> 1. **PyPI Release (Public):**
+>    - Update version in `pyproject.toml`
+>    - `git commit -am "release: vX.Y.Z"`
+>    - `git tag vX.Y.Z && git push --tags`
+>    - GitHub Actions will handle the release
+>
+> 2. **GitHub Release (Private):**
+>    - Update version in `pyproject.toml`
+>    - `make release RELEASE_NOTES="Release notes"`
+>    - Install using: `pip install https://github.com/username/rloop/releases/download/vX.Y.Z/flujo-X.Y.Z-py3-none-any.whl`
+
+#### Detailed Release Process
+
+1. **Version Management**
+   ```toml
+   # pyproject.toml
+   [project]
+   version = "0.3.0"  # Follow semantic versioning (MAJOR.MINOR.PATCH)
+   ```
+   - MAJOR: Breaking changes
+   - MINOR: New features (backwards compatible)
+   - PATCH: Bug fixes (backwards compatible)
+
+2. **Release Notes Best Practices**
+   ```markdown
+   # Example Release Notes
+   
+   ## What's New
+   - Added new AI agent orchestration features
+   - Improved error handling in workflow execution
+   - Enhanced documentation with usage examples
+   
+   ## Breaking Changes
+   - Renamed `Agent.run()` to `Agent.execute()` for clarity
+   - Updated configuration format in `config.yaml`
+   
+   ## Bug Fixes
+   - Fixed memory leak in long-running workflows
+   - Resolved race condition in parallel agent execution
+   
+   ## Dependencies
+   - Updated pydantic to v2.7.0
+   - Added new optional dependency: logfire>=0.3.0
+   ```
+
+3. **Release Checklist**
+   - [ ] Update version in `pyproject.toml`
+   - [ ] Update CHANGELOG.md
+   - [ ] Run full test suite: `make test`
+   - [ ] Check code quality: `make quality`
+   - [ ] Build package: `make package`
+   - [ ] Verify wheel contents: `unzip -l dist/flujo-*.whl`
+   - [ ] Create release with notes
+   - [ ] Test installation in clean environment
+   - [ ] Update documentation if needed
+
+4. **Testing the Release**
+   ```bash
+   # Create a clean virtual environment
+   python -m venv test_env
+   source test_env/bin/activate
+   
+   # Test PyPI installation
+   pip install flujo==X.Y.Z
+   
+   # Test GitHub release installation
+   pip install https://github.com/username/rloop/releases/download/vX.Y.Z/flujo-X.Y.Z-py3-none-any.whl
+   ```
+
+#### Troubleshooting Release Issues
+
+| Issue | Solution |
+|-------|----------|
+| `Error: RELEASE_NOTES environment variable is required` | Provide release notes: `make release RELEASE_NOTES="Your notes"` |
+| `Error: Release vX.Y.Z already exists` | Delete existing release: `make release-delete` or use a new version |
+| `Error: No such file or directory: dist/flujo-*.whl` | Run `make package` first to build the distribution |
+| `Error: Permission denied` | Ensure GitHub CLI is authenticated: `gh auth status` |
+| `Error: Invalid version format` | Check version in `pyproject.toml` follows semantic versioning |
+| `Error: Wheel installation fails` | Verify Python version compatibility in `pyproject.toml` |
+| `Error: GitHub API rate limit exceeded` | Wait for rate limit reset or use GitHub token with higher limits |
+
+#### Common Release Scenarios
+
+1. **Hotfix Release**
+   ```bash
+   # 1. Update patch version
+   # 2. Create release with focused notes
+   make release RELEASE_NOTES="Hotfix: Fixed critical issue in agent execution"
+   ```
+
+2. **Feature Release**
+   ```bash
+   # 1. Update minor version
+   # 2. Create comprehensive release notes
+   make release RELEASE_NOTES="New features: Added support for custom agent types and improved workflow monitoring"
+   ```
+
+3. **Major Version Release**
+   ```bash
+   # 1. Update major version
+   # 2. Create detailed release notes with migration guide
+   make release RELEASE_NOTES="Major update: Completely redesigned agent system. See MIGRATION.md for upgrade instructions"
+   ```
+
+#### Security Considerations
+
+1. **Private Distribution**
+   - GitHub releases are private by default
+   - Access control via GitHub repository permissions
+   - Consider using GitHub Packages for better access management
+
+2. **Package Signing**
+   - Consider signing your releases for additional security
+   - Use `twine` with GPG signing for PyPI releases
+   - Document signing process for maintainers
+
+3. **Dependency Management**
+   - Regularly audit dependencies: `make security`
+   - Pin dependency versions in `pyproject.toml`
+   - Document any security-related changes in release notes
+
+#### Automated Release Workflows
+
+The project supports automated releases through GitHub Actions. There are two workflows available:
+
+1. **PyPI Release Workflow**
+   ```yaml
+   # .github/workflows/pypi-release.yml
+   name: PyPI Release
+   on:
+     push:
+       tags:
+         - 'v*'  # Triggers on version tags
+   
+   jobs:
+     release:
+       runs-on: ubuntu-latest
+       steps:
+         - uses: actions/checkout@v4
+         - name: Set up Python
+           uses: actions/setup-python@v5
+           with:
+             python-version: '3.11'
+         - name: Install dependencies
+           run: make pip-dev
+         - name: Run tests
+           run: make test
+         - name: Build package
+           run: make package
+         - name: Publish to PyPI
+           run: make publish
+           env:
+             TWINE_USERNAME: __token__
+             TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+   ```
+   - Triggered by pushing a version tag (e.g., `v0.3.0`)
+   - Runs tests to ensure quality
+   - Builds and publishes to PyPI automatically
+   - Requires PyPI API token in repository secrets
+
+2. **GitHub Release Workflow**
+   ```yaml
+   # .github/workflows/github-release.yml
+   name: GitHub Release
+   on:
+     push:
+       tags:
+         - 'v*'  # Triggers on version tags
+   
+   jobs:
+     release:
+       runs-on: ubuntu-latest
+       steps:
+         - uses: actions/checkout@v4
+         - name: Set up Python
+           uses: actions/setup-python@v5
+           with:
+             python-version: '3.11'
+         - name: Install dependencies
+           run: make pip-dev
+         - name: Run tests
+           run: make test
+         - name: Build package
+           run: make package
+         - name: Create GitHub Release
+           uses: softprops/action-gh-release@v1
+           with:
+             files: |
+               dist/flujo-*.whl
+               dist/flujo-*.tar.gz
+             body_path: CHANGELOG.md
+           env:
+             GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+   ```
+   - Also triggered by version tags
+   - Creates GitHub releases automatically
+   - Uses CHANGELOG.md for release notes
+   - Uploads built packages as release assets
+
+**How to Use Automated Releases:**
+
+1. **Prepare for Release**
+   ```bash
+   # 1. Update version in pyproject.toml
+   # 2. Update CHANGELOG.md
+   # 3. Commit changes
+   git commit -am "release: v0.3.0"
+   
+   # 4. Create and push tag
+   git tag v0.3.0
+   git push origin v0.3.0
+   ```
+
+2. **What Happens Automatically**
+   - GitHub Actions workflow triggers
+   - Tests run to verify quality
+   - Package is built
+   - Release is created (PyPI and/or GitHub)
+   - Release notes are published
+   - Assets are uploaded
+
+3. **Required Setup**
+   - PyPI API token in repository secrets (for PyPI releases)
+   - GitHub token (automatically provided)
+   - Proper permissions in repository settings
+
+4. **Benefits**
+   - Consistent release process
+   - Automated testing before release
+   - No manual upload steps
+   - Release history tracking
+   - Automatic changelog generation
+   - Reduced human error
+
+5. **Monitoring Releases**
+   - Check Actions tab in GitHub repository
+   - Review release artifacts
+   - Verify PyPI/GitHub release pages
+   - Monitor installation success
+
+> **Note:** The automated workflows are configured in `.github/workflows/`. You can customize them based on your needs.
 
 ---
 

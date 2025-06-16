@@ -1,0 +1,60 @@
+name: GitHub Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # Triggers on version tags
+
+jobs:
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Needed for creating releases
+      id-token: write  # Needed for trusted publishing
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Needed for changelog generation
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          make pip-dev
+
+      - name: Run tests
+        run: make test
+
+      - name: Build package
+        run: make package
+
+      - name: Generate changelog
+        id: changelog
+        uses: TriPSs/conventional-changelog-action@v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          version-file: './pyproject.toml'
+          output-file: 'CHANGELOG.md'
+          skip-version-file: true
+          skip-commit: true
+          release-count: 0
+          tag-prefix: 'v'
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            dist/flujo-*.whl
+            dist/flujo-*.tar.gz
+          body_path: CHANGELOG.md
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
