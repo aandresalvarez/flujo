@@ -1,9 +1,7 @@
 """
-01_weighted_scoring.py
-----------------------
-Demonstrates **weighted** checklist scoring.  Two items, different weights.
+Demonstrates using weighted scoring to prioritize certain quality criteria.
+For more details on scoring, see docs/scoring.md.
 """
-
 from flujo.recipes import Default
 from flujo import (
     Task,
@@ -11,55 +9,55 @@ from flujo import (
     solution_agent,
     validator_agent,
     reflection_agent,
+    init_telemetry,
 )
 from flujo.infra.settings import settings
 from flujo.domain.models import Checklist
 
-# 📝 Switch to weighted scoring – you can also set this in .env
+init_telemetry()
+
+# Switch scoring to weighted so the orchestrator honors our weights.
 settings.scorer = "weighted"
 
+# Define our checklist items and their relative importance.
 weights = [
     {"item": "Includes a docstring", "weight": 0.7},
     {"item": "Uses type hints", "weight": 0.3},
 ]
 
-# Create a custom review agent with our specific criteria
-CUSTOM_REVIEW_SYS = """You are an expert software engineer.
-Your task is to generate a checklist of criteria to evaluate a solution for the user's request.
-The checklist MUST include EXACTLY these items (copy them verbatim):
-1. "Includes a docstring"
-2. "Uses type hints"
+# Create a custom review agent that returns exactly these checklist items.
+REVIEW_SYS = """You are an expert Python reviewer. Provide a checklist with these exact items:\n1. \"Includes a docstring\"\n2. \"Uses type hints\"\nReturn JSON only matching Checklist model."""
+review_agent = make_agent_async(settings.default_review_model, REVIEW_SYS, Checklist)
 
-Return **JSON only** that conforms to this schema:
-Checklist(items=[ChecklistItem(description:str, passed:bool|None, feedback:str|None)])
-
-Example:
-{
-  "items": [
-    {"description": "Includes a docstring", "passed": null, "feedback": null},
-    {"description": "Uses type hints", "passed": null, "feedback": null}
-  ]
-}
-"""
-
-review_agent = make_agent_async(settings.default_review_model, CUSTOM_REVIEW_SYS, Checklist)
-
+# Our task asks for a simple addition function with both a docstring and type hints.
 task = Task(
-    prompt="Write a Python function that reverses a string.",
+    prompt="Write a Python function that adds two numbers using type hints and a clear docstring.",
     metadata={"weights": weights},
 )
 
-# Create the default recipe with the required agents
-orch = Default(review_agent, solution_agent, validator_agent, reflection_agent)
+# The Default recipe will automatically apply the weighted_score function now that
+# settings.scorer is set to 'weighted' and weights are provided via metadata.
+# If your global settings have `scorer` as 'ratio', you can override it
+# in the metadata as well: `metadata={"weights": weights, "scorer": "weighted"}`
+orch = Default(
+    review_agent=review_agent,
+    solution_agent=solution_agent,
+    validator_agent=validator_agent,
+    reflection_agent=reflection_agent,
+)
 
-best = orch.run_sync(task)
+print("🧠 Running workflow with weighted scoring (prioritizing docstrings)...")
+best_candidate = orch.run_sync(task)
 
-print("\nSolution:\n", best.solution)
-print("\nWeighted score:", best.score)
-print("\nChecklist:")
-if best.checklist:
-    for item in best.checklist.items:
-        weight = next((w["weight"] for w in weights if w["item"] == item.description), 1.0)
-        print(f" • {item.description:<25} passed={item.passed}  weight={weight:.1f}")
+if best_candidate:
+    print("\n🎉 Workflow finished!")
+    print("-" * 50)
+    print(f"Solution:\n{best_candidate.solution}")
+    print(f"\nWeighted Score: {best_candidate.score:.2f}")
+    if best_candidate.checklist:
+        print("\nFinal Quality Checklist:")
+        for item in best_candidate.checklist.items:
+            status = "✅ Passed" if item.passed else "❌ Failed"
+            print(f"  - {item.description:<60} {status}")
 else:
-    print("  No checklist was generated for this solution.")
+    print("\n❌ The workflow did not produce a valid solution.")

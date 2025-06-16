@@ -132,15 +132,15 @@ Check out the [examples directory](examples/) for more usage examples:
 
 | Script | What it shows |
 | ------ | ------------- |
-| [**00_quickstart.py**](examples/00_quickstart.py) | Minimal, single-task run (ratio scorer). |
-| [**01_weighted_scoring.py**](examples/01_weighted_scoring.py) | Passing custom checklist weights. |
-| [**02_custom_agents.py**](examples/02_custom_agents.py) | Mixing models or replacing the solution agent. |
-| [**03_reward_scorer.py**](examples/03_reward_scorer.py) | Using the reward-model scorer. |
-| [**04_batch_processing.py**](examples/04_batch_processing.py) | Running many prompts from a CSV and exporting results. |
-| [**05_pipeline_sql.py**](examples/05_pipeline_sql.py) | DSL pipeline with SQL validation plugin. |
-| [**06_typed_context.py**](examples/06_typed_context.py) | Sharing state across steps using TypedPipelineContext. |
-| [**07_loop_step.py**](examples/07_loop_step.py) | Iterative refinement with LoopStep. |
-| [**08_branch_step.py**](examples/08_branch_step.py) | Conditional routing with ConditionalStep. |
+| [**00_quickstart.py**](examples/00_quickstart.py) | Hello World with the Default recipe. |
+| [**01_weighted_scoring.py**](examples/01_weighted_scoring.py) | Weighted scoring to prioritize docstrings. |
+| [**02_custom_agents.py**](examples/02_custom_agents.py) | Building creative agents with custom prompts. |
+| [**03_reward_scorer.py**](examples/03_reward_scorer.py) | Using an LLM judge via RewardScorer. |
+| [**04_batch_processing.py**](examples/04_batch_processing.py) | Running multiple workflows concurrently. |
+| [**05_pipeline_sql.py**](examples/05_pipeline_sql.py) | Pipeline DSL with SQL validation plugin. |
+| [**06_typed_context.py**](examples/06_typed_context.py) | Sharing state with Typed Pipeline Context. |
+| [**07_loop_step.py**](examples/07_loop_step.py) | Iterative refinement using LoopStep. |
+| [**08_branch_step.py**](examples/08_branch_step.py) | Dynamic routing with ConditionalStep. |
 
 ## Requirements
 
