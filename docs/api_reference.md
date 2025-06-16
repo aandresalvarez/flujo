@@ -64,7 +64,7 @@ custom_pipeline = (
         solution_agent,
         tools=[tool1, tool2]       # Optional tools
     )
-    >> Step.validate(              # Validation step
+    >> Step.validate_step(              # Validation step
         validator_agent,
         plugins=[plugin1]          # Optional validation plugins
     )
@@ -84,7 +84,7 @@ runner_with_ctx = Flujo(
 # Advanced constructs
 looping_step = Step.loop_until(
     name="refinement_loop",
-    loop_body_pipeline=Pipeline.from_step(Step.solution(solution_agent)),
+loop_body_pipeline=Pipeline.from_step(Step.solution(solution_agent)),
     exit_condition_callable=lambda out, ctx: "done" in out.lower(),
 )
 
@@ -94,7 +94,7 @@ router = Step.branch_on(
     condition_callable=lambda out, ctx: "code" if "function" in out else "text",
     branches={
         "code": Pipeline.from_step(Step.solution(solution_agent)),
-        "text": Pipeline.from_step(Step.validate(validator_agent)),
+        "text": Pipeline.from_step(Step.validate_step(validator_agent)),
     },
 )
 ```

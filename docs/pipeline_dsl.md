@@ -25,7 +25,7 @@ from flujo.infra.agents import (
 pipeline = (
     Step.review(review_agent)
     >> Step.solution(solution_agent)
-    >> Step.validate(validator_agent)
+    >> Step.validate_step(validator_agent)
 )
 
 # Run it
@@ -41,7 +41,7 @@ The `>>` operator chains steps together:
 # Create reusable steps
 review_step = Step.review(review_agent)
 solution_step = Step.solution(solution_agent)
-validate_step = Step.validate(validator_agent)
+validate_step = Step.validate_step(validator_agent)
 
 # Compose them in different ways
 pipeline1 = review_step >> solution_step >> validate_step
@@ -113,7 +113,7 @@ Validation steps verify the solution:
 
 ```python
 # Basic validation
-validate_step = Step.validate(validator_agent)
+validate_step = Step.validate_step(validator_agent)
 
 # With custom scoring
 from flujo import weighted_score
@@ -123,7 +123,7 @@ weights = {
     "readability": 0.4
 }
 
-validate_step = Step.validate(
+validate_step = Step.validate_step(
     validator_agent,
     scorer=lambda c: weighted_score(c, weights)
 )
@@ -131,7 +131,7 @@ validate_step = Step.validate(
 # With plugins
 from flujo.plugins import SQLSyntaxValidator
 
-validate_step = Step.validate(
+validate_step = Step.validate_step(
     validator_agent,
     plugins=[SQLSyntaxValidator()]
 )
@@ -153,7 +153,7 @@ pipeline = (
         Step.solution(solution_agent),
         Step.solution(alternative_agent)
     )
-    >> Step.validate(validator_agent)
+    >> Step.validate_step(validator_agent)
 )
 ```
 
@@ -169,7 +169,7 @@ loop_step = Step.loop_until(
     exit_condition_callable=lambda out, ctx: "done" in out,
 )
 
-pipeline = Step.review(review_agent) >> loop_step >> Step.validate(validator_agent)
+pipeline = Step.review(review_agent) >> loop_step >> Step.validate_step(validator_agent)
 ```
 
 ## Typed Pipeline Context
@@ -231,7 +231,7 @@ branch_step = Step.branch_on(
     },
 )
 
-pipeline = Step.solution(solution_agent) >> branch_step >> Step.validate(validator_agent)
+pipeline = Step.solution(solution_agent) >> branch_step >> Step.validate_step(validator_agent)
 ```
 
 ### Custom Step Factories
@@ -249,7 +249,7 @@ def create_code_step(agent, **config):
 pipeline = (
     Step.review(review_agent)
     >> create_code_step(solution_agent)
-    >> Step.validate(validator_agent)
+    >> Step.validate_step(validator_agent)
 )
 ```
 
@@ -286,7 +286,7 @@ pipeline = (
         Step.solution(backup_agent),
         on_error=True
     )
-    >> Step.validate(validator_agent)
+    >> Step.validate_step(validator_agent)
 )
 ```
 
@@ -331,7 +331,7 @@ from flujo.plugins import (
 pipeline = (
     Step.review(review_agent)  # Define requirements
     >> Step.solution(code_agent)  # Generate code
-    >> Step.validate(
+    >> Step.validate_step(
         validator_agent,
         plugins=[
             SQLSyntaxValidator(),
@@ -355,7 +355,7 @@ pipeline = (
         Step.solution(writer_agent),  # Main writer
         Step.solution(editor_agent)   # Alternative version
     )
-    >> Step.validate(
+    >> Step.validate_step(
         validator_agent,
         scorer=lambda c: weighted_score(c, {
             "grammar": 0.3,

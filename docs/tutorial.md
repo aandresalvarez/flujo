@@ -134,7 +134,7 @@ validator_agent_for_extraction = make_agent_async("openai:gpt-4o", VALIDATE_PROM
 data_extraction_pipeline = (
     Step.review(review_agent_for_extraction, name="PlanExtraction")
     >> Step.solution(extraction_agent, name="ExtractContactInfo")
-    >> Step.validate(validator_agent_for_extraction, name="ValidateCard")
+    >> Step.validate_step(validator_agent_for_extraction, name="ValidateCard")
 )
 
 pipeline_runner = Flujo(data_extraction_pipeline)
@@ -267,7 +267,7 @@ from flujo.plugins.sql_validator import SQLSyntaxValidator
 from flujo.testing.utils import StubAgent
 
 sql_step = Step.solution(StubAgent(["SELECT FROM"]))
-check_step = Step.validate(StubAgent([None]), plugins=[SQLSyntaxValidator()])
+check_step = Step.validate_step(StubAgent([None]), plugins=[SQLSyntaxValidator()])
 runner = Flujo(sql_step >> check_step)
 result = runner.run("SELECT FROM")
 print(result.step_history[-1].feedback)

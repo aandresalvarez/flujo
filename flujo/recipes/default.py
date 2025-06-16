@@ -39,9 +39,15 @@ class Default:
     ) -> None:
         _ = reflection_agent, max_iters, k_variants, reflection_limit
 
-        step_review = Step.review(self._wrap_review_agent(review_agent), max_retries=3)
-        step_solution = Step.solution(self._wrap_solution_agent(solution_agent), max_retries=3)
-        step_validate = Step.validate_step(self._wrap_validator_agent(validator_agent), max_retries=3)
+        step_review = Step.review(
+            self._wrap_review_agent(review_agent), max_retries=3
+        )
+        step_solution = Step.solution(
+            self._wrap_solution_agent(solution_agent), max_retries=3
+        )
+        step_validate = Step.validate_step(
+            self._wrap_validator_agent(validator_agent), max_retries=3
+        )
 
         pipeline = step_review >> step_solution >> step_validate
         self.flujo_engine = Flujo(pipeline, context_model=Default.Context)

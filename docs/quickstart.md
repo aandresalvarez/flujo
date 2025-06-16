@@ -161,7 +161,7 @@ from flujo import (
 custom_pipeline = (
     Step.review(review_agent)
     >> Step.solution(solution_agent)
-    >> Step.validate(validator_agent)
+    >> Step.validate_step(validator_agent)
 )
 
 runner = Flujo(custom_pipeline)
