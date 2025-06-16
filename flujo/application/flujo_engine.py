@@ -12,6 +12,7 @@ from ..exceptions import (
     OrchestratorError,
     PipelineContextInitializationError,
     UsageLimitExceededError,
+    PipelineAbortSignal,
 )
 from ..domain.pipeline_dsl import (
     Pipeline,
@@ -23,6 +24,7 @@ from ..domain.pipeline_dsl import (
 from ..domain.plugins import PluginOutcome
 from ..domain.models import PipelineResult, StepResult, UsageLimits
 from ..domain.resources import AppResources
+from ..domain.types import HookCallable
 
 
 class InfiniteRedirectError(OrchestratorError):
@@ -43,6 +45,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
         initial_context_data: Optional[Dict[str, Any]] = None,
         resources: Optional[AppResources] = None,
         usage_limits: Optional[UsageLimits] = None,
+        hooks: Optional[list[HookCallable]] = None,
     ) -> None:
         if isinstance(pipeline, Step):
             pipeline = Pipeline.from_step(pipeline)
@@ -51,6 +54,17 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
         self.initial_context_data: Dict[str, Any] = initial_context_data or {}
         self.resources = resources
         self.usage_limits = usage_limits
+        self.hooks = hooks or []
+
+    async def _dispatch_hook(self, event_name: str, **kwargs: Any) -> None:
+        for hook in self.hooks:
+            try:
+                await hook(event_name=event_name, **kwargs)
+            except PipelineAbortSignal:
+                raise
+            except Exception as e:  # noqa: BLE001
+                name = getattr(hook, "__name__", str(hook))
+                logfire.error(f"Error in hook '{name}': {e}")
 
     async def _run_step(
         self,
@@ -505,7 +519,20 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
         data: Optional[RunnerInT] = initial_input
         pipeline_result_obj = PipelineResult()
         try:
+            await self._dispatch_hook(
+                "pre_run",
+                initial_input=initial_input,
+                pipeline_context=current_pipeline_context_instance,
+                resources=self.resources,
+            )
             for step in self.pipeline.steps:
+                await self._dispatch_hook(
+                    "pre_step",
+                    step=step,
+                    step_input=data,
+                    pipeline_context=current_pipeline_context_instance,
+                    resources=self.resources,
+                )
                 with logfire.span(step.name) as span:
                     step_result = await self._run_step(
                         step,
@@ -522,7 +549,20 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
                     pipeline_result_obj.step_history.append(step_result)
                     pipeline_result_obj.total_cost_usd += step_result.cost_usd
                     self._check_usage_limits(pipeline_result_obj, span)
-                if not step_result.success:
+                if step_result.success:
+                    await self._dispatch_hook(
+                        "post_step",
+                        step_result=step_result,
+                        pipeline_context=current_pipeline_context_instance,
+                        resources=self.resources,
+                    )
+                else:
+                    await self._dispatch_hook(
+                        "on_step_failure",
+                        step_result=step_result,
+                        pipeline_context=current_pipeline_context_instance,
+                        resources=self.resources,
+                    )
                     logfire.warn(
                         f"Step '{step.name}' failed. Halting pipeline execution."
                     )
@@ -532,16 +572,24 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
         except asyncio.CancelledError:
             logfire.info("Pipeline cancelled")
             return pipeline_result_obj
+        except PipelineAbortSignal as e:
+            logfire.info(str(e))
         except UsageLimitExceededError as e:
             if current_pipeline_context_instance is not None:
                 pipeline_result_obj.final_pipeline_context = (
                     current_pipeline_context_instance
                 )
             raise e
-
-        if current_pipeline_context_instance is not None:
-            pipeline_result_obj.final_pipeline_context = (
-                current_pipeline_context_instance
+        finally:
+            if current_pipeline_context_instance is not None:
+                pipeline_result_obj.final_pipeline_context = (
+                    current_pipeline_context_instance
+                )
+            await self._dispatch_hook(
+                "post_run",
+                pipeline_result=pipeline_result_obj,
+                pipeline_context=current_pipeline_context_instance,
+                resources=self.resources,
             )
 
         return pipeline_result_obj

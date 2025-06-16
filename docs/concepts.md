@@ -343,6 +343,20 @@ runner = Flujo(pipeline, resources=resources)
 Any agent or plugin can declare a keyword-only argument named `resources` to
 receive this object.
 
+## Lifecycle Hooks
+
+Lifecycle hooks let you run custom code before and after key events such as
+`pre_run`, `post_run`, `pre_step`, `post_step`, and `on_step_failure`.
+
+```python
+async def log_hook(**kwargs):
+    print("event", kwargs.get("event_name"))
+
+runner = Flujo(pipeline, hooks=[log_hook])
+```
+
+Raise `PipelineAbortSignal` from a hook to stop execution.
+
 ## Best Practices
 
 1. **Agent Design**

@@ -78,6 +78,7 @@ runner_with_ctx = Flujo(
     initial_context_data={"counter": 0},
     resources=my_resources,
     usage_limits=UsageLimits(total_cost_usd_limit=10.0),
+    hooks=[my_hook],
 )
 
 # Advanced constructs
@@ -245,6 +246,22 @@ limits = UsageLimits(
     total_tokens_limit: Optional[int] = None,
 )
 ```
+
+### Lifecycle Hooks
+
+You can register callbacks to observe or control pipeline execution.
+
+```python
+from flujo import HookCallable, PipelineAbortSignal
+
+async def my_hook(**kwargs):
+    print("event:", kwargs.get("event_name"))
+
+runner = Flujo(pipeline, hooks=[my_hook])
+```
+
+Hooks receive keyword arguments depending on the event. Raise
+`PipelineAbortSignal` from a hook to stop the run gracefully.
 
 ## Self-Improvement & Evaluation
 
