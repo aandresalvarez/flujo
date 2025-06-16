@@ -21,6 +21,7 @@ from ..domain.pipeline_dsl import (
 )
 from ..domain.plugins import PluginOutcome
 from ..domain.models import PipelineResult, StepResult
+from ..domain.resources import AppResources
 
 
 class InfiniteRedirectError(OrchestratorError):
@@ -39,24 +40,27 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
         pipeline: Pipeline[RunnerInT, RunnerOutT] | Step[RunnerInT, RunnerOutT],
         context_model: Optional[Type[BaseModel]] = None,
         initial_context_data: Optional[Dict[str, Any]] = None,
+        resources: Optional[AppResources] = None,
     ) -> None:
         if isinstance(pipeline, Step):
             pipeline = Pipeline.from_step(pipeline)
         self.pipeline: Pipeline[RunnerInT, RunnerOutT] = pipeline
         self.context_model = context_model
         self.initial_context_data: Dict[str, Any] = initial_context_data or {}
+        self.resources = resources
 
     async def _run_step(
         self,
         step: Step[Any, Any],
         data: Any,
         pipeline_context: Optional[BaseModel],
+        resources: Optional[AppResources],
     ) -> StepResult:
         visited: set[Any] = set()
         if isinstance(step, LoopStep):
-            return await self._execute_loop_step(step, data, pipeline_context)
+            return await self._execute_loop_step(step, data, pipeline_context, resources)
         elif isinstance(step, ConditionalStep):
-            return await self._execute_conditional_step(step, data, pipeline_context)
+            return await self._execute_conditional_step(step, data, pipeline_context, resources)
 
         result = StepResult(name=step.name)
         original_agent = step.agent
@@ -72,6 +76,8 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
             agent_kwargs = {}
             if pipeline_context is not None:
                 agent_kwargs["pipeline_context"] = pipeline_context
+            if resources is not None:
+                agent_kwargs["resources"] = resources
             output = await current_agent.run(data, **agent_kwargs)
             result.latency_s += time.monotonic() - start
             last_output = output
@@ -87,6 +93,8 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
                     plugin_kwargs = {}
                     if pipeline_context is not None:
                         plugin_kwargs["pipeline_context"] = pipeline_context
+                    if resources is not None:
+                        plugin_kwargs["resources"] = resources
                     plugin_result: PluginOutcome = await asyncio.wait_for(
                         plugin.validate({"input": data, "output": output}, **plugin_kwargs),
                         timeout=step.config.timeout_s,
@@ -150,6 +158,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
         loop_step: LoopStep,
         loop_step_initial_input: Any,
         pipeline_context: Optional[BaseModel],
+        resources: Optional[AppResources],
     ) -> StepResult:
         loop_overall_result = StepResult(name=loop_step.name)
 
@@ -186,7 +195,10 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
                     f"LoopStep '{loop_step.name}' Iteration {i} - Body Step '{body_s.name}'"
                 ):
                     body_step_result_obj = await self._run_step(
-                        body_s, current_iteration_data_for_body_step, pipeline_context
+                        body_s,
+                        current_iteration_data_for_body_step,
+                        pipeline_context,
+                        resources,
                     )
 
                 loop_overall_result.latency_s += body_step_result_obj.latency_s
@@ -284,6 +296,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
         conditional_step: ConditionalStep,
         conditional_step_input: Any,
         pipeline_context: Optional[BaseModel],
+        resources: Optional[AppResources],
     ) -> StepResult:
         conditional_overall_result = StepResult(name=conditional_step.name)
         executed_branch_key: BranchKey | None = None
@@ -331,7 +344,10 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
                     f"ConditionalStep '{conditional_step.name}' Branch '{branch_key_to_execute}' - Step '{branch_s.name}'"
                 ):
                     branch_step_result_obj = await self._run_step(
-                        branch_s, current_branch_data, pipeline_context
+                        branch_s,
+                        current_branch_data,
+                        pipeline_context,
+                        resources,
                     )
 
                 conditional_overall_result.latency_s += branch_step_result_obj.latency_s
@@ -415,7 +431,10 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
             for step in self.pipeline.steps:
                 with logfire.span(step.name) as span:
                     step_result = await self._run_step(
-                        step, data, pipeline_context=current_pipeline_context_instance
+                        step,
+                        data,
+                        pipeline_context=current_pipeline_context_instance,
+                        resources=self.resources,
                     )
                     if step_result.metadata_:
                         for key, value in step_result.metadata_.items():

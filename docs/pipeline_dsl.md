@@ -199,6 +199,21 @@ print(result.final_pipeline_context.counter)  # 2
 Each `run()` call gets a fresh context instance. Access the final state via
 `PipelineResult.final_pipeline_context`.
 
+## Managed Resources
+
+You can also pass a long-lived resources container to the runner. Declare a
+keyword-only `resources` argument in your agents or plugins to use it.
+
+```python
+class MyResources(AppResources):
+    db_pool: Any
+
+async def query(data: int, *, resources: MyResources) -> str:
+    return resources.db_pool.get_user(data)
+
+runner = Flujo(Step("q", query), resources=my_resources)
+```
+
 ### Conditional Branching
 
 Use `Step.branch_on()` to route to different sub-pipelines at runtime. See [ConditionalStep](pipeline_branching.md) for full details.
