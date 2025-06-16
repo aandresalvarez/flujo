@@ -1,5 +1,9 @@
 """Custom exceptions for the orchestrator."""
 
+from __future__ import annotations
+
+from flujo.domain.models import PipelineResult
+
 
 class OrchestratorError(Exception):
     """Base exception for the application."""
@@ -48,3 +52,11 @@ class PipelineContextInitializationError(OrchestratorError):
     """Raised when a typed pipeline context fails to initialize."""
 
     pass
+
+
+class UsageLimitExceededError(OrchestratorError):
+    """Raised when a pipeline run exceeds its defined usage limits."""
+
+    def __init__(self, message: str, result: "PipelineResult") -> None:
+        super().__init__(message)
+        self.result = result

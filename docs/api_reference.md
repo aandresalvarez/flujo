@@ -47,7 +47,7 @@ from flujo import (
 )
 from pydantic import BaseModel
 from typing import Any
-from flujo import AppResources
+from flujo import AppResources, UsageLimits
 
 class MyResources(AppResources):
     db_pool: Any
@@ -77,6 +77,7 @@ runner_with_ctx = Flujo(
     context_model=MyContext,
     initial_context_data={"counter": 0},
     resources=my_resources,
+    usage_limits=UsageLimits(total_cost_usd_limit=10.0),
 )
 
 # Advanced constructs
@@ -232,6 +233,19 @@ pipeline_result = PipelineResult(
 )
 ```
 
+### UsageLimits
+
+Define cost or token ceilings for a run.
+
+```python
+from flujo import UsageLimits
+
+limits = UsageLimits(
+    total_cost_usd_limit: Optional[float] = None,
+    total_tokens_limit: Optional[int] = None,
+)
+```
+
 ## Self-Improvement & Evaluation
 
 ### Evaluation Functions
@@ -363,6 +377,7 @@ from flujo import (
     OrchestratorError,
     ConfigurationError,
     SettingsError,
+    UsageLimitExceededError,
 )
 
 # Base exception for all orchestrator errors
@@ -375,9 +390,13 @@ except OrchestratorError as e:
 except ConfigurationError as e:
     print(f"Configuration error: {e}")
 
-# Settings-specific errors  
+# Settings-specific errors
 except SettingsError as e:
     print(f"Settings error: {e}")
+
+# Usage governor errors
+except UsageLimitExceededError as e:
+    print(f"Usage limits hit: {e}")
 ```
 
 ## Command Line Interface

@@ -370,6 +370,19 @@ receive this object.
    - Implement custom validation plugins
    - Monitor quality metrics over time
 
+## Usage Governor
+
+`Flujo` can enforce **cost and token limits** during a pipeline run. Provide a
+`UsageLimits` object when creating the runner. If the pipeline exceeds either
+limit, it stops and raises `UsageLimitExceededError` with the partial result.
+
+```python
+from flujo import Flujo, Step, UsageLimits
+
+limits = UsageLimits(total_cost_usd_limit=1.0, total_tokens_limit=5000)
+runner = Flujo(my_pipeline, usage_limits=limits)
+```
+
 ## Next Steps
 
 - Try the [Tutorial](tutorial.md) for hands-on examples

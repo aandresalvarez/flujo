@@ -217,6 +217,18 @@ This guide helps you resolve common issues when using `flujo`.
    )
    ```
 
+### 4. Usage Governor Breach
+
+**Symptoms:**
+- Pipeline stops with `UsageLimitExceededError`
+
+**Solutions:**
+1. Increase or remove the limits:
+   ```python
+   runner = Flujo(pipeline, usage_limits=None)
+   ```
+2. Reduce cost by using cheaper models or fewer iterations.
+
 ## Telemetry Issues
 
 ### 1. Metrics Collection
