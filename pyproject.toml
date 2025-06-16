@@ -61,6 +61,7 @@ dev = [
   "rich",
   "build",     # Added for package building
   "twine",     # Added for package uploading
+  "pytest-benchmark>=4.0.0",
 ]
 docs = [
     "mkdocs",
