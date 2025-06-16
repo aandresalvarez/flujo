@@ -10,6 +10,7 @@ from typing import (
     Generic,
 )
 from pydantic_ai import Agent
+from pydantic import BaseModel
 import os
 from flujo.infra.settings import settings
 from flujo.domain.models import Checklist
@@ -220,6 +221,14 @@ class AsyncAgentWrapper(
                 kwargs["generation_kwargs"] = {}
             kwargs["generation_kwargs"]["temperature"] = temp
 
+        # Compatibility shim: pydantic-ai expects serializable dicts for its
+        # internal function-calling message generation, not Pydantic model
+        # instances. We automatically serialize any BaseModel inputs here to
+        # ensure compatibility.
+        processed_args = [
+            arg.model_dump() if isinstance(arg, BaseModel) else arg for arg in args
+        ]
+
         retryer = AsyncRetrying(
             reraise=False,
             stop=stop_after_attempt(self._max_retries),
@@ -230,7 +239,7 @@ class AsyncAgentWrapper(
             async for attempt in retryer:
                 with attempt:
                     raw_agent_response = await asyncio.wait_for(
-                        self._agent.run(*args, **kwargs),
+                        self._agent.run(*processed_args, **kwargs),
                         timeout=self._timeout_seconds,
                     )
                     logfire.info(
