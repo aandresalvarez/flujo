@@ -59,7 +59,6 @@ dev = [
   "hypothesis",
   "vcrpy",
   "rich",
-  "pytest-benchmark",
   "build",     # Added for package building
   "twine",     # Added for package uploading
 ]
@@ -69,7 +68,10 @@ docs = [
     "mkdocstrings[python]",
 ]
 opentelemetry = ["opentelemetry-sdk>=1.26"]
-bench = ["numpy"]
+bench = [
+    "numpy",
+    "pytest-benchmark>=4.0.0",
+]
 
 # CLI entry point (install adds `flujo` command to PATH)
 [project.scripts]

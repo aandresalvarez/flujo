@@ -36,6 +36,20 @@ jobs:
           files: ./coverage.xml
           fail_ci_if_error: true
 
+  benchmark:
+    name: Run Benchmark Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: pip install -e ".[dev,bench]"
+      - name: Run benchmark and save results
+        run: pytest --benchmark-json=benchmark_results.json tests/benchmarks
+
 # Codecov badge (add to README.md or docs/index.md):
 # ![codecov](https://codecov.io/gh/yourorg/flujo/branch/main/graph/badge.svg)
 
