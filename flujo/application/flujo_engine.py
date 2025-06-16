@@ -519,9 +519,9 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
                                 span.set_attribute(key, value)
                             except Exception:  # noqa: BLE001
                                 pass
-                pipeline_result_obj.step_history.append(step_result)
-                pipeline_result_obj.total_cost_usd += step_result.cost_usd
-                self._check_usage_limits(pipeline_result_obj, span)
+                    pipeline_result_obj.step_history.append(step_result)
+                    pipeline_result_obj.total_cost_usd += step_result.cost_usd
+                    self._check_usage_limits(pipeline_result_obj, span)
                 if not step_result.success:
                     logfire.warn(
                         f"Step '{step.name}' failed. Halting pipeline execution."
