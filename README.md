@@ -124,7 +124,7 @@ if len(pipeline_result.step_history) > 1 and pipeline_result.step_history[1].suc
 - [Contributing Guide](docs/contributing.md): How to contribute to the project
 - [Development Guide](docs/dev.md): Development setup and workflow
 - [Code of Conduct](CODE_OF_CONDUCT.md): Community guidelines
-- [License](LICENSE): MIT License
+- [License](LICENSE): Dual License (AGPL-3.0 + Commercial)
 
 ## Examples
 
