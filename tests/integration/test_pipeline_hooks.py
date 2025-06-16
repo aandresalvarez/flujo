@@ -1,13 +1,20 @@
 import pytest
 from unittest.mock import MagicMock
-from flujo import Flujo, Step, AppResources
-from flujo.exceptions import PipelineAbortSignal
+from flujo import (
+    Flujo,
+    Step,
+    Pipeline,
+    AppResources,
+    UsageLimits,
+)
+from flujo.exceptions import PipelineAbortSignal, UsageLimitExceededError
 from flujo.domain.models import PipelineResult
 from pydantic import BaseModel
 from typing import Any, List, Dict, cast
 from flujo.domain.agent_protocol import AsyncAgentProtocol
 from flujo.testing.utils import StubAgent, DummyPlugin
 from flujo.domain.plugins import PluginOutcome
+from tests.integration.test_usage_governor import FixedMetricAgent
 
 
 class HookResources(AppResources):
@@ -44,6 +51,11 @@ async def aborting_hook(call_recorder: List[Dict[str, Any]], **kwargs: Any) -> N
 
 async def erroring_hook(**kwargs: Any) -> None:
     raise ValueError("Hook failed!")
+
+
+async def post_run_abort_hook(**kwargs: Any) -> None:
+    if kwargs.get("event_name") == "post_run":
+        raise PipelineAbortSignal("abort in post_run")
 
 
 @pytest.mark.asyncio  # type: ignore[misc]
@@ -183,3 +195,14 @@ async def test_hooks_receive_context_and_resources(
     assert "resources" in post_step_call["keys"]
     assert isinstance(result.final_pipeline_context, HookContext)
     assert result.final_pipeline_context.call_count > 0
+
+
+@pytest.mark.asyncio  # type: ignore[misc]
+async def test_post_run_abort_does_not_mask_errors() -> None:
+    """Abort signal in post_run should not hide UsageLimitExceededError."""
+    limits = UsageLimits(total_cost_usd_limit=0.0, total_tokens_limit=None)
+    pipeline = Pipeline.from_step(Step("metric_step", FixedMetricAgent()))
+    runner = Flujo(pipeline, usage_limits=limits, hooks=[post_run_abort_hook])
+
+    with pytest.raises(UsageLimitExceededError):
+        await runner.run_async(0)

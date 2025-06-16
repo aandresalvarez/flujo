@@ -585,12 +585,15 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
                 pipeline_result_obj.final_pipeline_context = (
                     current_pipeline_context_instance
                 )
-            await self._dispatch_hook(
-                "post_run",
-                pipeline_result=pipeline_result_obj,
-                pipeline_context=current_pipeline_context_instance,
-                resources=self.resources,
-            )
+            try:
+                await self._dispatch_hook(
+                    "post_run",
+                    pipeline_result=pipeline_result_obj,
+                    pipeline_context=current_pipeline_context_instance,
+                    resources=self.resources,
+                )
+            except PipelineAbortSignal as e:  # pragma: no cover - avoid masking
+                logfire.info(str(e))
 
         return pipeline_result_obj
 
