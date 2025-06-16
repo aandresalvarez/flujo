@@ -187,7 +187,22 @@ We welcome contributions! Please see our [Contributing Guide](docs/contributing.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is dual-licensed:
+
+1. **Open Source License**: GNU Affero General Public License v3.0 (AGPL-3.0)
+   - Free for open-source projects
+   - Requires sharing of modifications
+   - Suitable for non-commercial use
+
+2. **Commercial License**
+   - For businesses and commercial use
+   - Includes support and updates
+   - No requirement to share modifications
+   - Contact for pricing and terms
+
+For commercial licensing, please contact: alvaro@example.com
+
+See [LICENSE](LICENSE) and [COMMERCIAL_LICENSE](COMMERCIAL_LICENSE) for details.
 
 ## Acknowledgments
 
