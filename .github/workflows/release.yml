@@ -52,10 +52,4 @@ jobs:
         tag-prefix: 'v'
 
     - name: Publish package to PyPI
-      uses: pypa/gh-action-pypi-publish@release/v1
-      with:
-        # Using trusted publisher authentication
-        # If using GPG signing, uncomment:
-        # gpg-sign: true
-        # gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
-        # gpg-password: ${{ secrets.GPG_PASSWORD }} 
+      uses: pypa/gh-action-pypi-publish@release/v1 
