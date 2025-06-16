@@ -343,8 +343,8 @@ print(details)
    - [API Reference](api_reference.md)
 
 2. **Community**
-   - [GitHub Issues](https://github.com/aandresalvarez/rloop/issues)
-   - [Discussions](https://github.com/aandresalvarez/rloop/discussions)
+   - [GitHub Issues](https://github.com/aandresalvarez/flujo/issues)
+   - [Discussions](https://github.com/aandresalvarez/flujo/discussions)
 
 3. **Development**
    - [Contributing Guide](dev.md)

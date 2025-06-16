@@ -77,11 +77,11 @@ flujo = "flujo.cli.main:app"
 
 # Project links (PEP 621)
 [project.urls]
-Homepage = "https://github.com/aandresalvarez/rloop"
-Repository = "https://github.com/aandresalvarez/rloop"
-Documentation = "https://aandresalvarez.github.io/rloop/"
-Bug_Tracker = "https://github.com/aandresalvarez/rloop/issues"
-Changelog = "https://github.com/aandresalvarez/rloop/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/aandresalvarez/flujo"
+Repository = "https://github.com/aandresalvarez/flujo"
+Documentation = "https://aandresalvarez.github.io/flujo/"
+Bug_Tracker = "https://github.com/aandresalvarez/flujo/issues"
+Changelog = "https://github.com/aandresalvarez/flujo/blob/main/CHANGELOG.md"
 
 # --------------------------------------------------------------------------- #
 # Tool-specific configuration

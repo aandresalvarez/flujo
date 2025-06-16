@@ -43,8 +43,8 @@ For development work, you can install the package in editable mode:
 
 ```bash
 # Clone the repository
-git clone https://github.com/aandresalvarez/rloop.git
-cd rloop
+git clone https://github.com/aandresalvarez/flujo.git
+cd flujo
 
 # Create and activate a virtual environment
 python3.11 -m venv .venv
@@ -140,7 +140,7 @@ print("✅ Installation successful!")
 
 If you encounter any issues:
 1. Check the [troubleshooting guide](troubleshooting.md)
-2. Search [existing issues](https://github.com/aandresalvarez/rloop/issues)
+2. Search [existing issues](https://github.com/aandresalvarez/flujo/issues)
 3. Create a new issue if needed
 
 ## Next Steps

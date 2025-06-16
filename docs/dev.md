@@ -8,8 +8,8 @@ Thanks for helping improve **flujo**! This guide will help you set up a fully-fe
 
 ```bash
 # Clone the repository
-git clone https://github.com/aandresalvarez/rloop.git
-cd rloop
+git clone https://github.com/aandresalvarez/flujo.git
+cd flujo
 
 # Create and activate a Python 3.11 virtual environment
 python3.11 -m venv .venv
@@ -190,7 +190,7 @@ make release-delete       # delete current release (requires confirmation)
 > 2. **GitHub Release (Private):**
 >    - Update version in `pyproject.toml`
 >    - `make release RELEASE_NOTES="Release notes"`
->    - Install using: `pip install https://github.com/username/rloop/releases/download/vX.Y.Z/flujo-X.Y.Z-py3-none-any.whl`
+>    - Install using: `pip install https://github.com/username/flujo/releases/download/vX.Y.Z/flujo-X.Y.Z-py3-none-any.whl`
 
 #### Detailed Release Process
 
@@ -247,7 +247,7 @@ make release-delete       # delete current release (requires confirmation)
    pip install flujo==X.Y.Z
    
    # Test GitHub release installation
-   pip install https://github.com/username/rloop/releases/download/vX.Y.Z/flujo-X.Y.Z-py3-none-any.whl
+   pip install https://github.com/username/flujo/releases/download/vX.Y.Z/flujo-X.Y.Z-py3-none-any.whl
    ```
 
 #### Troubleshooting Release Issues

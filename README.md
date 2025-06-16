@@ -6,7 +6,7 @@
 
 A powerful Python library for orchestrating AI workflows using Pydantic models.
 The `flujo` package (repository hosted at
-[`github.com/aandresalvarez/rloop`](https://github.com/aandresalvarez/rloop))
+[`github.com/aandresalvarez/flujo`](https://github.com/aandresalvarez/flujo))
 provides utilities to manage multi-agent pipelines with minimal setup.
 
 ## Features
@@ -161,8 +161,8 @@ pip install flujo
 
 ```bash
 # Clone the repository
-git clone https://github.com/aandresalvarez/rloop.git
-cd rloop
+git clone https://github.com/aandresalvarez/flujo.git
+cd flujo
 
 # Create and activate virtual environment
 python -m venv venv
@@ -181,8 +181,8 @@ We welcome contributions! Please see our [Contributing Guide](docs/contributing.
 ## Support
 
 - [Documentation](https://flujo.readthedocs.io/)
-- [Issue Tracker](https://github.com/aandresalvarez/rloop/issues)
-- [Discussions](https://github.com/aandresalvarez/rloop/discussions)
+- [Issue Tracker](https://github.com/aandresalvarez/flujo/issues)
+- [Discussions](https://github.com/aandresalvarez/flujo/discussions)
 - [Discord](https://discord.gg/...)
 
 ## License
@@ -221,6 +221,6 @@ If you use this project in your research, please cite:
   author = {Alvaro Andres Alvarez},
   title = {Flujo},
   year = {2024},
-  url = {https://github.com/aandresalvarez/rloop}
+  url = {https://github.com/aandresalvarez/flujo}
 }
 ```

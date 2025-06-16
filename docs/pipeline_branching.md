@@ -49,5 +49,5 @@ pipeline = Step("classify", classify) >> branch_step
 
 Running the pipeline will execute either the `process_numbers` or `process_text` branch based on the classification result.
 
-See [pipeline_dsl.md](pipeline_dsl.md) for an overview of the DSL. A runnable example can be found in [this script on GitHub](https://github.com/aandresalvarez/rloop/blob/main/examples/08_branch_step.py).
+See [pipeline_dsl.md](pipeline_dsl.md) for an overview of the DSL. A runnable example can be found in [this script on GitHub](https://github.com/aandresalvarez/flujo/blob/main/examples/08_branch_step.py).
 

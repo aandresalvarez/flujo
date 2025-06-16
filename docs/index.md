@@ -110,10 +110,10 @@ Choose your path based on your needs:
 ## Support & Community
 
 - **📚 Documentation**: Complete guides and API reference
-- **🐛 Issues**: [GitHub Issues](https://github.com/aandresalvarez/rloop/issues)
-- **💬 Discussions**: [GitHub Discussions](https://github.com/aandresalvarez/rloop/discussions)
+- **🐛 Issues**: [GitHub Issues](https://github.com/aandresalvarez/flujo/issues)
+- **💬 Discussions**: [GitHub Discussions](https://github.com/aandresalvarez/flujo/discussions)
 - **📦 Package**: [PyPI](https://pypi.org/project/flujo/)
 
 ## License
 
-MIT License - see [LICENSE](https://github.com/aandresalvarez/rloop/blob/main/LICENSE) for details. 
+MIT License - see [LICENSE](https://github.com/aandresalvarez/flujo/blob/main/LICENSE) for details. 

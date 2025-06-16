@@ -56,4 +56,4 @@ print(result.step_history[-1].output)
 print(result.final_pipeline_context.counter)
 ```
 
-See [pipeline_dsl.md](pipeline_dsl.md) for general DSL usage. For a complete script demonstrating `LoopStep`, check [this script on GitHub](https://github.com/aandresalvarez/rloop/blob/main/examples/07_loop_step.py).
+See [pipeline_dsl.md](pipeline_dsl.md) for general DSL usage. For a complete script demonstrating `LoopStep`, check [this script on GitHub](https://github.com/aandresalvarez/flujo/blob/main/examples/07_loop_step.py).
