@@ -87,7 +87,8 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
         original_agent = step.agent
         current_agent = original_agent
         last_feedback = None
-        last_output = None
+        last_raw_output = None
+        last_unpacked_output = None
         for attempt in range(1, step.config.max_retries + 1):
             result.attempts = attempt
             if current_agent is None:
@@ -99,9 +100,11 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
                 agent_kwargs["pipeline_context"] = pipeline_context
             if resources is not None:
                 agent_kwargs["resources"] = resources
-            output = await current_agent.run(data, **agent_kwargs)
+            raw_output = await current_agent.run(data, **agent_kwargs)
             result.latency_s += time.monotonic() - start
-            last_output = output
+            last_raw_output = raw_output
+            unpacked_output = getattr(raw_output, "output", raw_output)
+            last_unpacked_output = unpacked_output
 
             success = True
             feedback: str | None = None
@@ -117,9 +120,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
                     if resources is not None:
                         plugin_kwargs["resources"] = resources
                     plugin_result: PluginOutcome = await asyncio.wait_for(
-                        plugin.validate(
-                            {"input": data, "output": output}, **plugin_kwargs
-                        ),
+                        plugin.validate({"input": data, "output": unpacked_output}, **plugin_kwargs),
                         timeout=step.config.timeout_s,
                     )
                 except asyncio.TimeoutError as e:
@@ -134,15 +135,15 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
                     final_plugin_outcome = plugin_result
 
             if final_plugin_outcome and final_plugin_outcome.new_solution is not None:
-                output = final_plugin_outcome.new_solution
-                last_output = output
+                unpacked_output = final_plugin_outcome.new_solution
+                last_unpacked_output = unpacked_output
 
             if success:
-                result.output = output
+                result.output = unpacked_output
                 result.success = True
                 result.feedback = feedback
-                result.token_counts += getattr(output, "token_counts", 1)
-                result.cost_usd += getattr(output, "cost_usd", 0.0)
+                result.token_counts += getattr(raw_output, "token_counts", 1)
+                result.cost_usd += getattr(raw_output, "cost_usd", 0.0)
                 return result
 
             # Call failure handlers on each failed attempt
@@ -169,14 +170,14 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
             last_feedback = feedback
 
         # If we get here, all retries failed
-        result.output = last_output
+        result.output = last_unpacked_output
         result.success = False
         result.feedback = last_feedback
         result.token_counts += (
-            getattr(last_output, "token_counts", 1) if last_output is not None else 0
+            getattr(last_raw_output, "token_counts", 1) if last_raw_output is not None else 0
         )
         result.cost_usd += (
-            getattr(last_output, "cost_usd", 0.0) if last_output is not None else 0.0
+            getattr(last_raw_output, "cost_usd", 0.0) if last_raw_output is not None else 0.0
         )
         return result
 

@@ -6,6 +6,7 @@ from flujo.domain import Step
 from flujo.application.flujo_engine import Flujo
 from flujo.domain.models import PipelineResult
 from flujo.testing.utils import StubAgent, DummyPlugin
+from typing import Any
 from flujo.domain.plugins import PluginOutcome
 
 
@@ -112,3 +113,32 @@ async def test_pipeline_cancellation() -> None:
     task.cancel()
     result = await task
     assert isinstance(result, PipelineResult)
+
+
+class CapturePlugin:
+    def __init__(self):
+        self.data = None
+
+    async def validate(self, data: dict[str, Any]) -> PluginOutcome:
+        self.data = data
+        return PluginOutcome(success=True)
+
+
+class WrappedResult:
+    def __init__(self, output: str, token_counts: int = 2, cost_usd: float = 0.1) -> None:
+        self.output = output
+        self.token_counts = token_counts
+        self.cost_usd = cost_usd
+
+
+async def test_runner_unpacks_agent_result() -> None:
+    agent = StubAgent([WrappedResult("ok")])
+    plugin = CapturePlugin()
+    step = Step("s", agent, plugins=[plugin])
+    runner = Flujo(step)
+    result = await runner.run_async("in")
+    history = result.step_history[0]
+    assert history.output == "ok"
+    assert plugin.data["output"] == "ok"
+    assert history.token_counts == 2
+    assert result.total_cost_usd == 0.1
