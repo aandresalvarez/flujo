@@ -323,6 +323,26 @@ print(f"Reflection enabled: {settings.reflection_enabled}")
 # AGENT_TIMEOUT=60
 ```
 
+## Managed Resources
+
+`Flujo` supports an optional *resources* container that is passed to every step
+and plugin during a pipeline run. This is a convenient place to keep shared
+objects like database connections or API clients.
+
+Create your own container by inheriting from `AppResources` and pass an
+instance to the runner:
+
+```python
+class MyResources(AppResources):
+    db_pool: Any
+
+resources = MyResources(db_pool=make_pool())
+runner = Flujo(pipeline, resources=resources)
+```
+
+Any agent or plugin can declare a keyword-only argument named `resources` to
+receive this object.
+
 ## Best Practices
 
 1. **Agent Design**

@@ -38,6 +38,10 @@ nav:
     - 'Documentation Guide': documentation_guide.md
     - 'Documentation Status': documentation_status.md
   - 'Use Cases': use_cases.md
+  - Cookbook:
+    - 'Using Resources': cookbook/using_resources.md
+  - Migration:
+    - 'v0.3.7': migration/v0.3.7.md
   - API Reference:
     - Overview: api_reference.md
     - Pipeline DSL: pipeline_dsl.md

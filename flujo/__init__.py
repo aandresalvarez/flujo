@@ -20,6 +20,7 @@ from .domain import (
     StepConfig,
     PluginOutcome,
     ValidationPlugin,
+    AppResources,
 )
 from .application.eval_adapter import run_pipeline_async
 from .application.self_improvement import evaluate_and_improve, SelfImprovementAgent
@@ -48,6 +49,7 @@ __all__ = [
     "Step",
     "Pipeline",
     "StepConfig",
+    "AppResources",
     "PluginOutcome",
     "ValidationPlugin",
     "run_pipeline_async",

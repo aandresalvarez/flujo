@@ -46,6 +46,13 @@ from flujo import (
     review_agent, solution_agent, validator_agent,
 )
 from pydantic import BaseModel
+from typing import Any
+from flujo import AppResources
+
+class MyResources(AppResources):
+    db_pool: Any
+
+my_resources = MyResources(db_pool=make_pool())
 
 class MyContext(BaseModel):
     counter: int = 0
@@ -69,6 +76,7 @@ runner_with_ctx = Flujo(
     custom_pipeline,
     context_model=MyContext,
     initial_context_data={"counter": 0},
+    resources=my_resources,
 )
 
 # Advanced constructs
@@ -141,6 +149,17 @@ from flujo import (
 - **`reflection_agent`**: Provides reflection and improvement suggestions (outputs `str`)
 
 ## Data Models
+
+### AppResources
+
+Container for long-lived resources shared across pipeline steps.
+
+```python
+from flujo import AppResources
+
+class MyResources(AppResources):
+    db_pool: Any
+```
 
 ### Task
 
