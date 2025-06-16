@@ -17,6 +17,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0  # Needed for changelog generation
+          ref: main      # Checkout main branch instead of tag
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -34,25 +35,26 @@ jobs:
       - name: Build package
         run: make package
 
-      - name: Generate changelog
-        id: changelog
-        uses: TriPSs/conventional-changelog-action@v3
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          version-file: './pyproject.toml'
-          output-file: 'CHANGELOG.md'
-          skip-version-file: true
-          skip-commit: true
-          release-count: 0
-          tag-prefix: 'v'
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
             dist/flujo-*.whl
             dist/flujo-*.tar.gz
-          body_path: CHANGELOG.md
+          body: |
+            ## What's New in v0.3.1
+            
+            ### License Changes
+            - Switched to dual licensing model (AGPL-3.0 + Commercial)
+            - Added commercial license terms
+            - Updated all license references
+            
+            ### Documentation
+            - Updated README with dual licensing information
+            - Added commercial license file
+            - Updated license classifiers in pyproject.toml
+            
+            For commercial licensing, please contact: alvaro@example.com
           draft: false
           prerelease: false
           generate_release_notes: true
