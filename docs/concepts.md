@@ -116,6 +116,10 @@ operations, the agents used at each stage, and the integration of plugins.
 Steps declare a `pipeline_context` parameter to access or modify this object. See
 [Typed Pipeline Context](pipeline_context.md) for full documentation.
 
+## The Pipeline Context: Built-in Memory
+
+Every run automatically receives a `PipelineContext` instance. It includes a `run_id`, the initial prompt, a mutable `scratchpad` dictionary and a record of all human interactions (`hitl_history`). This allows agents to share state without additional setup.
+
 The built-in [**Default recipe**](#the-default-recipe) uses this DSL under the hood. When you need different logic, you can use the same tools directly through the `Flujo` engine. The DSL also supports advanced constructs like [**LoopStep**](pipeline_looping.md) for iteration and [**ConditionalStep**](pipeline_branching.md) for branching workflows.
 
 ```python
@@ -185,6 +189,10 @@ router_step = Step.branch_on(
     },
 )
 ```
+
+#### Human-in-the-Loop Steps
+
+Use `Step.human_in_the_loop()` to pause execution and wait for structured human input. The step optionally validates the response with a Pydantic model and all interactions are saved to the `PipelineContext`.
 
 ## Scoring
 
