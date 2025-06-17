@@ -1,3 +1,4 @@
+import pickle
 import pytest
 from pydantic import BaseModel, ValidationError
 
@@ -115,3 +116,18 @@ async def test_cannot_resume_non_paused_pipeline() -> None:
     result = await gather_result(runner, "x")
     with pytest.raises(OrchestratorError):
         await runner.resume_async(result, "irrelevant")
+
+
+@pytest.mark.asyncio
+async def test_paused_hitl_pipeline_can_be_serialized_and_resumed() -> None:
+    pipeline = Step("first", StubAgent(["draft"])) >> Step.human_in_the_loop("pause")
+    runner = Flujo(pipeline)
+
+    paused = await gather_result(runner, "start")
+    pickled_result = pickle.dumps(paused)
+    unpickled_result = pickle.loads(pickled_result)
+
+    resumed = await runner.resume_async(unpickled_result, "human response")
+
+    assert resumed.step_history[-1].success
+    assert resumed.step_history[-1].output == "human response"

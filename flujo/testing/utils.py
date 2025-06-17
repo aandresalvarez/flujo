@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, List
+from typing import Any, List, AsyncIterator, Dict, Optional
+import asyncio
 
 from ..domain.plugins import PluginOutcome
 
@@ -43,3 +44,44 @@ async def gather_result(runner: Any, data: Any, **kwargs: Any) -> Any:
     if not has_items:
         raise ValueError("runner.run_async did not yield any items.")
     return result
+
+
+class FailingStreamAgent:
+    """Agent that yields a few chunks then raises an exception."""
+
+    def __init__(self, chunks: List[str], exc: Exception) -> None:
+        self.chunks = chunks
+        self.exc = exc
+
+    async def stream(self, data: Any, **kwargs: Any) -> AsyncIterator[str]:
+        for ch in self.chunks:
+            await asyncio.sleep(0)
+            yield ch
+        raise self.exc
+
+
+from ..domain.backends import ExecutionBackend, StepExecutionRequest
+from ..domain.agent_protocol import AsyncAgentProtocol
+from ..infra.backends import LocalBackend
+from ..domain.models import StepResult
+
+
+class DummyRemoteBackend(ExecutionBackend):
+    """Mock backend that simulates remote execution."""
+
+    def __init__(self, agent_registry: Dict[str, AsyncAgentProtocol[Any, Any]] | None = None) -> None:
+        self.agent_registry = agent_registry or {}
+        self.call_counter = 0
+        self.recorded_requests: List[StepExecutionRequest] = []
+        self.local = LocalBackend(agent_registry=self.agent_registry)
+
+    async def execute_step(self, request: StepExecutionRequest) -> StepResult:
+        self.call_counter += 1
+        self.recorded_requests.append(request)
+        data_dict = request.model_dump()
+        roundtrip = StepExecutionRequest.model_validate(data_dict)
+        # Preserve original step object to avoid pydantic resetting config
+        roundtrip.step = request.step
+        # Ensure usage_limits propagate to the underlying LocalBackend
+        roundtrip.usage_limits = request.usage_limits
+        return await self.local.execute_step(roundtrip)

@@ -112,6 +112,7 @@ async def _execute_loop_step_logic(
     *,
     step_executor: StepExecutor,
     context_model_defined: bool,
+    usage_limits: UsageLimits | None = None,
 ) -> StepResult:
     """Logic for executing a LoopStep without engine coupling."""
     loop_overall_result = StepResult(name=loop_step.name)
@@ -156,6 +157,42 @@ async def _execute_loop_step_logic(
             loop_overall_result.latency_s += body_step_result_obj.latency_s
             loop_overall_result.cost_usd += getattr(body_step_result_obj, "cost_usd", 0.0)
             loop_overall_result.token_counts += getattr(body_step_result_obj, "token_counts", 0)
+
+            if usage_limits is not None:
+                if (
+                    usage_limits.total_cost_usd_limit is not None
+                    and loop_overall_result.cost_usd > usage_limits.total_cost_usd_limit
+                ):
+                    logfire.warn(
+                        f"Cost limit of ${usage_limits.total_cost_usd_limit} exceeded"
+                    )
+                    loop_overall_result.success = False
+                    loop_overall_result.feedback = (
+                        f"Cost limit of ${usage_limits.total_cost_usd_limit} exceeded"
+                    )
+                    pr = PipelineResult(step_history=[loop_overall_result], total_cost_usd=loop_overall_result.cost_usd)
+                    pr.final_pipeline_context = pipeline_context
+                    raise UsageLimitExceededError(
+                        loop_overall_result.feedback,
+                        pr,
+                    )
+                if (
+                    usage_limits.total_tokens_limit is not None
+                    and loop_overall_result.token_counts > usage_limits.total_tokens_limit
+                ):
+                    logfire.warn(
+                        f"Token limit of {usage_limits.total_tokens_limit} exceeded"
+                    )
+                    loop_overall_result.success = False
+                    loop_overall_result.feedback = (
+                        f"Token limit of {usage_limits.total_tokens_limit} exceeded"
+                    )
+                    pr = PipelineResult(step_history=[loop_overall_result], total_cost_usd=loop_overall_result.cost_usd)
+                    pr.final_pipeline_context = pipeline_context
+                    raise UsageLimitExceededError(
+                        loop_overall_result.feedback,
+                        pr,
+                    )
 
             if not body_step_result_obj.success:
                 logfire.warn(
@@ -248,6 +285,7 @@ async def _execute_conditional_step_logic(
     *,
     step_executor: StepExecutor,
     context_model_defined: bool,
+    usage_limits: UsageLimits | None = None,
 ) -> StepResult:
     """Logic for executing a ConditionalStep without engine coupling."""
     conditional_overall_result = StepResult(name=conditional_step.name)
@@ -367,6 +405,7 @@ async def _run_step_logic(
     *,
     step_executor: StepExecutor,
     context_model_defined: bool,
+    usage_limits: UsageLimits | None = None,
 ) -> StepResult:
     """Core logic for executing a single step without engine coupling."""
     visited: set[Any] = set()
@@ -378,6 +417,7 @@ async def _run_step_logic(
             resources,
             step_executor=step_executor,
             context_model_defined=context_model_defined,
+            usage_limits=usage_limits,
         )
     if isinstance(step, ConditionalStep):
         return await _execute_conditional_step_logic(
@@ -387,6 +427,7 @@ async def _run_step_logic(
             resources,
             step_executor=step_executor,
             context_model_defined=context_model_defined,
+            usage_limits=usage_limits,
         )
     if isinstance(step, HumanInTheLoopStep):
         message = step.message_for_user if step.message_for_user is not None else str(data)
@@ -557,6 +598,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
             pipeline_context=pipeline_context,
             resources=resources,
             context_model_defined=self.context_model is not None,
+            usage_limits=self.usage_limits,
         )
         return await self.backend.execute_step(request)
 
@@ -660,22 +702,38 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
                                 agent_kwargs["resources"] = self.resources
                             chunks: list[Any] = []
                             start = time.monotonic()
-                            async for chunk in step.agent.stream(data, **agent_kwargs):
-                                chunks.append(chunk)
-                                yield chunk
-                            latency = time.monotonic() - start
-                            final_output: Any
-                            if chunks and all(isinstance(c, str) for c in chunks):
-                                final_output = "".join(chunks)
-                            else:
-                                final_output = chunks
-                            step_result = StepResult(
-                                name=step.name,
-                                output=final_output,
-                                success=True,
-                                attempts=1,
-                                latency_s=latency,
-                            )
+                            try:
+                                async for chunk in step.agent.stream(data, **agent_kwargs):
+                                    chunks.append(chunk)
+                                    yield chunk
+                                latency = time.monotonic() - start
+                                final_output: Any
+                                if chunks and all(isinstance(c, str) for c in chunks):
+                                    final_output = "".join(chunks)
+                                else:
+                                    final_output = chunks
+                                step_result = StepResult(
+                                    name=step.name,
+                                    output=final_output,
+                                    success=True,
+                                    attempts=1,
+                                    latency_s=latency,
+                                )
+                            except Exception as e:
+                                latency = time.monotonic() - start
+                                final_output: Any
+                                if chunks and all(isinstance(c, str) for c in chunks):
+                                    final_output = "".join(chunks)
+                                else:
+                                    final_output = chunks
+                                step_result = StepResult(
+                                    name=step.name,
+                                    output=final_output,
+                                    success=False,
+                                    feedback=str(e),
+                                    attempts=1,
+                                    latency_s=latency,
+                                )
                         else:
                             step_result = await self._run_step(
                                 step,
