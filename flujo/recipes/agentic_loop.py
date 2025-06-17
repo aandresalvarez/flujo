@@ -11,6 +11,7 @@ from ..domain.commands import (
     FinishCommand,
     ExecutedCommandLog,
 )
+from ..exceptions import PausedException
 from ..domain.models import PipelineResult, PipelineContext
 from ..domain.pipeline_dsl import Step, LoopStep
 from ..application.flujo_engine import Flujo, _accepts_param
@@ -74,8 +75,10 @@ class AgenticLoop:
 
     def resume(self, paused_result: PipelineResult, human_input: Any) -> PipelineResult:
         runner = Flujo(self._pipeline, context_model=PipelineContext)
+
         async def _consume() -> PipelineResult:
             return await runner.resume_async(paused_result, human_input)
+
         return asyncio.run(_consume())
 
     async def resume_async(self, paused_result: PipelineResult, human_input: Any) -> PipelineResult:
@@ -127,10 +130,13 @@ class _CommandExecutor:
                     if isinstance(node, (ast.Import, ast.ImportFrom)):
                         raise ValueError("Imports are not allowed in run_python")
                 local_scope: Dict[str, Any] = {}
-                exec(compile(tree, filename="<agentic_loop>", mode="exec"), {"__builtins__": {}}, local_scope)
+                exec(
+                    compile(tree, filename="<agentic_loop>", mode="exec"),
+                    {"__builtins__": {}},
+                    local_scope,
+                )
                 result = local_scope.get("result", "Python code executed successfully.")
             elif cmd.type == "ask_human":
-                from ..exceptions import PausedException
                 if isinstance(pipeline_context, PipelineContext):
                     pipeline_context.scratchpad["paused_step_input"] = cmd
                 raise PausedException(message=cmd.question)
@@ -149,4 +155,3 @@ class _CommandExecutor:
             )
         )
         return result
-
