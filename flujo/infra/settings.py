@@ -4,7 +4,14 @@ import os
 from typing import ClassVar, Dict, Literal, Optional
 
 import dotenv
-from pydantic import Field, SecretStr, ValidationError, field_validator, AliasChoices, model_validator
+from pydantic import (
+    Field,
+    SecretStr,
+    ValidationError,
+    field_validator,
+    AliasChoices,
+    model_validator,
+)
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from ..exceptions import SettingsError
