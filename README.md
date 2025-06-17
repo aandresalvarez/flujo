@@ -121,7 +121,7 @@ if len(pipeline_result.step_history) > 1 and pipeline_result.step_history[1].suc
 
 ### Development
 
-- [Contributing Guide](docs/contributing.md): How to contribute to the project
+- [Contributing Guide](CONTRIBUTING.md): How to contribute to the project
 - [Development Guide](docs/dev.md): Development setup and workflow
 - [Code of Conduct](CODE_OF_CONDUCT.md): Community guidelines
 - [License](LICENSE): Dual License (AGPL-3.0 + Commercial)
@@ -141,6 +141,8 @@ Check out the [examples directory](examples/) for more usage examples:
 | [**06_typed_context.py**](examples/06_typed_context.py) | Sharing state with Typed Pipeline Context. |
 | [**07_loop_step.py**](examples/07_loop_step.py) | Iterative refinement using LoopStep. |
 | [**08_branch_step.py**](examples/08_branch_step.py) | Dynamic routing with ConditionalStep. |
+
+Looking for more community resources? Check out the [Awesome Flujo list](AWESOME-FLUJO.md).
 
 ## Requirements
 
@@ -176,7 +178,7 @@ pip install -e ".[dev]"
 
 ## Contributing
 
-We welcome contributions! Please see our [Contributing Guide](docs/contributing.md) for details.
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
 
 ## Support
 

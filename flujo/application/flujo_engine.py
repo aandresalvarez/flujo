@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import time
+import weakref
 from typing import Any, Callable, Dict, Generic, Optional, Type, TypeVar
 
 from pydantic import BaseModel, ValidationError
@@ -40,17 +41,20 @@ class InfiniteRedirectError(OrchestratorError):
     """Raised when a redirect loop is detected."""
 
 
-_accepts_param_cache: Dict[int, Dict[str, Optional[bool]]] = {}
+_accepts_param_cache: (
+    "weakref.WeakKeyDictionary[Callable[..., Any], Dict[str, Optional[bool]]]"
+) = weakref.WeakKeyDictionary()
+
 
 def _accepts_param(func: Callable[..., Any], param: str) -> Optional[bool]:
     """Return True if callable's signature includes param or **kwargs.
 
-    Returns None if the signature cannot be inspected. Results are cached
-    using the id of the callable to avoid issues with unhashable callables.
+    Returns ``None`` if the signature cannot be inspected. Results are cached
+    using a :class:`~weakref.WeakKeyDictionary` keyed by the callable object to
+    avoid stale cache entries when bound method objects are garbage collected.
     """
-    func_id = id(func)
-    if func_id in _accepts_param_cache and param in _accepts_param_cache[func_id]:
-        return _accepts_param_cache[func_id][param]
+    if func in _accepts_param_cache and param in _accepts_param_cache[func]:
+        return _accepts_param_cache[func][param]
 
     try:
         sig = inspect.signature(func)
@@ -59,15 +63,19 @@ def _accepts_param(func: Callable[..., Any], param: str) -> Optional[bool]:
     else:
         if param in sig.parameters:
             result = True
-        elif any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
+        elif any(
+            p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+        ):
             result = True
         else:
             result = False
 
-    if func_id not in _accepts_param_cache:
-        _accepts_param_cache[func_id] = {}
-    _accepts_param_cache[func_id][param] = result
+    if func not in _accepts_param_cache:
+        _accepts_param_cache[func] = {}
+    _accepts_param_cache[func][param] = result
     return result
+
+
 RunnerInT = TypeVar("RunnerInT")
 RunnerOutT = TypeVar("RunnerOutT")
 
@@ -112,12 +120,20 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
     ) -> StepResult:
         visited: set[Any] = set()
         if isinstance(step, LoopStep):
-            return await self._execute_loop_step(step, data, pipeline_context, resources)
+            return await self._execute_loop_step(
+                step, data, pipeline_context, resources
+            )
         elif isinstance(step, ConditionalStep):
-            return await self._execute_conditional_step(step, data, pipeline_context, resources)
+            return await self._execute_conditional_step(
+                step, data, pipeline_context, resources
+            )
         elif isinstance(step, HumanInTheLoopStep):
             # Prepare message to human
-            message = step.message_for_user if step.message_for_user is not None else str(data)
+            message = (
+                step.message_for_user
+                if step.message_for_user is not None
+                else str(data)
+            )
             if isinstance(pipeline_context, PipelineContext):
                 pipeline_context.scratchpad["status"] = "paused"
             raise PausedException(message)
@@ -214,7 +230,9 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
             # Handle redirection for next attempt
             if redirect_to:
                 if redirect_to in visited:
-                    raise InfiniteRedirectError(f"Redirect loop detected in step {step.name}")
+                    raise InfiniteRedirectError(
+                        f"Redirect loop detected in step {step.name}"
+                    )
                 visited.add(redirect_to)
                 current_agent = redirect_to
             else:
@@ -233,10 +251,14 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
         result.success = False
         result.feedback = last_feedback
         result.token_counts += (
-            getattr(last_raw_output, "token_counts", 1) if last_raw_output is not None else 0
+            getattr(last_raw_output, "token_counts", 1)
+            if last_raw_output is not None
+            else 0
         )
         result.cost_usd += (
-            getattr(last_raw_output, "cost_usd", 0.0) if last_raw_output is not None else 0.0
+            getattr(last_raw_output, "cost_usd", 0.0)
+            if last_raw_output is not None
+            else 0.0
         )
         return result
 
@@ -259,7 +281,9 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
                     f"Error in initial_input_to_loop_body_mapper for LoopStep '{loop_step.name}': {e}"
                 )
                 loop_overall_result.success = False
-                loop_overall_result.feedback = f"Initial input mapper raised an exception: {e}"
+                loop_overall_result.feedback = (
+                    f"Initial input mapper raised an exception: {e}"
+                )
                 return loop_overall_result
         else:
             current_body_input = loop_step_initial_input
@@ -289,8 +313,12 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
                     )
 
                 loop_overall_result.latency_s += body_step_result_obj.latency_s
-                loop_overall_result.cost_usd += getattr(body_step_result_obj, "cost_usd", 0.0)
-                loop_overall_result.token_counts += getattr(body_step_result_obj, "token_counts", 0)
+                loop_overall_result.cost_usd += getattr(
+                    body_step_result_obj, "cost_usd", 0.0
+                )
+                loop_overall_result.token_counts += getattr(
+                    body_step_result_obj, "token_counts", 0
+                )
 
                 if not body_step_result_obj.success:
                     logfire.warn(
@@ -303,7 +331,9 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
                 current_iteration_data_for_body_step = body_step_result_obj.output
 
             if iteration_succeeded_fully:
-                last_successful_iteration_body_output = current_iteration_data_for_body_step
+                last_successful_iteration_body_output = (
+                    current_iteration_data_for_body_step
+                )
             final_body_output_of_last_iteration = current_iteration_data_for_body_step
 
             try:
@@ -315,11 +345,15 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
                     f"Error in exit_condition_callable for LoopStep '{loop_step.name}': {e}"
                 )
                 loop_overall_result.success = False
-                loop_overall_result.feedback = f"Exit condition callable raised an exception: {e}"
+                loop_overall_result.feedback = (
+                    f"Exit condition callable raised an exception: {e}"
+                )
                 break
 
             if should_exit:
-                logfire.info(f"LoopStep '{loop_step.name}' exit condition met at iteration {i}.")
+                logfire.info(
+                    f"LoopStep '{loop_step.name}' exit condition met at iteration {i}."
+                )
                 loop_overall_result.success = iteration_succeeded_fully
                 if not iteration_succeeded_fully:
                     loop_overall_result.feedback = (
@@ -350,9 +384,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
                 f"LoopStep '{loop_step.name}' reached max_loops ({loop_step.max_loops}) without exit condition being met."
             )
             loop_overall_result.success = False
-            loop_overall_result.feedback = (
-                f"Reached max_loops ({loop_step.max_loops}) without meeting exit condition."
-            )
+            loop_overall_result.feedback = f"Reached max_loops ({loop_step.max_loops}) without meeting exit condition."
 
         if loop_overall_result.success and loop_exited_successfully_by_condition:
             if loop_step.loop_output_mapper:
@@ -365,16 +397,16 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
                         f"Error in loop_output_mapper for LoopStep '{loop_step.name}': {e}"
                     )
                     loop_overall_result.success = False
-                    loop_overall_result.feedback = f"Loop output mapper raised an exception: {e}"
+                    loop_overall_result.feedback = (
+                        f"Loop output mapper raised an exception: {e}"
+                    )
                     loop_overall_result.output = None
             else:
                 loop_overall_result.output = last_successful_iteration_body_output
         else:
             loop_overall_result.output = final_body_output_of_last_iteration
             if not loop_overall_result.feedback:
-                loop_overall_result.feedback = (
-                    "Loop did not complete successfully or exit condition not met positively."
-                )
+                loop_overall_result.feedback = "Loop did not complete successfully or exit condition not met positively."
 
         return loop_overall_result
 
@@ -399,7 +431,9 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
             )
             executed_branch_key = branch_key_to_execute
 
-            selected_branch_pipeline = conditional_step.branches.get(branch_key_to_execute)
+            selected_branch_pipeline = conditional_step.branches.get(
+                branch_key_to_execute
+            )
             if selected_branch_pipeline is None:
                 selected_branch_pipeline = conditional_step.default_branch_pipeline
                 if selected_branch_pipeline is None:
@@ -475,8 +509,10 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
         if branch_succeeded:
             if conditional_step.branch_output_mapper:
                 try:
-                    conditional_overall_result.output = conditional_step.branch_output_mapper(
-                        branch_output, executed_branch_key, pipeline_context
+                    conditional_overall_result.output = (
+                        conditional_step.branch_output_mapper(
+                            branch_output, executed_branch_key, pipeline_context
+                        )
                     )
                 except Exception as e:  # noqa: BLE001
                     logfire.error(
@@ -494,8 +530,12 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
 
         conditional_overall_result.attempts = 1
         if executed_branch_key is not None:
-            conditional_overall_result.metadata_ = conditional_overall_result.metadata_ or {}
-            conditional_overall_result.metadata_["executed_branch_key"] = str(executed_branch_key)
+            conditional_overall_result.metadata_ = (
+                conditional_overall_result.metadata_ or {}
+            )
+            conditional_overall_result.metadata_["executed_branch_key"] = str(
+                executed_branch_key
+            )
 
         return conditional_overall_result
 
@@ -518,7 +558,9 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
                     span.set_attribute("governor_breached", True)
                 except Exception:  # noqa: BLE001
                     pass
-            logfire.warn(f"Cost limit of ${self.usage_limits.total_cost_usd_limit} exceeded")
+            logfire.warn(
+                f"Cost limit of ${self.usage_limits.total_cost_usd_limit} exceeded"
+            )
             raise UsageLimitExceededError(
                 f"Cost limit of ${self.usage_limits.total_cost_usd_limit} exceeded",
                 pipeline_result,
@@ -533,7 +575,9 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
                     span.set_attribute("governor_breached", True)
                 except Exception:  # noqa: BLE001
                     pass
-            logfire.warn(f"Token limit of {self.usage_limits.total_tokens_limit} exceeded")
+            logfire.warn(
+                f"Token limit of {self.usage_limits.total_tokens_limit} exceeded"
+            )
             raise UsageLimitExceededError(
                 f"Token limit of {self.usage_limits.total_tokens_limit} exceeded",
                 pipeline_result,
@@ -561,7 +605,9 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
                 ) from e
 
         else:
-            current_pipeline_context_instance = PipelineContext(initial_prompt=str(initial_input))
+            current_pipeline_context_instance = PipelineContext(
+                initial_prompt=str(initial_input)
+            )
 
         if isinstance(current_pipeline_context_instance, PipelineContext):
             current_pipeline_context_instance.scratchpad["status"] = "running"
@@ -592,9 +638,15 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
                             resources=self.resources,
                         )
                     except PausedException as e:
-                        if isinstance(current_pipeline_context_instance, PipelineContext):
-                            current_pipeline_context_instance.scratchpad["status"] = "paused"
-                            current_pipeline_context_instance.scratchpad["pause_message"] = str(e)
+                        if isinstance(
+                            current_pipeline_context_instance, PipelineContext
+                        ):
+                            current_pipeline_context_instance.scratchpad["status"] = (
+                                "paused"
+                            )
+                            current_pipeline_context_instance.scratchpad[
+                                "pause_message"
+                            ] = str(e)
                         pipeline_result_obj.final_pipeline_context = (
                             current_pipeline_context_instance
                         )
@@ -622,7 +674,9 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
                         pipeline_context=current_pipeline_context_instance,
                         resources=self.resources,
                     )
-                    logfire.warn(f"Step '{step.name}' failed. Halting pipeline execution.")
+                    logfire.warn(
+                        f"Step '{step.name}' failed. Halting pipeline execution."
+                    )
                     break
                 step_output: Optional[RunnerInT] = step_result.output
                 data = step_output
@@ -633,13 +687,20 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
             logfire.info(str(e))
         except UsageLimitExceededError as e:
             if current_pipeline_context_instance is not None:
-                pipeline_result_obj.final_pipeline_context = current_pipeline_context_instance
+                pipeline_result_obj.final_pipeline_context = (
+                    current_pipeline_context_instance
+                )
             raise e
         finally:
             if current_pipeline_context_instance is not None:
-                pipeline_result_obj.final_pipeline_context = current_pipeline_context_instance
+                pipeline_result_obj.final_pipeline_context = (
+                    current_pipeline_context_instance
+                )
                 if isinstance(current_pipeline_context_instance, PipelineContext):
-                    if current_pipeline_context_instance.scratchpad.get("status") != "paused":
+                    if (
+                        current_pipeline_context_instance.scratchpad.get("status")
+                        != "paused"
+                    ):
                         status = (
                             "completed"
                             if all(s.success for s in pipeline_result_obj.step_history)
@@ -659,11 +720,18 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
         return pipeline_result_obj
 
     def run(
-        self, initial_input: RunnerInT, *, initial_context_data: Optional[Dict[str, Any]] = None
+        self,
+        initial_input: RunnerInT,
+        *,
+        initial_context_data: Optional[Dict[str, Any]] = None,
     ) -> PipelineResult:
-        return asyncio.run(self.run_async(initial_input, initial_context_data=initial_context_data))
+        return asyncio.run(
+            self.run_async(initial_input, initial_context_data=initial_context_data)
+        )
 
-    async def resume_async(self, paused_result: PipelineResult, human_input: Any) -> PipelineResult:
+    async def resume_async(
+        self, paused_result: PipelineResult, human_input: Any
+    ) -> PipelineResult:
         """Resume a paused pipeline with human input."""
         ctx = paused_result.final_pipeline_context
         if ctx is None:
@@ -751,7 +819,9 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
         if isinstance(ctx, PipelineContext):
             if ctx.scratchpad.get("status") != "paused":
                 status = (
-                    "completed" if all(s.success for s in paused_result.step_history) else "failed"
+                    "completed"
+                    if all(s.success for s in paused_result.step_history)
+                    else "failed"
                 )
                 ctx.scratchpad["status"] = status
 
