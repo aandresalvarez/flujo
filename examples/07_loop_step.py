@@ -77,7 +77,9 @@ runner = Flujo(full_pipeline)
 
 async def main() -> None:
     print("🚀 Starting iterative refinement pipeline...\n")
-    result = await runner.run_async("Write a sentence about Python.")
+    result = None
+    async for item in runner.run_async("Write a sentence about Python."):
+        result = item
 
     print("\n✅ Pipeline finished!")
     final_result = result.step_history[-1]

@@ -39,7 +39,9 @@ runner = Flujo(sql_pipeline)
 
 async def main() -> None:
     print("🧠 Running a custom SQL generation and validation pipeline...")
-    result = await runner.run_async("Generate a query to select all users.")
+    result = None
+    async for item in runner.run_async("Generate a query to select all users."):
+        result = item
 
     # 5. Inspect the results from the pipeline's `step_history`.
     solution_result = result.step_history[0]

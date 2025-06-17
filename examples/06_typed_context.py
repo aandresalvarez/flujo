@@ -89,7 +89,9 @@ runner = Flujo(pipeline, context_model=ResearchContext)
 
 async def main() -> None:
     print("🚀 Starting multi-step research pipeline with a shared context...\n")
-    result = await runner.run_async("Create a report on Python's history.")
+    result = None
+    async for item in runner.run_async("Create a report on Python's history."):
+        result = item
 
     # 5. Inspect the final state of the context after the run is complete.
     print("\n✅ Pipeline finished!")

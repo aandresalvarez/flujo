@@ -34,7 +34,9 @@ async def main():
 
     # 4. Run the pipeline to get a solution.
     print("🧠 Running a simple pipeline to generate a solution...")
-    result = await runner.run_async("Explain 'technical debt' in one sentence for a non-technical manager.")
+    result = None
+    async for item in runner.run_async("Explain 'technical debt' in one sentence for a non-technical manager."):
+        result = item
 
     if not result.step_history or not result.step_history[-1].success:
         print("\n❌ Pipeline failed to produce a solution.")
