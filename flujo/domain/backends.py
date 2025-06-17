@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Protocol, Any, Dict, Optional
+from dataclasses import dataclass
 from pydantic import BaseModel
 
 from .pipeline_dsl import Step
@@ -9,7 +10,8 @@ from .resources import AppResources
 from .agent_protocol import AsyncAgentProtocol
 
 
-class StepExecutionRequest(BaseModel):
+@dataclass
+class StepExecutionRequest:
     """Serializable request for executing a single step."""
 
     # Use unparameterized Step here to avoid Pydantic recreating the object and
@@ -22,8 +24,6 @@ class StepExecutionRequest(BaseModel):
     # Whether the runner was created with a context model. Needed for
     # proper context passing semantics.
     context_model_defined: bool = False
-
-    model_config = {"arbitrary_types_allowed": True}
 
 
 class ExecutionBackend(Protocol):
