@@ -235,7 +235,10 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
             async for attempt in retryer:
                 with attempt:
                     raw_agent_response = await asyncio.wait_for(
-                        self._agent.run(processed_args[0] if processed_args else None),  # type: ignore[arg-type]
+                        self._agent.run(
+                            *processed_args,
+                            **processed_kwargs,
+                        ),
                         timeout=self._timeout_seconds,
                     )
                     logfire.info(f"Agent '{self._model_name}' raw response: {raw_agent_response}")

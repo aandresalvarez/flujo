@@ -3,6 +3,7 @@ from pydantic import BaseModel
 
 from flujo.application.flujo_engine import Flujo
 from flujo.domain import Step
+from flujo.testing.utils import gather_result
 from flujo.exceptions import PipelineContextInitializationError
 from flujo.domain.plugins import PluginOutcome
 
@@ -61,7 +62,7 @@ async def test_context_initialization_and_access() -> None:
     agent = CaptureAgent()
     step = Step("s", agent)
     runner = Flujo(step, context_model=Ctx, initial_context_data={"num": 1})
-    result = await runner.run_async("in")
+    result = await gather_result(runner, "in")
     assert isinstance(agent.seen, Ctx)
     assert result.final_pipeline_context.num == 1
 
@@ -70,14 +71,14 @@ async def test_context_initialization_and_access() -> None:
 async def test_context_initialization_failure() -> None:
     runner = Flujo(Step("s", CaptureAgent()), context_model=Ctx, initial_context_data={"num": "bad"})
     with pytest.raises(PipelineContextInitializationError):
-        await runner.run_async("in")
+        await gather_result(runner, "in")
 
 
 @pytest.mark.asyncio
 async def test_context_mutation_between_steps() -> None:
     pipeline = Step("inc", IncAgent()) >> Step("read", ReadAgent())
     runner = Flujo(pipeline, context_model=Ctx)
-    result = await runner.run_async("x")
+    result = await gather_result(runner, "x")
     assert result.step_history[-1].output == 1
     assert result.final_pipeline_context.num == 1
 
@@ -86,8 +87,8 @@ async def test_context_mutation_between_steps() -> None:
 async def test_context_isolated_per_run() -> None:
     step = Step("inc", IncAgent())
     runner = Flujo(step, context_model=Ctx)
-    r1 = await runner.run_async("a")
-    r2 = await runner.run_async("b")
+    r1 = await gather_result(runner, "a")
+    r2 = await gather_result(runner, "b")
     assert r1.final_pipeline_context.num == 1
     assert r2.final_pipeline_context.num == 1
 
@@ -100,7 +101,7 @@ async def test_plugin_receives_context_and_strict_plugin_errors() -> None:
     step = Step("s", CaptureAgent(), plugins=[(ctx_plugin, 0), (kwargs_plugin, 0), (strict_plugin, 0)])
     runner = Flujo(step, context_model=Ctx)
     with pytest.raises(TypeError):
-        await runner.run_async("in")
+        await gather_result(runner, "in")
     # Context plugin ran before the TypeError
     assert isinstance(ctx_plugin.ctx, Ctx)
     assert kwargs_plugin.kwargs.get("pipeline_context") == ctx_plugin.ctx

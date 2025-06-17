@@ -33,7 +33,13 @@ result = orchestrator.run_sync(Task(prompt="Generate a poem"))
 
 # Run a task asynchronously
 candidate = await orchestrator.run_async(Task(prompt="Generate a poem"))
+
+# Stream the response chunk by chunk
+async for piece in orchestrator.stream_async(Task(prompt="Generate a poem")):
+    ...
 ```
+`run_async` is an async generator that yields chunks from the final step. Use
+`stream_async` as a clearer alias.
 
 ### Pipeline DSL & `Flujo`
 
@@ -113,6 +119,10 @@ pipeline_result = runner.run(
     "Your initial prompt"  # Input for the first step
 )  # Returns PipelineResult
 
+# Stream results asynchronously
+async for part in runner.stream_async("Your initial prompt"):
+    ...
+
 # Access step results
 for step_res in pipeline_result.step_history:
     print(f"Step: {step_res.name}, Success: {step_res.success}")
@@ -138,6 +148,12 @@ agent = make_agent_async(
     output_type: type,             # Output type (str, Pydantic model, etc.)
     tools: Optional[List[Tool]] = None,  # Optional tools
 )
+
+# Implement a streaming agent
+class MyStreamer(StreamingAgentProtocol):
+    async def stream(self, data: str) -> AsyncIterator[str]:
+        yield data
+```
 
 # Pre-built agents
 from flujo import (

@@ -31,3 +31,15 @@ class DummyPlugin:
         idx = min(self.call_count, len(self.outcomes) - 1)
         self.call_count += 1
         return self.outcomes[idx]
+
+
+async def gather_result(runner: Any, data: Any, **kwargs: Any) -> Any:
+    """Consume a streaming run and return the final result."""
+    result = None
+    has_items = False
+    async for item in runner.run_async(data, **kwargs):
+        result = item
+        has_items = True
+    if not has_items:
+        raise ValueError("runner.run_async did not yield any items.")
+    return result

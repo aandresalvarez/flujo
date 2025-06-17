@@ -3,6 +3,7 @@ import pytest
 from pydantic import BaseModel
 
 from flujo import Flujo, Step, Pipeline, UsageLimits, UsageLimitExceededError
+from flujo.testing.utils import gather_result
 from typing import Any
 from flujo.domain.agent_protocol import AsyncAgentProtocol
 from flujo.domain.models import PipelineResult
@@ -43,7 +44,7 @@ async def test_governor_halts_on_cost_limit_breach(
     runner = Flujo(pipeline, usage_limits=limits)
 
     with pytest.raises(UsageLimitExceededError) as exc_info:
-        await runner.run_async(0)
+        await gather_result(runner, 0)
 
     assert "Cost limit of $0.15 exceeded" in str(exc_info.value)
     result: PipelineResult = exc_info.value.result
@@ -64,7 +65,7 @@ async def test_governor_halts_on_token_limit_breach(
     runner = Flujo(pipeline, usage_limits=limits)
 
     with pytest.raises(UsageLimitExceededError) as exc_info:
-        await runner.run_async(0)
+        await gather_result(runner, 0)
 
     assert "Token limit of 150 exceeded" in str(exc_info.value)
     result: PipelineResult = exc_info.value.result
@@ -84,7 +85,7 @@ async def test_governor_allows_completion_within_limits(
     )  # type: ignore[arg-type]
     runner = Flujo(pipeline, usage_limits=limits)
 
-    result = await runner.run_async(0)
+    result = await gather_result(runner, 0)
 
     assert len(result.step_history) == 2
     assert result.step_history[-1].success
@@ -101,7 +102,7 @@ async def test_governor_inactive_when_no_limits_provided(
         FixedMetricAgent(),
     )  # type: ignore[arg-type]
     runner = Flujo(pipeline)
-    result = await runner.run_async(0)
+    result = await gather_result(runner, 0)
 
     assert len(result.step_history) == 2
     assert result.step_history[-1].success
@@ -116,7 +117,7 @@ async def test_governor_halts_immediately_on_zero_limit(
     runner = Flujo(metric_pipeline, usage_limits=limits)
 
     with pytest.raises(UsageLimitExceededError):
-        await runner.run_async(0)
+        await gather_result(runner, 0)
 
 
 @pytest.mark.asyncio
@@ -134,7 +135,7 @@ async def test_governor_with_loop_step(
     runner = Flujo(loop_step, usage_limits=limits)
 
     with pytest.raises(UsageLimitExceededError) as exc_info:
-        await runner.run_async(0)
+        await gather_result(runner, 0)
 
     result: PipelineResult = exc_info.value.result
     loop_result = result.step_history[0]

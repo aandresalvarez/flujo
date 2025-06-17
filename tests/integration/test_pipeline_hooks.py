@@ -12,7 +12,7 @@ from flujo.domain.models import PipelineResult
 from pydantic import BaseModel
 from typing import Any, List, Dict, cast
 from flujo.domain.agent_protocol import AsyncAgentProtocol
-from flujo.testing.utils import StubAgent, DummyPlugin
+from flujo.testing.utils import StubAgent, DummyPlugin, gather_result
 from flujo.domain.plugins import PluginOutcome
 from tests.integration.test_usage_governor import FixedMetricAgent
 
@@ -71,7 +71,7 @@ async def test_all_hooks_are_called_in_correct_order(
         await generic_recorder_hook(call_recorder, **kwargs)
 
     runner = Flujo(pipeline, hooks=[recorder])
-    await runner.run_async("start")
+    await gather_result(runner, "start")
 
     events = [c["event"] for c in call_recorder]
     assert events == [
@@ -101,7 +101,7 @@ async def test_on_step_failure_hook_is_called(
         await generic_recorder_hook(call_recorder, **kwargs)
 
     runner = Flujo(pipeline, hooks=[recorder])
-    await runner.run_async("start")
+    await gather_result(runner, "start")
 
     events = [c["event"] for c in call_recorder]
     assert events == [
@@ -124,7 +124,7 @@ async def test_hook_receives_correct_arguments(
         await generic_recorder_hook(call_recorder, **kwargs)
 
     runner = Flujo(pipeline, hooks=[recorder])
-    await runner.run_async("start")
+    await gather_result(runner, "start")
 
     pre_run_call = next(c for c in call_recorder if c["event"] == "pre_run")
     assert "initial_input" in pre_run_call["keys"]
@@ -149,7 +149,7 @@ async def test_pipeline_aborts_gracefully_from_hook(
     )
 
     runner = Flujo(pipeline, hooks=[aborting_hook])
-    result = await runner.run_async("start")
+    result = await gather_result(runner, "start")
 
     assert isinstance(result, PipelineResult)
     assert len(result.step_history) == 2
@@ -164,7 +164,7 @@ async def test_faulty_hook_does_not_crash_pipeline(
     pipeline = Step("s1", agent=cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok"])))
     runner = Flujo(pipeline, hooks=[erroring_hook])
 
-    result = await runner.run_async("start")
+    result = await gather_result(runner, "start")
 
     assert result.step_history[0].success is True
     assert "Error in hook" in caplog.text
@@ -188,7 +188,7 @@ async def test_hooks_receive_context_and_resources(
         resources=mock_res,
         hooks=[recorder],
     )
-    result = await runner.run_async("start")
+    result = await gather_result(runner, "start")
 
     post_step_call = next(c for c in call_recorder if c["event"] == "post_step")
     assert "pipeline_context" in post_step_call["keys"]
@@ -205,4 +205,4 @@ async def test_post_run_abort_does_not_mask_errors() -> None:
     runner = Flujo(pipeline, usage_limits=limits, hooks=[post_run_abort_hook])
 
     with pytest.raises(UsageLimitExceededError):
-        await runner.run_async(0)
+        await gather_result(runner, 0)

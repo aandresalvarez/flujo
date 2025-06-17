@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from flujo.application.flujo_engine import Flujo
 from flujo.domain import Step
 from flujo.domain.models import Checklist, ChecklistItem
-from flujo.testing.utils import StubAgent
+from flujo.testing.utils import StubAgent, gather_result
 from flujo.infra.agents import AsyncAgentWrapper
 
 class TypeCheckingAgent:
@@ -25,7 +25,7 @@ async def test_pydantic_models_are_serialized_for_agents():
     pipeline = first >> second
     runner = Flujo(pipeline)
 
-    result = await runner.run_async(None)
+    result = await gather_result(runner, None)
 
     assert result.step_history[-1].output == "ok"
 
@@ -45,6 +45,6 @@ async def test_pipeline_context_serialized_for_agent_kwargs():
         initial_context_data={"foo": "bar"},
     )
 
-    result = await runner.run_async(None)
+    result = await gather_result(runner, None)
 
     assert result.step_history[-1].output == "bar"
