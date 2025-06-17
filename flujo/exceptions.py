@@ -67,3 +67,10 @@ class PipelineAbortSignal(Exception):
 
     def __init__(self, message: str = "Pipeline aborted by hook.") -> None:
         super().__init__(message)
+
+
+class PausedException(OrchestratorError):
+    """Internal exception used to pause a pipeline."""
+
+    def __init__(self, message: str = "Pipeline paused for human input.") -> None:
+        super().__init__(message)

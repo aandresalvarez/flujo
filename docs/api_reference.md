@@ -88,6 +88,12 @@ loop_body_pipeline=Pipeline.from_step(Step.solution(solution_agent)),
     exit_condition_callable=lambda out, ctx: "done" in out.lower(),
 )
 
+# Pause for human input
+approval_step = Step.human_in_the_loop(
+    name="approval",
+    message_for_user="Is the draft acceptable?",
+)
+
 # Conditional branching
 router = Step.branch_on(
     name="router",
@@ -232,6 +238,19 @@ pipeline_result = PipelineResult(
     total_cost_usd: float = 0.0,          # Total cost
     final_pipeline_context: Optional[BaseModel] = None,  # Final context
 )
+
+### PipelineContext
+
+Each run gets a `PipelineContext` with:
+
+- `run_id`: unique identifier
+- `initial_prompt`: the first input
+- `scratchpad`: a mutable dictionary for agents
+- `hitl_history`: list of `HumanInteraction` records
+
+### Resuming a Paused Pipeline
+
+Use `Flujo.resume_async(paused_result, human_input)` to continue after a `HumanInTheLoopStep`.
 ```
 
 ### UsageLimits
