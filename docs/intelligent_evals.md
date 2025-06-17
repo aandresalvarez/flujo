@@ -63,11 +63,16 @@ its `StepConfig` parameters and a redacted summary of the step's system prompt.
 This gives the agent more insight into how your pipeline is configured and helps
 it provide targeted `CONFIG_ADJUSTMENT` or `PROMPT_MODIFICATION` suggestions.
 
-Example snippet of the context:
+Example snippet of the context prompt:
 
 ```
+Analyze the following failed and successful pipeline runs to identify root causes and suggest improvements.
+
+--- FAILED CASES ---
+
 Case: test_sql_error
-- GenerateSQL: Output(content="SELEC * FROM t") (success=True)
+Input: SELECT * FROM table...
+- Step 'GenerateSQL': Output='SELEC * FROM t' (success=True, feedback='None')
   Config(retries=1, timeout=30s)
   SystemPromptSummary: "You are a SQL expert..."
 ```
