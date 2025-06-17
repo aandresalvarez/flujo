@@ -599,9 +599,13 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
                         if is_last and step.agent is not None and hasattr(step.agent, "stream"):
                             agent_kwargs: Dict[str, Any] = {}
                             target = getattr(step.agent, "_agent", step.agent)
-                            if current_pipeline_context_instance is not None and _accepts_param(target.stream, "pipeline_context"):
+                            if current_pipeline_context_instance is not None and _accepts_param(
+                                target.stream, "pipeline_context"
+                            ):
                                 agent_kwargs["pipeline_context"] = current_pipeline_context_instance
-                            if self.resources is not None and _accepts_param(target.stream, "resources"):
+                            if self.resources is not None and _accepts_param(
+                                target.stream, "resources"
+                            ):
                                 agent_kwargs["resources"] = self.resources
                             chunks: list[Any] = []
                             start = time.monotonic()
@@ -714,7 +718,9 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
     ) -> PipelineResult:
         async def _consume() -> PipelineResult:
             result: PipelineResult | None = None
-            async for item in self.run_async(initial_input, initial_context_data=initial_context_data):
+            async for item in self.run_async(
+                initial_input, initial_context_data=initial_context_data
+            ):
                 result = item  # last yield is the PipelineResult
             assert result is not None
             return result

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol, AsyncIterator, Any
 
+
 class StreamingAgentProtocol(Protocol):
     """Protocol for agents that can stream their output."""
 
@@ -9,4 +10,3 @@ class StreamingAgentProtocol(Protocol):
         """Asynchronously yield output chunks."""
         if False:  # pragma: no cover - placeholder
             yield None
-
