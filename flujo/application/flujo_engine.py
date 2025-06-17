@@ -44,7 +44,7 @@ class InfiniteRedirectError(OrchestratorError):
 _accepts_param_cache_weak: (
     "weakref.WeakKeyDictionary[Callable[..., Any], Dict[str, Optional[bool]]]"
 ) = weakref.WeakKeyDictionary()
-_accepts_param_cache_id: Dict[int, Dict[str, Optional[bool]]] = {}
+_accepts_param_cache_id: weakref.WeakValueDictionary[int, Dict[str, Optional[bool]]] = weakref.WeakValueDictionary()
 
 
 def _accepts_param(func: Callable[..., Any], param: str) -> Optional[bool]:
