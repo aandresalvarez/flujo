@@ -11,6 +11,7 @@ from typing import (
     Sequence,
     TypeVar,
     Dict,
+    Type,
 )
 from pydantic import BaseModel, Field, ConfigDict
 from .agent_protocol import AsyncAgentProtocol
@@ -94,6 +95,20 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         """Construct a validation step using the provided agent."""
         return cls("validate", agent, **config)
 
+    @classmethod
+    def human_in_the_loop(
+        cls,
+        name: str,
+        message_for_user: str | None = None,
+        input_schema: Type[BaseModel] | None = None,
+    ) -> "HumanInTheLoopStep":
+        """Create a step that pauses execution for human input."""
+        return HumanInTheLoopStep(
+            name=name,
+            message_for_user=message_for_user,
+            input_schema=input_schema,
+        )
+
     def add_plugin(self, plugin: ValidationPlugin, priority: int = 0) -> "Step[StepInT, StepOutT]":
         """Add a validation plugin to this step."""
         self.plugins.append((plugin, priority))
@@ -154,6 +169,34 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             branch_input_mapper=branch_input_mapper,
             branch_output_mapper=branch_output_mapper,
             **config_kwargs,
+        )
+
+
+class HumanInTheLoopStep(Step[Any, Any]):
+    """A step that pauses the pipeline for human input."""
+
+    message_for_user: str | None = Field(default=None)
+    input_schema: Type[BaseModel] | None = Field(default=None)
+
+    model_config = {"arbitrary_types_allowed": True}
+
+    def __init__(
+        self,
+        *,
+        name: str,
+        message_for_user: str | None = None,
+        input_schema: Type[BaseModel] | None = None,
+        **config: Any,
+    ) -> None:
+        BaseModel.__init__(
+            self,
+            name=name,
+            agent=None,
+            config=StepConfig(**config),
+            plugins=[],
+            failure_handlers=[],
+            message_for_user=message_for_user,
+            input_schema=input_schema,
         )
 
 
@@ -312,5 +355,6 @@ __all__ = [
     "StepConfig",
     "LoopStep",
     "ConditionalStep",
+    "HumanInTheLoopStep",
     "BranchKey",
 ]
