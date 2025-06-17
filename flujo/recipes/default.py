@@ -58,8 +58,10 @@ class Default:
         class _ReviewAgent:
             async def run(self, prompt: str, *, pipeline_context: Default.Context) -> Checklist:
                 result = await _invoke(agent, prompt)
-                pipeline_context.checklist = result
-                return cast(Checklist, result)
+                # Unpack the result if it has an 'output' attribute (AgentRunResult)
+                unpacked_result = getattr(result, "output", result)
+                pipeline_context.checklist = cast(Checklist, unpacked_result)
+                return cast(Checklist, unpacked_result)
 
         return _ReviewAgent()
 
@@ -72,8 +74,10 @@ class Default:
         class _SolutionAgent:
             async def run(self, _data: Any, *, pipeline_context: Default.Context) -> str:
                 result = await _invoke(agent, pipeline_context.initial_prompt)
-                pipeline_context.solution = cast(str, result)
-                return cast(str, result)
+                # Unpack the result if it has an 'output' attribute (AgentRunResult)
+                unpacked_result = getattr(result, "output", result)
+                pipeline_context.solution = cast(str, unpacked_result)
+                return cast(str, unpacked_result)
 
         return _SolutionAgent()
 
@@ -94,8 +98,10 @@ class Default:
                     ),
                 }
                 result = await _invoke(agent, json.dumps(payload))
-                pipeline_context.checklist = result
-                return cast(Checklist, result)
+                # Unpack the result if it has an 'output' attribute (AgentRunResult)
+                unpacked_result = getattr(result, "output", result)
+                pipeline_context.checklist = cast(Checklist, unpacked_result)
+                return cast(Checklist, unpacked_result)
 
         return _ValidatorAgent()
 
