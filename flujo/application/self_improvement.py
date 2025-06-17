@@ -15,6 +15,8 @@ from ..domain.models import (
 from ..domain.pipeline_dsl import Pipeline, Step
 from ..utils.redact import summarize_and_redact_prompt
 
+MAX_STEP_OUTPUT_LENGTH = 150
+
 
 class SelfImprovementAgent:
     """Agent that analyzes failures and suggests improvements."""
