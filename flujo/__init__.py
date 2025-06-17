@@ -9,7 +9,7 @@ try:
 except Exception:
     __version__ = "0.0.0"
 from .application.flujo_engine import Flujo
-from .recipes import Default
+from .recipes import Default, AgenticLoop
 from .infra.settings import settings
 from .infra.telemetry import init_telemetry
 
@@ -49,6 +49,7 @@ from .exceptions import (
 __all__ = [
     "Flujo",
     "Default",
+    "AgenticLoop",
     "Task",
     "Candidate",
     "Checklist",

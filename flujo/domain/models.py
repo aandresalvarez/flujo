@@ -2,6 +2,7 @@
 
 from typing import Any, List, Optional, Literal, Dict
 from pydantic import BaseModel, Field
+from .commands import ExecutedCommandLog
 from datetime import datetime, timezone
 import uuid
 from enum import Enum
@@ -170,5 +171,9 @@ class PipelineContext(BaseModel):
     initial_prompt: str
     scratchpad: Dict[str, Any] = Field(default_factory=dict)
     hitl_history: List[HumanInteraction] = Field(default_factory=list)
+    command_log: List[ExecutedCommandLog] = Field(
+        default_factory=list,
+        description="A log of commands executed by an AgenticLoop.",
+    )
 
     model_config = {"arbitrary_types_allowed": True}
