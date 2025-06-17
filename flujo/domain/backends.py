@@ -12,7 +12,10 @@ from .agent_protocol import AsyncAgentProtocol
 class StepExecutionRequest(BaseModel):
     """Serializable request for executing a single step."""
 
-    step: Step[Any, Any]
+    # Use unparameterized Step here to avoid Pydantic recreating the object and
+    # resetting configuration like ``max_retries`` when a concrete Step instance
+    # is provided.
+    step: Step
     input_data: Any
     pipeline_context: Optional[BaseModel] | None = None
     resources: Optional[AppResources] = None
