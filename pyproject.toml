@@ -7,7 +7,7 @@ build-backend = "hatchling.build"
 # --------------------------------------------------------------------------- #
 [project]
 name            = "flujo"
-version         = "0.4.0" # Major feature release with intelligent evals, streaming, HITL, and more
+version         = "0.4.1" # Patch release with retry logic and pipeline execution fixes
 description     = "Production-ready orchestration for AI agents, built with Pydantic."
 readme          = "README.md"
 requires-python = ">=3.11,<4.0"

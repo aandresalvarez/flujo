@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2024-12-19
+
+### Fixed
+- Fixed step retry logic to properly handle max_retries configuration
+- Fixed pipeline execution to allow step retries before halting
+- Fixed plugin validation loop to correctly handle retries and redirections
+- Fixed failure handler execution during retry attempts
+- Fixed redirect loop detection for unhashable agent objects
+- Added usage limits support to loop and conditional step execution
+- Improved error handling in streaming pipeline execution
+- Fixed token and cost accumulation in step results
+
 ## [0.4.0] - 2024-12-19
 
 ### Added
