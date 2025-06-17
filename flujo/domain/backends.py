@@ -4,11 +4,7 @@ from typing import Protocol, Any, Dict, Optional
 from pydantic import BaseModel
 
 from .pipeline_dsl import Step
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from ..application.flujo_engine import Flujo
-from .models import StepResult
+from .models import StepResult, PipelineContext
 from .resources import AppResources
 from .agent_protocol import AsyncAgentProtocol
 
@@ -20,7 +16,6 @@ class StepExecutionRequest(BaseModel):
     input_data: Any
     pipeline_context: Optional[BaseModel] | None = None
     resources: Optional[AppResources] = None
-    engine: Optional["Flujo"] = None
 
     model_config = {"arbitrary_types_allowed": True}
 

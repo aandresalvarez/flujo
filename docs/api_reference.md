@@ -51,6 +51,7 @@ from flujo import (
     Step, Flujo, Task,
     review_agent, solution_agent, validator_agent,
 )
+from flujo.infra.backends import LocalBackend
 from pydantic import BaseModel
 from typing import Any
 from flujo import AppResources, UsageLimits
@@ -85,6 +86,7 @@ runner_with_ctx = Flujo(
     resources=my_resources,
     usage_limits=UsageLimits(total_cost_usd_limit=10.0),
     hooks=[my_hook],
+    backend=LocalBackend(),
 )
 
 # Advanced constructs
@@ -281,6 +283,29 @@ limits = UsageLimits(
     total_tokens_limit: Optional[int] = None,
 )
 ```
+
+### Execution Backends
+
+`Flujo` delegates step execution to an `ExecutionBackend`. The built-in
+`LocalBackend` runs steps in the current process.
+
+```python
+from flujo.domain.backends import ExecutionBackend, StepExecutionRequest
+from flujo.infra.backends import LocalBackend
+```
+
+`StepExecutionRequest` is the payload sent to a backend:
+
+```python
+StepExecutionRequest(
+    step=Step(...),
+    input_data=..., 
+    pipeline_context=PipelineContext(initial_prompt=""),
+    resources=None,
+)
+```
+
+Custom backends implement `execute_step(request) -> StepResult`.
 
 ### Lifecycle Hooks
 

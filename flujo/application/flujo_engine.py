@@ -87,19 +87,279 @@ RunnerInT = TypeVar("RunnerInT")
 RunnerOutT = TypeVar("RunnerOutT")
 
 
+async def _execute_loop_step_logic(
+    loop_step: LoopStep,
+    loop_step_initial_input: Any,
+    pipeline_context: Optional[BaseModel],
+    resources: Optional[AppResources],
+) -> StepResult:
+    """Logic for executing a LoopStep without engine coupling."""
+    loop_overall_result = StepResult(name=loop_step.name)
+
+    if loop_step.initial_input_to_loop_body_mapper:
+        try:
+            current_body_input = loop_step.initial_input_to_loop_body_mapper(
+                loop_step_initial_input, pipeline_context
+            )
+        except Exception as e:  # noqa: BLE001
+            logfire.error(
+                f"Error in initial_input_to_loop_body_mapper for LoopStep '{loop_step.name}': {e}"
+            )
+            loop_overall_result.success = False
+            loop_overall_result.feedback = f"Initial input mapper raised an exception: {e}"
+            return loop_overall_result
+    else:
+        current_body_input = loop_step_initial_input
+
+    last_successful_iteration_body_output: Any = None
+    final_body_output_of_last_iteration: Any = None
+    loop_exited_successfully_by_condition = False
+
+    for i in range(1, loop_step.max_loops + 1):
+        loop_overall_result.attempts = i
+        logfire.info(
+            f"LoopStep '{loop_step.name}': Starting Iteration {i}/{loop_step.max_loops}"
+        )
+
+        iteration_succeeded_fully = True
+        current_iteration_data_for_body_step = current_body_input
+
+        for body_s in loop_step.loop_body_pipeline.steps:
+            with logfire.span(
+                f"LoopStep '{loop_step.name}' Iteration {i} - Body Step '{body_s.name}'"
+            ):
+                body_step_result_obj = await _run_step_logic(
+                    body_s,
+                    current_iteration_data_for_body_step,
+                    pipeline_context,
+                    resources,
+                )
+
+            loop_overall_result.latency_s += body_step_result_obj.latency_s
+            loop_overall_result.cost_usd += getattr(body_step_result_obj, "cost_usd", 0.0)
+            loop_overall_result.token_counts += getattr(body_step_result_obj, "token_counts", 0)
+
+            if not body_step_result_obj.success:
+                logfire.warn(
+                    f"Body Step '{body_s.name}' in LoopStep '{loop_step.name}' (Iteration {i}) failed."
+                )
+                iteration_succeeded_fully = False
+                final_body_output_of_last_iteration = body_step_result_obj.output
+                break
+
+            current_iteration_data_for_body_step = body_step_result_obj.output
+
+        if iteration_succeeded_fully:
+            last_successful_iteration_body_output = current_iteration_data_for_body_step
+        final_body_output_of_last_iteration = current_iteration_data_for_body_step
+
+        try:
+            should_exit = loop_step.exit_condition_callable(
+                final_body_output_of_last_iteration, pipeline_context
+            )
+        except Exception as e:
+            logfire.error(
+                f"Error in exit_condition_callable for LoopStep '{loop_step.name}': {e}"
+            )
+            loop_overall_result.success = False
+            loop_overall_result.feedback = f"Exit condition callable raised an exception: {e}"
+            break
+
+        if should_exit:
+            logfire.info(f"LoopStep '{loop_step.name}' exit condition met at iteration {i}.")
+            loop_overall_result.success = iteration_succeeded_fully
+            if not iteration_succeeded_fully:
+                loop_overall_result.feedback = (
+                    "Loop exited by condition, but last iteration body failed."
+                )
+            loop_exited_successfully_by_condition = True
+            break
+
+        if i < loop_step.max_loops:
+            if loop_step.iteration_input_mapper:
+                try:
+                    current_body_input = loop_step.iteration_input_mapper(
+                        final_body_output_of_last_iteration, pipeline_context, i
+                    )
+                except Exception as e:
+                    logfire.error(
+                        f"Error in iteration_input_mapper for LoopStep '{loop_step.name}': {e}"
+                    )
+                    loop_overall_result.success = False
+                    loop_overall_result.feedback = (
+                        f"Iteration input mapper raised an exception: {e}"
+                    )
+                    break
+            else:
+                current_body_input = final_body_output_of_last_iteration
+    else:
+        logfire.warn(
+            f"LoopStep '{loop_step.name}' reached max_loops ({loop_step.max_loops}) without exit condition being met."
+        )
+        loop_overall_result.success = False
+        loop_overall_result.feedback = (
+            f"Reached max_loops ({loop_step.max_loops}) without meeting exit condition."
+        )
+
+    if loop_overall_result.success and loop_exited_successfully_by_condition:
+        if loop_step.loop_output_mapper:
+            try:
+                loop_overall_result.output = loop_step.loop_output_mapper(
+                    last_successful_iteration_body_output, pipeline_context
+                )
+            except Exception as e:
+                logfire.error(
+                    f"Error in loop_output_mapper for LoopStep '{loop_step.name}': {e}"
+                )
+                loop_overall_result.success = False
+                loop_overall_result.feedback = f"Loop output mapper raised an exception: {e}"
+                loop_overall_result.output = None
+        else:
+            loop_overall_result.output = last_successful_iteration_body_output
+    else:
+        loop_overall_result.output = final_body_output_of_last_iteration
+        if not loop_overall_result.feedback:
+            loop_overall_result.feedback = (
+                "Loop did not complete successfully or exit condition not met positively."
+            )
+
+    return loop_overall_result
+
+
+async def _execute_conditional_step_logic(
+    conditional_step: ConditionalStep,
+    conditional_step_input: Any,
+    pipeline_context: Optional[BaseModel],
+    resources: Optional[AppResources],
+) -> StepResult:
+    """Logic for executing a ConditionalStep without engine coupling."""
+    conditional_overall_result = StepResult(name=conditional_step.name)
+    executed_branch_key: BranchKey | None = None
+    branch_output: Any = None
+    branch_succeeded = False
+
+    try:
+        branch_key_to_execute = conditional_step.condition_callable(
+            conditional_step_input, pipeline_context
+        )
+        logfire.info(
+            f"ConditionalStep '{conditional_step.name}': Condition evaluated to branch key '{branch_key_to_execute}'."
+        )
+        executed_branch_key = branch_key_to_execute
+
+        selected_branch_pipeline = conditional_step.branches.get(branch_key_to_execute)
+        if selected_branch_pipeline is None:
+            selected_branch_pipeline = conditional_step.default_branch_pipeline
+            if selected_branch_pipeline is None:
+                err_msg = (
+                    f"ConditionalStep '{conditional_step.name}': No branch found for key '{branch_key_to_execute}' and no default branch defined."
+                )
+                logfire.warn(err_msg)
+                conditional_overall_result.success = False
+                conditional_overall_result.feedback = err_msg
+                return conditional_overall_result
+            logfire.info(
+                f"ConditionalStep '{conditional_step.name}': Executing default branch."
+            )
+        else:
+            logfire.info(
+                f"ConditionalStep '{conditional_step.name}': Executing branch for key '{branch_key_to_execute}'."
+            )
+
+        if conditional_step.branch_input_mapper:
+            input_for_branch = conditional_step.branch_input_mapper(
+                conditional_step_input, pipeline_context
+            )
+        else:
+            input_for_branch = conditional_step_input
+
+        current_branch_data = input_for_branch
+        branch_pipeline_failed_internally = False
+
+        for branch_s in selected_branch_pipeline.steps:
+            with logfire.span(
+                f"ConditionalStep '{conditional_step.name}' Branch '{branch_key_to_execute}' - Step '{branch_s.name}'"
+            ):
+                branch_step_result_obj = await _run_step_logic(
+                    branch_s,
+                    current_branch_data,
+                    pipeline_context,
+                    resources,
+                )
+
+            conditional_overall_result.latency_s += branch_step_result_obj.latency_s
+            conditional_overall_result.cost_usd += getattr(branch_step_result_obj, "cost_usd", 0.0)
+            conditional_overall_result.token_counts += getattr(branch_step_result_obj, "token_counts", 0)
+
+            if not branch_step_result_obj.success:
+                logfire.warn(
+                    f"Step '{branch_s.name}' in branch '{branch_key_to_execute}' of ConditionalStep '{conditional_step.name}' failed."
+                )
+                branch_pipeline_failed_internally = True
+                branch_output = branch_step_result_obj.output
+                conditional_overall_result.feedback = (
+                    f"Failure in branch '{branch_key_to_execute}', step '{branch_s.name}': {branch_step_result_obj.feedback}"
+                )
+                break
+
+            current_branch_data = branch_step_result_obj.output
+
+        if not branch_pipeline_failed_internally:
+            branch_output = current_branch_data
+            branch_succeeded = True
+
+    except Exception as e:  # noqa: BLE001
+        logfire.error(
+            f"Error during ConditionalStep '{conditional_step.name}' execution: {e}",
+            exc_info=True,
+        )
+        conditional_overall_result.success = False
+        conditional_overall_result.feedback = (
+            f"Error executing conditional logic or branch: {e}"
+        )
+        return conditional_overall_result
+
+    conditional_overall_result.success = branch_succeeded
+    if branch_succeeded:
+        if conditional_step.branch_output_mapper:
+            try:
+                conditional_overall_result.output = conditional_step.branch_output_mapper(
+                    branch_output, executed_branch_key, pipeline_context
+                )
+            except Exception as e:  # noqa: BLE001
+                logfire.error(
+                    f"Error in branch_output_mapper for ConditionalStep '{conditional_step.name}': {e}"
+                )
+                conditional_overall_result.success = False
+                conditional_overall_result.feedback = (
+                    f"Branch output mapper raised an exception: {e}"
+                )
+                conditional_overall_result.output = None
+        else:
+            conditional_overall_result.output = branch_output
+    else:
+        conditional_overall_result.output = branch_output
+
+    conditional_overall_result.attempts = 1
+    if executed_branch_key is not None:
+        conditional_overall_result.metadata_ = conditional_overall_result.metadata_ or {}
+        conditional_overall_result.metadata_["executed_branch_key"] = str(executed_branch_key)
+
+    return conditional_overall_result
+
+
 async def _run_step_logic(
-    engine: "Flujo",
     step: Step[Any, Any],
     data: Any,
     pipeline_context: Optional[BaseModel],
     resources: Optional[AppResources],
 ) -> StepResult:
-    """Core logic for executing a single step."""
+    """Core logic for executing a single step without engine coupling."""
     visited: set[Any] = set()
     if isinstance(step, LoopStep):
-        return await engine._execute_loop_step(step, data, pipeline_context, resources)
+        return await _execute_loop_step_logic(step, data, pipeline_context, resources)
     if isinstance(step, ConditionalStep):
-        return await engine._execute_conditional_step(step, data, pipeline_context, resources)
+        return await _execute_conditional_step_logic(step, data, pipeline_context, resources)
     if isinstance(step, HumanInTheLoopStep):
         message = step.message_for_user if step.message_for_user is not None else str(data)
         if isinstance(pipeline_context, PipelineContext):
@@ -125,7 +385,7 @@ async def _run_step_logic(
             accepts_ctx = _accepts_param(target.run, "pipeline_context")
 
             pass_ctx = False
-            if engine.context_model is not None:
+            if not isinstance(pipeline_context, PipelineContext):
                 pass_ctx = True
             elif accepts_ctx:
                 pass_ctx = True
@@ -153,7 +413,7 @@ async def _run_step_logic(
 
                 if pipeline_context is not None:
                     pass_ctx = False
-                    if engine.context_model is not None:
+                    if not isinstance(pipeline_context, PipelineContext):
                         pass_ctx = True
                     elif accepts_ctx:
                         pass_ctx = True
@@ -245,7 +505,6 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
 
             backend = LocalBackend()
         self.backend = backend
-        setattr(self.backend, "engine", self)
 
     async def _dispatch_hook(self, event_name: str, **kwargs: Any) -> None:
         for hook in self.hooks:
@@ -269,268 +528,8 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
             input_data=data,
             pipeline_context=pipeline_context,
             resources=resources,
-            engine=self,
         )
         return await self.backend.execute_step(request)
-
-    async def _execute_loop_step(
-        self,
-        loop_step: LoopStep,
-        loop_step_initial_input: Any,
-        pipeline_context: Optional[BaseModel],
-        resources: Optional[AppResources],
-    ) -> StepResult:
-        loop_overall_result = StepResult(name=loop_step.name)
-
-        if loop_step.initial_input_to_loop_body_mapper:
-            try:
-                current_body_input = loop_step.initial_input_to_loop_body_mapper(
-                    loop_step_initial_input, pipeline_context
-                )
-            except Exception as e:  # noqa: BLE001
-                logfire.error(
-                    f"Error in initial_input_to_loop_body_mapper for LoopStep '{loop_step.name}': {e}"
-                )
-                loop_overall_result.success = False
-                loop_overall_result.feedback = f"Initial input mapper raised an exception: {e}"
-                return loop_overall_result
-        else:
-            current_body_input = loop_step_initial_input
-
-        last_successful_iteration_body_output: Any = None
-        final_body_output_of_last_iteration: Any = None
-        loop_exited_successfully_by_condition = False
-
-        for i in range(1, loop_step.max_loops + 1):
-            loop_overall_result.attempts = i
-            logfire.info(
-                f"LoopStep '{loop_step.name}': Starting Iteration {i}/{loop_step.max_loops}"
-            )
-
-            iteration_succeeded_fully = True
-            current_iteration_data_for_body_step = current_body_input
-
-            for body_s in loop_step.loop_body_pipeline.steps:
-                with logfire.span(
-                    f"LoopStep '{loop_step.name}' Iteration {i} - Body Step '{body_s.name}'"
-                ):
-                    body_step_result_obj = await self._run_step(
-                        body_s,
-                        current_iteration_data_for_body_step,
-                        pipeline_context,
-                        resources,
-                    )
-
-                loop_overall_result.latency_s += body_step_result_obj.latency_s
-                loop_overall_result.cost_usd += getattr(body_step_result_obj, "cost_usd", 0.0)
-                loop_overall_result.token_counts += getattr(body_step_result_obj, "token_counts", 0)
-
-                if not body_step_result_obj.success:
-                    logfire.warn(
-                        f"Body Step '{body_s.name}' in LoopStep '{loop_step.name}' (Iteration {i}) failed."
-                    )
-                    iteration_succeeded_fully = False
-                    final_body_output_of_last_iteration = body_step_result_obj.output
-                    break
-
-                current_iteration_data_for_body_step = body_step_result_obj.output
-
-            if iteration_succeeded_fully:
-                last_successful_iteration_body_output = current_iteration_data_for_body_step
-            final_body_output_of_last_iteration = current_iteration_data_for_body_step
-
-            try:
-                should_exit = loop_step.exit_condition_callable(
-                    final_body_output_of_last_iteration, pipeline_context
-                )
-            except Exception as e:
-                logfire.error(
-                    f"Error in exit_condition_callable for LoopStep '{loop_step.name}': {e}"
-                )
-                loop_overall_result.success = False
-                loop_overall_result.feedback = f"Exit condition callable raised an exception: {e}"
-                break
-
-            if should_exit:
-                logfire.info(f"LoopStep '{loop_step.name}' exit condition met at iteration {i}.")
-                loop_overall_result.success = iteration_succeeded_fully
-                if not iteration_succeeded_fully:
-                    loop_overall_result.feedback = (
-                        "Loop exited by condition, but last iteration body failed."
-                    )
-                loop_exited_successfully_by_condition = True
-                break
-
-            if i < loop_step.max_loops:
-                if loop_step.iteration_input_mapper:
-                    try:
-                        current_body_input = loop_step.iteration_input_mapper(
-                            final_body_output_of_last_iteration, pipeline_context, i
-                        )
-                    except Exception as e:
-                        logfire.error(
-                            f"Error in iteration_input_mapper for LoopStep '{loop_step.name}': {e}"
-                        )
-                        loop_overall_result.success = False
-                        loop_overall_result.feedback = (
-                            f"Iteration input mapper raised an exception: {e}"
-                        )
-                        break
-                else:
-                    current_body_input = final_body_output_of_last_iteration
-        else:
-            logfire.warn(
-                f"LoopStep '{loop_step.name}' reached max_loops ({loop_step.max_loops}) without exit condition being met."
-            )
-            loop_overall_result.success = False
-            loop_overall_result.feedback = (
-                f"Reached max_loops ({loop_step.max_loops}) without meeting exit condition."
-            )
-
-        if loop_overall_result.success and loop_exited_successfully_by_condition:
-            if loop_step.loop_output_mapper:
-                try:
-                    loop_overall_result.output = loop_step.loop_output_mapper(
-                        last_successful_iteration_body_output, pipeline_context
-                    )
-                except Exception as e:
-                    logfire.error(
-                        f"Error in loop_output_mapper for LoopStep '{loop_step.name}': {e}"
-                    )
-                    loop_overall_result.success = False
-                    loop_overall_result.feedback = f"Loop output mapper raised an exception: {e}"
-                    loop_overall_result.output = None
-            else:
-                loop_overall_result.output = last_successful_iteration_body_output
-        else:
-            loop_overall_result.output = final_body_output_of_last_iteration
-            if not loop_overall_result.feedback:
-                loop_overall_result.feedback = (
-                    "Loop did not complete successfully or exit condition not met positively."
-                )
-
-        return loop_overall_result
-
-    async def _execute_conditional_step(
-        self,
-        conditional_step: ConditionalStep,
-        conditional_step_input: Any,
-        pipeline_context: Optional[BaseModel],
-        resources: Optional[AppResources],
-    ) -> StepResult:
-        conditional_overall_result = StepResult(name=conditional_step.name)
-        executed_branch_key: BranchKey | None = None
-        branch_output: Any = None
-        branch_succeeded = False
-
-        try:
-            branch_key_to_execute = conditional_step.condition_callable(
-                conditional_step_input, pipeline_context
-            )
-            logfire.info(
-                f"ConditionalStep '{conditional_step.name}': Condition evaluated to branch key '{branch_key_to_execute}'."
-            )
-            executed_branch_key = branch_key_to_execute
-
-            selected_branch_pipeline = conditional_step.branches.get(branch_key_to_execute)
-            if selected_branch_pipeline is None:
-                selected_branch_pipeline = conditional_step.default_branch_pipeline
-                if selected_branch_pipeline is None:
-                    err_msg = f"ConditionalStep '{conditional_step.name}': No branch found for key '{branch_key_to_execute}' and no default branch defined."
-                    logfire.warn(err_msg)
-                    conditional_overall_result.success = False
-                    conditional_overall_result.feedback = err_msg
-                    return conditional_overall_result
-                logfire.info(
-                    f"ConditionalStep '{conditional_step.name}': Executing default branch."
-                )
-            else:
-                logfire.info(
-                    f"ConditionalStep '{conditional_step.name}': Executing branch for key '{branch_key_to_execute}'."
-                )
-
-            if conditional_step.branch_input_mapper:
-                input_for_branch = conditional_step.branch_input_mapper(
-                    conditional_step_input, pipeline_context
-                )
-            else:
-                input_for_branch = conditional_step_input
-
-            current_branch_data = input_for_branch
-            branch_pipeline_failed_internally = False
-
-            for branch_s in selected_branch_pipeline.steps:
-                with logfire.span(
-                    f"ConditionalStep '{conditional_step.name}' Branch '{branch_key_to_execute}' - Step '{branch_s.name}'"
-                ):
-                    branch_step_result_obj = await self._run_step(
-                        branch_s,
-                        current_branch_data,
-                        pipeline_context,
-                        resources,
-                    )
-
-                conditional_overall_result.latency_s += branch_step_result_obj.latency_s
-                conditional_overall_result.cost_usd += getattr(
-                    branch_step_result_obj, "cost_usd", 0.0
-                )
-                conditional_overall_result.token_counts += getattr(
-                    branch_step_result_obj, "token_counts", 0
-                )
-
-                if not branch_step_result_obj.success:
-                    logfire.warn(
-                        f"Step '{branch_s.name}' in branch '{branch_key_to_execute}' of ConditionalStep '{conditional_step.name}' failed."
-                    )
-                    branch_pipeline_failed_internally = True
-                    branch_output = branch_step_result_obj.output
-                    conditional_overall_result.feedback = f"Failure in branch '{branch_key_to_execute}', step '{branch_s.name}': {branch_step_result_obj.feedback}"
-                    break
-
-                current_branch_data = branch_step_result_obj.output
-
-            if not branch_pipeline_failed_internally:
-                branch_output = current_branch_data
-                branch_succeeded = True
-
-        except Exception as e:  # noqa: BLE001
-            logfire.error(
-                f"Error during ConditionalStep '{conditional_step.name}' execution: {e}",
-                exc_info=True,
-            )
-            conditional_overall_result.success = False
-            conditional_overall_result.feedback = (
-                f"Error executing conditional logic or branch: {e}"
-            )
-            return conditional_overall_result
-
-        conditional_overall_result.success = branch_succeeded
-        if branch_succeeded:
-            if conditional_step.branch_output_mapper:
-                try:
-                    conditional_overall_result.output = conditional_step.branch_output_mapper(
-                        branch_output, executed_branch_key, pipeline_context
-                    )
-                except Exception as e:  # noqa: BLE001
-                    logfire.error(
-                        f"Error in branch_output_mapper for ConditionalStep '{conditional_step.name}': {e}"
-                    )
-                    conditional_overall_result.success = False
-                    conditional_overall_result.feedback = (
-                        f"Branch output mapper raised an exception: {e}"
-                    )
-                    conditional_overall_result.output = None
-            else:
-                conditional_overall_result.output = branch_output
-        else:
-            conditional_overall_result.output = branch_output
-
-        conditional_overall_result.attempts = 1
-        if executed_branch_key is not None:
-            conditional_overall_result.metadata_ = conditional_overall_result.metadata_ or {}
-            conditional_overall_result.metadata_["executed_branch_key"] = str(executed_branch_key)
-
-        return conditional_overall_result
 
     def _check_usage_limits(
         self,
@@ -859,6 +858,3 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
 
         paused_result.final_pipeline_context = ctx
         return paused_result
-
-
-StepExecutionRequest.model_rebuild()

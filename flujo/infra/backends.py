@@ -13,15 +13,9 @@ class LocalBackend(ExecutionBackend):
 
     def __init__(self, agent_registry: Dict[str, AsyncAgentProtocol] | None = None) -> None:
         self.agent_registry = agent_registry or {}
-        self.engine = None
 
     async def execute_step(self, request: StepExecutionRequest) -> StepResult:
-        if request.engine is None:
-            engine = self.engine
-        else:
-            engine = request.engine
         return await _run_step_logic(
-            engine,
             request.step,
             request.input_data,
             request.pipeline_context,
