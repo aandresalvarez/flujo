@@ -49,11 +49,24 @@ def _build_context(
     pipeline_definition: Pipeline[Any, Any] | Step[Any, Any] | None = None,
 ) -> str:
     lines: list[str] = []
+    lines.append(
+        "Analyze the following failed and successful pipeline runs to identify root causes and suggest improvements."
+    )
+
+    lines.append("\n--- FAILED CASES ---\n")
     for case in failures:
         pr: PipelineResult = case.output
         lines.append(f"Case: {case.name}")
+        try:
+            input_str = str(case.inputs)
+        except Exception:
+            input_str = repr(case.inputs)
+        lines.append(f"Input: {input_str[:200]}...")
         for step in pr.step_history:
-            lines.append(f"- {step.name}: {step.output} (success={step.success})")
+            out_str = str(step.output)
+            lines.append(
+                f"- Step '{step.name}': Output='{out_str[:150]}...' (success={step.success}, feedback='{step.feedback}')"
+            )
             step_obj = _find_step(pipeline_definition, step.name)
             if step_obj is not None:
                 cfg = step_obj.config
@@ -61,11 +74,22 @@ def _build_context(
                 if step_obj.agent is not None:
                     summary = summarize_and_redact_prompt(step_obj.agent.system_prompt)
                     lines.append(f'  SystemPromptSummary: "{summary}"')
+        lines.append("")
+
     if success:
-        lines.append("Successful example:")
+        lines.append("\n--- SUCCESSFUL EXAMPLE FOR CONTRAST ---\n")
         pr = success.output
+        lines.append(f"Case: {success.name}")
+        try:
+            input_str = str(success.inputs)
+        except Exception:
+            input_str = repr(success.inputs)
+        lines.append(f"Input: {input_str[:200]}...")
         for step in pr.step_history:
-            lines.append(f"- {step.name}: {step.output}")
+            out_str = str(step.output)
+            lines.append(
+                f"- Step '{step.name}': Output='{out_str[:150]}...' (success={step.success}, feedback='{step.feedback}')"
+            )
             step_obj = _find_step(pipeline_definition, step.name)
             if step_obj is not None:
                 cfg = step_obj.config
@@ -73,6 +97,7 @@ def _build_context(
                 if step_obj.agent is not None:
                     summary = summarize_and_redact_prompt(step_obj.agent.system_prompt)
                     lines.append(f'  SystemPromptSummary: "{summary}"')
+
     return "\n".join(lines)
 
 
