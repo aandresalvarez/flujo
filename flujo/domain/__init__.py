@@ -11,6 +11,7 @@ from .pipeline_dsl import (
 from .plugins import PluginOutcome, ValidationPlugin
 from .resources import AppResources
 from .types import HookCallable
+from .backends import ExecutionBackend, StepExecutionRequest
 
 __all__ = [
     "Step",
@@ -23,4 +24,6 @@ __all__ = [
     "ValidationPlugin",
     "AppResources",
     "HookCallable",
+    "ExecutionBackend",
+    "StepExecutionRequest",
 ]

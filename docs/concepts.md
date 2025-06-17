@@ -405,6 +405,24 @@ limits = UsageLimits(total_cost_usd_limit=1.0, total_tokens_limit=5000)
 runner = Flujo(my_pipeline, usage_limits=limits)
 ```
 
+## Pluggable Execution Back-Ends
+
+Advanced users can control where each step executes by implementing the
+`ExecutionBackend` protocol. The default `LocalBackend` runs steps in the
+current process, so behaviour is unchanged for typical usage. Custom back-ends
+can delegate work to remote services or task queues while the orchestration
+logic in `Flujo` stays the same.
+
+```python
+from flujo.infra.backends import LocalBackend
+from flujo import Flujo
+
+runner = Flujo(pipeline, backend=LocalBackend())
+```
+
+See [Creating a Custom Execution Backend](extending.md#creating-a-custom-execution-backend)
+for guidance on building your own.
+
 ## Streaming
 
 `Flujo` can stream output from the final step of a pipeline. Use `stream_async`
