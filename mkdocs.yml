@@ -42,6 +42,10 @@ nav:
     - 'Controlling Costs': cookbook/cost_control.md
     - 'Lifecycle Hooks': cookbook/lifecycle_hooks.md
     - 'Using Resources': cookbook/using_resources.md
+    - 'HITL Simple Approval': cookbook/hitl_simple_approval.md
+    - 'HITL Dynamic Clarification': cookbook/hitl_dynamic_clarification.md
+    - 'HITL Structured Input': cookbook/hitl_structured_input.md
+    - 'HITL Correction Loop': cookbook/hitl_stateful_correction_loop.md
   - Migration:
     - 'v0.3.7': migration/v0.3.7.md
     - 'v0.3.8': migration/v0.3.8.md
