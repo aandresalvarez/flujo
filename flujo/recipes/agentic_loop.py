@@ -35,7 +35,9 @@ class AgenticLoop:
         self._pipeline = self._build_internal_pipeline()
 
     def _build_internal_pipeline(self) -> LoopStep:
-        executor_step: Step[Any, Any] = Step("ExecuteCommand", _CommandExecutor(self.agent_registry))
+        executor_step: Step[Any, Any] = Step(
+            "ExecuteCommand", _CommandExecutor(self.agent_registry)
+        )
         loop_body = Step("DecideNextCommand", self.planner_agent) >> executor_step
 
         def exit_condition(_: Any, context: Any) -> bool:

@@ -69,9 +69,7 @@ def _format_step_output(
     out_str = _truncate(_safe_str(step.output), MAX_STEP_OUTPUT_LENGTH)
     feedback = getattr(step, "feedback", None)
     feedback_str = f", feedback='{feedback}'" if feedback is not None else ""
-    lines.append(
-        f"- Step '{step.name}': Output='{out_str}' (success={step.success}{feedback_str})"
-    )
+    lines.append(f"- Step '{step.name}': Output='{out_str}' (success={step.success}{feedback_str})")
     step_obj = _find_step(pipeline_definition, step.name)
     if step_obj is not None:
         cfg = step_obj.config
