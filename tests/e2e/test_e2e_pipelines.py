@@ -3,7 +3,7 @@ import pytest
 from flujo.domain import Step
 from flujo.application.flujo_engine import Flujo
 from flujo.plugins.sql_validator import SQLSyntaxValidator
-from flujo.testing.utils import StubAgent
+from flujo.testing.utils import StubAgent, gather_result
 
 
 @pytest.mark.e2e
@@ -14,6 +14,6 @@ async def test_sql_pipeline_with_real_validator():
     validation_step = Step.validate_step(validator_agent).add_plugin(SQLSyntaxValidator())
     pipeline = solution_step >> validation_step
     runner = Flujo(pipeline)
-    result = await runner.run_async("prompt")
+    result = await gather_result(runner, "prompt")
     assert result.step_history[-1].success is False
     assert result.step_history[-1].feedback

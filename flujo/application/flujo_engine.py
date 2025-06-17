@@ -4,7 +4,7 @@ import asyncio
 import inspect
 import time
 import weakref
-from typing import Any, Callable, Dict, Generic, Optional, Type, TypeVar
+from typing import Any, Callable, Dict, Generic, Optional, Type, TypeVar, AsyncIterator
 
 from pydantic import BaseModel, ValidationError
 
@@ -554,7 +554,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
         initial_input: RunnerInT,
         *,
         initial_context_data: Optional[Dict[str, Any]] = None,
-    ) -> PipelineResult:
+    ) -> AsyncIterator[Any]:
         current_pipeline_context_instance: Optional[BaseModel] = None
         if self.context_model is not None:
             try:
@@ -585,7 +585,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
                 pipeline_context=current_pipeline_context_instance,
                 resources=self.resources,
             )
-            for step in self.pipeline.steps:
+            for idx, step in enumerate(self.pipeline.steps):
                 await self._dispatch_hook(
                     "pre_step",
                     step=step,
@@ -595,12 +595,39 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
                 )
                 with logfire.span(step.name) as span:
                     try:
-                        step_result = await self._run_step(
-                            step,
-                            data,
-                            pipeline_context=current_pipeline_context_instance,
-                            resources=self.resources,
-                        )
+                        is_last = idx == len(self.pipeline.steps) - 1
+                        if is_last and hasattr(step.agent, "stream"):
+                            agent_kwargs: Dict[str, Any] = {}
+                            target = getattr(step.agent, "_agent", step.agent)
+                            if current_pipeline_context_instance is not None and _accepts_param(target.stream, "pipeline_context"):
+                                agent_kwargs["pipeline_context"] = current_pipeline_context_instance
+                            if self.resources is not None and _accepts_param(target.stream, "resources"):
+                                agent_kwargs["resources"] = self.resources
+                            chunks: list[Any] = []
+                            start = time.monotonic()
+                            async for chunk in step.agent.stream(data, **agent_kwargs):
+                                chunks.append(chunk)
+                                yield chunk
+                            latency = time.monotonic() - start
+                            final_output: Any
+                            if chunks and all(isinstance(c, str) for c in chunks):
+                                final_output = "".join(chunks)
+                            else:
+                                final_output = chunks
+                            step_result = StepResult(
+                                name=step.name,
+                                output=final_output,
+                                success=True,
+                                attempts=1,
+                                latency_s=latency,
+                            )
+                        else:
+                            step_result = await self._run_step(
+                                step,
+                                data,
+                                pipeline_context=current_pipeline_context_instance,
+                                resources=self.resources,
+                            )
                     except PausedException as e:
                         if isinstance(current_pipeline_context_instance, PipelineContext):
                             current_pipeline_context_instance.scratchpad["status"] = "paused"
@@ -638,7 +665,8 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
                 data = step_output
         except asyncio.CancelledError:
             logfire.info("Pipeline cancelled")
-            return pipeline_result_obj
+            yield pipeline_result_obj
+            return
         except PipelineAbortSignal as e:
             logfire.info(str(e))
         except UsageLimitExceededError as e:
@@ -666,7 +694,17 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
             except PipelineAbortSignal as e:  # pragma: no cover - avoid masking
                 logfire.info(str(e))
 
-        return pipeline_result_obj
+        yield pipeline_result_obj
+        return
+
+    async def stream_async(
+        self,
+        initial_input: RunnerInT,
+        *,
+        initial_context_data: Optional[Dict[str, Any]] = None,
+    ) -> AsyncIterator[Any]:
+        async for item in self.run_async(initial_input, initial_context_data=initial_context_data):
+            yield item
 
     def run(
         self,
@@ -674,7 +712,14 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
         *,
         initial_context_data: Optional[Dict[str, Any]] = None,
     ) -> PipelineResult:
-        return asyncio.run(self.run_async(initial_input, initial_context_data=initial_context_data))
+        async def _consume() -> PipelineResult:
+            result: PipelineResult | None = None
+            async for item in self.run_async(initial_input, initial_context_data=initial_context_data):
+                result = item  # last yield is the PipelineResult
+            assert result is not None
+            return result
+
+        return asyncio.run(_consume())
 
     async def resume_async(self, paused_result: PipelineResult, human_input: Any) -> PipelineResult:
         """Resume a paused pipeline with human input."""

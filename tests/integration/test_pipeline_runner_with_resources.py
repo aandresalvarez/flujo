@@ -3,6 +3,7 @@ from unittest.mock import MagicMock
 from pydantic import BaseModel
 
 from flujo import Flujo, Step, AppResources, PluginOutcome
+from flujo.testing.utils import gather_result
 from flujo.domain.plugins import ValidationPlugin
 from flujo.domain.agent_protocol import AsyncAgentProtocol
 
@@ -52,7 +53,7 @@ async def test_resources_passed_to_agent(mock_resources: MyResources):
     pipeline = Step("query_step", ResourceUsingAgent())
     runner = Flujo(pipeline, resources=mock_resources)
 
-    await runner.run_async("users")
+    await gather_result(runner, "users")
 
     mock_resources.db_conn.query.assert_called_once_with("SELECT * FROM users")
 
@@ -63,7 +64,7 @@ async def test_resources_passed_to_plugin(mock_resources: MyResources):
     step = Step("plugin_step", ResourceUsingAgent(), plugins=[plugin])
     runner = Flujo(step, resources=mock_resources)
 
-    result = await runner.run_async("products")
+    result = await gather_result(runner, "products")
 
     assert result.step_history[0].success
     mock_resources.api_client.post.assert_called_once_with("/validate", json="queried_products")
@@ -74,7 +75,7 @@ async def test_resource_instance_is_shared_across_steps(mock_resources: MyResour
     pipeline = Step("step1", ResourceUsingAgent()) >> Step("step2", ResourceUsingAgent())
     runner = Flujo(pipeline, resources=mock_resources)
 
-    await runner.run_async("orders")
+    await gather_result(runner, "orders")
 
     assert mock_resources.db_conn.query.call_count == 2
     mock_resources.db_conn.query.assert_any_call("SELECT * FROM orders")
@@ -88,7 +89,7 @@ async def test_pipeline_with_no_resources_succeeds():
     pipeline = Step("simple_step", agent)
 
     runner = Flujo(pipeline)
-    result = await runner.run_async("in")
+    result = await gather_result(runner, "in")
 
     assert result.step_history[0].success
     assert result.step_history[0].output == "ok"
@@ -104,7 +105,7 @@ async def test_mixing_resources_and_context(mock_resources: MyResources):
         resources=mock_resources,
     )
 
-    result = await runner.run_async("data")
+    result = await gather_result(runner, "data")
 
     assert result.step_history[0].output == "context_and_resource_used"
     mock_resources.db_conn.query.assert_called_once_with("Log from modified")

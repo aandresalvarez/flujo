@@ -15,6 +15,7 @@ from ..domain.pipeline_dsl import Step
 from ..domain.models import Candidate, PipelineResult, Task, Checklist
 from ..domain.scoring import ratio_score
 from ..application.flujo_engine import Flujo
+from ..testing.utils import gather_result
 
 
 class Default:
@@ -99,7 +100,8 @@ class Default:
         return _ValidatorAgent()
 
     async def run_async(self, task: Task) -> Candidate | None:
-        result: PipelineResult = await self.flujo_engine.run_async(
+        result: PipelineResult = await gather_result(
+            self.flujo_engine,
             task.prompt,
             initial_context_data={"initial_prompt": task.prompt},
         )

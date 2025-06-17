@@ -405,6 +405,20 @@ limits = UsageLimits(total_cost_usd_limit=1.0, total_tokens_limit=5000)
 runner = Flujo(my_pipeline, usage_limits=limits)
 ```
 
+## Streaming
+
+`Flujo` can stream output from the final step of a pipeline. Use `stream_async`
+to iterate over chunks as they are produced. The last item yielded is the full
+`PipelineResult` object.
+
+```python
+async for chunk in runner.stream_async("hello"):
+    if isinstance(chunk, str):
+        print(chunk, end="")
+    else:
+        result = chunk
+```
+
 ## Next Steps
 
 - Try the [Tutorial](tutorial.md) for hands-on examples
