@@ -165,8 +165,8 @@ def make_agent(
 
     # The Agent constructor's type hints are not strict enough for mypy strict mode.
     # See: https://github.com/pydantic/pydantic-ai/issues (file an issue if not present)
-    agent: Agent[Any, Any] = Agent(
-        model,
+    agent: Agent[Any, Any] = Agent(  # type: ignore[call-overload]
+        model=model,
         system_prompt=system_prompt,
         output_type=output_type,
         api_key=api_key,
@@ -235,7 +235,7 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
             async for attempt in retryer:
                 with attempt:
                     raw_agent_response = await asyncio.wait_for(
-                        self._agent.run(*processed_args, **processed_kwargs),
+                        self._agent.run(processed_args[0] if processed_args else None),  # type: ignore[arg-type]
                         timeout=self._timeout_seconds,
                     )
                     logfire.info(f"Agent '{self._model_name}' raw response: {raw_agent_response}")

@@ -58,7 +58,7 @@ class Default:
             async def run(self, prompt: str, *, pipeline_context: Default.Context) -> Checklist:
                 result = await _invoke(agent, prompt)
                 pipeline_context.checklist = result
-                return result
+                return cast(Checklist, result)
 
         return _ReviewAgent()
 
@@ -94,7 +94,7 @@ class Default:
                 }
                 result = await _invoke(agent, json.dumps(payload))
                 pipeline_context.checklist = result
-                return result
+                return cast(Checklist, result)
 
         return _ValidatorAgent()
 
