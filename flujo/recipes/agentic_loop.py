@@ -17,7 +17,7 @@ from ..domain.pipeline_dsl import Step, LoopStep
 from ..application.flujo_engine import Flujo, _accepts_param
 from ..domain.resources import AppResources
 
-_command_adapter = TypeAdapter(AgentCommand)
+_command_adapter: TypeAdapter[AgentCommand] = TypeAdapter(AgentCommand)
 
 
 class AgenticLoop:
@@ -26,7 +26,7 @@ class AgenticLoop:
     def __init__(
         self,
         planner_agent: AsyncAgentProtocol[Any, AgentCommand],
-        agent_registry: Dict[str, AsyncAgentProtocol],
+        agent_registry: Dict[str, AsyncAgentProtocol[Any, Any]],
         max_loops: int = 15,
     ) -> None:
         self.planner_agent = planner_agent
@@ -35,11 +35,11 @@ class AgenticLoop:
         self._pipeline = self._build_internal_pipeline()
 
     def _build_internal_pipeline(self) -> LoopStep:
-        executor_step = Step("ExecuteCommand", _CommandExecutor(self.agent_registry))
+        executor_step: Step[Any, Any] = Step("ExecuteCommand", _CommandExecutor(self.agent_registry))
         loop_body = Step("DecideNextCommand", self.planner_agent) >> executor_step
 
-        def exit_condition(_: Any, context: PipelineContext) -> bool:
-            if not context.command_log:
+        def exit_condition(_: Any, context: Any) -> bool:
+            if not isinstance(context, PipelineContext) or not context.command_log:
                 return False
             last_cmd = context.command_log[-1].generated_command
             return isinstance(last_cmd, FinishCommand)
@@ -51,7 +51,7 @@ class AgenticLoop:
             max_loops=self.max_loops,
             iteration_input_mapper=lambda result, ctx, i: {
                 "last_command_result": result,
-                "goal": ctx.initial_prompt,
+                "goal": ctx.initial_prompt if isinstance(ctx, PipelineContext) else "",
             },
         )
 
@@ -64,14 +64,14 @@ class AgenticLoop:
 
     async def run_async(self, initial_goal: str) -> PipelineResult:
         runner = Flujo(self._pipeline, context_model=PipelineContext)
-        result: PipelineResult | None = None
+        final_result: PipelineResult | None = None
         async for item in runner.run_async(
             {"last_command_result": None, "goal": initial_goal},
             initial_context_data={"initial_prompt": initial_goal},
         ):
-            result = item
-        assert result is not None
-        return result
+            final_result = item
+        assert final_result is not None
+        return final_result
 
     def resume(self, paused_result: PipelineResult, human_input: Any) -> PipelineResult:
         runner = Flujo(self._pipeline, context_model=PipelineContext)
@@ -87,43 +87,47 @@ class AgenticLoop:
 
 
 class _CommandExecutor:
-    def __init__(self, agent_registry: Dict[str, AsyncAgentProtocol]):
+    def __init__(self, agent_registry: Dict[str, AsyncAgentProtocol[Any, Any]]):
         self.agent_registry = agent_registry
 
-    async def run(
-        self,
-        command: Any,
-        *,
-        pipeline_context: PipelineContext,
-        resources: AppResources | None = None,
-    ) -> Any:
+    async def run(self, data: Any, **kwargs: Any) -> Any:
+        return await self._run_command(data, **kwargs)
+
+    async def run_async(self, data: Any, **kwargs: Any) -> Any:
+        return await self._run_command(data, **kwargs)
+
+    async def _run_command(self, data: Any, **kwargs: Any) -> Any:
+        pipeline_context = kwargs.get("pipeline_context")
+        resources = kwargs.get("resources")
+        if not isinstance(pipeline_context, PipelineContext):
+            raise ValueError("pipeline_context must be a PipelineContext instance")
         turn = len(pipeline_context.command_log) + 1
         try:
-            cmd = _command_adapter.validate_python(command)
+            cmd = _command_adapter.validate_python(data)
         except ValidationError as e:  # pragma: no cover - planner bug
-            result = f"Invalid command: {e}"
+            validation_error_result = f"Invalid command: {e}"
             pipeline_context.command_log.append(
                 ExecutedCommandLog(
                     turn=turn,
-                    generated_command=command,
-                    execution_result=result,
+                    generated_command=data,
+                    execution_result=validation_error_result,
                 )
             )
-            return result
+            return validation_error_result
 
-        result: Any = "Command type not recognized."
+        exec_result: Any = "Command type not recognized."
         try:
             if cmd.type == "run_agent":
                 agent = self.agent_registry.get(cmd.agent_name)
                 if not agent:
-                    result = f"Error: Agent '{cmd.agent_name}' not found."
+                    exec_result = f"Error: Agent '{cmd.agent_name}' not found."
                 else:
-                    kwargs: Dict[str, Any] = {}
+                    agent_kwargs: Dict[str, Any] = {}
                     if _accepts_param(agent.run, "pipeline_context"):
-                        kwargs["pipeline_context"] = pipeline_context
+                        agent_kwargs["pipeline_context"] = pipeline_context
                     if resources is not None and _accepts_param(agent.run, "resources"):
-                        kwargs["resources"] = resources
-                    result = await agent.run(cmd.input_data, **kwargs)
+                        agent_kwargs["resources"] = resources
+                    exec_result = await agent.run(cmd.input_data, **agent_kwargs)
             elif cmd.type == "run_python":
                 tree = ast.parse(cmd.code, mode="exec")
                 for node in ast.walk(tree):
@@ -135,23 +139,23 @@ class _CommandExecutor:
                     {"__builtins__": {}},
                     local_scope,
                 )
-                result = local_scope.get("result", "Python code executed successfully.")
+                exec_result = local_scope.get("result", "Python code executed successfully.")
             elif cmd.type == "ask_human":
                 if isinstance(pipeline_context, PipelineContext):
                     pipeline_context.scratchpad["paused_step_input"] = cmd
                 raise PausedException(message=cmd.question)
             elif cmd.type == "finish":
-                result = cmd.final_answer
+                exec_result = cmd.final_answer
         except PausedException:
             raise
         except Exception as e:  # noqa: BLE001
-            result = f"Error during command execution: {e}"
+            exec_result = f"Error during command execution: {e}"
 
         pipeline_context.command_log.append(
             ExecutedCommandLog(
                 turn=turn,
                 generated_command=cmd,
-                execution_result=result,
+                execution_result=exec_result,
             )
         )
-        return result
+        return exec_result

@@ -49,7 +49,7 @@ from ..domain.resources import AppResources
 from ..domain.types import HookCallable
 from ..domain.backends import ExecutionBackend, StepExecutionRequest
 
-_agent_command_adapter = TypeAdapter(AgentCommand)
+_agent_command_adapter: TypeAdapter[AgentCommand] = TypeAdapter(AgentCommand)
 
 
 class InfiniteRedirectError(OrchestratorError):

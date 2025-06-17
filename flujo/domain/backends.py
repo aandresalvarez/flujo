@@ -12,7 +12,7 @@ from .agent_protocol import AsyncAgentProtocol
 class StepExecutionRequest(BaseModel):
     """Serializable request for executing a single step."""
 
-    step: Step
+    step: Step[Any, Any]
     input_data: Any
     pipeline_context: Optional[BaseModel] | None = None
     resources: Optional[AppResources] = None
@@ -26,7 +26,7 @@ class StepExecutionRequest(BaseModel):
 class ExecutionBackend(Protocol):
     """Protocol for executing pipeline steps."""
 
-    agent_registry: Dict[str, AsyncAgentProtocol]
+    agent_registry: Dict[str, AsyncAgentProtocol[Any, Any]]
 
     async def execute_step(self, request: StepExecutionRequest) -> StepResult:
         """Execute a single step and return the result."""

@@ -16,13 +16,13 @@ class LocalBackend(ExecutionBackend):
     """Backend that executes steps in the current process."""
 
     def __init__(
-        self, agent_registry: Dict[str, AsyncAgentProtocol] | None = None
+        self, agent_registry: Dict[str, AsyncAgentProtocol[Any, Any]] | None = None
     ) -> None:
         self.agent_registry = agent_registry or {}
 
     async def execute_step(self, request: StepExecutionRequest) -> StepResult:
         async def executor(
-            step: Step,
+            step: Step[Any, Any],
             data: Any,
             pipeline_context: Optional[BaseModel],
             resources: Optional[AppResources],
