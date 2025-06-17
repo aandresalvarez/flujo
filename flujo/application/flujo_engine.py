@@ -37,6 +37,7 @@ from ..domain.commands import AgentCommand, ExecutedCommandLog
 from pydantic import TypeAdapter
 from ..domain.resources import AppResources
 from ..domain.types import HookCallable
+from ..domain.backends import ExecutionBackend, StepExecutionRequest
 
 _agent_command_adapter = TypeAdapter(AgentCommand)
 
@@ -86,6 +87,138 @@ RunnerInT = TypeVar("RunnerInT")
 RunnerOutT = TypeVar("RunnerOutT")
 
 
+async def _run_step_logic(
+    engine: "Flujo",
+    step: Step[Any, Any],
+    data: Any,
+    pipeline_context: Optional[BaseModel],
+    resources: Optional[AppResources],
+) -> StepResult:
+    """Core logic for executing a single step."""
+    visited: set[Any] = set()
+    if isinstance(step, LoopStep):
+        return await engine._execute_loop_step(step, data, pipeline_context, resources)
+    if isinstance(step, ConditionalStep):
+        return await engine._execute_conditional_step(step, data, pipeline_context, resources)
+    if isinstance(step, HumanInTheLoopStep):
+        message = step.message_for_user if step.message_for_user is not None else str(data)
+        if isinstance(pipeline_context, PipelineContext):
+            pipeline_context.scratchpad["status"] = "paused"
+        raise PausedException(message)
+
+    result = StepResult(name=step.name)
+    original_agent = step.agent
+    current_agent = original_agent
+    last_feedback = None
+    last_raw_output = None
+    last_unpacked_output = None
+    for attempt in range(1, step.config.max_retries + 1):
+        result.attempts = attempt
+        if current_agent is None:
+            raise OrchestratorError(f"Step {step.name} has no agent")
+
+        start = time.monotonic()
+        agent_kwargs: Dict[str, Any] = {}
+        if pipeline_context is not None:
+            inner = getattr(current_agent, "_agent", None)
+            target = inner if inner is not None else current_agent
+            accepts_ctx = _accepts_param(target.run, "pipeline_context")
+
+            pass_ctx = False
+            if engine.context_model is not None:
+                pass_ctx = True
+            elif accepts_ctx:
+                pass_ctx = True
+            if pass_ctx:
+                agent_kwargs["pipeline_context"] = pipeline_context
+        if resources is not None:
+            agent_kwargs["resources"] = resources
+        raw_output = await current_agent.run(data, **agent_kwargs)
+        result.latency_s += time.monotonic() - start
+        last_raw_output = raw_output
+        unpacked_output = getattr(raw_output, "output", raw_output)
+        last_unpacked_output = unpacked_output
+
+        success = True
+        feedback: str | None = None
+        redirect_to = None
+        final_plugin_outcome: PluginOutcome | None = None
+
+        sorted_plugins = sorted(step.plugins, key=lambda p: p[1], reverse=True)
+        for plugin, _ in sorted_plugins:
+            try:
+                plugin_kwargs: Dict[str, Any] = {}
+                accepts_ctx = _accepts_param(plugin.validate, "pipeline_context")
+                accepts_resources = _accepts_param(plugin.validate, "resources")
+
+                if pipeline_context is not None:
+                    pass_ctx = False
+                    if engine.context_model is not None:
+                        pass_ctx = True
+                    elif accepts_ctx:
+                        pass_ctx = True
+                    if pass_ctx:
+                        plugin_kwargs["pipeline_context"] = pipeline_context
+
+                if resources is not None and accepts_resources:
+                    plugin_kwargs["resources"] = resources
+                plugin_result: PluginOutcome = await asyncio.wait_for(
+                    plugin.validate({"input": data, "output": unpacked_output}, **plugin_kwargs),
+                    timeout=step.config.timeout_s,
+                )
+            except asyncio.TimeoutError as e:
+                raise TimeoutError(f"Plugin timeout in step {step.name}") from e
+
+            if not plugin_result.success:
+                success = False
+                feedback = plugin_result.feedback
+                redirect_to = plugin_result.redirect_to
+                final_plugin_outcome = plugin_result
+            if plugin_result.new_solution is not None:
+                final_plugin_outcome = plugin_result
+
+        if final_plugin_outcome and final_plugin_outcome.new_solution is not None:
+            unpacked_output = final_plugin_outcome.new_solution
+            last_unpacked_output = unpacked_output
+
+        if success:
+            result.output = unpacked_output
+            result.success = True
+            result.feedback = feedback
+            result.token_counts += getattr(raw_output, "token_counts", 1)
+            result.cost_usd += getattr(raw_output, "cost_usd", 0.0)
+            return result
+
+        for handler in step.failure_handlers:
+            handler()
+
+        if redirect_to:
+            if redirect_to in visited:
+                raise InfiniteRedirectError(f"Redirect loop detected in step {step.name}")
+            visited.add(redirect_to)
+            current_agent = redirect_to
+        else:
+            current_agent = original_agent
+
+        if feedback:
+            if isinstance(data, dict):
+                data["feedback"] = data.get("feedback", "") + "\n" + feedback
+            else:
+                data = f"{str(data)}\n{feedback}"
+        last_feedback = feedback
+
+    result.output = last_unpacked_output
+    result.success = False
+    result.feedback = last_feedback
+    result.token_counts += (
+        getattr(last_raw_output, "token_counts", 1) if last_raw_output is not None else 0
+    )
+    result.cost_usd += (
+        getattr(last_raw_output, "cost_usd", 0.0) if last_raw_output is not None else 0.0
+    )
+    return result
+
+
 class Flujo(Generic[RunnerInT, RunnerOutT]):
     """Execute a pipeline sequentially."""
 
@@ -97,6 +230,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
         resources: Optional[AppResources] = None,
         usage_limits: Optional[UsageLimits] = None,
         hooks: Optional[list[HookCallable]] = None,
+        backend: Optional[ExecutionBackend] = None,
     ) -> None:
         if isinstance(pipeline, Step):
             pipeline = Pipeline.from_step(pipeline)
@@ -106,6 +240,12 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
         self.resources = resources
         self.usage_limits = usage_limits
         self.hooks = hooks or []
+        if backend is None:
+            from ..infra.backends import LocalBackend
+
+            backend = LocalBackend()
+        self.backend = backend
+        setattr(self.backend, "engine", self)
 
     async def _dispatch_hook(self, event_name: str, **kwargs: Any) -> None:
         for hook in self.hooks:
@@ -124,135 +264,14 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
         pipeline_context: Optional[BaseModel],
         resources: Optional[AppResources],
     ) -> StepResult:
-        visited: set[Any] = set()
-        if isinstance(step, LoopStep):
-            return await self._execute_loop_step(step, data, pipeline_context, resources)
-        elif isinstance(step, ConditionalStep):
-            return await self._execute_conditional_step(step, data, pipeline_context, resources)
-        elif isinstance(step, HumanInTheLoopStep):
-            # Prepare message to human
-            message = step.message_for_user if step.message_for_user is not None else str(data)
-            if isinstance(pipeline_context, PipelineContext):
-                pipeline_context.scratchpad["status"] = "paused"
-            raise PausedException(message)
-
-        result = StepResult(name=step.name)
-        original_agent = step.agent
-        current_agent = original_agent
-        last_feedback = None
-        last_raw_output = None
-        last_unpacked_output = None
-        for attempt in range(1, step.config.max_retries + 1):
-            result.attempts = attempt
-            if current_agent is None:
-                raise OrchestratorError(f"Step {step.name} has no agent")
-
-            start = time.monotonic()
-            agent_kwargs = {}
-            if pipeline_context is not None:
-                inner = getattr(current_agent, "_agent", None)
-                target = inner if inner is not None else current_agent
-                accepts_ctx = _accepts_param(target.run, "pipeline_context")
-
-                pass_ctx = False
-                if self.context_model is not None:
-                    pass_ctx = True
-                elif accepts_ctx:
-                    pass_ctx = True
-                if pass_ctx:
-                    agent_kwargs["pipeline_context"] = pipeline_context
-            if resources is not None:
-                agent_kwargs["resources"] = resources
-            raw_output = await current_agent.run(data, **agent_kwargs)
-            result.latency_s += time.monotonic() - start
-            last_raw_output = raw_output
-            unpacked_output = getattr(raw_output, "output", raw_output)
-            last_unpacked_output = unpacked_output
-
-            success = True
-            feedback: str | None = None
-            redirect_to = None
-            final_plugin_outcome: PluginOutcome | None = None
-
-            sorted_plugins = sorted(step.plugins, key=lambda p: p[1], reverse=True)
-            for plugin, _ in sorted_plugins:
-                try:
-                    plugin_kwargs = {}
-                    accepts_ctx = _accepts_param(plugin.validate, "pipeline_context")
-                    accepts_resources = _accepts_param(plugin.validate, "resources")
-
-                    if pipeline_context is not None:
-                        pass_ctx = False
-                        if self.context_model is not None:
-                            pass_ctx = True
-                        elif accepts_ctx:
-                            pass_ctx = True
-                        if pass_ctx:
-                            plugin_kwargs["pipeline_context"] = pipeline_context
-
-                    if resources is not None and accepts_resources:
-                        plugin_kwargs["resources"] = resources
-                    plugin_result: PluginOutcome = await asyncio.wait_for(
-                        plugin.validate(
-                            {"input": data, "output": unpacked_output}, **plugin_kwargs
-                        ),
-                        timeout=step.config.timeout_s,
-                    )
-                except asyncio.TimeoutError as e:
-                    raise TimeoutError(f"Plugin timeout in step {step.name}") from e
-
-                if not plugin_result.success:
-                    success = False
-                    feedback = plugin_result.feedback
-                    redirect_to = plugin_result.redirect_to
-                    final_plugin_outcome = plugin_result
-                if plugin_result.new_solution is not None:
-                    final_plugin_outcome = plugin_result
-
-            if final_plugin_outcome and final_plugin_outcome.new_solution is not None:
-                unpacked_output = final_plugin_outcome.new_solution
-                last_unpacked_output = unpacked_output
-
-            if success:
-                result.output = unpacked_output
-                result.success = True
-                result.feedback = feedback
-                result.token_counts += getattr(raw_output, "token_counts", 1)
-                result.cost_usd += getattr(raw_output, "cost_usd", 0.0)
-                return result
-
-            # Call failure handlers on each failed attempt
-            for handler in step.failure_handlers:
-                handler()
-
-            # Handle redirection for next attempt
-            if redirect_to:
-                if redirect_to in visited:
-                    raise InfiniteRedirectError(f"Redirect loop detected in step {step.name}")
-                visited.add(redirect_to)
-                current_agent = redirect_to
-            else:
-                current_agent = original_agent
-
-            # Update input with feedback for next attempt
-            if feedback:
-                if isinstance(data, dict):
-                    data["feedback"] = data.get("feedback", "") + "\n" + feedback
-                else:
-                    data = f"{str(data)}\n{feedback}"
-            last_feedback = feedback
-
-        # If we get here, all retries failed
-        result.output = last_unpacked_output
-        result.success = False
-        result.feedback = last_feedback
-        result.token_counts += (
-            getattr(last_raw_output, "token_counts", 1) if last_raw_output is not None else 0
+        request = StepExecutionRequest(
+            step=step,
+            input_data=data,
+            pipeline_context=pipeline_context,
+            resources=resources,
+            engine=self,
         )
-        result.cost_usd += (
-            getattr(last_raw_output, "cost_usd", 0.0) if last_raw_output is not None else 0.0
-        )
-        return result
+        return await self.backend.execute_step(request)
 
     async def _execute_loop_step(
         self,
@@ -840,3 +859,6 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
 
         paused_result.final_pipeline_context = ctx
         return paused_result
+
+
+StepExecutionRequest.model_rebuild()

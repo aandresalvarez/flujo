@@ -23,6 +23,8 @@ from .domain import (
     AppResources,
 )
 from .domain.types import HookCallable
+from .domain.backends import ExecutionBackend, StepExecutionRequest
+from .infra.backends import LocalBackend
 from .application.eval_adapter import run_pipeline_async
 from .application.self_improvement import evaluate_and_improve, SelfImprovementAgent
 from .domain.models import PipelineResult, StepResult, UsageLimits
@@ -83,4 +85,7 @@ __all__ = [
     "DummyPlugin",
     "SQLSyntaxValidator",
     "UsageLimits",
+    "ExecutionBackend",
+    "StepExecutionRequest",
+    "LocalBackend",
 ]
