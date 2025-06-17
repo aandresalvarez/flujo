@@ -63,6 +63,7 @@ pip-delete-this-directory.txt
 # Jupyter Notebook
 .ipynb_checkpoints
 *.ipynb
+!examples/cookbook/*.ipynb
 
 # Logs and databases
 *.log
@@ -143,6 +144,7 @@ pip-delete-this-directory.txt
 # Jupyter Notebook
 .ipynb_checkpoints
 *.ipynb
+!examples/cookbook/*.ipynb
 
 # Logs and databases
 *.log

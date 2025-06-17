@@ -11,7 +11,7 @@ from typing import Any, Optional, cast
 
 from pydantic import BaseModel
 
-from flujo import Flujo, Step, Pipeline
+from flujo import Flujo, Step
 
 
 class FunctionAgent:

@@ -7,7 +7,7 @@ For more details, see docs/extending.md.
 import asyncio
 from typing import Any, cast
 
-from flujo import Flujo, Step, Pipeline
+from flujo import Flujo, Step
 from flujo.plugins.sql_validator import SQLSyntaxValidator
 from flujo.testing.utils import StubAgent
 

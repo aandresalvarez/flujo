@@ -39,9 +39,9 @@ nav:
     - 'Documentation Status': documentation_status.md
   - 'Use Cases': use_cases.md
   - Cookbook:
-    - 'Using Resources': cookbook/using_resources.md
-    - 'Cost Control': cookbook/cost_control.md
+    - 'Controlling Costs': cookbook/cost_control.md
     - 'Lifecycle Hooks': cookbook/lifecycle_hooks.md
+    - 'Using Resources': cookbook/using_resources.md
   - Migration:
     - 'v0.3.7': migration/v0.3.7.md
     - 'v0.3.8': migration/v0.3.8.md
