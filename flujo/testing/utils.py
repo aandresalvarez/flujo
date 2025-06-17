@@ -36,6 +36,10 @@ class DummyPlugin:
 async def gather_result(runner: Any, data: Any, **kwargs: Any) -> Any:
     """Consume a streaming run and return the final result."""
     result = None
+    has_items = False
     async for item in runner.run_async(data, **kwargs):
         result = item
+        has_items = True
+    if not has_items:
+        raise ValueError("runner.run_async did not yield any items.")
     return result
