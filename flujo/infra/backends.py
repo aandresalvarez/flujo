@@ -22,7 +22,7 @@ class LocalBackend(ExecutionBackend):
 
     async def execute_step(self, request: StepExecutionRequest) -> StepResult:
         async def executor(
-            step: Step,
+            step: Step[Any, Any],
             data: Any,
             pipeline_context: Optional[BaseModel],
             resources: Optional[AppResources],

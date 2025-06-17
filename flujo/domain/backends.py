@@ -16,7 +16,7 @@ class StepExecutionRequest:
 
     # Use unparameterized ``Step`` type so Pydantic will not recreate the object
     # and accidentally reset attributes like ``max_retries``.
-    step: Step
+    step: Step[Any, Any]
     input_data: Any
     pipeline_context: Optional[BaseModel] | None = None
     resources: Optional[AppResources] = None

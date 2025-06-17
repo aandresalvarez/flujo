@@ -1,9 +1,13 @@
 from __future__ import annotations
 
-from typing import Any, List, AsyncIterator, Dict, Optional
+from typing import Any, List, AsyncIterator, Dict
 import asyncio
 
 from ..domain.plugins import PluginOutcome
+from ..domain.backends import ExecutionBackend, StepExecutionRequest
+from ..domain.agent_protocol import AsyncAgentProtocol
+from ..infra.backends import LocalBackend
+from ..domain.models import StepResult
 
 
 class StubAgent:
@@ -60,16 +64,12 @@ class FailingStreamAgent:
         raise self.exc
 
 
-from ..domain.backends import ExecutionBackend, StepExecutionRequest
-from ..domain.agent_protocol import AsyncAgentProtocol
-from ..infra.backends import LocalBackend
-from ..domain.models import StepResult
-
-
 class DummyRemoteBackend(ExecutionBackend):
     """Mock backend that simulates remote execution."""
 
-    def __init__(self, agent_registry: Dict[str, AsyncAgentProtocol[Any, Any]] | None = None) -> None:
+    def __init__(
+        self, agent_registry: Dict[str, AsyncAgentProtocol[Any, Any]] | None = None
+    ) -> None:
         self.agent_registry = agent_registry or {}
         self.call_counter = 0
         self.recorded_requests: List[StepExecutionRequest] = []
@@ -78,8 +78,16 @@ class DummyRemoteBackend(ExecutionBackend):
     async def execute_step(self, request: StepExecutionRequest) -> StepResult:
         self.call_counter += 1
         self.recorded_requests.append(request)
-        data_dict = request.model_dump()
-        roundtrip = StepExecutionRequest.model_validate(data_dict)
+        # Since StepExecutionRequest is a dataclass, we need to create a new instance
+        # instead of using Pydantic model methods
+        roundtrip = StepExecutionRequest(
+            step=request.step,
+            input_data=request.input_data,
+            pipeline_context=request.pipeline_context,
+            resources=request.resources,
+            context_model_defined=request.context_model_defined,
+            usage_limits=request.usage_limits,
+        )
         # Preserve original step object to avoid pydantic resetting config
         roundtrip.step = request.step
         # Ensure usage_limits propagate to the underlying LocalBackend

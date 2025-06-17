@@ -163,14 +163,15 @@ async def _execute_loop_step_logic(
                     usage_limits.total_cost_usd_limit is not None
                     and loop_overall_result.cost_usd > usage_limits.total_cost_usd_limit
                 ):
-                    logfire.warn(
-                        f"Cost limit of ${usage_limits.total_cost_usd_limit} exceeded"
-                    )
+                    logfire.warn(f"Cost limit of ${usage_limits.total_cost_usd_limit} exceeded")
                     loop_overall_result.success = False
                     loop_overall_result.feedback = (
                         f"Cost limit of ${usage_limits.total_cost_usd_limit} exceeded"
                     )
-                    pr = PipelineResult(step_history=[loop_overall_result], total_cost_usd=loop_overall_result.cost_usd)
+                    pr = PipelineResult(
+                        step_history=[loop_overall_result],
+                        total_cost_usd=loop_overall_result.cost_usd,
+                    )
                     pr.final_pipeline_context = pipeline_context
                     raise UsageLimitExceededError(
                         loop_overall_result.feedback,
@@ -180,14 +181,15 @@ async def _execute_loop_step_logic(
                     usage_limits.total_tokens_limit is not None
                     and loop_overall_result.token_counts > usage_limits.total_tokens_limit
                 ):
-                    logfire.warn(
-                        f"Token limit of {usage_limits.total_tokens_limit} exceeded"
-                    )
+                    logfire.warn(f"Token limit of {usage_limits.total_tokens_limit} exceeded")
                     loop_overall_result.success = False
                     loop_overall_result.feedback = (
                         f"Token limit of {usage_limits.total_tokens_limit} exceeded"
                     )
-                    pr = PipelineResult(step_history=[loop_overall_result], total_cost_usd=loop_overall_result.cost_usd)
+                    pr = PipelineResult(
+                        step_history=[loop_overall_result],
+                        total_cost_usd=loop_overall_result.cost_usd,
+                    )
                     pr.final_pipeline_context = pipeline_context
                     raise UsageLimitExceededError(
                         loop_overall_result.feedback,
@@ -707,28 +709,28 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
                                     chunks.append(chunk)
                                     yield chunk
                                 latency = time.monotonic() - start
-                                final_output: Any
+                                final_output_success: Any
                                 if chunks and all(isinstance(c, str) for c in chunks):
-                                    final_output = "".join(chunks)
+                                    final_output_success = "".join(chunks)
                                 else:
-                                    final_output = chunks
+                                    final_output_success = chunks
                                 step_result = StepResult(
                                     name=step.name,
-                                    output=final_output,
+                                    output=final_output_success,
                                     success=True,
                                     attempts=1,
                                     latency_s=latency,
                                 )
                             except Exception as e:
                                 latency = time.monotonic() - start
-                                final_output: Any
+                                final_output_error: Any
                                 if chunks and all(isinstance(c, str) for c in chunks):
-                                    final_output = "".join(chunks)
+                                    final_output_error = "".join(chunks)
                                 else:
-                                    final_output = chunks
+                                    final_output_error = chunks
                                 step_result = StepResult(
                                     name=step.name,
-                                    output=final_output,
+                                    output=final_output_error,
                                     success=False,
                                     feedback=str(e),
                                     attempts=1,
