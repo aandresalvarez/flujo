@@ -10,6 +10,7 @@ from pydantic_evals.reporting import EvaluationReport, ReportCase
 from ..domain.models import (
     ImprovementReport,
     PipelineResult,
+    StepResult,
 )
 from ..domain.pipeline_dsl import Pipeline, Step
 from ..utils.redact import summarize_and_redact_prompt
@@ -43,36 +44,73 @@ def _find_step(
     return None
 
 
+def _safe_str(obj: Any) -> str:
+    """Convert obj to string, falling back to repr on error."""
+    try:
+        return str(obj)
+    except Exception:
+        return repr(obj)
+
+
+def _truncate(text: str, limit: int) -> str:
+    """Truncate text to limit, appending ellipsis only if truncated."""
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "..."
+
+
+def _format_step_output(
+    step: StepResult,
+    pipeline_definition: Pipeline[Any, Any] | Step[Any, Any] | None,
+) -> list[str]:
+    lines: list[str] = []
+    out_str = _truncate(_safe_str(step.output), MAX_STEP_OUTPUT_LENGTH)
+    feedback = getattr(step, "feedback", None)
+    feedback_str = f", feedback='{feedback}'" if feedback is not None else ""
+    lines.append(
+        f"- Step '{step.name}': Output='{out_str}' (success={step.success}{feedback_str})"
+    )
+    step_obj = _find_step(pipeline_definition, step.name)
+    if step_obj is not None:
+        cfg = step_obj.config
+        lines.append(f"  Config(retries={cfg.max_retries}, timeout={cfg.timeout_s}s)")
+        if step_obj.agent is not None:
+            summary = summarize_and_redact_prompt(step_obj.agent.system_prompt)
+            lines.append(f'  SystemPromptSummary: "{summary}"')
+    return lines
+
+
 def _build_context(
     failures: Iterable[ReportCase],
     success: ReportCase | None,
     pipeline_definition: Pipeline[Any, Any] | Step[Any, Any] | None = None,
 ) -> str:
     lines: list[str] = []
+    lines.append(
+        "Analyze the following failed and successful pipeline runs to identify root causes and suggest improvements."
+    )
+
+    lines.append("")
+    lines.append("--- FAILED CASES ---")
+    lines.append("")
     for case in failures:
         pr: PipelineResult = case.output
         lines.append(f"Case: {case.name}")
+        input_str = _truncate(_safe_str(case.inputs), 200)
+        lines.append(f"Input: {input_str}")
         for step in pr.step_history:
-            lines.append(f"- {step.name}: {step.output} (success={step.success})")
-            step_obj = _find_step(pipeline_definition, step.name)
-            if step_obj is not None:
-                cfg = step_obj.config
-                lines.append(f"  Config(retries={cfg.max_retries}, timeout={cfg.timeout_s}s)")
-                if step_obj.agent is not None:
-                    summary = summarize_and_redact_prompt(step_obj.agent.system_prompt)
-                    lines.append(f'  SystemPromptSummary: "{summary}"')
+            lines.extend(_format_step_output(step, pipeline_definition))
+        lines.append("")
+
     if success:
-        lines.append("Successful example:")
+        lines.append("\n--- SUCCESSFUL EXAMPLE FOR CONTRAST ---\n")
         pr = success.output
+        lines.append(f"Case: {success.name}")
+        input_str = _truncate(_safe_str(success.inputs), 200)
+        lines.append(f"Input: {input_str}")
         for step in pr.step_history:
-            lines.append(f"- {step.name}: {step.output}")
-            step_obj = _find_step(pipeline_definition, step.name)
-            if step_obj is not None:
-                cfg = step_obj.config
-                lines.append(f"  Config(retries={cfg.max_retries}, timeout={cfg.timeout_s}s)")
-                if step_obj.agent is not None:
-                    summary = summarize_and_redact_prompt(step_obj.agent.system_prompt)
-                    lines.append(f'  SystemPromptSummary: "{summary}"')
+            lines.extend(_format_step_output(step, pipeline_definition))
+
     return "\n".join(lines)
 
 
