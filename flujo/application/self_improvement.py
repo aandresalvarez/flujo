@@ -89,7 +89,9 @@ def _build_context(
         "Analyze the following failed and successful pipeline runs to identify root causes and suggest improvements."
     )
 
-    lines.append("\n--- FAILED CASES ---\n")
+    lines.append("")
+    lines.append("--- FAILED CASES ---")
+    lines.append("")
     for case in failures:
         pr: PipelineResult = case.output
         lines.append(f"Case: {case.name}")
