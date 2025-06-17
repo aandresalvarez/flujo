@@ -206,6 +206,9 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
         )
         self._model_name: str | None = model_name or getattr(agent, "model", "unknown_model")
 
+    def _call_agent_with_dynamic_args(self, *args: Any, **kwargs: Any) -> Any:
+        return self._agent.run(*args, **kwargs)
+
     async def _run_with_retry(self, *args: Any, **kwargs: Any) -> Any:
         temp = kwargs.pop("temperature", None)
         if temp is not None:
@@ -235,7 +238,7 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
             async for attempt in retryer:
                 with attempt:
                     raw_agent_response = await asyncio.wait_for(
-                        self._agent.run(
+                        self._call_agent_with_dynamic_args(
                             *processed_args,
                             **processed_kwargs,
                         ),

@@ -596,7 +596,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
                 with logfire.span(step.name) as span:
                     try:
                         is_last = idx == len(self.pipeline.steps) - 1
-                        if is_last and hasattr(step.agent, "stream"):
+                        if is_last and step.agent is not None and hasattr(step.agent, "stream"):
                             agent_kwargs: Dict[str, Any] = {}
                             target = getattr(step.agent, "_agent", step.agent)
                             if current_pipeline_context_instance is not None and _accepts_param(target.stream, "pipeline_context"):
