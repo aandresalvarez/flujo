@@ -15,7 +15,6 @@ from ..exceptions import PausedException
 from ..domain.models import PipelineResult, PipelineContext
 from ..domain.pipeline_dsl import Step, LoopStep
 from ..application.flujo_engine import Flujo, _accepts_param
-from ..domain.resources import AppResources
 
 _command_adapter: TypeAdapter[AgentCommand] = TypeAdapter(AgentCommand)
 

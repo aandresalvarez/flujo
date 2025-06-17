@@ -4,7 +4,7 @@ from typing import Protocol, Any, Dict, Optional
 from pydantic import BaseModel
 
 from .pipeline_dsl import Step
-from .models import StepResult, PipelineContext
+from .models import StepResult
 from .resources import AppResources
 from .agent_protocol import AsyncAgentProtocol
 
@@ -15,7 +15,7 @@ class StepExecutionRequest(BaseModel):
     # Use unparameterized Step here to avoid Pydantic recreating the object and
     # resetting configuration like ``max_retries`` when a concrete Step instance
     # is provided.
-    step: Step
+    step: Step[Any, Any]
     input_data: Any
     pipeline_context: Optional[BaseModel] | None = None
     resources: Optional[AppResources] = None
