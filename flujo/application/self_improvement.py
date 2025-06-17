@@ -48,31 +48,66 @@ def _build_context(
     success: ReportCase | None,
     pipeline_definition: Pipeline[Any, Any] | Step[Any, Any] | None = None,
 ) -> str:
+    """Format failed and successful cases into a detailed prompt."""
     lines: list[str] = []
+
+    lines.append(
+        "Analyze the following failed and successful pipeline runs to identify root causes and suggest improvements."
+    )
+    lines.append("\n--- FAILED CASES ---\n")
+
     for case in failures:
         pr: PipelineResult = case.output
         lines.append(f"Case: {case.name}")
+        if hasattr(case, "inputs"):
+            lines.append(f"Input: {str(case.inputs)[:200]}...")
+
         for step in pr.step_history:
-            lines.append(f"- {step.name}: {step.output} (success={step.success})")
+            snippet = str(step.output)
+            if len(snippet) > 150:
+                snippet = snippet[:147] + "..."
+            lines.append(
+                f"- Step '{step.name}': Output='{snippet}' (success={step.success}, feedback='{step.feedback}')"
+            )
             step_obj = _find_step(pipeline_definition, step.name)
             if step_obj is not None:
                 cfg = step_obj.config
-                lines.append(f"  Config(retries={cfg.max_retries}, timeout={cfg.timeout_s}s)")
-                if step_obj.agent is not None:
-                    summary = summarize_and_redact_prompt(step_obj.agent.system_prompt)
+                lines.append(
+                    f"  Config(retries={cfg.max_retries}, timeout={cfg.timeout_s}s)"
+                )
+                if step_obj.agent is not None and hasattr(step_obj.agent, "system_prompt"):
+                    summary = summarize_and_redact_prompt(
+                        step_obj.agent.system_prompt
+                    )
                     lines.append(f'  SystemPromptSummary: "{summary}"')
+        lines.append("")
+
     if success:
-        lines.append("Successful example:")
+        lines.append("\n--- SUCCESSFUL EXAMPLE FOR CONTRAST ---\n")
+        lines.append(f"Case: {success.name}")
+        if hasattr(success, "inputs"):
+            lines.append(f"Input: {str(success.inputs)[:200]}...")
+
         pr = success.output
         for step in pr.step_history:
-            lines.append(f"- {step.name}: {step.output}")
+            snippet = str(step.output)
+            if len(snippet) > 150:
+                snippet = snippet[:147] + "..."
+            lines.append(
+                f"- Step '{step.name}': Output='{snippet}' (success={step.success}, feedback='{step.feedback}')"
+            )
             step_obj = _find_step(pipeline_definition, step.name)
             if step_obj is not None:
                 cfg = step_obj.config
-                lines.append(f"  Config(retries={cfg.max_retries}, timeout={cfg.timeout_s}s)")
-                if step_obj.agent is not None:
-                    summary = summarize_and_redact_prompt(step_obj.agent.system_prompt)
+                lines.append(
+                    f"  Config(retries={cfg.max_retries}, timeout={cfg.timeout_s}s)"
+                )
+                if step_obj.agent is not None and hasattr(step_obj.agent, "system_prompt"):
+                    summary = summarize_and_redact_prompt(
+                        step_obj.agent.system_prompt
+                    )
                     lines.append(f'  SystemPromptSummary: "{summary}"')
+
     return "\n".join(lines)
 
 
