@@ -1,7 +1,9 @@
 """Domain models for flujo."""
 
-from typing import Any, List, Optional, Literal
+from typing import Any, List, Optional, Literal, Dict
 from pydantic import BaseModel, Field
+from datetime import datetime
+import uuid
 from enum import Enum
 
 
@@ -16,12 +18,8 @@ class ChecklistItem(BaseModel):
     """A single item in a checklist for evaluating a solution."""
 
     description: str = Field(..., description="The criterion to evaluate.")
-    passed: Optional[bool] = Field(
-        None, description="Whether the solution passes this criterion."
-    )
-    feedback: Optional[str] = Field(
-        None, description="Feedback if the criterion is not met."
-    )
+    passed: Optional[bool] = Field(None, description="Whether the solution passes this criterion.")
+    feedback: Optional[str] = Field(None, description="Feedback if the criterion is not met.")
 
 
 class Checklist(BaseModel):
@@ -76,9 +74,7 @@ class PipelineResult(BaseModel):
     total_cost_usd: float = 0.0
     final_pipeline_context: Optional[BaseModel] = Field(
         default=None,
-        description=(
-            "The final state of the typed pipeline context, if configured and used."
-        ),
+        description=("The final state of the typed pipeline context, if configured and used."),
     )
 
     model_config = {"arbitrary_types_allowed": True}
@@ -157,3 +153,22 @@ class ImprovementReport(BaseModel):
     """Aggregated improvement suggestions returned by the agent."""
 
     suggestions: list[ImprovementSuggestion] = Field(default_factory=list)
+
+
+class HumanInteraction(BaseModel):
+    """Records a single human interaction in a HITL conversation."""
+
+    message_to_human: str
+    human_response: Any
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+
+class PipelineContext(BaseModel):
+    """A built-in context object shared across the pipeline run."""
+
+    run_id: str = Field(default_factory=lambda: f"run_{uuid.uuid4().hex}")
+    initial_prompt: str
+    scratchpad: Dict[str, Any] = Field(default_factory=dict)
+    hitl_history: List[HumanInteraction] = Field(default_factory=list)
+
+    model_config = {"arbitrary_types_allowed": True}
