@@ -22,7 +22,7 @@ class LocalBackend(ExecutionBackend):
 
     async def execute_step(self, request: StepExecutionRequest) -> StepResult:
         async def executor(
-            step: Step[Any, Any],
+            step: Step,
             data: Any,
             pipeline_context: Optional[BaseModel],
             resources: Optional[AppResources],
@@ -33,6 +33,7 @@ class LocalBackend(ExecutionBackend):
                 pipeline_context=pipeline_context,
                 resources=resources,
                 context_model_defined=request.context_model_defined,
+                usage_limits=request.usage_limits,
             )
             return await self.execute_step(nested_request)
 
@@ -43,4 +44,5 @@ class LocalBackend(ExecutionBackend):
             request.resources,
             step_executor=executor,
             context_model_defined=request.context_model_defined,
+            usage_limits=request.usage_limits,
         )

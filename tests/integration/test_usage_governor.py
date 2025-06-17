@@ -139,5 +139,30 @@ async def test_governor_with_loop_step(
 
     result: PipelineResult = exc_info.value.result
     loop_result = result.step_history[0]
-    assert loop_result.attempts == 4
-    assert result.total_cost_usd == 0.40
+    assert loop_result.attempts == 3
+    assert result.total_cost_usd == pytest.approx(0.30)
+
+
+@pytest.mark.asyncio
+async def test_governor_halts_loop_step_mid_iteration(
+    metric_pipeline: Pipeline[int, MockAgentOutput],
+) -> None:
+    """Governor stops a LoopStep when limits are breached mid-loop."""
+    limits = UsageLimits(total_cost_usd_limit=0.25, total_tokens_limit=None)
+    loop_step = Step.loop_until(
+        name="breach_loop",
+        loop_body_pipeline=metric_pipeline,
+        exit_condition_callable=lambda _out, _ctx: False,
+        max_loops=5,
+    )
+    runner = Flujo(loop_step, usage_limits=limits)
+
+    with pytest.raises(UsageLimitExceededError) as exc_info:
+        await gather_result(runner, 0)
+
+    result: PipelineResult = exc_info.value.result
+    assert len(result.step_history) == 1
+    loop_result = result.step_history[0]
+    assert not loop_result.success
+    assert loop_result.attempts == 3
+    assert result.total_cost_usd == pytest.approx(0.30)

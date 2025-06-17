@@ -1,9 +1,11 @@
+import asyncio
 import pytest
 from pydantic import BaseModel
 
 from flujo.application.flujo_engine import Flujo
 from flujo.domain import Step
 from flujo.testing.utils import StubAgent, gather_result
+from flujo.domain.models import PipelineResult
 
 
 class Ctx(BaseModel):
@@ -34,3 +36,30 @@ async def test_existing_agents_without_context() -> None:
     runner = Flujo(step)
     result = await gather_result(runner, "hi")
     assert result.step_history[0].output == "ok"
+
+
+class TestContext(BaseModel):
+    counter: int = 0
+
+
+class IncrementAgent:
+    async def run(
+        self, data: str, *, pipeline_context: TestContext | None = None
+    ) -> str:
+        if pipeline_context:
+            pipeline_context.counter += 1
+        return data
+
+
+@pytest.mark.asyncio
+async def test_concurrent_runs_with_typed_context_are_isolated() -> None:
+    step = Step("inc", IncrementAgent())
+    runner = Flujo(step, context_model=TestContext)
+
+    async def run_one() -> PipelineResult:
+        return await gather_result(runner, "input")
+
+    result1, result2 = await asyncio.gather(run_one(), run_one())
+
+    assert result1.final_pipeline_context.counter == 1
+    assert result2.final_pipeline_context.counter == 1

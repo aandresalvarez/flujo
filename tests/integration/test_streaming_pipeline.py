@@ -7,7 +7,7 @@ from flujo.application.flujo_engine import Flujo
 from flujo.domain import Step
 from flujo.domain.models import PipelineResult
 from flujo.domain.resources import AppResources
-from flujo.testing.utils import StubAgent
+from flujo.testing.utils import StubAgent, FailingStreamAgent
 from pydantic import BaseModel
 
 
@@ -77,3 +77,24 @@ async def test_context_and_resources_in_stream() -> None:
     assert isinstance(final, PipelineResult)
     assert final.final_pipeline_context.count == 1
     assert final.step_history[-1].output == "5"
+
+
+@pytest.mark.asyncio
+async def test_pipeline_handles_streaming_agent_failure_gracefully() -> None:
+    agent = FailingStreamAgent(["H", "e", "l"], RuntimeError("Stream connection lost"))
+    pipeline = Step.solution(agent)
+    runner = Flujo(pipeline)
+
+    collected: list[str] = []
+    final: PipelineResult | None = None
+    async for item in runner.stream_async("Hello"):
+        if isinstance(item, PipelineResult):
+            final = item
+        else:
+            collected.append(item)
+
+    assert collected == ["H", "e", "l"]
+    assert final is not None
+    step_result = final.step_history[-1]
+    assert not step_result.success
+    assert "Stream connection lost" in (step_result.feedback or "")
