@@ -40,24 +40,34 @@ class InfiniteRedirectError(OrchestratorError):
     """Raised when a redirect loop is detected."""
 
 
+_accepts_param_cache: Dict[int, Dict[str, Optional[bool]]] = {}
+
 def _accepts_param(func: Callable[..., Any], param: str) -> Optional[bool]:
     """Return True if callable's signature includes param or **kwargs.
 
-    Returns None if the signature cannot be inspected. The result is not cached
-    because some callables used here may be unhashable, which would break a
-    decorator-based cache.
+    Returns None if the signature cannot be inspected. Results are cached
+    using the id of the callable to avoid issues with unhashable callables.
     """
+    func_id = id(func)
+    if func_id in _accepts_param_cache and param in _accepts_param_cache[func_id]:
+        return _accepts_param_cache[func_id][param]
+
     try:
         sig = inspect.signature(func)
     except (TypeError, ValueError):
-        return None
-    if param in sig.parameters:
-        return True
-    if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
-        return True
-    return False
+        result = None
+    else:
+        if param in sig.parameters:
+            result = True
+        elif any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
+            result = True
+        else:
+            result = False
 
-
+    if func_id not in _accepts_param_cache:
+        _accepts_param_cache[func_id] = {}
+    _accepts_param_cache[func_id][param] = result
+    return result
 RunnerInT = TypeVar("RunnerInT")
 RunnerOutT = TypeVar("RunnerOutT")
 
