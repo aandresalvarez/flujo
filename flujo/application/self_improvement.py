@@ -64,7 +64,7 @@ def _format_step_output(
     pipeline_definition: Pipeline[Any, Any] | Step[Any, Any] | None,
 ) -> list[str]:
     lines: list[str] = []
-    out_str = _truncate(_safe_str(step.output), 150)
+    out_str = _truncate(_safe_str(step.output), MAX_STEP_OUTPUT_LENGTH)
     feedback = getattr(step, "feedback", None)
     feedback_str = f", feedback='{feedback}'" if feedback is not None else ""
     lines.append(
