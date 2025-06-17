@@ -1,9 +1,13 @@
 from __future__ import annotations
 
-from typing import Dict
+from typing import Any, Dict, Optional
+
+from ..domain.pipeline_dsl import Step
+from ..domain.resources import AppResources
 
 from ..domain.backends import ExecutionBackend, StepExecutionRequest
 from ..domain.agent_protocol import AsyncAgentProtocol
+from pydantic import BaseModel
 from ..domain.models import StepResult
 from ..application.flujo_engine import _run_step_logic
 
@@ -11,19 +15,32 @@ from ..application.flujo_engine import _run_step_logic
 class LocalBackend(ExecutionBackend):
     """Backend that executes steps in the current process."""
 
-    def __init__(self, agent_registry: Dict[str, AsyncAgentProtocol] | None = None) -> None:
+    def __init__(
+        self, agent_registry: Dict[str, AsyncAgentProtocol] | None = None
+    ) -> None:
         self.agent_registry = agent_registry or {}
-        self.engine = None
 
     async def execute_step(self, request: StepExecutionRequest) -> StepResult:
-        if request.engine is None:
-            engine = self.engine
-        else:
-            engine = request.engine
+        async def executor(
+            step: Step,
+            data: Any,
+            pipeline_context: Optional[BaseModel],
+            resources: Optional[AppResources],
+        ) -> StepResult:
+            nested_request = StepExecutionRequest(
+                step=step,
+                input_data=data,
+                pipeline_context=pipeline_context,
+                resources=resources,
+                context_model_defined=request.context_model_defined,
+            )
+            return await self.execute_step(nested_request)
+
         return await _run_step_logic(
-            engine,
             request.step,
             request.input_data,
             request.pipeline_context,
             request.resources,
+            step_executor=executor,
+            context_model_defined=request.context_model_defined,
         )
