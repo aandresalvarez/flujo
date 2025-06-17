@@ -33,8 +33,12 @@ from ..domain.models import (
     PipelineContext,
     HumanInteraction,
 )
+from ..domain.commands import AgentCommand, ExecutedCommandLog
+from pydantic import TypeAdapter
 from ..domain.resources import AppResources
 from ..domain.types import HookCallable
+
+_agent_command_adapter = TypeAdapter(AgentCommand)
 
 
 class InfiniteRedirectError(OrchestratorError):
@@ -636,6 +640,9 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
                         if isinstance(current_pipeline_context_instance, PipelineContext):
                             current_pipeline_context_instance.scratchpad["status"] = "paused"
                             current_pipeline_context_instance.scratchpad["pause_message"] = str(e)
+                            scratch = current_pipeline_context_instance.scratchpad
+                            if "paused_step_input" not in scratch:
+                                scratch["paused_step_input"] = data
                         pipeline_result_obj.final_pipeline_context = (
                             current_pipeline_context_instance
                         )
@@ -739,10 +746,8 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
         if start_idx >= len(self.pipeline.steps):
             raise OrchestratorError("No steps remaining to resume")
         paused_step = self.pipeline.steps[start_idx]
-        if not isinstance(paused_step, HumanInTheLoopStep):
-            raise OrchestratorError("Next step is not a HumanInTheLoopStep")
 
-        if paused_step.input_schema is not None:
+        if isinstance(paused_step, HumanInTheLoopStep) and paused_step.input_schema is not None:
             human_input = paused_step.input_schema.model_validate(human_input)
 
         if isinstance(ctx, PipelineContext):
@@ -760,6 +765,19 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
             success=True,
             attempts=1,
         )
+        if isinstance(ctx, PipelineContext):
+            pending = ctx.scratchpad.pop("paused_step_input", None)
+            if pending is not None:
+                try:
+                    pending_cmd = _agent_command_adapter.validate_python(pending)
+                except ValidationError:
+                    pending_cmd = pending
+                log_entry = ExecutedCommandLog(
+                    turn=len(ctx.command_log) + 1,
+                    generated_command=pending_cmd,
+                    execution_result=human_input,
+                )
+                ctx.command_log.append(log_entry)
         paused_result.step_history.append(paused_step_result)
 
         data = human_input
