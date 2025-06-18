@@ -1,327 +1,176 @@
- 
+## Flujo v.Next Roadmap: From Engine to Ecosystem —and Beyond
+
+**Document Owner:** Alvaro A. Alvarez  
+**Status:** DRAFT  
+**Last Updated:** 2025‑06‑18
 
 ---
 
-## 1. Fast Side-by-Side
+### Vision Statement
 
-| Dimension               | **Roadmap A – “Complete & Detailed”**                                     | **Roadmap B – “Strategic Dev”**                                                                   |
-| ----------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| **Focus of Phase 1**    | Harden *engine*: resources DI, usage governor, non-linear input mapping.  | Harden *DX*: hooks/callbacks, agent factories, better docs, telemetry polish, evaluation polish.  |
-| **Phase 2**             | Conversational recipe, HITL, compliance plugin **libraries**.             | Compliance plugins, reference templates, HITL, advanced context-aware agents, community building. |
-| **Phase 3**             | Streaming, dynamic graph mutation, pluggable execution back-ends.         | Same three ideas but adds deeper resource-scheduler integration & refined data-flow.              |
-| **Enterprise concerns** | Addressed early via cost governor & DI; compliance plugins delayed to P2. | Addressed via hooks/callbacks first and compliance plugins in P2.                                 |
-| **Community/ecosystem** | Implicit (plugins)                                                        | Explicit (Awesome Flujo list, webinars, contributor nurturing).                                   |
-| **Documentation**       | Mentioned lightly.                                                        | Cookbook & Jupyter tutorials called out as deliverables.                                          |
-| **Risk / sequencing**   | Very technology-driven; risky heavy lifts appear early.                   | More incremental DX wins first; deeper engine changes later.                                      |
+With the core orchestration engine complete, *Flujo* now differentiates on **confidence**, **compliance**, and **continuous improvement**. Our roadmap delivers an unrivalled developer experience, a thriving plugin ecosystem, enterprise‑grade scale, and—through a new innovation phase—capabilities no other AI‑workflow framework offers: compile‑time graph safety, time‑travel debugging, built‑in policy enforcement, self‑healing pipelines, multimodal support, a live graph UI, and zero‑to‑prod DevOps.
 
 ---
 
-## 2. Strengths Worth Keeping
+### Owner Legend
 
-| Roadmap | What to Keep & Why                                                                                                                                                                                                 |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **A**   | *Managed resources & DI* sets a solid enterprise-grade foundation; usage-governor is a killer “safe-default” for cost; declarative DAG input-mapping elegantly unlocks non-linear flows.                           |
-| **B**   | Hook/callback system gives low-friction entry point for audits, metrics, security; agent factories & cookbook provide fast time-to-first-value for newcomers; explicit community-building fosters network effects. |
-
----
-
-## 3. Gaps / Tensions
-
-1. **Sequencing risk:**
-
-   * A puts heavy architectural changes (DI, governor, DAG) *all* in the very next release cycle. That can stall momentum if unexpected complexity pops up.
-   * B defers those core features, but big enterprise clients often evaluate frameworks on cost-control and resource governance first.
-
-2. **Measurability:**
-   Neither roadmap describes KPIs or “definition of done.” Example: *What metric shows that hooks improved DX?* — time to integrate a custom audit plugin ≤ 1 h?
-
-3. **Interop / compatibility:**
-   Pluggable execution back-ends appear in both, but neither spells out **serialization standard(s)** or **artifact registry** for shipping agent code to Lambda/Cloud Run.
-
-4. **Security posture:**
-   Compliance plugins are planned, yet there’s no milestone for *core* security hygiene (SBOMs, supply-chain scanning, secrets redaction in logs).
-
-5. **Versioning & migration:**
-   Breaking API changes (DI, hooks, streaming) will come—plan for **semantic-versioning, changelog automation, and migration docs**.
-
-6. **Performance story:**
-   Real-time streaming is penciled in, but there’s no systematic performance benchmarking harness in earlier phases to catch regressions.
+| Tag      |  Role                         |
+| -------- | ----------------------------- |
+| **DOC**  | Documentation Guild           |
+| **DX**   | Developer Experience Guild    |
+| **FE**   | Framework Engineering Guild   |
+| **INF**  | Infrastructure & DevOps Guild |
+| **LEAD** | Product Lead / PM             |
 
 ---
 
-## 4. Suggested Unified Roadmap (High-Impact, Lower-Risk Ordering)
+## Phase 1 — Developer Onboarding & Polish (*The 1.0 Release Cycle*)
 
-Below is one possible rescope you can drop into your doc. Phases are still three, but each is 2-3 sprints (≈6–9 weeks) and has explicit “exit criteria”.
+**Goal:** Make Flujo exceptionally easy to learn and adopt. This phase culminates in the **`Flujo 1.0`** GA release.
 
-### **Phase 1 – Harden Core & Instrumentability**
+### Epic 1.1 — Comprehensive Documentation Overhaul
 
-| Epic                                   | Key Tasks                                                               | Exit Criteria                                                           |
-| -------------------------------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| **1.1 Dependency-Injection Resources** | Implement `resources` arg; exemplar DB pool + secret manager; doc page. | All built-in recipes run with DI; >90 % test coverage; migration guide. |
-| **1.2 Usage Governor (Cost / Tokens)** | `UsageLimits` model; engine checks; exhaust-path tests.                 | Pipeline halts safely & surfaces errors; cost shown in telemetry event. |
-| **1.3 Lifecycle Hooks / Callbacks**    | Minimal `on_*` hooks; sample Splunk logger plugin.                      | 3 demo callbacks in cookbook; plugin can abort pipeline in hook.        |
-| **1.4 Benchmark Harness**              | pytest-bench + perf dashboards in CI.                                   | Baseline numbers for Default recipe in README badge.                    |
+|  #                                                                                                                       |  Story                 |  Description                                                                                                                   |  Owner      |
+| ------------------------------------------------------------------------------------------------------------------------ | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ----------- |
+|  1.1‑1                                                                                                                   | Rewrite the Tutorial   | Craft a narrative tutorial that walks from `pip install flujo` to a wow‑moment **AgenticLoop** demo.                           | **DOC**     |
+|  1.1‑2                                                                                                                   | Update Core Concepts   | Refresh **concepts.md** to clarify *Routing vs. Exploration* (`ConditionalStep` vs. `AgenticLoop`).                            | **DOC**     |
+|  1.1‑3                                                                                                                   | Enhance API Reference  | Ensure every public class (e.g. `AgenticLoop`, `PipelineContext`, `ExecutionBackend`) has exhaustive, example‑rich docstrings. | **FE / DX** |
+|  1.1‑4                                                                                                                   | Add “Patterns” Section | New top‑level docs section housing canonical patterns: Plan‑then‑Execute, Stateful HITL, etc.                                  | **DOC**     |
+|  1.1‑5                                                                                                                   | Technical Review       | Framework engineer sweeps every page for accuracy against `main` branch.                                                       | **FE**      |
+| **Exit Criteria:** A first‑time user can implement a multi‑turn *stateful* pipeline by following only the official docs. |                        |                                                                                                                                |             |
 
-> *Why this order?* DI + governor deliver “enterprise safety”, hooks let you dog-food telemetry & audit early, benchmarks catch regressions from DI refactor.
+### Epic 1.2 — Overhaul & Enhance Examples
 
-### **Phase 2 – Developer Delight & Compliance Foundations**
-
-| Epic                                     | Key Tasks                                                             | Exit Criteria                                                          |
-| ---------------------------------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| **2.1 Agent Factories & Fluent Builder** | `CodeGenAgent`, `SQLAgent`; builder chaining for custom roles.        | New “Generate-Review-Validate in 10 lines” tutorial passes CI example. |
-| **2.2 Cookbook & Notebooks**             | Convert existing examples to Jupyter; launch docs site section.       | At least 6 scenario notebooks; GH stars / docs traffic ↑ 20 %.         |
-| **2.3 Compliance Plugin Packs**          | Release `flujo-deidentifier`, `flujo-audit` under separate namespace. | Install via `pip`; HIPAA/GDPR reference pipeline passes unit PII scan. |
-| **2.4 HITL Pause/Resume MVP**            | Implement `PauseForHumanInput`; FastAPI demo UI.                      | End-to-end test proves resume continues tokens tally.                  |
-
-### **Phase 3 – Future-Proof Orchestration**
-
-| Epic                                          | Key Tasks                                                           | Exit Criteria                                               |
-| --------------------------------------------- | ------------------------------------------------------------------- | ----------------------------------------------------------- |
-| **3.1 Streaming Engine**                      | `StreamingAgentProtocol`; back-pressure handling; sample voice bot. | Latency <300 ms per token on local test harness.            |
-| **3.2 Dynamic Graph Mutation (Experimental)** | `PipelineMutation` outcome; safeguard against infinite loops.       | Feature flagged behind `--experimental`; tutorial notebook. |
-| **3.3 Pluggable Back-Ends**                   | `ExecutionBackend` API; `LocalBackend` + `LambdaBackend`.           | Lambda demo processes 100 parallel invocations <5 min.      |
+|  #                                                                                                                                 |  Story                      |  Description                                                                                     |  Owner  |
+| ---------------------------------------------------------------------------------------------------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------ | ------- |
+|  1.2‑1                                                                                                                             | Refactor `00_quickstart.py` | Update quick‑start to showcase **AgenticLoop** immediately.                                      | **DX**  |
+|  1.2‑2                                                                                                                             | Create New Examples         | Add `10_adaptive_routing.py` (Plan‑then‑Execute) and `11_stateful_hitl.py` (stateful HITL loop). | **DX**  |
+|  1.2‑3                                                                                                                             | Jupyter Notebooks           | Convert high‑impact examples into annotated notebooks for Colab / Binder.                        | **DX**  |
+|  1.2‑4                                                                                                                             | Improve Readability         | Add rich comments + clear `print()` checkpoints across all examples.                             | **DX**  |
+| **Exit Criteria:** `examples/` is a gold‑standard gallery; every script runs with `python example.py` and explains itself clearly. |                             |                                                                                                  |         |
 
 ---
 
-## 5. Additional Cross-Cutting Improvements
+## Phase 2 — Ecosystem & Community Growth
 
-1. **Security & Supply-chain**
+**Goal:** Transform Flujo from a library into the hub of a vibrant ecosystem.
 
-   * Add SLSA-compliant GitHub Actions workflow (Provenance attestations).
-   * auto-generate SBOM via `cyclonedx-python` in releases.
+### Epic 2.1 — The “Flujo Toolkit” Official Plugin Suite
 
-2. **Governance & Decision Log**
+|  #                                                                                                   |  Story                    |  Description                                                                  |  Owner  |
+| ---------------------------------------------------------------------------------------------------- | ------------------------- | ----------------------------------------------------------------------------- | ------- |
+|  2.1‑1                                                                                               | `flujo‑pii‑redactor`      | Plugin that redacts PII (emails, phones) via regex + optional LLM refinement. | **FE**  |
+|  2.1‑2                                                                                               | `flujo‑vector‑db`         | Adapters for Weaviate & Pinecone, enabling RAG pipelines in 3 lines.          | **FE**  |
+|  2.1‑3                                                                                               | Update `AWESOME‑FLUJO.md` | Curate official + community plugins; launch early adopter outreach.           | **DX**  |
+| **Exit Criteria:** Devs can build a compliant RAG pipeline using only core Flujo & official plugins. |                           |                                                                               |         |
 
-   * ADR (Architecture Decision Record) repository—helps community follow rationale for large features like graph mutation.
+### Epic 2.2 — Launch & Community Engagement
 
-3. **Release & Migration Policy**
-
-   * Adopt **CalVer** + SemVer (e.g., `2025.6` minor) or stick to SemVer but define *LTS* branches for enterprise users.
-
-4. **Community Programs**
-
-   * **Flujo Fellowship**: quarterly highlight of top plugin authors.
-   * **Bug Bash Week** before each minor release with small bounties.
-
-5. **KPIs & Telemetry Dashboard**
-
-   * Public dashboard of weekly downloads, average pipeline run time, % pipelines aborted by governor — builds trust & guides prioritization.
+|  #                                                                                            |  Story            |  Description                                                     |  Owner        |
+| --------------------------------------------------------------------------------------------- | ----------------- | ---------------------------------------------------------------- | ------------- |
+|  2.2‑1                                                                                        | 1.0 Launch Blog   | Publish “Announcing Flujo 1.0” across Medium, Dev.to, X/Twitter. | **DX / LEAD** |
+|  2.2‑2                                                                                        | Video Tutorials   | Produce three 2‑5 min screencasts for key recipes.               | **DX**        |
+|  2.2‑3                                                                                        | Community Channel | Stand‑up Discord server + GitHub Discussions; seed with FAQs.    | **DX**        |
+| **Exit Criteria:** `1.0.0` published on PyPI, blog live, Discord active with ≥50 early users. |                   |                                                                  |               |
 
 ---
 
-### TL;DR
+## Phase 3 — Scaling the Architecture & Enterprise Focus
 
-* **Marry A’s rigorous core-architecture items (DI, governor, DAG input mapping) with B’s DX-first hooks & community focus,** but stage them so the heaviest lifts don’t block early wins.
-* **Define explicit exit criteria & metrics** for every epic; otherwise momentum and stakeholder alignment drift.
-* **Layer in security, performance benchmarking, and version-migration support early** so later streaming / mutation experiments don’t introduce chaos.
-* **Invest in cookbook-level docs and community programs while core refactors are underway**—this keeps adoption climbing even if headline features are “under the hood”.
+**Goal:** Prove Flujo at cloud scale and meet enterprise governance needs.
 
-Feel free to lift any of these tables or bullet lists directly into your roadmap document or Jira backlog. Let me know if you’d like deeper dives on any epic (e.g., API sketch for hooks, serialization strategy for Lambda backend, etc.).
+### Epic 3.1 — Distributed Backend Reference Implementation
 
+|  #                                                                                             |  Story                 |  Description                                                                                  |  Owner      |
+| ---------------------------------------------------------------------------------------------- | ---------------------- | --------------------------------------------------------------------------------------------- | ----------- |
+|  3.1‑1                                                                                         | Serialization Strategy | Design secure schema for `StepExecutionRequest` + results, including agent registry look‑ups. | **FE**      |
+|  3.1‑2                                                                                         | `flujo‑lambda‑backend` | OSS repo + SAM/CDK templates for AWS Lambda execution.                                        | **INF**     |
+|  3.1‑3                                                                                         | Distributed Demo       | Example `AgenticLoop` where each agent invocation is a separate Lambda.                       | **FE / DX** |
+| **Exit Criteria:** Users can deploy a fully distributed pipeline to AWS Lambda in <15 minutes. |                        |                                                                                               |             |
 
-=========================================
+### Epic 3.2 — Advanced Enterprise Governance
 
-# Flujo vNext Roadmap – Developer Work Breakdown
-
-*Date: 2025‑06‑15*
-*Document Owner: Alvaro A. Alvarez*
-
-> **Purpose**
-> Convert the unified strategic roadmap into actionable epics, stories, and exit criteria that engineering, DX, docs, and QA teams can pull directly into Jira. 9 sprints (\~3 weeks each) are assumed; adjust in planning.
-
----
-
-## Legend
-
-| Abbrev  | Role                             |
-| ------- | -------------------------------- |
-| **FE**  | Framework Engineer               |
-| **DX**  | Dev‑Experience Specialist        |
-| **INF** | Infrastructure / DevOps Engineer |
-| **DOC** | Technical Writer                 |
-| **QA**  | Quality Engineer                 |
-| **TW**  | Tech Writer (Docs)               |
-
-Story IDs follow the pattern **EPIC‑X.Y** (e.g., 1.1‑2).
+|  #                                                                                             |  Story               |  Description                                                                                        |  Owner  |
+| ---------------------------------------------------------------------------------------------- | -------------------- | --------------------------------------------------------------------------------------------------- | ------- |
+|  3.2‑1                                                                                         | RBAC for Agents      | Extend `agent_registry` to include permission scopes; unauthorised calls raise compile‑time errors. | **FE**  |
+|  3.2‑2                                                                                         | Time‑Based Budgets   | Enforce cost ceilings per hour/day; auto‑pause pipelines on breach.                                 | **FE**  |
+|  3.2‑3                                                                                         | Telemetry Dashboards | Grafana JSONs for latency, cost, token usage, and policy events.                                    | **INF** |
+| **Exit Criteria:** Admins can restrict expensive agents and observe real‑time cost dashboards. |                      |                                                                                                     |         |
 
 ---
 
-## Phase 1 – Harden Core & Instrumentability *(Sprints P1 – P3)*
+## Phase 4 — Differentiator & Innovation Leap
 
-Focus: enterprise‑safe core, visibility, and performance baselines.
+**Goal:** Deliver unique capabilities that put Flujo in a league of its own.
 
-### Epic 1.1 – Managed Dependency‑Injection Resources
+### Epic 4.1 — Static‑Analysis Type Checker
 
-**Goal:** One sharable `resources` object lifecycles through a pipeline run.
+|  #                                                            |  Story              |  Description                                                            |  Owner  |
+| ------------------------------------------------------------- | ------------------- | ----------------------------------------------------------------------- | ------- |
+|  4.1‑1                                                        | Graph Type Spec     | Formal contract + error taxonomy for `Step[A,B]` edges.                 | **FE**  |
+|  4.1‑2                                                        | MyPy/Pyright Plugin | Emit graph‑level errors (unreachable node, type mismatch) at lint time. | **FE**  |
+|  4.1‑3                                                        | IDE Patches         | VS Code extension suggests auto‑fixes during refactors.                 | **DX**  |
+| **Exit Criteria:** CI fails on invalid graphs before runtime. |                     |                                                                         |         |
 
-| Story | Description                                               | Owner | Est. | Dep   |
-| ----- | --------------------------------------------------------- | ----- | ---- | ----- |
-| 1.1‑1 | Draft ADR‑014: DI Design, public API & type contract      | FE    | 1d   | –     |
-| 1.1‑2 | Implement engine refactor (`Flujo.__init__`, `_run_step`) | FE    | 3d   | 1.1‑1 |
-| 1.1‑3 | Modify built‑in recipes & Step DSL to accept resources    | FE    | 2d   | 1.1‑2 |
-| 1.1‑4 | Unit & property tests (>90 % coverage)                    | QA    | 2d   | 1.1‑3 |
-| 1.1‑5 | Write migration guide + cookbook “Using Resources”        | DOC   | 1d   | 1.1‑3 |
+### Epic 4.2 — Flight‑Recorder Time‑Travel Debugger
 
-**Exit Criteria:** All CI green; examples run with optional `AppResources` without breaking changes; docs published.
+|  #                                                                                      |  Story               |  Description                                                               |  Owner  |
+| --------------------------------------------------------------------------------------- | -------------------- | -------------------------------------------------------------------------- | ------- |
+|  4.2‑1                                                                                  | Low‑Overhead Capture | Stream every token + state to a binary log.                                | **FE**  |
+|  4.2‑2                                                                                  | Replay CLI           | `flujodebug replay <run‑id>` steps forward/backward with state inspection. | **DX**  |
+|  4.2‑3                                                                                  | Hot‑Swap Step        | CLI flag to swap a Step impl and continue replay.                          | **DX**  |
+| **Exit Criteria:** Developers can deterministically replay and edit any production run. |                      |                                                                            |         |
 
----
+### Epic 4.3 — Policy & Compliance DSL
 
-### Epic 1.2 – Usage Governor (Cost & Token Limits)
+|  #                                                                               |  Story                |  Description                                          |  Owner  |
+| -------------------------------------------------------------------------------- | --------------------- | ----------------------------------------------------- | ------- |
+|  4.3‑1                                                                           | DSL Engine            | YAML/JSON schema for declaring PHI/PII rulesets.      | **FE**  |
+|  4.3‑2                                                                           | Pre‑built Packs       | Ship HIPAA & GDPR policy bundles.                     | **FE**  |
+|  4.3‑3                                                                           | Telemetry Integration | Violations surface as OTel spans and block execution. | **INF** |
+| **Exit Criteria:** Pipelines fail fast on policy violations without manual code. |                       |                                                       |         |
 
-\| Story | Description | Owner | Est. | Dep |
-\| 1.2‑1 | Design `UsageLimits` Pydantic model | FE | 1d | – |
-\| 1.2‑2 | Track cost & tokens inside `PipelineResult` | FE | 2d | 1.2‑1 |
-\| 1.2‑3 | Enforce limits with graceful early‑stop | FE | 2d | 1.2‑2 |
-\| 1.2‑4 | Add tests: limit breach, zero‑limit bypass | QA | 1d | 1.2‑3 |
-\| 1.2‑5 | Telemetry event + docs page | DX/TW | 1d | 1.2‑3 |
+### Epic 4.4 — Auto‑Eval → Auto‑Patch Loop
 
-**Exit Criteria:** Pipeline halts when `total_cost_usd_limit` or `total_tokens_limit` exceeded; telemetry shows `governor_breached` flag.
+|  #                                                                       |  Story            |  Description                                                |  Owner  |
+| ------------------------------------------------------------------------ | ----------------- | ----------------------------------------------------------- | ------- |
+|  4.4‑1                                                                   | Critique → Diff   | Convert LLM critique into structured Git patches.           | **FE**  |
+|  4.4‑2                                                                   | GitHub Bot        | Open PRs, assign reviewers, rerun CI on merge.              | **DX**  |
+|  4.4‑3                                                                   | Self‑Healing Demo | Showcase prompt that self‑patches after hallucination eval. | **DX**  |
+| **Exit Criteria:** A failing eval triggers a PR that passes once merged. |                   |                                                             |         |
 
----
+### Epic 4.5 — Multimodal & Multi‑Runtime Support
 
-### Epic 1.3 – Lifecycle Hooks & Callbacks
+|  #                                                                                                    |  Story              |  Description                                              |  Owner  |
+| ----------------------------------------------------------------------------------------------------- | ------------------- | --------------------------------------------------------- | ------- |
+|  4.5‑1                                                                                                | `MediaStep` Base    | Typed steps for images, audio, tables.                    | **FE**  |
+|  4.5‑2                                                                                                | Runtime Abstraction | Transparent dispatch to CPU, GPU, or serverless.          | **INF** |
+|  4.5‑3                                                                                                | Cross‑Modal Example | Vision‑language loop: caption image, answer follow‑up Qs. | **DX**  |
+| **Exit Criteria:** Users mix text & vision models in one DAG and deploy to Lambda *or* K8s unchanged. |                     |                                                           |         |
 
-\| Story | Description | Owner | Est. | Dep |
-\| 1.3‑1 | Specify hook interface & event payloads | FE | 2d | – |
-\| 1.3‑2 | Engine emits hooks; add callback registry | FE | 3d | 1.3‑1 |
-\| 1.3‑3 | Sample Splunk/Stdout logger plugin | DX | 1d | 1.3‑2 |
-\| 1.3‑4 | Cookbook article + API docs | TW | 1d | 1.3‑3 |
+### Epic 4.6 — Live Graph UI + IntelliSense
 
-**Exit Criteria:** Callback can log `pre_step_execution` for Default recipe; sample plugin demonstrates abort on custom condition.
+|  #                                                                                                                             |  Story                 |  Description                                                  |  Owner      |
+| ------------------------------------------------------------------------------------------------------------------------------ | ---------------------- | ------------------------------------------------------------- | ----------- |
+|  4.6‑1                                                                                                                         | Web Canvas MVP         | Visual pipeline editor; drag‑and‑drop nodes sync to DSL file. | **FE / DX** |
+|  4.6‑2                                                                                                                         | Type‑Aware Suggestions | Palette shows only type‑compatible Steps.                     | **FE**      |
+|  4.6‑3                                                                                                                         | Round‑Trip Fidelity    | Code ↔ UI updates remain perfectly in sync.                   | **DX**      |
+| **Exit Criteria:** A valid pipeline can be authored end‑to‑end without writing code, yet generates clean DSL committed to git. |                        |                                                               |             |
 
----
+### Epic 4.7 — Opinionated Ops Stack
 
-### Epic 1.4 – Benchmark & Regression Harness
-
-\| Story | Description | Owner | Est. |
-\| 1.4‑1 | Integrate `pytest‑benchmark`; baseline Default recipe | QA | 1d |
-\| 1.4‑2 | GH Action perf guard + README badge | INF | 1d |
-
-**Exit Criteria:** CI fails if runtime >20 % baseline; badge displays current ops/sec.
-
----
-
-## Phase 2 – Developer Delight & Compliance Foundations *(Sprints P4 – P6)*
-
-### Epic 2.1 – Agent Factories & Fluent Builder
-
-\| Story | Description | Owner | Est. |
-\| 2.1‑1 | Spec “role factories” (`CodeGenAgent`, `SQLAgent`, …) | DX | 2d |
-\| 2.1‑2 | Implement builder API (`AgentBuilder`) | FE | 3d |
-\| 2.1‑3 | Update quick‑start docs & tutorial notebook | TW | 1d |
-
-**Exit Criteria:** Users generate review‑validate pipeline in ≤10 LoC.
-
----
-
-### Epic 2.2 – Cookbook & Interactive Notebooks
-
-\| Story | Description | Owner | Est. |
-\| 2.2‑1 | Select 6 recipes (RAG, Iterative, Secure, etc.) | TW | 0.5d |
-\| 2.2‑2 | Write/convert to Jupyter; include unit test cells | DX | 4d |
-\| 2.2‑3 | Deploy docs site with nb‑render | INF | 1d |
-
-**Exit Criteria:** Docs traffic ↑20 % two weeks post‑release.
+|  #                                                                                                                        |  Story               |  Description                                                   |  Owner  |
+| ------------------------------------------------------------------------------------------------------------------------- | -------------------- | -------------------------------------------------------------- | ------- |
+|  4.7‑1                                                                                                                    | `flujodeploy init`   | Scaffold Helm/Kustomize charts, CI/CD, canary configs.         | **INF** |
+|  4.7‑2                                                                                                                    | Autoscaling Policies | Step‑level concurrency knobs + cost alerts shipped by default. | **INF** |
+|  4.7‑3                                                                                                                    | Grafana Dashboards   | Pre‑wired boards for latency, tokens, cost, policy events.     | **INF** |
+| **Exit Criteria:** A new project goes from `git clone` to production deployment in <30 min on any CNCF‑compliant cluster. |                      |                                                                |         |
 
 ---
 
-### Epic 2.3 – Compliance Plugin Packs
+### Roadmap Summary
 
-\| Story | Description | Owner | Est. |
-\| 2.3‑1 | Scaffold `flujo‑deidentifier` package | FE | 2d |
-\| 2.3‑2 | PII redaction plugin using DI secret regex service | FE | 3d |
-\| 2.3‑3 | HIPAA reference pipeline sample | DX | 1d |
-\| 2.3‑4 | Advanced audit plugin (`flujo‑audit`) | FE | 2d |
-\| 2.3‑5 | Integration tests with governor + hooks | QA | 1d |
+*Phases 1–3* make Flujo delightful, documented, scalable, and enterprise‑ready. *Phase 4* positions Flujo as the **only** framework that is statically safe, debuggable in time, policy‑aware, self‑healing, and multimodal—with a turnkey ops story to match.
 
-**Exit Criteria:** Running HIPAA pipeline passes unit PII scan script.
-
----
-
-### Epic 2.4 – Human‑in‑the‑Loop (HITL) Support
-
-\| Story | Description | Owner | Est. |
-\| 2.4‑1 | Implement `PauseForHumanInput` outcome | FE | 2d |
-\| 2.4‑2 | Serialize `PipelineResult` + context | FE | 2d |
-\| 2.4‑3 | Add `Flujo.resume_async` | FE | 1d |
-\| 2.4‑4 | FastAPI demo UI | DX | 2d |
-\| 2.4‑5 | Docs & tests | QA/TW | 1d |
-
-**Exit Criteria:** Demo pauses after validation step, resumes with human feedback, preserving cost tally.
-
----
-
-### Epic 2.5 – Community & Ecosystem Growth
-
-\| Story | Description | Owner | Est. |
-\| 2.5‑1 | Launch "Awesome‑Flujo" repo | DX | 0.5d |
-\| 2.5‑2 | Contributor guide upgrade, PR templates | DX | 0.5d |
-\| 2.5‑3 | Host first webinar | DOC | 0.5d |
-
-**Exit Criteria:** ≥10 external PRs in next quarter; stars +15 % MoM.
-
----
-
-## Phase 3 – Future‑Proof Orchestration *(Sprints P7 – P9)*
-
-### Epic 3.1 – Streaming Engine
-
-\| Story | Description | Owner | Est. |
-\| 3.1‑1 | Define `StreamingAgentProtocol` & `StreamingStep` | FE | 3d |
-\| 3.1‑2 | Engine async generator chaining + back‑pressure | FE | 4d |
-\| 3.1‑3 | Voice‑bot demo pipeline | DX | 2d |
-\| 3.1‑4 | Latency benchmarks + CI guard | QA | 1d |
-
-**Exit Criteria:** End‑to‑end latency <300 ms/token on local harness.
-
----
-
-### Epic 3.2 – Dynamic Pipeline Mutation (Experimental)
-
-\| Story | Description | Owner | Est. |
-\| 3.2‑1 | Design `PipelineMutation` spec & safety rails | FE | 2d |
-\| 3.2‑2 | Engine support behind `--experimental` flag | FE | 3d |
-\| 3.2‑3 | Tutorial notebook (adaptive SQL fixer) | DX | 1d |
-
-**Exit Criteria:** Feature flagged; infinite‑loop guard passes fuzz tests.
-
----
-
-### Epic 3.3 – Pluggable Execution Back‑Ends
-
-\| Story | Description | Owner | Est. |
-\| 3.3‑1 | Define `ExecutionBackend` protocol | FE | 2d |
-\| 3.3‑2 | Implement `LocalBackend` (default) | FE | 1d |
-\| 3.3‑3 | Implement `LambdaBackend` PoC with cloudpickle | INF | 3d |
-\| 3.3‑4 | CI integration test: 100 parallel lambda runs | QA | 2d |
-\| 3.3‑5 | Serialization security review | FE | 1d |
-
-**Exit Criteria:** PoC processes 100 parallel jobs <5 min; docs & sample repo.
-
----
-
-## Cross‑Cutting Initiatives (run parallel)
-
-| Initiative                  | Key Deliverables                                                    | Owner |
-| --------------------------- | ------------------------------------------------------------------- | ----- |
-| **Security & Supply‑Chain** | SBOM via CycloneDX, SLSA provenance, secret‑scrubbed logs           | INF   |
-| **Versioning & Migration**  | Adopt SemVer+LTS branches, automated changelog via `release‑please` | DX    |
-| **Performance Dashboard**   | Public Grafana Cloud board fed by CI benchmarks                     | INF   |
-
----
-
-## Appendix A – Glossary
-
-`DI` – Dependency Injection • `ADR` – Architecture Decision Record • `PII` – Personally Identifiable Information • `HITL` – Human‑in‑the‑Loop
-
----
-
-### Next Steps
-
-1. Product leads validate estimates & sprint placement.
-2. Create matching Jira Epics & Stories with IDs above.
-3. Kick‑off Sprint P1 with Epics 1.1 & 1.2 in parallel.
-
----
-
-*End of document*
+| # | Story | Description | Owner |
+\|---
