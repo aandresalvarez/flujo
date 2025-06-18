@@ -73,12 +73,10 @@ def _format_step_output(
     step_obj = _find_step(pipeline_definition, step.name)
     if step_obj is not None:
         cfg = step_obj.config
-        temp_str = (
-            f", temperature={cfg.temperature}" if cfg.temperature is not None else ""
-        )
-        lines.append(
-            f"  Config(retries={cfg.max_retries}, timeout={cfg.timeout_s}s{temp_str})"
-        )
+        parts = [f"retries={cfg.max_retries}", f"timeout={cfg.timeout_s}s"]
+        if cfg.temperature is not None:
+            parts.append(f"temperature={cfg.temperature}")
+        lines.append(f"  Config({', '.join(parts)})")
         if step_obj.agent is not None:
             summary = summarize_and_redact_prompt(step_obj.agent.system_prompt)
             lines.append(f'  SystemPromptSummary: "{summary}"')

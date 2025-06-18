@@ -506,8 +506,7 @@ async def _run_step_logic(
         if resources is not None:
             agent_kwargs["resources"] = resources
         if step.config.temperature is not None:
-            if _agent_accepts_param(current_agent, "temperature"):
-                agent_kwargs["temperature"] = step.config.temperature
+            agent_kwargs["temperature"] = step.config.temperature
         raw_output = await current_agent.run(data, **agent_kwargs)
         result.latency_s += time.monotonic() - start
         last_raw_output = raw_output
@@ -780,9 +779,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
                                 target.stream, "resources"
                             ):
                                 agent_kwargs["resources"] = self.resources
-                            if step.config.temperature is not None and _accepts_param(
-                                target.stream, "temperature"
-                            ):
+                            if step.config.temperature is not None:
                                 agent_kwargs["temperature"] = step.config.temperature
                             chunks: list[Any] = []
                             start = time.monotonic()
