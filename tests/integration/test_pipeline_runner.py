@@ -143,3 +143,37 @@ async def test_runner_unpacks_agent_result() -> None:
     assert plugin.data["output"] == "ok"
     assert history.token_counts == 2
     assert result.total_cost_usd == 0.1
+
+
+async def test_step_config_temperature_passed() -> None:
+    class CaptureAgent:
+        def __init__(self):
+            self.kwargs: dict[str, Any] | None = None
+
+        async def run(self, data: Any, **kwargs: Any) -> str:
+            self.kwargs = kwargs
+            return "ok"
+
+    agent = CaptureAgent()
+    step = Step("s", agent, temperature=0.3)
+    runner = Flujo(step)
+    await gather_result(runner, "in")
+    assert agent.kwargs is not None
+    assert agent.kwargs.get("temperature") == 0.3
+
+
+async def test_step_config_temperature_omitted() -> None:
+    class CaptureAgent:
+        def __init__(self):
+            self.kwargs: dict[str, Any] | None = None
+
+        async def run(self, data: Any, **kwargs: Any) -> str:
+            self.kwargs = kwargs
+            return "ok"
+
+    agent = CaptureAgent()
+    step = Step("s", agent)
+    runner = Flujo(step)
+    await gather_result(runner, "in")
+    assert agent.kwargs is not None
+    assert "temperature" not in agent.kwargs

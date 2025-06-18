@@ -31,3 +31,24 @@ def test_improvement_models_validation() -> None:
         assert isinstance(e, Exception)
     else:
         assert False, "Validation should fail"
+
+
+def test_improvement_models_config_and_new_case() -> None:
+    suggestion = ImprovementSuggestion(
+        suggestion_type=SuggestionType.CONFIG_ADJUSTMENT,
+        failure_pattern_summary="f",
+        detailed_explanation="d",
+        config_change_details=[
+            {
+                "parameter_name": "temperature",
+                "suggested_value": "0.1",
+                "reasoning": "more deterministic",
+            }
+        ],
+        suggested_new_eval_case_description="Add join query case",
+    )
+    report = ImprovementReport(suggestions=[suggestion])
+    dumped = report.model_dump()
+    loaded = ImprovementReport.model_validate(dumped)
+    assert loaded.suggestions[0].config_change_details is not None
+    assert loaded.suggestions[0].suggested_new_eval_case_description == "Add join query case"
