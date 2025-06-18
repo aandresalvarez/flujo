@@ -83,9 +83,7 @@ def test_get_reflection_agent_disabled(monkeypatch) -> None:
     import importlib
     import flujo.infra.agents as agents_mod
 
-    monkeypatch.setattr(
-        "flujo.infra.settings.settings.reflection_enabled", False
-    )
+    monkeypatch.setattr("flujo.infra.settings.settings.reflection_enabled", False)
     importlib.reload(agents_mod)
     agent = agents_mod.get_reflection_agent()
     assert agent.__class__.__name__ == "NoOpReflectionAgent"
@@ -93,9 +91,7 @@ def test_get_reflection_agent_disabled(monkeypatch) -> None:
 
 def test_get_reflection_agent_creation_failure(monkeypatch) -> None:
     monkeypatch.setattr("flujo.infra.settings.settings.reflection_enabled", True)
-    with patch(
-        "flujo.infra.agents.make_agent_async", side_effect=Exception("fail")
-    ):
+    with patch("flujo.infra.agents.make_agent_async", side_effect=Exception("fail")):
         agent = get_reflection_agent()
         assert agent.__class__.__name__ == "NoOpReflectionAgent"
 
@@ -200,16 +196,14 @@ def test_async_agent_wrapper_with_dummy_agent() -> None:
     class DummyAgent:
         async def run(self, *args, **kwargs):
             return "dummy"
+
     wrapper = AsyncAgentWrapper(DummyAgent())
     assert isinstance(wrapper, AsyncAgentWrapper)
 
 
 def test_async_agent_wrapper_init_valid_args(mock_pydantic_ai_agent: MagicMock) -> None:
     wrapper = AsyncAgentWrapper(
-        agent=mock_pydantic_ai_agent,
-        max_retries=5,
-        timeout=10,
-        model_name="custom_test_model"
+        agent=mock_pydantic_ai_agent, max_retries=5, timeout=10, model_name="custom_test_model"
     )
     assert wrapper._max_retries == 5
     assert wrapper._timeout_seconds == 10
@@ -222,12 +216,16 @@ def test_async_agent_wrapper_init_default_timeout(mock_pydantic_ai_agent: MagicM
     assert wrapper._timeout_seconds == settings.agent_timeout
 
 
-def test_async_agent_wrapper_init_invalid_max_retries_type(mock_pydantic_ai_agent: MagicMock) -> None:
+def test_async_agent_wrapper_init_invalid_max_retries_type(
+    mock_pydantic_ai_agent: MagicMock,
+) -> None:
     with pytest.raises(TypeError, match="max_retries must be an integer"):
         AsyncAgentWrapper(agent=mock_pydantic_ai_agent, max_retries="not_an_int")
 
 
-def test_async_agent_wrapper_init_negative_max_retries_value(mock_pydantic_ai_agent: MagicMock) -> None:
+def test_async_agent_wrapper_init_negative_max_retries_value(
+    mock_pydantic_ai_agent: MagicMock,
+) -> None:
     with pytest.raises(ValueError, match="max_retries must be a non-negative integer"):
         AsyncAgentWrapper(agent=mock_pydantic_ai_agent, max_retries=-1)
 
@@ -237,7 +235,9 @@ def test_async_agent_wrapper_init_invalid_timeout_type(mock_pydantic_ai_agent: M
         AsyncAgentWrapper(agent=mock_pydantic_ai_agent, timeout="not_an_int")
 
 
-def test_async_agent_wrapper_init_non_positive_timeout_value(mock_pydantic_ai_agent: MagicMock) -> None:
+def test_async_agent_wrapper_init_non_positive_timeout_value(
+    mock_pydantic_ai_agent: MagicMock,
+) -> None:
     with pytest.raises(ValueError, match="timeout must be a positive integer if specified"):
         AsyncAgentWrapper(agent=mock_pydantic_ai_agent, timeout=0)
     with pytest.raises(ValueError, match="timeout must be a positive integer if specified"):
@@ -249,6 +249,7 @@ async def test_async_agent_wrapper_runtime_timeout(mock_pydantic_ai_agent: Magic
     async def slow_run(*args, **kwargs):
         await asyncio.sleep(2)
         return "should_not_reach_here"
+
     mock_pydantic_ai_agent.run = AsyncMock(side_effect=slow_run)
     wrapper = AsyncAgentWrapper(agent=mock_pydantic_ai_agent, timeout=1, max_retries=1)
     with pytest.raises(OrchestratorRetryError) as exc_info:

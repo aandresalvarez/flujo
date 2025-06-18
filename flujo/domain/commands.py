@@ -3,7 +3,9 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Literal, Union
 
-from pydantic import BaseModel, Field
+from flujo.domain.models import BaseModel, PipelineContext
+from pydantic import Field, ConfigDict
+from typing import ClassVar
 
 
 class RunAgentCommand(BaseModel):
@@ -47,4 +49,8 @@ class ExecutedCommandLog(BaseModel):
     execution_result: Any
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-    model_config = {"arbitrary_types_allowed": True}
+    model_config: ClassVar[ConfigDict] = {"arbitrary_types_allowed": True}
+
+
+# Resolve forward references in PipelineContext now that ExecutedCommandLog is defined
+PipelineContext.model_rebuild()

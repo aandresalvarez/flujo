@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 from typing import Protocol, runtime_checkable, Any
-from pydantic import BaseModel
+from flujo.domain.models import BaseModel
+from pydantic import ConfigDict
+from typing import ClassVar
 
 
 class PluginOutcome(BaseModel):
     """Result returned by a validation plugin."""
 
-    model_config = {"arbitrary_types_allowed": True}
+    model_config: ClassVar[ConfigDict] = {"arbitrary_types_allowed": True}
 
     success: bool
     feedback: str | None = None

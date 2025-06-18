@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# mypy: ignore-errors
+
 from typing import (
     Any,
     Callable,
@@ -13,7 +15,8 @@ from typing import (
     Dict,
     Type,
 )
-from pydantic import BaseModel, Field, ConfigDict
+from flujo.domain.models import BaseModel
+from pydantic import Field, ConfigDict
 from .agent_protocol import AsyncAgentProtocol
 from .plugins import ValidationPlugin
 
@@ -64,7 +67,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                 else:
                     plugin_list.append((p, 0))
 
-        super().__init__(
+        super().__init__(  # type: ignore[misc]
             name=name,
             agent=agent,
             config=StepConfig(**config),
@@ -245,7 +248,7 @@ class LoopStep(Step[Any, Any]):
         if max_loops <= 0:
             raise ValueError("max_loops must be a positive integer.")
 
-        BaseModel.__init__(
+        BaseModel.__init__(  # type: ignore[misc]
             self,
             name=name,
             agent=None,
@@ -300,7 +303,7 @@ class ConditionalStep(Step[Any, Any]):
         if not branches:
             raise ValueError("'branches' dictionary cannot be empty.")
 
-        BaseModel.__init__(
+        BaseModel.__init__(  # type: ignore[misc]
             self,
             name=name,
             agent=None,

@@ -46,37 +46,33 @@ python --version                    # should print 3.11.x
 
 ## 2. Development Environment Setup
 
-The project supports multiple package managers. Choose your preferred one:
+### Local Development Workflow
 
-### Option A: Poetry (Recommended)
-```bash
-# Install Poetry
-pip install --upgrade poetry
+1. **Install Hatch:**
+   ```bash
+   pip install hatch
+   ```
 
-# Install dependencies (includes runtime, dev, docs, and bench extras)
-make poetry-dev
-```
+2. **Create Environment & Install Dependencies:**
+   ```bash
+   make install
+   # or
+   hatch env create
+   ```
 
-### Option B: UV (Fastest)
-```bash
-# Install UV
-pip install --upgrade uv
+3. **Run Quality Checks:**
+   ```bash
+   make quality
+   # or
+   hatch run quality
+   ```
 
-# Install dependencies
-make uv-dev
-```
-
-### Option C: Standard pip
-```bash
-# Install dependencies
-make pip-dev
-```
-
-> **Important Notes:**
-> - All options install the package in editable mode (`-e`)
-> - Code changes are picked up instantly without reinstalling
-> - `poetry.lock` is tracked in git for reproducible builds
-> - Run `make help` to see all available commands
+4. **Run Tests:**
+   ```bash
+   make test
+   # or
+   hatch run test
+   ```
 
 ---
 
@@ -99,38 +95,31 @@ The orchestrator automatically loads this file via **python-dotenv**.
 
 ## 4. Testing
 
-The project includes comprehensive tests with different runners:
+The project includes comprehensive tests:
 
 ### Full Test Suite
 ```bash
-# With Poetry
-make poetry-test                    # includes coverage report
-make poetry-test-fast              # without coverage
-
-# With UV (fastest)
-make uv-test                       # includes coverage
-make uv-test-fast                 # without coverage
-
-# With pip (default)
-make test                         # includes coverage
-make test-fast                    # without coverage
+make test       # includes coverage
+make test-fast  # without coverage
 ```
 
 ### Specific Test Types
 ```bash
-# Unit Tests
-make test-unit                    # or poetry-test-unit / uv-test-unit
-
-# End-to-End Tests
-make test-e2e                     # or poetry-test-e2e / uv-test-e2e
-
-# Benchmark Tests
-make test-bench                   # or poetry-test-bench / uv-test-bench
+make test-unit
+make test-e2e
+make test-bench
 ```
 Run the benchmark suite to measure the framework's internal overhead and catch
 performance regressions introduced by new code.
 
 > **Note:** Async tests are handled automatically by **pytest-asyncio**
+
+### Property-Based Testing
+
+We use `Hypothesis` for property-based testing to uncover edge cases. When adding
+new utilities or models, consider writing property-based tests.
+
+You can see examples in `tests/unit/test_utils_properties.py`.
 
 ---
 
@@ -138,22 +127,25 @@ performance regressions introduced by new code.
 
 ### All-in-One Quality Check
 ```bash
-make quality                      # runs all quality checks
+make quality  # runs formatting, lint, type check and security scan
 ```
 
 ### Individual Quality Checks
 ```bash
-# Code Style
-make lint                        # check with Ruff
-make format                      # format code
-make format-check               # check formatting (CI)
-
-# Type Safety
-make type-check                 # static type checking with MyPy
-
-# Security
-make security                   # vulnerability check with pip-audit
+make lint        # Ruff linting
+make format      # autoformat code
+make type-check  # MyPy type checking
 ```
+
+### Security Checks
+
+We use `Bandit` to perform static analysis security scanning. Run it before submitting a pull request:
+
+```bash
+make bandit
+```
+
+The CI pipeline will fail if any high-confidence issues are detected.
 
 ---
 

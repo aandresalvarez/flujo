@@ -43,9 +43,7 @@ class TestContext(BaseModel):
 
 
 class IncrementAgent:
-    async def run(
-        self, data: str, *, pipeline_context: TestContext | None = None
-    ) -> str:
+    async def run(self, data: str, *, pipeline_context: TestContext | None = None) -> str:
         if pipeline_context:
             pipeline_context.counter += 1
         return data

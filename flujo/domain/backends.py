@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol, Any, Dict, Optional
 from dataclasses import dataclass
-from pydantic import BaseModel
+from flujo.domain.models import BaseModel
 
 from .pipeline_dsl import Step
 from .models import StepResult, UsageLimits

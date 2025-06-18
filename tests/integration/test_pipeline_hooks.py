@@ -30,9 +30,7 @@ def call_recorder() -> List[Dict[str, Any]]:
     return []
 
 
-async def generic_recorder_hook(
-    call_recorder: List[Dict[str, Any]], **kwargs: Any
-) -> None:
+async def generic_recorder_hook(call_recorder: List[Dict[str, Any]], **kwargs: Any) -> None:
     call_recorder.append(
         {
             "event": kwargs.get("event_name"),
@@ -89,9 +87,7 @@ async def test_on_step_failure_hook_is_called(
     call_recorder: List[Dict[str, Any]],
 ) -> None:
     failing_plugin = DummyPlugin([PluginOutcome(success=False)])
-    pipeline = Step(
-        "s1", agent=cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok"]))
-    ) >> Step(
+    pipeline = Step("s1", agent=cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok"]))) >> Step(
         "s2",
         agent=cast(AsyncAgentProtocol[Any, Any], StubAgent(["bad"])),
         plugins=[failing_plugin],

@@ -476,8 +476,7 @@ async def test_conditional_step_error_logging_in_callables(monkeypatch) -> None:
     step = Step.branch_on(
         name="cond_err",
         condition_callable=bad_condition,
-        branches={"a": Pipeline.from_step(Step("a", StubAgent(["A"])))}
+        branches={"a": Pipeline.from_step(Step("a", StubAgent(["A"])))},
     )
     await gather_result(Flujo(step), "in")
     assert any("cond boom" in m for m in errors)
-

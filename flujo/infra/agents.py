@@ -10,7 +10,7 @@ from typing import (
     Generic,
 )
 from pydantic_ai import Agent
-from pydantic import BaseModel
+from pydantic import BaseModel as PydanticBaseModel
 import os
 from flujo.infra.settings import settings
 from flujo.domain.models import Checklist
@@ -222,9 +222,11 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
         # internal function-calling message generation, not Pydantic model
         # instances. We automatically serialize any BaseModel inputs here to
         # ensure compatibility.
-        processed_args = [arg.model_dump() if isinstance(arg, BaseModel) else arg for arg in args]
+        processed_args = [
+            arg.model_dump() if isinstance(arg, PydanticBaseModel) else arg for arg in args
+        ]
         processed_kwargs = {
-            key: value.model_dump() if isinstance(value, BaseModel) else value
+            key: value.model_dump() if isinstance(value, PydanticBaseModel) else value
             for key, value in kwargs.items()
         }
 

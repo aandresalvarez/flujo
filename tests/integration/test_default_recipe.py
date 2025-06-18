@@ -5,6 +5,7 @@ This test verifies that the `Default` recipe correctly uses the `Flujo` engine
 and a `Typed Pipeline Context` to manage the data flow between agents,
 ensuring each agent receives the appropriate inputs.
 """
+
 import pytest
 import json
 from unittest.mock import AsyncMock, patch
@@ -29,9 +30,7 @@ def mock_agents() -> dict[str, AsyncMock]:
     # The validator agent returns the checklist, simulating it has been filled out.
     validator_agent = AsyncMock()
     validator_agent.run = AsyncMock(
-        return_value=Checklist(
-            items=[ChecklistItem(description="item 1", passed=True)]
-        )
+        return_value=Checklist(items=[ChecklistItem(description="item 1", passed=True)])
     )
     reflection_agent = AsyncMock()
     reflection_agent.run = AsyncMock(return_value="Reflection complete.")
@@ -57,7 +56,9 @@ async def test_default_recipe_data_flow(mock_agents: dict[str, AsyncMock]):
     task = Task(prompt="Test prompt")
 
     # Patch the `run_async` method of the internal Flujo engine to inspect its inputs.
-    with patch.object(orch.flujo_engine, "run_async", wraps=orch.flujo_engine.run_async) as mock_flujo_run:
+    with patch.object(
+        orch.flujo_engine, "run_async", wraps=orch.flujo_engine.run_async
+    ) as mock_flujo_run:
         result = await orch.run_async(task)
         mock_flujo_run.assert_called_once()
         call_args = mock_flujo_run.call_args
