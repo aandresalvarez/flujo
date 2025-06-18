@@ -78,9 +78,7 @@ def _format_step_output(
             parts.append(f"temperature={cfg.temperature}")
         lines.append(f"  Config({', '.join(parts)})")
         if step_obj.agent is not None:
-            summary = summarize_and_redact_prompt(
-                getattr(step_obj.agent, "system_prompt", "")
-            )
+            summary = summarize_and_redact_prompt(getattr(step_obj.agent, "system_prompt", ""))
             lines.append(f'  SystemPromptSummary: "{summary}"')
     return lines
 
