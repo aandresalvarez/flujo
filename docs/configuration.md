@@ -133,8 +133,8 @@ pipeline = (
     Step.review(review_agent, timeout=30)  # 30-second timeout
     >> Step.solution(
         solution_agent,
-        retries=3,  # Number of retries
-        backoff_factor=2  # Exponential backoff
+        retries=3,            # Number of retries
+        temperature=0.7,      # Control randomness
     )
     >> Step.validate(validator_agent)
 )
@@ -194,7 +194,7 @@ tool = Tool(
     my_tool,
     timeout=10,  # Tool timeout
     retries=2,   # Number of retries
-    backoff_factor=1.5  # Backoff between retries
+    backoff_factor=1.5,  # Backoff between retries
 )
 ```
 

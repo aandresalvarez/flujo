@@ -68,7 +68,7 @@ Example snippet of the context:
 ```
 Case: test_sql_error
 - GenerateSQL: Output(content="SELEC * FROM t") (success=True)
-  Config(retries=1, timeout=30s)
+  Config(retries=1, timeout=30s, temperature=0.7)
   SystemPromptSummary: "You are a SQL expert..."
 ```
 

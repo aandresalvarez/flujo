@@ -66,7 +66,7 @@ async def test_self_improvement_context_includes_config_and_prompts(monkeypatch)
 
     agent = StubAgent(["ok"])
     agent.system_prompt = "Test prompt"
-    pipeline = Step.solution(agent, max_retries=5, timeout_s=30)
+    pipeline = Step.solution(agent, max_retries=5, timeout_s=30, temperature=0.5)
     runner = Flujo(pipeline)
     dataset = Dataset(cases=[Case(inputs="i", expected_output="o")])
 
@@ -78,4 +78,6 @@ async def test_self_improvement_context_includes_config_and_prompts(monkeypatch)
     )
 
     assert "Config(retries=5" in captured["prompt"]
+    assert "timeout=30.0s" in captured["prompt"]
+    assert "temperature=0.5" in captured["prompt"]
     assert "SystemPromptSummary" in captured["prompt"]
