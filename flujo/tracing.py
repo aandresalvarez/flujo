@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Literal
+from typing import Any, Callable, Dict, Literal, Optional, cast
 
 from rich.console import Console
 from rich.panel import Panel
@@ -24,9 +24,7 @@ class ConsoleTracer:
         self.log_inputs = log_inputs
         self.log_outputs = log_outputs
         self.console = (
-            Console(highlight=False)
-            if colorized
-            else Console(no_color=True, highlight=False)
+            Console(highlight=False) if colorized else Console(no_color=True, highlight=False)
         )
         self.event_handlers: Dict[str, Callable[..., Any]] = {
             "pre_run": self._handle_pre_run,
@@ -90,10 +88,11 @@ class ConsoleTracer:
         self.console.print(Panel(details, title=title, border_style="bold red"))
 
     async def hook(self, **kwargs: Any) -> None:
-        event = kwargs.get("event_name")
-        handler = self.event_handlers.get(event)
+        event = cast(Optional[str], kwargs.get("event_name"))
+        handler = self.event_handlers.get(event) if event is not None else None
         if handler:
             import inspect
+
             if inspect.iscoroutinefunction(handler):
                 await handler(**kwargs)
             else:
