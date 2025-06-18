@@ -28,6 +28,7 @@ async def test_tracer_outputs_info_level(capsys: pytest.CaptureFixture[str]) -> 
     runner = Flujo(step, local_tracer="default")
     await gather_result(runner, "in")
     captured = capsys.readouterr().out
+    assert "Pipeline Start" in captured
     assert "Step Start" in captured
     assert "Status" in captured
 
@@ -39,4 +40,5 @@ async def test_tracer_outputs_debug_level(capsys: pytest.CaptureFixture[str]) ->
     runner = Flujo(step, local_tracer=tracer)
     await gather_result(runner, "in")
     captured = capsys.readouterr().out
+    assert "Pipeline Start" in captured
     assert "Output" in captured
