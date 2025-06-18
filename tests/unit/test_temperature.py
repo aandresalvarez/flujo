@@ -14,6 +14,7 @@ def test_temp_schedule_from_settings(monkeypatch) -> None:
     assert temp_for_round(1) == 0.1
     assert temp_for_round(2) == 0.1
 
+
 def test_temperature(monkeypatch) -> None:
     # Set t_schedule explicitly for this test
     monkeypatch.setattr(settings, "t_schedule", [0.1, 0.1, 0.1])

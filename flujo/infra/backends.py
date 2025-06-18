@@ -7,8 +7,7 @@ from ..domain.resources import AppResources
 
 from ..domain.backends import ExecutionBackend, StepExecutionRequest
 from ..domain.agent_protocol import AsyncAgentProtocol
-from pydantic import BaseModel
-from ..domain.models import StepResult
+from ..domain.models import StepResult, BaseModel
 from ..application.flujo_engine import _run_step_logic
 
 

@@ -45,6 +45,7 @@ dependencies = [
   "logfire>=0.3",
   "sqlvalidator>=0.0.8",
   "pydantic-evals>=0.0.47", # Added for Intelligent Evals
+  "orjson>=3.9.0",
 ]
 
 # Optional dependency groups (install with: `pip install .[dev]`, etc.)
@@ -62,6 +63,8 @@ dev = [
   "build",     # Added for package building
   "twine",     # Added for package uploading
   "pytest-benchmark>=4.0.0",
+  "bandit>=1.7.5",
+  "cyclonedx-python-lib>=5.2.0",
 ]
 docs = [
     "mkdocs",
@@ -101,7 +104,7 @@ exclude = [
 
 # Allow third-party libraries that do not ship type information.
 [[tool.mypy.overrides]]
-module = ["yaml", "sqlvalidator", "vcr"]
+module = ["yaml", "sqlvalidator", "vcr", "orjson"]
 ignore_missing_imports = true
 
 [tool.ruff]
@@ -132,7 +135,34 @@ include = [
     "pyproject.toml",
 ]
 
+
 [tool.hatch.build.targets.wheel.shared-data]
 "README.md" = "share/doc/flujo/README.md"
 "LICENSE" = "share/doc/flujo/LICENSE"
 "CHANGELOG.md" = "share/doc/flujo/CHANGELOG.md"
+
+[tool.hatch.envs.default]
+features = ["dev"]
+
+[tool.hatch.envs.default.scripts]
+lint = "ruff check flujo tests"
+format = "ruff format flujo tests"
+type-check = "mypy flujo"
+test = "pytest {args}"
+cov = "pytest --cov=flujo --cov-report=term-missing {args}"
+bandit-check = "bandit -c pyproject.toml -r flujo -s B101,B404,B603 --exit-zero"
+cyclonedx = [
+  "cyclonedx-py",
+  "--format",
+  "json",
+  "--output",
+  "sbom.json",
+]
+
+# Composite script for all quality checks
+quality = [
+  "format",
+  "lint",
+  "type-check",
+  "bandit-check",
+]

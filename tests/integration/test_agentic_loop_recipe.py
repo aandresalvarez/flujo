@@ -14,10 +14,12 @@ from flujo.domain.models import PipelineContext
 
 @pytest.mark.asyncio
 async def test_agent_delegation_and_finish() -> None:
-    planner = StubAgent([
-        RunAgentCommand(agent_name="summarizer", input_data="hi"),
-        FinishCommand(final_answer="done"),
-    ])
+    planner = StubAgent(
+        [
+            RunAgentCommand(agent_name="summarizer", input_data="hi"),
+            FinishCommand(final_answer="done"),
+        ]
+    )
     summarizer = AsyncMock()
     summarizer.run = AsyncMock(return_value="summary")
     loop = AgenticLoop(planner, {"summarizer": summarizer})
@@ -33,10 +35,12 @@ async def test_agent_delegation_and_finish() -> None:
 
 @pytest.mark.asyncio
 async def test_pause_and_resume_in_loop() -> None:
-    planner = StubAgent([
-        AskHumanCommand(question="Need input"),
-        FinishCommand(final_answer="ok"),
-    ])
+    planner = StubAgent(
+        [
+            AskHumanCommand(question="Need input"),
+            FinishCommand(final_answer="ok"),
+        ]
+    )
     loop = AgenticLoop(planner, {})
     paused = await loop.run_async("goal")
     ctx = paused.final_pipeline_context
@@ -47,10 +51,12 @@ async def test_pause_and_resume_in_loop() -> None:
 
 
 def test_sync_resume() -> None:
-    planner = StubAgent([
-        AskHumanCommand(question="Need input"),
-        FinishCommand(final_answer="ok"),
-    ])
+    planner = StubAgent(
+        [
+            AskHumanCommand(question="Need input"),
+            FinishCommand(final_answer="ok"),
+        ]
+    )
     loop = AgenticLoop(planner, {})
     paused = loop.run("goal")
     resumed = loop.resume(paused, "human")
@@ -70,10 +76,12 @@ async def test_max_loops_failure() -> None:
 
 @pytest.mark.asyncio
 async def test_run_python_safe() -> None:
-    planner = StubAgent([
-        RunPythonCodeCommand(code="result = 1 + 1"),
-        FinishCommand(final_answer="done"),
-    ])
+    planner = StubAgent(
+        [
+            RunPythonCodeCommand(code="result = 1 + 1"),
+            FinishCommand(final_answer="done"),
+        ]
+    )
     loop = AgenticLoop(planner, {})
     result = await loop.run_async("goal")
     ctx = result.final_pipeline_context
@@ -82,12 +90,13 @@ async def test_run_python_safe() -> None:
 
 @pytest.mark.asyncio
 async def test_run_python_rejects_imports() -> None:
-    planner = StubAgent([
-        RunPythonCodeCommand(code="import os\nresult = 42"),
-        FinishCommand(final_answer="done"),
-    ])
+    planner = StubAgent(
+        [
+            RunPythonCodeCommand(code="import os\nresult = 42"),
+            FinishCommand(final_answer="done"),
+        ]
+    )
     loop = AgenticLoop(planner, {})
     result = await loop.run_async("goal")
     log_entry = result.final_pipeline_context.command_log[0]
     assert "Imports are not allowed" in str(log_entry.execution_result)
-

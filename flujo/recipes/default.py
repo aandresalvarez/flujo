@@ -6,7 +6,7 @@ import asyncio
 import json
 from typing import Any, Optional, cast, TYPE_CHECKING
 
-from pydantic import BaseModel
+from flujo.domain.models import BaseModel
 
 if TYPE_CHECKING:  # pragma: no cover - used for typing only
     from ..infra.agents import AsyncAgentProtocol

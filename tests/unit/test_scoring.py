@@ -118,6 +118,7 @@ def test_reward_scorer_init_failure(monkeypatch) -> None:
     # Mock Agent to raise RewardModelUnavailable
     def agent_side_effect(*args, **kwargs):
         raise RewardModelUnavailable("OpenAI API key is required for RewardScorer.")
+
     monkeypatch.setattr("flujo.domain.scoring.Agent", Mock(side_effect=agent_side_effect))
 
     with pytest.raises(RewardModelUnavailable):

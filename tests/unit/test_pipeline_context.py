@@ -69,7 +69,9 @@ async def test_context_initialization_and_access() -> None:
 
 @pytest.mark.asyncio
 async def test_context_initialization_failure() -> None:
-    runner = Flujo(Step("s", CaptureAgent()), context_model=Ctx, initial_context_data={"num": "bad"})
+    runner = Flujo(
+        Step("s", CaptureAgent()), context_model=Ctx, initial_context_data={"num": "bad"}
+    )
     with pytest.raises(PipelineContextInitializationError):
         await gather_result(runner, "in")
 
@@ -98,7 +100,9 @@ async def test_plugin_receives_context_and_strict_plugin_errors() -> None:
     ctx_plugin = ContextPlugin()
     kwargs_plugin = KwargsPlugin()
     strict_plugin = StrictPlugin()
-    step = Step("s", CaptureAgent(), plugins=[(ctx_plugin, 0), (kwargs_plugin, 0), (strict_plugin, 0)])
+    step = Step(
+        "s", CaptureAgent(), plugins=[(ctx_plugin, 0), (kwargs_plugin, 0), (strict_plugin, 0)]
+    )
     runner = Flujo(step, context_model=Ctx)
     with pytest.raises(TypeError):
         await gather_result(runner, "in")

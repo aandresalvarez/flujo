@@ -48,9 +48,7 @@ def test_cli_solve_happy_path(monkeypatch) -> None:
         return DummyCandidate()
 
     monkeypatch.setattr("flujo.cli.main.Default.run_sync", dummy_run_sync)
-    monkeypatch.setattr(
-        "flujo.cli.main.make_agent_async", lambda *a, **k: object()
-    )
+    monkeypatch.setattr("flujo.cli.main.make_agent_async", lambda *a, **k: object())
     from flujo.cli.main import app
 
     result = runner.invoke(app, ["solve", "write a poem"])
@@ -67,9 +65,7 @@ def test_cli_solve_custom_models(monkeypatch) -> None:
         return DummyCandidate()
 
     monkeypatch.setattr("flujo.cli.main.Default.run_sync", dummy_run_sync)
-    monkeypatch.setattr(
-        "flujo.cli.main.make_agent_async", lambda *a, **k: object()
-    )
+    monkeypatch.setattr("flujo.cli.main.make_agent_async", lambda *a, **k: object())
     result = runner.invoke(app, ["solve", "write", "--solution-model", "gemini:gemini-1.5-pro"])
     assert result.exit_code == 0
 
@@ -87,9 +83,7 @@ def test_cli_bench_command(monkeypatch) -> None:
         return DummyCandidate()
 
     monkeypatch.setattr("flujo.cli.main.Default.run_sync", dummy_run_sync)
-    monkeypatch.setattr(
-        "flujo.cli.main.make_agent_async", lambda *a, **k: object()
-    )
+    monkeypatch.setattr("flujo.cli.main.make_agent_async", lambda *a, **k: object())
     from flujo.cli.main import app
 
     result = runner.invoke(app, ["bench", "test prompt", "--rounds", "2"])
@@ -124,6 +118,7 @@ def test_cli_solve_with_weights(monkeypatch) -> None:
 
     class DummyCandidate:
         score = 1.0
+
         def model_dump(self):
             return {"solution": "mocked", "score": self.score}
 
@@ -134,20 +129,21 @@ def test_cli_solve_with_weights(monkeypatch) -> None:
     with patch("flujo.cli.main.Default") as MockDefault:
         # Create a mock instance with a proper run_sync method
         mock_instance = MagicMock()
+
         async def mock_run_async(task: Task) -> DummyCandidate:
             assert isinstance(task, Task)
             assert task.prompt == "write a poem"
             assert task.metadata.get("weights") is not None
             return DummyCandidate()
+
         mock_instance.run_async = mock_run_async
-        mock_instance.run_sync = MagicMock(side_effect=lambda task: asyncio.run(mock_run_async(task)))
+        mock_instance.run_sync = MagicMock(
+            side_effect=lambda task: asyncio.run(mock_run_async(task))
+        )
         MockDefault.return_value = mock_instance
 
         # Patch make_agent_async to return our mock agent
-        monkeypatch.setattr(
-            "flujo.cli.main.make_agent_async",
-            lambda *a, **k: mock_agent
-        )
+        monkeypatch.setattr("flujo.cli.main.make_agent_async", lambda *a, **k: mock_agent)
 
         from flujo.cli.main import app
         import tempfile
@@ -166,21 +162,24 @@ def test_cli_solve_with_weights(monkeypatch) -> None:
                 weights_file = f.name
 
             result = runner.invoke(app, ["solve", "write a poem", "--weights-path", weights_file])
-            
+
             # Print debug info if test fails
             if result.exit_code != 0:
                 print(f"CLI Output: {result.stdout}")
                 print(f"CLI Error: {result.stderr}")
                 if result.exc_info:
                     import traceback
+
                     print("Exception:", "".join(traceback.format_exception(*result.exc_info)))
 
-            assert result.exit_code == 0, f"CLI command failed. Output: {result.stdout}, Error: {result.stderr}"
+            assert result.exit_code == 0, (
+                f"CLI command failed. Output: {result.stdout}, Error: {result.stderr}"
+            )
 
             # Verify Default was called with correct arguments
             MockDefault.assert_called_once()
             mock_instance.run_sync.assert_called_once()
-            
+
             # Verify the task passed to run_sync
             call_args = mock_instance.run_sync.call_args
             assert call_args is not None
@@ -230,9 +229,7 @@ def test_cli_solve_keyboard_interrupt(monkeypatch) -> None:
         raise KeyboardInterrupt()
 
     monkeypatch.setattr("flujo.cli.main.Default.run_sync", raise_keyboard)
-    monkeypatch.setattr(
-        "flujo.cli.main.make_agent_async", lambda *a, **k: object()
-    )
+    monkeypatch.setattr("flujo.cli.main.make_agent_async", lambda *a, **k: object())
     result = runner.invoke(app, ["solve", "prompt"])
     assert result.exit_code == 130
 
@@ -244,9 +241,7 @@ def test_cli_bench_keyboard_interrupt(monkeypatch) -> None:
         raise KeyboardInterrupt()
 
     monkeypatch.setattr("flujo.cli.main.Default.run_sync", raise_keyboard)
-    monkeypatch.setattr(
-        "flujo.cli.main.make_agent_async", lambda *a, **k: object()
-    )
+    monkeypatch.setattr("flujo.cli.main.make_agent_async", lambda *a, **k: object())
     result = runner.invoke(app, ["bench", "prompt"])
     assert result.exit_code == 130
 
@@ -288,9 +283,7 @@ def test_cli_solve_configuration_error(monkeypatch) -> None:
 
 def test_cli_explain(tmp_path) -> None:
     file = tmp_path / "pipe.py"
-    file.write_text(
-        "from flujo.domain import Step\npipeline = Step('A') >> Step('B')\n"
-    )
+    file.write_text("from flujo.domain import Step\npipeline = Step('A') >> Step('B')\n")
 
     result = runner.invoke(app, ["explain", str(file)])
     assert result.exit_code == 0
@@ -337,7 +330,12 @@ def test_cli_improve_json_output(monkeypatch, tmp_path) -> None:
         "from pydantic_evals import Dataset, Case\ndataset = Dataset(cases=[Case(inputs='a')])\n"
     )
 
-    from flujo.domain.models import ImprovementReport, ImprovementSuggestion, SuggestionType, PromptModificationDetail
+    from flujo.domain.models import (
+        ImprovementReport,
+        ImprovementSuggestion,
+        SuggestionType,
+        PromptModificationDetail,
+    )
 
     async def dummy_eval(*a, **k):
         return ImprovementReport(
@@ -347,7 +345,9 @@ def test_cli_improve_json_output(monkeypatch, tmp_path) -> None:
                     suggestion_type=SuggestionType.PROMPT_MODIFICATION,
                     failure_pattern_summary="f",
                     detailed_explanation="d",
-                    prompt_modification_details=PromptModificationDetail(modification_instruction="m"),
+                    prompt_modification_details=PromptModificationDetail(
+                        modification_instruction="m"
+                    ),
                 )
             ]
         )
@@ -421,28 +421,40 @@ def test_cli_run_with_args() -> None:
     dummy_settings.scorer = "ratio"
     dummy_settings.reflection_limit = 1
 
-    with patch("flujo.cli.main.Default") as MockDefault, \
-         patch("flujo.cli.main.make_agent_async") as mock_make_agent, \
-         patch("flujo.cli.main.get_reflection_agent") as mock_get_reflection_agent, \
-         patch("flujo.cli.main.settings", dummy_settings):
+    with (
+        patch("flujo.cli.main.Default") as MockDefault,
+        patch("flujo.cli.main.make_agent_async") as mock_make_agent,
+        patch("flujo.cli.main.get_reflection_agent") as mock_get_reflection_agent,
+        patch("flujo.cli.main.settings", dummy_settings),
+    ):
         mock_instance = MagicMock()
         mock_instance.run_sync.return_value = DummyCandidate()
         MockDefault.return_value = mock_instance
         mock_make_agent.return_value = MagicMock()
         mock_get_reflection_agent.return_value = MagicMock()
 
-        result = runner.invoke(app, [
-            "solve",
-            "test prompt",
-            "--max-iters", "5",
-            "--k", "3",
-            "--reflection",
-            "--scorer", "ratio",
-            "--solution-model", "gpt-4",
-            "--review-model", "gpt-3.5-turbo",
-            "--validator-model", "gpt-3.5-turbo",
-            "--reflection-model", "gpt-4"
-        ])
+        result = runner.invoke(
+            app,
+            [
+                "solve",
+                "test prompt",
+                "--max-iters",
+                "5",
+                "--k",
+                "3",
+                "--reflection",
+                "--scorer",
+                "ratio",
+                "--solution-model",
+                "gpt-4",
+                "--review-model",
+                "gpt-3.5-turbo",
+                "--validator-model",
+                "gpt-3.5-turbo",
+                "--reflection-model",
+                "gpt-4",
+            ],
+        )
         assert result.exit_code == 0
         assert "test solution" in result.stdout
         mock_instance.run_sync.assert_called_once()
@@ -546,7 +558,7 @@ def test_cli_add_eval_case_prints_correct_case_string(tmp_path) -> None:
         ],
     )
     assert result.exit_code == 0
-    assert "Case(name=\"my_new_test\"" in result.stdout
+    assert 'Case(name="my_new_test"' in result.stdout
 
 
 def test_cli_add_eval_case_handles_missing_dataset_file_gracefully(tmp_path) -> None:
@@ -590,15 +602,19 @@ def test_cli_improve_uses_custom_improvement_model(monkeypatch, tmp_path) -> Non
         "pipeline = Step.solution(StubAgent(['a']))\n"
     )
     data = tmp_path / "data.py"
-    data.write_text("from pydantic_evals import Dataset, Case\ndataset=Dataset(cases=[Case(inputs='a')])")
+    data.write_text(
+        "from pydantic_evals import Dataset, Case\ndataset=Dataset(cases=[Case(inputs='a')])"
+    )
 
     called: dict[str, Any] = {}
 
     def fake_make(model: str | None = None):
         called["model"] = model
+
         class A:
             async def run(self, p):
                 return "{}"
+
         return A()
 
     monkeypatch.setattr("flujo.cli.main.make_self_improvement_agent", fake_make)

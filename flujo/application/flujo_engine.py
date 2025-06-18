@@ -17,7 +17,8 @@ from typing import (
     Union,
 )
 
-from pydantic import BaseModel, ValidationError
+from flujo.domain.models import BaseModel
+from pydantic import ValidationError
 
 
 from ..infra.telemetry import logfire

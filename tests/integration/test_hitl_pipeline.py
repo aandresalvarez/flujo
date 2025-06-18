@@ -3,7 +3,7 @@ import pytest
 from pydantic import BaseModel, ValidationError
 
 from flujo.application.flujo_engine import Flujo
-from flujo.domain.pipeline_dsl import Step, Pipeline
+from flujo.domain.pipeline_dsl import Step
 from flujo.domain.models import PipelineContext
 from flujo.exceptions import OrchestratorError
 from flujo.testing.utils import StubAgent, gather_result
@@ -31,9 +31,7 @@ async def test_static_approval_pause_and_resume() -> None:
 
 @pytest.mark.asyncio
 async def test_dynamic_clarification_pause_and_resume() -> None:
-    pipeline = Step("ask", StubAgent(["Need help?"])) >> Step.human_in_the_loop(
-        "clarify"
-    )
+    pipeline = Step("ask", StubAgent(["Need help?"])) >> Step.human_in_the_loop("clarify")
     runner = Flujo(pipeline)
     paused = await gather_result(runner, "hi")
     ctx = paused.final_pipeline_context

@@ -25,7 +25,7 @@ class ResourceUsingAgent(AsyncAgentProtocol):
 
 class ResourceUsingPlugin(ValidationPlugin):
     async def validate(self, data: dict, *, resources: MyResources, **kwargs) -> PluginOutcome:
-        resources.api_client.post("/validate", json=data['output'])
+        resources.api_client.post("/validate", json=data["output"])
         return PluginOutcome(success=True)
 
 

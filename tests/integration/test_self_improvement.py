@@ -47,6 +47,7 @@ async def test_e2e_self_improvement_with_mocked_llm_suggestions():
 @pytest.mark.asyncio
 async def test_build_context_for_self_improvement_agent():
     from flujo.application.self_improvement import _build_context
+
     pr = Step.solution(StubAgent(["ok"]))
     runner = Flujo(pr)
     dataset = Dataset(cases=[Case(name="c1", inputs="i", expected_output="o")])

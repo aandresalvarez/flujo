@@ -7,6 +7,7 @@ from flujo.domain.models import Checklist, ChecklistItem
 from flujo.testing.utils import StubAgent, gather_result
 from flujo.infra.agents import AsyncAgentWrapper
 
+
 class TypeCheckingAgent:
     async def run(self, data):
         assert isinstance(data, dict)
@@ -17,6 +18,7 @@ class KwargCheckingAgent:
     async def run(self, data, *, pipeline_context):
         assert isinstance(pipeline_context, dict)
         return pipeline_context.get("foo")
+
 
 @pytest.mark.asyncio
 async def test_pydantic_models_are_serialized_for_agents():

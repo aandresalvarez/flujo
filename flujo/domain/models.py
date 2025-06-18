@@ -1,11 +1,24 @@
 """Domain models for flujo."""
 
-from typing import Any, List, Optional, Literal, Dict
-from pydantic import BaseModel, Field
-from .commands import ExecutedCommandLog
+from typing import Any, List, Optional, Literal, Dict, TYPE_CHECKING
+import orjson
+from pydantic import BaseModel as PydanticBaseModel, Field, ConfigDict
+from typing import ClassVar
 from datetime import datetime, timezone
 import uuid
 from enum import Enum
+
+if TYPE_CHECKING:
+    from .commands import ExecutedCommandLog
+
+
+class BaseModel(PydanticBaseModel):
+    """BaseModel for all flujo domain models, configured to use orjson."""
+
+    model_config: ClassVar[ConfigDict] = {  # type: ignore[typeddict-unknown-key]
+        "json_loads": orjson.loads,
+        "json_dumps": lambda v, *, default: orjson.dumps(v, default=default).decode(),
+    }
 
 
 class Task(BaseModel):
@@ -78,7 +91,7 @@ class PipelineResult(BaseModel):
         description=("The final state of the typed pipeline context, if configured and used."),
     )
 
-    model_config = {"arbitrary_types_allowed": True}
+    model_config: ClassVar[ConfigDict] = {"arbitrary_types_allowed": True}
 
 
 class UsageLimits(BaseModel):
@@ -171,9 +184,9 @@ class PipelineContext(BaseModel):
     initial_prompt: str
     scratchpad: Dict[str, Any] = Field(default_factory=dict)
     hitl_history: List[HumanInteraction] = Field(default_factory=list)
-    command_log: List[ExecutedCommandLog] = Field(
+    command_log: List["ExecutedCommandLog"] = Field(
         default_factory=list,
         description="A log of commands executed by an AgenticLoop.",
     )
 
-    model_config = {"arbitrary_types_allowed": True}
+    model_config: ClassVar[ConfigDict] = {"arbitrary_types_allowed": True}
