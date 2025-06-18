@@ -41,6 +41,7 @@ nav:
   - Cookbook:
     - 'Controlling Costs': cookbook/cost_control.md
     - 'Lifecycle Hooks': cookbook/lifecycle_hooks.md
+    - 'Console Tracer': cookbook/console_tracer.md
     - 'Using Resources': cookbook/using_resources.md
     - 'HITL Simple Approval': cookbook/hitl_simple_approval.md
     - 'HITL Dynamic Clarification': cookbook/hitl_dynamic_clarification.md
