@@ -133,8 +133,8 @@ pipeline = (
     Step.review(review_agent, timeout=30)  # 30-second timeout
     >> Step.solution(
         solution_agent,
-        retries=3,  # Number of retries
-        backoff_factor=2  # Exponential backoff
+        retries=3,            # Number of retries
+        temperature=0.7,      # Control randomness
     )
     >> Step.validate(validator_agent)
 )

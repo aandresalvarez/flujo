@@ -32,6 +32,7 @@ class StepConfig(BaseModel):
 
     max_retries: int = 1
     timeout_s: float | None = None
+    temperature: float | None = None
 
 
 class Step(BaseModel, Generic[StepInT, StepOutT]):
