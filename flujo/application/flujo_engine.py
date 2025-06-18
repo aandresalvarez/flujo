@@ -506,9 +506,7 @@ async def _run_step_logic(
         if resources is not None:
             agent_kwargs["resources"] = resources
         if step.config.temperature is not None:
-            inner = getattr(current_agent, "_agent", None)
-            target = inner if inner is not None else current_agent
-            if _accepts_param(target.run, "temperature"):
+            if _agent_accepts_param(current_agent, "temperature"):
                 agent_kwargs["temperature"] = step.config.temperature
         raw_output = await current_agent.run(data, **agent_kwargs)
         result.latency_s += time.monotonic() - start
