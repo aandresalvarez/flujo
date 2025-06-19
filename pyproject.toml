@@ -40,7 +40,7 @@ dependencies = [
   "python-dotenv>=1.0",
   "pyyaml>=6.0",
   "tenacity>=8.2",
-  "typer[all]>=0.12",
+  "typer>=0.12",
   "rich>=13.7",
   "logfire>=0.3",
   "sqlvalidator>=0.0.8",
@@ -56,7 +56,7 @@ dev = [
   "pip-audit",
   "pytest",
   "pytest-cov",
-  "pytest-asyncio[mode-auto]",
+  "pytest-asyncio",
   "hypothesis",
   "vcrpy",
   "rich",
@@ -166,3 +166,7 @@ quality = [
   "type-check",
   "bandit-check",
 ]
+
+# Suppress LogfireNotConfiguredWarning for users who do not enable Logfire
+[tool.logfire]
+ignore_no_config = true

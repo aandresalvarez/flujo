@@ -38,12 +38,12 @@ async def test_existing_agents_without_context() -> None:
     assert result.step_history[0].output == "ok"
 
 
-class TestContext(BaseModel):
+class _TestContext(BaseModel):
     counter: int = 0
 
 
 class IncrementAgent:
-    async def run(self, data: str, *, pipeline_context: TestContext | None = None) -> str:
+    async def run(self, data: str, *, pipeline_context: _TestContext | None = None) -> str:
         if pipeline_context:
             pipeline_context.counter += 1
         return data
@@ -52,7 +52,7 @@ class IncrementAgent:
 @pytest.mark.asyncio
 async def test_concurrent_runs_with_typed_context_are_isolated() -> None:
     step = Step("inc", IncrementAgent())
-    runner = Flujo(step, context_model=TestContext)
+    runner = Flujo(step, context_model=_TestContext)
 
     async def run_one() -> PipelineResult:
         return await gather_result(runner, "input")

@@ -1,6 +1,14 @@
 from hypothesis import given, strategies as st
+from unittest.mock import patch
 from flujo.utils.redact import summarize_and_redact_prompt
 from flujo.infra.settings import Settings
+from pydantic import SecretStr, BaseModel
+
+# Simple test settings class that doesn't load from environment
+class _TestSettings(BaseModel):
+    openai_api_key: SecretStr
+    google_api_key: SecretStr
+    anthropic_api_key: SecretStr
 
 secrets = ["sk-abc123DEF456", "gk_xyz987ZYX654", "ak_mno789MNO456"]
 
@@ -22,19 +30,12 @@ def test_property_summary_length(prompt, max_length):
 @given(prompt=text_with_secrets())
 def test_property_redaction_hides_secrets(prompt):
     """Known secret patterns should be redacted from the output."""
-    mock_settings = Settings(
-        openai_api_key="sk-abc123DEF456",
-        google_api_key="gk_xyz987ZYX654",
-        anthropic_api_key="ak_mno789MNO456",
+    mock_settings = _TestSettings(
+        openai_api_key=SecretStr("sk-abc123DEF456"),
+        google_api_key=SecretStr("gk_xyz987ZYX654"),
+        anthropic_api_key=SecretStr("ak_mno789MNO456"),
     )
-    from flujo.infra import settings as settings_module
-
-    original_settings = settings_module.settings
-    settings_module.settings = mock_settings
-    try:
-        summary = summarize_and_redact_prompt(prompt)
-        for secret in secrets:
-            assert secret not in summary
-            assert secret[:8] not in summary
-    finally:
-        settings_module.settings = original_settings
+    summary = summarize_and_redact_prompt(prompt, settings=mock_settings)
+    for secret in secrets:
+        assert secret not in summary
+        assert secret[:8] not in summary
