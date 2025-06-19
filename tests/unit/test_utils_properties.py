@@ -1,14 +1,14 @@
 from hypothesis import given, strategies as st
-from unittest.mock import patch
 from flujo.utils.redact import summarize_and_redact_prompt
-from flujo.infra.settings import Settings
 from pydantic import SecretStr, BaseModel
+
 
 # Simple test settings class that doesn't load from environment
 class _TestSettings(BaseModel):
     openai_api_key: SecretStr
     google_api_key: SecretStr
     anthropic_api_key: SecretStr
+
 
 secrets = ["sk-abc123DEF456", "gk_xyz987ZYX654", "ak_mno789MNO456"]
 

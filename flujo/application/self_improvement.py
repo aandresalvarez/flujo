@@ -30,7 +30,7 @@ class SelfImprovementAgent:
             data = json.dumps(raw)
         else:
             data = str(raw)
-        return ImprovementReport.model_validate_json(data)
+        return ImprovementReport.model_validate_json(data)  # type: ignore[return-value]
 
 
 def _find_step(

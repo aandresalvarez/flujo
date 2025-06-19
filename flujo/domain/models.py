@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 class BaseModel(PydanticBaseModel):
     """BaseModel for all flujo domain models, configured to use orjson."""
 
-    model_config: ClassVar[ConfigDict] = {  # type: ignore[typeddict-unknown-key]
+    model_config: ClassVar[ConfigDict] = {
         # Removed deprecated json_dumps and json_loads config keys
     }
 
@@ -24,10 +24,24 @@ class BaseModel(PydanticBaseModel):
         return orjson.dumps(self.model_dump(), **kwargs).decode()
 
     @classmethod
-    def model_validate_json(cls, json_data: str, **kwargs: Any) -> "BaseModel":
+    def model_validate_json(
+        cls,
+        json_data: str | bytes | bytearray,
+        *,
+        strict: bool | None = None,
+        context: Any | None = None,
+        by_alias: bool | None = None,
+        by_name: bool | None = None,
+    ) -> "BaseModel":
         """Override to use orjson for deserialization."""
         data = orjson.loads(json_data)
-        return cls.model_validate(data, **kwargs)
+        return cls.model_validate(
+            data,
+            strict=strict,
+            context=context,
+            by_alias=by_alias,
+            by_name=by_name,
+        )
 
 
 class Task(BaseModel):

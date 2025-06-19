@@ -634,13 +634,14 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
             if span is not None:
                 try:
                     span.set_attribute("governor_breached", True)
-                except Exception:  # noqa: BLE001
-                    pass
-            logfire.warn(f"Cost limit of ${self.usage_limits.total_cost_usd_limit} exceeded")
-            raise UsageLimitExceededError(
-                f"Cost limit of ${self.usage_limits.total_cost_usd_limit} exceeded",
-                pipeline_result,
-            )
+                except Exception as e:  # noqa: BLE001
+                    # Defensive: log and ignore errors setting span attributes
+                    logfire.error(f"Error setting span attribute: {e}")
+                logfire.warn(f"Cost limit of ${self.usage_limits.total_cost_usd_limit} exceeded")
+                raise UsageLimitExceededError(
+                    f"Cost limit of ${self.usage_limits.total_cost_usd_limit} exceeded",
+                    pipeline_result,
+                )
 
         if (
             self.usage_limits.total_tokens_limit is not None
@@ -649,13 +650,14 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
             if span is not None:
                 try:
                     span.set_attribute("governor_breached", True)
-                except Exception:  # noqa: BLE001
-                    pass
-            logfire.warn(f"Token limit of {self.usage_limits.total_tokens_limit} exceeded")
-            raise UsageLimitExceededError(
-                f"Token limit of {self.usage_limits.total_tokens_limit} exceeded",
-                pipeline_result,
-            )
+                except Exception as e:  # noqa: BLE001
+                    # Defensive: log and ignore errors setting span attributes
+                    logfire.error(f"Error setting span attribute: {e}")
+                logfire.warn(f"Token limit of {self.usage_limits.total_tokens_limit} exceeded")
+                raise UsageLimitExceededError(
+                    f"Token limit of {self.usage_limits.total_tokens_limit} exceeded",
+                    pipeline_result,
+                )
 
     @staticmethod
     def _set_final_context(result: PipelineResult, ctx: Optional[BaseModel]) -> None:
@@ -780,8 +782,9 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
                         for key, value in step_result.metadata_.items():
                             try:
                                 span.set_attribute(key, value)
-                            except Exception:  # noqa: BLE001
-                                pass
+                            except Exception as e:  # noqa: BLE001
+                                # Defensive: log and ignore errors setting span attributes
+                                logfire.error(f"Error setting span attribute: {e}")
                     pipeline_result_obj.step_history.append(step_result)
                     pipeline_result_obj.total_cost_usd += step_result.cost_usd
                     self._check_usage_limits(pipeline_result_obj, span)
@@ -937,8 +940,9 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
                     for key, value in step_result.metadata_.items():
                         try:
                             span.set_attribute(key, value)
-                        except Exception:  # noqa: BLE001
-                            pass
+                        except Exception as e:  # noqa: BLE001
+                            # Defensive: log and ignore errors setting span attributes
+                            logfire.error(f"Error setting span attribute: {e}")
                 paused_result.step_history.append(step_result)
                 paused_result.total_cost_usd += step_result.cost_usd
                 self._check_usage_limits(paused_result, span)

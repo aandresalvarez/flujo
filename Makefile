@@ -30,4 +30,4 @@ bandit:
 
 cyclonedx:
 	@echo "📦 Generating CycloneDX SBOM..."
-	@hatch run cyclonedx
+	@hatch run cyclonedx-py environment --pyproject pyproject.toml --output-file sbom.json --output-format JSON

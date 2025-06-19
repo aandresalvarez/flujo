@@ -135,6 +135,8 @@ class _CommandExecutor:
                     if isinstance(node, (ast.Import, ast.ImportFrom)):
                         raise ValueError("Imports are not allowed in run_python")
                 local_scope: Dict[str, Any] = {}
+                # WARNING: The following use of exec is sandboxed with empty __builtins__ for security.
+                # Only trusted code should be executed here. Review all inputs to this exec carefully.
                 exec(
                     compile(tree, filename="<agentic_loop>", mode="exec"),
                     {"__builtins__": {}},

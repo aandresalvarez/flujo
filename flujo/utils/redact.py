@@ -1,10 +1,11 @@
 """Utilities for redacting sensitive information."""
 
 import re
-from flujo.infra.settings import settings as global_settings
+from flujo.infra.settings import settings as global_settings, Settings
+from typing import Optional
 
 
-def redact_string(text: str, secret: str) -> str:
+def redact_string(text: str, secret: Optional[str]) -> str:
     """Replaces occurrences of a secret string or its prefix with a redacted placeholder."""
     if not text:
         return text
@@ -22,7 +23,9 @@ def redact_url_password(url: str) -> str:
     return re.sub(r"://[^@]+@", "://[REDACTED]@", url)
 
 
-def summarize_and_redact_prompt(prompt_text: str, max_length: int = 200, settings=None) -> str:
+def summarize_and_redact_prompt(
+    prompt_text: str, max_length: int = 200, settings: Optional[Settings] = None
+) -> str:
     """Return a truncated and redacted version of a prompt."""
     if not prompt_text:
         return ""
