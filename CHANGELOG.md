@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.13] - 2025-06-19
+
+### Added
+- Enhanced Makefile with pip-based development workflow support
+- New `pip-dev` target for installing development dependencies with pip
+- New `pip-install` target for installing package in development mode
+- New `clean` target for cleaning build artifacts and caches
+
+### Changed
+- Improved development environment setup with better tooling support
+- Enhanced project documentation and build system configuration
+
 ## [0.4.12] - 2024-12-19
 
 ### Changed
