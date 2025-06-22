@@ -27,37 +27,20 @@ python --version                    # should print 3.11.x
 
 ## 2. Development Environment Setup
 
-The project supports multiple package managers. Choose your preferred one:
+Flujo uses [Hatch](https://hatch.pypa.io/) to manage the development
+environment and command scripts. The provided `Makefile` simply calls these
+`hatch` scripts for convenience.
 
-### Option A: Poetry (Recommended)
 ```bash
-# Install Poetry
-pip install --upgrade poetry
-
-# Install dependencies (includes runtime, dev, docs, and bench extras)
-make poetry-dev
+pip install hatch
+make install        # create the Hatch environment
+make quality        # run format, lint, types and security checks
+make test           # run the test suite
+# pass extra pytest arguments
+make test args="-k my_test"
 ```
 
-### Option B: UV (Fastest)
-```bash
-# Install UV
-pip install --upgrade uv
-
-# Install dependencies
-make uv-dev
-```
-
-### Option C: Standard pip
-```bash
-# Install dependencies
-make pip-dev
-```
-
-> **Important Notes:**
-> - All options install the package in editable mode (`-e`)
-> - Code changes are picked up instantly without reinstalling
-> - `poetry.lock` is tracked in git for reproducible builds
-> - Run `make help` to see all available commands
+Run `make help` to see all available commands.
 
 ---
 
@@ -80,36 +63,17 @@ The orchestrator automatically loads this file via **python-dotenv**.
 
 ## 4. Testing
 
-The project includes comprehensive tests with different runners:
+Run the test suite with:
 
-### Full Test Suite
 ```bash
-# With Poetry
-make poetry-test                    # includes coverage report
-make poetry-test-fast              # without coverage
-
-# With UV (fastest)
-make uv-test                       # includes coverage
-make uv-test-fast                 # without coverage
-
-# With pip (default)
-make test                         # includes coverage
-make test-fast                    # without coverage
+make test
 ```
 
-### Specific Test Types
+Pass additional arguments to `pytest` using the `args` variable:
+
 ```bash
-# Unit Tests
-make test-unit                    # or poetry-test-unit / uv-test-unit
-
-# End-to-End Tests
-make test-e2e                     # or poetry-test-e2e / uv-test-e2e
-
-# Benchmark Tests
-make test-bench                   # or poetry-test-bench / uv-test-bench
+make test args="-k my_test"
 ```
-Run the benchmark suite to measure the framework's internal overhead and catch
-performance regressions introduced by new code.
 
 > **Note:** Async tests are handled automatically by **pytest-asyncio**
 
@@ -125,15 +89,9 @@ make quality                      # runs all quality checks
 ### Individual Quality Checks
 ```bash
 # Code Style
-make lint                        # check with Ruff
-make format                      # format code
-make format-check               # check formatting (CI)
-
-# Type Safety
-make type-check                 # static type checking with MyPy
-
-# Security
-make security                   # vulnerability check with pip-audit
+make lint        # check with Ruff
+make format      # format code
+make type-check  # static type checking with MyPy
 ```
 
 ---
@@ -300,7 +258,7 @@ make release-delete       # delete current release (requires confirmation)
    - Document signing process for maintainers
 
 3. **Dependency Management**
-   - Regularly audit dependencies: `make security`
+   - Regularly audit dependencies with `pip-audit`
    - Pin dependency versions in `pyproject.toml`
    - Document any security-related changes in release notes
 

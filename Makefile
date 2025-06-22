@@ -1,18 +1,24 @@
-.PHONY: help install quality test cov bandit cyclonedx pip-dev pip-install clean
+.DEFAULT_GOAL := help
+
+args = $(filter-out $@,$(MAKECMDGOALS))
+
+.PHONY: help install quality lint format type-check test cov bandit sbom pip-dev pip-install clean
 
 help:
-	@echo "Commands:"
-	@echo "  install    : Create a hatch environment and install dependencies."
-	@echo "  pip-dev    : Install development dependencies using pip."
-	@echo "  pip-install: Install the package in development mode using pip."
-	@echo "  quality    : Run all code quality checks (format, lint, types, security)."
-	@echo "  test       : Run all tests with pytest."
-	@echo "  cov        : Run tests and report code coverage."
-	@echo "  bandit     : Run Bandit security scan."
-	@echo "  cyclonedx  : Generate a CycloneDX SBOM."
-	@echo "  clean      : Clean up build artifacts and caches."
+	@echo "Available commands:"
+	@echo "  install       - Install dependencies for development."
+	@echo "  quality       - Run all code quality checks."
+	@echo "  lint          - Run Ruff linting."
+	@echo "  format        - Auto-format the code."
+	@echo "  type-check    - Run MyPy type checking."
+	@echo "  test          - Run the test suite (use 'make test args=\"-k expr\"')."
+	@echo "  cov           - Run tests with coverage (uses args too)."
+	@echo "  bandit        - Run Bandit security scan."
+	@echo "  sbom          - Generate a CycloneDX SBOM."
+	@echo "  clean         - Remove build artifacts and caches."
 
 install:
+	@pip install hatch
 	@hatch env create
 
 pip-dev:
@@ -26,24 +32,28 @@ pip-install:
 	@python -m pip install -e .
 
 quality:
-	@echo "✅ Running all quality checks..."
 	@hatch run quality
 
+lint:
+	@hatch run lint
+
+format:
+	@hatch run format
+
+type-check:
+	@hatch run type-check
+
 test:
-	@echo "🧪 Running tests..."
-	@hatch run test
+	@hatch run test $(args)
 
 cov:
-	@echo "📊 Running tests with coverage..."
-	@hatch run cov
+	@hatch run cov $(args)
 
 bandit:
-	@echo "🔍 Running Bandit security scan..."
 	@hatch run bandit-check
 
-cyclonedx:
-	@echo "📦 Generating CycloneDX SBOM..."
-	@hatch run cyclonedx-py environment --pyproject pyproject.toml --output-file sbom.json --output-format JSON
+sbom:
+	@hatch run cyclonedx
 
 clean:
 	@echo "🧹 Cleaning up build artifacts and caches..."
