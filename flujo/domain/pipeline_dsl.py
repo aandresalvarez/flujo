@@ -6,6 +6,7 @@ from typing import (
     Any,
     Callable,
     ClassVar,
+    Coroutine,
     Generic,
     Iterator,
     List,
@@ -14,7 +15,13 @@ from typing import (
     TypeVar,
     Dict,
     Type,
+    ParamSpec,
+    Concatenate,
+    get_type_hints,
+    get_origin,
+    get_args,
 )
+import inspect
 from flujo.domain.models import BaseModel
 from pydantic import Field, ConfigDict
 from .agent_protocol import AsyncAgentProtocol
@@ -24,6 +31,7 @@ from .plugins import ValidationPlugin
 StepInT = TypeVar("StepInT")
 StepOutT = TypeVar("StepOutT")
 NewOutT = TypeVar("NewOutT")
+P = ParamSpec("P")
 
 
 # BranchKey type alias for ConditionalStep
@@ -98,6 +106,75 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
     def validate_step(cls, agent: AsyncAgentProtocol[Any, Any], **config: Any) -> "Step[Any, Any]":
         """Construct a validation step using the provided agent."""
         return cls("validate", agent, **config)
+
+    @classmethod
+    def from_callable(
+        cls: type["Step[StepInT, StepOutT]"],
+        callable_: Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]],
+        name: str | None = None,
+        **config: Any,
+    ) -> "Step[StepInT, StepOutT]":
+        """Create a :class:`Step` by wrapping an async callable.
+
+        The input and output types are inferred from the callable's first
+        positional parameter and return annotation. Additional keyword-only
+        parameters such as ``pipeline_context`` or ``resources`` are supported.
+        If type hints are missing, ``Any`` is used.
+        """
+
+        func = callable_
+        if not inspect.iscoroutinefunction(func):
+            # try __call__ for callable objects
+            call_method = getattr(func, "__call__", None)
+            if call_method is None or not inspect.iscoroutinefunction(call_method):
+                raise TypeError("from_callable expects an async callable")
+
+        try:
+            hints = get_type_hints(func)
+        except Exception:
+            hints = {}
+
+        sig = inspect.signature(func)
+        params = list(sig.parameters.values())
+        first: inspect.Parameter | None = None
+        for p in params:
+            if p.kind in (
+                inspect.Parameter.POSITIONAL_ONLY,
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            ):
+                if p.name in {"self", "cls"}:
+                    continue
+                first = p
+                break
+
+        input_type = Any
+        if first is None:
+            input_type = type(None)
+        else:
+            input_type = hints.get(first.name, Any)
+
+        output_type = hints.get("return", Any)
+        if get_origin(output_type) is Coroutine:
+            args = get_args(output_type)
+            if len(args) == 3:
+                output_type = args[2]
+            else:
+                output_type = Any
+
+        step_name = name or getattr(func, "__name__", func.__class__.__name__)
+
+        class _CallableAgent:
+            async def run(self, data: Any, **kwargs: Any) -> Any:
+                if first is None:
+                    return await func(**kwargs)
+                return await func(data, **kwargs)
+
+        agent_wrapper = _CallableAgent()
+
+        step = cls(step_name, agent_wrapper, **config)
+        object.__setattr__(step, "__step_input_type__", input_type)
+        object.__setattr__(step, "__step_output_type__", output_type)
+        return step
 
     @classmethod
     def human_in_the_loop(

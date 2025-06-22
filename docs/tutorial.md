@@ -289,7 +289,7 @@ async def record(data: str, *, pipeline_context: Stats | None = None) -> str:
         pipeline_context.calls += 1
     return data
 
-pipeline = Step("first", record) >> Step("second", record)
+pipeline = Step.from_callable(record) >> Step.from_callable(record)
 runner = Flujo(pipeline, context_model=Stats)
 final = runner.run("hi")
 print(final.final_pipeline_context.calls)  # 2
@@ -306,7 +306,7 @@ from flujo import Step, Flujo, Pipeline
 async def fixer(data: str) -> str:
     return data + "!"
 
-body = Pipeline.from_step(Step("fix", fixer))
+body = Pipeline.from_step(Step.from_callable(fixer))
 
 loop = Step.loop_until(
     name="add_exclamation",
@@ -339,7 +339,7 @@ branch = Step.branch_on(
     branches=branches,
 )
 
-pipeline = Step("start", fixer) >> branch
+pipeline = Step.from_callable(fixer) >> branch
 runner = Flujo(pipeline)
 print(runner.run("ok").step_history[-1].output)
 ```

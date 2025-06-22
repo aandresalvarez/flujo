@@ -190,7 +190,7 @@ async def increment(data: str, *, pipeline_context: MyContext | None = None) -> 
         pipeline_context.counter += 1
     return data
 
-pipeline = Step("inc", increment) >> Step("read", increment)
+pipeline = Step.from_callable(increment) >> Step.from_callable(increment)
 runner = Flujo(pipeline, context_model=MyContext)
 result = runner.run("hi")
 print(result.final_pipeline_context.counter)  # 2
@@ -211,7 +211,7 @@ class MyResources(AppResources):
 async def query(data: int, *, resources: MyResources) -> str:
     return resources.db_pool.get_user(data)
 
-runner = Flujo(Step("q", query), resources=my_resources)
+runner = Flujo(Step.from_callable(query), resources=my_resources)
 ```
 
 ### Conditional Branching
