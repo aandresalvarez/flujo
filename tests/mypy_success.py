@@ -18,6 +18,12 @@ def test_pipeline_type_continuity() -> None:
     step2: Step[UserInfo, Report] = Step.solution(agent2)
     _pipeline = step1 >> step2
 
+    async def foo(x: str) -> int:
+        return len(x)
+
+    inferred = Step.from_callable(foo)
+    reveal_type(inferred)
+
     # pipeline should type check
     # The following should fail mypy if uncommented:
     # agent3 = StubAgent(["raw_string"])

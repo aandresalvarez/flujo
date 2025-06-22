@@ -1,6 +1,7 @@
 from flujo.domain import Step, Pipeline
 from unittest.mock import AsyncMock, MagicMock, Mock
 from flujo.domain.plugins import ValidationPlugin
+import pytest
 
 
 def test_step_chaining_operator() -> None:
@@ -108,3 +109,49 @@ def test_step_init_handles_mixed_plugin_formats() -> None:
     assert len(step.plugins) == 2
     assert step.plugins[0] == (plugin1, 0)
     assert step.plugins[1] == (plugin2, 5)
+
+
+@pytest.mark.asyncio
+async def test_step_from_callable_basic() -> None:
+    async def echo(x: str) -> int:
+        return len(x)
+
+    step = Step.from_callable(echo)
+    assert step.name == "echo"
+    result = await step.agent.run("hi")  # type: ignore[call-arg]
+    assert result == 2
+
+
+@pytest.mark.asyncio
+async def test_step_from_callable_name_and_config() -> None:
+    async def do(x: int) -> int:
+        return x + 1
+
+    step = Step.from_callable(do, name="increment", timeout_s=5)
+    assert step.name == "increment"
+    assert step.config.timeout_s == 5
+    out = await step.agent.run(1)  # type: ignore[call-arg]
+    assert out == 2
+
+
+class _Service:
+    async def process(self, value: str) -> str:
+        return value.upper()
+
+
+@pytest.mark.asyncio
+async def test_step_from_callable_bound_method() -> None:
+    svc = _Service()
+    step = Step.from_callable(svc.process)
+    assert step.name == "process"
+    assert await step.agent.run("ok") == "OK"  # type: ignore[call-arg]
+
+
+@pytest.mark.asyncio
+async def test_step_from_callable_untyped_defaults_any() -> None:
+    async def untyped(x):  # type: ignore[no-untyped-def]
+        return x
+
+    step = Step.from_callable(untyped)
+    assert step.name == "untyped"
+    assert await step.agent.run(5) == 5  # type: ignore[call-arg]
