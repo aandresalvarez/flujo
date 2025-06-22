@@ -12,7 +12,8 @@ Welcome! This tutorial will guide you through using the `flujo` library, from yo
 
 Before we write any code, let's understand the main components you'll be working with. Think of it like a chef learning about their ingredients before cooking.
 
-*   **The Default Recipe (Class):** This is a high-level helper for running a *standard, pre-defined workflow*. It coordinates a fixed team: a `review_agent` (planner), a `solution_agent` (doer), and a `validator_agent` (quality analyst), and optionally a `reflection_agent`. It's your quick start for this common pattern.
+*   **AgenticLoop (Recipe):** A dynamic planner-loop pattern. A planner agent decides which `AgentCommand` to execute next (run a tool agent, ask a human, run Python, or finish). This is the recommended starting point for building flexible agent workflows.
+*   **The Default Recipe (Class):** A simplified helper for running a fixed Review → Solution → Validate workflow. Useful for quick prototypes when you don't need full agentic control.
 
 *   **An Agent:** An **Agent** is a specialized AI model given a specific role and instructions (a "system prompt"). In the default pipeline we use three agents:
     1.  **`review_agent` (The Planner):** Looks at your request and creates a detailed checklist of what a "good" solution should look like.
@@ -29,45 +30,43 @@ Now that we know the players, let's see them in action!
 
 ---
 
-## 1. Your First AI Task: Simple Orchestration
+## 1. Your First AI Task: AgenticLoop
 
-Let's start with the most straightforward use case: give the orchestrator a prompt and let it manage its default team of smart agents to get the job done. This shows the entire self-correction loop in action.
+We'll begin with the `AgenticLoop` pattern. A planner agent decides which tool agent to run and when to finish.
 
 ```python
-# 📂 step_1_basic_usage.py
-from flujo.recipes import Default
-from flujo import (
-    Task,
-    review_agent, solution_agent, validator_agent,
-    init_telemetry,
-)
+# 📂 step_1_agentic_loop.py
+from flujo.recipes import AgenticLoop
+from flujo import make_agent_async, init_telemetry
+from flujo.domain.commands import AgentCommand, FinishCommand, RunAgentCommand
+from pydantic import TypeAdapter
 
 init_telemetry()
 
-print("🤖 Assembling the AI agent team for the standard Default workflow...")
-orch = Default(
-    review_agent=review_agent,
-    solution_agent=solution_agent,
-    validator_agent=validator_agent,
+async def search_agent(query: str) -> str:
+    return "Rainy days are peaceful" if "rain" in query else "No info"
+
+PLANNER_PROMPT = """
+You are a poet assistant. Use `search_agent` to gather inspiration.
+When ready, reply with `FinishCommand` containing the final haiku.
+"""
+planner = make_agent_async(
+    "openai:gpt-4o",
+    PLANNER_PROMPT,
+    TypeAdapter(AgentCommand),
 )
 
-print("📝 Defining task: 'Write a short, optimistic haiku about a rainy day.'")
-task = Task(prompt="Write a short, optimistic haiku about a rainy day.")
+loop = AgenticLoop(planner_agent=planner, agent_registry={"search_agent": search_agent})
+result = loop.run("Write a short, optimistic haiku about a rainy day.")
 
-print("🧠 Running the workflow...")
-best_candidate = orch.run_sync(task)
-
-if best_candidate:
-    print("\n🎉 Workflow finished! Here is the best result:")
-    print("-" * 50)
-    print(f"\nSolution (the haiku):\n'{best_candidate.solution}'")
-    if best_candidate.checklist:
-        print("\nSelf-Correction Checklist:")
-for item in best_candidate.checklist.items:
-    status = "✅ Passed" if item.passed else "❌ Failed"
-    print(f"  - {item.description:<45} {status}")
+for entry in result.final_pipeline_context.command_log:
+    print(entry)
 ```
-You've successfully orchestrated a team of AI agents to complete a creative task with built-in quality control. The `best_candidate` object represents the outcome of the entire Review → Solution → Validate process.
+This loop lets the planner decide when to call the tool and when to finish. The command log shows each decision.
+
+## 2. The Budget-Aware Workflow: Customizing Agents for `Default`
+
+The `Default` recipe is still handy for simple, fixed workflows. You can customize its agents to mix models for cost and quality.
 
 ---
 

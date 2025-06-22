@@ -2,27 +2,42 @@
 
 This guide explains the fundamental concepts that power `flujo`. Understanding these concepts will help you build more effective AI workflows.
 
-## The Default Recipe
+## AgenticLoop
 
-The **`Default` recipe** is a high-level helper that manages a **standard,
-pre-defined AI workflow**. Think of it as a project manager for a specific team
-structure: a Review Agent, a Solution Agent, a Validator Agent, and optionally a
-Reflection Agent. It handles the flow of information between these fixed roles,
-manages retries based on their internal configuration, and returns the best
-`Candidate` from this standard process. For building custom workflows with
-different steps or logic, you would use the `Pipeline` DSL and the `Flujo`
-engine.
+`AgenticLoop` is the primary pattern for building explorative agent workflows. A
+planner agent emits an `AgentCommand` on each turn—run a tool agent, execute
+Python, ask a human, or finish. The loop executes the command and records it in
+the `PipelineContext`.
+
+```python
+from flujo.recipes import AgenticLoop
+from flujo import make_agent_async
+from flujo.domain.commands import AgentCommand
+from pydantic import TypeAdapter
+
+planner = make_agent_async(
+    "openai:gpt-4o",
+    "Plan the next command and finish when done.",
+    TypeAdapter(AgentCommand),
+)
+loop = AgenticLoop(planner_agent=planner, agent_registry={})
+```
+
+## The Default Recipe (Simplified)
+
+The **`Default` recipe** is a convenient helper that runs a **fixed Review →
+Solution → Validate workflow**. It's useful when you want a quick,
+opinionated pipeline without planning logic. Under the hood it uses the same
+Pipeline DSL described later.
 
 ```python
 from flujo.recipes import Default
-from flujo import review_agent, solution_agent, validator_agent, reflection_agent
+from flujo import review_agent, solution_agent, validator_agent
 
-# Assemble the default recipe with the built-in agents
 recipe = Default(
     review_agent=review_agent,
     solution_agent=solution_agent,
     validator_agent=validator_agent,
-    reflection_agent=reflection_agent,  # Optional but recommended
 )
 ```
 
