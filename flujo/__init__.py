@@ -23,6 +23,7 @@ from .domain import (
     AppResources,
 )
 from .domain.types import HookCallable
+from .domain.events import HookPayload
 from .domain.backends import ExecutionBackend, StepExecutionRequest
 from .infra.backends import LocalBackend
 from .tracing import ConsoleTracer
@@ -69,6 +70,7 @@ __all__ = [
     "PipelineResult",
     "StepResult",
     "HookCallable",
+    "HookPayload",
     "PipelineAbortSignal",
     "settings",
     "init_telemetry",

@@ -1,0 +1,27 @@
+import pytest
+from unittest.mock import MagicMock
+from typing import Any, cast
+
+from flujo import Flujo, Step
+from flujo.domain.agent_protocol import AsyncAgentProtocol
+from flujo.testing.utils import StubAgent, gather_result
+from flujo.domain.events import HookPayload, PostStepPayload
+
+
+@pytest.mark.asyncio  # type: ignore[misc]
+async def test_hook_receives_typed_payload() -> None:
+    step = Step("s1", cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok"])))
+    recorder = MagicMock()
+
+    async def hook(payload: HookPayload) -> None:
+        recorder(payload)
+
+    runner = Flujo(step, hooks=[hook])
+    await gather_result(runner, "start")
+
+    post_step_calls = [c.args[0] for c in recorder.call_args_list if isinstance(c.args[0], PostStepPayload)]
+    assert len(post_step_calls) == 1
+    payload = post_step_calls[0]
+    assert isinstance(payload, PostStepPayload)
+    assert payload.step_result.output == "ok"
+
