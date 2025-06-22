@@ -7,7 +7,6 @@ ensuring each agent receives the appropriate inputs.
 """
 
 import pytest
-import json
 from unittest.mock import AsyncMock, patch
 
 from flujo.recipes.default import Default
@@ -69,10 +68,9 @@ async def test_default_recipe_data_flow(mock_agents: dict[str, AsyncMock]):
     mock_agents["solution"].run.assert_called_once_with("Test prompt")
 
     mock_agents["validator"].run.assert_called_once()
-    validator_input_str = mock_agents["validator"].run.call_args[0][0]
-    validator_input_dict = json.loads(validator_input_str)
+    validator_input_dict = mock_agents["validator"].run.call_args.args[0]
     assert validator_input_dict["solution"] == "The final solution."
-    assert validator_input_dict["checklist"]["items"][0]["description"] == "item 1"
+    assert validator_input_dict["checklist"].items[0].description == "item 1"
 
     assert isinstance(result, Candidate)
     assert result.solution == "The final solution."

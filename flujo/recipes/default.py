@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any, Optional, cast, TYPE_CHECKING
+from typing import Any, Optional, TYPE_CHECKING, cast
 
-from flujo.domain.models import BaseModel
+from flujo.domain.models import PipelineContext
 
 if TYPE_CHECKING:  # pragma: no cover - used for typing only
     from ..infra.agents import AsyncAgentProtocol
@@ -21,13 +21,6 @@ from ..testing.utils import gather_result
 class Default:
     """Pre-configured workflow using the :class:`Flujo` engine."""
 
-    class Context(BaseModel):
-        """Shared state for the Default recipe."""
-
-        initial_prompt: str
-        checklist: Checklist | None = None
-        solution: str | None = None
-
     def __init__(
         self,
         review_agent: "AsyncAgentProtocol[Any, Any]",
@@ -38,72 +31,58 @@ class Default:
         k_variants: Optional[int] = None,
         reflection_limit: Optional[int] = None,
     ) -> None:
-        _ = reflection_agent, max_iters, k_variants, reflection_limit
+        _ = max_iters, k_variants, reflection_limit
 
-        step_review = Step.review(self._wrap_review_agent(review_agent), max_retries=3)
-        step_solution = Step.solution(self._wrap_solution_agent(solution_agent), max_retries=3)
-        step_validate = Step.validate_step(
-            self._wrap_validator_agent(validator_agent), max_retries=3
+        async def _invoke(target: Any, data: Any) -> Any:
+            if hasattr(target, "run") and callable(getattr(target, "run")):
+                return await target.run(data)
+            return await target(data)
+
+        class ReviewWrapper:
+            async def run(self, prompt: str, *, pipeline_context: PipelineContext) -> str:
+                result = await _invoke(review_agent, prompt)
+                checklist = cast(Checklist, getattr(result, "output", result))
+                pipeline_context.scratchpad["checklist"] = checklist
+                return prompt
+
+        class SolutionWrapper:
+            async def run(self, prompt: str, *, pipeline_context: PipelineContext) -> str:
+                result = await _invoke(solution_agent, prompt)
+                solution = cast(str, getattr(result, "output", result))
+                pipeline_context.scratchpad["solution"] = solution
+                return solution
+
+        class ValidatorWrapper:
+            async def run(self, _data: str, *, pipeline_context: PipelineContext) -> Checklist:
+                payload = {
+                    "solution": pipeline_context.scratchpad.get("solution"),
+                    "checklist": pipeline_context.scratchpad.get("checklist"),
+                }
+                result = await _invoke(validator_agent, payload)
+                validated = cast(Checklist, getattr(result, "output", result))
+                pipeline_context.scratchpad["checklist"] = validated
+                return validated
+
+        pipeline = (
+            Step.review(ReviewWrapper(), max_retries=3)
+            >> Step.solution(SolutionWrapper(), max_retries=3)
+            >> Step.validate_step(ValidatorWrapper(), max_retries=3)
         )
 
-        pipeline = step_review >> step_solution >> step_validate
-        self.flujo_engine = Flujo(pipeline, context_model=Default.Context)
-
-    def _wrap_review_agent(self, agent: "AsyncAgentProtocol[Any, Any]") -> Any:
-        async def _invoke(target: Any, data: Any, **kwargs: Any) -> Any:
-            if hasattr(target, "run") and callable(getattr(target, "run")):
-                return await target.run(data, **kwargs)
-            return await target(data, **kwargs)
-
-        class _ReviewAgent:
-            async def run(self, prompt: str, *, pipeline_context: Default.Context) -> Checklist:
-                result = await _invoke(agent, prompt)
-                # Unpack the result if it has an 'output' attribute (AgentRunResult)
-                unpacked_result = getattr(result, "output", result)
-                pipeline_context.checklist = cast(Checklist, unpacked_result)
-                return cast(Checklist, unpacked_result)
-
-        return _ReviewAgent()
-
-    def _wrap_solution_agent(self, agent: "AsyncAgentProtocol[Any, Any]") -> Any:
-        async def _invoke(target: Any, data: Any, **kwargs: Any) -> Any:
-            if hasattr(target, "run") and callable(getattr(target, "run")):
-                return await target.run(data, **kwargs)
-            return await target(data, **kwargs)
-
-        class _SolutionAgent:
-            async def run(self, _data: Any, *, pipeline_context: Default.Context) -> str:
-                result = await _invoke(agent, pipeline_context.initial_prompt)
-                # Unpack the result if it has an 'output' attribute (AgentRunResult)
-                unpacked_result = getattr(result, "output", result)
-                pipeline_context.solution = cast(str, unpacked_result)
-                return cast(str, unpacked_result)
-
-        return _SolutionAgent()
-
-    def _wrap_validator_agent(self, agent: "AsyncAgentProtocol[Any, Any]") -> Any:
-        async def _invoke(target: Any, data: Any, **kwargs: Any) -> Any:
-            if hasattr(target, "run") and callable(getattr(target, "run")):
-                return await target.run(data, **kwargs)
-            return await target(data, **kwargs)
-
-        class _ValidatorAgent:
-            async def run(self, _data: Any, *, pipeline_context: Default.Context) -> Checklist:
+        if reflection_agent is not None:
+            async def reflection_step(_: Any, *, pipeline_context: PipelineContext) -> str:
                 payload = {
-                    "solution": pipeline_context.solution,
-                    "checklist": (
-                        json.loads(pipeline_context.checklist.model_dump_json())
-                        if pipeline_context.checklist is not None
-                        else None
-                    ),
+                    "solution": pipeline_context.scratchpad.get("solution"),
+                    "checklist": pipeline_context.scratchpad.get("checklist"),
                 }
-                result = await _invoke(agent, json.dumps(payload))
-                # Unpack the result if it has an 'output' attribute (AgentRunResult)
-                unpacked_result = getattr(result, "output", result)
-                pipeline_context.checklist = cast(Checklist, unpacked_result)
-                return cast(Checklist, unpacked_result)
+                result = await _invoke(reflection_agent, payload)
+                reflection = cast(str, getattr(result, "output", result))
+                pipeline_context.scratchpad["reflection"] = reflection
+                return reflection
 
-        return _ValidatorAgent()
+            pipeline = pipeline >> Step.from_callable(reflection_step, name="reflection", max_retries=3)
+
+        self.flujo_engine = Flujo(pipeline, context_model=PipelineContext)
 
     async def run_async(self, task: Task) -> Candidate | None:
         result: PipelineResult = await gather_result(
@@ -111,12 +90,14 @@ class Default:
             task.prompt,
             initial_context_data={"initial_prompt": task.prompt},
         )
-        ctx = cast(Default.Context, result.final_pipeline_context)
-        if ctx.solution is None or ctx.checklist is None:
+        ctx = cast(PipelineContext, result.final_pipeline_context)
+        solution = cast(Optional[str], ctx.scratchpad.get("solution"))
+        checklist = cast(Optional[Checklist], ctx.scratchpad.get("checklist"))
+        if solution is None or checklist is None:
             return None
 
-        score = ratio_score(ctx.checklist)
-        return Candidate(solution=ctx.solution, score=score, checklist=ctx.checklist)
+        score = ratio_score(checklist)
+        return Candidate(solution=solution, score=score, checklist=checklist)
 
     def run_sync(self, task: Task) -> Candidate | None:
         return asyncio.run(self.run_async(task))
