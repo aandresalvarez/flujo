@@ -53,7 +53,9 @@ bandit:
 	@hatch run bandit-check
 
 sbom:
-	@hatch run cyclonedx
+        @hatch run cyclonedx
+
+cyclonedx: sbom
 
 clean:
 	@echo "🧹 Cleaning up build artifacts and caches..."

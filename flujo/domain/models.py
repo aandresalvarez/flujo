@@ -1,6 +1,6 @@
 """Domain models for flujo."""
 
-from typing import Any, List, Optional, Literal, Dict, TYPE_CHECKING
+from typing import Any, List, Optional, Literal, Dict, TYPE_CHECKING, cast
 import orjson
 from pydantic import BaseModel as PydanticBaseModel, Field, ConfigDict
 from typing import ClassVar
@@ -21,7 +21,7 @@ class BaseModel(PydanticBaseModel):
 
     def model_dump_json(self, **kwargs: Any) -> str:
         """Override to use orjson for serialization."""
-        return orjson.dumps(self.model_dump(), **kwargs).decode()
+        return cast(str, orjson.dumps(self.model_dump(), **kwargs).decode())
 
     @classmethod
     def model_validate_json(
