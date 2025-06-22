@@ -42,7 +42,9 @@ def weighted_score(check: Checklist, weights: List[Dict[str, Any]]) -> float:
     if total_weight == 0:
         return 0.0
 
-    score = sum(weight_map.get(item.description, 1.0) for item in check.items if item.passed)
+    score = sum(
+        weight_map.get(item.description, 1.0) for item in check.items if item.passed
+    )
     return score / total_weight
 
 
