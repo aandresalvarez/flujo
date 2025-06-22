@@ -1,6 +1,15 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Literal, Optional, cast
+from typing import Any, Callable, Dict, Literal
+
+from .domain.events import (
+    HookPayload,
+    PreRunPayload,
+    PostRunPayload,
+    PreStepPayload,
+    PostStepPayload,
+    OnStepFailurePayload,
+)
 
 from rich.console import Console
 from rich.panel import Panel
@@ -26,7 +35,7 @@ class ConsoleTracer:
         self.console = (
             Console(highlight=False) if colorized else Console(no_color=True, highlight=False)
         )
-        self.event_handlers: Dict[str, Callable[..., Any]] = {
+        self.event_handlers: Dict[str, Callable[[HookPayload], Any]] = {
             "pre_run": self._handle_pre_run,
             "post_run": self._handle_post_run,
             "pre_step": self._handle_pre_step,
@@ -34,16 +43,14 @@ class ConsoleTracer:
             "on_step_failure": self._handle_on_step_failure,
         }
 
-    def _handle_pre_run(self, **kwargs: Any) -> None:
-        initial_input = kwargs.get("initial_input")
+    def _handle_pre_run(self, payload: PreRunPayload) -> None:
+        initial_input = payload.initial_input
         title = "Pipeline Start"
         details = Text(f"Input: {initial_input!r}")
         self.console.print(Panel(details, title=title, border_style="bold blue"))
 
-    def _handle_post_run(self, **kwargs: Any) -> None:
-        pipeline_result = kwargs.get("pipeline_result")
-        if pipeline_result is None:
-            return
+    def _handle_post_run(self, payload: PostRunPayload) -> None:
+        pipeline_result = payload.pipeline_result
         title = "Pipeline End"
         is_success = all(s.success for s in pipeline_result.step_history)
         status_text = "✅ COMPLETED" if is_success else "❌ FAILED"
@@ -54,9 +61,9 @@ class ConsoleTracer:
         details.append(f"Total Cost: ${pipeline_result.total_cost_usd:.6f}")
         self.console.print(Panel(details, title=title, border_style="bold blue"))
 
-    def _handle_pre_step(self, **kwargs: Any) -> None:
-        step = kwargs.get("step")
-        step_input = kwargs.get("step_input")
+    def _handle_pre_step(self, payload: PreStepPayload) -> None:
+        step = payload.step
+        step_input = payload.step_input
         title = f"Step Start: {step.name if step else ''}"
         if self.level == "debug" and self.log_inputs:
             body = Text(repr(step_input))
@@ -64,10 +71,8 @@ class ConsoleTracer:
             body = Text("running")
         self.console.print(Panel(body, title=title))
 
-    def _handle_post_step(self, **kwargs: Any) -> None:
-        step_result = kwargs.get("step_result")
-        if step_result is None:
-            return
+    def _handle_post_step(self, payload: PostStepPayload) -> None:
+        step_result = payload.step_result
         title = f"Step End: {step_result.name}"
         status = "SUCCESS" if step_result.success else "FAILED"
         color = "green" if step_result.success else "red"
@@ -76,10 +81,8 @@ class ConsoleTracer:
             body_text.append(f"\nOutput: {repr(step_result.output)}")
         self.console.print(Panel(body_text, title=title))
 
-    def _handle_on_step_failure(self, **kwargs: Any) -> None:
-        step_result = kwargs.get("step_result")
-        if step_result is None:
-            return
+    def _handle_on_step_failure(self, payload: OnStepFailurePayload) -> None:
+        step_result = payload.step_result
         title = f"Step Failure: {step_result.name}"
         details = Text(
             f"Status: FAILED\nFeedback: {step_result.feedback}",
@@ -87,15 +90,16 @@ class ConsoleTracer:
         )
         self.console.print(Panel(details, title=title, border_style="bold red"))
 
-    async def hook(self, **kwargs: Any) -> None:
-        event = cast(Optional[str], kwargs.get("event_name"))
-        handler = self.event_handlers.get(event) if event is not None else None
+    async def hook(self, payload: HookPayload) -> None:
+        handler = self.event_handlers.get(payload.event_name)
         if handler:
             import inspect
 
             if inspect.iscoroutinefunction(handler):
-                await handler(**kwargs)
+                await handler(payload)
             else:
-                handler(**kwargs)
+                handler(payload)
         else:
-            self.console.print(Panel(Text(str(event)), title="Unknown tracer event"))
+            self.console.print(
+                Panel(Text(str(payload.event_name)), title="Unknown tracer event")
+            )

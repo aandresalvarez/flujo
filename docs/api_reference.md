@@ -313,14 +313,15 @@ You can register callbacks to observe or control pipeline execution.
 
 ```python
 from flujo import HookCallable, PipelineAbortSignal
+from flujo.domain.events import HookPayload
 
-async def my_hook(**kwargs):
-    print("event:", kwargs.get("event_name"))
+async def my_hook(payload: HookPayload) -> None:
+    print("event:", payload.event_name)
 
 runner = Flujo(pipeline, hooks=[my_hook])
 ```
 
-Hooks receive keyword arguments depending on the event. Raise
+Hooks receive a typed payload object describing the event. Raise
 `PipelineAbortSignal` from a hook to stop the run gracefully.
 
 ## Self-Improvement & Evaluation

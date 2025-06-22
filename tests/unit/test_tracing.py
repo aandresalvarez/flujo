@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import MagicMock
 from flujo.tracing import ConsoleTracer
 from flujo.domain.models import StepResult
+from flujo.domain.events import PostStepPayload
 
 
 @pytest.mark.asyncio  # type: ignore[misc]
@@ -10,7 +11,8 @@ async def test_console_tracer_hook_prints() -> None:
     spy = MagicMock()
     tracer.console.print = spy
     result = StepResult(name="s", output="out")
-    await tracer.hook(event_name="post_step", step_result=result)
+    payload = PostStepPayload(event_name="post_step", step_result=result)
+    await tracer.hook(payload)
     spy.assert_called()
 
 

@@ -6,7 +6,7 @@ You need to integrate custom logic into the pipeline's execution flow. For examp
 
 ## The Solution
 
-The `Flujo` runner accepts an optional `hooks` parameter, which is a list of `async` functions. These functions are called at specific points in the pipeline lifecycle. You can also raise the `PipelineAbortSignal` exception from a hook to gracefully stop the run.
+The `Flujo` runner accepts an optional `hooks` parameter, which is a list of `async` functions. Hooks receive **typed payload objects** describing the event. You can raise `PipelineAbortSignal` from a hook to gracefully stop the run.
 
 ```python
 from unittest.mock import MagicMock
@@ -15,17 +15,17 @@ from flujo.exceptions import PipelineAbortSignal
 
 # --- Define Hook Functions ---
 
-async def simple_logger_hook(**kwargs):
-    """A hook that prints the name of every event."""
-    event_name = kwargs.get('event_name')
-    print(f"HOOK FIRED: {event_name}")
+from flujo.domain.events import HookPayload, OnStepFailurePayload
 
-async def abort_on_failure_hook(**kwargs):
-    """A hook that gracefully stops the pipeline if any step fails."""
-    if kwargs.get('event_name') == 'on_step_failure':
-        step_name = kwargs['step_result'].name
-        print(f"HOOK: Step '{step_name}' failed. Aborting the run.")
-        raise PipelineAbortSignal(f"Aborted due to failure in '{step_name}'")
+async def simple_logger_hook(payload: HookPayload):
+    """Print the name of every event."""
+    print(f"HOOK FIRED: {payload.event_name}")
+
+async def abort_on_failure_hook(payload: OnStepFailurePayload):
+    """Stop the pipeline if any step fails."""
+    step_name = payload.step_result.name
+    print(f"HOOK: Step '{step_name}' failed. Aborting the run.")
+    raise PipelineAbortSignal(f"Aborted due to failure in '{step_name}'")
 
 # --- Setup and Run ---
 failing_step = Step("failing_step", agent=MagicMock(side_effect=RuntimeError("An error occurred!")))
@@ -44,7 +44,7 @@ print(f"\nPipeline finished. It ran {len(result.step_history)} steps before bein
 
 ### How It Works
 
-1.  We define two hooks: `simple_logger_hook` and `abort_on_failure_hook`. Both are `async def` functions that accept `**kwargs`.
+1.  We define two hooks: `simple_logger_hook` and `abort_on_failure_hook`. Each is an `async` function that accepts a typed payload object describing the event.
 2.  We register these hooks by passing them in a list to the `Flujo` constructor.
 3.  As the pipeline runs, the `Flujo` engine calls every registered hook for each event (`pre_run`, `pre_step`, etc.). The `simple_logger_hook` prints the name of each event as it happens.
 4.  The `failing_step`'s agent raises a `RuntimeError`. The engine catches this, marks the step as failed, and then fires the `on_step_failure` event.

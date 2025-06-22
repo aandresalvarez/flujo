@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+from typing import get_type_hints, get_origin, get_args
 import time
 import weakref
 from typing import (
@@ -49,6 +50,14 @@ from ..domain.commands import AgentCommand, ExecutedCommandLog
 from pydantic import TypeAdapter
 from ..domain.resources import AppResources
 from ..domain.types import HookCallable
+from ..domain.events import (
+    HookPayload,
+    PreRunPayload,
+    PostRunPayload,
+    PreStepPayload,
+    PostStepPayload,
+    OnStepFailurePayload,
+)
 from ..domain.backends import ExecutionBackend, StepExecutionRequest
 from ..tracing import ConsoleTracer
 
@@ -591,9 +600,41 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
         self.backend = backend
 
     async def _dispatch_hook(self, event_name: str, **kwargs: Any) -> None:
+        payload_map: dict[str, type[HookPayload]] = {
+            "pre_run": PreRunPayload,
+            "post_run": PostRunPayload,
+            "pre_step": PreStepPayload,
+            "post_step": PostStepPayload,
+            "on_step_failure": OnStepFailurePayload,
+        }
+        PayloadCls = payload_map.get(event_name)
+        if PayloadCls is None:
+            return
+
+        payload = PayloadCls(event_name=event_name, **kwargs)
+
         for hook in self.hooks:
             try:
-                await hook(event_name=event_name, **kwargs)
+                should_call = True
+                try:
+                    sig = inspect.signature(hook)
+                    params = list(sig.parameters.values())
+                    if params:
+                        hints = get_type_hints(hook)
+                        ann = hints.get(params[0].name, params[0].annotation)
+                        if ann is not inspect.Signature.empty:
+                            origin = get_origin(ann)
+                            if origin is Union:
+                                if not any(isinstance(payload, t) for t in get_args(ann)):
+                                    should_call = False
+                            elif isinstance(ann, type):
+                                if not isinstance(payload, ann):
+                                    should_call = False
+                except Exception:
+                    pass
+
+                if should_call:
+                    await hook(payload)
             except PipelineAbortSignal:
                 raise
             except Exception as e:  # noqa: BLE001

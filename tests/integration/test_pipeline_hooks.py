@@ -10,7 +10,12 @@ from flujo import (
 from flujo.exceptions import PipelineAbortSignal, UsageLimitExceededError
 from flujo.domain.models import PipelineResult
 from pydantic import BaseModel
-from typing import Any, List, Dict, cast
+from typing import Any, List, cast
+from flujo.domain.events import (
+    HookPayload,
+    PreRunPayload,
+    PostStepPayload,
+)
 from flujo.domain.agent_protocol import AsyncAgentProtocol
 from flujo.testing.utils import StubAgent, DummyPlugin, gather_result
 from flujo.domain.plugins import PluginOutcome
@@ -26,52 +31,48 @@ class HookContext(BaseModel):
 
 
 @pytest.fixture  # type: ignore[misc]
-def call_recorder() -> List[Dict[str, Any]]:
+def call_recorder() -> List[HookPayload]:
     return []
 
 
-async def generic_recorder_hook(call_recorder: List[Dict[str, Any]], **kwargs: Any) -> None:
-    call_recorder.append(
-        {
-            "event": kwargs.get("event_name"),
-            "keys": sorted(kwargs.keys()),
-        }
-    )
-    if kwargs.get("pipeline_context"):
-        kwargs["pipeline_context"].call_count += 1
+async def generic_recorder_hook(call_recorder: List[HookPayload], payload: HookPayload) -> None:
+    call_recorder.append(payload)
+    context = getattr(payload, "pipeline_context", None)
+    if context is not None:
+        context.call_count += 1
 
 
-async def aborting_hook(call_recorder: List[Dict[str, Any]], **kwargs: Any) -> None:
-    if kwargs.get("event_name") == "on_step_failure":
-        call_recorder.append({"event": "on_step_failure_and_abort"})
+async def aborting_hook(call_recorder: List[HookPayload], payload: HookPayload) -> None:
+    if payload.event_name == "on_step_failure":
+        call_recorder.append(payload)
         raise PipelineAbortSignal("Aborted from hook")
 
 
-async def erroring_hook(**kwargs: Any) -> None:
+async def erroring_hook(payload: HookPayload) -> None:
     raise ValueError("Hook failed!")
 
 
-async def post_run_abort_hook(**kwargs: Any) -> None:
-    if kwargs.get("event_name") == "post_run":
+async def post_run_abort_hook(payload: HookPayload) -> None:
+    if payload.event_name == "post_run":
         raise PipelineAbortSignal("abort in post_run")
 
 
 @pytest.mark.asyncio  # type: ignore[misc]
 async def test_all_hooks_are_called_in_correct_order(
-    call_recorder: List[Dict[str, Any]],
+    call_recorder: List[HookPayload],
 ) -> None:
     pipeline = Step(
         "s1",
         agent=cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok1"])),
     ) >> Step("s2", agent=cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok2"])))
 
-    async def recorder(**kwargs: Any) -> None:
-        await generic_recorder_hook(call_recorder, **kwargs)
+    async def recorder(payload: HookPayload) -> None:
+        await generic_recorder_hook(call_recorder, payload)
 
     runner = Flujo(pipeline, hooks=[recorder])
     await gather_result(runner, "start")
 
-    events = [c["event"] for c in call_recorder]
+    events = [p.event_name for p in call_recorder]
     assert events == [
         "pre_run",
         "pre_step",
@@ -84,7 +85,7 @@ async def test_all_hooks_are_called_in_correct_order(
 
 @pytest.mark.asyncio  # type: ignore[misc]
 async def test_on_step_failure_hook_is_called(
-    call_recorder: List[Dict[str, Any]],
+    call_recorder: List[HookPayload],
 ) -> None:
     failing_plugin = DummyPlugin([PluginOutcome(success=False)])
     pipeline = Step("s1", agent=cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok"]))) >> Step(
@@ -93,13 +94,13 @@ async def test_on_step_failure_hook_is_called(
         plugins=[failing_plugin],
     )
 
-    async def recorder(**kwargs: Any) -> None:
-        await generic_recorder_hook(call_recorder, **kwargs)
+    async def recorder(payload: HookPayload) -> None:
+        await generic_recorder_hook(call_recorder, payload)
 
     runner = Flujo(pipeline, hooks=[recorder])
     await gather_result(runner, "start")
 
-    events = [c["event"] for c in call_recorder]
+    events = [p.event_name for p in call_recorder]
     assert events == [
         "pre_run",
         "pre_step",
@@ -112,26 +113,26 @@ async def test_on_step_failure_hook_is_called(
 
 @pytest.mark.asyncio  # type: ignore[misc]
 async def test_hook_receives_correct_arguments(
-    call_recorder: List[Dict[str, Any]],
+    call_recorder: List[HookPayload],
 ) -> None:
     pipeline = Step("s1", agent=cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok"])))
 
-    async def recorder(**kwargs: Any) -> None:
-        await generic_recorder_hook(call_recorder, **kwargs)
+    async def recorder(payload: HookPayload) -> None:
+        await generic_recorder_hook(call_recorder, payload)
 
     runner = Flujo(pipeline, hooks=[recorder])
     await gather_result(runner, "start")
 
-    pre_run_call = next(c for c in call_recorder if c["event"] == "pre_run")
-    assert "initial_input" in pre_run_call["keys"]
+    pre_run_call = next(p for p in call_recorder if p.event_name == "pre_run")
+    assert isinstance(pre_run_call, PreRunPayload)
 
-    post_step_call = next(c for c in call_recorder if c["event"] == "post_step")
-    assert "step_result" in post_step_call["keys"]
+    post_step_call = next(p for p in call_recorder if p.event_name == "post_step")
+    assert isinstance(post_step_call, PostStepPayload)
 
 
 @pytest.mark.asyncio  # type: ignore[misc]
 async def test_pipeline_aborts_gracefully_from_hook(
-    call_recorder: List[Dict[str, Any]],
+    call_recorder: List[HookPayload],
 ) -> None:
     failing_plugin = DummyPlugin([PluginOutcome(success=False)])
     pipeline = (
@@ -144,7 +145,10 @@ async def test_pipeline_aborts_gracefully_from_hook(
         >> Step("s3", agent=cast(AsyncAgentProtocol[Any, Any], StubAgent(["unused"])))
     )
 
-    runner = Flujo(pipeline, hooks=[aborting_hook])
+    async def hook(payload: HookPayload) -> None:
+        await aborting_hook(call_recorder, payload)
+
+    runner = Flujo(pipeline, hooks=[hook])
     result = await gather_result(runner, "start")
 
     assert isinstance(result, PipelineResult)
@@ -169,13 +173,13 @@ async def test_faulty_hook_does_not_crash_pipeline(
 
 @pytest.mark.asyncio  # type: ignore[misc]
 async def test_hooks_receive_context_and_resources(
-    call_recorder: List[Dict[str, Any]],
+    call_recorder: List[HookPayload],
 ) -> None:
     pipeline = Step("s1", agent=cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok"])))
     mock_res = HookResources(db=MagicMock())
 
-    async def recorder(**kwargs: Any) -> None:
-        await generic_recorder_hook(call_recorder, **kwargs)
+    async def recorder(payload: HookPayload) -> None:
+        await generic_recorder_hook(call_recorder, payload)
 
     runner = Flujo(
         pipeline,
@@ -186,9 +190,9 @@ async def test_hooks_receive_context_and_resources(
     )
     result = await gather_result(runner, "start")
 
-    post_step_call = next(c for c in call_recorder if c["event"] == "post_step")
-    assert "pipeline_context" in post_step_call["keys"]
-    assert "resources" in post_step_call["keys"]
+    post_step_call = next(p for p in call_recorder if p.event_name == "post_step")
+    assert getattr(post_step_call, "pipeline_context") is not None
+    assert getattr(post_step_call, "resources") is not None
     assert isinstance(result.final_pipeline_context, HookContext)
     assert result.final_pipeline_context.call_count > 0
 
