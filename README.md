@@ -27,40 +27,33 @@ pip install flujo
 ### Basic Usage
 
 ```python
-from flujo.recipes import Default
-from flujo import (
-    Task,
-    review_agent, solution_agent, validator_agent,
-    init_telemetry,
-)
+from flujo.recipes import AgenticLoop
+from flujo import make_agent_async, init_telemetry
+from flujo.domain.commands import AgentCommand
+from pydantic import TypeAdapter
 
-# Optional: enable telemetry for your application
+# Enable telemetry (optional but recommended)
 init_telemetry()
 
-# Assemble an orchestrator with the library-provided agents. The class
-# runs a fixed pipeline: Review -> Solution -> Validate.
-flujo = Default(
-    review_agent=review_agent,
-    solution_agent=solution_agent,
-    validator_agent=validator_agent,
+async def search_agent(query: str) -> str:
+    """A simple tool agent that returns information."""
+    if "python" in query.lower():
+        return "Python is a high-level, general-purpose programming language."
+    return "No information found."
+
+PLANNER_PROMPT = """
+You are a research assistant. Use the `search_agent` tool to gather facts.
+When you know the answer, issue a `FinishCommand` with the final result.
+"""
+planner = make_agent_async(
+    "openai:gpt-4o",
+    PLANNER_PROMPT,
+    TypeAdapter(AgentCommand),
 )
 
-# Define a task
-task = Task(prompt="Write a Python function to calculate Fibonacci numbers")
-
-# Run synchronously
-best_candidate = flujo.run_sync(task)
-
-# Print the result
-if best_candidate:
-    print("Solution:\n", best_candidate.solution)
-    if best_candidate.checklist:
-        print("\nQuality Checklist:")
-        for item in best_candidate.checklist.items:
-            status = "✅ Passed" if item.passed else "❌ Failed"
-            print(f"  - {item.description:<45} {status}")
-else:
-    print("No solution found.")
+loop = AgenticLoop(planner_agent=planner, agent_registry={"search_agent": search_agent})
+result = loop.run("What is Python?")
+print(result.final_pipeline_context.command_log[-1].execution_result)
 ```
 
 ### Pipeline Example
@@ -132,7 +125,7 @@ Check out the [examples directory](examples/) for more usage examples:
 
 | Script | What it shows |
 | ------ | ------------- |
-| [**00_quickstart.py**](examples/00_quickstart.py) | Hello World with the Default recipe. |
+| [**00_quickstart.py**](examples/00_quickstart.py) | Hello World with the AgenticLoop recipe. |
 | [**01_weighted_scoring.py**](examples/01_weighted_scoring.py) | Weighted scoring to prioritize docstrings. |
 | [**02_custom_agents.py**](examples/02_custom_agents.py) | Building creative agents with custom prompts. |
 | [**03_reward_scorer.py**](examples/03_reward_scorer.py) | Using an LLM judge via RewardScorer. |
