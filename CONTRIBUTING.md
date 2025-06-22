@@ -48,6 +48,9 @@ python --version                    # should print 3.11.x
 
 ### Local Development Workflow
 
+All `make` commands are thin wrappers around `hatch` scripts defined in
+`pyproject.toml`.
+
 1. **Install Hatch:**
    ```bash
    pip install hatch
@@ -56,22 +59,17 @@ python --version                    # should print 3.11.x
 2. **Create Environment & Install Dependencies:**
    ```bash
    make install
-   # or
-   hatch env create
    ```
 
 3. **Run Quality Checks:**
    ```bash
    make quality
-   # or
-   hatch run quality
    ```
 
 4. **Run Tests:**
    ```bash
    make test
-   # or
-   hatch run test
+   # pass arguments with: make test args="-k <pattern>"
    ```
 
 ---
