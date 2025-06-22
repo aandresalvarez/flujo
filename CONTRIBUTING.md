@@ -145,6 +145,27 @@ make bandit
 
 The CI pipeline will fail if any high-confidence issues are detected.
 
+#### Security: Secret Detection
+
+Our project uses `detect-secrets` to prevent API keys and other sensitive credentials from being committed. This hook runs automatically every time you make a commit.
+
+**What to do if your commit is blocked:**
+
+1. **If it's a real secret:**
+   - **Do not bypass the hook.**
+   - Remove the secret from your staged changes.
+   - Place the secret in your local `.env` file (which is git-ignored) and access it via `os.getenv()` or `flujo.settings`.
+   - Re-add the file and commit again.
+
+2. **If it's a false positive (e.g., a test ID):**
+   - Update the baseline to tell `detect-secrets` that this string is acceptable.
+   - Run the following commands:
+     ```bash
+     detect-secrets scan . > .secrets.baseline
+     git add .secrets.baseline
+     ```
+   - Commit your changes again. This will update the baseline for all contributors.
+
 ---
 
 ## 6. Documentation
