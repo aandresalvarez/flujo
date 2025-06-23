@@ -33,14 +33,14 @@ class AgenticLoop:
         self.max_loops = max_loops
         self._pipeline = self._build_internal_pipeline()
 
-    def _build_internal_pipeline(self) -> LoopStep:
+    def _build_internal_pipeline(self) -> LoopStep[PipelineContext]:
         executor_step: Step[Any, Any] = Step(
             "ExecuteCommand", _CommandExecutor(self.agent_registry)
         )
         loop_body = Step("DecideNextCommand", self.planner_agent) >> executor_step
 
-        def exit_condition(_: Any, context: Any) -> bool:
-            if not isinstance(context, PipelineContext) or not context.command_log:
+        def exit_condition(_: Any, context: PipelineContext | None) -> bool:
+            if not context or not context.command_log:
                 return False
             last_cmd = context.command_log[-1].generated_command
             return isinstance(last_cmd, FinishCommand)
@@ -52,7 +52,7 @@ class AgenticLoop:
             max_loops=self.max_loops,
             iteration_input_mapper=lambda result, ctx, i: {
                 "last_command_result": result,
-                "goal": ctx.initial_prompt if isinstance(ctx, PipelineContext) else "",
+                "goal": ctx.initial_prompt if ctx else "",
             },
         )
 
@@ -146,7 +146,9 @@ class _CommandExecutor:
                     {"__builtins__": {}},
                     local_scope,
                 )
-                exec_result = local_scope.get("result", "Python code executed successfully.")
+                exec_result = local_scope.get(
+                    "result", "Python code executed successfully."
+                )
             elif cmd.type == "ask_human":
                 if isinstance(pipeline_context, PipelineContext):
                     pipeline_context.scratchpad["paused_step_input"] = cmd

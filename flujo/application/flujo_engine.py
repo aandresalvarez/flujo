@@ -125,7 +125,7 @@ StepExecutor: TypeAlias = Callable[
 
 
 async def _execute_loop_step_logic(
-    loop_step: LoopStep,
+    loop_step: LoopStep[ContextT],
     loop_step_initial_input: Any,
     pipeline_context: Optional[ContextT],
     resources: Optional[AppResources],
@@ -300,7 +300,7 @@ async def _execute_loop_step_logic(
 
 
 async def _execute_conditional_step_logic(
-    conditional_step: ConditionalStep,
+    conditional_step: ConditionalStep[ContextT],
     conditional_step_input: Any,
     pipeline_context: Optional[ContextT],
     resources: Optional[AppResources],
@@ -470,7 +470,9 @@ async def _run_step_logic(
 
         start = time.monotonic()
         agent_kwargs: Dict[str, Any] = {}
-        if isinstance(current_agent, ContextAwareAgentProtocol) and getattr(current_agent, "__context_aware__", False):
+        if isinstance(current_agent, ContextAwareAgentProtocol) and getattr(
+            current_agent, "__context_aware__", False
+        ):
             if pipeline_context is None:
                 raise TypeError(
                     f"Agent '{current_agent.__class__.__name__}' requires a pipeline context"
@@ -516,7 +518,9 @@ async def _run_step_logic(
                 plugin_kwargs: Dict[str, Any] = {}
                 accepts_resources = _accepts_param(plugin.validate, "resources")
 
-                if isinstance(plugin, ContextAwarePluginProtocol) and getattr(plugin, "__context_aware__", False):
+                if isinstance(plugin, ContextAwarePluginProtocol) and getattr(
+                    plugin, "__context_aware__", False
+                ):
                     if pipeline_context is None:
                         raise TypeError(
                             f"Plugin '{plugin.__class__.__name__}' requires a pipeline context"
@@ -856,7 +860,8 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                             if "paused_step_input" not in scratch:
                                 scratch["paused_step_input"] = data
                         self._set_final_context(
-                            pipeline_result_obj, current_pipeline_context_instance
+                            pipeline_result_obj,
+                            current_pipeline_context_instance,
                         )
                         break
                     if step_result.metadata_:
@@ -895,11 +900,17 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             logfire.info(str(e))
         except UsageLimitExceededError as e:
             if current_pipeline_context_instance is not None:
-                self._set_final_context(pipeline_result_obj, current_pipeline_context_instance)
+                self._set_final_context(
+                    pipeline_result_obj,
+                    current_pipeline_context_instance,
+                )
             raise e
         finally:
             if current_pipeline_context_instance is not None:
-                self._set_final_context(pipeline_result_obj, current_pipeline_context_instance)
+                self._set_final_context(
+                    pipeline_result_obj,
+                    current_pipeline_context_instance,
+                )
                 if isinstance(current_pipeline_context_instance, PipelineContext):
                     if current_pipeline_context_instance.scratchpad.get("status") != "paused":
                         status = (
