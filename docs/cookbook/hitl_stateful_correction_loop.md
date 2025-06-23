@@ -18,3 +18,6 @@ paused = await runner.run_async("start")
 paused = await runner.resume_async(paused, "not ok")
 final = await runner.resume_async(paused, "ok")
 ```
+
+A full, runnable version of this example can be found in [examples/11_stateful_hitl.py](https://github.com/aandresalvarez/flujo/blob/main/examples/11_stateful_hitl.py).
+

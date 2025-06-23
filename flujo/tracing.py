@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Literal
+from typing import Any, Callable, Dict, Literal, cast
 
 from .domain.events import (
     HookPayload,
@@ -36,11 +36,11 @@ class ConsoleTracer:
             Console(highlight=False) if colorized else Console(no_color=True, highlight=False)
         )
         self.event_handlers: Dict[str, Callable[[HookPayload], Any]] = {
-            "pre_run": self._handle_pre_run,
-            "post_run": self._handle_post_run,
-            "pre_step": self._handle_pre_step,
-            "post_step": self._handle_post_step,
-            "on_step_failure": self._handle_on_step_failure,
+            "pre_run": cast(Callable[[HookPayload], Any], self._handle_pre_run),
+            "post_run": cast(Callable[[HookPayload], Any], self._handle_post_run),
+            "pre_step": cast(Callable[[HookPayload], Any], self._handle_pre_step),
+            "post_step": cast(Callable[[HookPayload], Any], self._handle_post_step),
+            "on_step_failure": cast(Callable[[HookPayload], Any], self._handle_on_step_failure),
         }
 
     def _handle_pre_run(self, payload: PreRunPayload) -> None:
@@ -100,6 +100,4 @@ class ConsoleTracer:
             else:
                 handler(payload)
         else:
-            self.console.print(
-                Panel(Text(str(payload.event_name)), title="Unknown tracer event")
-            )
+            self.console.print(Panel(Text(str(payload.event_name)), title="Unknown tracer event"))

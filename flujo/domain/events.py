@@ -25,7 +25,7 @@ class PostRunPayload(BaseModel):
 
 class PreStepPayload(BaseModel):
     event_name: Literal["pre_step"]
-    step: Step
+    step: Step[Any, Any]
     step_input: Any
     pipeline_context: Optional[BaseModel] = None
     resources: Optional[AppResources] = None
@@ -52,4 +52,3 @@ HookPayload = Union[
     PostStepPayload,
     OnStepFailurePayload,
 ]
-

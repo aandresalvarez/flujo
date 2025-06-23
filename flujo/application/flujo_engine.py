@@ -16,6 +16,7 @@ from typing import (
     AsyncIterator,
     Awaitable,
     Union,
+    cast,
 )
 
 from flujo.domain.models import BaseModel
@@ -611,7 +612,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
         if PayloadCls is None:
             return
 
-        payload = PayloadCls(event_name=event_name, **kwargs)
+        payload = PayloadCls(event_name=cast(Any, event_name), **kwargs)
 
         for hook in self.hooks:
             try:

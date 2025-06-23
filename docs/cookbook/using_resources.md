@@ -54,3 +54,6 @@ print(f"\n✅ Agent successfully used the database connection to find: {result.s
 5.  The agent can then use the methods on the injected object (e.g., `resources.db_conn.get_user_by_id`).
 
 This dependency injection pattern keeps your agents clean and decoupled from how resources are created, making them much easier to test and maintain.
+
+A full, runnable version of this example can be found in [examples/12_using_resources.py](https://github.com/aandresalvarez/flujo/blob/main/examples/12_using_resources.py).
+

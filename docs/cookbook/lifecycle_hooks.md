@@ -52,3 +52,6 @@ print(f"\nPipeline finished. It ran {len(result.step_history)} steps before bein
 6.  The engine catches this special signal and gracefully terminates the entire run, returning the partial `PipelineResult`.
 
 This provides a powerful and clean way to add cross-cutting concerns like logging, metrics, and custom control flow to your pipelines.
+
+A full, runnable version of this example can be found in [examples/13_lifecycle_hooks.py](https://github.com/aandresalvarez/flujo/blob/main/examples/13_lifecycle_hooks.py).
+

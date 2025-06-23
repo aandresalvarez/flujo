@@ -22,7 +22,7 @@ def test_pipeline_type_continuity() -> None:
         return len(x)
 
     inferred = Step.from_callable(foo)
-    reveal_type(inferred)
+    reveal_type(inferred)  # noqa: F821
 
     # pipeline should type check
     # The following should fail mypy if uncommented:
