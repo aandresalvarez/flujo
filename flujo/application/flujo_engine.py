@@ -631,8 +631,9 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
                             elif isinstance(ann, type):
                                 if not isinstance(payload, ann):
                                     should_call = False
-                except Exception:
-                    pass
+                except Exception as e:
+                    name = getattr(hook, "__name__", str(hook))
+                    logfire.error(f"Error in hook '{name}': {e}")
 
                 if should_call:
                     await hook(payload)

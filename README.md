@@ -170,7 +170,7 @@ pip install -e ".[dev]"
 
 # Set up the Hatch environment for tooling
 pip install hatch
-make install
+make setup
 ```
 
 ## Contributing
