@@ -254,7 +254,7 @@ step_result = StepResult(
 pipeline_result = PipelineResult(
     step_history: List[StepResult] = [],  # All step results
     total_cost_usd: float = 0.0,          # Total cost
-    final_pipeline_context: Optional[BaseModel] = None,  # Final context
+    final_pipeline_context: Optional[ContextT] = None,  # Final context
 )
 
 ### PipelineContext

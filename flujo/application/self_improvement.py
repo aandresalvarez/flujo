@@ -97,7 +97,7 @@ def _build_context(
     lines.append("--- FAILED CASES ---")
     lines.append("")
     for case in failures:
-        pr: PipelineResult = case.output
+        pr: PipelineResult[Any] = case.output
         lines.append(f"Case: {case.name}")
         input_str = _truncate(_safe_str(case.inputs), 200)
         lines.append(f"Input: {input_str}")
@@ -118,7 +118,7 @@ def _build_context(
 
 
 async def evaluate_and_improve(
-    task_function: Callable[[Any], Awaitable[PipelineResult]],
+    task_function: Callable[[Any], Awaitable[PipelineResult[Any]]],
     dataset: Any,
     improvement_agent: SelfImprovementAgent,
     pipeline_definition: Optional[Pipeline[Any, Any] | Step[Any, Any]] = None,

@@ -1,5 +1,6 @@
 from flujo.domain import Step, step
 from flujo.testing.utils import StubAgent
+from flujo.application.flujo_engine import Flujo
 from pydantic import BaseModel
 
 
@@ -30,3 +31,13 @@ def test_pipeline_type_continuity() -> None:
     # agent3 = StubAgent(["raw_string"])
     # step3: Step[int, str] = Step.solution(agent3)
     # bad_pipeline = step1 >> step3
+
+
+class MyCtx(BaseModel):
+    counter: int = 0
+
+
+def check_result_typing() -> None:
+    runner = Flujo(Step.solution(StubAgent(["ok"])), context_model=MyCtx)
+    result = runner.run("hi")
+    reveal_type(result.final_pipeline_context)  # noqa: F821

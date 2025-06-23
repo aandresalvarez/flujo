@@ -56,16 +56,16 @@ class AgenticLoop:
             },
         )
 
-    def run(self, initial_goal: str) -> PipelineResult:
+    def run(self, initial_goal: str) -> PipelineResult[PipelineContext]:
         runner = Flujo(self._pipeline, context_model=PipelineContext)
         return runner.run(
             {"last_command_result": None, "goal": initial_goal},
             initial_context_data={"initial_prompt": initial_goal},
         )
 
-    async def run_async(self, initial_goal: str) -> PipelineResult:
+    async def run_async(self, initial_goal: str) -> PipelineResult[PipelineContext]:
         runner = Flujo(self._pipeline, context_model=PipelineContext)
-        final_result: PipelineResult | None = None
+        final_result: PipelineResult[PipelineContext] | None = None
         async for item in runner.run_async(
             {"last_command_result": None, "goal": initial_goal},
             initial_context_data={"initial_prompt": initial_goal},
@@ -74,15 +74,19 @@ class AgenticLoop:
         assert final_result is not None
         return final_result
 
-    def resume(self, paused_result: PipelineResult, human_input: Any) -> PipelineResult:
+    def resume(
+        self, paused_result: PipelineResult[PipelineContext], human_input: Any
+    ) -> PipelineResult[PipelineContext]:
         runner = Flujo(self._pipeline, context_model=PipelineContext)
 
-        async def _consume() -> PipelineResult:
+        async def _consume() -> PipelineResult[PipelineContext]:
             return await runner.resume_async(paused_result, human_input)
 
         return asyncio.run(_consume())
 
-    async def resume_async(self, paused_result: PipelineResult, human_input: Any) -> PipelineResult:
+    async def resume_async(
+        self, paused_result: PipelineResult[PipelineContext], human_input: Any
+    ) -> PipelineResult[PipelineContext]:
         runner = Flujo(self._pipeline, context_model=PipelineContext)
         return await runner.resume_async(paused_result, human_input)
 
