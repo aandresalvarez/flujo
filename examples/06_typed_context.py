@@ -12,7 +12,7 @@ from typing import Optional, cast, Type
 
 from flujo.domain.models import BaseModel as FlujoBaseModel
 
-from flujo import Flujo, Step, PipelineResult
+from flujo import Flujo, PipelineResult, step
 
 
 # 1. Define the context model. This is our shared data structure for one run.
@@ -24,6 +24,7 @@ class ResearchContext(FlujoBaseModel):
 
 # 2. Define agents that interact with the context.
 #    They declare a keyword-only `pipeline_context` argument to get access.
+@step
 async def plan_research_agent(task: str, *, pipeline_context: ResearchContext) -> str:
     """This agent identifies the core topic and saves it to the context."""
     print("🧠 Planning Agent: Analyzing task to find the core research topic.")
@@ -34,6 +35,7 @@ async def plan_research_agent(task: str, *, pipeline_context: ResearchContext) -
     return f"Research plan for {topic}"
 
 
+@step
 async def gather_sources_agent(
     plan: str, *, pipeline_context: ResearchContext
 ) -> list[str]:
@@ -45,6 +47,7 @@ async def gather_sources_agent(
     return sources
 
 
+@step
 async def summarize_agent(
     sources: list[str], *, pipeline_context: ResearchContext
 ) -> str:
@@ -64,12 +67,8 @@ async def summarize_agent(
     return summary
 
 
-# 3. Define the pipeline using Step.from_callable
-pipeline = (
-    Step.from_callable(plan_research_agent, name="PlanResearch")
-    >> Step.from_callable(gather_sources_agent, name="GatherSources")
-    >> Step.from_callable(summarize_agent, name="Summarize")
-)
+# 3. Define the pipeline using the step decorator
+pipeline = plan_research_agent >> gather_sources_agent >> summarize_agent
 
 # 4. Initialize the Flujo runner, telling it to use our context model.
 

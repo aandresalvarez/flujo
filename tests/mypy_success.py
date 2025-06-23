@@ -1,4 +1,4 @@
-from flujo.domain import Step
+from flujo.domain import Step, step
 from flujo.testing.utils import StubAgent
 from pydantic import BaseModel
 
@@ -18,10 +18,11 @@ def test_pipeline_type_continuity() -> None:
     step2: Step[UserInfo, Report] = Step.solution(agent2)
     _pipeline = step1 >> step2
 
+    @step
     async def foo(x: str) -> int:
         return len(x)
 
-    inferred = Step.from_callable(foo)
+    inferred = foo
     reveal_type(inferred)  # noqa: F821
 
     # pipeline should type check

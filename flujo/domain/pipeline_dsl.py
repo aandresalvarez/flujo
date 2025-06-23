@@ -17,6 +17,7 @@ from typing import (
     Type,
     ParamSpec,
     Concatenate,
+    overload,
     get_type_hints,
     get_origin,
     get_args,
@@ -253,6 +254,47 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         )
 
 
+@overload
+def step(func: Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]]) -> "Step[StepInT, StepOutT]":
+    """Transform an async function into a :class:`Step`."""
+    ...
+
+
+@overload
+def step(*, name: str | None = None, **config_kwargs: Any) -> Callable[
+    [Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]]],
+    "Step[StepInT, StepOutT]",
+]:
+    """Decorator form to configure the created :class:`Step`."""
+    ...
+
+
+def step(
+    func: Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]] | None = None,
+    *,
+    name: str | None = None,
+    **config_kwargs: Any,
+) -> Any:
+    """Decorator that converts an async function into a :class:`Step`.
+
+    It can be used with or without arguments. When used without parentheses,
+    ``@step`` directly transforms the decorated async function into a ``Step``.
+    When called with keyword arguments, those are forwarded to ``Step.from_callable``.
+    """
+
+    decorator_kwargs = {"name": name, **config_kwargs}
+
+    def decorator(
+        fn: Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]]
+    ) -> "Step[StepInT, StepOutT]":
+        return Step.from_callable(fn, **decorator_kwargs)
+
+    if func is not None:
+        return decorator(func)
+
+    return decorator
+
+
 class HumanInTheLoopStep(Step[Any, Any]):
     """A step that pauses the pipeline for human input."""
 
@@ -431,6 +473,7 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
 # Explicit exports
 __all__ = [
     "Step",
+    "step",
     "Pipeline",
     "StepConfig",
     "LoopStep",

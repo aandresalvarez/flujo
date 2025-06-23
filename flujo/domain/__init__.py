@@ -7,6 +7,7 @@ from .pipeline_dsl import (
     LoopStep,
     ConditionalStep,
     BranchKey,
+    step,
 )
 from .plugins import PluginOutcome, ValidationPlugin
 from .resources import AppResources
@@ -15,6 +16,7 @@ from .backends import ExecutionBackend, StepExecutionRequest
 
 __all__ = [
     "Step",
+    "step",
     "Pipeline",
     "StepConfig",
     "LoopStep",

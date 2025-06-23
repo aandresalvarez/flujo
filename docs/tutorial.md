@@ -284,12 +284,13 @@ from pydantic import BaseModel
 class Stats(BaseModel):
     calls: int = 0
 
+@step
 async def record(data: str, *, pipeline_context: Stats | None = None) -> str:
     if pipeline_context:
         pipeline_context.calls += 1
     return data
 
-pipeline = Step.from_callable(record) >> Step.from_callable(record)
+pipeline = record >> record
 runner = Flujo(pipeline, context_model=Stats)
 final = runner.run("hi")
 print(final.final_pipeline_context.calls)  # 2
@@ -301,12 +302,13 @@ Some workflows require repeating a set of steps until a condition is met. `LoopS
 lets you express this directly in the DSL.
 
 ```python
-from flujo import Step, Flujo, Pipeline
+from flujo import Step, Flujo, Pipeline, step
 
+@step
 async def fixer(data: str) -> str:
     return data + "!"
 
-body = Pipeline.from_step(Step.from_callable(fixer))
+body = Pipeline.from_step(fixer)
 
 loop = Step.loop_until(
     name="add_exclamation",
@@ -330,10 +332,10 @@ def choose(out, ctx):
 
 branches = {
     "positive": Pipeline.from_step(
-        Step.from_callable(lambda x: x + " 😊", name="yay")
+        step(name="yay")(lambda x: x + " 😊")
     ),
     "neutral": Pipeline.from_step(
-        Step.from_callable(lambda x: x, name="meh")
+        step(name="meh")(lambda x: x)
     ),
 }
 
@@ -343,7 +345,7 @@ branch = Step.branch_on(
     branches=branches,
 )
 
-pipeline = Step.from_callable(fixer) >> branch
+pipeline = fixer >> branch
 runner = Flujo(pipeline)
 print(runner.run("ok").step_history[-1].output)
 ```

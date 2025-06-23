@@ -16,6 +16,7 @@ from .infra.telemetry import init_telemetry
 from .domain.models import Task, Candidate, Checklist, ChecklistItem
 from .domain import (
     Step,
+    step,
     Pipeline,
     StepConfig,
     PluginOutcome,
@@ -59,6 +60,7 @@ __all__ = [
     "Checklist",
     "ChecklistItem",
     "Step",
+    "step",
     "Pipeline",
     "StepConfig",
     "AppResources",

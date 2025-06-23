@@ -11,7 +11,7 @@ from typing import cast
 
 from pydantic import BaseModel
 
-from flujo import Flujo, Step, Pipeline, PipelineResult
+from flujo import Flujo, Step, Pipeline, PipelineResult, step
 
 
 class TextEdit(BaseModel):
@@ -23,12 +23,14 @@ class TextEdit(BaseModel):
 
 
 # Agents for our iterative workflow
+@step(name="GenerateInitialDraft")
 async def generate_text_agent(prompt: str) -> TextEdit:
     """Generates the initial draft."""
     print("✍️ Generating initial draft...")
     return TextEdit(text="Python is a language.")
 
 
+@step(name="EditAndReview")
 async def edit_and_review_agent(draft: TextEdit) -> TextEdit:
     """Reviews text. If it's too short, it adds to it and provides feedback."""
     print(f"🧐 Reviewing draft: '{draft.text}'")
@@ -45,9 +47,7 @@ async def edit_and_review_agent(draft: TextEdit) -> TextEdit:
 
 
 # The body of our loop is a single "edit and review" step.
-loop_body_pipeline = Pipeline.from_step(
-    Step.from_callable(edit_and_review_agent, name="EditAndReview")
-)
+loop_body_pipeline = Pipeline.from_step(edit_and_review_agent)
 
 # The `LoopStep` will run the `loop_body_pipeline` repeatedly.
 loop_step = Step.loop_until(
@@ -60,9 +60,7 @@ loop_step = Step.loop_until(
 )
 
 # The full pipeline: generate an initial version, then enter the refinement loop.
-full_pipeline = (
-    Step.from_callable(generate_text_agent, name="GenerateInitialDraft") >> loop_step
-)
+full_pipeline = generate_text_agent >> loop_step
 
 runner = Flujo(full_pipeline)
 
