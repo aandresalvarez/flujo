@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Protocol, TypeVar, Any, runtime_checkable
 
-from .models import BaseModel
+from .types import ContextT
 
 AgentInT = TypeVar("AgentInT", contravariant=True)
 AgentOutT = TypeVar("AgentOutT", covariant=True)
@@ -41,9 +41,6 @@ class AgentProtocol(AsyncAgentProtocol[T_Input, AgentOutT], Protocol[T_Input, Ag
         return await self.run(data, **kwargs)
 
 
-ContextT = TypeVar("ContextT", bound="BaseModel")
-
-
 @runtime_checkable
 class ContextAwareAgentProtocol(Protocol[AgentInT, AgentOutT, ContextT]):
     """A protocol for agents that are aware of a specific pipeline context type."""
@@ -56,8 +53,7 @@ class ContextAwareAgentProtocol(Protocol[AgentInT, AgentOutT, ContextT]):
         *,
         pipeline_context: ContextT,
         **kwargs: Any,
-    ) -> AgentOutT:
-        ...
+    ) -> AgentOutT: ...
 
 
 # Explicit exports
