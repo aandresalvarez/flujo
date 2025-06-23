@@ -4,12 +4,21 @@ from __future__ import annotations
 
 from typing import Protocol, TypeVar, Any, runtime_checkable
 
+from .models import BaseModel
+
 AgentInT = TypeVar("AgentInT", contravariant=True)
 AgentOutT = TypeVar("AgentOutT", covariant=True)
 
 
 @runtime_checkable
 class AsyncAgentProtocol(Protocol[AgentInT, AgentOutT]):
+    """Generic asynchronous agent interface.
+
+    Note: For agents requiring a typed pipeline context, implementing the
+    :class:`flujo.domain.ContextAwareAgentProtocol` is now the recommended and
+    type-safe approach.
+    """
+
     async def run(self, data: AgentInT, **kwargs: Any) -> AgentOutT: ...
 
     async def run_async(self, data: AgentInT, **kwargs: Any) -> AgentOutT:
@@ -32,5 +41,32 @@ class AgentProtocol(AsyncAgentProtocol[T_Input, AgentOutT], Protocol[T_Input, Ag
         return await self.run(data, **kwargs)
 
 
+ContextT = TypeVar("ContextT", bound="BaseModel")
+
+
+@runtime_checkable
+class ContextAwareAgentProtocol(Protocol[AgentInT, AgentOutT, ContextT]):
+    """A protocol for agents that are aware of a specific pipeline context type."""
+
+    __context_aware__: bool = True
+
+    async def run(
+        self,
+        data: AgentInT,
+        *,
+        pipeline_context: ContextT,
+        **kwargs: Any,
+    ) -> AgentOutT:
+        ...
+
+
 # Explicit exports
-__all__ = ["AgentProtocol", "AsyncAgentProtocol", "T_Input", "AgentInT", "AgentOutT"]
+__all__ = [
+    "AgentProtocol",
+    "AsyncAgentProtocol",
+    "ContextAwareAgentProtocol",
+    "T_Input",
+    "AgentInT",
+    "AgentOutT",
+    "ContextT",
+]

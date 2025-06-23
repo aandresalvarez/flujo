@@ -12,7 +12,8 @@ from typing import Optional, cast, Type
 
 from flujo.domain.models import BaseModel as FlujoBaseModel
 
-from flujo import Flujo, PipelineResult, step
+from flujo import Flujo, PipelineResult, Step
+from flujo.domain.agent_protocol import ContextAwareAgentProtocol
 
 
 # 1. Define the context model. This is our shared data structure for one run.
@@ -22,53 +23,68 @@ class ResearchContext(FlujoBaseModel):
     summary: Optional[str] = None
 
 
-# 2. Define agents that interact with the context.
-#    They declare a keyword-only `pipeline_context` argument to get access.
-@step
-async def plan_research_agent(task: str, *, pipeline_context: ResearchContext) -> str:
-    """This agent identifies the core topic and saves it to the context."""
-    print("🧠 Planning Agent: Analyzing task to find the core research topic.")
-    # In a real app, an LLM would extract the topic. We'll simulate it.
-    topic = "The History of the Python Programming Language"
-    pipeline_context.research_topic = topic
-    print(f"   -> Set `research_topic` in context to: '{topic}'")
-    return f"Research plan for {topic}"
+# 2. Define agents that interact with the context using the ContextAware protocol.
+
+class PlanResearchAgent(ContextAwareAgentProtocol[str, str, ResearchContext]):
+    async def run(
+        self,
+        data: str,
+        *,
+        pipeline_context: ResearchContext,
+        **kwargs: Any,
+    ) -> str:
+        """Identify the core topic and store it in the context."""
+        print("🧠 Planning Agent: Analyzing task to find the core research topic.")
+        topic = "The History of the Python Programming Language"
+        pipeline_context.research_topic = topic
+        print(f"   -> Set `research_topic` in context to: '{topic}'")
+        return f"Research plan for {topic}"
 
 
-@step
-async def gather_sources_agent(
-    plan: str, *, pipeline_context: ResearchContext
-) -> list[str]:
-    """This agent "finds" sources and updates a counter in the context."""
-    print("📚 Gathering Sources Agent: Finding relevant articles.")
-    sources = ["python.org", "Wikipedia", "A History of Computing book"]
-    pipeline_context.sources_found = len(sources)
-    print(f"   -> Found {len(sources)} sources. Updated `sources_found` in context.")
-    return sources
+class GatherSourcesAgent(ContextAwareAgentProtocol[str, list[str], ResearchContext]):
+    async def run(
+        self,
+        data: str,
+        *,
+        pipeline_context: ResearchContext,
+        **kwargs: Any,
+    ) -> list[str]:
+        """"Find" sources and update a counter in the context."""
+        print("📚 Gathering Sources Agent: Finding relevant articles.")
+        sources = ["python.org", "Wikipedia", "A History of Computing book"]
+        pipeline_context.sources_found = len(sources)
+        print(f"   -> Found {len(sources)} sources. Updated `sources_found` in context.")
+        return sources
 
 
-@step
-async def summarize_agent(
-    sources: list[str], *, pipeline_context: ResearchContext
-) -> str:
-    """
-    This agent uses data (`research_topic`, `sources_found`) from the context
-    to write its summary, demonstrating how a later step can use data from earlier ones.
-    """
-    print("✍️ Summarization Agent: Writing summary.")
-    topic = pipeline_context.research_topic  # <-- Reading from context
-    num_sources = pipeline_context.sources_found
-    summary = (
-        f"The summary for '{topic}' based on {num_sources} sources is complete. "
-        "Python was created by Guido van Rossum in the late 1980s."
-    )
-    pipeline_context.summary = summary
-    print(f"   -> Wrote summary for '{topic}' and saved to context.")
-    return summary
+class SummarizeAgent(ContextAwareAgentProtocol[list[str], str, ResearchContext]):
+    async def run(
+        self,
+        data: list[str],
+        *,
+        pipeline_context: ResearchContext,
+        **kwargs: Any,
+    ) -> str:
+        """Write a summary using data stored in the context."""
+        print("✍️ Summarization Agent: Writing summary.")
+        topic = pipeline_context.research_topic
+        num_sources = pipeline_context.sources_found
+        summary = (
+            f"The summary for '{topic}' based on {num_sources} sources is complete."
+            "Python was created by Guido van Rossum in the late 1980s."
+        )
+        pipeline_context.summary = summary
+        print(f"   -> Wrote summary for '{topic}' and saved to context.")
+        return summary
 
 
-# 3. Define the pipeline using the step decorator
-pipeline = plan_research_agent >> gather_sources_agent >> summarize_agent
+
+# 3. Define the pipeline using our context-aware agents
+pipeline = (
+    Step.solution(PlanResearchAgent())
+    >> Step.solution(GatherSourcesAgent())
+    >> Step.solution(SummarizeAgent())
+)
 
 # 4. Initialize the Flujo runner, telling it to use our context model.
 

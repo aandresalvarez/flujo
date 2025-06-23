@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import warnings
 from typing import get_type_hints, get_origin, get_args
 import time
 import weakref
@@ -40,7 +41,11 @@ from ..domain.pipeline_dsl import (
     HumanInTheLoopStep,
     BranchKey,
 )
-from ..domain.plugins import PluginOutcome
+from ..domain.plugins import (
+    PluginOutcome,
+    ContextAwarePluginProtocol,
+    ValidationPlugin,
+)
 from ..domain.models import (
     PipelineResult,
     StepResult,
@@ -49,6 +54,10 @@ from ..domain.models import (
     HumanInteraction,
 )
 from ..domain.commands import AgentCommand, ExecutedCommandLog
+from ..domain.agent_protocol import (
+    AsyncAgentProtocol,
+    ContextAwareAgentProtocol,
+)
 from pydantic import TypeAdapter
 from ..domain.resources import AppResources
 from ..domain.types import HookCallable
@@ -465,7 +474,13 @@ async def _run_step_logic(
 
         start = time.monotonic()
         agent_kwargs: Dict[str, Any] = {}
-        if pipeline_context is not None:
+        if isinstance(current_agent, ContextAwareAgentProtocol) and getattr(current_agent, "__context_aware__", False):
+            if pipeline_context is None:
+                raise TypeError(
+                    f"Agent '{current_agent.__class__.__name__}' requires a pipeline context"
+                )
+            agent_kwargs["pipeline_context"] = pipeline_context
+        elif pipeline_context is not None:
             inner = getattr(current_agent, "_agent", None)
             target = inner if inner is not None else current_agent
             accepts_ctx = _accepts_param(target.run, "pipeline_context")
@@ -473,7 +488,14 @@ async def _run_step_logic(
             pass_ctx = False
             if context_model_defined:
                 pass_ctx = True
-            elif accepts_ctx:
+            if accepts_ctx:
+                warnings.warn(
+                    f"Agent '{current_agent.__class__.__name__}' uses a legacy context pattern. "
+                    f"For type safety, implement the 'ContextAwareAgentProtocol' instead. "
+                    "See documentation for details.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
                 pass_ctx = True
             if pass_ctx:
                 agent_kwargs["pipeline_context"] = pipeline_context
@@ -496,17 +518,32 @@ async def _run_step_logic(
         for plugin, _ in sorted_plugins:
             try:
                 plugin_kwargs: Dict[str, Any] = {}
-                accepts_ctx = _accepts_param(plugin.validate, "pipeline_context")
                 accepts_resources = _accepts_param(plugin.validate, "resources")
 
-                if pipeline_context is not None:
-                    pass_ctx = False
-                    if context_model_defined:
-                        pass_ctx = True
-                    elif accepts_ctx:
-                        pass_ctx = True
-                    if pass_ctx:
-                        plugin_kwargs["pipeline_context"] = pipeline_context
+                if isinstance(plugin, ContextAwarePluginProtocol) and getattr(plugin, "__context_aware__", False):
+                    if pipeline_context is None:
+                        raise TypeError(
+                            f"Plugin '{plugin.__class__.__name__}' requires a pipeline context"
+                        )
+                    plugin_kwargs["pipeline_context"] = pipeline_context
+                else:
+                    accepts_ctx = _accepts_param(plugin.validate, "pipeline_context")
+
+                    if pipeline_context is not None:
+                        pass_ctx = False
+                        if context_model_defined:
+                            pass_ctx = True
+                        if accepts_ctx:
+                            warnings.warn(
+                                f"Plugin '{plugin.__class__.__name__}' uses a legacy context pattern. "
+                                f"For type safety, implement the 'ContextAwarePluginProtocol' instead. "
+                                "See documentation for details.",
+                                DeprecationWarning,
+                                stacklevel=2,
+                            )
+                            pass_ctx = True
+                        if pass_ctx:
+                            plugin_kwargs["pipeline_context"] = pipeline_context
 
                 if resources is not None and accepts_resources:
                     plugin_kwargs["resources"] = resources
