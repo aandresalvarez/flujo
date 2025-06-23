@@ -30,38 +30,25 @@ runner = Flujo(
 
 The initial data is validated against the Pydantic model. If validation fails a `PipelineContextInitializationError` is raised and the run is aborted.
 
-## Accessing the context in steps
+## Accessing the context in components
 
-Any step agent or plugin that wants access should declare a keyword-only argument named `pipeline_context`. It is recommended to type-hint this parameter with your context model.
+Implement the `ContextAwareAgentProtocol` or `ContextAwarePluginProtocol` to receive a strongly typed context without casts.
 
 ```python
-class CountingAgent(AsyncAgentProtocol[str, str]):
-    async def run(
-        self,
-        data: str,
-        *,
-        pipeline_context: Optional[MyContext] = None,
-        **kwargs: Any,
-    ) -> str:
-        if pipeline_context:
-            pipeline_context.counter += 1
+from flujo.domain.agent_protocol import ContextAwareAgentProtocol
+from flujo.domain.plugins import ContextAwarePluginProtocol, PluginOutcome
+
+class CountingAgent(ContextAwareAgentProtocol[str, str, MyContext]):
+    async def run(self, data: str, *, pipeline_context: MyContext, **kwargs: Any) -> str:
+        pipeline_context.counter += 1
         return data
+
+class MyPlugin(ContextAwarePluginProtocol[MyContext]):
+    async def validate(self, data: dict[str, Any], *, pipeline_context: MyContext, **kwargs: Any) -> PluginOutcome:
+        return PluginOutcome(success=True)
 ```
 
-Plugins follow the same convention:
-
-```python
-class MyPlugin(ValidationPlugin):
-    async def validate(
-        self,
-        payload: dict[str, Any],
-        *,
-        pipeline_context: Optional[MyContext] = None,
-    ) -> PluginOutcome:
-        ...
-```
-
-If a component does not accept this parameter and also does not use `**kwargs`, a `TypeError` will occur when a context is provided.
+Legacy agents that merely accept a `pipeline_context` parameter will still work but will trigger a `DeprecationWarning`. Updating them to implement the `ContextAware` protocol is recommended.
 
 ## Lifecycle
 
