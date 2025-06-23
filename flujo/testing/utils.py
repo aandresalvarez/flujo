@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, List, AsyncIterator, Dict
 import asyncio
+import orjson
+from pydantic import BaseModel
 
 from ..domain.plugins import PluginOutcome
 from ..domain.backends import ExecutionBackend, StepExecutionRequest
@@ -78,18 +80,47 @@ class DummyRemoteBackend(ExecutionBackend):
     async def execute_step(self, request: StepExecutionRequest) -> StepResult:
         self.call_counter += 1
         self.recorded_requests.append(request)
-        # Since StepExecutionRequest is a dataclass, we need to create a new instance
-        # instead of using Pydantic model methods
+
+        original_step = request.step
+
+        def pydantic_default(obj: Any) -> Any:
+            if isinstance(obj, BaseModel):
+                return obj.model_dump()
+            raise TypeError
+
+        payload = {
+            "input_data": request.input_data,
+            "pipeline_context": request.pipeline_context,
+            "resources": request.resources,
+            "context_model_defined": request.context_model_defined,
+            "usage_limits": request.usage_limits,
+        }
+
+        serialized = orjson.dumps(payload, default=pydantic_default)
+        data = orjson.loads(serialized)
+
+        def reconstruct(original: Any, value: Any) -> Any:
+            if original is None:
+                return None
+            if isinstance(original, BaseModel):
+                return type(original).model_validate(value)
+            return value
+
         roundtrip = StepExecutionRequest(
-            step=request.step,
-            input_data=request.input_data,
-            pipeline_context=request.pipeline_context,
-            resources=request.resources,
-            context_model_defined=request.context_model_defined,
-            usage_limits=request.usage_limits,
+            step=original_step,
+            input_data=reconstruct(request.input_data, data.get("input_data")),
+            pipeline_context=reconstruct(request.pipeline_context, data.get("pipeline_context")),
+            resources=reconstruct(request.resources, data.get("resources")),
+            context_model_defined=data.get("context_model_defined", False),
+            usage_limits=reconstruct(request.usage_limits, data.get("usage_limits")),
         )
-        # Preserve original step object to avoid pydantic resetting config
-        roundtrip.step = request.step
-        # Ensure usage_limits propagate to the underlying LocalBackend
-        roundtrip.usage_limits = request.usage_limits
-        return await self.local.execute_step(roundtrip)
+        roundtrip.step = original_step
+        result = await self.local.execute_step(roundtrip)
+
+        if (
+            isinstance(request.pipeline_context, BaseModel)
+            and roundtrip.pipeline_context is not None
+        ):
+            request.pipeline_context.__dict__.update(roundtrip.pipeline_context.__dict__)
+
+        return result
