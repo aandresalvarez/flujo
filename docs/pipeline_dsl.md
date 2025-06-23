@@ -16,17 +16,18 @@ The Pipeline DSL lets you:
 ### Creating a Pipeline
 
 ```python
-from flujo import Step, Flujo
+from flujo import Step, Flujo, step
 
+@step
 async def add_one(x: int) -> int:
     return x + 1
 
-pipeline = Step.from_callable(add_one) >> Step.from_callable(add_one)
+pipeline = add_one >> add_one
 runner = Flujo(pipeline)
 result = runner.run(1)
 ```
 
-The `Step.from_callable` factory infers the input and output types from the
+The `@step` decorator infers the input and output types from the
 function's signature so the pipeline is typed as `Step[int, int]`.
 
 ```python
@@ -63,14 +64,15 @@ pipeline3 = review_step >> solution_step >> solution_step >> validate_step  # Do
 
 ### Creating Steps from Functions
 
-Use `Step.from_callable` to wrap your own async functions. The factory infers
+Use the `@step` decorator to wrap your own async functions. The decorator infers
 both the input and output types:
 
 ```python
+@step
 async def to_upper(text: str) -> str:
     return text.upper()
 
-upper_step = Step.from_callable(to_upper)
+upper_step = to_upper
 ```
 
 The resulting `upper_step` has the type `Step[str, str]` and can be composed
@@ -212,12 +214,13 @@ from pydantic import BaseModel
 class MyContext(BaseModel):
     counter: int = 0
 
+@step
 async def increment(data: str, *, pipeline_context: MyContext | None = None) -> str:
     if pipeline_context:
         pipeline_context.counter += 1
     return data
 
-pipeline = Step.from_callable(increment) >> Step.from_callable(increment)
+pipeline = increment >> increment
 runner = Flujo(pipeline, context_model=MyContext)
 result = runner.run("hi")
 print(result.final_pipeline_context.counter)  # 2
@@ -235,10 +238,11 @@ keyword-only `resources` argument in your agents or plugins to use it.
 class MyResources(AppResources):
     db_pool: Any
 
+@step
 async def query(data: int, *, resources: MyResources) -> str:
     return resources.db_pool.get_user(data)
 
-runner = Flujo(Step.from_callable(query), resources=my_resources)
+runner = Flujo(query, resources=my_resources)
 ```
 
 ### Conditional Branching

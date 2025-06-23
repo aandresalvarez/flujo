@@ -1,4 +1,4 @@
-from flujo.domain import Step, Pipeline
+from flujo.domain import Step, Pipeline, step
 from unittest.mock import AsyncMock, MagicMock, Mock
 from flujo.domain.plugins import ValidationPlugin
 import pytest
@@ -155,3 +155,26 @@ async def test_step_from_callable_untyped_defaults_any() -> None:
     step = Step.from_callable(untyped)
     assert step.name == "untyped"
     assert await step.agent.run(5) == 5  # type: ignore[call-arg]
+
+
+@pytest.mark.asyncio
+async def test_step_decorator_basic() -> None:
+    @step
+    async def echo(x: str) -> int:
+        return len(x)
+
+    assert isinstance(echo, Step)
+    assert echo.name == "echo"
+    result = await echo.agent.run("hi")  # type: ignore[call-arg]
+    assert result == 2
+
+
+@pytest.mark.asyncio
+async def test_step_decorator_name_and_config() -> None:
+    @step(name="inc", timeout_s=10)
+    async def do(x: int) -> int:
+        return x + 1
+
+    assert do.name == "inc"
+    assert do.config.timeout_s == 10
+    assert await do.agent.run(1) == 2  # type: ignore[call-arg]
