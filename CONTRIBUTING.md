@@ -492,6 +492,15 @@ make clean-cache          # All tool caches
 | Make not found | Install: `brew install make` (macOS) or `apt install make` (Ubuntu) |
 | Tool-specific errors | Run `make clean-cache` and retry |
 
+### Troubleshooting CI/CD
+
+Our GitHub Actions workflow mirrors the local development environment. If a job fails in CI but succeeds locally, check the following:
+
+1. **Have you installed the latest dependencies?** Run `make install` or `hatch run setup` to match the CI environment.
+2. **Is the issue in the `quality_checks` job?** This job runs `hatch run quality`. Execute the same command locally to reproduce lint or type errors.
+3. **Is the issue in the `test_and_security` job?** This job runs `hatch run cov` and `hatch run bandit-check`. Run them locally to pinpoint the failing step.
+4. **Review the Workflow File:** The CI logic lives in `.github/workflows/ci.yml` and uses the unified setup script for consistency.
+
 For all available commands:
 ```bash
 make help

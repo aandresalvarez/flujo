@@ -19,7 +19,7 @@ help:
 
 install:
 	@pip install hatch
-	@hatch env create
+	@hatch run setup
 
 pip-dev:
 	@echo "📦 Installing development dependencies with pip..."
