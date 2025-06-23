@@ -5,26 +5,18 @@ The pipeline will generate text, then loop through a "review and edit"
 cycle until the text meets a quality standard or the max number of
 loops is reached. For more details, see docs/pipeline_looping.md.
 """
+
 import asyncio
-from typing import Any
+from typing import cast
 
 from pydantic import BaseModel
 
-from flujo import Flujo, Step, Pipeline
-
-
-class FunctionAgent:
-    """Wraps an async function so it can be used as a pipeline agent."""
-
-    def __init__(self, func: Any) -> None:
-        self.func = func
-
-    async def run(self, data: Any = None, **kwargs: Any) -> Any:
-        return await self.func(data, **kwargs)
+from flujo import Flujo, Step, Pipeline, PipelineResult
 
 
 class TextEdit(BaseModel):
     """A model to hold the text and feedback during the loop."""
+
     text: str
     feedback: str = "No feedback yet."
     is_good_enough: bool = False
@@ -54,7 +46,7 @@ async def edit_and_review_agent(draft: TextEdit) -> TextEdit:
 
 # The body of our loop is a single "edit and review" step.
 loop_body_pipeline = Pipeline.from_step(
-    Step("EditAndReview", agent=FunctionAgent(edit_and_review_agent))
+    Step.from_callable(edit_and_review_agent, name="EditAndReview")
 )
 
 # The `LoopStep` will run the `loop_body_pipeline` repeatedly.
@@ -68,24 +60,26 @@ loop_step = Step.loop_until(
 )
 
 # The full pipeline: generate an initial version, then enter the refinement loop.
-full_pipeline = Step(
-    "GenerateInitialDraft", agent=FunctionAgent(generate_text_agent)
-) >> loop_step
+full_pipeline = (
+    Step.from_callable(generate_text_agent, name="GenerateInitialDraft") >> loop_step
+)
 
 runner = Flujo(full_pipeline)
 
 
 async def main() -> None:
     print("🚀 Starting iterative refinement pipeline...\n")
-    result = None
+    result: PipelineResult | None = None
     async for item in runner.run_async("Write a sentence about Python."):
         result = item
 
     print("\n✅ Pipeline finished!")
+    assert result is not None
     final_result = result.step_history[-1]
+    output = cast(TextEdit, final_result.output)
 
-    print(f"\nFinal Output: '{final_result.output.text}'")
-    print(f"Final Feedback: '{final_result.output.feedback}'")
+    print(f"\nFinal Output: '{output.text}'")
+    print(f"Final Feedback: '{output.feedback}'")
     print(f"Iterations (attempts): {final_result.attempts}")
 
 

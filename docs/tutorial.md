@@ -329,8 +329,12 @@ def choose(out, ctx):
     return "positive" if "!" in out else "neutral"
 
 branches = {
-    "positive": Pipeline.from_step(Step("yay", lambda x: x + " 😊")),
-    "neutral": Pipeline.from_step(Step("meh", lambda x: x)),
+    "positive": Pipeline.from_step(
+        Step.from_callable(lambda x: x + " 😊", name="yay")
+    ),
+    "neutral": Pipeline.from_step(
+        Step.from_callable(lambda x: x, name="meh")
+    ),
 }
 
 branch = Step.branch_on(

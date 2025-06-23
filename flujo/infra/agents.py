@@ -165,7 +165,7 @@ def make_agent(
 
     # The Agent constructor's type hints are not strict enough for mypy strict mode.
     # See: https://github.com/pydantic/pydantic-ai/issues (file an issue if not present)
-    agent: Agent[Any, Any] = Agent(  # type: ignore[call-overload]
+    agent: Agent[Any, Any] = Agent(
         model=model,
         system_prompt=system_prompt,
         output_type=output_type,

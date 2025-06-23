@@ -6,26 +6,17 @@ a single pipeline run. It's perfect for passing data between non-adjacent
 steps or for accumulating information throughout a workflow.
 For more details, see docs/pipeline_context.md.
 """
+
 import asyncio
-from typing import Any, Optional, cast
+from typing import Optional, cast, Type
 
-from pydantic import BaseModel
+from flujo.domain.models import BaseModel as FlujoBaseModel
 
-from flujo import Flujo, Step
-
-
-class FunctionAgent:
-    """Wraps an async function so it can be used as a pipeline agent."""
-
-    def __init__(self, func: Any) -> None:
-        self.func = func
-
-    async def run(self, data: Any = None, **kwargs: Any) -> Any:
-        return await self.func(data, **kwargs)
+from flujo import Flujo, Step, PipelineResult
 
 
 # 1. Define the context model. This is our shared data structure for one run.
-class ResearchContext(BaseModel):
+class ResearchContext(FlujoBaseModel):
     research_topic: str = "Unknown"
     sources_found: int = 0
     summary: Optional[str] = None
@@ -33,9 +24,7 @@ class ResearchContext(BaseModel):
 
 # 2. Define agents that interact with the context.
 #    They declare a keyword-only `pipeline_context` argument to get access.
-async def plan_research_agent(
-    task: str, *, pipeline_context: ResearchContext
-) -> str:
+async def plan_research_agent(task: str, *, pipeline_context: ResearchContext) -> str:
     """This agent identifies the core topic and saves it to the context."""
     print("🧠 Planning Agent: Analyzing task to find the core research topic.")
     # In a real app, an LLM would extract the topic. We'll simulate it.
@@ -75,26 +64,27 @@ async def summarize_agent(
     return summary
 
 
-# 3. Define the pipeline.
+# 3. Define the pipeline using Step.from_callable
 pipeline = (
-    Step("PlanResearch", agent=FunctionAgent(plan_research_agent))
-    >> Step("GatherSources", agent=FunctionAgent(gather_sources_agent))
-    >> Step("Summarize", agent=FunctionAgent(summarize_agent))
+    Step.from_callable(plan_research_agent, name="PlanResearch")
+    >> Step.from_callable(gather_sources_agent, name="GatherSources")
+    >> Step.from_callable(summarize_agent, name="Summarize")
 )
 
 # 4. Initialize the Flujo runner, telling it to use our context model.
 
-runner = Flujo(pipeline, context_model=ResearchContext)
+runner = Flujo(pipeline, context_model=cast(Type[FlujoBaseModel], ResearchContext))
 
 
 async def main() -> None:
     print("🚀 Starting multi-step research pipeline with a shared context...\n")
-    result = None
+    result: PipelineResult | None = None
     async for item in runner.run_async("Create a report on Python's history."):
         result = item
 
     # 5. Inspect the final state of the context after the run is complete.
     print("\n✅ Pipeline finished!")
+    assert result is not None
     final_context = cast(ResearchContext, result.final_pipeline_context)
 
     print("\nFinal Context State:")
