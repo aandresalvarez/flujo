@@ -101,7 +101,7 @@ class Default:
         self.flujo_engine = Flujo(pipeline, context_model=PipelineContext)
 
     async def run_async(self, task: Task) -> Candidate | None:
-        result: PipelineResult = await gather_result(
+        result: PipelineResult[PipelineContext] = await gather_result(
             self.flujo_engine,
             task.prompt,
             initial_context_data={"initial_prompt": task.prompt},

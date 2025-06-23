@@ -17,6 +17,7 @@ from typing import (
     Awaitable,
     Union,
     cast,
+    TypeAlias,
 )
 
 from flujo.domain.models import BaseModel
@@ -108,11 +109,12 @@ def _accepts_param(func: Callable[..., Any], param: str) -> Optional[bool]:
 
 RunnerInT = TypeVar("RunnerInT")
 RunnerOutT = TypeVar("RunnerOutT")
+ContextT = TypeVar("ContextT", bound=BaseModel)
 
 # Type alias for a callable used to execute nested steps via the configured
 # backend.
-StepExecutor = Callable[
-    [Step[Any, Any], Any, Optional[BaseModel], Optional[AppResources]],
+StepExecutor: TypeAlias = Callable[
+    [Step[Any, Any], Any, Optional[ContextT], Optional[AppResources]],
     Awaitable[StepResult],
 ]
 
@@ -120,10 +122,10 @@ StepExecutor = Callable[
 async def _execute_loop_step_logic(
     loop_step: LoopStep,
     loop_step_initial_input: Any,
-    pipeline_context: Optional[BaseModel],
+    pipeline_context: Optional[ContextT],
     resources: Optional[AppResources],
     *,
-    step_executor: StepExecutor,
+    step_executor: StepExecutor[ContextT],
     context_model_defined: bool,
     usage_limits: UsageLimits | None = None,
 ) -> StepResult:
@@ -181,7 +183,7 @@ async def _execute_loop_step_logic(
                     loop_overall_result.feedback = (
                         f"Cost limit of ${usage_limits.total_cost_usd_limit} exceeded"
                     )
-                    pr = PipelineResult(
+                    pr: PipelineResult[ContextT] = PipelineResult(
                         step_history=[loop_overall_result],
                         total_cost_usd=loop_overall_result.cost_usd,
                     )
@@ -199,14 +201,14 @@ async def _execute_loop_step_logic(
                     loop_overall_result.feedback = (
                         f"Token limit of {usage_limits.total_tokens_limit} exceeded"
                     )
-                    pr = PipelineResult(
+                    pr_tokens: PipelineResult[ContextT] = PipelineResult(
                         step_history=[loop_overall_result],
                         total_cost_usd=loop_overall_result.cost_usd,
                     )
-                    Flujo._set_final_context(pr, pipeline_context)
+                    Flujo._set_final_context(pr_tokens, pipeline_context)
                     raise UsageLimitExceededError(
                         loop_overall_result.feedback,
-                        pr,
+                        pr_tokens,
                     )
 
             if not body_step_result_obj.success:
@@ -295,10 +297,10 @@ async def _execute_loop_step_logic(
 async def _execute_conditional_step_logic(
     conditional_step: ConditionalStep,
     conditional_step_input: Any,
-    pipeline_context: Optional[BaseModel],
+    pipeline_context: Optional[ContextT],
     resources: Optional[AppResources],
     *,
-    step_executor: StepExecutor,
+    step_executor: StepExecutor[ContextT],
     context_model_defined: bool,
     usage_limits: UsageLimits | None = None,
 ) -> StepResult:
@@ -415,10 +417,10 @@ async def _execute_conditional_step_logic(
 async def _run_step_logic(
     step: Step[Any, Any],
     data: Any,
-    pipeline_context: Optional[BaseModel],
+    pipeline_context: Optional[ContextT],
     resources: Optional[AppResources],
     *,
-    step_executor: StepExecutor,
+    step_executor: StepExecutor[ContextT],
     context_model_defined: bool,
     usage_limits: UsageLimits | None = None,
 ) -> StepResult:
@@ -565,13 +567,13 @@ async def _run_step_logic(
     return result
 
 
-class Flujo(Generic[RunnerInT, RunnerOutT]):
+class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
     """Execute a pipeline sequentially."""
 
     def __init__(
         self,
         pipeline: Pipeline[RunnerInT, RunnerOutT] | Step[RunnerInT, RunnerOutT],
-        context_model: Optional[Type[BaseModel]] = None,
+        context_model: Optional[Type[ContextT]] = None,
         initial_context_data: Optional[Dict[str, Any]] = None,
         resources: Optional[AppResources] = None,
         usage_limits: Optional[UsageLimits] = None,
@@ -647,7 +649,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
         self,
         step: Step[Any, Any],
         data: Any,
-        pipeline_context: Optional[BaseModel],
+        pipeline_context: Optional[ContextT],
         resources: Optional[AppResources],
     ) -> StepResult:
         request = StepExecutionRequest(
@@ -662,7 +664,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
 
     def _check_usage_limits(
         self,
-        pipeline_result: PipelineResult,
+        pipeline_result: PipelineResult[ContextT],
         span: Any | None,
     ) -> None:
         if self.usage_limits is None:
@@ -703,7 +705,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
                 )
 
     @staticmethod
-    def _set_final_context(result: PipelineResult, ctx: Optional[BaseModel]) -> None:
+    def _set_final_context(result: PipelineResult[ContextT], ctx: Optional[ContextT]) -> None:
         if ctx is not None:
             result.final_pipeline_context = ctx
 
@@ -712,8 +714,8 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
         initial_input: RunnerInT,
         *,
         initial_context_data: Optional[Dict[str, Any]] = None,
-    ) -> AsyncIterator[Any]:
-        current_pipeline_context_instance: Optional[BaseModel] = None
+    ) -> AsyncIterator[PipelineResult[ContextT]]:
+        current_pipeline_context_instance: Optional[ContextT] = None
         if self.context_model is not None:
             try:
                 context_data = {**self.initial_context_data}
@@ -729,13 +731,16 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
                 ) from e
 
         else:
-            current_pipeline_context_instance = PipelineContext(initial_prompt=str(initial_input))
+            current_pipeline_context_instance = cast(
+                ContextT,
+                PipelineContext(initial_prompt=str(initial_input)),
+            )
 
         if isinstance(current_pipeline_context_instance, PipelineContext):
             current_pipeline_context_instance.scratchpad["status"] = "running"
 
         data: Optional[RunnerInT] = initial_input
-        pipeline_result_obj = PipelineResult()
+        pipeline_result_obj: PipelineResult[ContextT] = PipelineResult()
         try:
             await self._dispatch_hook(
                 "pre_run",
@@ -897,9 +902,9 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
         initial_input: RunnerInT,
         *,
         initial_context_data: Optional[Dict[str, Any]] = None,
-    ) -> PipelineResult:
-        async def _consume() -> PipelineResult:
-            result: PipelineResult | None = None
+    ) -> PipelineResult[ContextT]:
+        async def _consume() -> PipelineResult[ContextT]:
+            result: PipelineResult[ContextT] | None = None
             async for item in self.run_async(
                 initial_input, initial_context_data=initial_context_data
             ):
@@ -909,9 +914,11 @@ class Flujo(Generic[RunnerInT, RunnerOutT]):
 
         return asyncio.run(_consume())
 
-    async def resume_async(self, paused_result: PipelineResult, human_input: Any) -> PipelineResult:
+    async def resume_async(
+        self, paused_result: PipelineResult[ContextT], human_input: Any
+    ) -> PipelineResult[ContextT]:
         """Resume a paused pipeline with human input."""
-        ctx = paused_result.final_pipeline_context
+        ctx: ContextT | None = paused_result.final_pipeline_context
         if ctx is None:
             raise OrchestratorError("Cannot resume pipeline without context")
         scratch = getattr(ctx, "scratchpad", {})

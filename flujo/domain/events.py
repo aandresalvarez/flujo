@@ -18,7 +18,7 @@ class PreRunPayload(BaseModel):
 
 class PostRunPayload(BaseModel):
     event_name: Literal["post_run"]
-    pipeline_result: PipelineResult
+    pipeline_result: PipelineResult[Any]
     pipeline_context: Optional[BaseModel] = None
     resources: Optional[AppResources] = None
 

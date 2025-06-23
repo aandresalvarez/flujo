@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from flujo.domain.models import PipelineResult
 
 
@@ -57,7 +59,7 @@ class PipelineContextInitializationError(OrchestratorError):
 class UsageLimitExceededError(OrchestratorError):
     """Raised when a pipeline run exceeds its defined usage limits."""
 
-    def __init__(self, message: str, result: "PipelineResult") -> None:
+    def __init__(self, message: str, result: "PipelineResult[Any]") -> None:
         super().__init__(message)
         self.result = result
 
