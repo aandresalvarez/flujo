@@ -40,6 +40,9 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
+      - name: Install pre-commit
+        run: pip install pre-commit
+
       - name: Install ALL dependencies (dev, bench, docs)
         run: |
           pip install hatch
