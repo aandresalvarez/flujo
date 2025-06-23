@@ -4,6 +4,7 @@ from typing import List, Dict, Any
 from .models import Checklist
 from pydantic_ai import Agent
 import flujo.infra.settings as settings_mod
+import os
 from flujo.infra.telemetry import logfire
 from ..exceptions import RewardModelUnavailable, FeatureDisabled
 
@@ -64,11 +65,13 @@ class RewardScorer:
 
         # The Agent constructor's type hints are not strict enough for mypy strict mode.
         # See: https://github.com/pydantic/pydantic-ai/issues (file an issue if not present)
+        os.environ.setdefault(
+            "OPENAI_API_KEY", settings.openai_api_key.get_secret_value()
+        )
         self.agent = Agent(
             "openai:gpt-4o-mini",
             system_prompt="You are a reward model. You return a single float score from 0.0 to 1.0.",
             output_type=float,
-            api_key=settings.openai_api_key.get_secret_value(),
         )
 
     @logfire.instrument("reward_score")  # type: ignore[misc]
