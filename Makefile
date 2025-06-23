@@ -2,7 +2,7 @@
 
 args = $(filter-out $@,$(MAKECMDGOALS))
 
-.PHONY: help setup quality lint format type-check test cov bandit sbom pip-dev pip-install clean
+.PHONY: help setup quality lint format type-check test cov bandit sbom pip-dev pip-install clean package
 
 help:
 	@echo "Available commands:"
@@ -15,6 +15,7 @@ help:
 	@echo "  cov           - Run tests with coverage (uses args too)."
 	@echo "  bandit        - Run Bandit security scan."
 	@echo "  sbom          - Generate a CycloneDX SBOM."
+	@echo "  package       - Build the package using Hatch."
 	@echo "  clean         - Remove build artifacts and caches."
 
 setup:
@@ -56,6 +57,10 @@ sbom:
 	@hatch run cyclonedx
 
 cyclonedx: sbom
+
+package:
+	@echo "📦 Building package with Hatch..."
+	@hatch build
 
 clean:
 	@echo "🧹 Cleaning up build artifacts and caches..."
