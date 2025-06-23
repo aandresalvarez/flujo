@@ -13,16 +13,23 @@ The Pipeline DSL lets you:
 
 ## Basic Usage
 
+!!! tip "Recommended Pattern"
+    For creating pipeline steps from your own `async` functions, the `@step` decorator is the simplest and most powerful approach. It automatically infers types and reduces boilerplate, making your code cleaner and safer.
+
 ### Creating a Pipeline
 
 ```python
-from flujo import Step, Flujo, step
+from flujo import Flujo, step
 
 @step
 async def add_one(x: int) -> int:
     return x + 1
 
-pipeline = add_one >> add_one
+@step
+async def add_two(x: int) -> int:
+    return x + 2
+
+pipeline = add_one >> add_two
 runner = Flujo(pipeline)
 result = runner.run(1)
 ```
@@ -30,36 +37,21 @@ result = runner.run(1)
 The `@step` decorator infers the input and output types from the
 function's signature so the pipeline is typed as `Step[int, int]`.
 
-```python
-from flujo.infra.agents import (
-    review_agent, solution_agent, validator_agent,
-)
-
-# Built-in step factories are still available
-pipeline = (
-    Step.review(review_agent)
-    >> Step.solution(solution_agent)
-    >> Step.validate_step(validator_agent)
-)
-
-runner = Flujo(pipeline)
-result = runner.run("Write a function to sort a list")
-```
-
 ### Pipeline Composition
 
 The `>>` operator chains steps together:
 
 ```python
-# Create reusable steps
-review_step = Step.review(review_agent)
-solution_step = Step.solution(solution_agent)
-validate_step = Step.validate_step(validator_agent)
+@step
+async def multiply(x: int) -> int:
+    return x * 2
 
-# Compose them in different ways
-pipeline1 = review_step >> solution_step >> validate_step
-pipeline2 = solution_step >> validate_step  # Skip review
-pipeline3 = review_step >> solution_step >> solution_step >> validate_step  # Double solution
+@step
+async def add_three(x: int) -> int:
+    return x + 3
+
+pipeline1 = multiply >> add_three
+pipeline2 = add_three >> multiply
 ```
 
 ### Creating Steps from Functions
