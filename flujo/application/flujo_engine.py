@@ -44,7 +44,6 @@ from ..domain.pipeline_dsl import (
 from ..domain.plugins import (
     PluginOutcome,
     ContextAwarePluginProtocol,
-    ValidationPlugin,
 )
 from ..domain.models import (
     PipelineResult,
@@ -54,10 +53,7 @@ from ..domain.models import (
     HumanInteraction,
 )
 from ..domain.commands import AgentCommand, ExecutedCommandLog
-from ..domain.agent_protocol import (
-    AsyncAgentProtocol,
-    ContextAwareAgentProtocol,
-)
+from ..domain.agent_protocol import ContextAwareAgentProtocol
 from pydantic import TypeAdapter
 from ..domain.resources import AppResources
 from ..domain.types import HookCallable
