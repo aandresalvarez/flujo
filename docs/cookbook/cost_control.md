@@ -50,3 +50,6 @@ except UsageLimitExceededError as e:
 7.  The exception contains the `result` object with the history up to the point of failure, which is useful for debugging.
 
 This mechanism is a critical safety feature for running `Flujo` in production.
+
+A full, runnable version of this example can be found in [examples/10_cost_control.py](https://github.com/aandresalvarez/flujo/blob/main/examples/10_cost_control.py).
+
