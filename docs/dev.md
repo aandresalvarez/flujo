@@ -33,7 +33,7 @@ environment and command scripts. The provided `Makefile` simply calls these
 
 ```bash
 pip install hatch
-make install        # create the Hatch environment
+make setup         # create the Hatch environment and install git hooks
 make quality        # run format, lint, types and security checks
 make test           # run the test suite
 # pass extra pytest arguments

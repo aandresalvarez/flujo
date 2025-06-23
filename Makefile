@@ -2,12 +2,12 @@
 
 args = $(filter-out $@,$(MAKECMDGOALS))
 
-.PHONY: help install quality lint format type-check test cov bandit sbom pip-dev pip-install clean
+.PHONY: help setup quality lint format type-check test cov bandit sbom pip-dev pip-install clean
 
 help:
-	@echo "Available commands:"
-	@echo "  install       - Install dependencies for development."
-	@echo "  quality       - Run all code quality checks."
+       @echo "Available commands:"
+       @echo "  setup         - Install dependencies and pre-commit hooks."
+       @echo "  quality       - Run all code quality checks."
 	@echo "  lint          - Run Ruff linting."
 	@echo "  format        - Auto-format the code."
 	@echo "  type-check    - Run MyPy type checking."
@@ -17,9 +17,9 @@ help:
 	@echo "  sbom          - Generate a CycloneDX SBOM."
 	@echo "  clean         - Remove build artifacts and caches."
 
-install:
-	@pip install hatch
-	@hatch env create
+setup:
+       @pip install --upgrade pip hatch pre-commit
+       @hatch run setup
 
 pip-dev:
 	@echo "📦 Installing development dependencies with pip..."

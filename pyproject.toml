@@ -162,6 +162,13 @@ cyclonedx = [
   "--output-format",
   "JSON",
 ]
+setup = [
+  "pip install --upgrade pip",
+  "pip install -e '.[dev,bench,docs]'",
+  "pre-commit install",
+]
+
+install-dev = "hatch run setup"
 
 # Composite script for all quality checks
 quality = [
