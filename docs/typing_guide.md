@@ -1,49 +1,99 @@
 # Typing Guide
 
-`flujo` embraces Python's type hints to make pipelines safer and easier to use.
-The `Step.from_callable` factory automatically infers a step's input and output
-types from an async function.
+`flujo` uses Python type hints to help you build robust pipelines. This guide shows how the `@step` decorator, `ContextAware` protocols and static type checkers work together.
+
+## The `@step` Decorator: Effortless Typed Steps
+
+Wrapping an async function with `@step` automatically creates a `Step[In, Out]` object using the function's signature. No manual generics are required.
 
 ```python
-from flujo import Step
+from flujo import step
 
-async def process(data: str) -> int:
+async def legacy_process(data: str) -> int:
     return len(data)
 
-step = Step.from_callable(process)
+process_step = step(legacy_process)  # Step[str, int]
 ```
 
-Static type checkers like `mypy` infer `step` as `Step[str, int]` so pipelines
-compose cleanly without manual casts. If a callable lacks annotations, the
-factory falls back to `Any`.
+The decorator can also be used directly on your function:
+
+```python
+from flujo import step
+
+@step
+async def to_upper(text: str) -> str:
+    return text.upper()
+```
+
+Here `to_upper` is already a `Step[str, str]` ready to be composed with other steps.
+
+## Type Safety in Pipelines
+
+Pipelines are strongly typed. If you try to chain incompatible steps, static analyzers such as `mypy` will flag an error.
+
+```python
+from flujo import step
+
+@step
+async def first(x: str) -> int:
+    return len(x)
+
+@step
+async def second(x: str) -> str:
+    return x
+
+pipeline = first >> second  # ❌ mypy: incompatible types
+```
+
+Because `first` outputs an `int` while `second` expects a `str`, `mypy` warns that the composition is invalid.
+
+## Stateful Pipelines: The `ContextAware` Protocols
+
+To share state across steps, define a Pydantic model and have your agents or plugins implement one of the context aware protocols. They receive a typed context instance automatically.
 
 ```python
 from pydantic import BaseModel
+from flujo.domain.agent_protocol import ContextAwareAgentProtocol
+from flujo.domain.plugins import ContextAwarePluginProtocol, PluginOutcome
 
-class Info(BaseModel):
-    message: str
-    count: int
+class MyContext(BaseModel):
+    user_query: str
+    counter: int = 0
 
-async def increment(info: Info) -> Info:
-    info.count += 1
-    return info
+class CountingAgent(ContextAwareAgentProtocol[str, str, MyContext]):
+    async def run(self, data: str, *, pipeline_context: MyContext, **_: object) -> str:
+        pipeline_context.counter += 1
+        return data
 
-typed = Step.from_callable(increment)
-# inferred as Step[Info, Info]
-
-async def untyped(x):
-    return x
-
-any_step = Step.from_callable(untyped)
-# inferred as Step[Any, Any]
-
-async def uses_context(data: str, *, pipeline_context: Info) -> str:
-    return data + pipeline_context.message
-
-context_step = Step.from_callable(uses_context)
+class MyPlugin(ContextAwarePluginProtocol[MyContext]):
+    async def validate(self, data: dict[str, object], *, pipeline_context: MyContext, **_: object) -> PluginOutcome:
+        return PluginOutcome(success=True)
 ```
 
-Keyword-only parameters such as ``pipeline_context`` or ``resources`` are
-ignored when inferring the input type. They are still passed through during
-execution, allowing you to access shared state or application resources without
-affecting the step's signature.
+Every call to `Flujo.run()` creates a fresh context instance. Mutations are visible to all subsequent steps.
+
+## A Complete Example
+
+```python
+from flujo import Flujo, step, PipelineResult
+
+class Ctx(BaseModel):
+    history: list[str] = []
+
+@step
+async def record(text: str, *, pipeline_context: Ctx) -> str:
+    pipeline_context.history.append(text)
+    return text.upper()
+
+@step
+async def cheer(text: str) -> str:
+    return f"{text}!"
+
+pipeline = record >> cheer
+runner = Flujo(pipeline, context_model=Ctx)
+result: PipelineResult[str] = runner.run("hello")
+print(result.final_pipeline_context.history)  # ['hello']
+print(result.step_history[-1].output)        # 'HELLO!'
+```
+
+This pipeline records each input in the context while producing an enthusiastic response.

@@ -59,33 +59,27 @@ print(result.final_pipeline_context.command_log[-1].execution_result)
 ### Pipeline Example
 
 ```python
-from flujo import (
-    Step, Flujo, Task,
-    review_agent, solution_agent, validator_agent,
-)
+from flujo import Flujo, step, PipelineResult
 
-# Build a custom pipeline using the Step DSL. This mirrors the internal
-# workflow used by :class:`Default` but is fully configurable.
-custom_pipeline = (
-    Step.review(review_agent)
-    >> Step.solution(solution_agent)
-    >> Step.validate(validator_agent)
-)
+@step
+async def to_uppercase(text: str) -> str:
+    """A simple step to convert text to uppercase."""
+    return text.upper()
 
-pipeline_runner = Flujo(custom_pipeline)
+@step
+async def add_enthusiasm(text: str) -> str:
+    """A second step to add emphasis."""
+    return f"{text}!!!"
 
-# Run synchronously; Flujo returns a PipelineResult.
-pipeline_result = pipeline_runner.run(
-    "Generate a REST API using FastAPI for a to-do list application."
-)
+# Compose the pipeline using the decorator-created steps
+pipeline = to_uppercase >> add_enthusiasm
+runner = Flujo(pipeline)
 
-print("\nPipeline Execution History:")
-for step_res in pipeline_result.step_history:
-    print(f"- Step '{step_res.name}': Success={step_res.success}")
+# Run the pipeline
+result: PipelineResult[str] = runner.run("hello world")
 
-if len(pipeline_result.step_history) > 1 and pipeline_result.step_history[1].success:
-    solution_output = pipeline_result.step_history[1].output
-    print("\nGenerated Solution:\n", solution_output)
+print(f"Final pipeline output: {result.step_history[-1].output}")
+# Expected Output: Final pipeline output: HELLO WORLD!!!
 ```
 
 ## Documentation

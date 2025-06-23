@@ -64,14 +64,42 @@ for entry in result.final_pipeline_context.command_log:
 ```
 This loop lets the planner decide when to call the tool and when to finish. The command log shows each decision.
 
-## 2. The Budget-Aware Workflow: Customizing Agents for `Default`
+## 2. Building Your First Custom Step with `@step`
+
+The easiest way to extend a pipeline is to decorate an async function with `@step`.
+
+```python
+from flujo import step
+
+@step
+async def shout(text: str) -> str:
+    return text.upper()
+```
+
+`shout` is now a typed `Step[str, str]` that you can compose with others.
+
+## 3. Composing Your First Custom Pipeline
+
+```python
+from flujo import Flujo, step, PipelineResult
+
+@step
+async def to_upper(text: str) -> str:
+    return text.upper()
+
+@step
+async def add_excitement(text: str) -> str:
+    return f"{text}!"
+
+pipeline = to_upper >> add_excitement
+runner = Flujo(pipeline)
+result: PipelineResult[str] = runner.run("hello")
+print(result.step_history[-1].output)  # HELLO!
+```
+
+## 4. The Budget-Aware Workflow: Customizing Agents for `Default`
 
 The `Default` recipe is still handy for simple, fixed workflows. You can customize its agents to mix models for cost and quality.
-
----
-
-
-## 2. The Budget-Aware Workflow: Customizing Agents for `Default`
 
 Professional AI workflows often involve a mix of models to balance cost, speed, and quality. Here, we'll use a **cheaper, faster model** for the initial draft (`solution_agent`) but retain the **smarter models** for the critical thinking roles (planning, quality control, and strategy).
 
@@ -96,7 +124,7 @@ This "cheap drafter, smart reviewer" pattern is a powerful way to get high-quali
 
 ---
 
-## 3. Outputting Structured Data with a Custom Pipeline
+## 5. Outputting Structured Data with a Custom Pipeline
 
 So far, our agents have only outputted simple strings. What if we need structured data, like JSON? The underlying `pydantic-ai` library excels at this. You can specify a Pydantic `BaseModel` as the `output_type` for an agent.
 
@@ -169,7 +197,7 @@ else:
 
 ---
 
-## 4. The Grand Finale: A Fully Custom Pipeline with Tools
+## 6. The Grand Finale: A Fully Custom Pipeline with Tools
 
 Now for the ultimate challenge. Let's build a workflow where **every agent is customized**, and our `solution_agent` can use **external tools** to get information it doesn't have.
 
@@ -256,7 +284,7 @@ This concludes our tour! You've journeyed from a simple prompt to a sophisticate
 -   Generate clean, **structured JSON** using Pydantic models.
 -   Empower agents with **external tools** to overcome their knowledge limitations.
 
-## 5. Building Custom Pipelines
+## 7. Building Custom Pipelines
 
 The new Pipeline DSL lets you compose your own workflow using `Step` objects. Execute the pipeline with `Flujo`:
 
