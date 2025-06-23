@@ -167,6 +167,10 @@ source venv/bin/activate  # Linux/macOS
 
 # Install development dependencies
 pip install -e ".[dev]"
+
+# Set up the Hatch environment for tooling
+pip install hatch
+make install
 ```
 
 ## Contributing
