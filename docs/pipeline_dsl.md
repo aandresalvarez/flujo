@@ -17,18 +17,30 @@ The Pipeline DSL lets you:
 
 ```python
 from flujo import Step, Flujo
+
+async def add_one(x: int) -> int:
+    return x + 1
+
+pipeline = Step.from_callable(add_one) >> Step.from_callable(add_one)
+runner = Flujo(pipeline)
+result = runner.run(1)
+```
+
+The `Step.from_callable` factory infers the input and output types from the
+function's signature so the pipeline is typed as `Step[int, int]`.
+
+```python
 from flujo.infra.agents import (
-    review_agent, solution_agent, validator_agent
+    review_agent, solution_agent, validator_agent,
 )
 
-# Create a basic pipeline
+# Built-in step factories are still available
 pipeline = (
     Step.review(review_agent)
     >> Step.solution(solution_agent)
     >> Step.validate_step(validator_agent)
 )
 
-# Run it
 runner = Flujo(pipeline)
 result = runner.run("Write a function to sort a list")
 ```
@@ -48,6 +60,21 @@ pipeline1 = review_step >> solution_step >> validate_step
 pipeline2 = solution_step >> validate_step  # Skip review
 pipeline3 = review_step >> solution_step >> solution_step >> validate_step  # Double solution
 ```
+
+### Creating Steps from Functions
+
+Use `Step.from_callable` to wrap your own async functions. The factory infers
+both the input and output types:
+
+```python
+async def to_upper(text: str) -> str:
+    return text.upper()
+
+upper_step = Step.from_callable(to_upper)
+```
+
+The resulting `upper_step` has the type `Step[str, str]` and can be composed
+like any other step.
 
 ## Step Types
 

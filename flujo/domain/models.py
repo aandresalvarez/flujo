@@ -21,7 +21,8 @@ class BaseModel(PydanticBaseModel):
 
     def model_dump_json(self, **kwargs: Any) -> str:
         """Override to use orjson for serialization."""
-        return orjson.dumps(self.model_dump(), **kwargs).decode()
+        data: bytes = orjson.dumps(self.model_dump(), **kwargs)
+        return data.decode()
 
     @classmethod
     def model_validate_json(
@@ -55,8 +56,12 @@ class ChecklistItem(BaseModel):
     """A single item in a checklist for evaluating a solution."""
 
     description: str = Field(..., description="The criterion to evaluate.")
-    passed: Optional[bool] = Field(None, description="Whether the solution passes this criterion.")
-    feedback: Optional[str] = Field(None, description="Feedback if the criterion is not met.")
+    passed: Optional[bool] = Field(
+        None, description="Whether the solution passes this criterion."
+    )
+    feedback: Optional[str] = Field(
+        None, description="Feedback if the criterion is not met."
+    )
 
 
 class Checklist(BaseModel):
@@ -111,7 +116,9 @@ class PipelineResult(BaseModel):
     total_cost_usd: float = 0.0
     final_pipeline_context: Optional[BaseModel] = Field(
         default=None,
-        description=("The final state of the typed pipeline context, if configured and used."),
+        description=(
+            "The final state of the typed pipeline context, if configured and used."
+        ),
     )
 
     model_config: ClassVar[ConfigDict] = {"arbitrary_types_allowed": True}

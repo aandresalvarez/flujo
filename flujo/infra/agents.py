@@ -140,36 +140,38 @@ def make_agent(
 ) -> Agent[Any, Any]:
     """Creates a pydantic_ai.Agent, injecting the correct API key."""
     provider_name = model.split(":")[0].lower()
-    api_key = None
 
     if provider_name == "openai":
         if not settings.openai_api_key:
             raise ConfigurationError(
                 "To use OpenAI models, the OPENAI_API_KEY environment variable must be set."
             )
-        api_key = settings.openai_api_key.get_secret_value()
-        # Ensure the OpenAI client can locate the key
-        os.environ.setdefault("OPENAI_API_KEY", api_key)
+        os.environ.setdefault(
+            "OPENAI_API_KEY", settings.openai_api_key.get_secret_value()
+        )
     elif provider_name in {"google-gla", "gemini"}:
         if not settings.google_api_key:
             raise ConfigurationError(
                 "To use Gemini models, the GOOGLE_API_KEY environment variable must be set."
             )
-        api_key = settings.google_api_key.get_secret_value()
+        os.environ.setdefault(
+            "GOOGLE_API_KEY", settings.google_api_key.get_secret_value()
+        )
     elif provider_name == "anthropic":
         if not settings.anthropic_api_key:
             raise ConfigurationError(
                 "To use Anthropic models, the ANTHROPIC_API_KEY environment variable must be set."
             )
-        api_key = settings.anthropic_api_key.get_secret_value()
+        os.environ.setdefault(
+            "ANTHROPIC_API_KEY", settings.anthropic_api_key.get_secret_value()
+        )
 
     # The Agent constructor's type hints are not strict enough for mypy strict mode.
     # See: https://github.com/pydantic/pydantic-ai/issues (file an issue if not present)
-    agent: Agent[Any, Any] = Agent(  # type: ignore[call-overload]
+    agent: Agent[Any, Any] = Agent(
         model=model,
         system_prompt=system_prompt,
         output_type=output_type,
-        api_key=api_key,
         tools=tools or [],
     )
     return agent
