@@ -1,9 +1,16 @@
 import pytest
+import os
+
+# Conditionally skip the test unless explicitly enabled.
+if not os.getenv("CI_E2E_RUN"):
+    pytest.skip(
+        "Skipping E2E golden transcript test; run manually or via E2E workflow.",
+        allow_module_level=True,
+    )
 
 try:
     import vcr
-except Exception:  # pragma: no cover - skip if dependency missing
-    vcr = None
+except ImportError:  # pragma: no cover - skip if dependency missing
     pytest.skip("vcrpy not installed", allow_module_level=True)
 from flujo.recipes import Default
 from flujo.domain.models import Task, Candidate
@@ -13,8 +20,6 @@ from flujo.infra.agents import (
     validator_agent,
     get_reflection_agent,
 )
-
-pytest.skip("Skipping golden transcript", allow_module_level=True)
 
 
 def scrub_auth(request):

@@ -119,6 +119,18 @@ new utilities or models, consider writing property-based tests.
 
 You can see examples in `tests/unit/test_utils_properties.py`.
 
+### Running End-to-End Tests
+
+The `tests/e2e` suite is skipped during normal CI runs. Maintainers can execute
+these tests manually via GitHub Actions:
+
+1. Open the **Actions** tab and choose **Manual E2E Tests**.
+2. Click **Run workflow** and optionally enable *Re-record VCR cassette?* to
+   delete the existing cassette and record a new one.
+3. If a new cassette is recorded, download the `new-e2e-cassette` artifact from
+   the workflow run and replace `tests/e2e/cassettes/golden.yaml` before
+   committing.
+
 ---
 
 ## 5. Code Quality
