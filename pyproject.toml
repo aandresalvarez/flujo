@@ -152,16 +152,7 @@ type-check = "mypy flujo"
 test = "pytest {args}"
 cov = "pytest --cov=flujo --cov-report=term-missing {args}"
 bandit-check = "bandit -c pyproject.toml -r flujo -s B101,B404,B603 --exit-zero"
-cyclonedx = [
-  "cyclonedx-py",
-  "environment",
-  "--pyproject",
-  "pyproject.toml",
-  "--output-file",
-  "sbom.json",
-  "--output-format",
-  "JSON",
-]
+cyclonedx = "cyclonedx-py environment --output-file sbom.json --output-format JSON"
 setup = [
   "pip install --upgrade pip",
   "pip install -e '.[dev,bench,docs]'",
