@@ -23,6 +23,7 @@ The `ConditionalStep` succeeds when the selected branch completes successfully. 
 
 ```python
 from flujo.domain import Step, Pipeline
+from pydantic import BaseModel
 
 async def classify(x: str) -> str:
     return "numbers" if x.isdigit() else "text"
@@ -38,9 +39,12 @@ branches = {
     "text": Pipeline.from_step(Step("txt", process_text)),
 }
 
+def select_branch(result: str, ctx: BaseModel | None) -> str:
+    return result
+
 branch_step = Step.branch_on(
     name="router",
-    condition_callable=lambda out, ctx: out,
+    condition_callable=select_branch,
     branches=branches,
 )
 

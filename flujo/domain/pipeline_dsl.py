@@ -27,6 +27,7 @@ from flujo.domain.models import BaseModel
 from pydantic import Field, ConfigDict
 from .agent_protocol import AsyncAgentProtocol
 from .plugins import ValidationPlugin
+from .types import ContextT
 
 
 StepInT = TypeVar("StepInT")
@@ -94,17 +95,23 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         raise TypeError("Can only chain Step with Step or Pipeline")
 
     @classmethod
-    def review(cls, agent: AsyncAgentProtocol[Any, Any], **config: Any) -> "Step[Any, Any]":
+    def review(
+        cls, agent: AsyncAgentProtocol[Any, Any], **config: Any
+    ) -> "Step[Any, Any]":
         """Construct a review step using the provided agent."""
         return cls("review", agent, **config)
 
     @classmethod
-    def solution(cls, agent: AsyncAgentProtocol[Any, Any], **config: Any) -> "Step[Any, Any]":
+    def solution(
+        cls, agent: AsyncAgentProtocol[Any, Any], **config: Any
+    ) -> "Step[Any, Any]":
         """Construct a solution step using the provided agent."""
         return cls("solution", agent, **config)
 
     @classmethod
-    def validate_step(cls, agent: AsyncAgentProtocol[Any, Any], **config: Any) -> "Step[Any, Any]":
+    def validate_step(
+        cls, agent: AsyncAgentProtocol[Any, Any], **config: Any
+    ) -> "Step[Any, Any]":
         """Construct a validation step using the provided agent."""
         return cls("validate", agent, **config)
 
@@ -191,7 +198,9 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             input_schema=input_schema,
         )
 
-    def add_plugin(self, plugin: ValidationPlugin, priority: int = 0) -> "Step[StepInT, StepOutT]":
+    def add_plugin(
+        self, plugin: ValidationPlugin, priority: int = 0
+    ) -> "Step[StepInT, StepOutT]":
         """Add a validation plugin to this step."""
         self.plugins.append((plugin, priority))
         return self
@@ -206,15 +215,17 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         cls,
         name: str,
         loop_body_pipeline: "Pipeline[Any, Any]",
-        exit_condition_callable: Callable[[Any, Optional[BaseModel]], bool],
+        exit_condition_callable: Callable[[Any, Optional[ContextT]], bool],
         max_loops: int = 5,
         initial_input_to_loop_body_mapper: Optional[
-            Callable[[Any, Optional[BaseModel]], Any]
+            Callable[[Any, Optional[ContextT]], Any]
         ] = None,
-        iteration_input_mapper: Optional[Callable[[Any, Optional[BaseModel], int], Any]] = None,
-        loop_output_mapper: Optional[Callable[[Any, Optional[BaseModel]], Any]] = None,
+        iteration_input_mapper: Optional[
+            Callable[[Any, Optional[ContextT], int], Any]
+        ] = None,
+        loop_output_mapper: Optional[Callable[[Any, Optional[ContextT]], Any]] = None,
         **config_kwargs: Any,
-    ) -> "LoopStep":
+    ) -> "LoopStep[ContextT]":
         """Factory method to create a :class:`LoopStep`."""
         from .pipeline_dsl import LoopStep
 
@@ -233,13 +244,15 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
     def branch_on(
         cls,
         name: str,
-        condition_callable: Callable[[Any, Optional[BaseModel]], BranchKey],
+        condition_callable: Callable[[Any, Optional[ContextT]], BranchKey],
         branches: Dict[BranchKey, "Pipeline[Any, Any]"],
         default_branch_pipeline: Optional["Pipeline[Any, Any]"] = None,
-        branch_input_mapper: Optional[Callable[[Any, Optional[BaseModel]], Any]] = None,
-        branch_output_mapper: Optional[Callable[[Any, BranchKey, Optional[BaseModel]], Any]] = None,
+        branch_input_mapper: Optional[Callable[[Any, Optional[ContextT]], Any]] = None,
+        branch_output_mapper: Optional[
+            Callable[[Any, BranchKey, Optional[ContextT]], Any]
+        ] = None,
         **config_kwargs: Any,
-    ) -> "ConditionalStep":
+    ) -> "ConditionalStep[ContextT]":
         """Factory method to create a :class:`ConditionalStep`."""
         from .pipeline_dsl import ConditionalStep
 
@@ -255,7 +268,9 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
 
 
 @overload
-def step(func: Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]]) -> "Step[StepInT, StepOutT]":
+def step(
+    func: Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]]
+) -> "Step[StepInT, StepOutT]":
     """Transform an async function into a :class:`Step`."""
     ...
 
@@ -270,7 +285,9 @@ def step(*, name: str | None = None, **config_kwargs: Any) -> Callable[
 
 
 def step(
-    func: Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]] | None = None,
+    func: (
+        Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]] | None
+    ) = None,
     *,
     name: str | None = None,
     **config_kwargs: Any,
@@ -322,30 +339,40 @@ class HumanInTheLoopStep(Step[Any, Any]):
         object.__setattr__(self, "input_schema", input_schema)
 
 
-class LoopStep(Step[Any, Any]):
+class LoopStep(Step[Any, Any], Generic[ContextT]):
     """A specialized step that executes a pipeline in a loop."""
 
     loop_body_pipeline: "Pipeline[Any, Any]" = Field(
         description="The pipeline to execute in each iteration."
     )
-    exit_condition_callable: Callable[[Any, Optional[BaseModel]], bool] = Field(
+    exit_condition_callable: Callable[[Any, Optional[ContextT]], bool] = Field(
         description=(
             "Callable that takes (last_body_output, pipeline_context) and returns True to exit loop."
         )
     )
     max_loops: int = Field(default=5, gt=0, description="Maximum number of iterations.")
 
-    initial_input_to_loop_body_mapper: Optional[Callable[[Any, Optional[BaseModel]], Any]] = Field(
+    initial_input_to_loop_body_mapper: Optional[
+        Callable[[Any, Optional[ContextT]], Any]
+    ] = Field(
         default=None,
-        description=("Callable to map LoopStep's input to the first iteration's body input."),
+        description=(
+            "Callable to map LoopStep's input to the first iteration's body input."
+        ),
     )
-    iteration_input_mapper: Optional[Callable[[Any, Optional[BaseModel], int], Any]] = Field(
-        default=None,
-        description=("Callable to map previous iteration's body output to next iteration's input."),
+    iteration_input_mapper: Optional[Callable[[Any, Optional[ContextT], int], Any]] = (
+        Field(
+            default=None,
+            description=(
+                "Callable to map previous iteration's body output to next iteration's input."
+            ),
+        )
     )
-    loop_output_mapper: Optional[Callable[[Any, Optional[BaseModel]], Any]] = Field(
+    loop_output_mapper: Optional[Callable[[Any, Optional[ContextT]], Any]] = Field(
         default=None,
-        description=("Callable to map the final successful output to the LoopStep's output."),
+        description=(
+            "Callable to map the final successful output to the LoopStep's output."
+        ),
     )
 
     model_config = {"arbitrary_types_allowed": True}
@@ -355,13 +382,15 @@ class LoopStep(Step[Any, Any]):
         *,
         name: str,
         loop_body_pipeline: "Pipeline[Any, Any]",
-        exit_condition_callable: Callable[[Any, Optional[BaseModel]], bool],
+        exit_condition_callable: Callable[[Any, Optional[ContextT]], bool],
         max_loops: int = 5,
         initial_input_to_loop_body_mapper: Optional[
-            Callable[[Any, Optional[BaseModel]], Any]
+            Callable[[Any, Optional[ContextT]], Any]
         ] = None,
-        iteration_input_mapper: Optional[Callable[[Any, Optional[BaseModel], int], Any]] = None,
-        loop_output_mapper: Optional[Callable[[Any, Optional[BaseModel]], Any]] = None,
+        iteration_input_mapper: Optional[
+            Callable[[Any, Optional[ContextT], int], Any]
+        ] = None,
+        loop_output_mapper: Optional[Callable[[Any, Optional[ContextT]], Any]] = None,
         **config_kwargs: Any,
     ) -> None:
         if max_loops <= 0:
@@ -383,10 +412,10 @@ class LoopStep(Step[Any, Any]):
         )
 
 
-class ConditionalStep(Step[Any, Any]):
+class ConditionalStep(Step[Any, Any], Generic[ContextT]):
     """A step that selects and executes a branch pipeline based on a condition."""
 
-    condition_callable: Callable[[Any, Optional[BaseModel]], BranchKey] = Field(
+    condition_callable: Callable[[Any, Optional[ContextT]], BranchKey] = Field(
         description=("Callable that returns a key to select a branch.")
     )
     branches: Dict[BranchKey, "Pipeline[Any, Any]"] = Field(
@@ -397,11 +426,13 @@ class ConditionalStep(Step[Any, Any]):
         description="Pipeline to execute when no branch key matches.",
     )
 
-    branch_input_mapper: Optional[Callable[[Any, Optional[BaseModel]], Any]] = Field(
+    branch_input_mapper: Optional[Callable[[Any, Optional[ContextT]], Any]] = Field(
         default=None,
         description="Maps ConditionalStep input to branch input.",
     )
-    branch_output_mapper: Optional[Callable[[Any, BranchKey, Optional[BaseModel]], Any]] = Field(
+    branch_output_mapper: Optional[
+        Callable[[Any, BranchKey, Optional[ContextT]], Any]
+    ] = Field(
         default=None,
         description="Maps branch output to ConditionalStep output.",
     )
@@ -412,11 +443,13 @@ class ConditionalStep(Step[Any, Any]):
         self,
         *,
         name: str,
-        condition_callable: Callable[[Any, Optional[BaseModel]], BranchKey],
+        condition_callable: Callable[[Any, Optional[ContextT]], BranchKey],
         branches: Dict[BranchKey, "Pipeline[Any, Any]"],
         default_branch_pipeline: Optional["Pipeline[Any, Any]"] = None,
-        branch_input_mapper: Optional[Callable[[Any, Optional[BaseModel]], Any]] = None,
-        branch_output_mapper: Optional[Callable[[Any, BranchKey, Optional[BaseModel]], Any]] = None,
+        branch_input_mapper: Optional[Callable[[Any, Optional[ContextT]], Any]] = None,
+        branch_output_mapper: Optional[
+            Callable[[Any, BranchKey, Optional[ContextT]], Any]
+        ] = None,
         **config_kwargs: Any,
     ) -> None:
         if not branches:

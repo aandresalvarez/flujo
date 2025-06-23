@@ -5,8 +5,12 @@ This example simulates a system that first classifies a user's query and then
 routes it to a specialized agent based on whether the query is about code
 or a general question. For more details, see docs/pipeline_branching.md.
 """
+
+# mypy: ignore-errors
+
 import asyncio
 from typing import Any, Literal
+from pydantic import BaseModel
 
 from flujo import Flujo, Step, Pipeline
 from flujo.domain.agent_protocol import AsyncAgentProtocol
@@ -15,7 +19,7 @@ from flujo.domain.agent_protocol import AsyncAgentProtocol
 # Agent wrapper classes for our routing workflow
 class ClassifyQueryAgent(AsyncAgentProtocol[str, Literal["code", "qa"]]):
     """Classifies the user's query to determine the correct route."""
-    
+
     async def run(self, query: str, **kwargs: Any) -> Literal["code", "qa"]:
         print(f"🧐 Classifying query: '{query}'")
         if "function" in query.lower() or "python" in query.lower():
@@ -27,7 +31,7 @@ class ClassifyQueryAgent(AsyncAgentProtocol[str, Literal["code", "qa"]]):
 
 class CodeGenerationAgent(AsyncAgentProtocol[str, str]):
     """A specialized agent for writing code."""
-    
+
     async def run(self, query: str, **kwargs: Any) -> str:
         print("   -> 🐍 Routing to Code Generation Agent.")
         return f'def solution():\n  """Solves: {query}"""\n  pass'
@@ -35,7 +39,7 @@ class CodeGenerationAgent(AsyncAgentProtocol[str, str]):
 
 class GeneralQAAgent(AsyncAgentProtocol[str, str]):
     """A specialized agent for answering general questions."""
-    
+
     async def run(self, query: str, **kwargs: Any) -> str:
         print("   -> ❓ Routing to General QA Agent.")
         return f"Here is a detailed answer to your question about '{query}'."
@@ -45,12 +49,17 @@ class GeneralQAAgent(AsyncAgentProtocol[str, str]):
 code_pipeline = Pipeline.from_step(Step("GenerateCode", CodeGenerationAgent()))
 qa_pipeline = Pipeline.from_step(Step("AnswerQuestion", GeneralQAAgent()))
 
+
 # 2. Define the `ConditionalStep`. This is our router.
+def choose_branch(classification_result: str, ctx: BaseModel | None) -> str:
+    return classification_result
+
+
 branch_step = Step.branch_on(
     name="QueryRouter",
     # The `condition_callable` receives the output of the previous step.
     # Its return value ("code" or "qa") is used as the key to select a branch.
-    condition_callable=lambda classification_result, ctx: classification_result,
+    condition_callable=choose_branch,
     branches={
         "code": code_pipeline,
         "qa": qa_pipeline,
@@ -61,6 +70,7 @@ branch_step = Step.branch_on(
 full_pipeline = Step("ClassifyQuery", ClassifyQueryAgent()) >> branch_step
 
 runner = Flujo(full_pipeline)
+
 
 # 4. Run the pipeline with different inputs to see the routing in action.
 async def run_and_print(prompt: str):

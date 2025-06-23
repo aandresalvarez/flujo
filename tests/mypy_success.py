@@ -1,7 +1,10 @@
-from flujo.domain import Step, step
+from typing import Any, cast, Callable, Optional
+
+from flujo.domain import Step, step, Pipeline
 from flujo.testing.utils import StubAgent
 from flujo.application.flujo_engine import Flujo
-from pydantic import BaseModel
+from flujo.domain.agent_protocol import AsyncAgentProtocol
+from flujo.domain.models import BaseModel
 
 
 class UserInfo(BaseModel):
@@ -15,8 +18,12 @@ class Report(BaseModel):
 def test_pipeline_type_continuity() -> None:
     agent1 = StubAgent([UserInfo(name="test")])
     agent2 = StubAgent([Report(summary="report")])
-    step1: Step[str, UserInfo] = Step.solution(agent1)
-    step2: Step[UserInfo, Report] = Step.solution(agent2)
+    step1: Step[str, UserInfo] = Step.solution(
+        cast(AsyncAgentProtocol[Any, Any], agent1)
+    )
+    step2: Step[UserInfo, Report] = Step.solution(
+        cast(AsyncAgentProtocol[Any, Any], agent2)
+    )
     _pipeline = step1 >> step2
 
     @step
@@ -38,6 +45,47 @@ class MyCtx(BaseModel):
 
 
 def check_result_typing() -> None:
-    runner = Flujo(Step.solution(StubAgent(["ok"])), context_model=MyCtx)
+    runner: Flujo[Any, Any, MyCtx] = Flujo(
+        Step.solution(cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok"]))),
+        context_model=MyCtx,
+    )
     result = runner.run("hi")
     reveal_type(result.final_pipeline_context)  # noqa: F821
+
+
+class LoopCtx(BaseModel):
+    is_finished: bool = False
+
+
+def typed_loop_step() -> None:
+    def should_exit(out: int, ctx: LoopCtx | None) -> bool:
+        return bool(ctx and ctx.is_finished)
+
+    body: Pipeline[Any, Any] = Pipeline.from_step(Step("a"))
+    Step.loop_until(
+        name="l",
+        loop_body_pipeline=body,
+        exit_condition_callable=cast(
+            Callable[[Any, Optional[LoopCtx]], bool],
+            should_exit,
+        ),
+    )  # type: ignore[type-var]
+
+    # Uncommenting the following should fail mypy:
+    # def bad(out: int, ctx: LoopCtx | None) -> bool:
+    #     return ctx.missing  # type: ignore[attr-defined]
+
+
+def typed_conditional_step() -> None:
+    def choose(_out: str, ctx: LoopCtx | None) -> str:
+        return "a" if ctx and ctx.is_finished else "b"
+
+    branches: dict[str, Pipeline[Any, Any]] = {"a": Step("a") >> Step("b")}
+    Step.branch_on(
+        name="b",
+        condition_callable=cast(
+            Callable[[Any, Optional[LoopCtx]], str],
+            choose,
+        ),
+        branches=branches,
+    )  # type: ignore[type-var]

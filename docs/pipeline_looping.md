@@ -32,10 +32,13 @@ async def inc(x: int, *, pipeline_context: Ctx | None = None) -> int:
 
 body = Pipeline.from_step(Step("inc", inc))
 
+def should_exit(last: int, ctx: Ctx | None) -> bool:
+    return last >= 3
+
 loop_step = Step.loop_until(
     name="increment_until_three",
     loop_body_pipeline=body,
-    exit_condition_callable=lambda out, ctx: out >= 3,
+    exit_condition_callable=should_exit,
     max_loops=5,
 )
 ```

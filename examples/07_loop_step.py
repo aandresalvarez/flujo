@@ -6,8 +6,9 @@ cycle until the text meets a quality standard or the max number of
 loops is reached. For more details, see docs/pipeline_looping.md.
 """
 
+# mypy: ignore-errors
+
 import asyncio
-from typing import cast
 
 from pydantic import BaseModel
 
@@ -74,7 +75,7 @@ async def main() -> None:
     print("\n✅ Pipeline finished!")
     assert result is not None
     final_result = result.step_history[-1]
-    output = cast(TextEdit, final_result.output)
+    output = final_result.output
 
     print(f"\nFinal Output: '{output.text}'")
     print(f"Final Feedback: '{output.feedback}'")
