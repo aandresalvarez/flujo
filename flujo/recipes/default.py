@@ -32,15 +32,17 @@ class Default:
     ) -> None:
         _ = max_iters, k_variants, reflection_limit
 
-        async def _invoke(target: Any, data: Any) -> Any:
+        async def _invoke(target: Any, data: Any, **kwargs: Any) -> Any:
             if hasattr(target, "run") and callable(getattr(target, "run")):
-                return await target.run(data)
-            return await target(data)
+                return await target.run(data, **kwargs)
+            return await target(data, **kwargs)
 
         class ReviewWrapper:
             async def run(self, data: Any, **kwargs: Any) -> Any:
-                pipeline_context: PipelineContext = kwargs["pipeline_context"]
-                result = await _invoke(review_agent, data)
+                pipeline_context = kwargs.get("context") or kwargs.get("pipeline_context")
+                if not pipeline_context:
+                    raise KeyError("Could not find 'context' or 'pipeline_context' in kwargs")
+                result = await _invoke(review_agent, data, **kwargs)
                 checklist = cast(Checklist, getattr(result, "output", result))
                 pipeline_context.scratchpad["checklist"] = checklist
                 return cast(str, data)
@@ -50,8 +52,10 @@ class Default:
 
         class SolutionWrapper:
             async def run(self, data: Any, **kwargs: Any) -> Any:
-                pipeline_context: PipelineContext = kwargs["pipeline_context"]
-                result = await _invoke(solution_agent, data)
+                pipeline_context = kwargs.get("context") or kwargs.get("pipeline_context")
+                if not pipeline_context:
+                    raise KeyError("Could not find 'context' or 'pipeline_context' in kwargs")
+                result = await _invoke(solution_agent, data, **kwargs)
                 solution = cast(str, getattr(result, "output", result))
                 pipeline_context.scratchpad["solution"] = solution
                 return solution
@@ -61,12 +65,14 @@ class Default:
 
         class ValidatorWrapper:
             async def run(self, _data: Any, **kwargs: Any) -> Any:
-                pipeline_context: PipelineContext = kwargs["pipeline_context"]
+                pipeline_context = kwargs.get("context") or kwargs.get("pipeline_context")
+                if not pipeline_context:
+                    raise KeyError("Could not find 'context' or 'pipeline_context' in kwargs")
                 payload = {
                     "solution": pipeline_context.scratchpad.get("solution"),
                     "checklist": pipeline_context.scratchpad.get("checklist"),
                 }
-                result = await _invoke(validator_agent, payload)
+                result = await _invoke(validator_agent, payload, **kwargs)
                 validated = cast(Checklist, getattr(result, "output", result))
                 pipeline_context.scratchpad["checklist"] = validated
                 return validated

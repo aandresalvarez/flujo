@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import inspect
 import warnings
-from typing import get_type_hints, get_origin, get_args
 import time
 import weakref
 from typing import (
@@ -19,11 +18,12 @@ from typing import (
     Union,
     cast,
     TypeAlias,
+    get_type_hints,
+    get_origin,
+    get_args,
 )
 
-from flujo.domain.models import BaseModel
 from pydantic import ValidationError
-
 
 from ..infra.telemetry import logfire
 from ..exceptions import (
@@ -41,11 +41,9 @@ from ..domain.pipeline_dsl import (
     HumanInTheLoopStep,
     BranchKey,
 )
-from ..domain.plugins import (
-    PluginOutcome,
-    ContextAwarePluginProtocol,
-)
+from ..domain.plugins import PluginOutcome, ContextAwarePluginProtocol
 from ..domain.models import (
+    BaseModel,
     PipelineResult,
     StepResult,
     UsageLimits,
@@ -82,15 +80,13 @@ _accepts_param_cache_id: weakref.WeakValueDictionary[int, Dict[str, Optional[boo
 
 
 def _accepts_param(func: Callable[..., Any], param: str) -> Optional[bool]:
-    """Return True if callable's signature includes ``param`` or ``**kwargs``.
-
-    Returns ``None`` if the signature cannot be inspected. Uses a
-    :class:`~weakref.WeakKeyDictionary` for hashable callables and falls back
-    to ``id(func)`` for unhashable ones.
+    """
+    Return True if callable's signature includes `param` or `**kwargs`.
+    Caches the result to avoid repeated inspection.
     """
     try:
         cache = _accepts_param_cache_weak.setdefault(func, {})
-    except TypeError:
+    except TypeError:  # For unhashable callables
         func_id = id(func)
         cache = _accepts_param_cache_id.setdefault(func_id, {})
     if param in cache:
@@ -98,15 +94,14 @@ def _accepts_param(func: Callable[..., Any], param: str) -> Optional[bool]:
 
     try:
         sig = inspect.signature(func)
-    except (TypeError, ValueError):
-        result = None
-    else:
         if param in sig.parameters:
             result = True
         elif any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
             result = True
         else:
             result = False
+    except (TypeError, ValueError):
+        result = None  # Cannot inspect signature
 
     cache[param] = result
     return result
@@ -116,8 +111,6 @@ RunnerInT = TypeVar("RunnerInT")
 RunnerOutT = TypeVar("RunnerOutT")
 ContextT = TypeVar("ContextT", bound=BaseModel)
 
-# Type alias for a callable used to execute nested steps via the configured
-# backend.
 StepExecutor: TypeAlias = Callable[
     [Step[Any, Any], Any, Optional[ContextT], Optional[AppResources]],
     Awaitable[StepResult],
@@ -142,7 +135,7 @@ async def _execute_loop_step_logic(
             current_body_input = loop_step.initial_input_to_loop_body_mapper(
                 loop_step_initial_input, pipeline_context
             )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logfire.error(
                 f"Error in initial_input_to_loop_body_mapper for LoopStep '{loop_step.name}': {e}"
             )
@@ -381,7 +374,7 @@ async def _execute_conditional_step_logic(
             branch_output = current_branch_data
             branch_succeeded = True
 
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logfire.error(
             f"Error during ConditionalStep '{conditional_step.name}' execution: {e}",
             exc_info=True,
@@ -397,7 +390,7 @@ async def _execute_conditional_step_logic(
                 conditional_overall_result.output = conditional_step.branch_output_mapper(
                     branch_output, executed_branch_key, pipeline_context
                 )
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 logfire.error(
                     f"Error in branch_output_mapper for ConditionalStep '{conditional_step.name}': {e}"
                 )
@@ -479,29 +472,20 @@ async def _run_step_logic(
                 )
             agent_kwargs["pipeline_context"] = pipeline_context
         elif pipeline_context is not None:
-            inner = getattr(current_agent, "_agent", None)
-            target = inner if inner is not None else current_agent
-            accepts_ctx = _accepts_param(target.run, "pipeline_context")
-            accepts_context = _accepts_param(target.run, "context")
-
-            pass_ctx = False
-            if context_model_defined:
-                pass_ctx = True
-            if accepts_ctx:
+            target = getattr(current_agent, "_agent", current_agent)
+            if _accepts_param(target.run, "context"):
+                agent_kwargs["context"] = pipeline_context
+            elif _accepts_param(target.run, "pipeline_context"):
+                agent_kwargs["pipeline_context"] = pipeline_context
                 warnings.warn(
-                    f"Agent '{current_agent.__class__.__name__}' uses a legacy context pattern. "
-                    f"For type safety, implement the 'ContextAwareAgentProtocol' instead. "
-                    "See documentation for details.",
+                    f"Agent '{target.__class__.__name__}' uses the deprecated 'pipeline_context' parameter. "
+                    "Update its signature to use 'context: YourContext' for future compatibility.",
                     DeprecationWarning,
                     stacklevel=2,
                 )
-                pass_ctx = True
-            if accepts_context:
-                agent_kwargs["context"] = pipeline_context
-            elif pass_ctx:
-                agent_kwargs["pipeline_context"] = pipeline_context
         if resources is not None:
-            agent_kwargs["resources"] = resources
+            if _accepts_param(current_agent.run, "resources"):
+                agent_kwargs["resources"] = resources
         if step.config.temperature is not None and _accepts_param(current_agent.run, "temperature"):
             agent_kwargs["temperature"] = step.config.temperature
         raw_output = await current_agent.run(data, **agent_kwargs)
@@ -529,35 +513,37 @@ async def _run_step_logic(
                             f"Plugin '{plugin.__class__.__name__}' requires a pipeline context"
                         )
                     plugin_kwargs["pipeline_context"] = pipeline_context
-                else:
-                    accepts_ctx = _accepts_param(plugin.validate, "pipeline_context")
-                    accepts_context = _accepts_param(plugin.validate, "context")
-
-                    if pipeline_context is not None:
-                        pass_ctx = False
-                        if context_model_defined:
-                            pass_ctx = True
-                        if accepts_context:
-                            plugin_kwargs["context"] = pipeline_context
-                        elif accepts_ctx:
-                            plugin_kwargs["pipeline_context"] = pipeline_context
-
+                elif pipeline_context is not None:
+                    # Prioritize 'context', fall back to 'pipeline_context' for compatibility
+                    if _accepts_param(plugin.validate, "context"):
+                        plugin_kwargs["context"] = pipeline_context
+                    elif _accepts_param(plugin.validate, "pipeline_context"):
+                        plugin_kwargs["pipeline_context"] = pipeline_context
+                        warnings.warn(
+                            f"Plugin '{plugin.__class__.__name__}' uses the deprecated 'pipeline_context' parameter. "
+                            "Update its signature to use 'context: YourContext' for future compatibility.",
+                            DeprecationWarning,
+                            stacklevel=2,
+                        )
                 if resources is not None and accepts_resources:
                     plugin_kwargs["resources"] = resources
-                plugin_result: PluginOutcome = await asyncio.wait_for(
-                    plugin.validate({"input": data, "output": unpacked_output}, **plugin_kwargs),
+                validated = await asyncio.wait_for(
+                    plugin.validate(
+                        {"output": last_unpacked_output, "feedback": last_feedback},
+                        **plugin_kwargs,
+                    ),
                     timeout=step.config.timeout_s,
                 )
             except asyncio.TimeoutError as e:
                 raise TimeoutError(f"Plugin timeout in step {step.name}") from e
 
-            if not plugin_result.success:
+            if not validated.success:
                 success = False
-                feedback = plugin_result.feedback
-                redirect_to = plugin_result.redirect_to
-                final_plugin_outcome = plugin_result
-            if plugin_result.new_solution is not None:
-                final_plugin_outcome = plugin_result
+                feedback = validated.feedback
+                redirect_to = validated.redirect_to
+                final_plugin_outcome = validated
+            if validated.new_solution is not None:
+                final_plugin_outcome = validated
 
         if final_plugin_outcome and final_plugin_outcome.new_solution is not None:
             unpacked_output = final_plugin_outcome.new_solution
@@ -567,7 +553,7 @@ async def _run_step_logic(
             result.output = unpacked_output
             result.success = True
             result.feedback = feedback
-            result.token_counts += getattr(raw_output, "token_counts", 1)
+            result.token_counts += getattr(raw_output, "token_counts", 0)
             result.cost_usd += getattr(raw_output, "cost_usd", 0.0)
             return result
 
@@ -575,9 +561,10 @@ async def _run_step_logic(
             handler()
 
         if redirect_to:
-            if redirect_to in visited:
-                raise InfiniteRedirectError(f"Redirect loop detected in step {step.name}")
-            visited.add(redirect_to)
+            if hasattr(redirect_to, "__hash__") and redirect_to.__hash__ is not None:
+                if redirect_to in visited:
+                    raise InfiniteRedirectError(f"Redirect loop detected in step {step.name}")
+                visited.add(redirect_to)
             current_agent = redirect_to
         else:
             current_agent = original_agent
@@ -675,7 +662,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     await hook(payload)
             except PipelineAbortSignal:
                 raise
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 name = getattr(hook, "__name__", str(hook))
                 logfire.error(f"Error in hook '{name}': {e}")
 
@@ -713,7 +700,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             if span is not None:
                 try:
                     span.set_attribute("governor_breached", True)
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     # Defensive: log and ignore errors setting span attributes
                     logfire.error(f"Error setting span attribute: {e}")
                 logfire.warn(f"Cost limit of ${self.usage_limits.total_cost_usd_limit} exceeded")
@@ -729,7 +716,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             if span is not None:
                 try:
                     span.set_attribute("governor_breached", True)
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     # Defensive: log and ignore errors setting span attributes
                     logfire.error(f"Error setting span attribute: {e}")
                 logfire.warn(f"Token limit of {self.usage_limits.total_tokens_limit} exceeded")
@@ -865,7 +852,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                         for key, value in step_result.metadata_.items():
                             try:
                                 span.set_attribute(key, value)
-                            except Exception as e:  # noqa: BLE001
+                            except Exception as e:
                                 # Defensive: log and ignore errors setting span attributes
                                 logfire.error(f"Error setting span attribute: {e}")
                     pipeline_result_obj.step_history.append(step_result)
@@ -923,7 +910,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     pipeline_context=current_pipeline_context_instance,
                     resources=self.resources,
                 )
-            except PipelineAbortSignal as e:  # pragma: no cover - avoid masking
+            except PipelineAbortSignal as e:
                 logfire.info(str(e))
 
         yield pipeline_result_obj
@@ -1031,7 +1018,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     for key, value in step_result.metadata_.items():
                         try:
                             span.set_attribute(key, value)
-                        except Exception as e:  # noqa: BLE001
+                        except Exception as e:
                             # Defensive: log and ignore errors setting span attributes
                             logfire.error(f"Error setting span attribute: {e}")
                 paused_result.step_history.append(step_result)

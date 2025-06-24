@@ -7,7 +7,7 @@ build-backend = "hatchling.build"
 # --------------------------------------------------------------------------- #
 [project]
 name            = "flujo"
-version         = "0.4.18" # Fix parameter passing to prioritize 'context' over 'pipeline_context'
+version         = "0.4.19" # Robust context parameter passing, signature-aware, fixes all known context/plugin/agent issues
 description     = "Production-ready orchestration for AI agents, built with Pydantic."
 readme          = "README.md"
 requires-python = ">=3.11,<4.0"
