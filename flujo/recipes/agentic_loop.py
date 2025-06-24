@@ -102,7 +102,7 @@ class _CommandExecutor:
         return await self._run_command(data, **kwargs)
 
     async def _run_command(self, data: Any, **kwargs: Any) -> Any:
-        pipeline_context = kwargs.get("pipeline_context")
+        pipeline_context = kwargs.get("context") or kwargs.get("pipeline_context")
         resources = kwargs.get("resources")
         if not isinstance(pipeline_context, PipelineContext):
             raise ValueError("pipeline_context must be a PipelineContext instance")

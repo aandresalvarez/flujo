@@ -104,8 +104,10 @@ async def test_plugin_receives_context_and_strict_plugin_errors() -> None:
         "s", CaptureAgent(), plugins=[(ctx_plugin, 0), (kwargs_plugin, 0), (strict_plugin, 0)]
     )
     runner = Flujo(step, context_model=Ctx)
-    with pytest.raises(TypeError):
+    with pytest.raises(TypeError, match="validate"):
         await gather_result(runner, "in")
-    # Context plugin ran before the TypeError
+
+    # Verify that the plugins that ran before the error behaved as expected
     assert isinstance(ctx_plugin.ctx, Ctx)
-    assert kwargs_plugin.kwargs.get("pipeline_context") == ctx_plugin.ctx
+    assert kwargs_plugin.kwargs.get("context") == ctx_plugin.ctx
+    assert kwargs_plugin.kwargs.get("pipeline_context") is None
