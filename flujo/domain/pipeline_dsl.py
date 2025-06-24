@@ -172,7 +172,9 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                 import inspect
 
                 # Detect if func is a mock (for test robustness)
-                is_mock = hasattr(func, 'assert_called_with') or func.__class__.__name__.startswith('AsyncMock')
+                is_mock = hasattr(func, "assert_called_with") or func.__class__.__name__.startswith(
+                    "AsyncMock"
+                )
 
                 sig = inspect.signature(func)
                 expects_kwonly_pipeline_context = any(
