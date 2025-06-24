@@ -29,7 +29,9 @@ class LegacyAgent(AsyncAgentProtocol[str, str]):
 
 
 class TypedPlugin(ContextAwarePluginProtocol[Ctx]):
-    async def validate(self, data: dict[str, Any], *, pipeline_context: Ctx, **kwargs: Any) -> PluginOutcome:
+    async def validate(
+        self, data: dict[str, Any], *, pipeline_context: Ctx, **kwargs: Any
+    ) -> PluginOutcome:
         pipeline_context.val += 1
         return PluginOutcome(success=True)
 

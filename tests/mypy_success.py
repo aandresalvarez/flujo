@@ -18,12 +18,8 @@ class Report(BaseModel):
 def test_pipeline_type_continuity() -> None:
     agent1 = StubAgent([UserInfo(name="test")])
     agent2 = StubAgent([Report(summary="report")])
-    step1: Step[str, UserInfo] = Step.solution(
-        cast(AsyncAgentProtocol[Any, Any], agent1)
-    )
-    step2: Step[UserInfo, Report] = Step.solution(
-        cast(AsyncAgentProtocol[Any, Any], agent2)
-    )
+    step1: Step[str, UserInfo] = Step.solution(cast(AsyncAgentProtocol[Any, Any], agent1))
+    step2: Step[UserInfo, Report] = Step.solution(cast(AsyncAgentProtocol[Any, Any], agent2))
     _pipeline = step1 >> step2
 
     @step

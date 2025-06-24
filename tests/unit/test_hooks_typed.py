@@ -19,9 +19,10 @@ async def test_hook_receives_typed_payload() -> None:
     runner = Flujo(step, hooks=[hook])
     await gather_result(runner, "start")
 
-    post_step_calls = [c.args[0] for c in recorder.call_args_list if isinstance(c.args[0], PostStepPayload)]
+    post_step_calls = [
+        c.args[0] for c in recorder.call_args_list if isinstance(c.args[0], PostStepPayload)
+    ]
     assert len(post_step_calls) == 1
     payload = post_step_calls[0]
     assert isinstance(payload, PostStepPayload)
     assert payload.step_result.output == "ok"
-

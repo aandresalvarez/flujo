@@ -146,9 +146,7 @@ class _CommandExecutor:
                     {"__builtins__": {}},
                     local_scope,
                 )
-                exec_result = local_scope.get(
-                    "result", "Python code executed successfully."
-                )
+                exec_result = local_scope.get("result", "Python code executed successfully.")
             elif cmd.type == "ask_human":
                 if isinstance(pipeline_context, PipelineContext):
                     pipeline_context.scratchpad["paused_step_input"] = cmd

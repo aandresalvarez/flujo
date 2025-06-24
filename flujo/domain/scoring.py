@@ -43,9 +43,7 @@ def weighted_score(check: Checklist, weights: List[Dict[str, Any]]) -> float:
     if total_weight == 0:
         return 0.0
 
-    score = sum(
-        weight_map.get(item.description, 1.0) for item in check.items if item.passed
-    )
+    score = sum(weight_map.get(item.description, 1.0) for item in check.items if item.passed)
     return score / total_weight
 
 
@@ -65,9 +63,7 @@ class RewardScorer:
 
         # The Agent constructor's type hints are not strict enough for mypy strict mode.
         # See: https://github.com/pydantic/pydantic-ai/issues (file an issue if not present)
-        os.environ.setdefault(
-            "OPENAI_API_KEY", settings.openai_api_key.get_secret_value()
-        )
+        os.environ.setdefault("OPENAI_API_KEY", settings.openai_api_key.get_secret_value())
         self.agent = Agent(
             "openai:gpt-4o-mini",
             system_prompt="You are a reward model. You return a single float score from 0.0 to 1.0.",
