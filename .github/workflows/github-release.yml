@@ -23,10 +23,19 @@ jobs:
         run: |
           # Get the tag name from the trigger
           TAG_NAME=${GITHUB_REF#refs/tags/}
-          echo "Deleting local tag: $TAG_NAME"
+          echo "Handling tag: $TAG_NAME"
+          
+          # Fetch all tags from remote with force to ensure we have the latest
+          git fetch --tags --force
+          
+          # Delete local tag if it exists (to prevent conflicts)
           git tag -d $TAG_NAME || true
-          # Fetch the tag from remote to ensure we have the latest
+          
+          # Fetch the specific tag from remote
           git fetch origin tag $TAG_NAME
+          
+          # Verify we have the correct tag
+          git show $TAG_NAME --stat
 
       - name: Set up Python
         uses: actions/setup-python@v5
