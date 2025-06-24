@@ -10,10 +10,10 @@ from flujo.domain.plugins import PluginOutcome
 
 class MockAgentWithContext:
     """Mock agent that expects 'context' parameter."""
-    
+
     def __init__(self):
         self.run = AsyncMock()
-    
+
     async def run(self, data, context=None, **kwargs):
         """Run method that expects 'context' parameter."""
         self.run(data, context=context, **kwargs)
@@ -22,8 +22,10 @@ class MockAgentWithContext:
 
 class MockAgentWithPipelineContext:
     """Mock agent that expects 'pipeline_context' parameter only."""
+
     def __init__(self):
         self.called_with = None
+
     async def run(self, data, pipeline_context=None):
         self.called_with = pipeline_context
         return {"output": f"Processed: {data}"}
@@ -31,10 +33,10 @@ class MockAgentWithPipelineContext:
 
 class MockPluginWithContext:
     """Mock plugin that expects 'context' parameter."""
-    
+
     def __init__(self):
         self.validate = AsyncMock()
-    
+
     async def validate(self, data, context=None, **kwargs):
         """Validate method that expects 'context' parameter."""
         self.validate(data, context=context, **kwargs)
@@ -43,8 +45,10 @@ class MockPluginWithContext:
 
 class MockPluginWithPipelineContext:
     """Mock plugin that expects 'pipeline_context' parameter only."""
+
     def __init__(self):
         self.called_with = None
+
     async def validate(self, data, pipeline_context=None):
         self.called_with = pipeline_context
         return PluginOutcome(success=True, feedback=None)
@@ -54,21 +58,18 @@ class MockPluginWithPipelineContext:
 async def test_agent_receives_context_parameter():
     """Test that agents receive 'context' parameter when they expect it."""
     agent = MockAgentWithContext()
-    step = Step(
-        name="test_step",
-        agent=agent,
-        config=MagicMock(max_retries=1, timeout_s=30)
-    )
-    
+    step = Step(name="test_step", agent=agent, config=MagicMock(max_retries=1, timeout_s=30))
+
     pipeline = Pipeline(steps=[step])
-    context = PipelineContext(initial_prompt="test prompt")
-    
+
     flujo = Flujo(pipeline, context_model=PipelineContext)
-    
+
     # Run the pipeline
-    async for result in flujo.run_async("test_data", initial_context_data={"initial_prompt": "test prompt"}):
+    async for result in flujo.run_async(
+        "test_data", initial_context_data={"initial_prompt": "test prompt"}
+    ):
         pass  # We only need the first result
-    
+
     # Verify the agent was called with 'context' parameter
     agent.run.assert_called_once()
     call_args = agent.run.call_args
@@ -80,21 +81,18 @@ async def test_agent_receives_context_parameter():
 async def test_agent_receives_pipeline_context_parameter():
     """Test that agents receive 'pipeline_context' parameter when they expect it."""
     agent = MockAgentWithPipelineContext()
-    step = Step(
-        name="test_step",
-        agent=agent,
-        config=MagicMock(max_retries=1, timeout_s=30)
-    )
-    
+    step = Step(name="test_step", agent=agent, config=MagicMock(max_retries=1, timeout_s=30))
+
     pipeline = Pipeline(steps=[step])
-    context = PipelineContext(initial_prompt="test prompt")
-    
+
     flujo = Flujo(pipeline, context_model=PipelineContext)
-    
+
     # Run the pipeline
-    async for result in flujo.run_async("test_data", initial_context_data={"initial_prompt": "test prompt"}):
+    async for result in flujo.run_async(
+        "test_data", initial_context_data={"initial_prompt": "test prompt"}
+    ):
         pass  # We only need the first result
-    
+
     # Verify the agent was called with 'pipeline_context' parameter
     assert agent.called_with is not None
     assert agent.called_with.initial_prompt == "test prompt"
@@ -105,23 +103,24 @@ async def test_plugin_receives_context_parameter():
     """Test that plugins receive 'context' parameter when they expect it."""
     agent = MockAgentWithContext()
     plugin = MockPluginWithContext()
-    
+
     step = Step(
         name="test_step",
         agent=agent,
         plugins=[(plugin, 1)],
-        config=MagicMock(max_retries=1, timeout_s=30)
+        config=MagicMock(max_retries=1, timeout_s=30),
     )
-    
+
     pipeline = Pipeline(steps=[step])
-    context = PipelineContext(initial_prompt="test prompt")
-    
+
     flujo = Flujo(pipeline, context_model=PipelineContext)
-    
+
     # Run the pipeline
-    async for result in flujo.run_async("test_data", initial_context_data={"initial_prompt": "test prompt"}):
+    async for result in flujo.run_async(
+        "test_data", initial_context_data={"initial_prompt": "test prompt"}
+    ):
         pass  # We only need the first result
-    
+
     # Verify the plugin was called with 'context' parameter
     plugin.validate.assert_called_once()
     call_args = plugin.validate.call_args
@@ -134,23 +133,24 @@ async def test_plugin_receives_pipeline_context_parameter():
     """Test that plugins receive 'pipeline_context' parameter when they expect it."""
     agent = MockAgentWithContext()
     plugin = MockPluginWithPipelineContext()
-    
+
     step = Step(
         name="test_step",
         agent=agent,
         plugins=[(plugin, 1)],
-        config=MagicMock(max_retries=1, timeout_s=30)
+        config=MagicMock(max_retries=1, timeout_s=30),
     )
-    
+
     pipeline = Pipeline(steps=[step])
-    context = PipelineContext(initial_prompt="test prompt")
-    
+
     flujo = Flujo(pipeline, context_model=PipelineContext)
-    
+
     # Run the pipeline
-    async for result in flujo.run_async("test_data", initial_context_data={"initial_prompt": "test prompt"}):
+    async for result in flujo.run_async(
+        "test_data", initial_context_data={"initial_prompt": "test prompt"}
+    ):
         pass  # We only need the first result
-    
+
     # Verify the plugin was called with 'pipeline_context' parameter
     assert plugin.called_with is not None
     assert plugin.called_with.initial_prompt == "test prompt"
@@ -162,31 +162,30 @@ async def test_parameter_priority_context_over_pipeline_context():
     agent = MockAgentWithContext()
     # Modify the agent to accept both parameters
     agent.run = AsyncMock()
-    
+
     # Fix recursion: use a separate mock to track calls
     call_log = {}
+
     async def run_with_both(data, context=None, pipeline_context=None, **kwargs):
         call_log["context"] = context
         call_log["pipeline_context"] = pipeline_context
         return {"output": f"Processed: {data}"}
+
     agent.run = run_with_both
-    
-    step = Step(
-        name="test_step",
-        agent=agent,
-        config=MagicMock(max_retries=1, timeout_s=30)
-    )
-    
+
+    step = Step(name="test_step", agent=agent, config=MagicMock(max_retries=1, timeout_s=30))
+
     pipeline = Pipeline(steps=[step])
-    context = PipelineContext(initial_prompt="test prompt")
-    
+
     flujo = Flujo(pipeline, context_model=PipelineContext)
-    
+
     # Run the pipeline
-    async for result in flujo.run_async("test_data", initial_context_data={"initial_prompt": "test prompt"}):
+    async for result in flujo.run_async(
+        "test_data", initial_context_data={"initial_prompt": "test prompt"}
+    ):
         pass  # We only need the first result
-    
+
     # Verify 'context' is prioritized
     assert call_log["context"] is not None
     assert call_log["context"].initial_prompt == "test prompt"
-    assert call_log["pipeline_context"] is None 
+    assert call_log["pipeline_context"] is None
