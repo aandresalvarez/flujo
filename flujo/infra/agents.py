@@ -137,6 +137,7 @@ def make_agent(
     system_prompt: str,
     output_type: Type[Any],
     tools: list[Any] | None = None,
+    **kwargs: Any,
 ) -> Agent[Any, Any]:
     """Creates a pydantic_ai.Agent, injecting the correct API key."""
     provider_name = model.split(":")[0].lower()
@@ -165,13 +166,47 @@ def make_agent(
         os.environ.setdefault(
             "ANTHROPIC_API_KEY", settings.anthropic_api_key.get_secret_value()
         )
+    
+    # Handle TypeAdapter and complex type patterns
+    actual_type = output_type
+    try:
+        if hasattr(output_type, '_type'):
+            # Handle TypeAdapter instances - extract the underlying type
+            actual_type = output_type._type
+        elif hasattr(output_type, '__origin__') and output_type.__origin__ is not None:
+            # Handle generic types like TypeAdapter[str]
+            if hasattr(output_type, '__args__') and output_type.__args__:
+                if output_type.__origin__.__name__ == 'TypeAdapter':
+                    actual_type = output_type.__args__[0]
+        
+        # Validate that the actual_type is a valid Pydantic type
+        # We avoid testing schema generation directly to prevent the infinite recursion issue
+        if hasattr(actual_type, '__name__'):
+            # Built-in types like str, int, etc. are always valid
+            pass
+        elif hasattr(actual_type, '__bases__') and PydanticBaseModel in actual_type.__bases__:
+            # Pydantic models are valid
+            pass
+        else:
+            # For other types, try a simple validation
+            try:
+                from pydantic import create_model
+                test_model = create_model('TestModel', value=(actual_type, ...))
+            except Exception as schema_error:
+                raise ValueError(
+                    f"Invalid output_type '{output_type}' (resolved to '{actual_type}'): {schema_error}. "
+                    "Use a Pydantic model, built-in type, or properly configured TypeAdapter."
+                ) from schema_error
+            
+    except Exception as e:
+        raise ValueError(f"Error processing output_type '{output_type}': {e}") from e
 
     # The Agent constructor's type hints are not strict enough for mypy strict mode.
     # See: https://github.com/pydantic/pydantic-ai/issues (file an issue if not present)
     agent: Agent[Any, Any] = Agent(
         model=model,
         system_prompt=system_prompt,
-        output_type=output_type,
+        output_type=actual_type,
         tools=tools or [],
     )
     return agent

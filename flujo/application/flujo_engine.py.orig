@@ -482,7 +482,6 @@ async def _run_step_logic(
             inner = getattr(current_agent, "_agent", None)
             target = inner if inner is not None else current_agent
             accepts_ctx = _accepts_param(target.run, "pipeline_context")
-            accepts_context = _accepts_param(target.run, "context")
 
             pass_ctx = False
             if context_model_defined:
@@ -498,9 +497,6 @@ async def _run_step_logic(
                 pass_ctx = True
             if pass_ctx:
                 agent_kwargs["pipeline_context"] = pipeline_context
-            elif accepts_context:
-                # Support the new 'context' parameter name for backward compatibility
-                agent_kwargs["context"] = pipeline_context
         if resources is not None:
             agent_kwargs["resources"] = resources
         if step.config.temperature is not None and _accepts_param(current_agent.run, "temperature"):
@@ -532,7 +528,6 @@ async def _run_step_logic(
                     plugin_kwargs["pipeline_context"] = pipeline_context
                 else:
                     accepts_ctx = _accepts_param(plugin.validate, "pipeline_context")
-                    accepts_context = _accepts_param(plugin.validate, "context")
 
                     if pipeline_context is not None:
                         pass_ctx = False
@@ -549,9 +544,6 @@ async def _run_step_logic(
                             pass_ctx = True
                         if pass_ctx:
                             plugin_kwargs["pipeline_context"] = pipeline_context
-                        elif accepts_context:
-                            # Support the new 'context' parameter name for backward compatibility
-                            plugin_kwargs["context"] = pipeline_context
 
                 if resources is not None and accepts_resources:
                     plugin_kwargs["resources"] = resources
