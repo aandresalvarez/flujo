@@ -496,11 +496,10 @@ async def _run_step_logic(
                     stacklevel=2,
                 )
                 pass_ctx = True
-            if pass_ctx:
-                agent_kwargs["pipeline_context"] = pipeline_context
-            elif accepts_context:
-                # Support the new 'context' parameter name for backward compatibility
+            if accepts_context:
                 agent_kwargs["context"] = pipeline_context
+            elif pass_ctx:
+                agent_kwargs["pipeline_context"] = pipeline_context
         if resources is not None:
             agent_kwargs["resources"] = resources
         if step.config.temperature is not None and _accepts_param(current_agent.run, "temperature"):
@@ -538,20 +537,10 @@ async def _run_step_logic(
                         pass_ctx = False
                         if context_model_defined:
                             pass_ctx = True
-                        if accepts_ctx:
-                            warnings.warn(
-                                f"Plugin '{plugin.__class__.__name__}' uses a legacy context pattern. "
-                                f"For type safety, implement the 'ContextAwarePluginProtocol' instead. "
-                                "See documentation for details.",
-                                DeprecationWarning,
-                                stacklevel=2,
-                            )
-                            pass_ctx = True
-                        if pass_ctx:
-                            plugin_kwargs["pipeline_context"] = pipeline_context
-                        elif accepts_context:
-                            # Support the new 'context' parameter name for backward compatibility
+                        if accepts_context:
                             plugin_kwargs["context"] = pipeline_context
+                        elif accepts_ctx:
+                            plugin_kwargs["pipeline_context"] = pipeline_context
 
                 if resources is not None and accepts_resources:
                     plugin_kwargs["resources"] = resources

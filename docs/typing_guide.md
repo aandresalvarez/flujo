@@ -51,6 +51,9 @@ Because `first` outputs an `int` while `second` expects a `str`, `mypy` warns th
 
 To share state across steps, define a Pydantic model and have your agents or plugins implement one of the context aware protocols. They receive a typed context instance automatically.
 
+> **Parameter Naming:**
+> Steps, agents, and plugins can declare either a `context` or `pipeline_context` parameter to receive the shared context. If both are present, `context` is prioritized for backward compatibility. This ensures compatibility with both legacy and modern code.
+
 ```python
 from pydantic import BaseModel
 from flujo.domain.agent_protocol import ContextAwareAgentProtocol
