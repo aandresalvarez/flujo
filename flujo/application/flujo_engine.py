@@ -473,16 +473,28 @@ async def _run_step_logic(
             agent_kwargs["pipeline_context"] = pipeline_context
         elif pipeline_context is not None:
             target = getattr(current_agent, "_agent", current_agent)
-            if _accepts_param(target.run, "context"):
-                agent_kwargs["context"] = pipeline_context
-            elif _accepts_param(target.run, "pipeline_context"):
-                agent_kwargs["pipeline_context"] = pipeline_context
-                warnings.warn(
-                    f"Agent '{target.__class__.__name__}' uses the deprecated 'pipeline_context' parameter. "
-                    "Update its signature to use 'context: YourContext' for future compatibility.",
-                    DeprecationWarning,
-                    stacklevel=2,
-                )
+            # The logic below is to handle parameter injection for context.
+            # It prioritizes `context`, then `pipeline_context` to support both new and legacy code.
+            # This is more robust than the previous `_accepts_param` which was too greedy with `**kwargs`.
+            try:
+                sig = inspect.signature(target.run)
+                params = sig.parameters
+                if "context" in params:
+                    agent_kwargs["context"] = pipeline_context
+                elif "pipeline_context" in params:
+                    agent_kwargs["pipeline_context"] = pipeline_context
+                    warnings.warn(
+                        f"Agent '{target.__class__.__name__}' uses the deprecated 'pipeline_context' parameter. "
+                        "Update its signature to use 'context: YourContext' for future compatibility.",
+                        DeprecationWarning,
+                        stacklevel=2,
+                    )
+                elif any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()):
+                    # Fallback for agents with **kwargs but no explicit context parameter.
+                    # Pass as 'context' for best-effort compatibility.
+                    agent_kwargs["context"] = pipeline_context
+            except (ValueError, TypeError):  # Fails on some built-ins
+                pass  # Fallback to empty kwargs if inspection fails
         if resources is not None:
             if _accepts_param(current_agent.run, "resources"):
                 agent_kwargs["resources"] = resources
