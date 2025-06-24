@@ -123,6 +123,7 @@ markers = [
 # --------------------------------------------------------------------------- #
 [tool.hatch.build.targets.wheel]
 packages = ["flujo"]
+include = ["flujo/py.typed"]
 
 [tool.hatch.build.targets.sdist]
 include = [
