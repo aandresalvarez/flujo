@@ -1,6 +1,7 @@
 from typing import Protocol, Any, runtime_checkable, Optional
 from pydantic import BaseModel
 
+
 class ValidationResult(BaseModel):
     """The standard output from any validator, providing a clear pass/fail signal and feedback."""
 

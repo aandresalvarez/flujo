@@ -17,5 +17,4 @@ class BaseValidator(Validator):
         output_to_check: Any,
         *,
         context: Optional[BaseModel] = None,
-    ) -> ValidationResult:
-        ...
+    ) -> ValidationResult: ...

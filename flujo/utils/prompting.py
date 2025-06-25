@@ -4,9 +4,7 @@ from typing import Any, Dict
 from pydantic import BaseModel
 
 IF_BLOCK_REGEX = re.compile(r"\{\{#if\s*([^\}]+?)\s*\}\}(.*?)\{\{\/if\}\}", re.DOTALL)
-EACH_BLOCK_REGEX = re.compile(
-    r"\{\{#each\s*([^\}]+?)\s*\}\}(.*?)\{\{\/each\}\}", re.DOTALL
-)
+EACH_BLOCK_REGEX = re.compile(r"\{\{#each\s*([^\}]+?)\s*\}\}(.*?)\{\{\/each\}\}", re.DOTALL)
 PLACEHOLDER_REGEX = re.compile(r"\{\{\s*([^\}]+?)\s*\}\}")
 
 
@@ -64,9 +62,7 @@ class AdvancedPromptFormatter:
 
         def placeholder_replacer(match: re.Match[str]) -> str:
             key = match.group(1).strip()
-            value = self._get_nested_value(
-                {**kwargs, **{"this": kwargs.get("this")}}, key
-            )
+            value = self._get_nested_value({**kwargs, **{"this": kwargs.get("this")}}, key)
             return self._serialize(value)
 
         processed = PLACEHOLDER_REGEX.sub(placeholder_replacer, processed)

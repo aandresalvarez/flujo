@@ -58,7 +58,9 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
     plugins: List[tuple[ValidationPlugin, int]] = Field(default_factory=list)
     validators: List[Validator] = Field(default_factory=list)
     failure_handlers: List[Callable[[], None]] = Field(default_factory=list)
-    updates_context: bool = Field(default=False, description="Whether the step output should merge into the pipeline context.")
+    updates_context: bool = Field(
+        default=False, description="Whether the step output should merge into the pipeline context."
+    )
 
     model_config: ClassVar[ConfigDict] = {
         "arbitrary_types_allowed": True,

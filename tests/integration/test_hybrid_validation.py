@@ -1,4 +1,3 @@
-import asyncio
 from typing import Any
 
 import pytest
@@ -13,19 +12,27 @@ from flujo.domain.validation import ValidationResult
 
 
 class PassValidator(BaseValidator):
-    async def validate(self, output_to_check: Any, *, context: BaseModel | None = None) -> ValidationResult:
+    async def validate(
+        self, output_to_check: Any, *, context: BaseModel | None = None
+    ) -> ValidationResult:
         return ValidationResult(is_valid=True, validator_name=self.name)
 
 
 class FailValidator(BaseValidator):
-    async def validate(self, output_to_check: Any, *, context: BaseModel | None = None) -> ValidationResult:
+    async def validate(
+        self, output_to_check: Any, *, context: BaseModel | None = None
+    ) -> ValidationResult:
         return ValidationResult(is_valid=False, feedback="bad output", validator_name=self.name)
 
 
 class ContextValidator(BaseValidator):
-    async def validate(self, output_to_check: Any, *, context: BaseModel | None = None) -> ValidationResult:
+    async def validate(
+        self, output_to_check: Any, *, context: BaseModel | None = None
+    ) -> ValidationResult:
         flag = getattr(context, "flag", False) if context else False
-        return ValidationResult(is_valid=flag, feedback=None if flag else "flag not set", validator_name=self.name)
+        return ValidationResult(
+            is_valid=flag, feedback=None if flag else "flag not set", validator_name=self.name
+        )
 
 
 @pytest.mark.asyncio

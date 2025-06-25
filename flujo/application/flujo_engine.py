@@ -42,7 +42,7 @@ from ..domain.pipeline_dsl import (
     BranchKey,
 )
 from ..domain.plugins import PluginOutcome, ContextAwarePluginProtocol
-from ..domain.validation import Validator, ValidationResult
+from ..domain.validation import ValidationResult
 from ..domain.models import (
     BaseModel,
     PipelineResult,
@@ -578,13 +578,16 @@ async def _run_step_logic(
                 if isinstance(res, Exception):
                     failed_checks_feedback.append(f"Validator crashed: {res}")
                     continue
-                if not res.is_valid:
-                    fb = res.feedback or "No details provided."
-                    failed_checks_feedback.append(f"Check '{res.validator_name}' failed: {fb}")
+                vres = cast(ValidationResult, res)
+                if not vres.is_valid:
+                    fb = vres.feedback or "No details provided."
+                    failed_checks_feedback.append(f"Check '{vres.validator_name}' failed: {fb}")
 
             if failed_checks_feedback:
                 success = False
-                combined_feedback = (feedback + "\n" if feedback else "") + "\n".join(failed_checks_feedback)
+                combined_feedback = (feedback + "\n" if feedback else "") + "\n".join(
+                    failed_checks_feedback
+                )
                 feedback = combined_feedback.strip()
 
         if success:
