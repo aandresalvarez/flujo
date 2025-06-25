@@ -42,6 +42,7 @@ from ..domain.pipeline_dsl import (
     BranchKey,
 )
 from ..domain.plugins import PluginOutcome, ContextAwarePluginProtocol
+from ..domain.validation import ValidationResult
 from ..domain.models import (
     BaseModel,
     PipelineResult,
@@ -560,6 +561,34 @@ async def _run_step_logic(
         if final_plugin_outcome and final_plugin_outcome.new_solution is not None:
             unpacked_output = final_plugin_outcome.new_solution
             last_unpacked_output = unpacked_output
+
+        # Run programmatic validators regardless of plugin outcome
+        if step.validators:
+            logfire.info(
+                f"Running {len(step.validators)} programmatic validators for step '{step.name}'..."
+            )
+            validation_tasks = [
+                validator.validate(unpacked_output, context=pipeline_context)
+                for validator in step.validators
+            ]
+            validation_results = await asyncio.gather(*validation_tasks, return_exceptions=True)
+
+            failed_checks_feedback: list[str] = []
+            for res in validation_results:
+                if isinstance(res, Exception):
+                    failed_checks_feedback.append(f"Validator crashed: {res}")
+                    continue
+                vres = cast(ValidationResult, res)
+                if not vres.is_valid:
+                    fb = vres.feedback or "No details provided."
+                    failed_checks_feedback.append(f"Check '{vres.validator_name}' failed: {fb}")
+
+            if failed_checks_feedback:
+                success = False
+                combined_feedback = (feedback + "\n" if feedback else "") + "\n".join(
+                    failed_checks_feedback
+                )
+                feedback = combined_feedback.strip()
 
         if success:
             result.output = unpacked_output

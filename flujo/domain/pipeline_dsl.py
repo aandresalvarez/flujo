@@ -27,6 +27,7 @@ from flujo.domain.models import BaseModel
 from pydantic import Field, ConfigDict
 from .agent_protocol import AsyncAgentProtocol
 from .plugins import ValidationPlugin
+from .validation import Validator
 from .types import ContextT
 
 
@@ -55,8 +56,11 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
     agent: Any | None = Field(default=None)
     config: StepConfig = Field(default_factory=StepConfig)
     plugins: List[tuple[ValidationPlugin, int]] = Field(default_factory=list)
+    validators: List[Validator] = Field(default_factory=list)
     failure_handlers: List[Callable[[], None]] = Field(default_factory=list)
-    updates_context: bool = Field(default=False, description="Whether the step output should merge into the pipeline context.")
+    updates_context: bool = Field(
+        default=False, description="Whether the step output should merge into the pipeline context."
+    )
 
     model_config: ClassVar[ConfigDict] = {
         "arbitrary_types_allowed": True,
@@ -67,6 +71,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         name: str,
         agent: Optional[AsyncAgentProtocol[StepInT, StepOutT]] = None,
         plugins: Optional[List[ValidationPlugin | tuple[ValidationPlugin, int]]] = None,
+        validators: Optional[List[Validator]] = None,
         on_failure: Optional[List[Callable[[], None]]] = None,
         updates_context: bool = False,
         **config: Any,
@@ -84,6 +89,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             agent=agent,
             config=StepConfig(**config),
             plugins=plugin_list,
+            validators=validators or [],
             failure_handlers=on_failure or [],
             updates_context=updates_context,
         )
@@ -98,19 +104,37 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         raise TypeError("Can only chain Step with Step or Pipeline")
 
     @classmethod
-    def review(cls, agent: AsyncAgentProtocol[Any, Any], **config: Any) -> "Step[Any, Any]":
+    def review(
+        cls,
+        agent: AsyncAgentProtocol[Any, Any],
+        *,
+        validators: Optional[List[Validator]] = None,
+        **config: Any,
+    ) -> "Step[Any, Any]":
         """Construct a review step using the provided agent."""
-        return cls("review", agent, **config)
+        return cls("review", agent, validators=validators, **config)
 
     @classmethod
-    def solution(cls, agent: AsyncAgentProtocol[Any, Any], **config: Any) -> "Step[Any, Any]":
+    def solution(
+        cls,
+        agent: AsyncAgentProtocol[Any, Any],
+        *,
+        validators: Optional[List[Validator]] = None,
+        **config: Any,
+    ) -> "Step[Any, Any]":
         """Construct a solution step using the provided agent."""
-        return cls("solution", agent, **config)
+        return cls("solution", agent, validators=validators, **config)
 
     @classmethod
-    def validate_step(cls, agent: AsyncAgentProtocol[Any, Any], **config: Any) -> "Step[Any, Any]":
+    def validate_step(
+        cls,
+        agent: AsyncAgentProtocol[Any, Any],
+        *,
+        validators: Optional[List[Validator]] = None,
+        **config: Any,
+    ) -> "Step[Any, Any]":
         """Construct a validation step using the provided agent."""
-        return cls("validate", agent, **config)
+        return cls("validate", agent, validators=validators, **config)
 
     @classmethod
     def from_callable(

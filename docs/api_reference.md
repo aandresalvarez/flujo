@@ -73,7 +73,8 @@ custom_pipeline = (
     )
     >> Step.validate_step(              # Validation step
         validator_agent,
-        plugins=[plugin1]          # Optional validation plugins
+        plugins=[plugin1],         # Optional validation plugins
+        validators=[validator1]    # Optional programmatic validators
     )
 )
 
