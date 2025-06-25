@@ -29,6 +29,7 @@ from .agent_protocol import AsyncAgentProtocol
 from .plugins import ValidationPlugin
 from .validation import Validator
 from .types import ContextT
+from .processors import AgentProcessors
 
 
 StepInT = TypeVar("StepInT")
@@ -58,6 +59,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
     plugins: List[tuple[ValidationPlugin, int]] = Field(default_factory=list)
     validators: List[Validator] = Field(default_factory=list)
     failure_handlers: List[Callable[[], None]] = Field(default_factory=list)
+    processors: "AgentProcessors" = Field(default_factory=AgentProcessors)
     updates_context: bool = Field(
         default=False, description="Whether the step output should merge into the pipeline context."
     )
@@ -74,6 +76,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         validators: Optional[List[Validator]] = None,
         on_failure: Optional[List[Callable[[], None]]] = None,
         updates_context: bool = False,
+        processors: Optional[AgentProcessors] = None,
         **config: Any,
     ) -> None:
         plugin_list: List[tuple[ValidationPlugin, int]] = []
@@ -92,6 +95,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             validators=validators or [],
             failure_handlers=on_failure or [],
             updates_context=updates_context,
+            processors=processors or AgentProcessors(),
         )
 
     def __rshift__(
@@ -109,10 +113,11 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         agent: AsyncAgentProtocol[Any, Any],
         *,
         validators: Optional[List[Validator]] = None,
+        processors: Optional[AgentProcessors] = None,
         **config: Any,
     ) -> "Step[Any, Any]":
         """Construct a review step using the provided agent."""
-        return cls("review", agent, validators=validators, **config)
+        return cls("review", agent, validators=validators, processors=processors, **config)
 
     @classmethod
     def solution(
@@ -120,10 +125,11 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         agent: AsyncAgentProtocol[Any, Any],
         *,
         validators: Optional[List[Validator]] = None,
+        processors: Optional[AgentProcessors] = None,
         **config: Any,
     ) -> "Step[Any, Any]":
         """Construct a solution step using the provided agent."""
-        return cls("solution", agent, validators=validators, **config)
+        return cls("solution", agent, validators=validators, processors=processors, **config)
 
     @classmethod
     def validate_step(
@@ -131,10 +137,11 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         agent: AsyncAgentProtocol[Any, Any],
         *,
         validators: Optional[List[Validator]] = None,
+        processors: Optional[AgentProcessors] = None,
         **config: Any,
     ) -> "Step[Any, Any]":
         """Construct a validation step using the provided agent."""
-        return cls("validate", agent, validators=validators, **config)
+        return cls("validate", agent, validators=validators, processors=processors, **config)
 
     @classmethod
     def from_callable(
@@ -142,6 +149,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         callable_: Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]],
         name: str | None = None,
         updates_context: bool = False,
+        processors: Optional[AgentProcessors] = None,
         **config: Any,
     ) -> "Step[StepInT, StepOutT]":
         """Create a :class:`Step` by wrapping an async callable.
@@ -233,7 +241,13 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
 
         agent_wrapper = _CallableAgent()
 
-        step = cls(step_name, agent_wrapper, updates_context=updates_context, **config)
+        step = cls(
+            step_name,
+            agent_wrapper,
+            updates_context=updates_context,
+            processors=processors,
+            **config,
+        )
         object.__setattr__(step, "__step_input_type__", input_type)
         object.__setattr__(step, "__step_output_type__", output_type)
         return step

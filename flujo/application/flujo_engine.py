@@ -464,6 +464,15 @@ async def _run_step_logic(
 
         start = time.monotonic()
         agent_kwargs: Dict[str, Any] = {}
+        # Apply prompt processors
+        if step.processors.prompt_processors:
+            processed = data
+            for proc in step.processors.prompt_processors:
+                try:
+                    processed = await proc.process(processed, pipeline_context)
+                except Exception as e:
+                    logfire.error(f"Processor {proc.name} failed: {e}")
+            data = processed
         if isinstance(current_agent, ContextAwareAgentProtocol) and getattr(
             current_agent, "__context_aware__", False
         ):
@@ -505,6 +514,15 @@ async def _run_step_logic(
         result.latency_s += time.monotonic() - start
         last_raw_output = raw_output
         unpacked_output = getattr(raw_output, "output", raw_output)
+        # Apply output processors
+        if step.processors.output_processors:
+            processed = unpacked_output
+            for proc in step.processors.output_processors:
+                try:
+                    processed = await proc.process(processed, pipeline_context)
+                except Exception as e:
+                    logfire.error(f"Processor {proc.name} failed: {e}")
+            unpacked_output = processed
         last_unpacked_output = unpacked_output
 
         success = True
