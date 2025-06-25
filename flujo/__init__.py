@@ -19,6 +19,7 @@ from .domain import (
     step,
     Pipeline,
     StepConfig,
+    AgentProcessors,
     PluginOutcome,
     ValidationPlugin,
     Validator,
@@ -37,6 +38,12 @@ from .domain.models import PipelineResult, StepResult, UsageLimits
 from .testing.utils import StubAgent, DummyPlugin
 from .utils.prompting import format_prompt
 from .plugins.sql_validator import SQLSyntaxValidator
+from .processors import (
+    Processor,
+    AddContextVariables,
+    StripMarkdownFences,
+    EnforceJsonResponse,
+)
 
 from .infra.agents import (
     review_agent,
@@ -67,6 +74,11 @@ __all__ = [
     "step",
     "Pipeline",
     "StepConfig",
+    "AgentProcessors",
+    "Processor",
+    "AddContextVariables",
+    "StripMarkdownFences",
+    "EnforceJsonResponse",
     "AppResources",
     "PluginOutcome",
     "ValidationPlugin",
