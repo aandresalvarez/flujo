@@ -252,6 +252,13 @@ result = runner.run("hi")
 print(result.final_pipeline_context.counter)  # 43
 ```
 
+When a step marked with `updates_context=True` returns a dictionary or a Pydantic
+model, the new data is merged into the current pipeline context. This merge is
+validation-safe: Pydantic recursively reconstructs all nested models and the
+entire context is revalidated. If the update would result in an invalid context,
+the step fails and the previous state is restored, preventing data corruption in
+later steps.
+
 ## Managed Resources
 
 You can also pass a long-lived resources container to the runner. Declare a
