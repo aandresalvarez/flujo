@@ -52,6 +52,7 @@ from ..domain.models import (
     PipelineContext,
     HumanInteraction,
 )
+from pydantic import BaseModel as PydanticBaseModel
 from ..domain.commands import AgentCommand, ExecutedCommandLog
 from ..domain.agent_protocol import ContextAwareAgentProtocol
 from pydantic import TypeAdapter
@@ -763,15 +764,39 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         )
         result = await self.backend.execute_step(request)
         if getattr(step, "updates_context", False):
-            if (
-                self.context_model is not None
-                and isinstance(result.output, self.context_model)
-                and pipeline_context is not None
-            ):
-                updated_data = result.output.model_dump(exclude_unset=True)
-                for key, value in updated_data.items():
-                    setattr(pipeline_context, key, value)
-                logfire.info(f"Context updated by step '{step.name}'.")
+            if self.context_model is not None and pipeline_context is not None:
+                if isinstance(result.output, (BaseModel, PydanticBaseModel)):
+                    update_data = result.output.model_dump(exclude_unset=True)
+                elif isinstance(result.output, dict):
+                    update_data = result.output
+                else:
+                    logfire.warn(
+                        f"Step '{step.name}' has updates_context=True but did not return a dict or Pydantic model. "
+                        "Skipping context update."
+                    )
+                    return result
+
+                try:
+                    original_data = pipeline_context.model_dump()
+                    for key, value in update_data.items():
+                        setattr(pipeline_context, key, value)
+
+                    validated = self.context_model.model_validate(pipeline_context.model_dump())
+                    pipeline_context.__dict__.update(validated.__dict__)
+                except ValidationError as e:
+                    for key, value in original_data.items():
+                        setattr(pipeline_context, key, value)
+                    error_msg = (
+                        f"Context update by step '{step.name}' failed Pydantic validation: {e}"
+                    )
+                    logfire.error(error_msg)
+                    result.success = False
+                    result.feedback = error_msg
+                    return result
+
+                logfire.info(
+                    f"Context successfully updated and re-validated by step '{step.name}'."
+                )
         return result
 
     def _check_usage_limits(
