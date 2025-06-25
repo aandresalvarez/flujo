@@ -12,7 +12,7 @@ class MockAgentWithContext:
     """Mock agent that expects 'context' parameter."""
 
     def __init__(self):
-        self.run = AsyncMock()
+        self.run = AsyncMock(return_value={"output": "ok"})
 
     async def run(self, data, context=None, **kwargs):
         """Run method that expects 'context' parameter."""
@@ -35,12 +35,12 @@ class MockPluginWithContext:
     """Mock plugin that expects 'context' parameter."""
 
     def __init__(self):
-        self.validate = AsyncMock()
+        self.validate = AsyncMock(return_value=PluginOutcome(success=True, feedback=None))
 
     async def validate(self, data, context=None, **kwargs):
         """Validate method that expects 'context' parameter."""
         self.validate(data, context=context, **kwargs)
-        return {"success": True, "feedback": None}
+        return PluginOutcome(success=True, feedback=None)
 
 
 class MockPluginWithPipelineContext:
