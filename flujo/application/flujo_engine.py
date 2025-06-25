@@ -5,6 +5,7 @@ import inspect
 import warnings
 import time
 import weakref
+import dataclasses
 from typing import (
     Any,
     Callable,
@@ -42,6 +43,7 @@ from ..domain.pipeline_dsl import (
     BranchKey,
 )
 from ..domain.plugins import PluginOutcome, ContextAwarePluginProtocol
+from ..processors import AgentProcessors
 from ..domain.models import (
     BaseModel,
     PipelineResult,
@@ -500,10 +502,24 @@ async def _run_step_logic(
                 agent_kwargs["resources"] = resources
         if step.config.temperature is not None and _accepts_param(current_agent.run, "temperature"):
             agent_kwargs["temperature"] = step.config.temperature
-        raw_output = await current_agent.run(data, **agent_kwargs)
+        step_processors = step.processors or AgentProcessors()
+        processed_data = data
+        if step_processors.prompt_processors:
+            for proc in step_processors.prompt_processors:
+                processed_data = await proc.process(processed_data, pipeline_context)
+        raw_output = await current_agent.run(processed_data, **agent_kwargs)
         result.latency_s += time.monotonic() - start
         last_raw_output = raw_output
-        unpacked_output = getattr(raw_output, "output", raw_output)
+        value = getattr(raw_output, "output", raw_output)
+        if step_processors.output_processors:
+            for proc in step_processors.output_processors:
+                value = await proc.process(value, pipeline_context)
+            if dataclasses.is_dataclass(raw_output):
+                raw_output = dataclasses.replace(cast(Any, raw_output), output=value)
+            else:
+                raw_output = value
+            value = getattr(raw_output, "output", raw_output)
+        unpacked_output = value
         last_unpacked_output = unpacked_output
 
         success = True

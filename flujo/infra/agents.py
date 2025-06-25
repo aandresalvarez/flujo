@@ -8,12 +8,16 @@ from typing import (
     Type,
     Any,
     Generic,
+    cast,
 )
 from pydantic_ai import Agent
-from pydantic import BaseModel as PydanticBaseModel
+from pydantic import BaseModel as PydanticBaseModel, TypeAdapter
 import os
+import dataclasses
+import orjson
 from flujo.infra.settings import settings
 from flujo.domain.models import Checklist
+from flujo.processors import AgentProcessors
 from flujo.domain.agent_protocol import (
     AsyncAgentProtocol,
     AgentInT,
@@ -219,6 +223,9 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
         max_retries: int = 3,
         timeout: int | None = None,
         model_name: str | None = None,
+        *,
+        processors: AgentProcessors | None = None,
+        output_type: Type[Any] | None = None,
     ) -> None:
         if not isinstance(max_retries, int):
             raise TypeError(f"max_retries must be an integer, got {type(max_retries).__name__}.")
@@ -237,6 +244,8 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
             timeout if timeout is not None else settings.agent_timeout
         )
         self._model_name: str | None = model_name or getattr(agent, "model", "unknown_model")
+        self._processors = processors or AgentProcessors()
+        self._final_output_type = output_type
 
     def _call_agent_with_dynamic_args(self, *args: Any, **kwargs: Any) -> Any:
         return self._agent.run(*args, **kwargs)
@@ -262,6 +271,23 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
             for key, value in kwargs.items()
         }
 
+        context_val = cast(
+            PydanticBaseModel | None,
+            processed_kwargs.get("context") or processed_kwargs.get("pipeline_context"),
+        )
+        if self._processors.prompt_processors:
+            if processed_args:
+                prompt = processed_args[0]
+            else:
+                prompt = processed_kwargs.get("data")
+            if prompt is not None:
+                for proc in self._processors.prompt_processors:
+                    prompt = await proc.process(prompt, context_val)
+                if processed_args:
+                    processed_args[0] = prompt
+                else:
+                    processed_kwargs["data"] = prompt
+
         retryer = AsyncRetrying(
             reraise=False,
             stop=stop_after_attempt(self._max_retries),
@@ -278,6 +304,26 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                         ),
                         timeout=self._timeout_seconds,
                     )
+                    if self._processors.output_processors:
+                        value = getattr(raw_agent_response, "output", raw_agent_response)
+                        for proc in self._processors.output_processors:
+                            value = await proc.process(value, context_val)
+                        if (
+                            self._final_output_type is not None
+                            and self._final_output_type is not str
+                        ):
+                            try:
+                                value = TypeAdapter(self._final_output_type).validate_python(
+                                    orjson.loads(value) if isinstance(value, str) else value
+                                )
+                            except Exception:
+                                value = TypeAdapter(self._final_output_type).validate_python(value)
+                        if dataclasses.is_dataclass(raw_agent_response):
+                            raw_agent_response = dataclasses.replace(
+                                cast(Any, raw_agent_response), output=value
+                            )
+                        else:
+                            raw_agent_response = value
                     logfire.info(f"Agent '{self._model_name}' raw response: {raw_agent_response}")
 
                     if isinstance(raw_agent_response, str) and raw_agent_response.startswith(
@@ -311,12 +357,22 @@ def make_agent_async(
     output_type: Type[Any],
     max_retries: int = 3,
     timeout: int | None = None,
+    *,
+    processors: AgentProcessors | None = None,
 ) -> AsyncAgentWrapper[Any, Any]:
     """
     Creates a pydantic_ai.Agent and returns an AsyncAgentWrapper exposing .run_async.
     """
-    agent = make_agent(model, system_prompt, output_type)
-    return AsyncAgentWrapper(agent, max_retries=max_retries, timeout=timeout, model_name=model)
+    agent_output_type = str if processors and processors.output_processors else output_type
+    agent = make_agent(model, system_prompt, agent_output_type)
+    return AsyncAgentWrapper(
+        agent,
+        max_retries=max_retries,
+        timeout=timeout,
+        model_name=model,
+        processors=processors,
+        output_type=output_type if processors and processors.output_processors else None,
+    )
 
 
 class NoOpReflectionAgent(AsyncAgentProtocol[Any, str]):
