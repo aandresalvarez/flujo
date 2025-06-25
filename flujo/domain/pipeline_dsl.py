@@ -56,6 +56,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
     config: StepConfig = Field(default_factory=StepConfig)
     plugins: List[tuple[ValidationPlugin, int]] = Field(default_factory=list)
     failure_handlers: List[Callable[[], None]] = Field(default_factory=list)
+    updates_context: bool = Field(default=False, description="Whether the step output should merge into the pipeline context.")
 
     model_config: ClassVar[ConfigDict] = {
         "arbitrary_types_allowed": True,
@@ -67,6 +68,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         agent: Optional[AsyncAgentProtocol[StepInT, StepOutT]] = None,
         plugins: Optional[List[ValidationPlugin | tuple[ValidationPlugin, int]]] = None,
         on_failure: Optional[List[Callable[[], None]]] = None,
+        updates_context: bool = False,
         **config: Any,
     ) -> None:
         plugin_list: List[tuple[ValidationPlugin, int]] = []
@@ -83,6 +85,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             config=StepConfig(**config),
             plugins=plugin_list,
             failure_handlers=on_failure or [],
+            updates_context=updates_context,
         )
 
     def __rshift__(
@@ -114,6 +117,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         cls: type["Step[StepInT, StepOutT]"],
         callable_: Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]],
         name: str | None = None,
+        updates_context: bool = False,
         **config: Any,
     ) -> "Step[StepInT, StepOutT]":
         """Create a :class:`Step` by wrapping an async callable.
@@ -205,7 +209,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
 
         agent_wrapper = _CallableAgent()
 
-        step = cls(step_name, agent_wrapper, **config)
+        step = cls(step_name, agent_wrapper, updates_context=updates_context, **config)
         object.__setattr__(step, "__step_input_type__", input_type)
         object.__setattr__(step, "__step_output_type__", output_type)
         return step
@@ -297,7 +301,7 @@ def step(
 
 @overload
 def step(
-    *, name: str | None = None, **config_kwargs: Any
+    *, name: str | None = None, updates_context: bool = False, **config_kwargs: Any
 ) -> Callable[
     [Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]]],
     "Step[StepInT, StepOutT]",
@@ -310,6 +314,7 @@ def step(
     func: (Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]] | None) = None,
     *,
     name: str | None = None,
+    updates_context: bool = False,
     **config_kwargs: Any,
 ) -> Any:
     """Decorator that converts an async function into a :class:`Step`.
@@ -319,7 +324,7 @@ def step(
     When called with keyword arguments, those are forwarded to ``Step.from_callable``.
     """
 
-    decorator_kwargs = {"name": name, **config_kwargs}
+    decorator_kwargs = {"name": name, "updates_context": updates_context, **config_kwargs}
 
     def decorator(
         fn: Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]],

@@ -3,6 +3,7 @@ from pydantic import BaseModel
 
 from flujo.application.flujo_engine import Flujo
 from flujo.domain import Step
+from flujo import step
 from flujo.testing.utils import gather_result
 from flujo.exceptions import PipelineContextInitializationError
 from flujo.domain.plugins import PluginOutcome
@@ -113,3 +114,21 @@ async def test_plugin_receives_context_and_strict_plugin_errors() -> None:
     assert isinstance(ctx_plugin.ctx, Ctx)
     assert kwargs_plugin.kwargs is not None
     assert kwargs_plugin.kwargs.get("context") is not None
+
+
+@pytest.mark.asyncio
+async def test_step_updates_context_automatic_merge() -> None:
+    @step(updates_context=True)
+    async def init(_: str) -> Ctx:
+        return Ctx(num=42)
+
+    @step
+    async def read(ctx_obj: Ctx, *, pipeline_context: Ctx | None = None) -> int:
+        assert pipeline_context is not None
+        return pipeline_context.num
+
+    runner = Flujo(init >> read, context_model=Ctx)
+    result = await gather_result(runner, "input")
+
+    assert result.final_pipeline_context.num == 42
+    assert result.step_history[-1].output == 42
