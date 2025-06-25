@@ -71,6 +71,7 @@ All `make` commands are thin wrappers around `hatch` scripts defined in
    make test
    # pass arguments with: make test args="-k <pattern>"
    ```
+   See the [Testing Guide](docs/testing_guide.md) for tips on creating effective unit and integration tests.
 
 ---
 
