@@ -1,4 +1,5 @@
 from flujo.domain import Step, Pipeline, step
+from flujo.domain.models import BaseModel
 from unittest.mock import AsyncMock, MagicMock, Mock
 from flujo.domain.plugins import ValidationPlugin
 import pytest
@@ -178,3 +179,37 @@ async def test_step_decorator_name_and_config() -> None:
     assert do.name == "inc"
     assert do.config.timeout_s == 10
     assert await do.agent.run(1) == 2  # type: ignore[call-arg]
+
+
+@pytest.mark.asyncio
+async def test_step_arun_basic() -> None:
+    @step
+    async def echo(x: str) -> int:
+        return len(x)
+
+    result = await echo.arun("hi")
+    assert result == 2
+
+
+class DummyCtx(BaseModel):
+    num: int = 0
+
+
+@pytest.mark.asyncio
+async def test_step_arun_with_context() -> None:
+    @step
+    async def increment(x: int, *, pipeline_context: DummyCtx) -> int:
+        pipeline_context.num += x
+        return pipeline_context.num
+
+    ctx = DummyCtx(num=1)
+    out = await increment.arun(2, pipeline_context=ctx)
+    assert out == 3
+    assert ctx.num == 3
+
+
+@pytest.mark.asyncio
+async def test_step_arun_no_agent() -> None:
+    step_without_agent = Step("blank")
+    with pytest.raises(ValueError):
+        await step_without_agent.arun(None)  # type: ignore[arg-type]

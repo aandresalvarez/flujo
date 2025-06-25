@@ -1,4 +1,5 @@
 from typing import Any, cast, Callable, Optional
+import asyncio
 
 from flujo.domain import Step, step, Pipeline
 from flujo.testing.utils import StubAgent
@@ -85,3 +86,15 @@ def typed_conditional_step() -> None:
         ),
         branches=branches,
     )  # type: ignore[type-var]
+
+
+def typed_arun() -> None:
+    length_step: Step[str, int]
+
+    @step
+    async def length(x: str) -> int:
+        return len(x)
+
+    length_step = length
+    out = asyncio.run(length_step.arun("hello"))
+    reveal_type(out)  # noqa: F821

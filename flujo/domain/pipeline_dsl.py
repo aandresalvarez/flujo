@@ -51,7 +51,10 @@ class StepConfig(BaseModel):
 
 
 class Step(BaseModel, Generic[StepInT, StepOutT]):
-    """Represents a single step in a pipeline."""
+    """Represents a single step in a pipeline.
+
+    Use :meth:`arun` to execute the step's agent directly when unit testing.
+    """
 
     name: str
     agent: Any | None = Field(default=None)
@@ -106,6 +109,31 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         if isinstance(other, Pipeline):
             return Pipeline.from_step(self) >> other
         raise TypeError("Can only chain Step with Step or Pipeline")
+
+    async def arun(self, data: StepInT, **kwargs: Any) -> StepOutT:
+        """Run this step's agent directly for testing purposes.
+
+        Parameters
+        ----------
+        data: StepInT
+            The input data for the step.
+        **kwargs: Any
+            Additional keyword arguments forwarded to the agent's ``run`` method.
+
+        Returns
+        -------
+        StepOutT
+            The agent's output.
+
+        Raises
+        ------
+        ValueError
+            If the step does not have an agent configured.
+        """
+        if self.agent is None:
+            raise ValueError(f"Step '{self.name}' has no agent to run.")
+
+        return await self.agent.run(data, **kwargs)
 
     @classmethod
     def review(
