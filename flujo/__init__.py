@@ -32,6 +32,7 @@ from .application.eval_adapter import run_pipeline_async
 from .application.self_improvement import evaluate_and_improve, SelfImprovementAgent
 from .domain.models import PipelineResult, StepResult, UsageLimits
 from .testing.utils import StubAgent, DummyPlugin
+from .utils.prompting import format_prompt
 from .plugins.sql_validator import SQLSyntaxValidator
 
 from .infra.agents import (
@@ -94,4 +95,5 @@ __all__ = [
     "StepExecutionRequest",
     "LocalBackend",
     "ConsoleTracer",
+    "format_prompt",
 ]
