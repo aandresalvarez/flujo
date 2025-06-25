@@ -466,11 +466,14 @@ async def _run_step_logic(
         agent_kwargs: Dict[str, Any] = {}
         # Apply prompt processors
         if step.processors.prompt_processors:
+            logfire.info(
+                f"Running {len(step.processors.prompt_processors)} prompt processors for step '{step.name}'..."
+            )
             processed = data
             for proc in step.processors.prompt_processors:
                 try:
                     processed = await proc.process(processed, pipeline_context)
-                except Exception as e:
+                except Exception as e:  # pragma: no cover - defensive
                     logfire.error(f"Processor {proc.name} failed: {e}")
             data = processed
         if isinstance(current_agent, ContextAwareAgentProtocol) and getattr(
@@ -516,11 +519,14 @@ async def _run_step_logic(
         unpacked_output = getattr(raw_output, "output", raw_output)
         # Apply output processors
         if step.processors.output_processors:
+            logfire.info(
+                f"Running {len(step.processors.output_processors)} output processors for step '{step.name}'..."
+            )
             processed = unpacked_output
             for proc in step.processors.output_processors:
                 try:
                     processed = await proc.process(processed, pipeline_context)
-                except Exception as e:
+                except Exception as e:  # pragma: no cover - defensive
                     logfire.error(f"Processor {proc.name} failed: {e}")
             unpacked_output = processed
         last_unpacked_output = unpacked_output
@@ -589,12 +595,18 @@ async def _run_step_logic(
                 validator.validate(unpacked_output, context=pipeline_context)
                 for validator in step.validators
             ]
-            validation_results = await asyncio.gather(*validation_tasks, return_exceptions=True)
+            try:
+                validation_results = await asyncio.gather(*validation_tasks, return_exceptions=True)
+            except Exception as e:  # pragma: no cover - defensive
+                validation_results = [e]
 
             failed_checks_feedback: list[str] = []
-            for res in validation_results:
+            for validator, res in zip(step.validators, validation_results):
                 if isinstance(res, Exception):
-                    failed_checks_feedback.append(f"Validator crashed: {res}")
+                    vname = getattr(
+                        validator, "name", getattr(validator, "__class__", type(validator)).__name__
+                    )
+                    failed_checks_feedback.append(f"Validator '{vname}' crashed: {res}")
                     continue
                 vres = cast(ValidationResult, res)
                 if not vres.is_valid:

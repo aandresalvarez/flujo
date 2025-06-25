@@ -1,0 +1,44 @@
+# Cookbook: Using Processors
+
+`Processor` objects let you modify step inputs or outputs without changing your agents. They are useful for injecting context variables or cleaning up responses.
+
+## Basic Example
+
+```python
+from flujo import Step, AgentProcessors
+from flujo.processors import AddContextVariables, StripMarkdownFences
+from flujo.testing.utils import StubAgent
+from pydantic import BaseModel
+
+class Ctx(BaseModel):
+    product: str
+
+agent = StubAgent(["```text\nHello!\n```"])
+processors = AgentProcessors(
+    prompt_processors=[AddContextVariables(["product"])],
+    output_processors=[StripMarkdownFences("text")],
+)
+step = Step.solution(agent, processors=processors)
+runner = Flujo(step, context_model=Ctx, initial_context_data={"product": "Widget"})
+result = runner.run("Write a slogan")
+print(result.step_history[0].output)
+```
+
+This prints `Hello!` because the output processor stripped the markdown fences.
+
+## Custom Processor
+
+Create your own processor by implementing the `Processor` protocol:
+
+```python
+from flujo.processors import Processor
+
+class Exclaim(Processor):
+    name = "Exclaim"
+
+    async def process(self, data: str, context=None) -> str:
+        return data + "!"
+```
+
+Attach it to a step via `AgentProcessors`.
+
