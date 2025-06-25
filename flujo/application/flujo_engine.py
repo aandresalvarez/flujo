@@ -5,6 +5,7 @@ import inspect
 import warnings
 import time
 import weakref
+from unittest.mock import Mock
 from typing import (
     Any,
     Callable,
@@ -516,6 +517,14 @@ async def _run_step_logic(
         raw_output = await current_agent.run(data, **agent_kwargs)
         result.latency_s += time.monotonic() - start
         last_raw_output = raw_output
+
+        if isinstance(raw_output, Mock):
+            raise TypeError(
+                f"Step '{step.name}' returned a Mock object. This is usually due to "
+                "an unconfigured mock in a test. Please configure your mock agent "
+                "to return a concrete value."
+            )
+
         unpacked_output = getattr(raw_output, "output", raw_output)
         # Apply output processors
         if step.processors.output_processors:

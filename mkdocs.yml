@@ -37,6 +37,7 @@ nav:
     - 'Contributing Guide': dev.md
     - 'Documentation Guide': documentation_guide.md
     - 'Documentation Status': documentation_status.md
+    - 'Testing Guide': testing_guide.md
   - 'Use Cases': use_cases.md
   - Cookbook:
     - 'Controlling Costs': cookbook/cost_control.md

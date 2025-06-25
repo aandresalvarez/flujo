@@ -327,6 +327,20 @@ TimeoutError: Operation timed out
 2. Check network
 3. Optimize request
 
+### 5. `TypeError: Step '...' returned a Mock object.`
+
+This error almost always occurs during unit testing when a mock agent is not configured to return a concrete value.
+
+**Solution:** Set a return value on your mock agent:
+
+```python
+from unittest.mock import AsyncMock
+
+agent = AsyncMock()
+agent.run.return_value = "expected"
+```
+See the [Testing Guide](testing_guide.md) for more examples.
+
 ## Getting Help
 
 ### 1. Debugging Tools
