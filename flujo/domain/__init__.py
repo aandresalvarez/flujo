@@ -10,6 +10,7 @@ from .pipeline_dsl import (
     step,
 )
 from .plugins import PluginOutcome, ValidationPlugin
+from .validation import Validator, ValidationResult
 from .resources import AppResources
 from .types import HookCallable
 from .backends import ExecutionBackend, StepExecutionRequest
@@ -24,6 +25,8 @@ __all__ = [
     "BranchKey",
     "PluginOutcome",
     "ValidationPlugin",
+    "Validator",
+    "ValidationResult",
     "AppResources",
     "HookCallable",
     "ExecutionBackend",

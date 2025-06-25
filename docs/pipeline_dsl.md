@@ -156,6 +156,21 @@ validate_step = Step.validate_step(
     validator_agent,
     plugins=[SQLSyntaxValidator()]
 )
+
+# With programmatic validators
+from flujo.validation import BaseValidator, ValidationResult
+
+class WordCountValidator(BaseValidator):
+    async def validate(self, output_to_check: str, *, context=None) -> ValidationResult:
+        return ValidationResult(is_valid=len(output_to_check.split()) < 5, validator_name=self.name,
+                                feedback="Too many words" if len(output_to_check.split()) >= 5 else None)
+
+validate_step = Step.validate_step(
+    validator_agent,
+    validators=[WordCountValidator()]
+)
+
+See [Hybrid Validation Cookbook](cookbook/hybrid_validation.md) for a complete example.
 ```
 
 ## Advanced Features

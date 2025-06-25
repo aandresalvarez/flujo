@@ -21,8 +21,11 @@ from .domain import (
     StepConfig,
     PluginOutcome,
     ValidationPlugin,
+    Validator,
+    ValidationResult,
     AppResources,
 )
+from .validation import BaseValidator
 from .domain.types import HookCallable
 from .domain.events import HookPayload
 from .domain.backends import ExecutionBackend, StepExecutionRequest
@@ -67,6 +70,9 @@ __all__ = [
     "AppResources",
     "PluginOutcome",
     "ValidationPlugin",
+    "Validator",
+    "ValidationResult",
+    "BaseValidator",
     "run_pipeline_async",
     "evaluate_and_improve",
     "SelfImprovementAgent",
