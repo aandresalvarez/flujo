@@ -25,6 +25,7 @@ from typing import (
 import inspect
 from flujo.domain.models import BaseModel
 from pydantic import Field, ConfigDict
+from ..processors import AgentProcessors
 from .agent_protocol import AsyncAgentProtocol
 from .plugins import ValidationPlugin
 from .types import ContextT
@@ -56,6 +57,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
     config: StepConfig = Field(default_factory=StepConfig)
     plugins: List[tuple[ValidationPlugin, int]] = Field(default_factory=list)
     failure_handlers: List[Callable[[], None]] = Field(default_factory=list)
+    processors: AgentProcessors = Field(default_factory=AgentProcessors)
 
     model_config: ClassVar[ConfigDict] = {
         "arbitrary_types_allowed": True,
@@ -67,6 +69,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         agent: Optional[AsyncAgentProtocol[StepInT, StepOutT]] = None,
         plugins: Optional[List[ValidationPlugin | tuple[ValidationPlugin, int]]] = None,
         on_failure: Optional[List[Callable[[], None]]] = None,
+        processors: AgentProcessors | None = None,
         **config: Any,
     ) -> None:
         plugin_list: List[tuple[ValidationPlugin, int]] = []
@@ -83,6 +86,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             config=StepConfig(**config),
             plugins=plugin_list,
             failure_handlers=on_failure or [],
+            processors=processors or AgentProcessors(),
         )
 
     def __rshift__(
@@ -246,6 +250,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         ] = None,
         iteration_input_mapper: Optional[Callable[[Any, Optional[ContextT], int], Any]] = None,
         loop_output_mapper: Optional[Callable[[Any, Optional[ContextT]], Any]] = None,
+        processors: AgentProcessors | None = None,
         **config_kwargs: Any,
     ) -> "LoopStep[ContextT]":
         """Factory method to create a :class:`LoopStep`."""
@@ -259,6 +264,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             initial_input_to_loop_body_mapper=initial_input_to_loop_body_mapper,
             iteration_input_mapper=iteration_input_mapper,
             loop_output_mapper=loop_output_mapper,
+            processors=processors,
             **config_kwargs,
         )
 
@@ -271,6 +277,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         default_branch_pipeline: Optional["Pipeline[Any, Any]"] = None,
         branch_input_mapper: Optional[Callable[[Any, Optional[ContextT]], Any]] = None,
         branch_output_mapper: Optional[Callable[[Any, BranchKey, Optional[ContextT]], Any]] = None,
+        processors: AgentProcessors | None = None,
         **config_kwargs: Any,
     ) -> "ConditionalStep[ContextT]":
         """Factory method to create a :class:`ConditionalStep`."""
@@ -283,6 +290,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             default_branch_pipeline=default_branch_pipeline,
             branch_input_mapper=branch_input_mapper,
             branch_output_mapper=branch_output_mapper,
+            processors=processors,
             **config_kwargs,
         )
 
@@ -346,11 +354,13 @@ class HumanInTheLoopStep(Step[Any, Any]):
         name: str,
         message_for_user: str | None = None,
         input_schema: Type[BaseModel] | None = None,
+        processors: AgentProcessors | None = None,
         **config: Any,
     ) -> None:
         super().__init__(
             name=name,
             agent=None,
+            processors=processors,
             config=StepConfig(**config),
             plugins=[],
             failure_handlers=[],
@@ -399,6 +409,7 @@ class LoopStep(Step[Any, Any], Generic[ContextT]):
         ] = None,
         iteration_input_mapper: Optional[Callable[[Any, Optional[ContextT], int], Any]] = None,
         loop_output_mapper: Optional[Callable[[Any, Optional[ContextT]], Any]] = None,
+        processors: AgentProcessors | None = None,
         **config_kwargs: Any,
     ) -> None:
         if max_loops <= 0:
@@ -408,6 +419,7 @@ class LoopStep(Step[Any, Any], Generic[ContextT]):
             self,
             name=name,
             agent=None,
+            processors=processors or AgentProcessors(),
             config=StepConfig(**config_kwargs),
             plugins=[],
             failure_handlers=[],
@@ -454,6 +466,7 @@ class ConditionalStep(Step[Any, Any], Generic[ContextT]):
         default_branch_pipeline: Optional["Pipeline[Any, Any]"] = None,
         branch_input_mapper: Optional[Callable[[Any, Optional[ContextT]], Any]] = None,
         branch_output_mapper: Optional[Callable[[Any, BranchKey, Optional[ContextT]], Any]] = None,
+        processors: AgentProcessors | None = None,
         **config_kwargs: Any,
     ) -> None:
         if not branches:
@@ -463,6 +476,7 @@ class ConditionalStep(Step[Any, Any], Generic[ContextT]):
             self,
             name=name,
             agent=None,
+            processors=processors or AgentProcessors(),
             config=StepConfig(**config_kwargs),
             plugins=[],
             failure_handlers=[],

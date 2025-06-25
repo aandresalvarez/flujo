@@ -500,7 +500,32 @@ async def _run_step_logic(
                 agent_kwargs["resources"] = resources
         if step.config.temperature is not None and _accepts_param(current_agent.run, "temperature"):
             agent_kwargs["temperature"] = step.config.temperature
-        raw_output = await current_agent.run(data, **agent_kwargs)
+        # Apply prompt processors from agent and step
+        processed_input = data
+        prompt_procs = []
+        if hasattr(current_agent, "processors"):
+            prompt_procs.extend(getattr(current_agent, "processors").prompt_processors)
+        prompt_procs.extend(step.processors.prompt_processors)
+        for proc in prompt_procs:
+            try:
+                processed_input = await proc.process(processed_input, pipeline_context)
+            except Exception as e:
+                logfire.error(f"Prompt processor '{proc.name}' error: {e}")
+
+        raw_output = await current_agent.run(processed_input, **agent_kwargs)
+        # Apply output processors
+        output_procs = []
+        if hasattr(current_agent, "processors"):
+            output_procs.extend(getattr(current_agent, "processors").output_processors)
+        output_procs.extend(step.processors.output_processors)
+        processed_output = raw_output
+        for proc in output_procs:
+            try:
+                processed_output = await proc.process(processed_output, pipeline_context)
+            except Exception as e:
+                logfire.error(f"Output processor '{proc.name}' error: {e}")
+
+        raw_output = processed_output
         result.latency_s += time.monotonic() - start
         last_raw_output = raw_output
         unpacked_output = getattr(raw_output, "output", raw_output)

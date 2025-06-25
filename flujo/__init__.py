@@ -34,6 +34,13 @@ from .domain.models import PipelineResult, StepResult, UsageLimits
 from .testing.utils import StubAgent, DummyPlugin
 from .utils.prompting import format_prompt
 from .plugins.sql_validator import SQLSyntaxValidator
+from .processors import (
+    Processor,
+    AgentProcessors,
+    AddContextVariables,
+    StripMarkdownFences,
+    EnforceJsonResponse,
+)
 
 from .infra.agents import (
     review_agent,
@@ -90,6 +97,11 @@ __all__ = [
     "StubAgent",
     "DummyPlugin",
     "SQLSyntaxValidator",
+    "Processor",
+    "AgentProcessors",
+    "AddContextVariables",
+    "StripMarkdownFences",
+    "EnforceJsonResponse",
     "UsageLimits",
     "ExecutionBackend",
     "StepExecutionRequest",

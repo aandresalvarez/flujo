@@ -9,6 +9,7 @@ from typing import (
     Any,
     Generic,
 )
+from ..processors import AgentProcessors
 from pydantic_ai import Agent
 from pydantic import BaseModel as PydanticBaseModel
 import os
@@ -219,6 +220,7 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
         max_retries: int = 3,
         timeout: int | None = None,
         model_name: str | None = None,
+        processors: AgentProcessors | None = None,
     ) -> None:
         if not isinstance(max_retries, int):
             raise TypeError(f"max_retries must be an integer, got {type(max_retries).__name__}.")
@@ -237,6 +239,7 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
             timeout if timeout is not None else settings.agent_timeout
         )
         self._model_name: str | None = model_name or getattr(agent, "model", "unknown_model")
+        self.processors = processors or AgentProcessors()
 
     def _call_agent_with_dynamic_args(self, *args: Any, **kwargs: Any) -> Any:
         return self._agent.run(*args, **kwargs)
@@ -311,12 +314,19 @@ def make_agent_async(
     output_type: Type[Any],
     max_retries: int = 3,
     timeout: int | None = None,
+    processors: AgentProcessors | None = None,
 ) -> AsyncAgentWrapper[Any, Any]:
     """
     Creates a pydantic_ai.Agent and returns an AsyncAgentWrapper exposing .run_async.
     """
     agent = make_agent(model, system_prompt, output_type)
-    return AsyncAgentWrapper(agent, max_retries=max_retries, timeout=timeout, model_name=model)
+    return AsyncAgentWrapper(
+        agent,
+        max_retries=max_retries,
+        timeout=timeout,
+        model_name=model,
+        processors=processors,
+    )
 
 
 class NoOpReflectionAgent(AsyncAgentProtocol[Any, str]):
