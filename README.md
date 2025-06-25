@@ -110,6 +110,7 @@ print(f"Final pipeline output: {result.step_history[-1].output}")
 
 - [Contributing Guide](CONTRIBUTING.md): How to contribute to the project
 - [Development Guide](docs/dev.md): Development setup and workflow
+- [Testing Guide](docs/testing_guide.md): Patterns and utilities for writing tests
 - [Code of Conduct](CODE_OF_CONDUCT.md): Community guidelines
 - [License](LICENSE): Dual License (AGPL-3.0 + Commercial)
 

@@ -93,7 +93,9 @@ The orchestrator automatically loads this file via **python-dotenv**.
 
 ## 4. Testing
 
-The project includes comprehensive tests:
+The project includes comprehensive tests. Please add or update tests for any
+new features or bug fixes. See the [Testing Guide](docs/testing_guide.md) for
+examples and utilities:
 
 ### Full Test Suite
 ```bash
