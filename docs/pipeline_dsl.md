@@ -218,6 +218,21 @@ print(result.final_pipeline_context.counter)  # 2
 Each `run()` call gets a fresh context instance. Access the final state via
 `PipelineResult.final_pipeline_context`.
 
+You can also have a step return a partial context object and mark it with
+`updates_context=True` to automatically merge those fields into the running
+context:
+
+```python
+@step(updates_context=True)
+async def bootstrap(_: str) -> MyContext:
+    return MyContext(counter=42)
+
+pipeline = bootstrap >> increment
+runner = Flujo(pipeline, context_model=MyContext)
+result = runner.run("hi")
+print(result.final_pipeline_context.counter)  # 43
+```
+
 ## Managed Resources
 
 You can also pass a long-lived resources container to the runner. Declare a

@@ -693,7 +693,18 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             context_model_defined=self.context_model is not None,
             usage_limits=self.usage_limits,
         )
-        return await self.backend.execute_step(request)
+        result = await self.backend.execute_step(request)
+        if getattr(step, "updates_context", False):
+            if (
+                self.context_model is not None
+                and isinstance(result.output, self.context_model)
+                and pipeline_context is not None
+            ):
+                updated_data = result.output.model_dump(exclude_unset=True)
+                for key, value in updated_data.items():
+                    setattr(pipeline_context, key, value)
+                logfire.info(f"Context updated by step '{step.name}'.")
+        return result
 
     def _check_usage_limits(
         self,
