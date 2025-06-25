@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import AsyncMock, Mock
 
 from flujo.application.flujo_engine import Flujo
-from flujo.domain.pipeline_dsl import Step, Pipeline
+from flujo.domain.pipeline_dsl import Step
 from flujo.testing.utils import StubAgent, gather_result
 
 
@@ -69,4 +69,3 @@ async def test_pipeline_stops_on_mock() -> None:
     assert good_agent.call_count == 1
     assert bad_agent.run.call_count == 1
     assert final_agent.call_count == 0
-
