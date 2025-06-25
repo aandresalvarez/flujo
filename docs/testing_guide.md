@@ -121,3 +121,21 @@ my_agent.run.return_value = "expected"
 
 See the [Troubleshooting Guide](troubleshooting.md) for more details.
 
+## Testing Individual Steps
+
+Use the :meth:`Step.arun` method to exercise a single step in isolation. This
+executes the step's underlying agent without any orchestration logic.
+
+```python
+from my_app.steps import process_data_step  # a @step decorated object
+import asyncio
+
+async def test_process_data_step() -> None:
+    input_data = "some raw data"
+    expected_output = "SOME RAW DATA"
+
+    result = await process_data_step.arun(input_data)
+
+    assert result == expected_output
+```
+
