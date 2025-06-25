@@ -173,6 +173,10 @@ validate_step = Step.validate_step(
 See [Hybrid Validation Cookbook](cookbook/hybrid_validation.md) for a complete example.
 ```
 
+All step factories also accept a `processors: Optional[AgentProcessors]` parameter
+to run pre-processing and post-processing hooks. See [Using Processors](cookbook/using_processors.md)
+for details.
+
 ## Advanced Features
 
 ### Parallel Execution

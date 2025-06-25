@@ -26,7 +26,7 @@ from .domain import (
     ValidationResult,
     AppResources,
 )
-from .validation import BaseValidator
+from .validation import BaseValidator, validator
 from .domain.types import HookCallable
 from .domain.events import HookPayload
 from .domain.backends import ExecutionBackend, StepExecutionRequest
@@ -85,6 +85,7 @@ __all__ = [
     "Validator",
     "ValidationResult",
     "BaseValidator",
+    "validator",
     "run_pipeline_async",
     "evaluate_and_improve",
     "SelfImprovementAgent",

@@ -69,14 +69,19 @@ custom_pipeline = (
     Step.review(review_agent)      # Review step
     >> Step.solution(              # Solution step
         solution_agent,
-        tools=[tool1, tool2]       # Optional tools
+        tools=[tool1, tool2],      # Optional tools
+        processors=my_processors   # Optional processors
     )
     >> Step.validate_step(              # Validation step
         validator_agent,
         plugins=[plugin1],         # Optional validation plugins
-        validators=[validator1]    # Optional programmatic validators
+        validators=[validator1],   # Optional programmatic validators
+        processors=my_processors
     )
 )
+
+# The `processors` argument lets you run custom pre- and post-processing
+# logic for a step. See [Using Processors](cookbook/using_processors.md).
 
 runner = Flujo(custom_pipeline)
 # With a shared typed context
