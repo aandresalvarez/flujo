@@ -179,24 +179,6 @@ for details.
 
 ## Advanced Features
 
-### Parallel Execution
-
-Run steps in parallel:
-
-```python
-from flujo import parallel
-
-# Run multiple solution steps in parallel
-pipeline = (
-    Step.review(review_agent)
-    >> parallel(
-        Step.solution(solution_agent),
-        Step.solution(alternative_agent)
-    )
-    >> Step.validate_step(validator_agent)
-)
-```
-
 ### Looping and Iteration
 
 Repeat a sub-pipeline until a condition is met using `Step.loop_until()`.
@@ -335,22 +317,6 @@ runner = Flujo(
 )
 ```
 
-### Error Recovery
-
-```python
-from flujo import fallback
-
-# Add fallback steps
-pipeline = (
-    Step.solution(solution_agent)
-    >> fallback(
-        Step.solution(backup_agent),
-        on_error=True
-    )
-    >> Step.validate_step(validator_agent)
-)
-```
-
 ## Best Practices
 
 1. **Pipeline Design**
@@ -361,12 +327,10 @@ pipeline = (
 
 2. **Error Handling**
    - Add appropriate retries
-   - Include fallback steps
    - Log errors properly
    - Monitor performance
 
 3. **Performance**
-   - Use parallel execution
    - Optimize step order
    - Cache results when possible
    - Monitor resource usage
@@ -412,10 +376,7 @@ result = runner.run("Write a SQL query to find active users")
 # Create a content generation pipeline
 pipeline = (
     Step.review(review_agent)  # Define content guidelines
-    >> parallel(
-        Step.solution(writer_agent),  # Main writer
-        Step.solution(editor_agent)   # Alternative version
-    )
+    >> Step.solution(writer_agent)  # Generate content
     >> Step.validate_step(
         validator_agent,
         scorer=lambda c: weighted_score(c, {
@@ -445,7 +406,6 @@ result = runner.run("Write a blog post about AI")
    - Monitor step durations
    - Check resource usage
    - Optimize step order
-   - Use parallel execution
 
 3. **Quality Issues**
    - Review scoring weights
