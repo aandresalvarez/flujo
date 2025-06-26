@@ -611,6 +611,7 @@ async def _run_step_logic(
                 validation_results = [e]
 
             failed_checks_feedback: list[str] = []
+            collected_results: list[ValidationResult] = []
             for validator, res in zip(step.validators, validation_results):
                 if isinstance(res, Exception):
                     vname = getattr(
@@ -619,9 +620,16 @@ async def _run_step_logic(
                     failed_checks_feedback.append(f"Validator '{vname}' crashed: {res}")
                     continue
                 vres = cast(ValidationResult, res)
+                collected_results.append(vres)
                 if not vres.is_valid:
                     fb = vres.feedback or "No details provided."
                     failed_checks_feedback.append(f"Check '{vres.validator_name}' failed: {fb}")
+
+            if step.persist_validation_results_to and pipeline_context is not None:
+                if hasattr(pipeline_context, step.persist_validation_results_to):
+                    history_list = getattr(pipeline_context, step.persist_validation_results_to)
+                    if isinstance(history_list, list):
+                        history_list.extend(collected_results)
 
             if failed_checks_feedback:
                 success = False
@@ -666,6 +674,13 @@ async def _run_step_logic(
     result.cost_usd += (
         getattr(last_raw_output, "cost_usd", 0.0) if last_raw_output is not None else 0.0
     )
+    if not result.success and step.persist_feedback_to_context:
+        if pipeline_context is not None and hasattr(
+            pipeline_context, step.persist_feedback_to_context
+        ):
+            history_list = getattr(pipeline_context, step.persist_feedback_to_context)
+            if isinstance(history_list, list) and result.feedback:
+                history_list.append(result.feedback)
     return result
 
 

@@ -1,5 +1,5 @@
-from typing import Protocol, Any, runtime_checkable, Optional
-from pydantic import BaseModel
+from typing import Protocol, Any, runtime_checkable, Optional, Dict
+from pydantic import BaseModel, Field
 
 
 class ValidationResult(BaseModel):
@@ -8,6 +8,7 @@ class ValidationResult(BaseModel):
     is_valid: bool
     feedback: Optional[str] = None
     validator_name: str
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
 @runtime_checkable
