@@ -402,6 +402,29 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             **config_kwargs,
         )
 
+    @classmethod
+    def map_over(
+        cls,
+        name: str,
+        pipeline_to_run: "Pipeline[Any, Any]",
+        *,
+        iterable_input: str,
+        max_concurrency: int = 1,
+        **config_kwargs: Any,
+    ) -> "MapStep[ContextT]":
+        """Factory to process each item of ``iterable_input`` with ``pipeline_to_run``."""
+
+        from .pipeline_dsl import MapStep
+
+        _ = max_concurrency  # reserved for future use
+        return MapStep(
+            name=name,
+            pipeline_to_run=pipeline_to_run,
+            iterable_input=iterable_input,
+            max_concurrency=max_concurrency,
+            **config_kwargs,
+        )
+
 
 @overload
 def step(
@@ -591,6 +614,88 @@ class ConditionalStep(Step[Any, Any], Generic[ContextT]):
         )
 
 
+class MapStep(LoopStep[ContextT]):
+    """A step that maps a pipeline over items in the pipeline context."""
+
+    iterable_input: str = Field()
+    max_concurrency: int = Field(default=1)
+
+    def __init__(
+        self,
+        *,
+        name: str,
+        pipeline_to_run: "Pipeline[Any, Any]",
+        iterable_input: str,
+        max_concurrency: int = 1,
+        **config_kwargs: Any,
+    ) -> None:
+        results: list[Any] = []
+        items: list[Any] = []
+        iteration_counter = {"i": 0}
+
+        async def _collect(item: Any, *, pipeline_context: BaseModel | None = None) -> Any:
+            results.append(item)
+            return item
+
+        collector = Step.from_callable(_collect, name=f"_{name}_collect")
+        body = pipeline_to_run >> collector
+
+        BaseModel.__init__(  # type: ignore[misc]
+            self,
+            name=name,
+            agent=None,
+            config=StepConfig(**config_kwargs),
+            plugins=[],
+            failure_handlers=[],
+            loop_body_pipeline=body,
+            exit_condition_callable=lambda _o, _c: False,
+            max_loops=1,
+            initial_input_to_loop_body_mapper=None,
+            iteration_input_mapper=None,
+            loop_output_mapper=None,
+            iterable_input=iterable_input,
+            max_concurrency=max_concurrency,
+        )
+
+        def _initial_mapper(_: Any, ctx: BaseModel | None) -> Any:
+            if ctx is None:
+                raise ValueError("map_over requires a pipeline context")
+            items.clear()
+            items.extend(getattr(ctx, iterable_input, []))
+            object.__setattr__(self, "max_loops", len(items) or 1)
+            iteration_counter["i"] = 0
+            results.clear()
+            if not items:
+
+                async def _noop(item: Any, *, pipeline_context: BaseModel | None = None) -> Any:
+                    return item
+
+                object.__setattr__(
+                    self,
+                    "loop_body_pipeline",
+                    Pipeline.from_step(Step.from_callable(_noop, name=f"_{name}_noop")),
+                )
+                return None
+            return items[0]
+
+        def _iter_mapper(_: Any, __: BaseModel | None, i: int) -> Any:
+            return items[i] if i < len(items) else None
+
+        def _exit_condition(_: Any, __: BaseModel | None) -> bool:
+            iteration_counter["i"] += 1
+            return iteration_counter["i"] >= len(items)
+
+        def _output_mapper(_: Any, __: BaseModel | None) -> list[Any]:
+            return list(results)
+
+        object.__setattr__(self, "initial_input_to_loop_body_mapper", _initial_mapper)
+        object.__setattr__(self, "iteration_input_mapper", _iter_mapper)
+        object.__setattr__(self, "exit_condition_callable", _exit_condition)
+        object.__setattr__(self, "loop_output_mapper", _output_mapper)
+        object.__setattr__(self, "iterable_input", iterable_input)
+        object.__setattr__(self, "max_concurrency", max_concurrency)
+
+
 PipeInT = TypeVar("PipeInT")
 PipeOutT = TypeVar("PipeOutT")
 NewPipeOutT = TypeVar("NewPipeOutT")
@@ -631,6 +736,7 @@ __all__ = [
     "Pipeline",
     "StepConfig",
     "LoopStep",
+    "MapStep",
     "ConditionalStep",
     "HumanInTheLoopStep",
     "BranchKey",
