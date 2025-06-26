@@ -146,8 +146,6 @@ pipeline = (
 # Configure the pipeline runner
 runner = Flujo(
     pipeline,
-    max_parallel=2,  # Maximum parallel executions
-    timeout=60,      # Overall timeout
     retry_on_error=True
 )
 ```
