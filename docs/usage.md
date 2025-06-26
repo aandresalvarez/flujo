@@ -7,7 +7,7 @@ Environment variables are loaded automatically from this file.
 ```bash
 flujo solve "Write a summary of this document."
 flujo show-config
-flujo bench --prompt "hi" --rounds 3
+flujo bench "hi" --rounds 3
 flujo explain path/to/pipeline.py
 flujo add-eval-case -d my_evals.py -n new_case -i "input"
 flujo --profile
