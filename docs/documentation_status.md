@@ -1,7 +1,7 @@
 # Documentation Status Report
 
 *Generated: June 2025*
-*Project Version: 0.3.1*
+*Project Version: 0.4.22*
 
 ## Overview
 
@@ -73,7 +73,7 @@ The documentation has been systematically reviewed and updated to reflect the cu
 - **Core Models**: All documented data models exist in `domain/models.py`
 
 ### ✅ Version Information
-- **Project Version**: 0.3.1 (confirmed in `pyproject.toml`)
+- **Project Version**: 0.4.22 (confirmed in `pyproject.toml`)
 - **Python Requirements**: 3.11+ (confirmed)
 - **Dependencies**: All documented dependencies verified in `pyproject.toml`
 
