@@ -867,6 +867,14 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         *,
         initial_context_data: Optional[Dict[str, Any]] = None,
     ) -> AsyncIterator[PipelineResult[ContextT]]:
+        """Run the pipeline asynchronously.
+
+        This method should be used when an asyncio event loop is already
+        running, such as within Jupyter notebooks or async web frameworks.
+
+        It yields any streaming output from the final step and then the final
+        ``PipelineResult`` object.
+        """
         current_pipeline_context_instance: Optional[ContextT] = None
         if self.context_model is not None:
             try:
@@ -1062,6 +1070,24 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         *,
         initial_context_data: Optional[Dict[str, Any]] = None,
     ) -> PipelineResult[ContextT]:
+        """Run the pipeline synchronously.
+
+        This helper should only be called from code that is not already running
+        inside an asyncio event loop.  If a running loop is detected a
+        ``TypeError`` is raised instructing the user to use ``run_async``
+        instead.
+        """
+        try:
+            asyncio.get_running_loop()
+            raise TypeError(
+                "Flujo.run() cannot be called from a running event loop. "
+                "If you are in an async environment (like Jupyter, FastAPI, or an "
+                "`async def` function), you must use the `run_async()` method."
+            )
+        except RuntimeError:
+            # No loop running, safe to proceed
+            pass
+
         async def _consume() -> PipelineResult[ContextT]:
             result: PipelineResult[ContextT] | None = None
             async for item in self.run_async(
