@@ -42,3 +42,23 @@ class Exclaim(Processor):
 
 Attach it to a step via `AgentProcessors`.
 
+## Parsing JSON Outputs
+
+Use `EnforceJsonResponse` to automatically convert string replies into Python
+objects.
+
+```python
+from flujo import Step, Flujo, AgentProcessors
+from flujo.processors import EnforceJsonResponse
+from flujo.testing.utils import StubAgent
+
+agent = StubAgent(['{"count": 1}'])
+processors = AgentProcessors(output_processors=[EnforceJsonResponse()])
+step = Step.solution(agent, processors=processors)
+runner = Flujo(step)
+result = runner.run("Give me a JSON object")
+print(result.step_history[0].output)
+```
+
+This prints `{'count': 1}` because the processor parsed the JSON string.
+
