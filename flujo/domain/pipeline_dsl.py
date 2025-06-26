@@ -21,6 +21,7 @@ from typing import (
     get_type_hints,
     get_origin,
     get_args,
+    Iterable,
 )
 import inspect
 from flujo.domain.models import BaseModel
@@ -65,14 +66,19 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
     processors: "AgentProcessors" = Field(default_factory=AgentProcessors)
     persist_feedback_to_context: Optional[str] = Field(
         default=None,
-        description=("If step fails, append feedback to this context attribute (must be a list)."),
+        description=(
+            "If step fails, append feedback to this context attribute (must be a list)."
+        ),
     )
     persist_validation_results_to: Optional[str] = Field(
         default=None,
-        description=("Append ValidationResult objects to this context attribute (must be a list)."),
+        description=(
+            "Append ValidationResult objects to this context attribute (must be a list)."
+        ),
     )
     updates_context: bool = Field(
-        default=False, description="Whether the step output should merge into the pipeline context."
+        default=False,
+        description="Whether the step output should merge into the pipeline context.",
     )
 
     model_config: ClassVar[ConfigDict] = {
@@ -280,13 +286,14 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                 import inspect
 
                 # Detect if func is a mock (for test robustness)
-                is_mock = hasattr(func, "assert_called_with") or func.__class__.__name__.startswith(
-                    "AsyncMock"
-                )
+                is_mock = hasattr(
+                    func, "assert_called_with"
+                ) or func.__class__.__name__.startswith("AsyncMock")
 
                 sig = inspect.signature(func)
                 expects_kwonly_pipeline_context = any(
-                    p.name == "pipeline_context" and p.kind == inspect.Parameter.KEYWORD_ONLY
+                    p.name == "pipeline_context"
+                    and p.kind == inspect.Parameter.KEYWORD_ONLY
                     for p in sig.parameters.values()
                 )
 
@@ -340,7 +347,9 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             input_schema=input_schema,
         )
 
-    def add_plugin(self, plugin: ValidationPlugin, priority: int = 0) -> "Step[StepInT, StepOutT]":
+    def add_plugin(
+        self, plugin: ValidationPlugin, priority: int = 0
+    ) -> "Step[StepInT, StepOutT]":
         """Add a validation plugin to this step."""
         self.plugins.append((plugin, priority))
         return self
@@ -360,7 +369,9 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         initial_input_to_loop_body_mapper: Optional[
             Callable[[Any, Optional[ContextT]], Any]
         ] = None,
-        iteration_input_mapper: Optional[Callable[[Any, Optional[ContextT], int], Any]] = None,
+        iteration_input_mapper: Optional[
+            Callable[[Any, Optional[ContextT], int], Any]
+        ] = None,
         loop_output_mapper: Optional[Callable[[Any, Optional[ContextT]], Any]] = None,
         **config_kwargs: Any,
     ) -> "LoopStep[ContextT]":
@@ -386,7 +397,9 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         branches: Dict[BranchKey, "Pipeline[Any, Any]"],
         default_branch_pipeline: Optional["Pipeline[Any, Any]"] = None,
         branch_input_mapper: Optional[Callable[[Any, Optional[ContextT]], Any]] = None,
-        branch_output_mapper: Optional[Callable[[Any, BranchKey, Optional[ContextT]], Any]] = None,
+        branch_output_mapper: Optional[
+            Callable[[Any, BranchKey, Optional[ContextT]], Any]
+        ] = None,
         **config_kwargs: Any,
     ) -> "ConditionalStep[ContextT]":
         """Factory method to create a :class:`ConditionalStep`."""
@@ -399,6 +412,24 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             default_branch_pipeline=default_branch_pipeline,
             branch_input_mapper=branch_input_mapper,
             branch_output_mapper=branch_output_mapper,
+            **config_kwargs,
+        )
+
+    @classmethod
+    def map_over(
+        cls,
+        name: str,
+        pipeline_to_run: "Pipeline[Any, Any]",
+        *,
+        iterable_input: str,
+        **config_kwargs: Any,
+    ) -> "MapStep[ContextT]":
+        """Factory to process each item of ``iterable_input`` with ``pipeline_to_run``."""
+
+        return MapStep(
+            name=name,
+            pipeline_to_run=pipeline_to_run,
+            iterable_input=iterable_input,
             **config_kwargs,
         )
 
@@ -423,7 +454,9 @@ def step(
 
 
 def step(
-    func: (Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]] | None) = None,
+    func: (
+        Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]] | None
+    ) = None,
     *,
     name: str | None = None,
     updates_context: bool = False,
@@ -436,7 +469,11 @@ def step(
     When called with keyword arguments, those are forwarded to ``Step.from_callable``.
     """
 
-    decorator_kwargs = {"name": name, "updates_context": updates_context, **config_kwargs}
+    decorator_kwargs = {
+        "name": name,
+        "updates_context": updates_context,
+        **config_kwargs,
+    }
 
     def decorator(
         fn: Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]],
@@ -489,17 +526,27 @@ class LoopStep(Step[Any, Any], Generic[ContextT]):
     )
     max_loops: int = Field(default=5, gt=0, description="Maximum number of iterations.")
 
-    initial_input_to_loop_body_mapper: Optional[Callable[[Any, Optional[ContextT]], Any]] = Field(
+    initial_input_to_loop_body_mapper: Optional[
+        Callable[[Any, Optional[ContextT]], Any]
+    ] = Field(
         default=None,
-        description=("Callable to map LoopStep's input to the first iteration's body input."),
+        description=(
+            "Callable to map LoopStep's input to the first iteration's body input."
+        ),
     )
-    iteration_input_mapper: Optional[Callable[[Any, Optional[ContextT], int], Any]] = Field(
-        default=None,
-        description=("Callable to map previous iteration's body output to next iteration's input."),
+    iteration_input_mapper: Optional[Callable[[Any, Optional[ContextT], int], Any]] = (
+        Field(
+            default=None,
+            description=(
+                "Callable to map previous iteration's body output to next iteration's input."
+            ),
+        )
     )
     loop_output_mapper: Optional[Callable[[Any, Optional[ContextT]], Any]] = Field(
         default=None,
-        description=("Callable to map the final successful output to the LoopStep's output."),
+        description=(
+            "Callable to map the final successful output to the LoopStep's output."
+        ),
     )
 
     model_config = {"arbitrary_types_allowed": True}
@@ -514,7 +561,9 @@ class LoopStep(Step[Any, Any], Generic[ContextT]):
         initial_input_to_loop_body_mapper: Optional[
             Callable[[Any, Optional[ContextT]], Any]
         ] = None,
-        iteration_input_mapper: Optional[Callable[[Any, Optional[ContextT], int], Any]] = None,
+        iteration_input_mapper: Optional[
+            Callable[[Any, Optional[ContextT], int], Any]
+        ] = None,
         loop_output_mapper: Optional[Callable[[Any, Optional[ContextT]], Any]] = None,
         **config_kwargs: Any,
     ) -> None:
@@ -555,7 +604,9 @@ class ConditionalStep(Step[Any, Any], Generic[ContextT]):
         default=None,
         description="Maps ConditionalStep input to branch input.",
     )
-    branch_output_mapper: Optional[Callable[[Any, BranchKey, Optional[ContextT]], Any]] = Field(
+    branch_output_mapper: Optional[
+        Callable[[Any, BranchKey, Optional[ContextT]], Any]
+    ] = Field(
         default=None,
         description="Maps branch output to ConditionalStep output.",
     )
@@ -570,7 +621,9 @@ class ConditionalStep(Step[Any, Any], Generic[ContextT]):
         branches: Dict[BranchKey, "Pipeline[Any, Any]"],
         default_branch_pipeline: Optional["Pipeline[Any, Any]"] = None,
         branch_input_mapper: Optional[Callable[[Any, Optional[ContextT]], Any]] = None,
-        branch_output_mapper: Optional[Callable[[Any, BranchKey, Optional[ContextT]], Any]] = None,
+        branch_output_mapper: Optional[
+            Callable[[Any, BranchKey, Optional[ContextT]], Any]
+        ] = None,
         **config_kwargs: Any,
     ) -> None:
         if not branches:
@@ -589,6 +642,96 @@ class ConditionalStep(Step[Any, Any], Generic[ContextT]):
             branch_input_mapper=branch_input_mapper,
             branch_output_mapper=branch_output_mapper,
         )
+
+
+class MapStep(LoopStep[ContextT]):
+    """A step that maps a pipeline over items in the pipeline context."""
+
+    iterable_input: str = Field()
+
+    def __init__(
+        self,
+        *,
+        name: str,
+        pipeline_to_run: "Pipeline[Any, Any]",
+        iterable_input: str,
+        **config_kwargs: Any,
+    ) -> None:
+        results_attr = f"__{name}_results"
+        items_attr = f"__{name}_items"
+
+        async def _collect(
+            item: Any, *, pipeline_context: BaseModel | None = None
+        ) -> Any:
+            if pipeline_context is None:
+                raise ValueError("map_over requires a pipeline context")
+            getattr(pipeline_context, results_attr).append(item)
+            return item
+
+        collector = Step.from_callable(_collect, name=f"_{name}_collect")
+        body = pipeline_to_run >> collector
+
+        BaseModel.__init__(  # type: ignore[misc]
+            self,
+            name=name,
+            agent=None,
+            config=StepConfig(**config_kwargs),
+            plugins=[],
+            failure_handlers=[],
+            loop_body_pipeline=body,
+            exit_condition_callable=lambda _o, ctx: len(getattr(ctx, results_attr, []))
+            >= len(getattr(ctx, items_attr, [])),
+            max_loops=1,
+            initial_input_to_loop_body_mapper=None,
+            iteration_input_mapper=None,
+            loop_output_mapper=None,
+            iterable_input=iterable_input,
+        )
+        object.__setattr__(self, "_original_body_pipeline", body)
+        object.__setattr__(self, "_results_attr", results_attr)
+        object.__setattr__(self, "_items_attr", items_attr)
+
+        def _initial_mapper(_: Any, ctx: BaseModel | None) -> Any:
+            if ctx is None:
+                raise ValueError("map_over requires a pipeline context")
+            raw_items = getattr(ctx, iterable_input, [])
+            if not isinstance(raw_items, Iterable):
+                raise TypeError(f"pipeline_context.{iterable_input} must be iterable")
+            items = list(raw_items)
+            setattr(ctx, items_attr, items)
+            setattr(ctx, results_attr, [])
+            object.__setattr__(self, "loop_body_pipeline", self._original_body_pipeline)
+            object.__setattr__(self, "max_loops", len(items) or 1)
+            if not items:
+
+                async def _noop(
+                    item: Any, *, pipeline_context: BaseModel | None = None
+                ) -> Any:
+                    return item
+
+                object.__setattr__(
+                    self,
+                    "loop_body_pipeline",
+                    Pipeline.from_step(Step.from_callable(_noop, name=f"_{name}_noop")),
+                )
+                return None
+            return items[0]
+
+        def _iter_mapper(_: Any, ctx: BaseModel | None, i: int) -> Any:
+            if ctx is None:
+                raise ValueError("map_over requires a pipeline context")
+            items = getattr(ctx, items_attr, [])
+            return items[i] if i < len(items) else None
+
+        def _output_mapper(_: Any, ctx: BaseModel | None) -> list[Any]:
+            if ctx is None:
+                raise ValueError("map_over requires a pipeline context")
+            return list(getattr(ctx, results_attr, []))
+
+        object.__setattr__(self, "initial_input_to_loop_body_mapper", _initial_mapper)
+        object.__setattr__(self, "iteration_input_mapper", _iter_mapper)
+        object.__setattr__(self, "loop_output_mapper", _output_mapper)
+        object.__setattr__(self, "iterable_input", iterable_input)
 
 
 PipeInT = TypeVar("PipeInT")
@@ -631,6 +774,7 @@ __all__ = [
     "Pipeline",
     "StepConfig",
     "LoopStep",
+    "MapStep",
     "ConditionalStep",
     "HumanInTheLoopStep",
     "BranchKey",
