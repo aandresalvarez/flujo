@@ -58,7 +58,7 @@ pipeline2 = add_three >> multiply
 
 ### **Chaining Pipelines with Pipelines: Modular Multi-Stage Workflows**
 
-> **New in v2.1:** You can now compose entire pipelines from other pipelines using the `>>` operator. This allows you to break complex workflows into logical, independent pipelines and then chain them together in a clean, readable sequence.
+> **New** You can now compose entire pipelines from other pipelines using the `>>` operator. This allows you to break complex workflows into logical, independent pipelines and then chain them together in a clean, readable sequence.
 
 #### **How it Works**
 
