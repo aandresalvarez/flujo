@@ -213,3 +213,19 @@ async def test_step_arun_no_agent() -> None:
     step_without_agent = Step("blank")
     with pytest.raises(ValueError):
         await step_without_agent.arun(None)  # type: ignore[arg-type]
+
+
+def test_pipeline_chaining_operator() -> None:
+    """Ensure that `Pipeline >> Pipeline` concatenates their steps in order."""
+    a1 = Step("A1")
+    a2 = Step("A2")
+    b1 = Step("B1")
+    b2 = Step("B2")
+
+    pipeline_one = a1 >> a2  # Pipeline with steps [A1, A2]
+    pipeline_two = b1 >> b2  # Pipeline with steps [B1, B2]
+
+    chained_pipeline = pipeline_one >> pipeline_two
+
+    assert isinstance(chained_pipeline, Pipeline)
+    assert [s.name for s in chained_pipeline.steps] == ["A1", "A2", "B1", "B2"]

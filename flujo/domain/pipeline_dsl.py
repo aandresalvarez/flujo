@@ -614,10 +614,10 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
     ) -> "Pipeline[PipeInT, NewPipeOutT]":
         if isinstance(other, Step):
             new_steps = list(self.steps) + [other]
-            return Pipeline[PipeInT, NewPipeOutT](steps=new_steps)
+            return Pipeline.model_construct(steps=new_steps)
         if isinstance(other, Pipeline):
             new_steps = list(self.steps) + list(other.steps)
-            return Pipeline[PipeInT, NewPipeOutT](steps=new_steps)
+            return Pipeline.model_construct(steps=new_steps)
         raise TypeError("Can only chain Pipeline with Step or Pipeline")
 
     def iter_steps(self) -> Iterator[Step[Any, Any]]:

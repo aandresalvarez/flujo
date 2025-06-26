@@ -6,7 +6,7 @@ The Pipeline Domain-Specific Language (DSL) is a powerful way to create custom A
 
 The Pipeline DSL lets you:
 
-- Compose complex workflows from simple steps
+- Compose complex workflows from simple steps **and from other pipelines**
 - Mix and match different agents
 - Add custom validation and scoring
 - Create reusable pipeline components
@@ -53,6 +53,69 @@ async def add_three(x: int) -> int:
 pipeline1 = multiply >> add_three
 pipeline2 = add_three >> multiply
 ```
+
+---
+
+### **Chaining Pipelines with Pipelines: Modular Multi-Stage Workflows**
+
+> **New in v2.1:** You can now compose entire pipelines from other pipelines using the `>>` operator. This allows you to break complex workflows into logical, independent pipelines and then chain them together in a clean, readable sequence.
+
+#### **How it Works**
+
+- `Step >> Step` → `Pipeline`
+- `Pipeline >> Step` → `Pipeline`
+- **`Pipeline >> Pipeline` → `Pipeline`** (new!)
+
+When you chain two pipelines, their steps are concatenated into a single, flat pipeline. The output of the first pipeline becomes the input to the second.
+
+#### **Example: Chaining Pipelines**
+
+```python
+from flujo import Pipeline, Step
+
+# Define two independent pipelines
+pipeline_a = Step("A1") >> Step("A2")
+pipeline_b = Step("B1") >> Step("B2")
+
+# Chain them together
+master_pipeline = pipeline_a >> pipeline_b
+
+# master_pipeline.steps == [A1, A2, B1, B2]
+```
+
+#### **Real-World Example: Multi-Stage Data Processing**
+
+Suppose you want to process text in two stages: first, resolve concepts; then, generate and validate SQL.
+
+```python
+from flujo import Pipeline, Step
+
+# 1. Build each independent pipeline
+concept_pipeline = Step("resolve_concepts", agent=concept_agent)
+sql_pipeline = (
+    Step("generate_sql", agent=sql_gen_agent) >>
+    Step("validate_sql", agent=sql_val_agent)
+)
+
+# 2. Chain them together using the >> operator
+master_pipeline = concept_pipeline >> sql_pipeline
+
+# The resulting pipeline takes text and outputs validated SQL
+```
+
+This approach:
+- Keeps each stage modular and testable
+- Produces a single, flat pipeline for unified context and observability
+- Is fully type-safe and backward compatible
+
+> **Tip:** You can chain as many pipelines as you want: `p1 >> p2 >> p3`.
+
+#### **Why This Matters**
+- **True Sequencing:** Models a sequence of operations, not just nested sub-pipelines.
+- **Unified Context:** All steps share a single context and are visible to the tracer.
+- **Simplicity:** No need for special sub-pipeline steps or wrappers.
+
+---
 
 ### Creating Steps from Functions
 
@@ -179,7 +242,7 @@ for details.
 
 ## Advanced Features
 
-### Looping and Iteration
+git ### Looping and Iteration
 
 Repeat a sub-pipeline until a condition is met using `Step.loop_until()`.
 See [LoopStep documentation](pipeline_looping.md) for full details.

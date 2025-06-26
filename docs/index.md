@@ -1,6 +1,29 @@
-# flujo
+# flujo Documentation Index
 
-Production-ready orchestration for Pydantic-based AI agents with intelligent evaluation and self-improvement capabilities.
+Welcome to the flujo documentation!
+
+## Key Features
+
+- Compose complex AI workflows from simple steps **and from other pipelines**
+- Modular, type-safe pipeline DSL
+- Shared, typed context for stateful workflows
+- Plugins for validation, scoring, and more
+- Support for loops, branching, and human-in-the-loop
+- Extensible with custom agents, plugins, and backends
+
+## Quick Links
+
+- [Pipeline DSL Guide](pipeline_dsl.md)
+- [Typed Pipeline Context](pipeline_context.md)
+- [Branching Pipelines](pipeline_branching.md)
+- [Looping Pipelines](pipeline_looping.md)
+- [Cookbook & Recipes](cookbook/)
+- [API Reference](api_reference.md)
+- [Extending flujo](extending.md)
+
+## What's New
+
+- **v2.1:** You can now chain entire pipelines together using the `>>` operator: `pipeline1 >> pipeline2`. This enables clean, modular, multi-stage workflows.
 
 ## Overview
 
