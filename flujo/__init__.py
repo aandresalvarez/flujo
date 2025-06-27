@@ -17,6 +17,7 @@ from .domain.models import Task, Candidate, Checklist, ChecklistItem
 from .domain import (
     Step,
     step,
+    adapter_step,
     mapper,
     Pipeline,
     StepConfig,
@@ -75,6 +76,7 @@ __all__ = [
     "ChecklistItem",
     "Step",
     "step",
+    "adapter_step",
     "mapper",
     "Pipeline",
     "StepConfig",

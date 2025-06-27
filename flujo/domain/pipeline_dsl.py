@@ -78,6 +78,10 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         default=False,
         description="Whether the step output should merge into the pipeline context.",
     )
+    meta: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Arbitrary metadata about this step.",
+    )
 
     model_config: ClassVar[ConfigDict] = {
         "arbitrary_types_allowed": True,
@@ -94,6 +98,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         processors: Optional[AgentProcessors] = None,
         persist_feedback_to_context: Optional[str] = None,
         persist_validation_results_to: Optional[str] = None,
+        meta: Optional[Dict[str, Any]] = None,
         **config: Any,
     ) -> None:
         plugin_list: List[tuple[ValidationPlugin, int]] = []
@@ -115,6 +120,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             processors=processors or AgentProcessors(),
             persist_feedback_to_context=persist_feedback_to_context,
             persist_validation_results_to=persist_validation_results_to,
+            meta=meta or {},
         )
 
     def __rshift__(
@@ -460,6 +466,8 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
 @overload
 def step(
     func: Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]],
+    *,
+    is_adapter: bool = False,
 ) -> "Step[StepInT, StepOutT]":
     """Transform an async function into a :class:`Step`."""
     ...
@@ -467,7 +475,11 @@ def step(
 
 @overload
 def step(
-    *, name: str | None = None, updates_context: bool = False, **config_kwargs: Any
+    *,
+    name: str | None = None,
+    updates_context: bool = False,
+    is_adapter: bool = False,
+    **config_kwargs: Any,
 ) -> Callable[
     [Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]]],
     "Step[StepInT, StepOutT]",
@@ -481,6 +493,7 @@ def step(
     *,
     name: str | None = None,
     updates_context: bool = False,
+    is_adapter: bool = False,
     **config_kwargs: Any,
 ) -> Any:
     """Decorator that converts an async function into a :class:`Step`.
@@ -499,7 +512,10 @@ def step(
     def decorator(
         fn: Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]],
     ) -> "Step[StepInT, StepOutT]":
-        return Step.from_callable(fn, **decorator_kwargs)
+        step_obj = Step.from_callable(fn, **decorator_kwargs)
+        if is_adapter:
+            step_obj.meta["is_adapter"] = True
+        return step_obj
 
     if func is not None:
         return decorator(func)
@@ -509,6 +525,14 @@ def step(
 
 # Convenience alias to create mapping steps
 mapper = Step.from_mapper
+
+
+def adapter_step(
+    func: (Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]] | None) = None,
+    **kwargs: Any,
+) -> Any:
+    """Alias for :func:`step` that marks the created step as an adapter."""
+    return step(func, is_adapter=True, **kwargs)
 
 
 class HumanInTheLoopStep(Step[Any, Any]):
