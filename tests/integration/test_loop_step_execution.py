@@ -402,8 +402,8 @@ async def test_loop_step_iteration_spans_and_logging(monkeypatch) -> None:
     assert "LoopStep 'loop_log': Starting Iteration 1/2" in infos
     assert "LoopStep 'loop_log': Starting Iteration 2/2" in infos
     assert "LoopStep 'loop_log' exit condition met at iteration 2." in infos
-    assert "LoopStep 'loop_log' Iteration 1 - Body Step 'inc'" in spans
-    assert "LoopStep 'loop_log' Iteration 2 - Body Step 'inc'" in spans
+    assert spans.count("Loop 'loop_log' - Iteration 1") == 1
+    assert spans.count("Loop 'loop_log' - Iteration 2") == 1
     assert not warns
 
 
@@ -450,4 +450,7 @@ async def test_loop_step_error_logging_in_callables(monkeypatch) -> None:
     )
     runner = Flujo(loop, context_model=Ctx)
     await gather_result(runner, 0)
-    assert any("Error in iteration_input_mapper for LoopStep 'loop_err_log'" in m for m in errors)
+    assert any(
+        "Error in iteration_input_mapper for LoopStep 'loop_err_log'" in m
+        for m in errors
+    )
