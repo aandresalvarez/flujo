@@ -159,6 +159,16 @@ async def test_step_from_callable_untyped_defaults_any() -> None:
 
 
 @pytest.mark.asyncio
+async def test_step_from_mapper_basic() -> None:
+    async def double(x: int) -> int:
+        return x * 2
+
+    step = Step.from_mapper(double)
+    assert isinstance(step, Step)
+    assert await step.arun(3) == 6
+
+
+@pytest.mark.asyncio
 async def test_step_decorator_basic() -> None:
     @step
     async def echo(x: str) -> int:

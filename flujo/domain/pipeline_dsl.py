@@ -330,6 +330,33 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         return step
 
     @classmethod
+    def from_mapper(
+        cls: type["Step[StepInT, StepOutT]"],
+        mapper: Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]],
+        name: str | None = None,
+        updates_context: bool = False,
+        processors: Optional[AgentProcessors] = None,
+        persist_feedback_to_context: Optional[str] = None,
+        persist_validation_results_to: Optional[str] = None,
+        **config: Any,
+    ) -> "Step[StepInT, StepOutT]":
+        """Create a :class:`Step` from an async mapper function.
+
+        This is a thin wrapper around :meth:`from_callable` for semantic
+        clarity when the callable merely maps its input to a new value.
+        """
+
+        return cls.from_callable(
+            mapper,
+            name=name,
+            updates_context=updates_context,
+            processors=processors,
+            persist_feedback_to_context=persist_feedback_to_context,
+            persist_validation_results_to=persist_validation_results_to,
+            **config,
+        )
+
+    @classmethod
     def human_in_the_loop(
         cls,
         name: str,
@@ -484,6 +511,10 @@ def step(
         return decorator(func)
 
     return decorator
+
+
+# Convenience alias to create mapping steps
+mapper = Step.from_mapper
 
 
 class HumanInTheLoopStep(Step[Any, Any]):
@@ -802,6 +833,7 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
 __all__ = [
     "Step",
     "step",
+    "mapper",
     "Pipeline",
     "StepConfig",
     "LoopStep",

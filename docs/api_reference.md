@@ -83,6 +83,13 @@ custom_pipeline = (
 # The `processors` argument lets you run custom pre- and post-processing
 # logic for a step. See [Using Processors](cookbook/using_processors.md).
 
+# You can also build steps from async functions using
+# `Step.from_mapper` or the `mapper` alias:
+async def to_upper(text: str) -> str:
+    return text.upper()
+
+upper_step = Step.from_mapper(to_upper)
+
 runner = Flujo(custom_pipeline)
 # With a shared typed context
 runner_with_ctx = Flujo(
