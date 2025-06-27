@@ -1,6 +1,6 @@
 # mypy: ignore-errors
 import pytest
-from pydantic import BaseModel
+from flujo.domain.models import BaseModel
 
 from flujo import Flujo, Step, Pipeline, UsageLimits, UsageLimitExceededError
 from flujo.testing.utils import gather_result

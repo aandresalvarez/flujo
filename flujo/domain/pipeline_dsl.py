@@ -276,43 +276,18 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
 
         step_name = name or getattr(func, "__name__", func.__class__.__name__)
 
+        from ..signature_tools import analyze_signature
+
+        spec = analyze_signature(func)
+
         class _CallableAgent:
+            _step_callable = func
+            _injection_spec = spec
+
             async def run(self, data: Any, **kwargs: Any) -> Any:
-                final_kwargs = {}
-                from flujo.application.flujo_engine import _accepts_param
-                import inspect
-
-                # Detect if func is a mock (for test robustness)
-                is_mock = hasattr(func, "assert_called_with") or func.__class__.__name__.startswith(
-                    "AsyncMock"
-                )
-
-                sig = inspect.signature(func)
-                expects_kwonly_pipeline_context = any(
-                    p.name == "pipeline_context" and p.kind == inspect.Parameter.KEYWORD_ONLY
-                    for p in sig.parameters.values()
-                )
-
-                context_value = kwargs.get("context") or kwargs.get("pipeline_context")
-                if context_value is not None:
-                    if is_mock:
-                        final_kwargs["context"] = context_value
-                        final_kwargs["pipeline_context"] = context_value
-                    elif expects_kwonly_pipeline_context:
-                        final_kwargs["pipeline_context"] = context_value
-                    elif _accepts_param(func, "context"):
-                        final_kwargs["context"] = context_value
-                    elif _accepts_param(func, "pipeline_context"):
-                        final_kwargs["pipeline_context"] = context_value
-
-                # Handle other parameters
-                for param in ["resources"]:
-                    if param in kwargs and _accepts_param(func, param):
-                        final_kwargs[param] = kwargs[param]
-
                 if first is None:
-                    return await func(**final_kwargs)
-                return await func(data, **final_kwargs)
+                    return await func(**kwargs)
+                return await func(data, **kwargs)
 
         agent_wrapper = _CallableAgent()
 

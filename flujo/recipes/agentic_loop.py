@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from typing import Any, Dict
+
+from ..domain.resources import AppResources
 import ast
 import asyncio
 from pydantic import TypeAdapter, ValidationError
@@ -95,17 +97,38 @@ class _CommandExecutor:
     def __init__(self, agent_registry: Dict[str, AsyncAgentProtocol[Any, Any]]):
         self.agent_registry = agent_registry
 
-    async def run(self, data: Any, **kwargs: Any) -> Any:
-        return await self._run_command(data, **kwargs)
-
-    async def run_async(self, data: Any, **kwargs: Any) -> Any:
-        return await self._run_command(data, **kwargs)
-
-    async def _run_command(self, data: Any, **kwargs: Any) -> Any:
-        pipeline_context = kwargs.get("context") or kwargs.get("pipeline_context")
-        resources = kwargs.get("resources")
-        if not isinstance(pipeline_context, PipelineContext):
+    async def run(
+        self,
+        data: Any,
+        *,
+        context: PipelineContext | None = None,
+        resources: AppResources | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        if context is None:
             raise ValueError("pipeline_context must be a PipelineContext instance")
+        return await self._run_command(data, context=context, resources=resources)
+
+    async def run_async(
+        self,
+        data: Any,
+        *,
+        context: PipelineContext | None = None,
+        resources: AppResources | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        if context is None:
+            raise ValueError("pipeline_context must be a PipelineContext instance")
+        return await self._run_command(data, context=context, resources=resources)
+
+    async def _run_command(
+        self,
+        data: Any,
+        *,
+        context: PipelineContext,
+        resources: AppResources | None = None,
+    ) -> Any:
+        pipeline_context = context
         turn = len(pipeline_context.command_log) + 1
         try:
             cmd = _command_adapter.validate_python(data)

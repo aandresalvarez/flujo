@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import MagicMock
-from pydantic import BaseModel
+from flujo.domain.models import BaseModel
 
 from flujo import Flujo, Step, AppResources, PluginOutcome
 from flujo.testing.utils import gather_result

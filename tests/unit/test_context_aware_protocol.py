@@ -2,7 +2,7 @@ import warnings
 from typing import Any
 
 import pytest
-from pydantic import BaseModel
+from flujo.domain.models import BaseModel
 
 from flujo import Flujo, Step
 from flujo.domain.agent_protocol import ContextAwareAgentProtocol, AsyncAgentProtocol
@@ -47,6 +47,9 @@ async def test_context_aware_agent_no_warning() -> None:
 
 @pytest.mark.asyncio
 async def test_legacy_agent_triggers_warning() -> None:
+    from flujo.deprecation import _warned_locations
+
+    _warned_locations.clear()
     step = Step("s", LegacyAgent())
     runner = Flujo(step, context_model=Ctx)
     with pytest.warns(DeprecationWarning):

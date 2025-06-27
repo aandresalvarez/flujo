@@ -7,7 +7,7 @@ in real-world scenarios, ensuring the FSD requirements are fully met.
 
 import pytest
 from typing import Any, Dict, List
-from pydantic import BaseModel
+from flujo.domain.models import BaseModel
 
 from flujo.application.flujo_engine import Flujo
 from flujo.domain import Step, Pipeline

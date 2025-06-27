@@ -1,6 +1,6 @@
 import asyncio
 import pytest
-from pydantic import BaseModel
+from flujo.domain.models import BaseModel
 from flujo.domain import Step
 from flujo.testing.utils import gather_result
 from flujo.application.flujo_engine import Flujo
