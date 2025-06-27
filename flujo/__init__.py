@@ -49,6 +49,7 @@ from .processors import (
     AddContextVariables,
     StripMarkdownFences,
     EnforceJsonResponse,
+    SerializePydantic,
 )
 
 from .infra.agents import (
@@ -92,6 +93,7 @@ __all__ = [
     "AddContextVariables",
     "StripMarkdownFences",
     "EnforceJsonResponse",
+    "SerializePydantic",
     "AppResources",
     "PluginOutcome",
     "ValidationPlugin",

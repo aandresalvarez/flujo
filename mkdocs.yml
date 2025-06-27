@@ -51,6 +51,7 @@ nav:
     - 'Real-Time Chatbot': cookbook/realtime_chatbot.md
     - 'Advanced Prompt Formatting': cookbook/advanced_prompting.md
     - 'Adapter Step': cookbook/adapter_step.md
+    - 'Serialize Pydantic': cookbook/serialize_pydantic.md
     - 'Agentic Loop': recipes/agentic_loop.md
   - Migration:
     - 'v0.3.7': migration/v0.3.7.md

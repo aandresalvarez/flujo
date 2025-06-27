@@ -2,6 +2,7 @@ import pytest
 from flujo.domain.models import BaseModel, PipelineContext
 
 from flujo import Flujo, Step, AgentProcessors
+from flujo.processors import SerializePydantic
 from flujo.testing.utils import StubAgent, gather_result
 
 
@@ -76,3 +77,28 @@ async def test_failing_processor_does_not_crash() -> None:
     runner = Flujo(step)
     result = await gather_result(runner, "in")
     assert result.step_history[0].success is True
+
+
+class User(BaseModel):
+    name: str
+    age: int
+
+
+@pytest.mark.asyncio
+async def test_serialize_pydantic_output_to_dict() -> None:
+    agent = StubAgent([User(name="A", age=1)])
+    procs = AgentProcessors(output_processors=[SerializePydantic()])
+    step = Step.solution(agent, processors=procs)
+    runner = Flujo(step)
+    result = await gather_result(runner, "in")
+    assert result.step_history[0].output == {"name": "A", "age": 1}
+
+
+@pytest.mark.asyncio
+async def test_serialize_pydantic_is_idempotent() -> None:
+    agent = StubAgent([{"x": 1}])
+    procs = AgentProcessors(output_processors=[SerializePydantic()])
+    step = Step.solution(agent, processors=procs)
+    runner = Flujo(step)
+    result = await gather_result(runner, "in")
+    assert result.step_history[0].output == {"x": 1}
