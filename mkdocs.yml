@@ -50,6 +50,7 @@ nav:
     - 'HITL Correction Loop': cookbook/hitl_stateful_correction_loop.md
     - 'Real-Time Chatbot': cookbook/realtime_chatbot.md
     - 'Advanced Prompt Formatting': cookbook/advanced_prompting.md
+    - 'Adapter Step': cookbook/adapter_step.md
     - 'Agentic Loop': recipes/agentic_loop.md
   - Migration:
     - 'v0.3.7': migration/v0.3.7.md
