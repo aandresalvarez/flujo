@@ -11,6 +11,22 @@ The Pipeline DSL lets you:
 - Add custom validation and scoring
 - Create reusable pipeline components
 
+## Steps vs. Agents
+
+A **Step** is a declarative node in the pipeline. It holds configuration and a
+reference to the **agent** that performs the actual work. During execution the
+runner iterates over the steps and invokes their agents in order.
+
+```mermaid
+graph LR
+    S[Step] -->|uses| A[Agent]
+    A --> O[Output]
+```
+
+`Step` objects do not execute anything themselves—they simply describe what
+should happen. The agent may be an async function, an `AsyncAgentWrapper` created
+with `make_agent_async`, or any object implementing `run()`.
+
 ## Basic Usage
 
 !!! tip "Recommended Pattern"
@@ -487,4 +503,6 @@ result = runner.run("Write a blog post about AI")
 
 - Read the [Usage Guide](usage.md)
 - Explore [Advanced Topics](extending.md)
-- Check out [Use Cases](use_cases.md) 
+- Check out [Use Cases](use_cases.md)
+- Future work: a `pipeline.visualize()` helper will output a Mermaid graph so you
+  can instantly diagram your pipeline.
