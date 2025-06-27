@@ -1,5 +1,5 @@
 import pytest
-from pydantic import BaseModel
+from flujo.domain.models import BaseModel
 
 from flujo.application.flujo_engine import Flujo
 from flujo.domain import Step, Pipeline

@@ -1,7 +1,7 @@
 import asyncio
 from typing import Any
 
-from pydantic import BaseModel
+from flujo.domain.models import BaseModel
 import pytest
 
 from flujo.application.flujo_engine import Flujo

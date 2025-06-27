@@ -1,6 +1,6 @@
 import pytest
 from typing import Any
-from pydantic import BaseModel
+from flujo.domain.models import BaseModel
 
 from flujo.application.flujo_engine import Flujo
 from flujo.domain import Step, Pipeline
@@ -450,7 +450,4 @@ async def test_loop_step_error_logging_in_callables(monkeypatch) -> None:
     )
     runner = Flujo(loop, context_model=Ctx)
     await gather_result(runner, 0)
-    assert any(
-        "Error in iteration_input_mapper for LoopStep 'loop_err_log'" in m
-        for m in errors
-    )
+    assert any("Error in iteration_input_mapper for LoopStep 'loop_err_log'" in m for m in errors)

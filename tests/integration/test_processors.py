@@ -1,5 +1,5 @@
 import pytest
-from pydantic import BaseModel
+from flujo.domain.models import BaseModel, PipelineContext
 
 from flujo import Flujo, Step, AgentProcessors
 from flujo.testing.utils import StubAgent, gather_result
@@ -8,21 +8,21 @@ from flujo.testing.utils import StubAgent, gather_result
 class AddWorld:
     name = "AddWorld"
 
-    async def process(self, data: str, context=None) -> str:
+    async def process(self, data: str, context: PipelineContext | None = None) -> str:
         return data + " world"
 
 
 class DoubleOutput:
     name = "DoubleOutput"
 
-    async def process(self, data: str, context=None) -> str:
+    async def process(self, data: str, context: PipelineContext | None = None) -> str:
         return data * 2
 
 
 class ContextPrefix:
     name = "CtxPrefix"
 
-    async def process(self, data: str, context=None) -> str:
+    async def process(self, data: str, context: PipelineContext | None = None) -> str:
         prefix = getattr(context, "prefix", "") if context else ""
         return f"{prefix}:{data}"
 
@@ -30,7 +30,7 @@ class ContextPrefix:
 class FailingProc:
     name = "Fail"
 
-    async def process(self, data, context=None):
+    async def process(self, data, context: PipelineContext | None = None):
         raise RuntimeError("boom")
 
 

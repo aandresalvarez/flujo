@@ -33,9 +33,7 @@ class ConsoleTracer:
         self.log_inputs = log_inputs
         self.log_outputs = log_outputs
         self.console = (
-            Console(highlight=False)
-            if colorized
-            else Console(no_color=True, highlight=False)
+            Console(highlight=False) if colorized else Console(no_color=True, highlight=False)
         )
         self._depth = 0
         self.event_handlers: Dict[str, Callable[[HookPayload], Any]] = {
@@ -43,9 +41,7 @@ class ConsoleTracer:
             "post_run": cast(Callable[[HookPayload], Any], self._handle_post_run),
             "pre_step": cast(Callable[[HookPayload], Any], self._handle_pre_step),
             "post_step": cast(Callable[[HookPayload], Any], self._handle_post_step),
-            "on_step_failure": cast(
-                Callable[[HookPayload], Any], self._handle_on_step_failure
-            ),
+            "on_step_failure": cast(Callable[[HookPayload], Any], self._handle_on_step_failure),
         }
 
     def _handle_pre_run(self, payload: PreRunPayload) -> None:
@@ -112,6 +108,4 @@ class ConsoleTracer:
             else:
                 handler(payload)
         else:
-            self.console.print(
-                Panel(Text(str(payload.event_name)), title="Unknown tracer event")
-            )
+            self.console.print(Panel(Text(str(payload.event_name)), title="Unknown tracer event"))
