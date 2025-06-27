@@ -10,6 +10,7 @@ from .pipeline_dsl import (
     ConditionalStep,
     BranchKey,
     step,
+    mapper,
 )
 from .plugins import PluginOutcome, ValidationPlugin
 from .validation import Validator, ValidationResult
@@ -21,6 +22,7 @@ from .backends import ExecutionBackend, StepExecutionRequest
 __all__ = [
     "Step",
     "step",
+    "mapper",
     "Pipeline",
     "StepConfig",
     "LoopStep",
