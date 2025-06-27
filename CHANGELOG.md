@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.23] - 2025-06-27
+
+### Fixed
+- Loop iteration spans now wrap each iteration, eliminating redundant spans
+- Conditional branch spans record the executed branch key for clarity
+- Console tracer tracks nesting depth, indenting start/end messages accordingly
+
 ## [0.4.22] - 2025-06-23
 
 ### Added
