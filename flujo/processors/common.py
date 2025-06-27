@@ -58,3 +58,16 @@ class EnforceJsonResponse:
             return json.loads(data)
         except Exception:
             return data
+
+
+class SerializePydantic:
+    """Serialize any object with a ``model_dump`` method to a plain ``dict``."""
+
+    def __init__(self) -> None:
+        self.name = "SerializePydantic"
+
+    async def process(self, data: Any, context: Optional[BaseModel] = None) -> Any:
+        dump = getattr(data, "model_dump", None)
+        if callable(dump):
+            return dump()
+        return data
