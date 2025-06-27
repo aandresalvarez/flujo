@@ -60,6 +60,7 @@ nav:
     - Typed Pipeline Context: pipeline_context.md
     - Looping (LoopStep): pipeline_looping.md
     - Branching (ConditionalStep): pipeline_branching.md
+    - Modular Workflows: modular_workflows.md
     - Scoring: scoring.md
     - Tools: tools.md
     - Telemetry: telemetry.md
