@@ -123,6 +123,27 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             meta=meta or {},
         )
 
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:  # pragma: no cover - behavior
+        """Disallow direct invocation of a Step."""
+        from ..exceptions import ImproperStepInvocationError
+
+        raise ImproperStepInvocationError(
+            f"Step '{self.name}' cannot be invoked directly. "
+            "Steps are configuration objects and must be run within a Pipeline. "
+            "For unit testing, use `step.arun()`."
+        )
+
+    def __getattr__(self, item: str) -> Any:  # pragma: no cover - behavior
+        if item in {"run", "stream"}:
+            from ..exceptions import ImproperStepInvocationError
+
+            raise ImproperStepInvocationError(
+                f"Step '{self.name}' cannot be invoked directly. "
+                "Steps are configuration objects and must be run within a Pipeline. "
+                "For unit testing, use `step.arun()`."
+            )
+        raise AttributeError(item)
+
     def __rshift__(
         self, other: "Step[StepOutT, NewOutT]" | "Pipeline[StepOutT, NewOutT]"
     ) -> "Pipeline[StepInT, NewOutT]":
@@ -842,6 +863,67 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
             new_steps = list(self.steps) + list(other.steps)
             return Pipeline.model_construct(steps=new_steps)
         raise TypeError("Can only chain Pipeline with Step or Pipeline")
+
+    def validate(self) -> None:
+        """Validate that all steps have agents and compatible types."""
+        from ..exceptions import MissingAgentError, TypeMismatchError
+        from typing import Any, get_origin, get_args, Union
+
+        def _compatible(a: Any, b: Any) -> bool:
+            if a is Any or b is Any:
+                return True
+
+            origin_a, origin_b = get_origin(a), get_origin(b)
+
+            if origin_b is Union:
+                return any(_compatible(a, arg) for arg in get_args(b))
+            if origin_a is Union:
+                return all(_compatible(arg, b) for arg in get_args(a))
+
+            try:
+                return issubclass(a, b)
+            except Exception:
+                pass
+
+            if origin_a is None and origin_b is None:
+                return False
+            if origin_a is None:
+                try:
+                    return issubclass(a, origin_b)
+                except Exception:
+                    return False
+            if origin_b is None:
+                try:
+                    return issubclass(origin_a, b)
+                except Exception:
+                    return False
+
+            if origin_a is not origin_b:
+                return False
+
+            args_a, args_b = get_args(a), get_args(b)
+            if len(args_a) != len(args_b):
+                return False
+            return all(_compatible(x, y) for x, y in zip(args_a, args_b))
+
+        prev_step = None
+        prev_out_type: Any = None
+        for step in self.steps:
+            if step.agent is None:
+                raise MissingAgentError(
+                    f"Step '{step.name}' is missing an agent. Assign one via `Step('name', agent=...)` "
+                    "or by using a step factory like `@step` or `Step.from_callable()`."
+                )
+            in_type = getattr(step, "__step_input_type__", Any)
+            if prev_step is not None and prev_out_type is not None:
+                if not _compatible(prev_out_type, in_type):
+                    raise TypeMismatchError(
+                        f"Type mismatch: Output of '{prev_step.name}' (returns `{prev_out_type}`) "
+                        f"is not compatible with '{step.name}' (expects `{in_type}`). "
+                        "For best results, use a static type checker like mypy to catch these issues before runtime."
+                    )
+            prev_step = step
+            prev_out_type = getattr(step, "__step_output_type__", Any)
 
     def iter_steps(self) -> Iterator[Step[Any, Any]]:
         return iter(self.steps)
