@@ -401,4 +401,5 @@ When reporting an issue, include:
 
 - Read the [Usage Guide](usage.md)
 - Check [Advanced Topics](extending.md)
-- Explore [Use Cases](use_cases.md) 
+- Explore [Use Cases](use_cases.md)
+- Review the [Adapter Step recipe](cookbook/adapter_step.md) for data-shaping tips

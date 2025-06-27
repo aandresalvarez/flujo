@@ -239,6 +239,7 @@ See [Hybrid Validation Cookbook](cookbook/hybrid_validation.md) for a complete e
 All step factories also accept a `processors: Optional[AgentProcessors]` parameter
 to run pre-processing and post-processing hooks. See [Using Processors](cookbook/using_processors.md)
 for details.
+For complex data shaping before calling another step, consider using an [Adapter Step](cookbook/adapter_step.md).
 
 ## Advanced Features
 
