@@ -5,6 +5,7 @@ import inspect
 import warnings
 import time
 import weakref
+import copy
 from unittest.mock import Mock
 from typing import (
     Any,
@@ -39,6 +40,7 @@ from ..domain.pipeline_dsl import (
     Step,
     LoopStep,
     ConditionalStep,
+    ParallelStep,
     HumanInTheLoopStep,
     BranchKey,
 )
@@ -415,6 +417,62 @@ async def _execute_conditional_step_logic(
     return conditional_overall_result
 
 
+async def _execute_parallel_step_logic(
+    parallel_step: ParallelStep[ContextT],
+    parallel_input: Any,
+    pipeline_context: Optional[ContextT],
+    resources: Optional[AppResources],
+    *,
+    step_executor: StepExecutor[ContextT],
+    context_model_defined: bool,
+    usage_limits: UsageLimits | None = None,
+) -> StepResult:
+    """Execute all branch pipelines concurrently and aggregate results."""
+
+    result = StepResult(name=parallel_step.name)
+    outputs: Dict[str, Any] = {}
+    branch_results: Dict[str, StepResult] = {}
+
+    async def run_branch(key: str, branch_pipe: Pipeline[Any, Any]) -> None:
+        ctx_copy = copy.deepcopy(pipeline_context) if pipeline_context is not None else None
+        current = parallel_input
+        branch_res = StepResult(name=f"{parallel_step.name}:{key}")
+        for s in branch_pipe.steps:
+            sr = await step_executor(s, current, ctx_copy, resources)
+            branch_res.latency_s += sr.latency_s
+            branch_res.cost_usd += getattr(sr, "cost_usd", 0.0)
+            branch_res.token_counts += getattr(sr, "token_counts", 0)
+            branch_res.attempts += sr.attempts
+            if not sr.success:
+                branch_res.success = False
+                branch_res.feedback = sr.feedback
+                branch_res.output = sr.output
+                break
+            current = sr.output
+        else:
+            branch_res.success = True
+            branch_res.output = current
+        outputs[key] = branch_res.output
+        branch_results[key] = branch_res
+
+    start = time.monotonic()
+    async with asyncio.TaskGroup() as tg:
+        for k, pipe in parallel_step.branches.items():
+            tg.create_task(run_branch(k, pipe))
+    result.latency_s = time.monotonic() - start
+
+    for br in branch_results.values():
+        result.cost_usd += br.cost_usd
+        result.token_counts += br.token_counts
+        result.success = result.success and br.success
+        if not br.success and result.feedback is None:
+            result.feedback = f"Branch failed: {br.feedback}" if br.feedback else "Branch failed"
+
+    result.output = outputs
+    result.attempts = 1
+    return result
+
+
 async def _run_step_logic(
     step: Step[Any, Any],
     data: Any,
@@ -439,6 +497,16 @@ async def _run_step_logic(
         )
     if isinstance(step, ConditionalStep):
         return await _execute_conditional_step_logic(
+            step,
+            data,
+            pipeline_context,
+            resources,
+            step_executor=step_executor,
+            context_model_defined=context_model_defined,
+            usage_limits=usage_limits,
+        )
+    if isinstance(step, ParallelStep):
+        return await _execute_parallel_step_logic(
             step,
             data,
             pipeline_context,

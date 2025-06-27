@@ -406,6 +406,18 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         )
 
     @classmethod
+    def parallel(
+        cls,
+        name: str,
+        branches: Dict[str, "Step[Any, Any]" | "Pipeline[Any, Any]"],
+        **config_kwargs: Any,
+    ) -> "ParallelStep[ContextT]":
+        """Factory to run branches concurrently and aggregate outputs."""
+        from .pipeline_dsl import ParallelStep
+
+        return ParallelStep(name=name, branches=branches, **config_kwargs)
+
+    @classmethod
     def map_over(
         cls,
         name: str,
@@ -616,6 +628,40 @@ class ConditionalStep(Step[Any, Any], Generic[ContextT]):
         )
 
 
+class ParallelStep(Step[Any, Any], Generic[ContextT]):
+    """A step that executes multiple branch pipelines concurrently."""
+
+    branches: Dict[str, "Pipeline[Any, Any]"] = Field(
+        description="Mapping of branch names to pipelines to run in parallel."
+    )
+
+    model_config = {"arbitrary_types_allowed": True}
+
+    def __init__(
+        self,
+        *,
+        name: str,
+        branches: Dict[str, "Step[Any, Any]" | "Pipeline[Any, Any]"],
+        **config_kwargs: Any,
+    ) -> None:
+        if not branches:
+            raise ValueError("'branches' dictionary cannot be empty.")
+
+        normalized: Dict[str, Pipeline[Any, Any]] = {}
+        for key, branch in branches.items():
+            normalized[key] = Pipeline.from_step(branch) if isinstance(branch, Step) else branch
+
+        BaseModel.__init__(  # type: ignore[misc]
+            self,
+            name=name,
+            agent=None,
+            config=StepConfig(**config_kwargs),
+            plugins=[],
+            failure_handlers=[],
+            branches=normalized,
+        )
+
+
 class MapStep(LoopStep[ContextT]):
     """A step that maps a pipeline over items in the pipeline context."""
 
@@ -760,6 +806,7 @@ __all__ = [
     "StepConfig",
     "LoopStep",
     "MapStep",
+    "ParallelStep",
     "ConditionalStep",
     "HumanInTheLoopStep",
     "BranchKey",
