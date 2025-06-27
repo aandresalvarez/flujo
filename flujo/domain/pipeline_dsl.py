@@ -25,6 +25,8 @@ from typing import (
 )
 import contextvars
 import inspect
+
+from .pipeline_validation import ValidationFinding, ValidationReport
 from flujo.domain.models import BaseModel
 from flujo.domain.resources import AppResources
 from pydantic import Field, ConfigDict
@@ -864,9 +866,17 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
             return Pipeline.model_construct(steps=new_steps)
         raise TypeError("Can only chain Pipeline with Step or Pipeline")
 
-    def validate(self) -> None:
-        """Validate that all steps have agents and compatible types."""
-        from ..exceptions import MissingAgentError, TypeMismatchError
+    def validate(self, *, raise_on_error: bool = False) -> ValidationReport:
+        """Validate that all steps have agents and compatible types.
+
+        Args:
+            raise_on_error: If ``True`` raise ``ConfigurationError`` when any
+                errors are found.
+
+        Returns:
+            ValidationReport summarizing any errors and warnings.
+        """
+        from ..exceptions import ConfigurationError
         from typing import Any, get_origin, get_args, Union
 
         def _compatible(a: Any, b: Any) -> bool:
@@ -906,24 +916,65 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                 return False
             return all(_compatible(x, y) for x, y in zip(args_a, args_b))
 
+        report = ValidationReport()
+
+        seen_steps: set[int] = set()
         prev_step = None
         prev_out_type: Any = None
+
         for step in self.steps:
-            if step.agent is None:
-                raise MissingAgentError(
-                    f"Step '{step.name}' is missing an agent. Assign one via `Step('name', agent=...)` "
-                    "or by using a step factory like `@step` or `Step.from_callable()`."
+            if id(step) in seen_steps:
+                report.warnings.append(
+                    ValidationFinding(
+                        rule_id="V-A3",
+                        severity="warning",
+                        message=(
+                            "The same Step object instance is used more than once in the pipeline. "
+                            "This may cause side effects if the step is stateful."
+                        ),
+                        step_name=step.name,
+                    )
                 )
+            else:
+                seen_steps.add(id(step))
+
+            if step.agent is None:
+                report.errors.append(
+                    ValidationFinding(
+                        rule_id="V-A1",
+                        severity="error",
+                        message=(
+                            "Step '{name}' is missing an agent. Assign one via `Step('name', agent=...)` "
+                            "or by using a step factory like `@step` or `Step.from_callable()`."
+                        ).format(name=step.name),
+                        step_name=step.name,
+                    )
+                )
+
             in_type = getattr(step, "__step_input_type__", Any)
             if prev_step is not None and prev_out_type is not None:
                 if not _compatible(prev_out_type, in_type):
-                    raise TypeMismatchError(
-                        f"Type mismatch: Output of '{prev_step.name}' (returns `{prev_out_type}`) "
-                        f"is not compatible with '{step.name}' (expects `{in_type}`). "
-                        "For best results, use a static type checker like mypy to catch these issues before runtime."
+                    report.errors.append(
+                        ValidationFinding(
+                            rule_id="V-A2",
+                            severity="error",
+                            message=(
+                                f"Type mismatch: Output of '{prev_step.name}' (returns `{prev_out_type}`) "
+                                f"is not compatible with '{step.name}' (expects `{in_type}`). "
+                                "For best results, use a static type checker like mypy to catch these issues before runtime."
+                            ),
+                            step_name=step.name,
+                        )
                     )
             prev_step = step
             prev_out_type = getattr(step, "__step_output_type__", Any)
+
+        if raise_on_error and report.errors:
+            raise ConfigurationError(
+                "Pipeline validation failed: " + report.model_dump_json(indent=2)
+            )
+
+        return report
 
     def iter_steps(self) -> Iterator[Step[Any, Any]]:
         return iter(self.steps)

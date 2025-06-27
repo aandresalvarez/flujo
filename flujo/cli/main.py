@@ -457,6 +457,44 @@ def explain(path: str) -> None:
         typer.echo(step.name)
 
 
+@app.command()
+def validate(
+    path: str,
+    strict: Annotated[
+        bool,
+        typer.Option(
+            "--strict",
+            help="Exit with non-zero status if validation errors are found.",
+        ),
+    ] = False,
+) -> None:
+    """Validate a pipeline defined in a file."""
+    try:
+        ns: Dict[str, Any] = runpy.run_path(path)
+    except Exception as e:
+        typer.echo(f"[red]Failed to load pipeline file: {e}", err=True)
+        raise typer.Exit(1)
+    pipeline: Optional[Pipeline] = ns.get("pipeline") or ns.get("PIPELINE")
+    if not isinstance(pipeline, Pipeline):
+        typer.echo("[red]No 'pipeline' variable of type Pipeline found", err=True)
+        raise typer.Exit(1)
+    report = pipeline.validate()
+    if report.errors:
+        typer.echo("[red]Validation errors detected:")
+        for f in report.errors:
+            loc = f"{f.step_name}: " if f.step_name else ""
+            typer.echo(f"- [{f.rule_id}] {loc}{f.message}")
+    if report.warnings:
+        typer.echo("[yellow]Warnings:")
+        for f in report.warnings:
+            loc = f"{f.step_name}: " if f.step_name else ""
+            typer.echo(f"- [{f.rule_id}] {loc}{f.message}")
+    if report.is_valid:
+        typer.echo("[green]Pipeline is valid")
+    if strict and not report.is_valid:
+        raise typer.Exit(1)
+
+
 @app.callback()
 def main(
     profile: Annotated[
@@ -486,6 +524,7 @@ __all__ = [
     "add_eval_case_cmd",
     "improve",
     "explain",
+    "validate",
     "main",
 ]
 
