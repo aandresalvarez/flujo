@@ -9,7 +9,7 @@ from flujo import (
 )
 from flujo.exceptions import PipelineAbortSignal, UsageLimitExceededError
 from flujo.domain.models import PipelineResult
-from pydantic import BaseModel
+from flujo.domain.models import BaseModel
 from typing import Any, List, cast
 from flujo.domain.events import (
     HookPayload,

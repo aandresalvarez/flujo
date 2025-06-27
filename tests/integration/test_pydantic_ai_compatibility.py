@@ -1,5 +1,5 @@
 import pytest
-from pydantic import BaseModel
+from flujo.domain.models import BaseModel
 
 from flujo.application.flujo_engine import Flujo
 from flujo.domain import Step
@@ -15,9 +15,10 @@ class TypeCheckingAgent:
 
 
 class KwargCheckingAgent:
-    async def run(self, data, *, pipeline_context):
-        assert isinstance(pipeline_context, dict)
-        return pipeline_context.get("foo")
+    async def run(self, data, *, pipeline_context: "SimpleContext") -> str:
+        if isinstance(pipeline_context, dict):
+            return pipeline_context.get("foo", "")
+        return pipeline_context.foo
 
 
 @pytest.mark.asyncio

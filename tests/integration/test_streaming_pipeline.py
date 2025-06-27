@@ -8,7 +8,7 @@ from flujo.domain import Step
 from flujo.domain.models import PipelineResult
 from flujo.domain.resources import AppResources
 from flujo.testing.utils import StubAgent, FailingStreamAgent
-from pydantic import BaseModel
+from flujo.domain.models import BaseModel
 
 
 class MockStreamingAgent:

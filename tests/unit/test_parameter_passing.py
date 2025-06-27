@@ -12,11 +12,11 @@ class MockAgentWithContext:
     """Mock agent that expects 'context' parameter."""
 
     def __init__(self):
-        self.run = AsyncMock(return_value={"output": "ok"})
+        self.run_mock = AsyncMock(return_value={"output": "ok"})
 
-    async def run(self, data, context=None, **kwargs):
+    async def run(self, data, *, context: PipelineContext | None = None, **kwargs):
         """Run method that expects 'context' parameter."""
-        self.run(data, context=context, **kwargs)
+        await self.run_mock(data, context=context, **kwargs)
         return {"output": f"Processed: {data}"}
 
 
@@ -26,7 +26,7 @@ class MockAgentWithPipelineContext:
     def __init__(self):
         self.called_with = None
 
-    async def run(self, data, pipeline_context=None):
+    async def run(self, data, *, pipeline_context: PipelineContext | None = None):
         self.called_with = pipeline_context
         return {"output": f"Processed: {data}"}
 
@@ -35,11 +35,11 @@ class MockPluginWithContext:
     """Mock plugin that expects 'context' parameter."""
 
     def __init__(self):
-        self.validate = AsyncMock(return_value=PluginOutcome(success=True, feedback=None))
+        self.mock = AsyncMock(return_value=PluginOutcome(success=True, feedback=None))
 
-    async def validate(self, data, context=None, **kwargs):
+    async def validate(self, data, *, context: PipelineContext | None = None, **kwargs):
         """Validate method that expects 'context' parameter."""
-        self.validate(data, context=context, **kwargs)
+        await self.mock(data, context=context, **kwargs)
         return PluginOutcome(success=True, feedback=None)
 
 
@@ -49,7 +49,7 @@ class MockPluginWithPipelineContext:
     def __init__(self):
         self.called_with = None
 
-    async def validate(self, data, pipeline_context=None):
+    async def validate(self, data, *, pipeline_context: PipelineContext | None = None):
         self.called_with = pipeline_context
         return PluginOutcome(success=True, feedback=None)
 
@@ -71,8 +71,8 @@ async def test_agent_receives_context_parameter():
         pass  # We only need the first result
 
     # Verify the agent was called with 'context' parameter
-    agent.run.assert_called_once()
-    call_args = agent.run.call_args
+    agent.run_mock.assert_called_once()
+    call_args = agent.run_mock.call_args
     assert "context" in call_args[1]
     assert call_args[1]["context"].initial_prompt == "test prompt"
 
@@ -122,8 +122,8 @@ async def test_plugin_receives_context_parameter():
         pass  # We only need the first result
 
     # Verify the plugin was called with 'context' parameter
-    plugin.validate.assert_called_once()
-    call_args = plugin.validate.call_args
+    plugin.mock.assert_called_once()
+    call_args = plugin.mock.call_args
     assert "context" in call_args[1]
     assert call_args[1]["context"].initial_prompt == "test prompt"
 
@@ -166,7 +166,13 @@ async def test_parameter_priority_context_over_pipeline_context():
     # Fix recursion: use a separate mock to track calls
     call_log = {}
 
-    async def run_with_both(data, context=None, pipeline_context=None, **kwargs):
+    async def run_with_both(
+        data,
+        *,
+        context: PipelineContext | None = None,
+        pipeline_context: PipelineContext | None = None,
+        **kwargs,
+    ) -> dict:
         call_log["context"] = context
         call_log["pipeline_context"] = pipeline_context
         return {"output": f"Processed: {data}"}

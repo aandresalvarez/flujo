@@ -26,6 +26,7 @@ from typing import (
 import contextvars
 import inspect
 from flujo.domain.models import BaseModel
+from flujo.domain.resources import AppResources
 from pydantic import Field, ConfigDict
 from .agent_protocol import AsyncAgentProtocol
 from .plugins import ValidationPlugin
@@ -276,43 +277,36 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
 
         step_name = name or getattr(func, "__name__", func.__class__.__name__)
 
+        from ..signature_tools import analyze_signature
+
+        spec = analyze_signature(func)
+
         class _CallableAgent:
-            async def run(self, data: Any, **kwargs: Any) -> Any:
-                final_kwargs = {}
-                from flujo.application.flujo_engine import _accepts_param
-                import inspect
+            _step_callable = func
+            _injection_spec = spec
 
-                # Detect if func is a mock (for test robustness)
-                is_mock = hasattr(func, "assert_called_with") or func.__class__.__name__.startswith(
-                    "AsyncMock"
-                )
+            async def run(
+                self,
+                data: Any,
+                *,
+                context: BaseModel | None = None,
+                resources: AppResources | None = None,
+                temperature: float | None = None,
+                **kwargs: Any,
+            ) -> Any:
+                from ..application.flujo_engine import _accepts_param
 
-                sig = inspect.signature(func)
-                expects_kwonly_pipeline_context = any(
-                    p.name == "pipeline_context" and p.kind == inspect.Parameter.KEYWORD_ONLY
-                    for p in sig.parameters.values()
-                )
-
-                context_value = kwargs.get("context") or kwargs.get("pipeline_context")
-                if context_value is not None:
-                    if is_mock:
-                        final_kwargs["context"] = context_value
-                        final_kwargs["pipeline_context"] = context_value
-                    elif expects_kwonly_pipeline_context:
-                        final_kwargs["pipeline_context"] = context_value
-                    elif _accepts_param(func, "context"):
-                        final_kwargs["context"] = context_value
-                    elif _accepts_param(func, "pipeline_context"):
-                        final_kwargs["pipeline_context"] = context_value
-
-                # Handle other parameters
-                for param in ["resources"]:
-                    if param in kwargs and _accepts_param(func, param):
-                        final_kwargs[param] = kwargs[param]
-
+                call_kwargs: Dict[str, Any] = {}
+                if spec.needs_context and context is not None and spec.context_kw:
+                    call_kwargs[spec.context_kw] = context
+                if spec.needs_resources and resources is not None:
+                    call_kwargs["resources"] = resources
+                if temperature is not None and _accepts_param(func, "temperature"):
+                    call_kwargs["temperature"] = temperature
+                call_kwargs.update(kwargs)
                 if first is None:
-                    return await func(**final_kwargs)
-                return await func(data, **final_kwargs)
+                    return await func(**call_kwargs)
+                return await func(data, **call_kwargs)
 
         agent_wrapper = _CallableAgent()
 

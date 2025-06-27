@@ -38,47 +38,38 @@ class Default:
             return await target(data, **kwargs)
 
         class ReviewWrapper:
-            async def run(self, data: Any, **kwargs: Any) -> Any:
-                pipeline_context = kwargs.get("context") or kwargs.get("pipeline_context")
-                if not pipeline_context:
-                    raise KeyError("Could not find 'context' or 'pipeline_context' in kwargs")
-                result = await _invoke(review_agent, data, **kwargs)
+            async def run(self, data: Any, *, context: PipelineContext) -> Any:
+                result = await _invoke(review_agent, data, context=context)
                 checklist = cast(Checklist, getattr(result, "output", result))
-                pipeline_context.scratchpad["checklist"] = checklist
+                context.scratchpad["checklist"] = checklist
                 return cast(str, data)
 
-            async def run_async(self, data: Any, **kwargs: Any) -> Any:
-                return await self.run(data, **kwargs)
+            async def run_async(self, data: Any, *, context: PipelineContext) -> Any:
+                return await self.run(data, context=context)
 
         class SolutionWrapper:
-            async def run(self, data: Any, **kwargs: Any) -> Any:
-                pipeline_context = kwargs.get("context") or kwargs.get("pipeline_context")
-                if not pipeline_context:
-                    raise KeyError("Could not find 'context' or 'pipeline_context' in kwargs")
-                result = await _invoke(solution_agent, data, **kwargs)
+            async def run(self, data: Any, *, context: PipelineContext) -> Any:
+                result = await _invoke(solution_agent, data, context=context)
                 solution = cast(str, getattr(result, "output", result))
-                pipeline_context.scratchpad["solution"] = solution
+                context.scratchpad["solution"] = solution
                 return solution
 
-            async def run_async(self, data: Any, **kwargs: Any) -> Any:
-                return await self.run(data, **kwargs)
+            async def run_async(self, data: Any, *, context: PipelineContext) -> Any:
+                return await self.run(data, context=context)
 
         class ValidatorWrapper:
-            async def run(self, _data: Any, **kwargs: Any) -> Any:
-                pipeline_context = kwargs.get("context") or kwargs.get("pipeline_context")
-                if not pipeline_context:
-                    raise KeyError("Could not find 'context' or 'pipeline_context' in kwargs")
+            async def run(self, _data: Any, *, context: PipelineContext) -> Any:
                 payload = {
-                    "solution": pipeline_context.scratchpad.get("solution"),
-                    "checklist": pipeline_context.scratchpad.get("checklist"),
+                    "solution": context.scratchpad.get("solution"),
+                    "checklist": context.scratchpad.get("checklist"),
                 }
-                result = await _invoke(validator_agent, payload, **kwargs)
+                result = await _invoke(validator_agent, payload, context=context)
                 validated = cast(Checklist, getattr(result, "output", result))
-                pipeline_context.scratchpad["checklist"] = validated
+                context.scratchpad["checklist"] = validated
                 return validated
 
-            async def run_async(self, _data: Any, **kwargs: Any) -> Any:
-                return await self.run(_data, **kwargs)
+            async def run_async(self, _data: Any, *, context: PipelineContext) -> Any:
+                return await self.run(_data, context=context)
 
         pipeline = (
             Step.review(cast("AsyncAgentProtocol[Any, Any]", ReviewWrapper()), max_retries=3)

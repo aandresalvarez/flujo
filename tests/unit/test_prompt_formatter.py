@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from flujo.domain.models import BaseModel
 from flujo import format_prompt
 
 
