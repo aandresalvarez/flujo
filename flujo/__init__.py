@@ -63,6 +63,9 @@ from .exceptions import (
     ConfigurationError,
     SettingsError,
     UsageLimitExceededError,
+    ImproperStepInvocationError,
+    MissingAgentError,
+    TypeMismatchError,
     PipelineAbortSignal,
 )
 
@@ -114,6 +117,9 @@ __all__ = [
     "ConfigurationError",
     "SettingsError",
     "UsageLimitExceededError",
+    "ImproperStepInvocationError",
+    "MissingAgentError",
+    "TypeMismatchError",
     "StubAgent",
     "DummyPlugin",
     "SQLSyntaxValidator",
