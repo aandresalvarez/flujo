@@ -76,3 +76,21 @@ class PausedException(OrchestratorError):
 
     def __init__(self, message: str = "Pipeline paused for human input.") -> None:
         super().__init__(message)
+
+
+class ImproperStepInvocationError(OrchestratorError):
+    """Raised when a ``Step`` object is invoked directly."""
+
+    pass
+
+
+class MissingAgentError(ConfigurationError):
+    """Raised when a pipeline step is missing its agent."""
+
+    pass
+
+
+class TypeMismatchError(ConfigurationError):
+    """Raised when consecutive steps have incompatible types."""
+
+    pass

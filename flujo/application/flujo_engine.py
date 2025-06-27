@@ -33,6 +33,8 @@ from ..exceptions import (
     UsageLimitExceededError,
     PipelineAbortSignal,
     PausedException,
+    MissingAgentError,
+    TypeMismatchError,
 )
 from ..domain.pipeline_dsl import (
     Pipeline,
@@ -558,7 +560,12 @@ async def _run_step_logic(
     for attempt in range(1, step.config.max_retries + 1):
         result.attempts = attempt
         if current_agent is None:
-            raise OrchestratorError(f"Step {step.name} has no agent")
+            from ..exceptions import MissingAgentError
+
+            raise MissingAgentError(
+                f"Step '{step.name}' is missing an agent. Assign one via `Step('name', agent=...)` "
+                "or by using a step factory like `@step` or `Step.from_callable()`."
+            )
 
         start = time.monotonic()
         agent_kwargs: Dict[str, Any] = {}
@@ -1115,6 +1122,16 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     logfire.warn(f"Step '{step.name}' failed. Halting pipeline execution.")
                     break
                 step_output: Optional[RunnerInT] = step_result.output
+                if idx < len(self.pipeline.steps) - 1:
+                    next_step = self.pipeline.steps[idx + 1]
+                    expected = getattr(next_step, "__step_input_type__", Any)
+                    if expected is not Any and expected is not None:
+                        if step_output is not None and not isinstance(step_output, expected):
+                            raise TypeMismatchError(
+                                f"Type mismatch: Output of '{step.name}' (returns `{type(step_output)}`) "
+                                f"is not compatible with '{next_step.name}' (expects `{expected}`). "
+                                "For best results, use a static type checker like mypy to catch these issues before runtime."
+                            )
                 data = step_output
         except asyncio.CancelledError:
             logfire.info("Pipeline cancelled")
