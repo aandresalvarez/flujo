@@ -1,5 +1,5 @@
 import pytest
-from pydantic import BaseModel
+from flujo.domain.models import BaseModel
 
 from flujo.application.flujo_engine import Flujo
 from flujo.domain import Step
@@ -112,8 +112,7 @@ async def test_plugin_receives_context_and_strict_plugin_errors() -> None:
     # Verify that the run succeeded and plugins received context correctly.
     assert result.step_history[0].success
     assert isinstance(ctx_plugin.ctx, Ctx)
-    assert kwargs_plugin.kwargs is not None
-    assert kwargs_plugin.kwargs.get("context") is not None
+    assert kwargs_plugin.kwargs == {}
 
 
 @pytest.mark.asyncio

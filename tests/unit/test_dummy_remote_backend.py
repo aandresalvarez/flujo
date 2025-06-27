@@ -1,5 +1,5 @@
 import pytest
-from pydantic import BaseModel
+from flujo.domain.models import BaseModel
 
 from flujo import Flujo, Step
 from flujo.testing.utils import DummyRemoteBackend, gather_result
