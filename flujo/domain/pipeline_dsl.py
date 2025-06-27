@@ -21,7 +21,9 @@ from typing import (
     get_type_hints,
     get_origin,
     get_args,
+    Iterable,
 )
+import contextvars
 import inspect
 from flujo.domain.models import BaseModel
 from pydantic import Field, ConfigDict
@@ -72,7 +74,8 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         description=("Append ValidationResult objects to this context attribute (must be a list)."),
     )
     updates_context: bool = Field(
-        default=False, description="Whether the step output should merge into the pipeline context."
+        default=False,
+        description="Whether the step output should merge into the pipeline context.",
     )
 
     model_config: ClassVar[ConfigDict] = {
@@ -402,6 +405,24 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             **config_kwargs,
         )
 
+    @classmethod
+    def map_over(
+        cls,
+        name: str,
+        pipeline_to_run: "Pipeline[Any, Any]",
+        *,
+        iterable_input: str,
+        **config_kwargs: Any,
+    ) -> "MapStep[ContextT]":
+        """Factory to process each item of ``iterable_input`` with ``pipeline_to_run``."""
+
+        return MapStep(
+            name=name,
+            pipeline_to_run=pipeline_to_run,
+            iterable_input=iterable_input,
+            **config_kwargs,
+        )
+
 
 @overload
 def step(
@@ -436,7 +457,11 @@ def step(
     When called with keyword arguments, those are forwarded to ``Step.from_callable``.
     """
 
-    decorator_kwargs = {"name": name, "updates_context": updates_context, **config_kwargs}
+    decorator_kwargs = {
+        "name": name,
+        "updates_context": updates_context,
+        **config_kwargs,
+    }
 
     def decorator(
         fn: Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]],
@@ -591,6 +616,109 @@ class ConditionalStep(Step[Any, Any], Generic[ContextT]):
         )
 
 
+class MapStep(LoopStep[ContextT]):
+    """A step that maps a pipeline over items in the pipeline context."""
+
+    iterable_input: str = Field()
+
+    def __init__(
+        self,
+        *,
+        name: str,
+        pipeline_to_run: "Pipeline[Any, Any]",
+        iterable_input: str,
+        **config_kwargs: Any,
+    ) -> None:
+        results_attr = f"__{name}_results"
+        items_attr = f"__{name}_items"
+
+        async def _collect(item: Any, *, pipeline_context: BaseModel | None = None) -> Any:
+            if pipeline_context is None:
+                raise ValueError("map_over requires a pipeline context")
+            getattr(pipeline_context, results_attr).append(item)
+            return item
+
+        collector = Step.from_callable(_collect, name=f"_{name}_collect")
+        body = pipeline_to_run >> collector
+
+        BaseModel.__init__(  # type: ignore[misc]
+            self,
+            name=name,
+            agent=None,
+            config=StepConfig(**config_kwargs),
+            plugins=[],
+            failure_handlers=[],
+            loop_body_pipeline=body,
+            exit_condition_callable=lambda _o, ctx: len(getattr(ctx, results_attr, []))
+            >= len(getattr(ctx, items_attr, [])),
+            max_loops=1,
+            initial_input_to_loop_body_mapper=None,
+            iteration_input_mapper=None,
+            loop_output_mapper=None,
+            iterable_input=iterable_input,
+        )
+        object.__setattr__(self, "_original_body_pipeline", body)
+
+        async def _noop(item: Any, **_: Any) -> Any:
+            return item
+
+        object.__setattr__(
+            self,
+            "_noop_pipeline",
+            Pipeline.from_step(Step.from_callable(_noop, name=f"_{name}_noop")),
+        )
+        object.__setattr__(self, "_results_attr", results_attr)
+        object.__setattr__(self, "_items_attr", items_attr)
+        object.__setattr__(
+            self, "_max_loops_var", contextvars.ContextVar(f"{name}_max_loops", default=1)
+        )
+        object.__setattr__(self, "_body_var", contextvars.ContextVar(f"{name}_body", default=body))
+
+        def _initial_mapper(_: Any, ctx: BaseModel | None) -> Any:
+            if ctx is None:
+                raise ValueError("map_over requires a pipeline context")
+            raw_items = getattr(ctx, iterable_input, [])
+            if isinstance(raw_items, (str, bytes, bytearray)) or not isinstance(
+                raw_items, Iterable
+            ):
+                raise TypeError(f"pipeline_context.{iterable_input} must be a non-string iterable")
+            items = list(raw_items)
+            setattr(ctx, items_attr, items)
+            setattr(ctx, results_attr, [])
+            if items:
+                self._max_loops_var.set(len(items))
+                self._body_var.set(self._original_body_pipeline)
+                return items[0]
+            else:
+                self._max_loops_var.set(1)
+                self._body_var.set(self._noop_pipeline)
+                return None
+
+        def _iter_mapper(_: Any, ctx: BaseModel | None, i: int) -> Any:
+            if ctx is None:
+                raise ValueError("map_over requires a pipeline context")
+            items = getattr(ctx, items_attr, [])
+            return items[i] if i < len(items) else None
+
+        def _output_mapper(_: Any, ctx: BaseModel | None) -> list[Any]:
+            if ctx is None:
+                raise ValueError("map_over requires a pipeline context")
+            return list(getattr(ctx, results_attr, []))
+
+        object.__setattr__(self, "initial_input_to_loop_body_mapper", _initial_mapper)
+        object.__setattr__(self, "iteration_input_mapper", _iter_mapper)
+        object.__setattr__(self, "loop_output_mapper", _output_mapper)
+        object.__setattr__(self, "iterable_input", iterable_input)
+
+    def __getattribute__(self, name: str) -> Any:  # noqa: D401
+        """Return attribute, using context vars for loop state."""
+        if name == "max_loops":
+            return object.__getattribute__(self, "_max_loops_var").get()
+        if name == "loop_body_pipeline":
+            return object.__getattribute__(self, "_body_var").get()
+        return super().__getattribute__(name)
+
+
 PipeInT = TypeVar("PipeInT")
 PipeOutT = TypeVar("PipeOutT")
 NewPipeOutT = TypeVar("NewPipeOutT")
@@ -631,6 +759,7 @@ __all__ = [
     "Pipeline",
     "StepConfig",
     "LoopStep",
+    "MapStep",
     "ConditionalStep",
     "HumanInTheLoopStep",
     "BranchKey",
