@@ -28,6 +28,8 @@ from .domain import (
     ValidationPlugin,
     Validator,
     ValidationResult,
+    ValidationFinding,
+    ValidationReport,
     AppResources,
 )
 from .validation import BaseValidator, validator
@@ -95,6 +97,8 @@ __all__ = [
     "ValidationPlugin",
     "Validator",
     "ValidationResult",
+    "ValidationFinding",
+    "ValidationReport",
     "BaseValidator",
     "validator",
     "run_pipeline_async",

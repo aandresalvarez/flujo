@@ -15,6 +15,7 @@ from .pipeline_dsl import (
 )
 from .plugins import PluginOutcome, ValidationPlugin
 from .validation import Validator, ValidationResult
+from .pipeline_validation import ValidationFinding, ValidationReport
 from .processors import AgentProcessors
 from .resources import AppResources
 from .types import HookCallable
@@ -36,6 +37,8 @@ __all__ = [
     "ValidationPlugin",
     "Validator",
     "ValidationResult",
+    "ValidationFinding",
+    "ValidationReport",
     "AppResources",
     "HookCallable",
     "ExecutionBackend",

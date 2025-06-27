@@ -5,6 +5,7 @@ from flujo.exceptions import (
     ImproperStepInvocationError,
     MissingAgentError,
     TypeMismatchError,
+    ConfigurationError,
 )
 
 
@@ -23,8 +24,11 @@ def test_improper_step_call() -> None:
 def test_missing_agent_errors() -> None:
     blank = Step("blank")
     pipeline = Pipeline.from_step(blank)
-    with pytest.raises(MissingAgentError):
-        pipeline.validate()
+    report = pipeline.validate()
+    assert not report.is_valid
+    assert any(f.rule_id == "V-A1" for f in report.errors)
+    with pytest.raises(ConfigurationError):
+        pipeline.validate(raise_on_error=True)
     runner = Flujo(blank)
     with pytest.raises(MissingAgentError):
         runner.run(None)
@@ -42,8 +46,11 @@ async def need_str(x: str) -> str:
 
 def test_type_mismatch_errors() -> None:
     pipeline = make_int >> need_str
-    with pytest.raises(TypeMismatchError):
-        pipeline.validate()
+    report = pipeline.validate()
+    assert not report.is_valid
+    assert any(f.rule_id == "V-A2" for f in report.errors)
+    with pytest.raises(ConfigurationError):
+        pipeline.validate(raise_on_error=True)
     runner = Flujo(pipeline)
     with pytest.raises(TypeMismatchError):
         runner.run("abc")
@@ -61,14 +68,17 @@ async def expect_optional(x: str | None) -> str:
 
 def test_union_optional_handling() -> None:
     ok_pipeline = echo >> expect_optional
-    ok_pipeline.validate()  # should not raise
+    report_ok = ok_pipeline.validate()
+    assert report_ok.is_valid
     runner_ok = Flujo(ok_pipeline)
     result_ok = runner_ok.run("hi")
     assert result_ok.step_history[-1].output == "hi"
 
     bad_pipeline = maybe_str >> need_str
-    with pytest.raises(TypeMismatchError):
-        bad_pipeline.validate()
+    report_bad = bad_pipeline.validate()
+    assert not report_bad.is_valid
+    with pytest.raises(ConfigurationError):
+        bad_pipeline.validate(raise_on_error=True)
     runner_bad = Flujo(bad_pipeline)
     with pytest.raises(TypeMismatchError):
         runner_bad.run("")

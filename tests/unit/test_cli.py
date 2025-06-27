@@ -291,6 +291,23 @@ def test_cli_explain(tmp_path) -> None:
     assert "B" in result.stdout
 
 
+def test_cli_validate_success(tmp_path) -> None:
+    file = tmp_path / "pipe.py"
+    file.write_text(
+        "from flujo.domain import Step\nfrom flujo.testing.utils import StubAgent\npipeline = Step('A', StubAgent(['x'])) >> Step('B', StubAgent(['y']))\n"
+    )
+    result = runner.invoke(app, ["validate", str(file)])
+    assert result.exit_code == 0
+    assert "Pipeline is valid" in result.stdout
+
+
+def test_cli_validate_failure(tmp_path) -> None:
+    file = tmp_path / "pipe.py"
+    file.write_text("from flujo.domain import Step\npipeline = Step('A') >> Step('B')\n")
+    result = runner.invoke(app, ["validate", str(file), "--strict"])
+    assert result.exit_code == 1
+
+
 def test_cli_improve_output_formatting(monkeypatch, tmp_path) -> None:
     pipe = tmp_path / "pipe.py"
     pipe.write_text(
