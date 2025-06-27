@@ -490,7 +490,13 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
 def step(
     func: Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]],
     *,
+    name: str | None = None,
+    updates_context: bool = False,
+    processors: Optional[AgentProcessors] = None,
+    persist_feedback_to_context: Optional[str] = None,
+    persist_validation_results_to: Optional[str] = None,
     is_adapter: bool = False,
+    **config_kwargs: Any,
 ) -> "Step[StepInT, StepOutT]":
     """Transform an async function into a :class:`Step`."""
     ...
@@ -501,6 +507,9 @@ def step(
     *,
     name: str | None = None,
     updates_context: bool = False,
+    processors: Optional[AgentProcessors] = None,
+    persist_feedback_to_context: Optional[str] = None,
+    persist_validation_results_to: Optional[str] = None,
     is_adapter: bool = False,
     **config_kwargs: Any,
 ) -> Callable[
@@ -516,19 +525,26 @@ def step(
     *,
     name: str | None = None,
     updates_context: bool = False,
+    processors: Optional[AgentProcessors] = None,
+    persist_feedback_to_context: Optional[str] = None,
+    persist_validation_results_to: Optional[str] = None,
     is_adapter: bool = False,
     **config_kwargs: Any,
 ) -> Any:
-    """Decorator that converts an async function into a :class:`Step`.
+    """A decorator that creates a :class:`Step` from an async function.
 
-    It can be used with or without arguments. When used without parentheses,
-    ``@step`` directly transforms the decorated async function into a ``Step``.
-    When called with keyword arguments, those are forwarded to ``Step.from_callable``.
+    This is syntactic sugar for :meth:`Step.from_callable`; see that method's
+    documentation for all available parameters. The decorator can be used with
+    or without arguments. When called with keyword arguments, they are forwarded
+    directly to ``Step.from_callable``.
     """
 
     decorator_kwargs = {
         "name": name,
         "updates_context": updates_context,
+        "processors": processors,
+        "persist_feedback_to_context": persist_feedback_to_context,
+        "persist_validation_results_to": persist_validation_results_to,
         **config_kwargs,
     }
 

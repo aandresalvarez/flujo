@@ -1,4 +1,4 @@
-from flujo.domain import Step, Pipeline, step
+from flujo.domain import Step, Pipeline, step, AgentProcessors
 from flujo.domain.models import BaseModel
 from unittest.mock import AsyncMock, MagicMock, Mock
 from flujo.domain.plugins import ValidationPlugin
@@ -239,3 +239,61 @@ def test_pipeline_chaining_operator() -> None:
 
     assert isinstance(chained_pipeline, Pipeline)
     assert [s.name for s in chained_pipeline.steps] == ["A1", "A2", "B1", "B2"]
+
+
+@pytest.mark.asyncio
+async def test_step_decorator_matches_from_callable() -> None:
+    async def add(x: int) -> int:
+        return x + 1
+
+    via_decorator = step(add)
+    via_method = Step.from_callable(add)
+
+    assert via_decorator.name == via_method.name
+    assert via_decorator.updates_context == via_method.updates_context
+    assert via_decorator.config.model_dump() == via_method.config.model_dump()
+    assert via_decorator.processors.model_dump() == via_method.processors.model_dump()
+    assert (
+        via_decorator.persist_feedback_to_context
+        == via_method.persist_feedback_to_context
+    )
+    assert (
+        via_decorator.persist_validation_results_to
+        == via_method.persist_validation_results_to
+    )
+    assert await via_decorator.arun(1) == await via_method.arun(1)
+
+
+@pytest.mark.asyncio
+async def test_step_decorator_matches_kwargs() -> None:
+    async def add(x: int) -> int:
+        return x + 1
+
+    procs = AgentProcessors()
+
+    via_decorator = step(
+        add,
+        name="plus_one",
+        updates_context=True,
+        processors=procs,
+        persist_feedback_to_context="fb",
+        persist_validation_results_to="vr",
+        timeout_s=5,
+    )
+    via_method = Step.from_callable(
+        add,
+        name="plus_one",
+        updates_context=True,
+        processors=procs,
+        persist_feedback_to_context="fb",
+        persist_validation_results_to="vr",
+        timeout_s=5,
+    )
+
+    assert via_decorator.name == via_method.name == "plus_one"
+    assert via_decorator.updates_context and via_method.updates_context
+    assert via_decorator.config.timeout_s == via_method.config.timeout_s == 5
+    assert via_decorator.processors.model_dump() == via_method.processors.model_dump()
+    assert via_decorator.persist_feedback_to_context == "fb"
+    assert via_decorator.persist_validation_results_to == "vr"
+    assert await via_decorator.arun(2) == await via_method.arun(2)
