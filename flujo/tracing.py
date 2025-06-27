@@ -33,14 +33,19 @@ class ConsoleTracer:
         self.log_inputs = log_inputs
         self.log_outputs = log_outputs
         self.console = (
-            Console(highlight=False) if colorized else Console(no_color=True, highlight=False)
+            Console(highlight=False)
+            if colorized
+            else Console(no_color=True, highlight=False)
         )
+        self._depth = 0
         self.event_handlers: Dict[str, Callable[[HookPayload], Any]] = {
             "pre_run": cast(Callable[[HookPayload], Any], self._handle_pre_run),
             "post_run": cast(Callable[[HookPayload], Any], self._handle_post_run),
             "pre_step": cast(Callable[[HookPayload], Any], self._handle_pre_step),
             "post_step": cast(Callable[[HookPayload], Any], self._handle_post_step),
-            "on_step_failure": cast(Callable[[HookPayload], Any], self._handle_on_step_failure),
+            "on_step_failure": cast(
+                Callable[[HookPayload], Any], self._handle_on_step_failure
+            ),
         }
 
     def _handle_pre_run(self, payload: PreRunPayload) -> None:
@@ -48,6 +53,7 @@ class ConsoleTracer:
         title = "Pipeline Start"
         details = Text(f"Input: {initial_input!r}")
         self.console.print(Panel(details, title=title, border_style="bold blue"))
+        self._depth = 0
 
     def _handle_post_run(self, payload: PostRunPayload) -> None:
         pipeline_result = payload.pipeline_result
@@ -64,16 +70,20 @@ class ConsoleTracer:
     def _handle_pre_step(self, payload: PreStepPayload) -> None:
         step = payload.step
         step_input = payload.step_input
-        title = f"Step Start: {step.name if step else ''}"
+        indent = "  " * self._depth
+        title = f"{indent}Step Start: {step.name if step else ''}"
         if self.level == "debug" and self.log_inputs:
             body = Text(repr(step_input))
         else:
             body = Text("running")
         self.console.print(Panel(body, title=title))
+        self._depth += 1
 
     def _handle_post_step(self, payload: PostStepPayload) -> None:
         step_result = payload.step_result
-        title = f"Step End: {step_result.name}"
+        self._depth = max(0, self._depth - 1)
+        indent = "  " * self._depth
+        title = f"{indent}Step End: {step_result.name}"
         status = "SUCCESS" if step_result.success else "FAILED"
         color = "green" if step_result.success else "red"
         body_text = Text(f"Status: {status}", style=f"bold {color}")
@@ -100,4 +110,6 @@ class ConsoleTracer:
             else:
                 handler(payload)
         else:
-            self.console.print(Panel(Text(str(payload.event_name)), title="Unknown tracer event"))
+            self.console.print(
+                Panel(Text(str(payload.event_name)), title="Unknown tracer event")
+            )
