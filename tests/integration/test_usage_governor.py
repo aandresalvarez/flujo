@@ -166,3 +166,20 @@ async def test_governor_halts_loop_step_mid_iteration(
     assert not loop_result.success
     assert loop_result.attempts == 3
     assert result.total_cost_usd == pytest.approx(0.30)
+
+
+@pytest.mark.asyncio
+async def test_governor_parallel_step_limit() -> None:
+    """Governor stops a ParallelStep when cumulative usage exceeds limits."""
+    branches = {
+        "a": Step("a", FixedMetricAgent()),
+        "b": Step("b", FixedMetricAgent()),
+    }
+    parallel = Step.parallel("parallel_usage", branches)
+    limits = UsageLimits(total_cost_usd_limit=0.15)
+    runner = Flujo(parallel, usage_limits=limits)
+
+    with pytest.raises(UsageLimitExceededError) as exc_info:
+        await gather_result(runner, 0)
+
+    assert "Cost limit of $0.15 exceeded" in str(exc_info.value)
