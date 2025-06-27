@@ -33,6 +33,8 @@ from ..exceptions import (
     UsageLimitExceededError,
     PipelineAbortSignal,
     PausedException,
+    MissingAgentError,
+    TypeMismatchError,
 )
 from ..domain.pipeline_dsl import (
     Pipeline,
@@ -109,6 +111,19 @@ def _accepts_param(func: Callable[..., Any], param: str) -> Optional[bool]:
 
     cache[param] = result
     return result
+
+
+def _types_compatible(a: Any, b: Any) -> bool:
+    """Return ``True`` if type ``a`` is compatible with type ``b``."""
+    if a is Any or b is Any:
+        return True
+    try:
+        return issubclass(a, b)
+    except Exception:
+        origin_a, origin_b = get_origin(a), get_origin(b)
+        if origin_a is None or origin_b is None:
+            return True
+        return origin_a is origin_b
 
 
 RunnerInT = TypeVar("RunnerInT")
@@ -558,7 +573,10 @@ async def _run_step_logic(
     for attempt in range(1, step.config.max_retries + 1):
         result.attempts = attempt
         if current_agent is None:
-            raise OrchestratorError(f"Step {step.name} has no agent")
+            raise MissingAgentError(
+                f"Step '{step.name}' is missing an agent. Assign one via `Step('name', agent=...)` "
+                "or by using a step factory like `@step` or `Step.from_callable()`."
+            )
 
         start = time.monotonic()
         agent_kwargs: Dict[str, Any] = {}
@@ -1115,6 +1133,18 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     logfire.warn(f"Step '{step.name}' failed. Halting pipeline execution.")
                     break
                 step_output: Optional[RunnerInT] = step_result.output
+                if idx < len(self.pipeline.steps) - 1:
+                    next_step = self.pipeline.steps[idx + 1]
+                    expected = getattr(next_step, "__step_input_type__", Any)
+                    actual_type = type(step_output)
+                    if step_output is None:
+                        actual_type = type(None)
+                    if not _types_compatible(actual_type, expected):
+                        raise TypeMismatchError(
+                            f"Type mismatch: Output of '{step.name}' (returns `{actual_type}`) "
+                            f"is not compatible with '{next_step.name}' (expects `{expected}`). "
+                            "For best results, use a static type checker like mypy to catch these issues before runtime."
+                        )
                 data = step_output
         except asyncio.CancelledError:
             logfire.info("Pipeline cancelled")
