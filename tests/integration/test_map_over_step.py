@@ -39,9 +39,7 @@ async def test_map_over_parallel() -> None:
     body = Pipeline.from_step(Step("sleep", SleepAgent()))
     mapper = Step.map_over("mapper_par", body, iterable_input="nums")
     runner = Flujo(mapper, context_model=Ctx)
-    result = await gather_result(
-        runner, None, initial_context_data={"nums": [0, 1, 2, 3]}
-    )
+    result = await gather_result(runner, None, initial_context_data={"nums": [0, 1, 2, 3]})
     assert result.step_history[-1].output == [0, 1, 2, 3]
 
 
