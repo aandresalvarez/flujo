@@ -4,7 +4,7 @@ Agent prompt templates and agent factory utilities.
 
 from __future__ import annotations
 
-from typing import Any, Generic, Optional, Type
+from typing import Any, Generic, Optional, Type, get_origin
 from pydantic_ai import Agent, ModelRetry
 from pydantic import BaseModel as PydanticBaseModel, TypeAdapter, ValidationError
 import json
@@ -41,6 +41,18 @@ def get_raw_output_from_exception(exc: Exception) -> str:
         if isinstance(first, str):
             return first
     return str(exc)
+
+
+def _get_underlying_type(output_type: Any) -> Any:
+    """Return the real type, unwrapping TypeAdapter instances."""
+    if isinstance(output_type, TypeAdapter):
+        return getattr(output_type, "_type", output_type)
+    origin = get_origin(output_type)
+    if origin is TypeAdapter:
+        args = getattr(output_type, "__args__", None)
+        if args:
+            return args[0]
+    return output_type
 
 
 # 1. Prompt Constants
@@ -219,11 +231,13 @@ def make_agent(
 
     final_processors = processors.copy(deep=True) if processors else AgentProcessors()
 
+    actual_type = _get_underlying_type(output_type)
+
     try:
         agent = Agent(
             model=model,
             system_prompt=system_prompt,
-            output_type=output_type,
+            output_type=actual_type,
             tools=tools or [],
             **kwargs,
         )
@@ -345,13 +359,17 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                 try:
                     cleaner = DeterministicRepairProcessor()
                     cleaned = await cleaner.process(raw_output)
-                    validated = TypeAdapter(self.target_output_type).validate_json(cleaned)
+                    validated = TypeAdapter(
+                        _get_underlying_type(self.target_output_type)
+                    ).validate_json(cleaned)
                     logfire.info("Deterministic repair successful.")
                     return validated
                 except (ValidationError, ValueError, TypeError):
                     logfire.warn("Deterministic repair failed. Escalating to LLM repair.")
                 try:
-                    schema = TypeAdapter(self.target_output_type).json_schema()
+                    schema = TypeAdapter(
+                        _get_underlying_type(self.target_output_type)
+                    ).json_schema()
                     prompt_data = {
                         "json_schema": json.dumps(schema, ensure_ascii=False),
                         "original_prompt": str(args[0]) if args else "",
@@ -369,7 +387,9 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                         raise OrchestratorError(
                             f"Repair agent could not fix output. Reasoning: {reason}"
                         )
-                    final_obj = TypeAdapter(self.target_output_type).validate_python(feedback)
+                    final_obj = TypeAdapter(
+                        _get_underlying_type(self.target_output_type)
+                    ).validate_python(feedback)
                     logfire.info("LLM-based repair successful.")
                     return final_obj
                 except OrchestratorError:

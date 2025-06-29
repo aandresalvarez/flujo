@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pre-flight pipeline validation with `Pipeline.validate()` returning a detailed report.
 - New `flujo validate` CLI command to check pipelines from the command line.
 
+## [0.4.25] - 2025-07-01
+
+### Fixed
+- `make_agent_async` now accepts `pydantic.TypeAdapter` instances for
+  `output_type`, unwrapping them for proper schema generation and validation.
+
 ## [0.4.23] - 2025-06-27
 
 ### Fixed
