@@ -13,6 +13,7 @@ from .pipeline_dsl import (
     adapter_step,
     mapper,
 )
+from .models import RefinementCheck
 from .plugins import PluginOutcome, ValidationPlugin
 from .validation import Validator, ValidationResult
 from .pipeline_validation import ValidationFinding, ValidationReport
@@ -44,4 +45,5 @@ __all__ = [
     "ExecutionBackend",
     "StepExecutionRequest",
     "AgentProcessors",
+    "RefinementCheck",
 ]
