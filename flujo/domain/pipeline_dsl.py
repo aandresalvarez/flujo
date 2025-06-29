@@ -27,7 +27,7 @@ import contextvars
 import inspect
 
 from .pipeline_validation import ValidationFinding, ValidationReport
-from flujo.domain.models import BaseModel
+from flujo.domain.models import BaseModel, PipelineContext, RefinementCheck  # noqa: F401
 from flujo.domain.resources import AppResources
 from pydantic import Field, ConfigDict
 from .agent_protocol import AsyncAgentProtocol
@@ -448,6 +448,75 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             initial_input_to_loop_body_mapper=initial_input_to_loop_body_mapper,
             iteration_input_mapper=iteration_input_mapper,
             loop_output_mapper=loop_output_mapper,
+            **config_kwargs,
+        )
+
+    @classmethod
+    def refine_until(
+        cls,
+        name: str,
+        generator_pipeline: "Pipeline[Any, Any]",
+        critic_pipeline: "Pipeline[Any, RefinementCheck]",
+        max_refinements: int = 5,
+        feedback_mapper: Optional[Callable[[Any, RefinementCheck], Any]] = None,
+        **config_kwargs: Any,
+    ) -> "LoopStep[ContextT]":
+        """Factory for a Generator-Critic refinement loop."""
+        artifact_key = f"__{name}_artifact"
+        original_holder: list[Any] = [None]
+        artifact_holder: list[Any] = [None]
+
+        async def _store_artifact(
+            artifact: Any, *, pipeline_context: BaseModel | None = None
+        ) -> Any:
+            artifact_holder[0] = artifact
+            if pipeline_context is not None and hasattr(pipeline_context, "scratchpad"):
+                pipeline_context.scratchpad[artifact_key] = artifact
+            return artifact
+
+        saver_step = cls.from_callable(_store_artifact, name=f"_{name}_store")
+
+        loop_body = generator_pipeline >> saver_step >> critic_pipeline
+
+        def _exit_condition(out: Any, _ctx: BaseModel | None) -> bool:
+            if isinstance(out, RefinementCheck):
+                return out.is_complete
+            return True
+
+        def _initial_mapper(inp: Any, ctx: BaseModel | None) -> dict[str, Any]:
+            original_holder[0] = inp
+            if ctx is not None and hasattr(ctx, "scratchpad"):
+                ctx.scratchpad.setdefault(artifact_key + "__orig", inp)
+            return {"original_input": inp, "feedback": None}
+
+        def _iteration_mapper(out: Any, ctx: BaseModel | None, _i: int) -> dict[str, Any]:
+            if isinstance(out, RefinementCheck):
+                feedback = out.feedback
+            else:
+                feedback = None
+            original = original_holder[0]
+            if feedback_mapper is None:
+                return {"original_input": original, "feedback": feedback}
+            return feedback_mapper(
+                original,
+                out
+                if isinstance(out, RefinementCheck)
+                else RefinementCheck(is_complete=False, feedback=feedback),
+            )
+
+        def _output_mapper(_out: Any, ctx: BaseModel | None) -> Any:
+            if ctx is not None and hasattr(ctx, "scratchpad") and artifact_key in ctx.scratchpad:
+                return ctx.scratchpad.get(artifact_key)
+            return artifact_holder[0]
+
+        return cls.loop_until(
+            name=name,
+            loop_body_pipeline=loop_body,
+            exit_condition_callable=_exit_condition,
+            max_loops=max_refinements,
+            initial_input_to_loop_body_mapper=_initial_mapper,
+            iteration_input_mapper=_iteration_mapper,
+            loop_output_mapper=_output_mapper,
             **config_kwargs,
         )
 
