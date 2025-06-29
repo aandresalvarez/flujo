@@ -74,6 +74,10 @@ class Settings(BaseSettings):
         "openai:gpt-4o",
         description="Default model to use for the SelfImprovementAgent.",
     )
+    default_repair_model: str = Field(
+        "openai:gpt-4o",
+        description="Default model used for the internal repair agent.",
+    )
 
     # --- Orchestrator Tuning ---
     max_iters: int = 5
