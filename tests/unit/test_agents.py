@@ -15,7 +15,6 @@ from flujo.domain.models import Checklist, ChecklistItem
 from flujo.exceptions import OrchestratorRetryError
 from flujo.infra.settings import settings
 from flujo.domain.processors import AgentProcessors
-from flujo.testing.utils import StubAgent
 
 
 @pytest.fixture
@@ -335,17 +334,14 @@ async def test_async_agent_wrapper_serializes_pydantic_kwarg() -> None:
 
 
 @pytest.mark.asyncio
-async def test_make_agent_async_pydantic_processors_injected(monkeypatch) -> None:
+async def test_make_agent_async_no_extra_processors(monkeypatch) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     from flujo.infra import settings as settings_mod
 
     monkeypatch.setattr(settings_mod.settings, "openai_api_key", SecretStr("test-key"))
 
     wrapper = make_agent_async("openai:gpt-4o", "sys", Checklist)
-    names = [p.name for p in wrapper.processors.output_processors]
-    assert names[0] == "StripMarkdownFences"
-    assert names[1] == "EnforceJsonResponse"
-    assert names[-1] == "PydanticValidation"
+    assert wrapper.processors.output_processors == []
 
 
 @pytest.mark.asyncio
@@ -364,24 +360,33 @@ async def test_make_agent_async_custom_processor_order(monkeypatch) -> None:
     procs = AgentProcessors(output_processors=[DummyProc()])
     wrapper = make_agent_async("openai:gpt-4o", "sys", Checklist, processors=procs)
     names = [p.name for p in wrapper.processors.output_processors]
-    assert names == [
-        "StripMarkdownFences",
-        "EnforceJsonResponse",
-        "dummy",
-        "PydanticValidation",
-    ]
+    assert names == ["dummy"]
 
 
 @pytest.mark.asyncio
-async def test_pydantic_output_cleaning(monkeypatch) -> None:
+async def test_pydantic_output_parsed_by_agent(monkeypatch) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     from flujo.infra import settings as settings_mod
 
     monkeypatch.setattr(settings_mod.settings, "openai_api_key", SecretStr("test-key"))
 
     raw = 'Here you go:\n```json\n{"items": []}\n```'
+
+    class ParsingStubAgent:
+        output_type = Checklist
+
+        def __init__(self, text: str) -> None:
+            self.text = text
+
+        async def run(self, *_args, **_kwargs):
+            import re
+            import json
+
+            m = re.search(r"\{.*\}", self.text, re.DOTALL)
+            return Checklist(**json.loads(m.group(0)))
+
     wrapper = make_agent_async("openai:gpt-4o", "sys", Checklist)
-    wrapper._agent = StubAgent([raw])
+    wrapper._agent = ParsingStubAgent(raw)
     result = await wrapper.run_async("prompt")
     assert isinstance(result, Checklist)
     assert result.items == []

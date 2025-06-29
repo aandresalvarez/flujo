@@ -253,14 +253,8 @@ async def test_step_decorator_matches_from_callable() -> None:
     assert via_decorator.updates_context == via_method.updates_context
     assert via_decorator.config.model_dump() == via_method.config.model_dump()
     assert via_decorator.processors.model_dump() == via_method.processors.model_dump()
-    assert (
-        via_decorator.persist_feedback_to_context
-        == via_method.persist_feedback_to_context
-    )
-    assert (
-        via_decorator.persist_validation_results_to
-        == via_method.persist_validation_results_to
-    )
+    assert via_decorator.persist_feedback_to_context == via_method.persist_feedback_to_context
+    assert via_decorator.persist_validation_results_to == via_method.persist_validation_results_to
     assert await via_decorator.arun(1) == await via_method.arun(1)
 
 
