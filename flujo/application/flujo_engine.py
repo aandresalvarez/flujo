@@ -695,6 +695,9 @@ async def _run_step_logic(
         feedback: str | None = None
         redirect_to = None
         final_plugin_outcome: PluginOutcome | None = None
+        validation_failed = False
+        is_validation_step = bool(step.meta.get("is_validation_step", False))
+        is_strict = bool(step.meta.get("strict_validation", False)) if is_validation_step else False
 
         sorted_plugins = sorted(step.plugins, key=lambda p: p[1], reverse=True)
         for plugin, _ in sorted_plugins:
@@ -740,10 +743,12 @@ async def _run_step_logic(
                 raise TimeoutError(f"Plugin timeout in step {step.name}") from e
 
             if not validated.success:
-                success = False
+                validation_failed = True
                 feedback = validated.feedback
                 redirect_to = validated.redirect_to
                 final_plugin_outcome = validated
+                if is_strict or not is_validation_step:
+                    success = False
             if validated.new_solution is not None:
                 final_plugin_outcome = validated
 
@@ -789,11 +794,16 @@ async def _run_step_logic(
                         history_list.extend(collected_results)
 
             if failed_checks_feedback:
-                success = False
+                validation_failed = True
+                if is_strict or not is_validation_step:
+                    success = False
                 combined_feedback = (feedback + "\n" if feedback else "") + "\n".join(
                     failed_checks_feedback
                 )
                 feedback = combined_feedback.strip()
+
+        if validation_failed and is_validation_step and not is_strict:
+            success = True
 
         if success:
             result.output = unpacked_output
@@ -801,6 +811,9 @@ async def _run_step_logic(
             result.feedback = feedback
             result.token_counts += getattr(raw_output, "token_counts", 0)
             result.cost_usd += getattr(raw_output, "cost_usd", 0.0)
+            if validation_failed and is_validation_step and not is_strict:
+                result.metadata_ = result.metadata_ or {}
+                result.metadata_["validation_passed"] = False
             return result
 
         for handler in step.failure_handlers:
@@ -822,7 +835,12 @@ async def _run_step_logic(
                 data = f"{str(data)}\n{feedback}"
         last_feedback = feedback
 
-    result.output = last_unpacked_output
+    is_validation_step = bool(step.meta.get("is_validation_step", False))
+    is_strict = bool(step.meta.get("strict_validation", False)) if is_validation_step else False
+    if validation_failed and is_strict:
+        result.output = None
+    else:
+        result.output = last_unpacked_output
     result.success = False
     result.feedback = last_feedback
     result.token_counts += (
@@ -831,6 +849,9 @@ async def _run_step_logic(
     result.cost_usd += (
         getattr(last_raw_output, "cost_usd", 0.0) if last_raw_output is not None else 0.0
     )
+    if validation_failed and is_validation_step and not is_strict:
+        result.metadata_ = result.metadata_ or {}
+        result.metadata_["validation_passed"] = False
     if not result.success and step.persist_feedback_to_context:
         if pipeline_context is not None and hasattr(
             pipeline_context, step.persist_feedback_to_context
