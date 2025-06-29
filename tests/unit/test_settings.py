@@ -20,6 +20,7 @@ def test_defaults(monkeypatch) -> None:
     assert s.max_iters == 5
     assert s.k_variants == 3
     assert s.logfire_api_key is None
+    assert isinstance(s.default_repair_model, str)
 
 
 def test_logfire_legacy_alias(monkeypatch) -> None:
@@ -60,6 +61,7 @@ def test_settings_initialization(monkeypatch) -> None:
         default_review_model="test",
         default_validator_model="test",
         default_reflection_model="test",
+        default_repair_model="test",
         agent_timeout=30,
     )
     # The test verifies that the SecretStr value is properly assigned
@@ -67,6 +69,7 @@ def test_settings_initialization(monkeypatch) -> None:
     assert settings.google_api_key.get_secret_value() == "test"
     assert settings.anthropic_api_key.get_secret_value() == "test"
     assert settings.logfire_api_key.get_secret_value() == "test"
+    assert settings.default_repair_model == "test"
 
 
 def test_test_settings() -> None:

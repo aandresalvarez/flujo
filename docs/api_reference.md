@@ -405,6 +405,7 @@ current_settings = settings
 # - default_review_model: str  
 # - default_validator_model: str
 # - default_reflection_model: str
+# - default_repair_model: str
 # - reflection_enabled: bool
 # - scorer: str
 # - agent_timeout: int

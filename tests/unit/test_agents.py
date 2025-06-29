@@ -290,6 +290,27 @@ def test_make_self_improvement_agent_uses_settings_default(monkeypatch) -> None:
     assert called["model"] == "model_from_settings"
 
 
+def test_make_repair_agent_uses_settings_default(monkeypatch) -> None:
+    called: dict[str, str] = {}
+
+    def fake_make(model: str, system_prompt: str, output_type: type, **kwargs) -> None:
+        called["model"] = model
+        return MagicMock()
+
+    monkeypatch.setattr(
+        "flujo.infra.agents.make_agent_async",
+        fake_make,
+    )
+    monkeypatch.setattr(
+        "flujo.infra.agents.settings.default_repair_model",
+        "model_from_settings",
+    )
+    from flujo.infra.agents import make_repair_agent
+
+    make_repair_agent()
+    assert called["model"] == "model_from_settings"
+
+
 def test_make_self_improvement_agent_uses_override_model(monkeypatch) -> None:
     called: dict[str, str] = {}
 
@@ -304,6 +325,23 @@ def test_make_self_improvement_agent_uses_override_model(monkeypatch) -> None:
     from flujo.infra.agents import make_self_improvement_agent
 
     make_self_improvement_agent(model="override_model")
+    assert called["model"] == "override_model"
+
+
+def test_make_repair_agent_uses_override_model(monkeypatch) -> None:
+    called: dict[str, str] = {}
+
+    def fake_make(model: str, system_prompt: str, output_type: type, **kwargs) -> None:
+        called["model"] = model
+        return MagicMock()
+
+    monkeypatch.setattr(
+        "flujo.infra.agents.make_agent_async",
+        fake_make,
+    )
+    from flujo.infra.agents import make_repair_agent
+
+    make_repair_agent(model="override_model")
     assert called["model"] == "override_model"
 
 
