@@ -113,3 +113,225 @@ To evolve `flujo` from a developer-centric orchestration library into a truly **
 | | ⏳ **To Do** | The Builder Agent's goal is to output a valid pipeline definition dictionary. | |
 | | ⏳ **To Do** | Implement the public-facing `flujo.build_from_description(description: str)` function, which orchestrates the Builder Agent and uses its output to call `Pipeline.from_definition()`. | |
 | | ⏳ **To Do** | Create "AI dogfooding" tests where an LLM is prompted to build and run a pipeline using this new function. | |
+
+---
+
+## Theme 6: PydanticAI-Inspired Ergonomic Enhancements
+
+Of course. Analyzing a mature, parallel library like `PydanticAI` is a fantastic way to identify potential improvements for `flujo`. Based on the extensive documentation you provided, `PydanticAI` has several powerful concepts that could enhance `flujo`'s ergonomics and capabilities, while still respecting "The Flujo Way."
+
+Here is a detailed analysis and a set of formal feature proposals you could send to the Flujo team.
+
+---
+
+### **FSD: Proposals for Enhancing `flujo` Inspired by `PydanticAI`**
+
+**To:** The Flujo Development Team  
+**From:** A User of the Concept Discovery V2 Pipeline  
+**Date:** October 26, 2023  
+**Subject:** Proposal for New Convenience Methods and Features to Enhance `flujo`
+
+#### **Executive Summary**
+
+The `flujo` library provides a powerful and explicit DSL for building robust AI workflows. Based on a deep analysis of the `PydanticAI` agent framework, we have identified four key areas where `flujo` could be enhanced to reduce boilerplate, improve testing ergonomics, and offer more granular control over agent interactions. These proposals are designed to be additive and fully aligned with the existing philosophy of "The Flujo Way."
+
+The proposed additions are:
+1. **Granular In-Flight Error Handling**: Introduce a mechanism for agents/plugins to request a retry *with specific feedback* sent to the LLM for self-correction.
+2. **Pre-Request History Processing**: Add a `history_processors` hook to transform the conversation history before it's sent to the LLM, useful for summarization or redaction.
+3. **Enhanced Testing Ergonomics**: Introduce a context manager (`flujo.override_agent`) to simplify unit testing of application code that uses Flujo internally.
+4. **Automatic Pipeline Visualization**: Add a `.to_mermaid()` method to `flujo.Pipeline` for automatic workflow visualization.
+
+---
+
+### **Proposal 1: Granular In-Flight Error Handling (Inspired by `ModelRetry`)**
+
+**The Opportunity:**  
+`PydanticAI` allows a tool to raise a `ModelRetry` exception with a specific error message. This message is then passed back to the LLM, instructing it to correct its parameters and try the tool call again. This is a powerful, targeted self-correction mechanism.
+
+**How Flujo Handles This Today:**  
+`flujo` has a robust retry system at the `Step` level (`max_retries`). A `ValidationPlugin` can fail a step by returning `PluginOutcome(success=False, feedback="...")`. If the step is configured to retry, the *entire step* is re-run. The feedback from the failed attempt is prepended to the next attempt's prompt, which is good but not as targeted as `PydanticAI`'s approach.
+
+**The PydanticAI Approach:**
+```python
+# In PydanticAI, a tool can do this:
+
+def my_flaky_tool(query: str) -> str:
+    if query == 'bad':
+        # This message goes directly back to the LLM for the retry.
+        raise ModelRetry("The query 'bad' is not allowed. Please provide a different query.")
+    return 'Success!'
+```
+
+**Proposed Flujo Enhancement:**
+Enhance `PluginOutcome` to allow for a more explicit retry signal. This gives developers finer control over the retry mechanism.
+
+```python
+# In flujo/domain/plugins.py
+class PluginOutcome(BaseModel):
+    # ... existing fields ...
+    # Add a new field:
+    request_retry_with_feedback: bool = False 
+```
+
+The `flujo` engine would then be updated to check for this flag. If `True`, it would immediately trigger a retry of just the agent call (not the whole step logic), using the `feedback` field to inform the LLM.
+
+**Example (Before & After):**
+
+**Before:** A plugin can only mark the whole step for a generic retry.
+```python
+class MyPlugin(ValidationPlugin):
+    async def validate(self, data: dict) -> PluginOutcome:
+        if "bad" in data['output']:
+            return PluginOutcome(success=False, feedback="Query was bad.")
+        return PluginOuputcome(success=True)
+```
+
+**After:** The plugin can explicitly request a targeted, corrective retry.
+```python
+class MyPlugin(ValidationPlugin):
+    async def validate(self, data: dict) -> PluginOutcome:
+        if "bad" in data['output']:
+            # Signal the engine to immediately retry the agent with this specific feedback
+            return PluginOutcome(
+                success=False, 
+                feedback="The query 'bad' is not allowed. Please provide a different query.",
+                request_retry_with_feedback=True 
+            )
+        return PluginOutcome(success=True)
+```
+
+**Benefits:**
+- **More Efficient Correction**: Avoids re-running all plugins on a retry.
+- **Clearer Intent**: Makes the self-correction loop more explicit.
+- **Increased Power**: Aligns `flujo`'s capabilities with advanced patterns seen in other frameworks.
+
+---
+
+### **Proposal 2: Pre-Request History Processors**
+
+**The Opportunity:**  
+`PydanticAI` allows developers to register `history_processors` on an `Agent`. These are functions that are applied to the conversation history *before* it's sent to the model. This is extremely useful for managing context window size (e.g., by summarizing old messages), redacting sensitive information, or dynamically adding context.
+
+**How Flujo Handles This Today:**  
+`flujo` has `AgentProcessors` for `prompt_processors`, which can modify the *current* input. However, there is no built-in, convenient hook specifically for processing the *entire message history* that might be part of the prompt context. A user would have to build this logic into a custom `Processor`, which is less ergonomic.
+
+**The PydanticAI Approach:**
+```python
+# In PydanticAI
+
+def summarize_old_messages(messages: list[ModelMessage]) -> list[ModelMessage]:
+    if len(messages) > 10:
+        # ... logic to summarize the first 10 messages ...
+        return [summary_message] + messages[10:]
+    return messages
+
+agent = Agent('openai:gpt-4o', history_processors=[summarize_old_messages])
+```
+
+**Proposed Flujo Enhancement:**
+Add a `history_processors` argument to `make_agent_async` and `Step`. This would provide a clean, dedicated hook for this common requirement.
+
+```python
+# In flujo/infra/agents.py
+def make_agent_async(
+    # ... existing args ...,
+    history_processors: List[Callable[[str], str]] | None = None,
+    # ...
+) -> AsyncAgentWrapper:
+    # ...
+```
+
+The engine would apply these processors to the prompt context before making the final LLM call.
+
+**Benefits:**
+- **Context Window Management**: Provides a simple solution to a critical problem in long-running conversations.
+- **Security & Privacy**: Enables easy implementation of PII redaction from conversation history.
+- **Improved Ergonomics**: Offers a more direct and intuitive API than creating a full custom `Processor`.
+
+---
+
+### **Proposal 3: Enhanced Testing Ergonomics with an `override` Context Manager**
+
+**The Opportunity:**  
+`PydanticAI` provides a context manager, `agent.override(model=...)`, which temporarily replaces an agent's model. This is incredibly useful for unit testing application code that internally instantiates and uses an agent, as it avoids complex mocking or dependency injection into the application code itself.
+
+**How Flujo Handles This Today:**  
+`flujo` has excellent testing utilities like `StubAgent`. However, to use them, you must inject them when the `Flujo` runner is instantiated. If your application code creates its own `Flujo` runner deep inside a function, testing becomes difficult. You would have to refactor your application to accept the agent as a dependency.
+
+**The PydanticAI Approach:**
+```python
+# In a PydanticAI test
+async def test_application_code():
+    with joke_agent.override(model=TestModel()): # Temporarily patches joke_agent
+        joke = await application_code('Tell me a joke.')
+    assert joke.startswith('Did you hear about')
+```
+
+**Proposed Flujo Enhancement:**
+Introduce a similar context manager at the `flujo` module level.
+
+```python
+# New feature in flujo
+import flujo
+
+@flujo.step
+async def real_agent_step(text: str) -> str:
+    # ... makes a real LLM call ...
+
+# In a test file
+from flujo.testing.utils import StubAgent
+import flujo
+
+async def test_my_app_function():
+    # my_app_function internally uses `real_agent_step`
+    with flujo.override_agent(real_agent_step, StubAgent(["fake response"])):
+        result = await my_app_function("test input")
+    
+    assert result == "fake response"
+```
+
+**Benefits:**
+- **Dramatically Simplifies Testing**: Allows testing of application logic without refactoring for dependency injection.
+- **Less Mocking Boilerplate**: Avoids complex `unittest.mock.patch` setups.
+- **Promotes Testability**: Encourages writing tests for higher-level application logic.
+
+---
+
+### **Proposal 4: Automatic Pipeline Visualization (Inspired by `pydantic-graph`)**
+
+**The Opportunity:**  
+`pydantic-graph`, which powers `PydanticAI`, can automatically generate Mermaid diagram code from a graph definition (`graph.mermaid_code(...)`). This provides instant, accurate documentation and visualization of complex workflows.
+
+**How Flujo Handles This Today:**  
+There is no built-in visualization tool. Developers must manually create diagrams, which can easily become outdated as the pipeline code evolves.
+
+**Proposed Flujo Enhancement:**
+Add a `.to_mermaid()` method to the `flujo.Pipeline` class. This method would inspect the `steps` list and generate a Mermaid `graph TD` definition.
+
+**Example:**
+```python
+pipeline = (
+    find_seed_concepts >> 
+    discovery_loop >> 
+    rank_and_select_concepts
+)
+
+# New proposed method
+mermaid_code = pipeline.to_mermaid()
+print(mermaid_code)
+```
+
+**Generated Output:**
+```mermaid
+graph TD
+    A[find_seed_concepts] --> B(IntelligentGraphTraversalLoop);
+    B --> C[rank_and_select_concepts];
+```
+*(Node shapes could indicate step type, e.g., `()` for loops, `{}` for conditionals)*
+
+**Benefits:**
+- **Living Documentation**: Ensures that workflow diagrams are always in sync with the code.
+- **Improved Understanding**: Helps developers visualize and reason about complex control flow.
+- **Enhanced Debugging**: Makes it easier to trace the flow of execution and identify potential issues.
+
+By adopting these proven concepts from `PydanticAI`, `flujo` can become even more powerful, robust, and developer-friendly, solidifying its position as a leading framework for production-grade AI orchestration.
