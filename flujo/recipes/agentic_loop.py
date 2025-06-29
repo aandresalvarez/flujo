@@ -92,6 +92,47 @@ class AgenticLoop:
         runner = Flujo(self._pipeline, context_model=PipelineContext)
         return await runner.resume_async(paused_result, human_input)
 
+    def as_step(self, name: str, **kwargs: Any) -> Step[str, PipelineResult[PipelineContext]]:
+        """Return this loop as a composable :class:`Step`.
+
+        Parameters
+        ----------
+        name:
+            Name of the resulting step.
+        **kwargs:
+            Additional ``Step`` configuration such as ``timeout_s`` or
+            ``max_retries``.
+
+        Returns
+        -------
+        Step
+            A step that executes :meth:`run_async` when invoked.
+        """
+
+        async def _runner(
+            initial_goal: str,
+            *,
+            context: PipelineContext | None = None,
+            resources: AppResources | None = None,
+        ) -> PipelineResult[PipelineContext]:
+            runner = Flujo(
+                self._pipeline,
+                context_model=PipelineContext,
+                resources=resources,
+            )
+            final_result: PipelineResult[PipelineContext] | None = None
+            async for item in runner.run_async(
+                {"last_command_result": None, "goal": initial_goal},
+                initial_context_data={"initial_prompt": initial_goal},
+            ):
+                final_result = item
+            assert final_result is not None
+            if context is not None:
+                context.__dict__.update(final_result.final_pipeline_context.__dict__)
+            return final_result
+
+        return Step.from_callable(_runner, name=name, **kwargs)
+
 
 class _CommandExecutor:
     def __init__(self, agent_registry: Dict[str, AsyncAgentProtocol[Any, Any]]):
