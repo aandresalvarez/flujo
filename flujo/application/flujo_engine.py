@@ -1028,9 +1028,15 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 logfire.error(
                     f"Pipeline context initialization failed for model {self.context_model.__name__}: {e}"
                 )
-                raise PipelineContextInitializationError(
-                    f"Failed to initialize pipeline context with model {self.context_model.__name__} and initial data. Validation errors:\n{e}"
-                ) from e
+                msg = (
+                    f"Failed to initialize pipeline context with model {self.context_model.__name__} and initial data."
+                )
+                if any(err.get("loc") == ("initial_prompt",) for err in e.errors()):
+                    msg += (
+                        " `initial_prompt` field required. Your custom context model must inherit from flujo.domain.models.PipelineContext."
+                    )
+                msg += f" Validation errors:\n{e}"
+                raise PipelineContextInitializationError(msg) from e
 
         else:
             current_pipeline_context_instance = cast(
