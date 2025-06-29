@@ -56,5 +56,6 @@ def example_adapter_step() -> None:
 
 def test_docstring_example() -> None:
     import sys
+
     failures, _ = doctest.testmod(sys.modules[__name__], verbose=False)
     assert failures == 0
