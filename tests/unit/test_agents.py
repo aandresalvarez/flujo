@@ -8,11 +8,14 @@ from flujo.infra.agents import (
     NoOpReflectionAgent,
     get_reflection_agent,
     LoggingReviewAgent,
+    make_agent_async,
 )
 from flujo.domain.models import Checklist, ChecklistItem
 
 from flujo.exceptions import OrchestratorRetryError
 from flujo.infra.settings import settings
+from flujo.domain.processors import AgentProcessors
+from flujo.testing.utils import StubAgent
 
 
 @pytest.fixture
@@ -203,7 +206,10 @@ def test_async_agent_wrapper_with_dummy_agent() -> None:
 
 def test_async_agent_wrapper_init_valid_args(mock_pydantic_ai_agent: MagicMock) -> None:
     wrapper = AsyncAgentWrapper(
-        agent=mock_pydantic_ai_agent, max_retries=5, timeout=10, model_name="custom_test_model"
+        agent=mock_pydantic_ai_agent,
+        max_retries=5,
+        timeout=10,
+        model_name="custom_test_model",
     )
     assert wrapper._max_retries == 5
     assert wrapper._timeout_seconds == 10
@@ -211,7 +217,9 @@ def test_async_agent_wrapper_init_valid_args(mock_pydantic_ai_agent: MagicMock) 
     assert wrapper._agent is mock_pydantic_ai_agent
 
 
-def test_async_agent_wrapper_init_default_timeout(mock_pydantic_ai_agent: MagicMock) -> None:
+def test_async_agent_wrapper_init_default_timeout(
+    mock_pydantic_ai_agent: MagicMock,
+) -> None:
     wrapper = AsyncAgentWrapper(agent=mock_pydantic_ai_agent)
     assert wrapper._timeout_seconds == settings.agent_timeout
 
@@ -230,7 +238,9 @@ def test_async_agent_wrapper_init_negative_max_retries_value(
         AsyncAgentWrapper(agent=mock_pydantic_ai_agent, max_retries=-1)
 
 
-def test_async_agent_wrapper_init_invalid_timeout_type(mock_pydantic_ai_agent: MagicMock) -> None:
+def test_async_agent_wrapper_init_invalid_timeout_type(
+    mock_pydantic_ai_agent: MagicMock,
+) -> None:
     with pytest.raises(TypeError, match="timeout must be an integer or None"):
         AsyncAgentWrapper(agent=mock_pydantic_ai_agent, timeout="not_an_int")
 
@@ -238,14 +248,20 @@ def test_async_agent_wrapper_init_invalid_timeout_type(mock_pydantic_ai_agent: M
 def test_async_agent_wrapper_init_non_positive_timeout_value(
     mock_pydantic_ai_agent: MagicMock,
 ) -> None:
-    with pytest.raises(ValueError, match="timeout must be a positive integer if specified"):
+    with pytest.raises(
+        ValueError, match="timeout must be a positive integer if specified"
+    ):
         AsyncAgentWrapper(agent=mock_pydantic_ai_agent, timeout=0)
-    with pytest.raises(ValueError, match="timeout must be a positive integer if specified"):
+    with pytest.raises(
+        ValueError, match="timeout must be a positive integer if specified"
+    ):
         AsyncAgentWrapper(agent=mock_pydantic_ai_agent, timeout=-10)
 
 
 @pytest.mark.asyncio
-async def test_async_agent_wrapper_runtime_timeout(mock_pydantic_ai_agent: MagicMock) -> None:
+async def test_async_agent_wrapper_runtime_timeout(
+    mock_pydantic_ai_agent: MagicMock,
+) -> None:
     async def slow_run(*args, **kwargs):
         await asyncio.sleep(2)
         return "should_not_reach_here"
@@ -254,7 +270,9 @@ async def test_async_agent_wrapper_runtime_timeout(mock_pydantic_ai_agent: Magic
     wrapper = AsyncAgentWrapper(agent=mock_pydantic_ai_agent, timeout=1, max_retries=1)
     with pytest.raises(OrchestratorRetryError) as exc_info:
         await wrapper.run_async("prompt")
-    assert "timed out" in str(exc_info.value).lower() or "TimeoutError" in str(exc_info.value)
+    assert "timed out" in str(exc_info.value).lower() or "TimeoutError" in str(
+        exc_info.value
+    )
     mock_pydantic_ai_agent.run.assert_called_once()
 
 
@@ -320,3 +338,56 @@ async def test_async_agent_wrapper_serializes_pydantic_kwarg() -> None:
     checklist = Checklist(items=[ChecklistItem(description="a")])
     await wrapper.run_async(data=checklist)
     mock_agent.run.assert_called_once_with(data=checklist.model_dump())
+
+
+@pytest.mark.asyncio
+async def test_make_agent_async_pydantic_processors_injected(monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    from flujo.infra import settings as settings_mod
+
+    monkeypatch.setattr(settings_mod.settings, "openai_api_key", SecretStr("test-key"))
+
+    wrapper = make_agent_async("openai:gpt-4o", "sys", Checklist)
+    names = [p.name for p in wrapper.processors.output_processors]
+    assert names[0] == "StripMarkdownFences"
+    assert names[1] == "EnforceJsonResponse"
+    assert names[-1] == "PydanticValidation"
+
+
+@pytest.mark.asyncio
+async def test_make_agent_async_custom_processor_order(monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    from flujo.infra import settings as settings_mod
+
+    monkeypatch.setattr(settings_mod.settings, "openai_api_key", SecretStr("test-key"))
+
+    class DummyProc:
+        name = "dummy"
+
+        async def process(self, data, context=None):
+            return data
+
+    procs = AgentProcessors(output_processors=[DummyProc()])
+    wrapper = make_agent_async("openai:gpt-4o", "sys", Checklist, processors=procs)
+    names = [p.name for p in wrapper.processors.output_processors]
+    assert names == [
+        "StripMarkdownFences",
+        "EnforceJsonResponse",
+        "dummy",
+        "PydanticValidation",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_pydantic_output_cleaning(monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    from flujo.infra import settings as settings_mod
+
+    monkeypatch.setattr(settings_mod.settings, "openai_api_key", SecretStr("test-key"))
+
+    raw = 'Here you go:\n```json\n{"items": []}\n```'
+    wrapper = make_agent_async("openai:gpt-4o", "sys", Checklist)
+    wrapper._agent = StubAgent([raw])
+    result = await wrapper.run_async("prompt")
+    assert isinstance(result, Checklist)
+    assert result.items == []
