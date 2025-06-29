@@ -13,7 +13,11 @@ from ..domain.commands import (
     FinishCommand,
     ExecutedCommandLog,
 )
-from ..exceptions import PausedException
+from ..exceptions import (
+    PausedException,
+    PipelineContextInitializationError,
+    ContextInheritanceError,
+)
 from ..domain.models import PipelineResult, PipelineContext
 from ..domain.pipeline_dsl import Step, LoopStep
 from ..application.flujo_engine import Flujo, _accepts_param
@@ -92,7 +96,9 @@ class AgenticLoop:
         runner = Flujo(self._pipeline, context_model=PipelineContext)
         return await runner.resume_async(paused_result, human_input)
 
-    def as_step(self, name: str, **kwargs: Any) -> Step[str, PipelineResult[PipelineContext]]:
+    def as_step(
+        self, name: str, *, inherit_context: bool = True, **kwargs: Any
+    ) -> Step[str, PipelineResult[PipelineContext]]:
         """Return this loop as a composable :class:`Step`.
 
         Parameters
@@ -115,26 +121,63 @@ class AgenticLoop:
             context: PipelineContext | None = None,
             resources: AppResources | None = None,
         ) -> PipelineResult[PipelineContext]:
-            runner = Flujo(
-                self._pipeline,
-                context_model=PipelineContext,
-                resources=resources,
-            )
+            init_ctx_data: Dict[str, Any] = {}
+            if inherit_context and context is not None:
+                init_ctx_data = context.model_dump()
+            if "initial_prompt" not in init_ctx_data:
+                init_ctx_data["initial_prompt"] = initial_goal
 
-            init_ctx_data = context.model_dump() if context is not None else {}
-            init_ctx_data["initial_prompt"] = initial_goal
+            try:
+                runner = Flujo(
+                    self._pipeline,
+                    context_model=PipelineContext,
+                    resources=resources,
+                    initial_context_data=init_ctx_data,
+                )
+            except PipelineContextInitializationError as e:
+                cause = getattr(e, "__cause__", None)
+                missing_fields = []
+                if cause is not None and hasattr(cause, "errors"):
+                    for err in cause.errors():
+                        if err.get("type") == "missing":
+                            loc = err.get("loc") or []
+                            if isinstance(loc, (list, tuple)) and loc:
+                                field = loc[0]
+                                if isinstance(field, str):
+                                    missing_fields.append(field)
+                raise ContextInheritanceError(
+                    missing_fields=missing_fields,
+                    parent_context_keys=list(context.model_dump().keys()) if context else [],
+                    child_model_name=PipelineContext.__name__,
+                ) from e
 
             final_result: PipelineResult[PipelineContext] | None = None
-            async for item in runner.run_async(
-                {"last_command_result": None, "goal": initial_goal},
-                initial_context_data=init_ctx_data,
-            ):
-                final_result = item
+            try:
+                async for item in runner.run_async(
+                    {"last_command_result": None, "goal": initial_goal}
+                ):
+                    final_result = item
+            except PipelineContextInitializationError as e:
+                cause = getattr(e, "__cause__", None)
+                missing_fields = []
+                if cause is not None and hasattr(cause, "errors"):
+                    for err in cause.errors():
+                        if err.get("type") == "missing":
+                            loc = err.get("loc") or []
+                            if isinstance(loc, (list, tuple)) and loc:
+                                field = loc[0]
+                                if isinstance(field, str):
+                                    missing_fields.append(field)
+                raise ContextInheritanceError(
+                    missing_fields=missing_fields,
+                    parent_context_keys=list(context.model_dump().keys()) if context else [],
+                    child_model_name=PipelineContext.__name__,
+                ) from e
             if final_result is None:
                 raise ValueError(
                     "The final result of the pipeline execution is None. Ensure the pipeline produces a valid result."
                 )
-            if context is not None:
+            if inherit_context and context is not None:
                 context.__dict__.update(final_result.final_pipeline_context.__dict__)
             return final_result
 
