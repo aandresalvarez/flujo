@@ -53,6 +53,8 @@ nav:
     - 'Adapter Step': cookbook/adapter_step.md
     - 'Serialize Pydantic': cookbook/serialize_pydantic.md
     - 'Agentic Loop': recipes/agentic_loop.md
+  - Guides:
+    - 'Choosing Your Loop': guides/choosing_your_loop.md
   - Migration:
     - 'v0.3.7': migration/v0.3.7.md
     - 'v0.3.8': migration/v0.3.8.md

@@ -15,6 +15,7 @@
 | **11_stateful_hitl.py** | Multi-turn correction loop with simulated HITL. |
 | **12_using_resources.py** | Dependency injection via AppResources. |
 | **13_lifecycle_hooks.py** | Observing pipeline events with hooks. |
+| **15_agentic_loop_migration.py** | Refactoring a LoopStep workflow using AgenticLoop. |
 
 Each script is standalone – activate your virtualenv, set `OPENAI_API_KEY`, then:
 
