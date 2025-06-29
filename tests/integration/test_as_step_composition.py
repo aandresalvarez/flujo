@@ -6,6 +6,7 @@ from flujo.testing.utils import StubAgent, gather_result
 from flujo.domain.commands import FinishCommand, RunAgentCommand
 from flujo.domain.models import PipelineContext, PipelineResult
 from flujo.domain.resources import AppResources
+from flujo.exceptions import ContextInheritanceError
 
 
 @pytest.mark.asyncio
@@ -136,4 +137,49 @@ async def test_as_step_initial_prompt_sync() -> None:
         initial_context_data={"initial_prompt": "wrong"},
     )
 
-    assert result.final_pipeline_context.initial_prompt == "goal"
+    assert result.final_pipeline_context.initial_prompt == "wrong"
+
+
+@pytest.mark.asyncio
+async def test_as_step_inherit_context_false() -> None:
+    class Incrementer:
+        async def run(self, data: int, *, pipeline_context: PipelineContext | None = None) -> dict:
+            assert pipeline_context is not None
+            current = pipeline_context.scratchpad.get("counter", 0)
+            return {"scratchpad": {"counter": current + data}}
+
+    inner_runner = Flujo(
+        Step("inc", Incrementer(), updates_context=True),
+        context_model=PipelineContext,
+    )
+
+    pipeline = inner_runner.as_step(name="inner", inherit_context=False)
+    runner = Flujo(pipeline, context_model=PipelineContext)
+
+    result = await gather_result(
+        runner,
+        2,
+        initial_context_data={"initial_prompt": "goal", "scratchpad": {"counter": 1}},
+    )
+
+    assert result.final_pipeline_context.scratchpad["counter"] == 1
+
+
+class ChildCtx(PipelineContext):
+    extra: int
+
+
+@pytest.mark.asyncio
+async def test_as_step_context_inheritance_error() -> None:
+    inner_runner = Flujo(Step("s", StubAgent(["ok"])), context_model=ChildCtx)
+
+    pipeline = inner_runner.as_step(name="inner")
+    runner = Flujo(pipeline, context_model=PipelineContext)
+
+    with pytest.raises(ContextInheritanceError) as exc:
+        await gather_result(
+            runner,
+            "goal",
+            initial_context_data={"initial_prompt": "goal"},
+        )
+    assert exc.value.missing_fields == ["extra"]
