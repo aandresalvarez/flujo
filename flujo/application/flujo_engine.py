@@ -1403,7 +1403,8 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             final_result: PipelineResult[ContextT] | None = None
             async for item in sub_runner.run_async(initial_input):
                 final_result = item
-            assert final_result is not None
+            if final_result is None:
+                raise OrchestratorError("Final result is None. The pipeline did not produce a valid result.")
             if context is not None:
                 context.__dict__.update(final_result.final_pipeline_context.__dict__)
             return final_result
