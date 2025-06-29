@@ -5,8 +5,9 @@ Agent prompt templates and agent factory utilities.
 from __future__ import annotations
 
 from typing import Any, Generic, Optional, Type
-from pydantic_ai import Agent
-from pydantic import BaseModel as PydanticBaseModel
+from pydantic_ai import Agent, ModelRetry
+from pydantic import BaseModel as PydanticBaseModel, TypeAdapter, ValidationError
+import json
 import os
 from flujo.infra.settings import settings
 from flujo.domain.models import Checklist
@@ -20,11 +21,26 @@ from flujo.domain.agent_protocol import (
 from flujo.exceptions import (
     OrchestratorRetryError,
     ConfigurationError,
+    OrchestratorError,
 )
 import asyncio
 from flujo.infra.telemetry import logfire
 import traceback
 from tenacity import AsyncRetrying, RetryError, stop_after_attempt, wait_exponential
+from ..processors.repair import DeterministicRepairProcessor
+
+
+def get_raw_output_from_exception(exc: Exception) -> str:
+    """Best-effort extraction of raw output from validation-related exceptions."""
+    if hasattr(exc, "message"):
+        msg = getattr(exc, "message")
+        if isinstance(msg, str):
+            return msg
+    if exc.args:
+        first = exc.args[0]
+        if isinstance(first, str):
+            return first
+    return str(exc)
 
 
 # 1. Prompt Constants
@@ -128,6 +144,29 @@ SELF_IMPROVE_SYS = """You are a debugging assistant specialized in AI pipelines.
     "}\n" \
     """
 
+REPAIR_PROMPT = """
+You are an expert system that corrects malformed JSON to conform to a given Pydantic JSON schema.
+Analyze the original prompt, the failed output, and the validation error. Your goal is to produce a valid JSON object.
+
+If you can fix the JSON, respond with ONLY the corrected raw JSON object.
+If the request or schema is too complex or ambiguous to fix reliably, respond with a JSON object with this exact schema:
+{{"repair_error": true, "reasoning": "A brief explanation of why the original task is difficult."}}
+
+TARGET SCHEMA:
+{json_schema}
+---
+ORIGINAL USER PROMPT:
+{original_prompt}
+---
+FAILED LLM OUTPUT:
+{failed_output}
+---
+PYDANTIC VALIDATION ERROR:
+{validation_error}
+---
+Your response:
+"""
+
 
 # 2. Agent Factory
 def make_agent(
@@ -189,6 +228,7 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
         timeout: int | None = None,
         model_name: str | None = None,
         processors: Optional[AgentProcessors] = None,
+        auto_repair: bool = True,
     ) -> None:
         if not isinstance(max_retries, int):
             raise TypeError(f"max_retries must be an integer, got {type(max_retries).__name__}.")
@@ -208,6 +248,8 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
         )
         self._model_name: str | None = model_name or getattr(agent, "model", "unknown_model")
         self.processors: AgentProcessors = processors or AgentProcessors()
+        self.auto_repair = auto_repair
+        self.target_output_type = getattr(agent, "output_type", Any)
 
     def _call_agent_with_dynamic_args(self, *args: Any, **kwargs: Any) -> Any:
         return self._agent.run(*args, **kwargs)
@@ -277,6 +319,44 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                     return unpacked_output
         except RetryError as e:
             last_exc = e.last_attempt.exception()
+            if isinstance(last_exc, (ValidationError, ModelRetry)) and self.auto_repair:
+                logfire.warn(
+                    f"Agent validation failed. Initiating automated repair. Error: {last_exc}"
+                )
+                raw_output = get_raw_output_from_exception(last_exc)
+                try:
+                    cleaner = DeterministicRepairProcessor()
+                    cleaned = await cleaner.process(raw_output)
+                    validated = TypeAdapter(self.target_output_type).validate_json(cleaned)
+                    logfire.info("Deterministic repair successful.")
+                    return validated
+                except Exception:
+                    logfire.warn("Deterministic repair failed. Escalating to LLM repair.")
+                try:
+                    schema = TypeAdapter(self.target_output_type).json_schema()
+                    prompt_data = {
+                        "json_schema": json.dumps(schema, ensure_ascii=False),
+                        "original_prompt": str(args[0]) if args else "",
+                        "failed_output": raw_output,
+                        "validation_error": str(last_exc),
+                    }
+                    repaired_str = await get_repair_agent().run(REPAIR_PROMPT.format(**prompt_data))
+                    try:
+                        feedback = json.loads(repaired_str)
+                        if isinstance(feedback, dict) and feedback.get("repair_error"):
+                            reason = feedback.get("reasoning", "No reasoning provided.")
+                            raise OrchestratorError(
+                                f"Repair agent could not fix output. Reasoning: {reason}"
+                            )
+                    except json.JSONDecodeError:
+                        pass
+                    final_obj = TypeAdapter(self.target_output_type).validate_json(repaired_str)
+                    logfire.info("LLM-based repair successful.")
+                    return final_obj
+                except Exception as repair_err:
+                    raise OrchestratorError(
+                        "Agent validation failed and auto-repair also failed."
+                    ) from repair_err
             raise OrchestratorRetryError(
                 f"Agent '{self._model_name}' failed after {self._max_retries} attempts. Last error: {type(last_exc).__name__}({last_exc})"
             ) from last_exc
@@ -301,6 +381,7 @@ def make_agent_async(
     max_retries: int = 3,
     timeout: int | None = None,
     processors: Optional[AgentProcessors] = None,
+    auto_repair: bool = True,
 ) -> AsyncAgentWrapper[Any, Any]:
     """
     Creates a pydantic_ai.Agent and returns an AsyncAgentWrapper exposing .run_async.
@@ -317,6 +398,7 @@ def make_agent_async(
         timeout=timeout,
         model_name=model,
         processors=final_processors,
+        auto_repair=auto_repair,
     )
 
 
@@ -391,6 +473,21 @@ try:
     self_improvement_agent: AsyncAgentProtocol[Any, str] = make_self_improvement_agent()
 except ConfigurationError:  # pragma: no cover - config may be missing in tests
     self_improvement_agent = NoOpReflectionAgent()
+
+_repair_agent: AsyncAgentWrapper[Any, str] | None = None
+
+
+def get_repair_agent() -> AsyncAgentWrapper[Any, str]:
+    """Lazily create the internal repair agent."""
+    global _repair_agent
+    if _repair_agent is None:
+        _repair_agent = make_agent_async(
+            "openai:gpt-4o",
+            REPAIR_PROMPT,
+            str,
+            auto_repair=False,
+        )
+    return _repair_agent
 
 
 class LoggingReviewAgent(AsyncAgentProtocol[Any, Any]):
