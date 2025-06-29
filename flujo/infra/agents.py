@@ -43,7 +43,7 @@ def get_raw_output_from_exception(exc: Exception) -> str:
     return str(exc)
 
 
-def _get_underlying_type(output_type: Any) -> Any:
+def _unwrap_type_adapter(output_type: Any) -> Any:
     """Return the real type, unwrapping TypeAdapter instances."""
     if isinstance(output_type, TypeAdapter):
         return output_type.annotation
