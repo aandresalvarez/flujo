@@ -695,6 +695,7 @@ async def _run_step_logic(
         feedback: str | None = None
         redirect_to = None
         final_plugin_outcome: PluginOutcome | None = None
+        validation_failed = False
 
         sorted_plugins = sorted(step.plugins, key=lambda p: p[1], reverse=True)
         for plugin, _ in sorted_plugins:
@@ -744,6 +745,7 @@ async def _run_step_logic(
                 feedback = validated.feedback
                 redirect_to = validated.redirect_to
                 final_plugin_outcome = validated
+                validation_failed = True
             if validated.new_solution is not None:
                 final_plugin_outcome = validated
 
@@ -790,6 +792,7 @@ async def _run_step_logic(
 
             if failed_checks_feedback:
                 success = False
+                validation_failed = True
                 combined_feedback = (feedback + "\n" if feedback else "") + "\n".join(
                     failed_checks_feedback
                 )
@@ -822,7 +825,11 @@ async def _run_step_logic(
                 data = f"{str(data)}\n{feedback}"
         last_feedback = feedback
 
-    result.output = last_unpacked_output
+    is_strict = step.meta.get("strict_validation", True)
+    if validation_failed and is_strict:
+        result.output = None
+    else:
+        result.output = last_unpacked_output
     result.success = False
     result.feedback = last_feedback
     result.token_counts += (
@@ -831,6 +838,9 @@ async def _run_step_logic(
     result.cost_usd += (
         getattr(last_raw_output, "cost_usd", 0.0) if last_raw_output is not None else 0.0
     )
+    if validation_failed and not is_strict:
+        result.metadata_ = result.metadata_ or {}
+        result.metadata_["validation_passed"] = False
     if not result.success and step.persist_feedback_to_context:
         if pipeline_context is not None and hasattr(
             pipeline_context, step.persist_feedback_to_context

@@ -253,9 +253,11 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         processors: Optional[AgentProcessors] = None,
         persist_feedback_to_context: Optional[str] = None,
         persist_validation_results_to: Optional[str] = None,
+        strict: bool = True,
         **config: Any,
     ) -> "Step[Any, Any]":
         """Construct a validation step using the provided agent."""
+        meta = {"is_validation_step": True, "strict_validation": strict}
         return cls(
             "validate",
             agent,
@@ -263,6 +265,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             processors=processors,
             persist_feedback_to_context=persist_feedback_to_context,
             persist_validation_results_to=persist_validation_results_to,
+            meta=meta,
             **config,
         )
 
