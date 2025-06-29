@@ -209,6 +209,24 @@ router_step = Step.branch_on(
 
 Use `Step.human_in_the_loop()` to pause execution and wait for structured human input. The step optionally validates the response with a Pydantic model and all interactions are saved to the `PipelineContext`.
 
+#### Composing Workflows with `.as_step()`
+
+High-level runners like `AgenticLoop` or even another `Flujo` instance can be embedded into a larger pipeline. Call `.as_step()` on the configured runner to obtain a `Step` object:
+
+```python
+discovery_loop = AgenticLoop(planner, tools)
+
+pipeline = (
+    discovery_loop.as_step(name="discover") >>
+    Step.mapper(
+        lambda r: r.final_pipeline_context.command_log[-1].execution_result,
+        name="extract",
+    )
+)
+```
+
+This enables a "pipeline of pipelines" pattern where complex sub-workflows remain modular yet easy to chain together.
+
 ## Scoring
 
 The orchestrator uses scoring to evaluate and select the best solution. Scoring strategies include:
