@@ -1,7 +1,8 @@
 import pytest
 import asyncio
 from unittest.mock import AsyncMock, patch, MagicMock
-from pydantic import SecretStr
+from pydantic import SecretStr, BaseModel, TypeAdapter
+from typing import List
 
 from flujo.infra.agents import (
     AsyncAgentWrapper,
@@ -428,3 +429,18 @@ async def test_pydantic_output_parsed_by_agent(monkeypatch) -> None:
     result = await wrapper.run_async("prompt")
     assert isinstance(result, Checklist)
     assert result.items == []
+
+
+@pytest.mark.asyncio
+async def test_make_agent_async_type_adapter(monkeypatch) -> None:
+    """Ensure TypeAdapter instances are unwrapped correctly."""
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    from flujo.infra import settings as settings_mod
+
+    monkeypatch.setattr(settings_mod.settings, "openai_api_key", SecretStr("test-key"))
+
+    class MyModel(BaseModel):
+        value: int
+
+    wrapper = make_agent_async("openai:gpt-4o", "sys", TypeAdapter(List[MyModel]))
+    assert wrapper.target_output_type == List[MyModel]
