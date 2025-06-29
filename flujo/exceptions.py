@@ -56,6 +56,22 @@ class PipelineContextInitializationError(OrchestratorError):
     pass
 
 
+class ContextInheritanceError(OrchestratorError):
+    """Raised when inheriting context for a nested pipeline fails."""
+
+    def __init__(
+        self, missing_fields: list[str], parent_context_keys: list[str], child_model_name: str
+    ) -> None:
+        msg = (
+            f"Failed to inherit context for {child_model_name}. Missing required fields: "
+            f"{', '.join(missing_fields)}. Parent context provided: {', '.join(parent_context_keys)}."
+        )
+        super().__init__(msg)
+        self.missing_fields = missing_fields
+        self.parent_context_keys = parent_context_keys
+        self.child_model_name = child_model_name
+
+
 class UsageLimitExceededError(OrchestratorError):
     """Raised when a pipeline run exceeds its defined usage limits."""
 
