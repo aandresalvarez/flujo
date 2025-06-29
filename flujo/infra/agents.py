@@ -4,23 +4,14 @@ Agent prompt templates and agent factory utilities.
 
 from __future__ import annotations
 
-from typing import (
-    Any,
-    Generic,
-    Optional,
-    Type,
-    Union,
-    get_args,
-    get_origin,
-)
+from typing import Any, Generic, Optional, Type
 from pydantic_ai import Agent
-from pydantic import BaseModel as PydanticBaseModel, TypeAdapter
+from pydantic import BaseModel as PydanticBaseModel
 import os
 from flujo.infra.settings import settings
 from flujo.domain.models import Checklist
 from flujo.domain.processors import AgentProcessors
-from flujo.processors import EnforceJsonResponse, StripMarkdownFences
-from types import UnionType
+
 from flujo.domain.agent_protocol import (
     AsyncAgentProtocol,
     AgentInT,
@@ -34,36 +25,6 @@ import asyncio
 from flujo.infra.telemetry import logfire
 import traceback
 from tenacity import AsyncRetrying, RetryError, stop_after_attempt, wait_exponential
-
-
-class PydanticValidationProcessor:
-    """Validate cleaned JSON against the target Pydantic model."""
-
-    def __init__(self, target: Type[Any]):
-        self.target = target
-        self.name = "PydanticValidation"
-
-    async def process(self, data: Any, context: Any | None = None) -> Any:
-        parsed = data
-        if isinstance(data, str):
-            import json
-            import re
-
-            try:
-                parsed = json.loads(data)
-            except Exception:
-                m = re.search(r"\{.*\}|\[.*\]", data, re.DOTALL)
-                if not m:
-                    raise ValueError("No JSON object found in output")
-                parsed = json.loads(m.group(0))
-
-        try:
-            adapter = (
-                self.target if isinstance(self.target, TypeAdapter) else TypeAdapter(self.target)
-            )
-            return adapter.validate_python(parsed)
-        except Exception as e:  # pragma: no cover - defensive
-            raise ValueError(f"Pydantic validation failed: {e}") from e
 
 
 # 1. Prompt Constants
@@ -201,61 +162,16 @@ def make_agent(
 
     final_processors = processors.copy(deep=True) if processors else AgentProcessors()
 
-    def _contains_pydantic(tp: Any) -> bool:
-        if isinstance(tp, TypeAdapter):
-            tp = tp._type
-        origin = get_origin(tp)
-        if origin in {list, dict, Union, UnionType}:
-            return any(_contains_pydantic(arg) for arg in get_args(tp))
-        if isinstance(tp, type) and issubclass(tp, PydanticBaseModel):
-            return True
-        return False
-
-    is_pydantic_output = _contains_pydantic(output_type)
-    agent: Agent[Any, Any]
-
-    if is_pydantic_output:
-        agent_native_output_type = str
-
-        final_processors.output_processors.insert(0, StripMarkdownFences("json"))
-        final_processors.output_processors.insert(1, EnforceJsonResponse())
-
-        final_processors.output_processors.append(PydanticValidationProcessor(output_type))
-
+    try:
         agent = Agent(
             model=model,
             system_prompt=system_prompt,
-            output_type=agent_native_output_type,
+            output_type=output_type,
             tools=tools or [],
+            **kwargs,
         )
-    else:
-        actual_type = output_type
-        try:
-            if hasattr(output_type, "_type"):
-                actual_type = output_type._type
-            elif hasattr(output_type, "__origin__") and output_type.__origin__ is not None:
-                if hasattr(output_type, "__args__") and output_type.__args__:
-                    if output_type.__origin__.__name__ == "TypeAdapter":
-                        actual_type = output_type.__args__[0]
-
-            if hasattr(actual_type, "__name__"):
-                pass
-            elif hasattr(actual_type, "__bases__") and PydanticBaseModel in actual_type.__bases__:
-                pass
-            else:
-                from pydantic import create_model
-
-                create_model("TestModel", value=(actual_type, ...))
-
-        except Exception as e:
-            raise ValueError(f"Error processing output_type '{output_type}': {e}") from e
-
-        agent = Agent(
-            model=model,
-            system_prompt=system_prompt,
-            output_type=actual_type,
-            tools=tools or [],
-        )
+    except Exception as e:  # pragma: no cover - defensive
+        raise ConfigurationError(f"Failed to create pydantic-ai agent: {e}") from e
 
     return agent, final_processors
 
