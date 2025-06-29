@@ -5,6 +5,7 @@ from flujo.recipes.agentic_loop import AgenticLoop
 from flujo.testing.utils import StubAgent, gather_result
 from flujo.domain.commands import FinishCommand, RunAgentCommand
 from flujo.domain.models import PipelineContext, PipelineResult
+from flujo.domain.resources import AppResources
 
 
 @pytest.mark.asyncio
@@ -60,3 +61,81 @@ async def test_pipeline_of_pipelines_via_as_step() -> None:
     inner_result = result.step_history[2].output
     assert isinstance(inner_result, PipelineResult)
     assert inner_result.step_history[-1].output == 2
+
+
+@pytest.mark.asyncio
+async def test_as_step_context_propagation() -> None:
+    class Incrementer:
+        async def run(
+            self, data: int, *, pipeline_context: PipelineContext | None = None
+        ) -> dict:
+            assert pipeline_context is not None
+            current = pipeline_context.scratchpad.get("counter", 0)
+            return {"scratchpad": {"counter": current + data}}
+
+    inner_runner = Flujo(
+        Step("inc", Incrementer(), updates_context=True),
+        context_model=PipelineContext,
+    )
+
+    pipeline = inner_runner.as_step(name="inner")
+    runner = Flujo(pipeline, context_model=PipelineContext)
+
+    result = await gather_result(
+        runner,
+        2,
+        initial_context_data={"initial_prompt": "goal", "scratchpad": {"counter": 1}},
+    )
+
+    assert result.final_pipeline_context.scratchpad["counter"] == 3
+
+
+@pytest.mark.asyncio
+async def test_as_step_resource_propagation() -> None:
+    class Res(AppResources):
+        counter: int = 0
+
+    class UseRes:
+        async def run(self, data: int, *, resources: Res) -> int:
+            resources.counter += data
+            return resources.counter
+
+    inner_runner = Flujo(
+        Step("res", UseRes()),
+        context_model=PipelineContext,
+    )
+
+    pipeline = inner_runner.as_step(name="inner")
+    res = Res()
+    runner = Flujo(pipeline, context_model=PipelineContext, resources=res)
+
+    await gather_result(
+        runner,
+        5,
+        initial_context_data={"initial_prompt": "goal"},
+    )
+
+    assert res.counter == 5
+
+
+@pytest.mark.asyncio
+async def test_as_step_initial_prompt_sync() -> None:
+    planner = StubAgent(
+        [
+            RunAgentCommand(agent_name="tool", input_data="hi"),
+            FinishCommand(final_answer="done"),
+        ]
+    )
+    tool = StubAgent(["tool-output"])
+    loop = AgenticLoop(planner, {"tool": tool})
+
+    pipeline = loop.as_step(name="inner")
+    runner = Flujo(pipeline, context_model=PipelineContext)
+
+    result = await gather_result(
+        runner,
+        "goal",
+        initial_context_data={"initial_prompt": "wrong"},
+    )
+
+    assert result.final_pipeline_context.initial_prompt == "goal"

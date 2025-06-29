@@ -120,14 +120,20 @@ class AgenticLoop:
                 context_model=PipelineContext,
                 resources=resources,
             )
+
+            init_ctx_data = context.model_dump() if context is not None else {}
+            init_ctx_data["initial_prompt"] = initial_goal
+
             final_result: PipelineResult[PipelineContext] | None = None
             async for item in runner.run_async(
                 {"last_command_result": None, "goal": initial_goal},
-                initial_context_data={"initial_prompt": initial_goal},
+                initial_context_data=init_ctx_data,
             ):
                 final_result = item
             if final_result is None:
-                raise ValueError("The final result of the pipeline execution is None. Ensure the pipeline produces a valid result.")
+                raise ValueError(
+                    "The final result of the pipeline execution is None. Ensure the pipeline produces a valid result."
+                )
             if context is not None:
                 context.__dict__.update(final_result.final_pipeline_context.__dict__)
             return final_result
