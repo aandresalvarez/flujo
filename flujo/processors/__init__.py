@@ -5,6 +5,7 @@ from .common import (
     EnforceJsonResponse,
     SerializePydantic,
 )
+from .repair import DeterministicRepairProcessor
 
 __all__ = [
     "Processor",
@@ -12,4 +13,5 @@ __all__ = [
     "StripMarkdownFences",
     "EnforceJsonResponse",
     "SerializePydantic",
+    "DeterministicRepairProcessor",
 ]
