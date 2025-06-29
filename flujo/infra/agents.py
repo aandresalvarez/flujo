@@ -46,7 +46,7 @@ def get_raw_output_from_exception(exc: Exception) -> str:
 def _get_underlying_type(output_type: Any) -> Any:
     """Return the real type, unwrapping TypeAdapter instances."""
     if isinstance(output_type, TypeAdapter):
-        return getattr(output_type, "_type", output_type)
+        return output_type.annotation
     origin = get_origin(output_type)
     if origin is TypeAdapter:
         args = getattr(output_type, "__args__", None)
