@@ -120,6 +120,13 @@ class PipelineResult(BaseModel, Generic[ContextT]):
     model_config: ClassVar[ConfigDict] = {"arbitrary_types_allowed": True}
 
 
+class RefinementCheck(BaseModel):
+    """Standardized output from a critic pipeline in a refinement loop."""
+
+    is_complete: bool
+    feedback: Optional[Any] = None
+
+
 class UsageLimits(BaseModel):
     """Defines resource consumption limits for a pipeline run."""
 
