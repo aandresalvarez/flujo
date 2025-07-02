@@ -24,3 +24,14 @@ def assert_validator_failed(
                 assert expected_feedback_part in (item.feedback or "")
             break
     assert found, f"Validator '{validator_name}' did not fail as expected."
+
+
+def assert_context_updated(result: PipelineResult[Any], **expected_updates: Any) -> None:
+    """Assert that the final context contains the expected updates."""
+    final_context = result.final_pipeline_context
+    if final_context is None:
+        raise AssertionError("final_pipeline_context not found in result")
+
+    for key, expected_value in expected_updates.items():
+        actual_value = getattr(final_context, key, None)
+        assert actual_value == expected_value, f"Expected {key} to be {expected_value}, but got {actual_value}"

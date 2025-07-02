@@ -78,7 +78,7 @@ def analyze_signature(func: Callable[..., Any]) -> InjectionSpec:
                         f"Parameter '{p.name}' must be annotated with a BaseModel subclass"
                     )
                 needs_context = True
-                context_kw = p.name
+                context_kw = "context"  # Always use "context" as the parameter name
             elif p.name == "resources":
                 ann = hints.get(p.name, p.annotation)
                 if ann is inspect.Signature.empty:

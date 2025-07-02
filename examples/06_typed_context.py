@@ -30,13 +30,13 @@ class PlanResearchAgent(ContextAwareAgentProtocol[str, str, ResearchContext]):
         self,
         data: str,
         *,
-        pipeline_context: ResearchContext,
+        context: ResearchContext,
         **kwargs: Any,
     ) -> str:
         """Identify the core topic and store it in the context."""
         print("🧠 Planning Agent: Analyzing task to find the core research topic.")
         topic = "The History of the Python Programming Language"
-        pipeline_context.research_topic = topic
+        context.research_topic = topic
         print(f"   -> Set `research_topic` in context to: '{topic}'")
         return f"Research plan for {topic}"
 
@@ -46,13 +46,13 @@ class GatherSourcesAgent(ContextAwareAgentProtocol[str, list[str], ResearchConte
         self,
         data: str,
         *,
-        pipeline_context: ResearchContext,
+        context: ResearchContext,
         **kwargs: Any,
     ) -> list[str]:
         """"Find" sources and update a counter in the context."""
         print("📚 Gathering Sources Agent: Finding relevant articles.")
         sources = ["python.org", "Wikipedia", "A History of Computing book"]
-        pipeline_context.sources_found = len(sources)
+        context.sources_found = len(sources)
         print(f"   -> Found {len(sources)} sources. Updated `sources_found` in context.")
         return sources
 
@@ -62,18 +62,18 @@ class SummarizeAgent(ContextAwareAgentProtocol[list[str], str, ResearchContext])
         self,
         data: list[str],
         *,
-        pipeline_context: ResearchContext,
+        context: ResearchContext,
         **kwargs: Any,
     ) -> str:
         """Write a summary using data stored in the context."""
         print("✍️ Summarization Agent: Writing summary.")
-        topic = pipeline_context.research_topic
-        num_sources = pipeline_context.sources_found
+        topic = context.research_topic
+        num_sources = context.sources_found
         summary = (
             f"The summary for '{topic}' based on {num_sources} sources is complete."
             "Python was created by Guido van Rossum in the late 1980s."
         )
-        pipeline_context.summary = summary
+        context.summary = summary
         print(f"   -> Wrote summary for '{topic}' and saved to context.")
         return summary
 

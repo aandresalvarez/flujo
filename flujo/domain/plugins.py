@@ -39,7 +39,7 @@ class ContextAwarePluginProtocol(Protocol[ContextT]):
         self,
         data: dict[str, Any],
         *,
-        pipeline_context: ContextT,
+        context: ContextT,
         **kwargs: Any,
     ) -> PluginOutcome: ...
 

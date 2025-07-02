@@ -90,7 +90,7 @@ class DummyRemoteBackend(ExecutionBackend):
 
         payload = {
             "input_data": request.input_data,
-            "pipeline_context": request.pipeline_context,
+            "context": request.context,
             "resources": request.resources,
             "context_model_defined": request.context_model_defined,
             "usage_limits": request.usage_limits,
@@ -109,7 +109,7 @@ class DummyRemoteBackend(ExecutionBackend):
         roundtrip = StepExecutionRequest(
             step=original_step,
             input_data=reconstruct(request.input_data, data.get("input_data")),
-            pipeline_context=reconstruct(request.pipeline_context, data.get("pipeline_context")),
+            context=reconstruct(request.context, data.get("context")),
             resources=reconstruct(request.resources, data.get("resources")),
             context_model_defined=data.get("context_model_defined", False),
             usage_limits=reconstruct(request.usage_limits, data.get("usage_limits")),
@@ -118,9 +118,9 @@ class DummyRemoteBackend(ExecutionBackend):
         result = await self.local.execute_step(roundtrip)
 
         if (
-            isinstance(request.pipeline_context, BaseModel)
-            and roundtrip.pipeline_context is not None
+            isinstance(request.context, BaseModel)
+            and roundtrip.context is not None
         ):
-            request.pipeline_context.__dict__.update(roundtrip.pipeline_context.__dict__)
+            request.context.__dict__.update(roundtrip.context.__dict__)
 
         return result

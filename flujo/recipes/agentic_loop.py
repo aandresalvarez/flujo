@@ -207,13 +207,14 @@ class _CommandExecutor:
         context: PipelineContext,
         resources: AppResources | None = None,
     ) -> Any:
-        pipeline_context = context
-        turn = len(pipeline_context.command_log) + 1
+        # Use context for clarity in internal logic
+        context_obj = context
+        turn = len(context_obj.command_log) + 1
         try:
             cmd = _command_adapter.validate_python(data)
         except ValidationError as e:  # pragma: no cover - planner bug
             validation_error_result = f"Invalid command: {e}"
-            pipeline_context.command_log.append(
+            context_obj.command_log.append(
                 ExecutedCommandLog(
                     turn=turn,
                     generated_command=data,
@@ -230,8 +231,8 @@ class _CommandExecutor:
                     exec_result = f"Error: Agent '{cmd.agent_name}' not found."
                 else:
                     agent_kwargs: Dict[str, Any] = {}
-                    if _accepts_param(agent.run, "pipeline_context"):
-                        agent_kwargs["pipeline_context"] = pipeline_context
+                    if _accepts_param(agent.run, "context"):
+                        agent_kwargs["context"] = context_obj
                     if resources is not None and _accepts_param(agent.run, "resources"):
                         agent_kwargs["resources"] = resources
                     exec_result = await agent.run(cmd.input_data, **agent_kwargs)
@@ -250,8 +251,8 @@ class _CommandExecutor:
                 )
                 exec_result = local_scope.get("result", "Python code executed successfully.")
             elif cmd.type == "ask_human":
-                if isinstance(pipeline_context, PipelineContext):
-                    pipeline_context.scratchpad["paused_step_input"] = cmd
+                if isinstance(context_obj, PipelineContext):
+                    context_obj.scratchpad["paused_step_input"] = cmd
                 raise PausedException(message=cmd.question)
             elif cmd.type == "finish":
                 exec_result = cmd.final_answer
@@ -260,7 +261,7 @@ class _CommandExecutor:
         except Exception as e:  # noqa: BLE001
             exec_result = f"Error during command execution: {e}"
 
-        pipeline_context.command_log.append(
+        context_obj.command_log.append(
             ExecutedCommandLog(
                 turn=turn,
                 generated_command=cmd,

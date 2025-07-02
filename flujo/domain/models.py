@@ -114,7 +114,7 @@ class PipelineResult(BaseModel, Generic[ContextT]):
     total_cost_usd: float = 0.0
     final_pipeline_context: Optional[ContextT] = Field(
         default=None,
-        description=("The final state of the typed pipeline context, if configured and used."),
+        description="The final state of the context object after pipeline execution.",
     )
 
     model_config: ClassVar[ConfigDict] = {"arbitrary_types_allowed": True}
@@ -211,7 +211,11 @@ class HumanInteraction(BaseModel):
 
 
 class PipelineContext(BaseModel):
-    """A built-in context object shared across the pipeline run."""
+    """A built-in context object shared across the pipeline run.
+
+    This context object provides common fields for pipeline execution tracking,
+    human-in-the-loop interactions, and command logging for agentic loops.
+    """
 
     run_id: str = Field(default_factory=lambda: f"run_{uuid.uuid4().hex}")
     initial_prompt: str

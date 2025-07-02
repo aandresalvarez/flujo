@@ -196,7 +196,7 @@ StepExecutor: TypeAlias = Callable[
 async def _execute_loop_step_logic(
     loop_step: LoopStep[ContextT],
     loop_step_initial_input: Any,
-    pipeline_context: Optional[ContextT],
+    context: Optional[ContextT],
     resources: Optional[AppResources],
     *,
     step_executor: StepExecutor[ContextT],
@@ -209,7 +209,7 @@ async def _execute_loop_step_logic(
     if loop_step.initial_input_to_loop_body_mapper:
         try:
             current_body_input = loop_step.initial_input_to_loop_body_mapper(
-                loop_step_initial_input, pipeline_context
+                loop_step_initial_input, context
             )
         except Exception as e:
             logfire.error(
@@ -237,7 +237,7 @@ async def _execute_loop_step_logic(
                 body_step_result_obj = await step_executor(
                     body_s,
                     current_iteration_data_for_body_step,
-                    pipeline_context,
+                    context,
                     resources,
                 )
 
@@ -259,7 +259,7 @@ async def _execute_loop_step_logic(
                             step_history=[loop_overall_result],
                             total_cost_usd=loop_overall_result.cost_usd,
                         )
-                        Flujo._set_final_context(pr, pipeline_context)
+                        Flujo._set_final_context(pr, context)
                         raise UsageLimitExceededError(
                             loop_overall_result.feedback,
                             pr,
@@ -277,7 +277,7 @@ async def _execute_loop_step_logic(
                             step_history=[loop_overall_result],
                             total_cost_usd=loop_overall_result.cost_usd,
                         )
-                        Flujo._set_final_context(pr_tokens, pipeline_context)
+                        Flujo._set_final_context(pr_tokens, context)
                         raise UsageLimitExceededError(
                             loop_overall_result.feedback,
                             pr_tokens,
@@ -299,7 +299,7 @@ async def _execute_loop_step_logic(
 
         try:
             should_exit = loop_step.exit_condition_callable(
-                final_body_output_of_last_iteration, pipeline_context
+                final_body_output_of_last_iteration, context
             )
         except Exception as e:
             logfire.error(f"Error in exit_condition_callable for LoopStep '{loop_step.name}': {e}")
@@ -321,7 +321,7 @@ async def _execute_loop_step_logic(
             if loop_step.iteration_input_mapper:
                 try:
                     current_body_input = loop_step.iteration_input_mapper(
-                        final_body_output_of_last_iteration, pipeline_context, i
+                        final_body_output_of_last_iteration, context, i
                     )
                 except Exception as e:
                     logfire.error(
@@ -347,7 +347,7 @@ async def _execute_loop_step_logic(
         if loop_step.loop_output_mapper:
             try:
                 loop_overall_result.output = loop_step.loop_output_mapper(
-                    last_successful_iteration_body_output, pipeline_context
+                    last_successful_iteration_body_output, context
                 )
             except Exception as e:
                 logfire.error(f"Error in loop_output_mapper for LoopStep '{loop_step.name}': {e}")
@@ -369,7 +369,7 @@ async def _execute_loop_step_logic(
 async def _execute_conditional_step_logic(
     conditional_step: ConditionalStep[ContextT],
     conditional_step_input: Any,
-    pipeline_context: Optional[ContextT],
+    context: Optional[ContextT],
     resources: Optional[AppResources],
     *,
     step_executor: StepExecutor[ContextT],
@@ -384,7 +384,7 @@ async def _execute_conditional_step_logic(
 
     try:
         branch_key_to_execute = conditional_step.condition_callable(
-            conditional_step_input, pipeline_context
+            conditional_step_input, context
         )
         logfire.info(
             f"ConditionalStep '{conditional_step.name}': Condition evaluated to branch key '{branch_key_to_execute}'."
@@ -408,7 +408,7 @@ async def _execute_conditional_step_logic(
 
         if conditional_step.branch_input_mapper:
             input_for_branch = conditional_step.branch_input_mapper(
-                conditional_step_input, pipeline_context
+                conditional_step_input, context
             )
         else:
             input_for_branch = conditional_step_input
@@ -428,7 +428,7 @@ async def _execute_conditional_step_logic(
                 branch_step_result_obj = await step_executor(
                     branch_s,
                     current_branch_data,
-                    pipeline_context,
+                    context,
                     resources,
                 )
 
@@ -467,7 +467,7 @@ async def _execute_conditional_step_logic(
         if conditional_step.branch_output_mapper:
             try:
                 conditional_overall_result.output = conditional_step.branch_output_mapper(
-                    branch_output, executed_branch_key, pipeline_context
+                    branch_output, executed_branch_key, context
                 )
             except Exception as e:
                 logfire.error(
@@ -494,7 +494,7 @@ async def _execute_conditional_step_logic(
 async def _execute_parallel_step_logic(
     parallel_step: ParallelStep[ContextT],
     parallel_input: Any,
-    pipeline_context: Optional[ContextT],
+    context: Optional[ContextT],
     resources: Optional[AppResources],
     *,
     step_executor: StepExecutor[ContextT],
@@ -508,7 +508,7 @@ async def _execute_parallel_step_logic(
     branch_results: Dict[str, StepResult] = {}
 
     async def run_branch(key: str, branch_pipe: Pipeline[Any, Any]) -> None:
-        ctx_copy = copy.deepcopy(pipeline_context) if pipeline_context is not None else None
+        ctx_copy = copy.deepcopy(context) if context is not None else None
         current = parallel_input
         branch_res = StepResult(name=f"{parallel_step.name}:{key}")
         for s in branch_pipe.steps:
@@ -553,7 +553,7 @@ async def _execute_parallel_step_logic(
                 step_history=[result],
                 total_cost_usd=result.cost_usd,
             )
-            Flujo._set_final_context(pr_cost, pipeline_context)
+            Flujo._set_final_context(pr_cost, context)
             raise UsageLimitExceededError(result.feedback, pr_cost)
         if (
             usage_limits.total_tokens_limit is not None
@@ -565,7 +565,7 @@ async def _execute_parallel_step_logic(
                 step_history=[result],
                 total_cost_usd=result.cost_usd,
             )
-            Flujo._set_final_context(pr_tokens, pipeline_context)
+            Flujo._set_final_context(pr_tokens, context)
             raise UsageLimitExceededError(result.feedback, pr_tokens)
 
     result.output = outputs
@@ -576,7 +576,7 @@ async def _execute_parallel_step_logic(
 async def _run_step_logic(
     step: Step[Any, Any],
     data: Any,
-    pipeline_context: Optional[ContextT],
+    context: Optional[ContextT],
     resources: Optional[AppResources],
     *,
     step_executor: StepExecutor[ContextT],
@@ -589,7 +589,7 @@ async def _run_step_logic(
         return await _execute_loop_step_logic(
             step,
             data,
-            pipeline_context,
+            context,
             resources,
             step_executor=step_executor,
             context_model_defined=context_model_defined,
@@ -599,7 +599,7 @@ async def _run_step_logic(
         return await _execute_conditional_step_logic(
             step,
             data,
-            pipeline_context,
+            context,
             resources,
             step_executor=step_executor,
             context_model_defined=context_model_defined,
@@ -607,18 +607,18 @@ async def _run_step_logic(
         )
     if isinstance(step, ParallelStep):
         return await _execute_parallel_step_logic(
-            step,
-            data,
-            pipeline_context,
-            resources,
+                    step,
+        data,
+        context,
+        resources,
             step_executor=step_executor,
             context_model_defined=context_model_defined,
             usage_limits=usage_limits,
         )
     if isinstance(step, HumanInTheLoopStep):
         message = step.message_for_user if step.message_for_user is not None else str(data)
-        if isinstance(pipeline_context, PipelineContext):
-            pipeline_context.scratchpad["status"] = "paused"
+        if isinstance(context, PipelineContext):
+            context.scratchpad["status"] = "paused"
         raise PausedException(message)
 
     result = StepResult(name=step.name)
@@ -647,26 +647,22 @@ async def _run_step_logic(
             processed = data
             for proc in step.processors.prompt_processors:
                 try:
-                    processed = await proc.process(processed, pipeline_context)
+                    processed = await proc.process(processed, context)
                 except Exception as e:  # pragma: no cover - defensive
                     logfire.error(f"Processor {proc.name} failed: {e}")
-            data = processed
+                data = processed
         from ..signature_tools import analyze_signature
 
         target = getattr(current_agent, "_agent", current_agent)
         func = getattr(target, "_step_callable", target.run)
         spec = analyze_signature(func)
 
-        if isinstance(current_agent, ContextAwareAgentProtocol) and getattr(
-            current_agent, "__context_aware__", False
-        ):
-            if pipeline_context is None:
+        if spec.needs_context:
+            if context is None:
                 raise TypeError(
-                    f"Agent '{current_agent.__class__.__name__}' requires a pipeline context"
+                    f"Component in step '{step.name}' requires a context, but no context model was provided to the Flujo runner."
                 )
-            agent_kwargs["context"] = pipeline_context
-        elif pipeline_context is not None and spec.needs_context and spec.context_kw:
-            agent_kwargs[spec.context_kw] = pipeline_context
+            agent_kwargs["context"] = context
 
         if resources is not None:
             if spec.needs_resources:
@@ -695,10 +691,10 @@ async def _run_step_logic(
             processed = unpacked_output
             for proc in step.processors.output_processors:
                 try:
-                    processed = await proc.process(processed, pipeline_context)
+                    processed = await proc.process(processed, context)
                 except Exception as e:  # pragma: no cover - defensive
                     logfire.error(f"Processor {proc.name} failed: {e}")
-            unpacked_output = processed
+                unpacked_output = processed
         last_unpacked_output = unpacked_output
 
         success = True
@@ -716,16 +712,12 @@ async def _run_step_logic(
                 func = getattr(plugin, "_plugin_callable", plugin.validate)
                 spec = analyze_signature(func)
 
-                if isinstance(plugin, ContextAwarePluginProtocol) and getattr(
-                    plugin, "__context_aware__", False
-                ):
-                    if pipeline_context is None:
+                if spec.needs_context:
+                    if context is None:
                         raise TypeError(
-                            f"Plugin '{plugin.__class__.__name__}' requires a pipeline context"
+                            f"Plugin in step '{step.name}' requires a context, but no context model was provided to the Flujo runner."
                         )
-                    plugin_kwargs["context"] = pipeline_context
-                elif pipeline_context is not None and spec.needs_context and spec.context_kw:
-                    plugin_kwargs[spec.context_kw] = pipeline_context
+                    plugin_kwargs["context"] = context
 
                 if resources is not None:
                     if spec.needs_resources:
@@ -762,7 +754,7 @@ async def _run_step_logic(
                 f"Running {len(step.validators)} programmatic validators for step '{step.name}'..."
             )
             validation_tasks = [
-                validator.validate(unpacked_output, context=pipeline_context)
+                validator.validate(unpacked_output, context=context)
                 for validator in step.validators
             ]
             try:
@@ -787,9 +779,9 @@ async def _run_step_logic(
                     fb = vres.feedback or "No details provided."
                     failed_checks_feedback.append(f"Check '{vres.validator_name}' failed: {fb}")
 
-            if step.persist_validation_results_to and pipeline_context is not None:
-                if hasattr(pipeline_context, step.persist_validation_results_to):
-                    history_list = getattr(pipeline_context, step.persist_validation_results_to)
+            if step.persist_validation_results_to and context is not None:
+                if hasattr(context, step.persist_validation_results_to):
+                    history_list = getattr(context, step.persist_validation_results_to)
                     if isinstance(history_list, list):
                         history_list.extend(collected_results)
 
@@ -858,10 +850,10 @@ async def _run_step_logic(
         is_strict=is_strict,
     )
     if not result.success and step.persist_feedback_to_context:
-        if pipeline_context is not None and hasattr(
-            pipeline_context, step.persist_feedback_to_context
+        if context is not None and hasattr(
+            context, step.persist_feedback_to_context
         ):
-            history_list = getattr(pipeline_context, step.persist_feedback_to_context)
+            history_list = getattr(context, step.persist_feedback_to_context)
             if isinstance(history_list, list) and result.feedback:
                 history_list.append(result.feedback)
     return result
@@ -949,20 +941,20 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         self,
         step: Step[Any, Any],
         data: Any,
-        pipeline_context: Optional[ContextT],
+        context: Optional[ContextT],
         resources: Optional[AppResources],
     ) -> StepResult:
         request = StepExecutionRequest(
             step=step,
             input_data=data,
-            pipeline_context=pipeline_context,
+            context=context,
             resources=resources,
             context_model_defined=self.context_model is not None,
             usage_limits=self.usage_limits,
         )
         result = await self.backend.execute_step(request)
         if getattr(step, "updates_context", False):
-            if self.context_model is not None and pipeline_context is not None:
+            if self.context_model is not None and context is not None:
                 if isinstance(result.output, (BaseModel, PydanticBaseModel)):
                     update_data = result.output.model_dump(exclude_unset=True)
                 elif isinstance(result.output, dict):
@@ -975,15 +967,15 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     return result
 
                 try:
-                    original_data = pipeline_context.model_dump()
+                    original_data = context.model_dump()
                     for key, value in update_data.items():
-                        setattr(pipeline_context, key, value)
+                        setattr(context, key, value)
 
-                    validated = self.context_model.model_validate(pipeline_context.model_dump())
-                    pipeline_context.__dict__.update(validated.__dict__)
+                    validated = self.context_model.model_validate(context.model_dump())
+                    context.__dict__.update(validated.__dict__)
                 except ValidationError as e:
                     for key, value in original_data.items():
-                        setattr(pipeline_context, key, value)
+                        setattr(context, key, value)
                     error_msg = (
                         f"Context update by step '{step.name}' failed Pydantic validation: {e}"
                     )
@@ -1058,31 +1050,31 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         It yields any streaming output from the final step and then the final
         ``PipelineResult`` object.
         """
-        current_pipeline_context_instance: Optional[ContextT] = None
+        current_context_instance: Optional[ContextT] = None
         if self.context_model is not None:
             try:
                 context_data = {**self.initial_context_data}
                 if initial_context_data:
                     context_data.update(initial_context_data)
-                current_pipeline_context_instance = self.context_model(**context_data)
+                current_context_instance = self.context_model(**context_data)
             except ValidationError as e:
                 logfire.error(
-                    f"Pipeline context initialization failed for model {self.context_model.__name__}: {e}"
+                    f"Context initialization failed for model {self.context_model.__name__}: {e}"
                 )
-                msg = f"Failed to initialize pipeline context with model {self.context_model.__name__} and initial data."
+                msg = f"Failed to initialize context with model {self.context_model.__name__} and initial data."
                 if any(err.get("loc") == ("initial_prompt",) for err in e.errors()):
                     msg += " `initial_prompt` field required. Your custom context model must inherit from flujo.domain.models.PipelineContext."
                 msg += f" Validation errors:\n{e}"
                 raise PipelineContextInitializationError(msg) from e
 
         else:
-            current_pipeline_context_instance = cast(
+            current_context_instance = cast(
                 ContextT,
                 PipelineContext(initial_prompt=str(initial_input)),
             )
 
-        if isinstance(current_pipeline_context_instance, PipelineContext):
-            current_pipeline_context_instance.scratchpad["status"] = "running"
+        if isinstance(current_context_instance, PipelineContext):
+            current_context_instance.scratchpad["status"] = "running"
 
         data: Optional[RunnerInT] = initial_input
         pipeline_result_obj: PipelineResult[ContextT] = PipelineResult()
@@ -1090,7 +1082,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             await self._dispatch_hook(
                 "pre_run",
                 initial_input=initial_input,
-                pipeline_context=current_pipeline_context_instance,
+                context=current_context_instance,
                 resources=self.resources,
             )
             for idx, step in enumerate(self.pipeline.steps):
@@ -1098,20 +1090,19 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     "pre_step",
                     step=step,
                     step_input=data,
-                    pipeline_context=current_pipeline_context_instance,
+                    context=current_context_instance,
                     resources=self.resources,
                 )
-                logfire.info(f"Executing Step '{step.name}' with agent {repr(step.agent)}")
                 with logfire.span(step.name) as span:
                     try:
                         is_last = idx == len(self.pipeline.steps) - 1
                         if is_last and step.agent is not None and hasattr(step.agent, "stream"):
                             agent_kwargs: Dict[str, Any] = {}
                             target = getattr(step.agent, "_agent", step.agent)
-                            if current_pipeline_context_instance is not None and _accepts_param(
+                            if current_context_instance is not None and _accepts_param(
                                 target.stream, "context"
                             ):
-                                agent_kwargs["context"] = current_pipeline_context_instance
+                                agent_kwargs["context"] = current_context_instance
                             if self.resources is not None and _accepts_param(
                                 target.stream, "resources"
                             ):
@@ -1158,22 +1149,22 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                             step_result = await self._run_step(
                                 step,
                                 data,
-                                pipeline_context=cast(
+                                context=cast(
                                     Optional[ContextT],
-                                    current_pipeline_context_instance,
+                                    current_context_instance,
                                 ),
                                 resources=self.resources,
                             )
                     except PausedException as e:
-                        if isinstance(current_pipeline_context_instance, PipelineContext):
-                            current_pipeline_context_instance.scratchpad["status"] = "paused"
-                            current_pipeline_context_instance.scratchpad["pause_message"] = str(e)
-                            scratch = current_pipeline_context_instance.scratchpad
+                        if isinstance(current_context_instance, PipelineContext):
+                            current_context_instance.scratchpad["status"] = "paused"
+                            current_context_instance.scratchpad["pause_message"] = str(e)
+                            scratch = current_context_instance.scratchpad
                             if "paused_step_input" not in scratch:
                                 scratch["paused_step_input"] = data
                         self._set_final_context(
                             pipeline_result_obj,
-                            cast(Optional[ContextT], current_pipeline_context_instance),
+                            cast(Optional[ContextT], current_context_instance),
                         )
                         break
                     if step_result.metadata_:
@@ -1190,14 +1181,14 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     await self._dispatch_hook(
                         "post_step",
                         step_result=step_result,
-                        pipeline_context=current_pipeline_context_instance,
+                        context=current_context_instance,
                         resources=self.resources,
                     )
                 else:
                     await self._dispatch_hook(
                         "on_step_failure",
                         step_result=step_result,
-                        pipeline_context=current_pipeline_context_instance,
+                        context=current_context_instance,
                         resources=self.resources,
                     )
                     logfire.warn(f"Step '{step.name}' failed. Halting pipeline execution.")
@@ -1223,31 +1214,31 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         except PipelineAbortSignal as e:
             logfire.info(str(e))
         except UsageLimitExceededError as e:
-            if current_pipeline_context_instance is not None:
+            if current_context_instance is not None:
                 self._set_final_context(
                     pipeline_result_obj,
-                    cast(Optional[ContextT], current_pipeline_context_instance),
+                    cast(Optional[ContextT], current_context_instance),
                 )
             raise e
         finally:
-            if current_pipeline_context_instance is not None:
+            if current_context_instance is not None:
                 self._set_final_context(
                     pipeline_result_obj,
-                    cast(Optional[ContextT], current_pipeline_context_instance),
+                    cast(Optional[ContextT], current_context_instance),
                 )
-                if isinstance(current_pipeline_context_instance, PipelineContext):
-                    if current_pipeline_context_instance.scratchpad.get("status") != "paused":
+                if isinstance(current_context_instance, PipelineContext):
+                    if current_context_instance.scratchpad.get("status") != "paused":
                         status = (
                             "completed"
                             if all(s.success for s in pipeline_result_obj.step_history)
                             else "failed"
                         )
-                        current_pipeline_context_instance.scratchpad["status"] = status
+                        current_context_instance.scratchpad["status"] = status
             try:
                 await self._dispatch_hook(
                     "post_run",
                     pipeline_result=pipeline_result_obj,
-                    pipeline_context=current_pipeline_context_instance,
+                    context=current_context_instance,
                     resources=self.resources,
                 )
             except PipelineAbortSignal as e:
@@ -1355,7 +1346,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 "pre_step",
                 step=step,
                 step_input=data,
-                pipeline_context=ctx,
+                context=ctx,
                 resources=self.resources,
             )
             logfire.info(f"Executing Step '{step.name}' with agent {repr(step.agent)}")
@@ -1364,7 +1355,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     step_result = await self._run_step(
                         step,
                         data,
-                        pipeline_context=cast(Optional[ContextT], ctx),
+                        context=cast(Optional[ContextT], ctx),
                         resources=self.resources,
                     )
                 except PausedException as e:
@@ -1387,14 +1378,14 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 await self._dispatch_hook(
                     "post_step",
                     step_result=step_result,
-                    pipeline_context=ctx,
+                    context=ctx,
                     resources=self.resources,
                 )
             else:
                 await self._dispatch_hook(
                     "on_step_failure",
                     step_result=step_result,
-                    pipeline_context=ctx,
+                    context=ctx,
                     resources=self.resources,
                 )
                 logfire.warn(f"Step '{step.name}' failed. Halting pipeline execution.")

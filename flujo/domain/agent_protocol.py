@@ -51,7 +51,7 @@ class ContextAwareAgentProtocol(Protocol[AgentInT, AgentOutT, ContextT]):
         self,
         data: AgentInT,
         *,
-        pipeline_context: ContextT,
+        context: ContextT,
         **kwargs: Any,
     ) -> AgentOutT: ...
 

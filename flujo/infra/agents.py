@@ -295,13 +295,14 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                 kwargs["generation_kwargs"] = {}
             kwargs["generation_kwargs"]["temperature"] = temp
 
-        pipeline_context = kwargs.get("context") or kwargs.get("pipeline_context")
+        # Get context from kwargs (supports both 'context' and legacy 'pipeline_context')
+        context_obj = kwargs.get("context") or kwargs.get("pipeline_context")
 
         processed_args = list(args)
         if self.processors.prompt_processors and processed_args:
             prompt_data = processed_args[0]
             for proc in self.processors.prompt_processors:
-                prompt_data = await proc.process(prompt_data, pipeline_context)
+                prompt_data = await proc.process(prompt_data, context_obj)
             processed_args[0] = prompt_data
 
         # Compatibility shim: pydantic-ai expects serializable dicts for its
@@ -345,7 +346,7 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                     if self.processors.output_processors:
                         processed = unpacked_output
                         for proc in self.processors.output_processors:
-                            processed = await proc.process(processed, pipeline_context)
+                            processed = await proc.process(processed, context_obj)
                         unpacked_output = processed
 
                     return unpacked_output

@@ -12,13 +12,17 @@ from .agent_protocol import AsyncAgentProtocol
 
 @dataclass
 class StepExecutionRequest:
-    """Serializable request for executing a single step."""
+    """Serializable request for executing a single step.
+
+    Contains the step to execute, input data, context object, resources,
+    and execution configuration.
+    """
 
     # Use unparameterized ``Step`` type so Pydantic will not recreate the object
     # and accidentally reset attributes like ``max_retries``.
     step: Step[Any, Any]
     input_data: Any
-    pipeline_context: Optional[BaseModel] | None = None
+    context: Optional[BaseModel] | None = None
     resources: Optional[AppResources] = None
     # Whether the runner was created with a context model. Needed for
     # proper context passing semantics.

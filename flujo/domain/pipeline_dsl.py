@@ -284,7 +284,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
 
         The input and output types are inferred from the callable's first
         positional parameter and return annotation. Additional keyword-only
-        parameters such as ``pipeline_context`` or ``resources`` are supported.
+        parameters such as ``context`` or ``resources`` are supported.
         If type hints are missing, ``Any`` is used.
         """
 
@@ -474,11 +474,11 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         )
 
         async def _store_artifact(
-            artifact: Any, *, pipeline_context: BaseModel | None = None
+            artifact: Any, *, context: BaseModel | None = None
         ) -> Any:
             artifact_var.set(artifact)
-            if pipeline_context is not None and hasattr(pipeline_context, "scratchpad"):
-                pipeline_context.scratchpad[artifact_key] = artifact
+            if context is not None and hasattr(context, "scratchpad"):
+                context.scratchpad[artifact_key] = artifact
             return artifact
 
         saver_step = cls.from_callable(_store_artifact, name=f"_{name}_store")
@@ -867,7 +867,7 @@ class MapStep(LoopStep[ContextT]):
 
         async def _collect(item: Any, *, context: BaseModel | None = None) -> Any:
             if context is None:
-                raise ValueError("map_over requires a pipeline context")
+                raise ValueError("map_over requires a context")
             getattr(context, results_attr).append(item)
             return item
 
@@ -911,12 +911,12 @@ class MapStep(LoopStep[ContextT]):
 
         def _initial_mapper(_: Any, ctx: BaseModel | None) -> Any:
             if ctx is None:
-                raise ValueError("map_over requires a pipeline context")
+                raise ValueError("map_over requires a context")
             raw_items = getattr(ctx, iterable_input, [])
             if isinstance(raw_items, (str, bytes, bytearray)) or not isinstance(
                 raw_items, Iterable
             ):
-                raise TypeError(f"pipeline_context.{iterable_input} must be a non-string iterable")
+                raise TypeError(f"context.{iterable_input} must be a non-string iterable")
             items = list(raw_items)
             setattr(ctx, items_attr, items)
             setattr(ctx, results_attr, [])
@@ -931,13 +931,13 @@ class MapStep(LoopStep[ContextT]):
 
         def _iter_mapper(_: Any, ctx: BaseModel | None, i: int) -> Any:
             if ctx is None:
-                raise ValueError("map_over requires a pipeline context")
+                raise ValueError("map_over requires a context")
             items = getattr(ctx, items_attr, [])
             return items[i] if i < len(items) else None
 
         def _output_mapper(_: Any, ctx: BaseModel | None) -> list[Any]:
             if ctx is None:
-                raise ValueError("map_over requires a pipeline context")
+                raise ValueError("map_over requires a context")
             return list(getattr(ctx, results_attr, []))
 
         object.__setattr__(self, "initial_input_to_loop_body_mapper", _initial_mapper)
@@ -1076,18 +1076,7 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                 if func is not None:
                     try:
                         spec = analyze_signature(func)
-                        if spec.context_kw == "pipeline_context":
-                            report.warnings.append(
-                                ValidationFinding(
-                                    rule_id="V-A4",
-                                    severity="warning",
-                                    message=(
-                                        f"Step '{step.name}' uses the deprecated 'pipeline_context' parameter. "
-                                        "Update its signature to use 'context: YourContext' for future compatibility and improved type safety."
-                                    ),
-                                    step_name=step.name,
-                                )
-                            )
+                        # No longer checking for deprecated pipeline_context since it's been removed
                     except Exception as e:  # pragma: no cover - defensive
                         report.warnings.append(
                             ValidationFinding(
