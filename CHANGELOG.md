@@ -14,6 +14,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Supports Union types like `Union[ModelA, ModelB]`
   - Maintains backward compatibility with regular types
   - Enables modern Pydantic v2 patterns for non-BaseModel types
+- **Enhanced CLI User Experience**: Improved command-line interface robustness and usability
+  - Added `typer.Choice` validation for `--scorer` option with automatic tab completion
+  - Enhanced help text generation for scoring strategy options
+  - Removed manual validation logic in favor of built-in Typer validation
+- **Comprehensive Type Safety**: Enabled full type checking for CLI module
+  - Removed global `# type: ignore` directive from CLI module
+  - Added proper generic type annotations for Pipeline and Step types
+  - Enhanced type safety throughout the command-line interface
 
 ### Changed
 - **BREAKING CHANGE**: Unified context parameter injection to use `context` exclusively
@@ -22,11 +30,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - This aligns the implementation with the documented API contract
   - Users who relied on `pipeline_context` parameter must update their code to use `context`
   - Removed deprecation warnings and backward compatibility logic for `pipeline_context`
+- **Enhanced Documentation**: Improved clarity and discoverability of validation features
+  - Added comprehensive documentation for `strict` parameter in `Step.validate_step`
+  - Clarified difference between strict and non-strict validation modes
+  - Added practical examples showing audit vs. blocking validation patterns
+  - Updated Pipeline DSL guide with validation best practices
 
 ### Fixed
-- Resolved API inconsistency between documentation and implementation
-- Eliminated developer confusion caused by parameter name mismatch
-- Improved code clarity and reduced technical debt
+- **Repository Hygiene**: Cleaned up development artifacts and improved project structure
+  - Removed obsolete backup files (`*.orig`) and temporary documentation
+  - Eliminated patch files and standalone debug scripts
+  - Improved contributor onboarding experience with cleaner repository
+- **Test Suite Stability**: Fixed test failures related to context parameter migration
+  - Updated test assertions to use new `context` parameter consistently
+  - Ensured all integration tests pass with unified parameter naming
+- **Code Quality**: Addressed linting and type checking issues
+  - Removed unused imports and variables
+  - Fixed type comparison issues in test code
+  - Enhanced overall code quality and maintainability
 
 ## [0.4.24] - 2025-06-30
 

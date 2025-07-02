@@ -1,10 +1,10 @@
-# type: ignore
 """CLI entry point for flujo."""
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Union, cast
+from typing import Any, Dict, List, Optional, Union, cast, Literal
 import typer
+import click
 import json
 import os
 import yaml
@@ -40,8 +40,7 @@ from flujo.domain.agent_protocol import AsyncAgentProtocol
 # Type definitions for CLI
 WeightsType = List[Dict[str, Union[str, float]]]
 MetadataType = Dict[str, Any]
-
-ScorerChoices = ["ratio", "weighted", "reward"]
+ScorerType = Literal["ratio", "weighted", "reward"]
 
 app: typer.Typer = typer.Typer(rich_markup_mode="markdown")
 
@@ -60,9 +59,11 @@ def solve(
         Optional[bool], typer.Option(help="Enable/disable reflection agent.")
     ] = None,
     scorer: Annotated[
-        Optional[str],
+        Optional[ScorerType],
         typer.Option(
-            help="Scoring strategy: 'ratio', 'weighted', or 'reward'.",
+            help="Scoring strategy.",
+            case_sensitive=False,
+            click_type=click.Choice(["ratio", "weighted", "reward"]),
         ),
     ] = None,
     weights_path: Annotated[
@@ -105,12 +106,6 @@ def solve(
             raise typer.Exit(2)
         if k is not None and k <= 0:
             typer.echo("[red]Error: --k must be a positive integer[/red]", err=True)
-            raise typer.Exit(2)
-        if scorer is not None and scorer not in {"ratio", "weighted", "reward"}:
-            typer.echo(
-                "[red]Error: --scorer must be one of 'ratio', 'weighted', or 'reward'[/red]",
-                err=True,
-            )
             raise typer.Exit(2)
         # Override settings from CLI args if they are provided
         if reflection is not None:
@@ -232,7 +227,7 @@ def bench(prompt: str, rounds: int = 10) -> None:
         KeyboardInterrupt: If the benchmark is interrupted by the user
     """
     import time
-    import numpy as np
+    import numpy as np  # type: ignore[import-not-found]
 
     try:
         review_agent = make_agent_async(settings.default_review_model, REVIEW_SYS, Checklist)
@@ -379,13 +374,15 @@ def improve(
         typer.echo(f"[red]Failed to load file: {e}", err=True)
         raise typer.Exit(1)
 
-    pipeline: Optional[Union[Pipeline, Step]] = pipe_ns.get("pipeline") or pipe_ns.get("PIPELINE")
+    pipeline: Optional[Union[Pipeline[Any, Any], Step[Any, Any]]] = pipe_ns.get(
+        "pipeline"
+    ) or pipe_ns.get("PIPELINE")
     dataset: Optional[Any] = dataset_ns.get("dataset") or dataset_ns.get("DATASET")
     if not isinstance(pipeline, (Pipeline, Step)) or dataset is None:
         typer.echo("[red]Invalid pipeline or dataset file", err=True)
         raise typer.Exit(1)
 
-    runner: Flujo = Flujo(pipeline)
+    runner: Flujo[Any, Any, Any] = Flujo(pipeline)
     task_fn = functools.partial(run_pipeline_async, runner=runner)
     _agent = make_self_improvement_agent(model=improvement_agent_model)
     agent: SelfImprovementAgent = SelfImprovementAgent(_agent)
@@ -449,11 +446,11 @@ def explain(path: str) -> None:
     except Exception as e:
         typer.echo(f"[red]Failed to load pipeline file: {e}", err=True)
         raise typer.Exit(1)
-    pipeline: Optional[Pipeline] = ns.get("pipeline") or ns.get("PIPELINE")
+    pipeline: Optional[Pipeline[Any, Any]] = ns.get("pipeline") or ns.get("PIPELINE")
     if not isinstance(pipeline, Pipeline):
         typer.echo("[red]No 'pipeline' variable of type Pipeline found", err=True)
         raise typer.Exit(1)
-    for step in pipeline.steps:  # type: ignore
+    for step in pipeline.steps:
         typer.echo(step.name)
 
 
@@ -474,7 +471,7 @@ def validate(
     except Exception as e:
         typer.echo(f"[red]Failed to load pipeline file: {e}", err=True)
         raise typer.Exit(1)
-    pipeline: Optional[Pipeline] = ns.get("pipeline") or ns.get("PIPELINE")
+    pipeline: Optional[Pipeline[Any, Any]] = ns.get("pipeline") or ns.get("PIPELINE")
     if not isinstance(pipeline, Pipeline):
         typer.echo("[red]No 'pipeline' variable of type Pipeline found", err=True)
         raise typer.Exit(1)

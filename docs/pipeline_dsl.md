@@ -215,6 +215,31 @@ Validation steps verify the solution:
 # Basic validation
 validate_step = Step.validate_step(validator_agent)
 
+# With strict validation (default) - step fails if validation fails
+strict_step = Step.validate_step(validator_agent, validators=[...], strict=True)
+
+# With non-strict validation - step passes but records validation failure in metadata
+audit_step = Step.validate_step(validator_agent, validators=[...], strict=False)
+```
+
+**Strict vs Non-Strict Validation:**
+
+- **`strict=True` (default)**: If any validation fails, the entire step fails and the pipeline stops or retries.
+- **`strict=False`**: The step always reports `success=True`, but validation failures are recorded in `StepResult.metadata_['validation_passed'] = False`. This is useful for creating "warning" or "auditing" steps that don't block the pipeline.
+
+```python
+# Example: Audit step that warns but doesn't fail
+audit_step = Step.validate_step(
+    validator_agent,
+    validators=[WordCountValidator()],
+    strict=False  # Will pass even if validation fails
+)
+
+# Later in your pipeline, you can check the metadata
+if result.step_history[-1].metadata_.get('validation_passed') == False:
+    print("Warning: Validation failed but pipeline continued")
+```
+
 # With custom scoring
 from flujo import weighted_score
 
