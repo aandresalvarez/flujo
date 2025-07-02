@@ -56,10 +56,16 @@ All `make` commands are thin wrappers around `hatch` scripts defined in
    pip install hatch
    ```
 
-2. **Create Environment & Install Dependencies:**
+2. **Create Environment & Install All Dev Dependencies:**
    ```bash
    make setup
    ```
+   This command will:
+   - Install all required development, testing, and documentation dependencies (including `pytest`, `pytest-asyncio`, `vcrpy`, `hypothesis`, etc.)
+   - Set up pre-commit hooks for code quality and secret scanning
+   - Ensure your environment matches the CI pipeline
+
+   > **Tip:** Always use `make setup` after pulling changes to dependencies or when setting up a new environment. This guarantees all tools (test, lint, type-check) will work as expected.
 
 3. **Run Quality Checks:**
    ```bash
@@ -72,6 +78,12 @@ All `make` commands are thin wrappers around `hatch` scripts defined in
    # pass arguments with: make test args="-k <pattern>"
    ```
    See the [Testing Guide](docs/testing_guide.md) for tips on creating effective unit and integration tests.
+
+---
+
+### Troubleshooting: mypy and Third-Party Stubs
+
+If you see errors from `mypy` about missing type stubs for third-party libraries (e.g., `pydantic_ai`, `tenacity`, `logfire`), don't worry! The `pyproject.toml` is configured to ignore these using the `[[tool.mypy.overrides]]` section. If you add new dependencies that lack type stubs, add them to this list to keep type checking clean and focused on your code.
 
 ---
 

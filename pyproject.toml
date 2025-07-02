@@ -105,7 +105,16 @@ exclude = [
 
 # Allow third-party libraries that do not ship type information.
 [[tool.mypy.overrides]]
-module = ["yaml", "sqlvalidator", "vcr", "orjson"]
+module = [
+    "pydantic_ai",
+    "pydantic_evals", 
+    "tenacity",
+    "yaml",
+    "sqlvalidator",
+    "vcr",
+    "orjson",
+    "logfire"
+]
 ignore_missing_imports = true
 
 [tool.ruff]

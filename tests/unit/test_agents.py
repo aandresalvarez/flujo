@@ -2,7 +2,7 @@ import pytest
 import asyncio
 from unittest.mock import AsyncMock, patch, MagicMock
 from pydantic import SecretStr, BaseModel, TypeAdapter
-from typing import List
+from typing import List, Dict, Union
 
 from flujo.infra.agents import (
     AsyncAgentWrapper,
@@ -444,3 +444,64 @@ async def test_make_agent_async_type_adapter(monkeypatch) -> None:
 
     wrapper = make_agent_async("openai:gpt-4o", "sys", TypeAdapter(List[MyModel]))
     assert wrapper.target_output_type == List[MyModel]
+
+
+@pytest.mark.asyncio
+async def test_make_agent_async_type_adapter_complex_nested(monkeypatch) -> None:
+    """Test TypeAdapter with complex nested types like List[Dict[str, Any]]."""
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    from flujo.infra import settings as settings_mod
+
+    monkeypatch.setattr(settings_mod.settings, "openai_api_key", SecretStr("test-key"))
+
+    class MyModel(BaseModel):
+        value: int
+        name: str
+
+    # Test with complex nested type
+    complex_type = TypeAdapter(List[Dict[str, MyModel]])
+    wrapper = make_agent_async("openai:gpt-4o", "sys", complex_type)
+    assert wrapper.target_output_type == List[Dict[str, MyModel]]
+
+
+@pytest.mark.asyncio
+async def test_make_agent_async_type_adapter_union_types(monkeypatch) -> None:
+    """Test TypeAdapter with Union types."""
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    from flujo.infra import settings as settings_mod
+    from typing import Union
+
+    monkeypatch.setattr(settings_mod.settings, "openai_api_key", SecretStr("test-key"))
+
+    class ModelA(BaseModel):
+        value: int
+
+    class ModelB(BaseModel):
+        text: str
+
+    # Test with Union type
+    union_type = TypeAdapter(Union[ModelA, ModelB])
+    wrapper = make_agent_async("openai:gpt-4o", "sys", union_type)
+    assert wrapper.target_output_type == Union[ModelA, ModelB]
+
+
+def test_unwrap_type_adapter_function() -> None:
+    """Test the _unwrap_type_adapter helper function directly."""
+    from flujo.infra.agents import _unwrap_type_adapter
+
+    class MyModel(BaseModel):
+        value: int
+
+    # Test with TypeAdapter instance
+    type_adapter = TypeAdapter(List[MyModel])
+    unwrapped = _unwrap_type_adapter(type_adapter)
+    assert unwrapped == List[MyModel]
+
+    # Test with regular type (should pass through unchanged)
+    regular_type = List[MyModel]
+    unwrapped = _unwrap_type_adapter(regular_type)
+    assert unwrapped == List[MyModel]
+
+    # Test with primitive type
+    unwrapped = _unwrap_type_adapter(str)
+    assert unwrapped == str
