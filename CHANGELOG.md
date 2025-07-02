@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.5.0] - 2025-07-02
 
+### Added
+- **Robust TypeAdapter Support**: Enhanced `make_agent_async` to seamlessly handle `pydantic.TypeAdapter` instances
+  - Automatically unwraps TypeAdapter instances to extract underlying types
+  - Supports complex nested types like `List[Dict[str, MyModel]]`
+  - Supports Union types like `Union[ModelA, ModelB]`
+  - Maintains backward compatibility with regular types
+  - Enables modern Pydantic v2 patterns for non-BaseModel types
+
 ### Changed
 - **BREAKING CHANGE**: Unified context parameter injection to use `context` exclusively
   - Removed support for `pipeline_context` parameter in step functions, agents, and plugins

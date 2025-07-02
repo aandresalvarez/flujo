@@ -46,7 +46,7 @@ from ..domain.pipeline_dsl import (
     HumanInTheLoopStep,
     BranchKey,
 )
-from ..domain.plugins import PluginOutcome, ContextAwarePluginProtocol
+from ..domain.plugins import PluginOutcome
 from ..domain.validation import ValidationResult
 from ..domain.models import (
     BaseModel,
@@ -58,7 +58,6 @@ from ..domain.models import (
 )
 from pydantic import BaseModel as PydanticBaseModel
 from ..domain.commands import AgentCommand, ExecutedCommandLog
-from ..domain.agent_protocol import ContextAwareAgentProtocol
 from pydantic import TypeAdapter
 from ..domain.resources import AppResources
 from ..domain.types import HookCallable
@@ -383,9 +382,7 @@ async def _execute_conditional_step_logic(
     branch_succeeded = False
 
     try:
-        branch_key_to_execute = conditional_step.condition_callable(
-            conditional_step_input, context
-        )
+        branch_key_to_execute = conditional_step.condition_callable(conditional_step_input, context)
         logfire.info(
             f"ConditionalStep '{conditional_step.name}': Condition evaluated to branch key '{branch_key_to_execute}'."
         )
@@ -407,9 +404,7 @@ async def _execute_conditional_step_logic(
             )
 
         if conditional_step.branch_input_mapper:
-            input_for_branch = conditional_step.branch_input_mapper(
-                conditional_step_input, context
-            )
+            input_for_branch = conditional_step.branch_input_mapper(conditional_step_input, context)
         else:
             input_for_branch = conditional_step_input
 
@@ -607,10 +602,10 @@ async def _run_step_logic(
         )
     if isinstance(step, ParallelStep):
         return await _execute_parallel_step_logic(
-                    step,
-        data,
-        context,
-        resources,
+            step,
+            data,
+            context,
+            resources,
             step_executor=step_executor,
             context_model_defined=context_model_defined,
             usage_limits=usage_limits,
@@ -850,9 +845,7 @@ async def _run_step_logic(
         is_strict=is_strict,
     )
     if not result.success and step.persist_feedback_to_context:
-        if context is not None and hasattr(
-            context, step.persist_feedback_to_context
-        ):
+        if context is not None and hasattr(context, step.persist_feedback_to_context):
             history_list = getattr(context, step.persist_feedback_to_context)
             if isinstance(history_list, list) and result.feedback:
                 history_list.append(result.feedback)

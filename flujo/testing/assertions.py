@@ -34,4 +34,6 @@ def assert_context_updated(result: PipelineResult[Any], **expected_updates: Any)
 
     for key, expected_value in expected_updates.items():
         actual_value = getattr(final_context, key, None)
-        assert actual_value == expected_value, f"Expected {key} to be {expected_value}, but got {actual_value}"
+        assert actual_value == expected_value, (
+            f"Expected {key} to be {expected_value}, but got {actual_value}"
+        )

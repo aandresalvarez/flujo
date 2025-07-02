@@ -117,10 +117,7 @@ class DummyRemoteBackend(ExecutionBackend):
         roundtrip.step = original_step
         result = await self.local.execute_step(roundtrip)
 
-        if (
-            isinstance(request.context, BaseModel)
-            and roundtrip.context is not None
-        ):
+        if isinstance(request.context, BaseModel) and roundtrip.context is not None:
             request.context.__dict__.update(roundtrip.context.__dict__)
 
         return result

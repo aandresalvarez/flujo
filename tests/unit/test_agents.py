@@ -469,7 +469,6 @@ async def test_make_agent_async_type_adapter_union_types(monkeypatch) -> None:
     """Test TypeAdapter with Union types."""
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     from flujo.infra import settings as settings_mod
-    from typing import Union
 
     monkeypatch.setattr(settings_mod.settings, "openai_api_key", SecretStr("test-key"))
 
@@ -504,4 +503,4 @@ def test_unwrap_type_adapter_function() -> None:
 
     # Test with primitive type
     unwrapped = _unwrap_type_adapter(str)
-    assert unwrapped == str
+    assert unwrapped is str
