@@ -5,6 +5,74 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2025-01-XX
+
+### Added
+- **Curated Layered Public API**: Complete architectural refactor with organized, layered import structure
+  - Core types (`Pipeline`, `Step`, `Context`, `Result`) available at top level (`from flujo import Pipeline`)
+  - Related components grouped into logical submodules (`recipes`, `testing`, `plugins`, `processors`, `models`, `exceptions`, `validation`, `tracing`, `utils`, `domain`, `application`, `infra`)
+  - Improved discoverability and reduced import complexity
+  - Enhanced developer experience with clear module boundaries
+- **Comprehensive Test Suite**: Robust testing infrastructure with 359 passing tests
+  - Fixed all import errors and circular dependency issues
+  - Resolved context mutation and agent protocol signature mismatches
+  - Implemented proper settings patching for isolated test execution
+  - Added systematic test fixes for all submodules and components
+- **Enhanced Code Quality**: Production-ready codebase with comprehensive quality checks
+  - All linting errors resolved (`ruff` compliance)
+  - Complete type checking compliance (`mypy` success)
+  - Security scanning passed (`bandit` validation)
+  - Removed unused imports and dead code
+  - Improved error handling and validation patterns
+
+### Changed
+- **BREAKING CHANGE**: Complete API restructuring for better organization and maintainability
+  - Moved from flat import structure to curated, layered public API
+  - Core types remain at top level for backward compatibility
+  - Related functionality grouped into logical submodules
+  - Updated all examples and documentation to use new import structure
+  - Added migration guide for users transitioning from flat imports
+- **Improved Module Organization**: Better separation of concerns and encapsulation
+  - Domain models and business logic separated from infrastructure
+  - Application services isolated from domain logic
+  - Infrastructure concerns properly abstracted
+  - Clear boundaries between different architectural layers
+- **Enhanced Error Handling**: More robust error management throughout the codebase
+  - Consistent error patterns and exception handling
+  - Better error messages and debugging information
+  - Improved validation error reporting
+  - Structured exception mechanisms for better error recovery
+
+### Fixed
+- **Import System**: Resolved all circular dependency and import issues
+  - Fixed module import errors in test suite
+  - Eliminated circular dependencies between submodules
+  - Proper module initialization and attribute access
+  - Consistent import patterns across the codebase
+- **Test Infrastructure**: Comprehensive test suite fixes and improvements
+  - Fixed settings singleton patching for isolated test execution
+  - Resolved context mutation issues in test scenarios
+  - Fixed agent protocol signature mismatches
+  - Corrected custom context model usage in tests
+  - Implemented robust test isolation and cleanup
+- **Documentation and Examples**: Updated all documentation to reflect new API structure
+  - Fixed import statements in all examples
+  - Updated documentation to use new submodule structure
+  - Corrected example execution paths and import patterns
+  - Enhanced documentation clarity and accuracy
+- **Development Workflow**: Improved development and testing experience
+  - Fixed `make quality` command for comprehensive quality checks
+  - Enhanced `make test` and `make cov` commands
+  - Improved development environment setup
+  - Better error reporting and debugging tools
+
+### Removed
+- **Obsolete Submodules**: Cleaned up problematic module structure
+  - Removed empty `__init__.py` files that caused import issues
+  - Eliminated redundant module hierarchies
+  - Streamlined module organization for better maintainability
+  - Reduced complexity in import resolution
+
 ## [0.5.0] - 2025-07-02
 
 ### Added
