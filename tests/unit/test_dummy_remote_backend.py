@@ -10,9 +10,9 @@ class Ctx(BaseModel):
 
 
 class IncrementAgent:
-    async def run(self, data: int, *, pipeline_context: Ctx | None = None) -> int:
-        if pipeline_context is not None:
-            pipeline_context.count += 1
+    async def run(self, data: int, *, context: Ctx | None = None) -> int:
+        if context is not None:
+            context.count += 1
         return data + 1
 
 

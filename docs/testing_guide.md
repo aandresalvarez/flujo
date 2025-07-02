@@ -74,8 +74,8 @@ class Ctx(BaseModel):
     counter: int = 0
 
 @step
-async def increment(x: int, *, pipeline_context: Ctx) -> int:
-    pipeline_context.counter += 1
+async def increment(x: int, *, context: Ctx) -> int:
+    context.counter += 1
     return x + 1
 
 pipeline = Step("a", increment) >> Step("b", increment)

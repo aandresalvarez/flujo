@@ -34,11 +34,11 @@ async def test_update_nested_model() -> None:
 
     class ReaderAgent:
         async def run(
-            self, data: object | None = None, *, pipeline_context: ContextWithNesting | None = None
+            self, data: object | None = None, *, context: ContextWithNesting | None = None
         ) -> int:
-            assert pipeline_context is not None
-            assert isinstance(pipeline_context.nested_item, NestedModel)
-            return pipeline_context.nested_item.value
+            assert context is not None
+            assert isinstance(context.nested_item, NestedModel)
+            return context.nested_item.value
 
     read_step = Step("read", ReaderAgent())
     runner = Flujo(update_step >> read_step, context_model=ContextWithNesting)
@@ -60,12 +60,12 @@ async def test_update_list_of_nested_models() -> None:
 
     class ListReader:
         async def run(
-            self, data: object | None = None, *, pipeline_context: ContextWithNesting | None = None
+            self, data: object | None = None, *, context: ContextWithNesting | None = None
         ) -> list[int]:
-            assert pipeline_context is not None
-            for item in pipeline_context.list_of_items:
+            assert context is not None
+            for item in context.list_of_items:
                 assert isinstance(item, NestedModel)
-            return [i.value for i in pipeline_context.list_of_items]
+            return [i.value for i in context.list_of_items]
 
     reader = Step("reader", ListReader())
     runner = Flujo(update_step >> reader, context_model=ContextWithNesting)

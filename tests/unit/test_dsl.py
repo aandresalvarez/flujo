@@ -208,12 +208,12 @@ class DummyCtx(BaseModel):
 @pytest.mark.asyncio
 async def test_step_arun_with_context() -> None:
     @step
-    async def increment(x: int, *, pipeline_context: DummyCtx) -> int:
-        pipeline_context.num += x
-        return pipeline_context.num
+    async def increment(x: int, *, context: DummyCtx) -> int:
+        context.num += x
+        return context.num
 
     ctx = DummyCtx(num=1)
-    out = await increment.arun(2, pipeline_context=ctx)
+    out = await increment.arun(2, context=ctx)
     assert out == 3
     assert ctx.num == 3
 

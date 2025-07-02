@@ -55,9 +55,9 @@ class MyResources(AppResources):
 
 class CtxStreamAgent:
     async def stream(
-        self, data: int, *, pipeline_context: Ctx, resources: MyResources
+        self, data: int, *, context: Ctx, resources: MyResources
     ) -> AsyncIterator[str]:
-        pipeline_context.count += 1
+        context.count += 1
         yield str(data + resources.increment)
 
 

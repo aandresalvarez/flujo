@@ -116,8 +116,8 @@ class ModerationContext(BaseModel):
 Use in any agent:
 
 ```python
-async def run(self, decision: str, *, pipeline_context: ModerationContext, **kwargs):
-    pipeline_context.final_disposition = decision
+async def run(self, decision: str, *, context: ModerationContext, **kwargs):
+    context.final_disposition = decision
 ```
 
 Attach it to the runner:
@@ -241,7 +241,7 @@ Flujo(pipeline, max_retries=2, retry_on_error=True)
 | --------------- | ------------------------------------------------------------- |
 | 🧱 Agents       | `AsyncAgentProtocol`, clean encapsulation                     |
 | 🔁 Control Flow | `Step.branch_on`, `Step.loop_until`, `Step.human_in_the_loop` |
-| 🧠 Context      | `pipeline_context: MyContext` shared across steps             |
+| 🧠 Context      | `context: MyContext` shared across steps             |
 | ✅ Validation    | `Step.validate_step(..., validators=[...], plugins=[...])`    |
 | 💵 Cost Limits  | `UsageLimits(total_cost_usd_limit=...)`                       |
 | 📜 Logs         | `ConsoleTracer` for debug visibility                          |

@@ -865,10 +865,10 @@ class MapStep(LoopStep[ContextT]):
         results_attr = f"__{name}_results"
         items_attr = f"__{name}_items"
 
-        async def _collect(item: Any, *, pipeline_context: BaseModel | None = None) -> Any:
-            if pipeline_context is None:
+        async def _collect(item: Any, *, context: BaseModel | None = None) -> Any:
+            if context is None:
                 raise ValueError("map_over requires a pipeline context")
-            getattr(pipeline_context, results_attr).append(item)
+            getattr(context, results_attr).append(item)
             return item
 
         collector = Step.from_callable(_collect, name=f"_{name}_collect")

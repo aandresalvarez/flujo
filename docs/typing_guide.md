@@ -52,7 +52,7 @@ Because `first` outputs an `int` while `second` expects a `str`, `mypy` warns th
 To share state across steps, define a Pydantic model and have your agents or plugins implement one of the context aware protocols. They receive a typed context instance automatically.
 
 > **Parameter Naming:**
-> Steps, agents, and plugins can declare either a `context` or `pipeline_context` parameter to receive the shared context. If both are present, `context` is prioritized for backward compatibility. This ensures compatibility with both legacy and modern code.
+> Steps, agents, and plugins can declare a `context` parameter to receive the shared context.
 
 ```python
 from pydantic import BaseModel
@@ -64,12 +64,12 @@ class MyContext(BaseModel):
     counter: int = 0
 
 class CountingAgent(ContextAwareAgentProtocol[str, str, MyContext]):
-    async def run(self, data: str, *, pipeline_context: MyContext, **_: object) -> str:
-        pipeline_context.counter += 1
-        return data
+    async def run(self, data: str, *, context: MyContext, **_: object) -> str:
+    context.counter += 1
+    return data
 
 class MyPlugin(ContextAwarePluginProtocol[MyContext]):
-    async def validate(self, data: dict[str, object], *, pipeline_context: MyContext, **_: object) -> PluginOutcome:
+    async def validate(self, data: dict[str, object], *, context: MyContext, **_: object) -> PluginOutcome:
         return PluginOutcome(success=True)
 ```
 
@@ -84,8 +84,8 @@ class Ctx(BaseModel):
     history: list[str] = []
 
 @step
-async def record(text: str, *, pipeline_context: Ctx) -> str:
-    pipeline_context.history.append(text)
+async def record(text: str, *, context: Ctx) -> str:
+    context.history.append(text)
     return text.upper()
 
 @step

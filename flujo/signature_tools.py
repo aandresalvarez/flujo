@@ -60,7 +60,7 @@ def analyze_signature(func: Callable[..., Any]) -> InjectionSpec:
 
     for p in sig.parameters.values():
         if p.kind == inspect.Parameter.KEYWORD_ONLY:
-            if p.name == "context" or (p.name == "pipeline_context" and not needs_context):
+            if p.name == "context":
                 ann = hints.get(p.name, p.annotation)
                 if ann is inspect.Signature.empty:
                     raise ConfigurationError(

@@ -53,9 +53,9 @@ class Ctx(BaseModel):
 @pytest.mark.asyncio
 async def test_loop_with_context_modification() -> None:
     class IncRecordAgent:
-        async def run(self, x: int, *, pipeline_context: Ctx | None = None) -> int:
-            if pipeline_context:
-                pipeline_context.counter += 1
+        async def run(self, x: int, *, context: Ctx | None = None) -> int:
+            if context:
+                context.counter += 1
             return x + 1
 
     body = Pipeline.from_step(Step("inc", IncRecordAgent()))

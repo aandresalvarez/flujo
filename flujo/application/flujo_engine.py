@@ -652,7 +652,6 @@ async def _run_step_logic(
                     logfire.error(f"Processor {proc.name} failed: {e}")
             data = processed
         from ..signature_tools import analyze_signature
-        from ..deprecation import warn_once
 
         target = getattr(current_agent, "_agent", current_agent)
         func = getattr(target, "_step_callable", target.run)
@@ -665,16 +664,9 @@ async def _run_step_logic(
                 raise TypeError(
                     f"Agent '{current_agent.__class__.__name__}' requires a pipeline context"
                 )
-            agent_kwargs["pipeline_context"] = pipeline_context
+            agent_kwargs["context"] = pipeline_context
         elif pipeline_context is not None and spec.needs_context and spec.context_kw:
             agent_kwargs[spec.context_kw] = pipeline_context
-            if spec.context_kw == "pipeline_context":
-                warn_once(
-                    f"Agent '{target.__class__.__name__}' uses the deprecated 'pipeline_context' parameter. "
-                    "Update its signature to use 'context: YourContext' for future compatibility.",
-                    DeprecationWarning,
-                    stacklevel=2,
-                )
 
         if resources is not None:
             if spec.needs_resources:
@@ -719,7 +711,6 @@ async def _run_step_logic(
         for plugin, _ in sorted_plugins:
             try:
                 from ..signature_tools import analyze_signature
-                from ..deprecation import warn_once
 
                 plugin_kwargs: Dict[str, Any] = {}
                 func = getattr(plugin, "_plugin_callable", plugin.validate)
@@ -732,16 +723,9 @@ async def _run_step_logic(
                         raise TypeError(
                             f"Plugin '{plugin.__class__.__name__}' requires a pipeline context"
                         )
-                    plugin_kwargs["pipeline_context"] = pipeline_context
+                    plugin_kwargs["context"] = pipeline_context
                 elif pipeline_context is not None and spec.needs_context and spec.context_kw:
                     plugin_kwargs[spec.context_kw] = pipeline_context
-                    if spec.context_kw == "pipeline_context":
-                        warn_once(
-                            f"Plugin '{plugin.__class__.__name__}' uses the deprecated 'pipeline_context' parameter. "
-                            "Update its signature to use 'context: YourContext' for future compatibility.",
-                            DeprecationWarning,
-                            stacklevel=2,
-                        )
 
                 if resources is not None:
                     if spec.needs_resources:
@@ -1125,9 +1109,9 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                             agent_kwargs: Dict[str, Any] = {}
                             target = getattr(step.agent, "_agent", step.agent)
                             if current_pipeline_context_instance is not None and _accepts_param(
-                                target.stream, "pipeline_context"
+                                target.stream, "context"
                             ):
-                                agent_kwargs["pipeline_context"] = current_pipeline_context_instance
+                                agent_kwargs["context"] = current_pipeline_context_instance
                             if self.resources is not None and _accepts_param(
                                 target.stream, "resources"
                             ):

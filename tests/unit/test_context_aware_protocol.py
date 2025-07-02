@@ -15,24 +15,22 @@ class Ctx(BaseModel):
 
 
 class TypedAgent(ContextAwareAgentProtocol[str, str, Ctx]):
-    async def run(self, data: str, *, pipeline_context: Ctx, **kwargs: Any) -> str:
-        pipeline_context.val += 1
+    async def run(self, data: str, *, context: Ctx, **kwargs: Any) -> str:
+        context.val += 1
         return data
 
 
 class LegacyAgent(AsyncAgentProtocol[str, str]):
-    async def run(self, data: str, *, pipeline_context: Ctx | None = None) -> str:
+    async def run(self, data: str, *, context: Ctx | None = None) -> str:
         return data
 
-    async def run_async(self, data: str, *, pipeline_context: Ctx | None = None) -> str:
-        return await self.run(data, pipeline_context=pipeline_context)
+    async def run_async(self, data: str, *, context: Ctx | None = None) -> str:
+        return await self.run(data, context=context)
 
 
 class TypedPlugin(ContextAwarePluginProtocol[Ctx]):
-    async def validate(
-        self, data: dict[str, Any], *, pipeline_context: Ctx, **kwargs: Any
-    ) -> PluginOutcome:
-        pipeline_context.val += 1
+    async def validate(self, data: dict[str, Any], *, context: Ctx, **kwargs: Any) -> PluginOutcome:
+        context.val += 1
         return PluginOutcome(success=True)
 
 
@@ -46,11 +44,9 @@ async def test_context_aware_agent_no_warning() -> None:
 
 
 @pytest.mark.asyncio
-async def test_legacy_agent_triggers_warning() -> None:
-    from flujo.deprecation import _warned_locations
-
-    _warned_locations.clear()
+async def test_legacy_agent_works_with_context() -> None:
     step = Step("s", LegacyAgent())
     runner = Flujo(step, context_model=Ctx)
-    with pytest.warns(DeprecationWarning):
-        await gather_result(runner, "in")
+    # Should work without warnings since we now use 'context' parameter
+    result = await gather_result(runner, "in")
+    assert result.step_history[0].success

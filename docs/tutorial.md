@@ -313,9 +313,9 @@ class Stats(BaseModel):
     calls: int = 0
 
 @step
-async def record(data: str, *, pipeline_context: Stats | None = None) -> str:
-    if pipeline_context:
-        pipeline_context.calls += 1
+async def record(data: str, *, context: Stats | None = None) -> str:
+    if context:
+        context.calls += 1
     return data
 
 pipeline = record >> record

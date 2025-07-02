@@ -17,30 +17,30 @@ class CaptureAgent:
     def __init__(self):
         self.seen = None
 
-    async def run(self, data: str, *, pipeline_context: Ctx | None = None) -> str:
-        self.seen = pipeline_context
+    async def run(self, data: str, *, context: Ctx | None = None) -> str:
+        self.seen = context
         return data
 
 
 class IncAgent:
-    async def run(self, data: str, *, pipeline_context: Ctx | None = None) -> str:
-        assert pipeline_context is not None
-        pipeline_context.num += 1
+    async def run(self, data: str, *, context: Ctx | None = None) -> str:
+        assert context is not None
+        context.num += 1
         return data
 
 
 class ReadAgent:
-    async def run(self, data: str, *, pipeline_context: Ctx | None = None) -> int:
-        assert pipeline_context is not None
-        return pipeline_context.num
+    async def run(self, data: str, *, context: Ctx | None = None) -> int:
+        assert context is not None
+        return context.num
 
 
 class ContextPlugin:
     def __init__(self):
         self.ctx = None
 
-    async def validate(self, data: dict, *, pipeline_context: Ctx | None = None) -> PluginOutcome:
-        self.ctx = pipeline_context
+    async def validate(self, data: dict, *, context: Ctx | None = None) -> PluginOutcome:
+        self.ctx = context
         return PluginOutcome(success=True)
 
 
@@ -122,9 +122,9 @@ async def test_step_updates_context_automatic_merge() -> None:
         return Ctx(num=42)
 
     @step
-    async def read(ctx_obj: Ctx, *, pipeline_context: Ctx | None = None) -> int:
-        assert pipeline_context is not None
-        return pipeline_context.num
+    async def read(ctx_obj: Ctx, *, context: Ctx | None = None) -> int:
+        assert context is not None
+        return context.num
 
     runner = Flujo(init >> read, context_model=Ctx)
     result = await gather_result(runner, "input")
