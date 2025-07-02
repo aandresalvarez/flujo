@@ -37,7 +37,7 @@ def call_recorder() -> List[HookPayload]:
 
 async def generic_recorder_hook(call_recorder: List[HookPayload], payload: HookPayload) -> None:
     call_recorder.append(payload)
-    context = getattr(payload, "pipeline_context", None)
+    context = getattr(payload, "context", None)
     if context is not None:
         context.call_count += 1
 
@@ -191,7 +191,7 @@ async def test_hooks_receive_context_and_resources(
     result = await gather_result(runner, "start")
 
     post_step_call = next(p for p in call_recorder if p.event_name == "post_step")
-    assert getattr(post_step_call, "pipeline_context") is not None
+    assert getattr(post_step_call, "context") is not None
     assert getattr(post_step_call, "resources") is not None
     assert isinstance(result.final_pipeline_context, HookContext)
     assert result.final_pipeline_context.call_count > 0
