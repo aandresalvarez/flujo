@@ -331,11 +331,11 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
 
         from ..signature_tools import analyze_signature
 
-        spec = analyze_signature(func)
+        analyze_signature(func)
 
         class _CallableAgent:
             _step_callable = func
-            _injection_spec = spec
+            _injection_spec = analyze_signature(func)
 
             async def run(
                 self,
@@ -349,9 +349,13 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                 from ..application.flujo_engine import _accepts_param
 
                 call_kwargs: Dict[str, Any] = {}
-                if spec.needs_context and context is not None and spec.context_kw:
-                    call_kwargs[spec.context_kw] = context
-                if spec.needs_resources and resources is not None:
+                if (
+                    analyze_signature(func).needs_context
+                    and context is not None
+                    and analyze_signature(func).context_kw
+                ):
+                    call_kwargs[analyze_signature(func).context_kw] = context
+                if analyze_signature(func).needs_resources and resources is not None:
                     call_kwargs["resources"] = resources
                 if temperature is not None and _accepts_param(func, "temperature"):
                     call_kwargs["temperature"] = temperature
@@ -473,9 +477,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             f"{name}_artifact", default=None
         )
 
-        async def _store_artifact(
-            artifact: Any, *, context: BaseModel | None = None
-        ) -> Any:
+        async def _store_artifact(artifact: Any, *, context: BaseModel | None = None) -> Any:
             artifact_var.set(artifact)
             if context is not None and hasattr(context, "scratchpad"):
                 context.scratchpad[artifact_key] = artifact
@@ -1075,7 +1077,7 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
 
                 if func is not None:
                     try:
-                        spec = analyze_signature(func)
+                        analyze_signature(func)
                         # No longer checking for deprecated pipeline_context since it's been removed
                     except Exception as e:  # pragma: no cover - defensive
                         report.warnings.append(
