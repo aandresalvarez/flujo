@@ -313,7 +313,7 @@ from flujo.infra.backends import LocalBackend
 StepExecutionRequest(
     step=Step(...),
     input_data=..., 
-    pipeline_context=PipelineContext(initial_prompt=""),
+    context=PipelineContext(initial_prompt=""),
     resources=None,
 )
 ```

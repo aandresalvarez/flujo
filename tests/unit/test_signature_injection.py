@@ -1,11 +1,9 @@
-import warnings
 import pytest
 from flujo.domain.models import BaseModel
 
 from flujo import Flujo, step
 from flujo.domain.resources import AppResources
 from flujo.testing.utils import gather_result
-from flujo.deprecation import _warned_locations
 
 
 class Ctx(BaseModel):
@@ -28,8 +26,8 @@ async def res_step(_: int, *, resources: MyRes) -> str:
 
 
 @step
-async def legacy(_: int, *, pipeline_context: Ctx) -> int:
-    return pipeline_context.num
+async def legacy(_: int, *, context: Ctx) -> int:
+    return context.num
 
 
 @pytest.mark.asyncio
@@ -48,10 +46,7 @@ async def test_resources_injected() -> None:
 
 
 @pytest.mark.asyncio
-async def test_pipeline_context_deprecated_warning() -> None:
-    _warned_locations.clear()
+async def test_legacy_context_works() -> None:
     runner = Flujo(legacy, context_model=Ctx)
-    with warnings.catch_warnings(record=True) as rec:
-        warnings.simplefilter("always")
-        await gather_result(runner, 0)
-    assert any(isinstance(w.message, DeprecationWarning) for w in rec)
+    result = await gather_result(runner, 0)
+    assert result.step_history[-1].output == 0

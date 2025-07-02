@@ -5,7 +5,7 @@
 ## Parameters
 
 - **`name`** – Step name.
-- **`condition_callable`** – Function accepting `(previous_step_output, pipeline_context)` and returning a key.
+- **`condition_callable`** – Function accepting `(previous_step_output, context)` and returning a key.
 - **`branches`** – Dictionary mapping keys to `Pipeline` objects.
 - **`default_branch_pipeline`** – Optional pipeline used when no key matches.
 - **`branch_input_mapper`** – Optional function mapping the `ConditionalStep` input to the branch input.

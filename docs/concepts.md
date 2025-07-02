@@ -128,7 +128,7 @@ multi-agent workflows**. This gives you full control over the sequence of
 operations, the agents used at each stage, and the integration of plugins.
 
 `Flujo` can also maintain a shared, typed context object for each run.
-Steps declare a `pipeline_context` parameter to access or modify this object. See
+Steps declare a `context` parameter to access or modify this object. See
 [Typed Pipeline Context](pipeline_context.md) for full documentation.
 
 ## The Pipeline Context: Built-in Memory

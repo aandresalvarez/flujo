@@ -67,9 +67,9 @@ async def test_pipeline_of_pipelines_via_as_step() -> None:
 @pytest.mark.asyncio
 async def test_as_step_context_propagation() -> None:
     class Incrementer:
-        async def run(self, data: int, *, pipeline_context: PipelineContext | None = None) -> dict:
-            assert pipeline_context is not None
-            current = pipeline_context.scratchpad.get("counter", 0)
+        async def run(self, data: int, *, context: PipelineContext | None = None) -> dict:
+            assert context is not None
+            current = context.scratchpad.get("counter", 0)
             return {"scratchpad": {"counter": current + data}}
 
     inner_runner = Flujo(
@@ -143,9 +143,9 @@ async def test_as_step_initial_prompt_sync() -> None:
 @pytest.mark.asyncio
 async def test_as_step_inherit_context_false() -> None:
     class Incrementer:
-        async def run(self, data: int, *, pipeline_context: PipelineContext | None = None) -> dict:
-            assert pipeline_context is not None
-            current = pipeline_context.scratchpad.get("counter", 0)
+        async def run(self, data: int, *, context: PipelineContext | None = None) -> dict:
+            assert context is not None
+            current = context.scratchpad.get("counter", 0)
             return {"scratchpad": {"counter": current + data}}
 
     inner_runner = Flujo(

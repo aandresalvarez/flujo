@@ -6,7 +6,7 @@
 
 - **`name`** – Step name.
 - **`loop_body_pipeline`** – A `Pipeline` executed on each iteration.
-- **`exit_condition_callable`** – Callable accepting `(last_body_output, pipeline_context)` and returning `True` to stop looping.
+- **`exit_condition_callable`** – Callable accepting `(last_body_output, context)` and returning `True` to stop looping.
 - **`max_loops`** – Maximum iterations (defaults to `5`). Prevents infinite loops.
 - **`initial_input_to_loop_body_mapper`** – Optional function mapping the `LoopStep` input to the first body input.
 - **`iteration_input_mapper`** – Optional function mapping the previous iteration output to the next iteration input.
@@ -25,9 +25,9 @@ from flujo.domain import Step, Pipeline
 class Ctx(BaseModel):
     counter: int = 0
 
-async def inc(x: int, *, pipeline_context: Ctx | None = None) -> int:
-    if pipeline_context:
-        pipeline_context.counter += 1
+async def inc(x: int, *, context: Ctx | None = None) -> int:
+    if context:
+        context.counter += 1
     return x + 1
 
 body = Pipeline.from_step(Step("inc", inc))

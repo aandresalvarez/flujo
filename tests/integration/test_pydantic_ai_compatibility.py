@@ -15,10 +15,10 @@ class TypeCheckingAgent:
 
 
 class KwargCheckingAgent:
-    async def run(self, data, *, pipeline_context: "SimpleContext") -> str:
-        if isinstance(pipeline_context, dict):
-            return pipeline_context.get("foo", "")
-        return pipeline_context.foo
+    async def run(self, data, *, context: "SimpleContext") -> str:
+        if isinstance(context, dict):
+            return context.get("foo", "")
+        return context.foo
 
 
 @pytest.mark.asyncio

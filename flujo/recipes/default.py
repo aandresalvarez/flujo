@@ -81,14 +81,14 @@ class Default:
 
         if reflection_agent is not None:
 
-            async def reflection_step(_: Any, *, pipeline_context: PipelineContext) -> str:
+            async def reflection_step(_: Any, *, context: PipelineContext) -> str:
                 payload = {
-                    "solution": pipeline_context.scratchpad.get("solution"),
-                    "checklist": pipeline_context.scratchpad.get("checklist"),
+                    "solution": context.scratchpad.get("solution"),
+                    "checklist": context.scratchpad.get("checklist"),
                 }
                 result = await _invoke(reflection_agent, payload)
                 reflection = cast(str, getattr(result, "output", result))
-                pipeline_context.scratchpad["reflection"] = reflection
+                context.scratchpad["reflection"] = reflection
                 return reflection
 
             pipeline = pipeline >> Step.from_callable(

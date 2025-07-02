@@ -13,9 +13,9 @@ class Ctx(BaseModel):
 
 
 class AddOneAgent:
-    async def run(self, data: int, *, pipeline_context: Ctx | None = None) -> int:
-        if pipeline_context:
-            pipeline_context.count += 1
+    async def run(self, data: int, *, context: Ctx | None = None) -> int:
+        if context:
+            context.count += 1
         return data + 1
 
 
@@ -43,9 +43,9 @@ class _TestContext(BaseModel):
 
 
 class IncrementAgent:
-    async def run(self, data: str, *, pipeline_context: _TestContext | None = None) -> str:
-        if pipeline_context:
-            pipeline_context.counter += 1
+    async def run(self, data: str, *, context: _TestContext | None = None) -> str:
+        if context:
+            context.counter += 1
         return data
 
 

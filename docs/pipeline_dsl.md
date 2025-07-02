@@ -276,7 +276,7 @@ pipeline = Step.review(review_agent) >> loop_step >> Step.validate_step(validato
 
 ## Typed Pipeline Context
 
-a `Flujo` runner can share a mutable Pydantic model instance across all steps in a single run. Pass a context model when creating the runner and declare either `context` or `pipeline_context` in your step functions or agents. If both are present, `context` is prioritized for backward compatibility. See [Typed Pipeline Context](pipeline_context.md) for a full explanation.
+a `Flujo` runner can share a mutable Pydantic model instance across all steps in a single run. Pass a context model when creating the runner and declare a `context` parameter in your step functions or agents. See [Typed Pipeline Context](pipeline_context.md) for a full explanation.
 
 ```python
 from pydantic import BaseModel
@@ -285,9 +285,9 @@ class MyContext(BaseModel):
     counter: int = 0
 
 @step
-async def increment(data: str, *, pipeline_context: MyContext | None = None) -> str:
-    if pipeline_context:
-        pipeline_context.counter += 1
+async def increment(data: str, *, context: MyContext | None = None) -> str:
+    if context:
+        context.counter += 1
     return data
 
 pipeline = increment >> increment

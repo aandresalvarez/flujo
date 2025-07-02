@@ -34,12 +34,12 @@ class ContextAndResourceAgent(AsyncAgentProtocol):
         self,
         data: str,
         *,
-        pipeline_context: MyContext,
+        context: MyContext,
         resources: MyResources,
         **kwargs,
     ) -> str:
-        pipeline_context.run_id = "modified"
-        resources.db_conn.query(f"Log from {pipeline_context.run_id}")
+        context.run_id = "modified"
+        resources.db_conn.query(f"Log from {context.run_id}")
         return "context_and_resource_used"
 
 
