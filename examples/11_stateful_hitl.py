@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import asyncio
 from flujo import Flujo, Step, Pipeline
-from flujo.testing.utils import StubAgent
+from flujo.testing import StubAgent
 
 
 def build_runner() -> Flujo[str, str]:

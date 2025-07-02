@@ -19,7 +19,7 @@ from typing import Any, Dict, List
 from pydantic import BaseModel
 
 from flujo import Flujo, Step, Pipeline
-from flujo.testing.utils import StubAgent
+from flujo.testing import StubAgent
 
 
 class ConceptResolutionContext(BaseModel):

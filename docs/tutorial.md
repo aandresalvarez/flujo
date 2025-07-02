@@ -106,7 +106,9 @@ Professional AI workflows often involve a mix of models to balance cost, speed, 
 ```python
 # 📂 step_3_mixing_models.py
 from flujo.recipes import Default
-from flujo import Task, review_agent, validator_agent, make_agent_async, init_telemetry
+from flujo import make_agent_async, init_telemetry
+from flujo.models import Task
+from flujo.infra.agents import review_agent, validator_agent
 init_telemetry()
 print("🚀 Building a workflow with a custom Solution Agent for the Default recipe...")
 FAST_SOLUTION_PROMPT = "You are a creative but junior marketing copywriter. Write a catchy and concise slogan. Be quick and creative."
@@ -133,10 +135,8 @@ Let's build a workflow that extracts information from a block of text into a str
 ```python
 # 📂 step_4_structured_output.py
 from pydantic import BaseModel, Field
-from flujo import (
-    Step, Flujo, make_agent_async, init_telemetry
-)
-from flujo.domain.models import Checklist
+from flujo import Step, Flujo, make_agent_async, init_telemetry
+from flujo.models import Checklist
 
 init_telemetry()
 
@@ -212,7 +212,8 @@ Now for the ultimate challenge. Let's build a workflow where **every agent is cu
 import random
 from pydantic import BaseModel
 from pydantic_ai import Tool
-from flujo import * # Import all for convenience
+from flujo import Flujo, Step, Pipeline
+from flujo.testing import StubAgent
 
 # --- 1. Define the Tool ---
 # This is a fake stock price function for our example.

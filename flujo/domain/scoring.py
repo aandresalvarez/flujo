@@ -3,7 +3,7 @@
 from typing import List, Dict, Any
 from .models import Checklist
 from pydantic_ai import Agent
-import flujo.infra.settings as settings_mod
+import sys
 import os
 from flujo.infra.telemetry import logfire
 from ..exceptions import RewardModelUnavailable, FeatureDisabled
@@ -55,7 +55,8 @@ class RewardScorer:
 
     def __init__(self) -> None:
         # Always fetch the current settings from the module to support monkeypatching in tests
-        settings = getattr(settings_mod, "settings")
+        settings_module = sys.modules["flujo.infra.settings"]
+        settings = getattr(settings_module, "settings")
         if not settings.reward_enabled:
             raise FeatureDisabled("RewardScorer is disabled by settings.")
         if not settings.openai_api_key:

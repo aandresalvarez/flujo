@@ -2,7 +2,9 @@
 import pytest
 from flujo.domain.models import BaseModel
 
-from flujo import Flujo, Step, Pipeline, UsageLimits, UsageLimitExceededError
+from flujo import Flujo, Step, Pipeline
+from flujo.domain import UsageLimits
+from flujo.exceptions import UsageLimitExceededError
 from flujo.testing.utils import gather_result
 from typing import Any
 from flujo.domain.agent_protocol import AsyncAgentProtocol

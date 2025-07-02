@@ -10,10 +10,10 @@ For more details, see docs/pipeline_context.md.
 import asyncio
 from typing import Optional, cast, Type
 
-from flujo.domain.models import BaseModel as FlujoBaseModel
-
-from flujo import Flujo, PipelineResult, Step
+from flujo import Flujo, Step
+from flujo.models import PipelineResult
 from flujo.domain.agent_protocol import ContextAwareAgentProtocol
+from flujo.models import BaseModel as FlujoBaseModel
 
 
 # 1. Define the context model. This is our shared data structure for one run.

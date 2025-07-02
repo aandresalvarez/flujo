@@ -12,7 +12,8 @@ import asyncio
 
 from pydantic import BaseModel
 
-from flujo import Flujo, Step, Pipeline, PipelineResult, step
+from flujo import Flujo, Step, Pipeline, step
+from flujo.models import PipelineResult
 
 
 class TextEdit(BaseModel):

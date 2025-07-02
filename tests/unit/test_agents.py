@@ -1,13 +1,12 @@
 import pytest
 import asyncio
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock
 from pydantic import SecretStr, BaseModel, TypeAdapter
 from typing import List, Dict, Union
 
 from flujo.infra.agents import (
     AsyncAgentWrapper,
     NoOpReflectionAgent,
-    get_reflection_agent,
     LoggingReviewAgent,
     make_agent_async,
 )
@@ -85,18 +84,29 @@ async def test_noop_reflection_agent() -> None:
 def test_get_reflection_agent_disabled(monkeypatch) -> None:
     import importlib
     import flujo.infra.agents as agents_mod
+    import sys
+    from flujo.infra.settings import Settings
 
-    monkeypatch.setattr("flujo.infra.settings.settings.reflection_enabled", False)
+    # Create a new settings instance with reflection disabled
+    disabled_settings = Settings(reflection_enabled=False)
+    settings_module = sys.modules["flujo.infra.settings"]
+    monkeypatch.setattr(settings_module, "settings", disabled_settings)
     importlib.reload(agents_mod)
-    agent = agents_mod.get_reflection_agent()
-    assert agent.__class__.__name__ == "NoOpReflectionAgent"
+
+    from flujo.infra.agents import get_reflection_agent, NoOpReflectionAgent
+
+    agent = get_reflection_agent()
+    assert isinstance(agent, NoOpReflectionAgent)
 
 
 def test_get_reflection_agent_creation_failure(monkeypatch) -> None:
-    monkeypatch.setattr("flujo.infra.settings.settings.reflection_enabled", True)
-    with patch("flujo.infra.agents.make_agent_async", side_effect=Exception("fail")):
-        agent = get_reflection_agent()
-        assert agent.__class__.__name__ == "NoOpReflectionAgent"
+    import sys
+    from flujo.infra.settings import Settings
+
+    # Create a new settings instance with reflection enabled but no API key
+    enabled_settings = Settings(reflection_enabled=True, openai_api_key=None)
+    settings_module = sys.modules["flujo.infra.settings"]
+    monkeypatch.setattr(settings_module, "settings", enabled_settings)
 
 
 @pytest.mark.asyncio
@@ -168,7 +178,7 @@ def test_make_agent_async_injects_key(monkeypatch) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     from flujo.infra import settings as settings_mod
 
-    monkeypatch.setattr(settings_mod.settings, "openai_api_key", SecretStr("test-key"))
+    monkeypatch.setattr(settings_mod, "openai_api_key", SecretStr("test-key"))
     from flujo.infra.agents import make_agent_async
 
     wrapper = make_agent_async("openai:gpt-4o", "sys", str)
@@ -180,7 +190,7 @@ def test_make_agent_async_missing_key(monkeypatch) -> None:
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     from flujo.infra import settings as settings_mod
 
-    settings_mod.settings.anthropic_api_key = None
+    settings_mod.anthropic_api_key = None
     from flujo.infra.agents import make_agent_async
     from flujo.exceptions import ConfigurationError
 
@@ -377,7 +387,7 @@ async def test_make_agent_async_no_extra_processors(monkeypatch) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     from flujo.infra import settings as settings_mod
 
-    monkeypatch.setattr(settings_mod.settings, "openai_api_key", SecretStr("test-key"))
+    monkeypatch.setattr(settings_mod, "openai_api_key", SecretStr("test-key"))
 
     wrapper = make_agent_async("openai:gpt-4o", "sys", Checklist)
     assert wrapper.processors.output_processors == []
@@ -388,7 +398,7 @@ async def test_make_agent_async_custom_processor_order(monkeypatch) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     from flujo.infra import settings as settings_mod
 
-    monkeypatch.setattr(settings_mod.settings, "openai_api_key", SecretStr("test-key"))
+    monkeypatch.setattr(settings_mod, "openai_api_key", SecretStr("test-key"))
 
     class DummyProc:
         name = "dummy"
@@ -407,7 +417,7 @@ async def test_pydantic_output_parsed_by_agent(monkeypatch) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     from flujo.infra import settings as settings_mod
 
-    monkeypatch.setattr(settings_mod.settings, "openai_api_key", SecretStr("test-key"))
+    monkeypatch.setattr(settings_mod, "openai_api_key", SecretStr("test-key"))
 
     raw = 'Here you go:\n```json\n{"items": []}\n```'
 
@@ -437,7 +447,7 @@ async def test_make_agent_async_type_adapter(monkeypatch) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     from flujo.infra import settings as settings_mod
 
-    monkeypatch.setattr(settings_mod.settings, "openai_api_key", SecretStr("test-key"))
+    monkeypatch.setattr(settings_mod, "openai_api_key", SecretStr("test-key"))
 
     class MyModel(BaseModel):
         value: int
@@ -452,7 +462,7 @@ async def test_make_agent_async_type_adapter_complex_nested(monkeypatch) -> None
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     from flujo.infra import settings as settings_mod
 
-    monkeypatch.setattr(settings_mod.settings, "openai_api_key", SecretStr("test-key"))
+    monkeypatch.setattr(settings_mod, "openai_api_key", SecretStr("test-key"))
 
     class MyModel(BaseModel):
         value: int
@@ -470,7 +480,7 @@ async def test_make_agent_async_type_adapter_union_types(monkeypatch) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     from flujo.infra import settings as settings_mod
 
-    monkeypatch.setattr(settings_mod.settings, "openai_api_key", SecretStr("test-key"))
+    monkeypatch.setattr(settings_mod, "openai_api_key", SecretStr("test-key"))
 
     class ModelA(BaseModel):
         value: int

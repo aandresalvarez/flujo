@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from flujo import Flujo, Pipeline, Step
 from flujo.recipes import AgenticLoop
 from flujo.domain.commands import FinishCommand, RunAgentCommand, AgentCommand
-from flujo.domain.models import PipelineContext
+from flujo.models import PipelineContext
 
 
 class TextEdit(BaseModel):

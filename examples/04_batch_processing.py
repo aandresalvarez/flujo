@@ -4,15 +4,16 @@ This pattern is highly efficient and leverages Python's `asyncio.gather`
 to run multiple `flujo` workflows at the same time.
 """
 import asyncio
+from flujo import Flujo, Step, Pipeline, Task
 from flujo.recipes import Default
 from flujo import (
-    Task,
     review_agent,
     solution_agent,
     validator_agent,
     reflection_agent,
     init_telemetry,
 )
+from flujo.infra.agents import review_agent, solution_agent, validator_agent, reflection_agent
 
 init_telemetry()
 

@@ -7,7 +7,9 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
-from flujo import Flujo, Step, UsageLimits, UsageLimitExceededError
+from flujo import Flujo, Step
+from flujo.models import UsageLimits
+from flujo.exceptions import UsageLimitExceededError
 
 
 class CostlyAgent:

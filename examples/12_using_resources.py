@@ -7,7 +7,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from flujo import Flujo, Step, AppResources
+from flujo import Flujo, Step
+from flujo.domain.resources import AppResources
 
 
 class MyWebAppResources(AppResources):

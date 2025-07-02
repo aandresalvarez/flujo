@@ -3,7 +3,8 @@ from typing import Any
 
 import pytest
 from flujo.application.flujo_engine import Flujo
-from flujo.domain import Step, Pipeline, RefinementCheck
+from flujo.domain import Step, Pipeline
+from flujo.domain.models import RefinementCheck
 from flujo.testing.utils import StubAgent, gather_result
 from pydantic import BaseModel
 

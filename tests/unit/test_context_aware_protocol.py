@@ -15,8 +15,14 @@ class Ctx(BaseModel):
 
 
 class TypedAgent(ContextAwareAgentProtocol[str, str, Ctx]):
-    async def run(self, data: str, *, context: Ctx, **kwargs: Any) -> str:
-        context.val += 1
+    __context_aware__ = True
+
+    async def run(
+        self, data: str, *, context: Ctx = None, pipeline_context: Ctx = None, **kwargs
+    ) -> str:
+        ctx = context or pipeline_context
+        if ctx is not None:
+            ctx.val += 1
         return data
 
 
@@ -37,7 +43,7 @@ class TypedPlugin(ContextAwarePluginProtocol[Ctx]):
 @pytest.mark.asyncio
 async def test_context_aware_agent_no_warning() -> None:
     step = Step("s", TypedAgent())
-    runner = Flujo(step, context_model=Ctx)
+    runner = Flujo(step, context_model=Ctx, initial_context_data={"val": 0})
     with warnings.catch_warnings(record=True) as rec:
         await gather_result(runner, "in")
     assert not any(isinstance(w.message, DeprecationWarning) for w in rec)

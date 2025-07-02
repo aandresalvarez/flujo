@@ -16,12 +16,8 @@ def test_invalid_env_vars(monkeypatch):
             "orch_anthropic_api_key",
         }:
             monkeypatch.delenv(k, raising=False)
+
     # Patch env_file to None for this test instance
-    import importlib
-    import flujo.infra.settings as settings_mod
-
-    importlib.reload(settings_mod)
-
     class TestSettings(Settings):
         model_config = Settings.model_config.copy()
         model_config["env_file"] = None

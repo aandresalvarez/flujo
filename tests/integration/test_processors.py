@@ -1,7 +1,8 @@
 import pytest
 from flujo.domain.models import BaseModel, PipelineContext
 
-from flujo import Flujo, Step, AgentProcessors
+from flujo import Flujo, Step
+from flujo.domain.processors import AgentProcessors
 from flujo.processors import SerializePydantic
 from flujo.testing.utils import StubAgent, gather_result
 

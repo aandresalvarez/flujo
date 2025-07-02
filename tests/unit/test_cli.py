@@ -8,6 +8,7 @@ from typer.testing import CliRunner
 from unittest.mock import patch, MagicMock, AsyncMock
 import pytest
 import json
+from flujo.infra.settings import Settings
 
 runner = CliRunner()
 
@@ -16,13 +17,11 @@ runner = CliRunner()
 def _set_api_key(monkeypatch) -> None:
     """Ensure OPENAI_API_KEY is present and refresh settings for each test."""
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
-    import flujo.infra.settings as settings_mod
+    import sys
 
-    new_settings = settings_mod.Settings()
-    monkeypatch.setattr(settings_mod, "settings", new_settings, raising=False)
-    monkeypatch.setattr("flujo.infra.agents.settings", new_settings, raising=False)
-    monkeypatch.setattr("flujo.application.temperature.settings", new_settings, raising=False)
-    monkeypatch.setattr("flujo.cli.main.settings", new_settings, raising=False)
+    new_settings = Settings()
+    settings_module = sys.modules["flujo.infra.settings"]
+    monkeypatch.setattr(settings_module, "settings", new_settings)
 
 
 @pytest.fixture

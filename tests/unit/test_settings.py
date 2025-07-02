@@ -2,6 +2,7 @@ from flujo.infra.settings import Settings
 from pydantic import SecretStr
 import os
 import pytest
+import sys
 
 
 def test_env_var_precedence(monkeypatch) -> None:
@@ -32,14 +33,19 @@ def test_logfire_legacy_alias(monkeypatch) -> None:
 
 
 def test_missing_api_key_allowed(monkeypatch) -> None:
-    monkeypatch.delenv("ORCH_OPENAI_API_KEY", raising=False)
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    import importlib
-    import flujo.infra.settings as settings_mod
+    # Delete all possible API key environment variables
+    for key in ["ORCH_OPENAI_API_KEY", "OPENAI_API_KEY", "openai_api_key"]:
+        monkeypatch.delenv(key, raising=False)
 
-    importlib.reload(settings_mod)
+    # Test that we can create settings without an API key
+    # The actual value will depend on the environment, but the important thing
+    # is that it doesn't crash
     s = Settings()
-    assert isinstance(s, Settings)
+    # Patch the module's settings
+    settings_module = sys.modules["flujo.infra.settings"]
+    monkeypatch.setattr(settings_module, "settings", s)
+    # Just verify that we can access the attribute without error
+    assert hasattr(s, "openai_api_key")
 
 
 def test_settings_initialization(monkeypatch) -> None:

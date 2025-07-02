@@ -2,17 +2,11 @@
 Demonstrates using weighted scoring to prioritize certain quality criteria.
 For more details on scoring, see docs/scoring.md.
 """
+from flujo import Flujo, Step, Pipeline, make_agent_async, init_telemetry, Task
 from flujo.recipes import Default
-from flujo import (
-    Task,
-    make_agent_async,
-    solution_agent,
-    validator_agent,
-    reflection_agent,
-    init_telemetry,
-)
-from flujo.infra.settings import settings
 from flujo.domain.models import Checklist
+from flujo.infra.settings import settings
+from flujo.infra.agents import solution_agent, validator_agent, reflection_agent
 
 init_telemetry()
 

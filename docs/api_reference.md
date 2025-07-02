@@ -47,14 +47,13 @@ The Pipeline DSL lets you create flexible, custom workflows and execute them
 with `Flujo`.
 
 ```python
-from flujo import (
-    Step, Flujo, Task,
-    review_agent, solution_agent, validator_agent,
-)
+from flujo import Step, Flujo, Task
+from flujo.infra.agents import review_agent, solution_agent, validator_agent
 from flujo.infra.backends import LocalBackend
 from pydantic import BaseModel
 from typing import Any
-from flujo import AppResources, UsageLimits
+from flujo.domain.resources import AppResources
+from flujo.models import UsageLimits
 
 class MyResources(AppResources):
     db_pool: Any
@@ -171,7 +170,7 @@ class MyStreamer(StreamingAgentProtocol):
 ```
 
 # Pre-built agents
-from flujo import (
+from flujo.infra.agents import (
     review_agent,
     solution_agent,
     validator_agent,
@@ -194,7 +193,7 @@ from flujo import (
 Container for long-lived resources shared across pipeline steps.
 
 ```python
-from flujo import AppResources
+from flujo.domain.resources import AppResources
 
 class MyResources(AppResources):
     db_pool: Any
@@ -232,7 +231,7 @@ candidate = Candidate(
 Quality evaluation structures.
 
 ```python
-from flujo import Checklist, ChecklistItem
+from flujo.models import Checklist, ChecklistItem
 
 item = ChecklistItem(
     description: str,              # What is being checked
@@ -250,7 +249,7 @@ checklist = Checklist(
 Results from pipeline execution.
 
 ```python
-from flujo import PipelineResult, StepResult
+from flujo.models import PipelineResult, StepResult
 
 step_result = StepResult(
     name: str,                     # Step name
@@ -289,7 +288,7 @@ Use `Flujo.resume_async(paused_result, human_input)` to continue after a `HumanI
 Define cost or token ceilings for a run.
 
 ```python
-from flujo import UsageLimits
+from flujo.models import UsageLimits
 
 limits = UsageLimits(
     total_cost_usd_limit: Optional[float] = None,
@@ -325,7 +324,8 @@ Custom backends implement `execute_step(request) -> StepResult`.
 You can register callbacks to observe or control pipeline execution.
 
 ```python
-from flujo import HookCallable, PipelineAbortSignal
+from flujo.domain import HookCallable
+from flujo.exceptions import PipelineAbortSignal
 from flujo.domain.events import HookPayload
 
 async def my_hook(payload: HookPayload) -> None:
@@ -342,7 +342,7 @@ Hooks receive a typed payload object describing the event. Raise
 ### Evaluation Functions
 
 ```python
-from flujo import run_pipeline_async, evaluate_and_improve
+from flujo.application import run_pipeline_async, evaluate_and_improve
 
 # Run pipeline evaluation
 result = await run_pipeline_async(
@@ -363,11 +363,8 @@ report = await evaluate_and_improve(
 ### Improvement Models
 
 ```python
-from flujo import (
-    SelfImprovementAgent,
-    ImprovementReport,
-    ImprovementSuggestion,
-)
+from flujo.application import SelfImprovementAgent
+from flujo.models import ImprovementReport, ImprovementSuggestion
 
 # Create improvement agent
 improvement_agent = SelfImprovementAgent(
@@ -395,7 +392,7 @@ report = ImprovementReport(
 ### Settings
 
 ```python
-from flujo import settings
+from flujo.infra import settings
 
 # Access current settings
 current_settings = settings
@@ -415,7 +412,7 @@ current_settings = settings
 ### Telemetry
 
 ```python
-from flujo import init_telemetry
+from flujo.infra import init_telemetry
 
 # Initialize telemetry
 init_telemetry()
@@ -432,7 +429,7 @@ init_telemetry()
 ### Validation Plugins
 
 ```python
-from flujo import ValidationPlugin, PluginOutcome
+from flujo.domain import ValidationPlugin, PluginOutcome
 from flujo.plugins import SQLSyntaxValidator
 
 # Use built-in SQL validator
@@ -465,7 +462,7 @@ dummy_plugin = DummyPlugin(should_pass=True)
 ## Exceptions
 
 ```python
-from flujo import (
+from flujo.exceptions import (
     OrchestratorError,
     ConfigurationError,
     SettingsError,

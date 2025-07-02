@@ -1,5 +1,5 @@
 from flujo.domain.models import BaseModel
-from flujo import format_prompt
+from flujo.utils import format_prompt
 
 
 class Person(BaseModel):

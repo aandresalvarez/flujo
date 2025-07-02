@@ -9,6 +9,7 @@ from flujo.domain.models import PipelineResult
 from flujo.domain.resources import AppResources
 from flujo.testing.utils import StubAgent, FailingStreamAgent
 from flujo.domain.models import BaseModel
+from flujo.domain.agent_protocol import ContextAwareAgentProtocol
 
 
 class MockStreamingAgent:
@@ -53,12 +54,16 @@ class MyResources(AppResources):
     increment: int = 1
 
 
-class CtxStreamAgent:
+class CtxStreamAgent(ContextAwareAgentProtocol[int, list, Ctx]):
+    __context_aware__ = True
+
     async def stream(
-        self, data: int, *, context: Ctx, resources: MyResources
-    ) -> AsyncIterator[str]:
-        context.count += 1
-        yield str(data + resources.increment)
+        self, data: int, *, context: Ctx = None, pipeline_context: Ctx = None, **kwargs
+    ) -> list:
+        ctx = context or pipeline_context
+        if ctx is not None:
+            ctx.count += 1
+        yield "5"
 
 
 @pytest.mark.asyncio

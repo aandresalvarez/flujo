@@ -32,7 +32,7 @@ Pipeline DSL described later.
 
 ```python
 from flujo.recipes import Default
-from flujo import review_agent, solution_agent, validator_agent
+from flujo.infra.agents import review_agent, solution_agent, validator_agent
 
 recipe = Default(
     review_agent=review_agent,
@@ -138,9 +138,8 @@ Every run automatically receives a `PipelineContext` instance. It includes a `ru
 The built-in [**Default recipe**](#the-default-recipe) uses this DSL under the hood. When you need different logic, you can use the same tools directly through the `Flujo` engine. The DSL also supports advanced constructs like [**LoopStep**](pipeline_looping.md) for iteration and [**ConditionalStep**](pipeline_branching.md) for branching workflows.
 
 ```python
-from flujo import (
-    Step, Flujo, review_agent, solution_agent, validator_agent
-)
+from flujo import Step, Flujo
+from flujo.infra.agents import review_agent, solution_agent, validator_agent
 
 # Define a pipeline
 pipeline = (
@@ -284,7 +283,7 @@ agent = make_agent_async(
 Plugins extend pipeline functionality, particularly for validation:
 
 ```python
-from flujo import ValidationPlugin, PluginOutcome
+from flujo.domain import ValidationPlugin, PluginOutcome
 from flujo.plugins import SQLSyntaxValidator
 
 # Use built-in SQL validator
@@ -306,7 +305,7 @@ pipeline = Step.validate(validator_agent, plugins=[sql_validator, CustomValidato
 The library includes intelligent evaluation capabilities:
 
 ```python
-from flujo import evaluate_and_improve, SelfImprovementAgent
+from flujo.application import evaluate_and_improve, SelfImprovementAgent
 from flujo.infra.agents import make_self_improvement_agent
 
 # Create improvement agent

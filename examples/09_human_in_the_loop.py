@@ -2,7 +2,7 @@
 import asyncio
 from typing import Any
 from flujo import Flujo, Step
-from flujo.testing.utils import StubAgent
+from flujo.testing import StubAgent
 
 
 async def main() -> None:

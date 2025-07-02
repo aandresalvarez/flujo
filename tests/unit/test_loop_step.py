@@ -1,6 +1,7 @@
 import pytest
 
-from flujo.domain import Step, Pipeline, LoopStep
+from flujo.domain import Step, Pipeline
+from flujo.domain.pipeline_dsl import LoopStep
 
 
 def test_loop_step_init_validation() -> None:

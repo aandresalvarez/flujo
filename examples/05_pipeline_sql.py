@@ -7,9 +7,10 @@ For more details, see docs/extending.md.
 import asyncio
 from typing import Any, cast
 
-from flujo import Flujo, Step
+from flujo import Flujo, Step, Pipeline, Task
 from flujo.plugins.sql_validator import SQLSyntaxValidator
-from flujo.testing.utils import StubAgent
+from flujo.testing import StubAgent
+from flujo.recipes import Default
 
 # To deterministically demonstrate the plugin, we'll use a `StubAgent` that
 # always produces invalid SQL. In a real app, this would be a powerful LLM agent.

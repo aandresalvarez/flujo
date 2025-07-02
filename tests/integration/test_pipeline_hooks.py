@@ -4,12 +4,9 @@ from flujo import (
     Flujo,
     Step,
     Pipeline,
-    AppResources,
-    UsageLimits,
 )
-from flujo.exceptions import PipelineAbortSignal, UsageLimitExceededError
-from flujo.domain.models import PipelineResult
-from flujo.domain.models import BaseModel
+from flujo.domain import AppResources, UsageLimits
+from flujo.domain.models import PipelineResult, BaseModel
 from typing import Any, List, cast
 from flujo.domain.events import (
     HookPayload,
@@ -17,9 +14,9 @@ from flujo.domain.events import (
     PostStepPayload,
 )
 from flujo.domain.agent_protocol import AsyncAgentProtocol
-from flujo.testing.utils import StubAgent, DummyPlugin, gather_result
-from flujo.domain.plugins import PluginOutcome
+from flujo.testing.utils import StubAgent, DummyPlugin, PluginOutcome, gather_result
 from tests.integration.test_usage_governor import FixedMetricAgent
+from flujo.exceptions import UsageLimitExceededError, PipelineAbortSignal
 
 
 class HookResources(AppResources):
@@ -175,7 +172,7 @@ async def test_faulty_hook_does_not_crash_pipeline(
 async def test_hooks_receive_context_and_resources(
     call_recorder: List[HookPayload],
 ) -> None:
-    pipeline = Step("s1", agent=cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok"])))
+    pipeline = Step("s1", agent=cast(AsyncAgentProtocol[Any, Any], IncrementingStubAgent()))
     mock_res = HookResources(db=MagicMock())
 
     async def recorder(payload: HookPayload) -> None:
@@ -206,3 +203,33 @@ async def test_post_run_abort_does_not_mask_errors() -> None:
 
     with pytest.raises(UsageLimitExceededError):
         await gather_result(runner, 0)
+
+
+class IncrementingStubAgent:
+    async def run(self, data, *, context: HookContext, **kwargs):
+        if context is not None:
+            context.call_count += 1
+        return "ok"
+
+
+@pytest.mark.asyncio  # type: ignore[misc]
+async def test_incrementing_stub_agent(
+    call_recorder: List[HookPayload],
+) -> None:
+    pipeline = Step("s1", agent=cast(AsyncAgentProtocol[Any, Any], IncrementingStubAgent()))
+
+    async def recorder(payload: HookPayload) -> None:
+        await generic_recorder_hook(call_recorder, payload)
+
+    runner = Flujo(
+        pipeline,
+        context_model=HookContext,
+        initial_context_data={"call_count": 0},
+        hooks=[recorder],
+    )
+    await gather_result(runner, "start")
+
+    post_step_call = next(p for p in call_recorder if p.event_name == "post_step")
+    assert getattr(post_step_call, "context") is not None
+    assert isinstance(post_step_call.context, HookContext)
+    assert post_step_call.context.call_count > 0

@@ -1,138 +1,56 @@
 """
-Flujo package init.
+Flujo: A powerful Python library for orchestrating AI workflows.
 """
 
+# Get version
 try:
     from importlib.metadata import version
 
     __version__ = version("flujo")
 except Exception:
     __version__ = "0.0.0"
+
+# 1. Import and expose sub-modules for a curated API
+from . import recipes
+from . import testing
+from . import plugins
+from . import processors
+from . import models
+from . import utils
+from . import domain
+from . import application
+from . import infra
+
+# 2. Expose the most essential core components at the top level for convenience.
+# These are the symbols users will interact with 90% of the time.
 from .application.flujo_engine import Flujo
-from .recipes import Default, AgenticLoop
+from .domain.pipeline_dsl import Step, step, Pipeline
+from .domain.models import Task, Candidate
+from .infra.agents import make_agent_async
 from .infra.settings import settings
 from .infra.telemetry import init_telemetry
 
-from .domain.models import Task, Candidate, Checklist, ChecklistItem
-from .domain import (
-    Step,
-    step,
-    adapter_step,
-    mapper,
-    Pipeline,
-    StepConfig,
-    MapStep,
-    ParallelStep,
-    AgentProcessors,
-    PluginOutcome,
-    ValidationPlugin,
-    Validator,
-    ValidationResult,
-    ValidationFinding,
-    ValidationReport,
-    AppResources,
-)
-from .validation import BaseValidator, validator
-from .domain.types import HookCallable
-from .domain.events import HookPayload
-from .domain.backends import ExecutionBackend, StepExecutionRequest
-from .infra.backends import LocalBackend
-from .tracing import ConsoleTracer
-from .application.eval_adapter import run_pipeline_async
-from .application.self_improvement import evaluate_and_improve, SelfImprovementAgent
-from .domain.models import PipelineResult, StepResult, UsageLimits
-from .testing.utils import StubAgent, DummyPlugin
-from .utils.prompting import format_prompt
-from .plugins.sql_validator import SQLSyntaxValidator
-from .processors import (
-    Processor,
-    AddContextVariables,
-    StripMarkdownFences,
-    EnforceJsonResponse,
-    SerializePydantic,
-)
-
-from .infra.agents import (
-    review_agent,
-    solution_agent,
-    validator_agent,
-    reflection_agent,
-    get_reflection_agent,
-    make_agent_async,
-)
-
-from .exceptions import (
-    OrchestratorError,
-    ConfigurationError,
-    SettingsError,
-    UsageLimitExceededError,
-    ImproperStepInvocationError,
-    MissingAgentError,
-    TypeMismatchError,
-    PipelineAbortSignal,
-)
-
+# 3. Define __all__ to control `from flujo import *` behavior and document the public API.
 __all__ = [
+    # Core Components
     "Flujo",
-    "Default",
-    "AgenticLoop",
-    "Task",
-    "Candidate",
-    "Checklist",
-    "ChecklistItem",
     "Step",
     "step",
-    "adapter_step",
-    "mapper",
     "Pipeline",
-    "StepConfig",
-    "MapStep",
-    "ParallelStep",
-    "AgentProcessors",
-    "Processor",
-    "AddContextVariables",
-    "StripMarkdownFences",
-    "EnforceJsonResponse",
-    "SerializePydantic",
-    "AppResources",
-    "PluginOutcome",
-    "ValidationPlugin",
-    "Validator",
-    "ValidationResult",
-    "ValidationFinding",
-    "ValidationReport",
-    "BaseValidator",
-    "validator",
-    "run_pipeline_async",
-    "evaluate_and_improve",
-    "SelfImprovementAgent",
-    "PipelineResult",
-    "StepResult",
-    "HookCallable",
-    "HookPayload",
-    "PipelineAbortSignal",
+    "Task",
+    "Candidate",
+    "make_agent_async",
+    # Global Singletons & Initializers
     "settings",
     "init_telemetry",
-    "review_agent",
-    "solution_agent",
-    "validator_agent",
-    "reflection_agent",
-    "get_reflection_agent",
-    "make_agent_async",
-    "OrchestratorError",
-    "ConfigurationError",
-    "SettingsError",
-    "UsageLimitExceededError",
-    "ImproperStepInvocationError",
-    "MissingAgentError",
-    "TypeMismatchError",
-    "StubAgent",
-    "DummyPlugin",
-    "SQLSyntaxValidator",
-    "UsageLimits",
-    "ExecutionBackend",
-    "StepExecutionRequest",
-    "LocalBackend",
-    "ConsoleTracer",
-    "format_prompt",
+    # Sub-modules
+    "recipes",
+    "testing",
+    "plugins",
+    "processors",
+    "models",
+    "utils",
+    "domain",
+    "application",
+    "infra",
 ]

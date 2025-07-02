@@ -2,9 +2,10 @@ import pytest
 from unittest.mock import MagicMock
 from flujo.domain.models import BaseModel
 
-from flujo import Flujo, Step, AppResources, PluginOutcome
+from flujo import Flujo, Step
+from flujo.domain import AppResources
 from flujo.testing.utils import gather_result
-from flujo.domain.plugins import ValidationPlugin
+from flujo.domain.plugins import ValidationPlugin, PluginOutcome
 from flujo.domain.agent_protocol import AsyncAgentProtocol
 
 

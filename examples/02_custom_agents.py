@@ -2,9 +2,9 @@
 Demonstrates creating custom agents with specific personalities and
 instructions, then using them with the high-level Default recipe.
 """
+from flujo import Flujo, Step, Pipeline, Task
 from flujo.recipes import Default
 from flujo import (
-    Task,
     make_agent_async,
     reflection_agent,
     init_telemetry,

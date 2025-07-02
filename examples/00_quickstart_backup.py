@@ -7,7 +7,7 @@ that can make decisions and use tools to accomplish goals.
 
 from typing import cast
 
-from flujo.domain.models import PipelineContext
+from flujo.models import PipelineContext
 from flujo import make_agent_async, init_telemetry
 from flujo.recipes import AgenticLoop
 from flujo.domain.commands import AgentCommand, FinishCommand, RunAgentCommand
