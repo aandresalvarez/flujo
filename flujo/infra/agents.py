@@ -209,25 +209,28 @@ def make_agent(
 ) -> tuple[Agent[Any, Any], AgentProcessors]:
     """Creates a pydantic_ai.Agent, injecting the correct API key and returns it with processors."""
     provider_name = model.split(":")[0].lower()
+    from flujo.infra.settings import settings as current_settings
 
     if provider_name == "openai":
-        if not settings.openai_api_key:
+        if not current_settings.openai_api_key:
             raise ConfigurationError(
                 "To use OpenAI models, the OPENAI_API_KEY environment variable must be set."
             )
-        os.environ.setdefault("OPENAI_API_KEY", settings.openai_api_key.get_secret_value())
+        os.environ.setdefault("OPENAI_API_KEY", current_settings.openai_api_key.get_secret_value())
     elif provider_name in {"google-gla", "gemini"}:
-        if not settings.google_api_key:
+        if not current_settings.google_api_key:
             raise ConfigurationError(
                 "To use Gemini models, the GOOGLE_API_KEY environment variable must be set."
             )
-        os.environ.setdefault("GOOGLE_API_KEY", settings.google_api_key.get_secret_value())
+        os.environ.setdefault("GOOGLE_API_KEY", current_settings.google_api_key.get_secret_value())
     elif provider_name == "anthropic":
-        if not settings.anthropic_api_key:
+        if not current_settings.anthropic_api_key:
             raise ConfigurationError(
                 "To use Anthropic models, the ANTHROPIC_API_KEY environment variable must be set."
             )
-        os.environ.setdefault("ANTHROPIC_API_KEY", settings.anthropic_api_key.get_secret_value())
+        os.environ.setdefault(
+            "ANTHROPIC_API_KEY", current_settings.anthropic_api_key.get_secret_value()
+        )
 
     final_processors = processors.copy(deep=True) if processors else AgentProcessors()
 
@@ -275,8 +278,10 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                 raise ValueError("timeout must be a positive integer if specified.")
         self._agent = agent
         self._max_retries = max_retries
+        from flujo.infra.settings import settings as current_settings
+
         self._timeout_seconds: int | None = (
-            timeout if timeout is not None else settings.agent_timeout
+            timeout if timeout is not None else current_settings.agent_timeout
         )
         self._model_name: str | None = model_name or getattr(agent, "model", "unknown_model")
         self.processors: AgentProcessors = processors or AgentProcessors()
