@@ -19,7 +19,7 @@ from ..exceptions import (
     ContextInheritanceError,
 )
 from ..domain.models import PipelineResult, PipelineContext
-from ..domain.pipeline_dsl import Step, LoopStep
+from ..domain.pipeline_dsl import Step, LoopStep, Pipeline
 from ..application.flujo_engine import Flujo, _accepts_param, _extract_missing_fields
 
 _command_adapter: TypeAdapter[AgentCommand] = TypeAdapter(AgentCommand)
@@ -43,7 +43,7 @@ class AgenticLoop:
         executor_step: Step[Any, Any] = Step.model_validate(
             {"name": "ExecuteCommand", "agent": _CommandExecutor(self.agent_registry)}
         )
-        loop_body = (
+        loop_body: Pipeline[Any, Any] = (
             Step.model_validate({"name": "DecideNextCommand", "agent": self.planner_agent})
             >> executor_step
         )

@@ -484,33 +484,145 @@ async def _execute_parallel_step_logic(
     outputs: Dict[str, Any] = {}
     branch_results: Dict[str, StepResult] = {}
 
+    # Shared state for proactive cancellation
+    limit_breached = asyncio.Event()
+    limit_breach_error: Optional[UsageLimitExceededError] = None
+
     async def run_branch(key: str, branch_pipe: Pipeline[Any, Any]) -> None:
-        ctx_copy = copy.deepcopy(context) if context is not None else None
+        nonlocal limit_breach_error
+
+        # Optimized context copying strategy
+        if context is not None:
+            if parallel_step.context_include_keys is not None:
+                # Create a new context with only the specified fields
+                branch_context_data = {}
+                for field_key in parallel_step.context_include_keys:
+                    if hasattr(context, field_key):
+                        branch_context_data[field_key] = getattr(context, field_key)
+                # Deepcopy only the selected data to maintain isolation
+                ctx_copy = context.__class__(**copy.deepcopy(branch_context_data))
+            else:
+                # Fallback to the original safe behavior
+                ctx_copy = copy.deepcopy(context)
+        else:
+            ctx_copy = None
+
         current = parallel_input
         branch_res = StepResult(name=f"{parallel_step.name}:{key}")
-        for s in branch_pipe.steps:
-            sr = await step_executor(s, current, ctx_copy, resources)
-            branch_res.latency_s += sr.latency_s
-            branch_res.cost_usd += getattr(sr, "cost_usd", 0.0)
-            branch_res.token_counts += getattr(sr, "token_counts", 0)
-            branch_res.attempts += sr.attempts
-            if not sr.success:
-                branch_res.success = False
-                branch_res.feedback = sr.feedback
-                branch_res.output = sr.output
-                break
-            current = sr.output
-        else:
-            branch_res.success = True
-            branch_res.output = current
+
+        try:
+            for s in branch_pipe.steps:
+                # Check if limit has been breached by another branch
+                if limit_breached.is_set():
+                    logfire.info(f"Branch '{key}' cancelled due to limit breach in sibling branch")
+                    branch_res.success = False
+                    branch_res.feedback = "Cancelled due to usage limit breach in sibling branch"
+                    break
+
+                sr = await step_executor(s, current, ctx_copy, resources)
+                branch_res.latency_s += sr.latency_s
+                branch_res.cost_usd += getattr(sr, "cost_usd", 0.0)
+                branch_res.token_counts += getattr(sr, "token_counts", 0)
+                branch_res.attempts += sr.attempts
+
+                # Check usage limits after each step within the branch
+                if usage_limits is not None:
+                    # Calculate cumulative usage across all branches
+                    total_cost = branch_res.cost_usd
+                    total_tokens = branch_res.token_counts
+
+                    # Add usage from other completed branches
+                    for other_key, other_br in branch_results.items():
+                        if other_key != key:
+                            total_cost += other_br.cost_usd
+                            total_tokens += other_br.token_counts
+
+                    # Check if limits are breached
+                    if (
+                        usage_limits.total_cost_usd_limit is not None
+                        and total_cost > usage_limits.total_cost_usd_limit
+                    ):
+                        limit_breach_error = UsageLimitExceededError(
+                            f"Cost limit of ${usage_limits.total_cost_usd_limit} exceeded",
+                            PipelineResult(
+                                step_history=[result],
+                                total_cost_usd=total_cost,
+                            ),
+                        )
+                        limit_breached.set()
+                        break
+
+                    if (
+                        usage_limits.total_tokens_limit is not None
+                        and total_tokens > usage_limits.total_tokens_limit
+                    ):
+                        limit_breach_error = UsageLimitExceededError(
+                            f"Token limit of {usage_limits.total_tokens_limit} exceeded",
+                            PipelineResult(
+                                step_history=[result],
+                                total_cost_usd=total_cost,
+                            ),
+                        )
+                        limit_breached.set()
+                        break
+
+                if not sr.success:
+                    branch_res.success = False
+                    branch_res.feedback = sr.feedback
+                    branch_res.output = sr.output
+                    break
+                current = sr.output
+            else:
+                branch_res.success = True
+                branch_res.output = current
+
+        except Exception as e:
+            logfire.error(f"Error in branch '{key}': {e}")
+            branch_res.success = False
+            branch_res.feedback = f"Branch execution error: {e}"
+            branch_res.output = None
+
         outputs[key] = branch_res.output
         branch_results[key] = branch_res
 
     start = time.monotonic()
-    tasks = [run_branch(k, pipe) for k, pipe in parallel_step.branches.items()]
-    await asyncio.gather(*tasks)
+
+    # Create tasks for all branches
+    tasks = {
+        asyncio.create_task(run_branch(k, pipe)): k for k, pipe in parallel_step.branches.items()
+    }
+
+    # Monitor tasks for completion or cancellation
+    while tasks:
+        done, pending = await asyncio.wait(tasks.keys(), return_when=asyncio.FIRST_COMPLETED)
+
+        # Check if any completed task was due to a limit breach
+        if limit_breached.is_set():
+            logfire.info("Usage limit breached, cancelling remaining tasks...")
+            for task in pending:
+                task.cancel()
+
+            # Wait for cancellations to complete
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
+
+            # Re-raise the usage limit error
+            if limit_breach_error is not None:
+                Flujo._set_final_context(limit_breach_error.result, context)
+                raise limit_breach_error
+            break
+
+        # Process completed tasks
+        for task in done:
+            try:
+                await task  # This will re-raise any exception from the task
+            except Exception as e:
+                logfire.error(f"Task failed: {e}")
+            tasks.pop(task)
+
     result.latency_s = time.monotonic() - start
 
+    # Aggregate results from all branches
     for br in branch_results.values():
         result.cost_usd += br.cost_usd
         result.token_counts += br.token_counts
@@ -519,6 +631,7 @@ async def _execute_parallel_step_logic(
 
     result.success = all(br.success for br in branch_results.values())
 
+    # Final usage limit check (for backward compatibility and safety)
     if usage_limits is not None:
         if (
             usage_limits.total_cost_usd_limit is not None

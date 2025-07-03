@@ -548,6 +548,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         cls,
         name: str,
         branches: Dict[str, "Step[Any, Any]" | "Pipeline[Any, Any]"],
+        context_include_keys: Optional[List[str]] = None,
         **config_kwargs: Any,
     ) -> "ParallelStep[ContextT]":
         """Factory to run branches concurrently and aggregate outputs."""
@@ -558,6 +559,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             {
                 "name": name,
                 "branches": branches,
+                "context_include_keys": context_include_keys,
                 "config": StepConfig(**config_kwargs),
             }
         )
@@ -753,6 +755,11 @@ class ParallelStep(Step[Any, Any], Generic[ContextT]):
 
     branches: Dict[str, "Pipeline[Any, Any]"] = Field(
         description="Mapping of branch names to pipelines to run in parallel."
+    )
+    context_include_keys: Optional[List[str]] = Field(
+        default=None,
+        description="If provided, only these top-level context fields will be copied to each branch. "
+        "If None, the entire context is deep-copied (default behavior).",
     )
 
     model_config = {"arbitrary_types_allowed": True}

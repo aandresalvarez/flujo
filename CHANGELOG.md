@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2025-01-15
+
+### Added
+- **Optimized ParallelStep Context Copying**: New `context_include_keys` parameter for `Step.parallel()` to selectively copy only needed context fields
+  - Significantly reduces memory usage and overhead when working with large context objects
+  - Allows developers to specify which context fields are required by parallel branches
+  - Maintains backward compatibility - omitting the parameter copies the entire context
+  - Performance improvement scales with context size and number of parallel branches
+- **Proactive Governor Cancellation**: Enhanced `ParallelStep` with immediate sibling task cancellation
+  - When any branch exceeds usage limits (cost or token limits), all sibling branches are immediately cancelled
+  - Prevents wasted resources and time by stopping unnecessary work early
+  - Uses `asyncio.Event` for efficient coordination between parallel tasks
+  - Improves cost efficiency and reduces execution time for usage-limited scenarios
+- **Comprehensive Benchmark Tests**: Added performance validation for new ParallelStep features
+  - Integration tests verify selective context copying behavior
+  - Benchmark tests measure performance improvements with large context objects
+  - Cancellation tests ensure proper cleanup when usage limits are exceeded
+  - Example script demonstrates practical usage of new features
+
+### Changed
+- **Enhanced ParallelStep Implementation**: Refactored `_execute_parallel_step_logic` for better performance and resource management
+  - Optimized context copying strategy with selective field inclusion
+  - Improved error handling and cancellation logic
+  - Better resource cleanup and task management
+  - More efficient coordination between parallel branches
+
+### Fixed
+- **Test Context Model Inheritance**: Fixed test context models to inherit from `flujo.domain.models.BaseModel`
+  - Resolves Pydantic model inheritance issues in test suite
+  - Ensures proper type compatibility with Flujo's domain models
+  - Maintains test isolation and reliability
+
 ## [0.6.0] - 2025-01-15
 
 ### Added

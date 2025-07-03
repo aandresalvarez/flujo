@@ -531,3 +531,249 @@ result = runner.run("Write a blog post about AI")
 - Check out [Use Cases](use_cases.md)
 - Future work: a `pipeline.visualize()` helper will output a Mermaid graph so you
   can instantly diagram your pipeline.
+
+# Pipeline DSL
+
+The Pipeline DSL provides a fluent interface for building complex workflows. It supports sequential execution, conditional branching, parallel execution, and looping.
+
+## Steps
+
+Steps are the basic building blocks of pipelines. Each step has a name and an agent that performs the actual work.
+
+### Creating Steps
+
+```python
+from flujo import Step
+
+# Create a step with an agent
+step = Step("my_step", my_agent)
+
+# Create a step with configuration
+step = Step("my_step", my_agent, max_retries=3, timeout_s=30.0)
+```
+
+### Step Configuration
+
+Steps can be configured with various options:
+
+- `max_retries`: Number of retry attempts (default: 1)
+- `timeout_s`: Timeout in seconds (default: None)
+- `temperature`: Temperature for LLM agents (default: None)
+
+## Pipelines
+
+Pipelines are sequences of steps that execute in order.
+
+### Creating Pipelines
+
+```python
+from flujo import Pipeline, Step
+
+# Create a pipeline from steps
+pipeline = Step("step1", agent1) >> Step("step2", agent2) >> Step("step3", agent3)
+
+# Or create a pipeline directly
+pipeline = Pipeline([step1, step2, step3])
+```
+
+### Pipeline Composition
+
+Pipelines can be composed using the `>>` operator:
+
+```python
+pipeline1 = Step("a", agent_a) >> Step("b", agent_b)
+pipeline2 = Step("c", agent_c) >> Step("d", agent_d)
+combined = pipeline1 >> pipeline2
+```
+
+## Conditional Steps
+
+Conditional steps execute different branches based on a condition.
+
+```python
+from flujo import Step
+
+def route_by_type(data, context):
+    if "code" in str(data):
+        return "code"
+    return "text"
+
+conditional = Step.branch_on(
+    name="router",
+    condition_callable=route_by_type,
+    branches={
+        "code": Pipeline.from_step(Step("code_gen", code_agent)),
+        "text": Pipeline.from_step(Step("text_gen", text_agent)),
+    }
+)
+```
+
+## Parallel Steps
+
+Parallel steps execute multiple branches concurrently and aggregate their outputs.
+
+### Basic Parallel Execution
+
+```python
+from flujo import Step
+
+parallel = Step.parallel(
+    name="parallel_processing",
+    branches={
+        "analysis": Pipeline.from_step(Step("analyze", analysis_agent)),
+        "summary": Pipeline.from_step(Step("summarize", summary_agent)),
+    }
+)
+```
+
+### Optimized Context Copying
+
+For pipelines with large context objects, you can optimize performance by specifying which context fields each branch needs:
+
+```python
+from flujo import Step
+
+# Only copy specific context fields to each branch
+parallel = Step.parallel(
+    name="parallel_optimized",
+    branches={
+        "analysis": Pipeline.from_step(Step("analyze", analysis_agent)),
+        "summary": Pipeline.from_step(Step("summarize", summary_agent)),
+    },
+    context_include_keys=["user_id", "document_id"]  # Only copy these fields
+)
+```
+
+This feature provides significant performance improvements when:
+- Your context contains large data structures (documents, images, etc.)
+- You have many parallel branches
+- Each branch only needs a subset of the context data
+
+### Proactive Governor Cancellation
+
+Parallel steps now support proactive cancellation when usage limits are breached. When any branch exceeds cost or token limits, sibling branches are immediately cancelled to prevent unnecessary resource consumption:
+
+```python
+from flujo import Step, UsageLimits
+
+parallel = Step.parallel(
+    name="parallel_governed",
+    branches={
+        "fast_expensive": Pipeline.from_step(Step("expensive", costly_agent)),
+        "slow_cheap": Pipeline.from_step(Step("cheap", cheap_agent)),
+    }
+)
+
+# If fast_expensive breaches the limit, slow_cheap will be cancelled immediately
+limits = UsageLimits(total_cost_usd_limit=0.10)
+runner = Flujo(parallel, usage_limits=limits)
+```
+
+This feature is particularly beneficial when:
+- You have branches with varying costs and execution times
+- You want to minimize wasted resources when limits are exceeded
+- You need predictable execution times under resource constraints
+
+## Loop Steps
+
+Loop steps execute a pipeline repeatedly until a condition is met.
+
+```python
+from flujo import Step
+
+def should_continue(output, context):
+    return len(str(output)) < 100
+
+loop = Step.loop_until(
+    name="refinement_loop",
+    loop_body_pipeline=Pipeline.from_step(Step("refine", refine_agent)),
+    exit_condition_callable=should_continue,
+    max_loops=5
+)
+```
+
+## Human-in-the-Loop Steps
+
+Human-in-the-loop steps pause execution for human input.
+
+```python
+from flujo import Step
+
+hitl = Step.human_in_the_loop(
+    name="approval",
+    message_for_user="Please review and approve the generated content"
+)
+```
+
+## Map Steps
+
+Map steps apply a pipeline to each item in an iterable from the context.
+
+```python
+from flujo import Step
+
+class Context(BaseModel):
+    items: List[str]
+
+map_step = Step.map_over(
+    name="process_items",
+    pipeline_to_run=Pipeline.from_step(Step("process", process_agent)),
+    iterable_input="items"
+)
+```
+
+## Step Factories
+
+Flujo provides several factory methods for creating specialized steps.
+
+### From Callable
+
+```python
+from flujo import Step
+
+async def my_function(data: str, *, context: BaseModel | None = None) -> str:
+    return data.upper()
+
+step = Step.from_callable(my_function, name="uppercase")
+```
+
+### From Mapper
+
+```python
+from flujo import Step
+
+async def double(x: int) -> int:
+    return x * 2
+
+step = Step.from_mapper(double, name="double")
+```
+
+## Validation and Error Handling
+
+Steps can include validation plugins and error handlers.
+
+```python
+from flujo import Step
+
+step = Step("validated", agent).add_plugin(validator, priority=1)
+```
+
+## Context Updates
+
+Steps can update the pipeline context.
+
+```python
+from flujo import Step
+
+step = Step("updater", agent, updates_context=True)
+```
+
+## Step Metadata
+
+Steps can carry arbitrary metadata.
+
+```python
+from flujo import Step
+
+step = Step("metadata", agent, meta={"version": "1.0", "author": "team"})
+```
