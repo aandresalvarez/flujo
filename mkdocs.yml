@@ -49,9 +49,13 @@ nav:
     - 'HITL Structured Input': cookbook/hitl_structured_input.md
     - 'HITL Correction Loop': cookbook/hitl_stateful_correction_loop.md
     - 'Real-Time Chatbot': cookbook/realtime_chatbot.md
-    - 'Advanced Prompt Formatting': cookbook/advanced_prompting.md
+    - 'Advanced Prompt Formatting': cookbook/advanced_prompt_formatting.md # pragma: allowlist secret # pragma: allowlist secret
     - 'Adapter Step': cookbook/adapter_step.md
     - 'Serialize Pydantic': cookbook/serialize_pydantic.md
+    - 'Using the Repair Processor': cookbook/using_repair_processor.md
+    - 'Console Tracer': cookbook/console_tracer.md
+    - 'Redacting Secrets': cookbook/redacting_secrets.md  # pragma: allowlist secret
+    - 'Custom Validators': cookbook/custom_validators.md
     - 'Agentic Loop': recipes/agentic_loop.md
   - Guides:
     - 'Choosing Your Loop': guides/choosing_your_loop.md

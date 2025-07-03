@@ -1,26 +1,46 @@
 # Cookbook: Using the Console Tracer
 
-## The Problem
+The `ConsoleTracer` is a hook that provides detailed, colorized output of your pipeline's execution to the console. It's a great tool for debugging and understanding how your pipeline is working.
 
-When developing pipelines, it can be hard to understand what happens at each step. You want instant feedback in your terminal with minimal setup.
+## Usage
 
-## The Solution
-
-The `ConsoleTracer` provides rich, colorized output for every step in a run. Enable it via the `local_tracer` parameter when constructing `Flujo`.
+To use the `ConsoleTracer`, you first need to instantiate it. You can then pass it to the `Flujo` runner in the `hooks` list.
 
 ```python
-from flujo import Flujo, Step
+from flujo import Step, Flujo
 from flujo.tracing import ConsoleTracer
 from flujo.testing.utils import StubAgent
 
-step = Step("example", StubAgent(["ok"]))
+# Create a tracer
+tracer = ConsoleTracer()
 
-# Quick enablement with the built-in defaults
-runner = Flujo(step, local_tracer="default")
+# Create a simple pipeline
+pipeline = Step.from_mapper(lambda x: x.upper())
 
-# Or configure it yourself
-custom = ConsoleTracer(level="debug", log_inputs=True)
-runner_custom = Flujo(step, local_tracer=custom)
+# Create a runner with the tracer hook
+runner = Flujo(pipeline, hooks=[tracer.hook])
+
+# Run the pipeline
+runner.run("hello world")
 ```
 
-With `level="info"` only high‑level events are printed. `level="debug"` also shows inputs and outputs.
+This will print a series of panels to the console, showing the start and end of the pipeline, as well as the start and end of each step.
+
+## Configuration
+
+The `ConsoleTracer` can be configured to control the level of detail and the appearance of the output.
+
+*   `level`: The logging level. Can be `"info"` or `"debug"`. In `"debug"` mode, the tracer will also log the inputs and outputs of each step.
+*   `log_inputs`: Whether to log the inputs of each step. Defaults to `True`.
+*   `log_outputs`: Whether to log the outputs of each step. Defaults to `True`.
+*   `colorized`: Whether to use color in the output. Defaults to `True`.
+
+```python
+# Create a tracer with custom configuration
+tracer = ConsoleTracer(
+    level="info",
+    log_inputs=False,
+    log_outputs=False,
+    colorized=False,
+)
+```

@@ -215,7 +215,67 @@ async def test_agent_restoration():
 5. **Simple Syntax**: Clean context manager interface
 6. **No Code Changes**: Test application code without modifying it
 
-## 7. Common Pitfalls
+## 7. Assertion Utilities
+
+`flujo` provides helpful assertion utilities to simplify testing of pipeline behavior, especially when dealing with validation results and context updates.
+
+### `assert_validator_failed`
+
+Asserts that a specific validator failed during a pipeline run. This is useful for testing scenarios where you expect a validation step to produce a failure.
+
+```python
+from flujo import Flujo, Step
+from flujo.testing.utils import StubAgent
+from flujo.validation import validator
+
+@validator
+def always_fail_validator(output: str) -> tuple[bool, str | None]:
+    return False, "This validator always fails!"
+
+pipeline = (
+    Step.solution(StubAgent(["some output"]))
+    >> Step.validate(validators=[always_fail_validator])
+)
+
+async def test_validator_failure():
+    runner = Flujo(pipeline)
+    result = await runner.arun("input")
+    
+    # Assert that the 'always_fail_validator' failed
+    assert_validator_failed(result, "always_fail_validator", "This validator always fails!")
+```
+
+### `assert_context_updated`
+
+Asserts that the final pipeline context contains specific expected updates. This is useful for testing that your steps correctly modify the shared pipeline context.
+
+```python
+from flujo import Flujo, Step
+from flujo.domain.models import PipelineContext
+from flujo.testing.utils import StubAgent
+
+class MyContext(PipelineContext):
+    my_value: int = 0
+
+@Step
+async def increment_context(input_data: str, *, context: MyContext) -> str:
+    context.my_value += 1
+    return input_data
+
+pipeline = (
+    Step.solution(StubAgent(["initial"]))
+    >> increment_context
+)
+
+async def test_context_update():
+    runner = Flujo(pipeline, context_model=MyContext, initial_context_data={"my_value": 0})
+    result = await runner.arun("test")
+    
+    # Assert that 'my_value' in the context was updated to 1
+    assert_context_updated(result, my_value=1)
+```
+
+## 8. Common Pitfalls
 
 If a mocked agent returns the default `Mock` object, the engine raises:
 
