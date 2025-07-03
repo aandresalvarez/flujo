@@ -4,6 +4,7 @@ import asyncio
 import inspect
 import time
 import weakref
+import contextvars
 import copy
 from unittest.mock import Mock
 from typing import (
@@ -72,11 +73,19 @@ from ..domain.events import (
 from ..domain.backends import ExecutionBackend, StepExecutionRequest
 from ..tracing import ConsoleTracer
 
+_fallback_chain_var: contextvars.ContextVar[list[Step[Any, Any]]] = contextvars.ContextVar(
+    "_fallback_chain", default=[]
+)
+
 _agent_command_adapter: TypeAdapter[AgentCommand] = TypeAdapter(AgentCommand)
 
 
 class InfiniteRedirectError(OrchestratorError):
     """Raised when a redirect loop is detected."""
+
+
+class InfiniteFallbackError(OrchestratorError):
+    """Raised when a fallback loop is detected."""
 
 
 _accepts_param_cache_weak: "weakref.WeakKeyDictionary[Callable[..., Any], Dict[str, Optional[bool]]]" = weakref.WeakKeyDictionary()
@@ -949,6 +958,45 @@ async def _run_step_logic(
         is_validation_step=is_validation_step,
         is_strict=is_strict,
     )
+    # If the step failed and a fallback is defined, execute it.
+    if not result.success and step.fallback_step:
+        logfire.info(
+            f"Step '{step.name}' failed. Attempting fallback step '{step.fallback_step.name}'."
+        )
+        original_failure_feedback = result.feedback
+
+        chain = _fallback_chain_var.get()
+        if step in chain:
+            raise InfiniteFallbackError(f"Fallback loop detected in step '{step.name}'")
+        token = _fallback_chain_var.set(chain + [step])
+        try:
+            fallback_result = await step_executor(
+                step.fallback_step,
+                data,
+                context,
+                resources,
+            )
+        finally:
+            _fallback_chain_var.reset(token)
+
+        result.latency_s += fallback_result.latency_s
+        result.cost_usd += fallback_result.cost_usd
+        result.token_counts += fallback_result.token_counts
+
+        if fallback_result.success:
+            result.success = True
+            result.output = fallback_result.output
+            result.feedback = None
+            result.metadata_ = {
+                **(result.metadata_ or {}),
+                "fallback_triggered": True,
+                "original_error": original_failure_feedback,
+            }
+        else:
+            result.feedback = (
+                f"Original error: {original_failure_feedback}\n"
+                f"Fallback error: {fallback_result.feedback}"
+            )
     if not result.success and step.persist_feedback_to_context:
         if context is not None and hasattr(context, step.persist_feedback_to_context):
             history_list = getattr(context, step.persist_feedback_to_context)
