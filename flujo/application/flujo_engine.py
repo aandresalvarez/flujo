@@ -159,6 +159,7 @@ def _types_compatible(a: Any, b: Any) -> bool:
         return issubclass(a, b)
     except Exception as e:
         import logging
+
         logging.warning(f"_types_compatible: issubclass({a}, {b}) raised {e}")
         return False
 

@@ -245,6 +245,7 @@ class _CommandExecutor:
                 # WARNING: The following use of exec is sandboxed with empty __builtins__ for security.
                 # Only trusted code should be executed here. Review all inputs to this exec carefully.
                 import logging
+
                 logging.info(f"Executing trusted user code in agentic_loop: {cmd.code}")
                 exec(
                     compile(tree, filename="<agentic_loop>", mode="exec"),

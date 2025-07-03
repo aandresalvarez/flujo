@@ -64,6 +64,7 @@ class DeterministicRepairProcessor:
             return self._canonical(obj)
         except Exception as e:
             import logging
+
             logging.warning(f"DeterministicRepairProcessor: ast.literal_eval failed: {e}")
             # pass
 
@@ -76,6 +77,7 @@ class DeterministicRepairProcessor:
             return True
         except Exception as e:
             import logging
+
             logging.warning(f"DeterministicRepairProcessor: _is_json failed: {e}")
             return False
 
