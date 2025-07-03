@@ -560,6 +560,23 @@ Steps can be configured with various options:
 - `timeout_s`: Timeout in seconds (default: None)
 - `temperature`: Temperature for LLM agents (default: None)
 
+### Fallback Steps
+
+Use `.fallback(other_step)` to specify an alternate step to run if the primary
+step fails after exhausting its retries. The fallback receives the same input as
+the original step.
+
+```python
+from flujo import Step
+
+primary = Step("generate", primary_agent, max_retries=2)
+backup = Step("backup", backup_agent)
+primary.fallback(backup)
+```
+
+If the fallback succeeds, the overall step is marked successful and
+`StepResult.metadata_['fallback_triggered']` is set to `True`.
+
 ## Pipelines
 
 Pipelines are sequences of steps that execute in order.

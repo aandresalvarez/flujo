@@ -949,6 +949,34 @@ async def _run_step_logic(
         is_validation_step=is_validation_step,
         is_strict=is_strict,
     )
+    # If the step failed and a fallback is defined, execute it.
+    if not result.success and step.fallback_step:
+        logfire.info(
+            f"Step '{step.name}' failed. Attempting fallback step '{step.fallback_step.name}'."
+        )
+        original_failure_feedback = result.feedback
+        fallback_result = await step_executor(
+            step.fallback_step,
+            data,
+            context,
+            resources,
+        )
+        if fallback_result.success:
+            result.success = True
+            result.output = fallback_result.output
+            result.feedback = None
+            result.cost_usd += fallback_result.cost_usd
+            result.token_counts += fallback_result.token_counts
+            result.metadata_ = {
+                "fallback_triggered": True,
+                "original_error": original_failure_feedback,
+                **(result.metadata_ or {}),
+            }
+        else:
+            result.feedback = (
+                f"Original error: {original_failure_feedback}\n"
+                f"Fallback error: {fallback_result.feedback}"
+            )
     if not result.success and step.persist_feedback_to_context:
         if context is not None and hasattr(context, step.persist_feedback_to_context):
             history_list = getattr(context, step.persist_feedback_to_context)
