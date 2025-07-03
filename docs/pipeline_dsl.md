@@ -776,6 +776,22 @@ async def double(x: int) -> int:
 step = Step.from_mapper(double, name="double")
 ```
 
+### Caching Step Results
+
+Use `Step.cached()` to store the result of an expensive step in a cache backend.
+
+```python
+from flujo import Step
+from flujo.caching import InMemoryCache
+
+expensive = Step("slow", agent)
+cached = Step.cached(expensive, cache_backend=InMemoryCache())
+```
+
+On a cache hit, `StepResult.metadata_["cache_hit"]` will be `True`. The cache key
+includes the step's definition (agent and config), the step input data, and any
+context or resources provided.
+
 ## Validation and Error Handling
 
 Steps can include validation plugins and error handlers.

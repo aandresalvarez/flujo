@@ -53,9 +53,7 @@ init_telemetry()
 @app.command()
 def solve(
     prompt: str,
-    max_iters: Annotated[
-        Optional[int], typer.Option(help="Maximum number of iterations.")
-    ] = None,
+    max_iters: Annotated[Optional[int], typer.Option(help="Maximum number of iterations.")] = None,
     k: Annotated[
         Optional[int],
         typer.Option(help="Number of solution variants to generate per iteration."),
@@ -77,9 +75,7 @@ def solve(
     solution_model: Annotated[
         Optional[str], typer.Option(help="Model for the Solution agent.")
     ] = None,
-    review_model: Annotated[
-        Optional[str], typer.Option(help="Model for the Review agent.")
-    ] = None,
+    review_model: Annotated[Optional[str], typer.Option(help="Model for the Review agent.")] = None,
     validator_model: Annotated[
         Optional[str], typer.Option(help="Model for the Validator agent.")
     ] = None,
@@ -109,9 +105,7 @@ def solve(
     try:
         # Argument validation
         if max_iters is not None and max_iters <= 0:
-            typer.echo(
-                "[red]Error: --max-iters must be a positive integer[/red]", err=True
-            )
+            typer.echo("[red]Error: --max-iters must be a positive integer[/red]", err=True)
             raise typer.Exit(2)
         if k is not None and k <= 0:
             typer.echo("[red]Error: --k must be a positive integer[/red]", err=True)
@@ -134,8 +128,7 @@ def solve(
                     else:
                         weights = json.load(f)
                 if not isinstance(weights, list) or not all(
-                    isinstance(w, dict) and "item" in w and "weight" in w
-                    for w in weights
+                    isinstance(w, dict) and "item" in w and "weight" in w for w in weights
                 ):
                     typer.echo(
                         "[red]Weights file must be a list of objects with 'item' and 'weight'",
@@ -242,12 +235,8 @@ def bench(prompt: str, rounds: int = 10) -> None:
     import numpy as np
 
     try:
-        review_agent = make_agent_async(
-            settings.default_review_model, REVIEW_SYS, Checklist
-        )
-        solution_agent = make_agent_async(
-            settings.default_solution_model, SOLUTION_SYS, str
-        )
+        review_agent = make_agent_async(settings.default_review_model, REVIEW_SYS, Checklist)
+        solution_agent = make_agent_async(settings.default_solution_model, SOLUTION_SYS, str)
         validator_agent = make_agent_async(
             settings.default_validator_model, VALIDATE_SYS, Checklist
         )
@@ -283,12 +272,8 @@ def bench(prompt: str, rounds: int = 10) -> None:
         table.add_column("Mean", justify="right")
         table.add_column("p50", justify="right")
         table.add_column("p95", justify="right")
-        table.add_row(
-            "Latency (s)", f"{avg_time:.2f}", f"{p50_time:.2f}", f"{p95_time:.2f}"
-        )
-        table.add_row(
-            "Score", f"{avg_score:.2f}", f"{p50_score:.2f}", f"{p95_score:.2f}"
-        )
+        table.add_row("Latency (s)", f"{avg_time:.2f}", f"{p50_time:.2f}", f"{p95_time:.2f}")
+        table.add_row("Score", f"{avg_score:.2f}", f"{p50_score:.2f}", f"{p95_score:.2f}")
         console: Console = Console()
         console.print(table)
     except KeyboardInterrupt:
@@ -327,9 +312,7 @@ def add_eval_case_cmd(
     """Print a new Case(...) definition to manually add to a dataset file."""
 
     if not dataset_path.exists() or not dataset_path.is_file():
-        typer.secho(
-            f"Error: Dataset file not found at {dataset_path}", fg=typer.colors.RED
-        )
+        typer.secho(f"Error: Dataset file not found at {dataset_path}", fg=typer.colors.RED)
         raise typer.Exit(1)
 
     case_parts = [f'Case(name="{case_name}", inputs="""{inputs}"""']
@@ -400,9 +383,7 @@ def improve(
     try:
         pipe_ns: Dict[str, Any] = runpy.run_path(pipeline_path)
         dataset_ns: Dict[str, Any] = runpy.run_path(dataset_path)
-    except (
-        Exception
-    ) as e:  # pragma: no cover - user error handling, covered in integration tests
+    except Exception as e:  # pragma: no cover - user error handling, covered in integration tests
         typer.echo(f"[red]Failed to load file: {e}", err=True)
         raise typer.Exit(1)
 
@@ -445,8 +426,7 @@ def improve(
                 detail += f"\nPrompt: {s.prompt_modification_details.modification_instruction}"
             elif s.config_change_details:
                 parts = [
-                    f"{c.parameter_name}->{c.suggested_value}"
-                    for c in s.config_change_details
+                    f"{c.parameter_name}->{c.suggested_value}" for c in s.config_change_details
                 ]
                 detail += "\nConfig: " + ", ".join(parts)
             elif s.suggested_new_eval_case_description:
