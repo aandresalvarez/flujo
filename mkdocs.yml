@@ -24,51 +24,53 @@ theme:
 
 nav:
   - Home: index.md
-  - Getting Started:
+  - '🚀 Getting Started':
     - Installation: installation.md
     - Quickstart: quickstart.md
     - Concepts: concepts.md
     - Configuration: configuration.md
-  - Usage: usage.md
-  - Tutorial: tutorial.md
-  - 'Intelligent Evals': intelligent_evals.md
-  - Extending: extending.md
-  - Development:
-    - 'Contributing Guide': dev.md
-    - 'Documentation Guide': documentation_guide.md
-    - 'Documentation Status': documentation_status.md
-    - 'Testing Guide': testing_guide.md
-  - 'Use Cases': use_cases.md
-  - Cookbook:
-    - 'Controlling Costs': cookbook/cost_control.md
-    - 'Lifecycle Hooks': cookbook/lifecycle_hooks.md
-    - 'Console Tracer': cookbook/console_tracer.md
-    - 'Using Resources': cookbook/using_resources.md
-    - 'HITL Simple Approval': cookbook/hitl_simple_approval.md
-    - 'HITL Dynamic Clarification': cookbook/hitl_dynamic_clarification.md
-    - 'HITL Structured Input': cookbook/hitl_structured_input.md
-    - 'HITL Correction Loop': cookbook/hitl_stateful_correction_loop.md
-    - 'Real-Time Chatbot': cookbook/realtime_chatbot.md
-    - 'Advanced Prompt Formatting': cookbook/advanced_prompting.md
-    - 'Adapter Step': cookbook/adapter_step.md
-    - 'Serialize Pydantic': cookbook/serialize_pydantic.md
-    - 'Agentic Loop': recipes/agentic_loop.md
-  - Guides:
-    - 'Choosing Your Loop': guides/choosing_your_loop.md
-  - Migration:
-    - 'v0.3.7': migration/v0.3.7.md
-    - 'v0.3.8': migration/v0.3.8.md
-  - API Reference:
-    - Overview: api_reference.md
+  - '📚 Usage Guides':
+    - Basic Usage: usage.md
+    - Tutorial: tutorial.md
+    - CLI Reference: cli.md
     - Pipeline DSL: pipeline_dsl.md
-    - Typed Pipeline Context: pipeline_context.md
+    - Tools: tools.md
+    - Scoring: scoring.md
+    - Telemetry: telemetry.md
+  - '🏗️ Architecture & Development':
+    - Architecture Overview: architecture.md
+    - API Reference: api_reference.md
+    - Extending: extending.md
+    - Testing Guide: testing_guide.md
+  - '🍳 Cookbook & Examples':
+    - Cost Control: cookbook/cost_control.md
+    - Lifecycle Hooks: cookbook/lifecycle_hooks.md
+    - Console Tracer: cookbook/console_tracer.md
+    - Using Resources: cookbook/using_resources.md
+    - HITL Simple Approval: cookbook/hitl_simple_approval.md
+    - HITL Dynamic Clarification: cookbook/hitl_dynamic_clarification.md
+    - HITL Structured Input: cookbook/hitl_structured_input.md
+    - HITL Correction Loop: cookbook/hitl_stateful_correction_loop.md
+    - Real-Time Chatbot: cookbook/realtime_chatbot.md
+    - Advanced Prompting: cookbook/advanced_prompting.md
+    - Adapter Step: cookbook/adapter_step.md
+    - Serialize Pydantic: cookbook/serialize_pydantic.md
+    - Agentic Loop: recipes/agentic_loop.md
+  - '🔧 Development & Contributing':
+    - Contributing Guide: dev.md
+    - Documentation Guide: documentation_guide.md
+    - Documentation Status: documentation_status.md
+  - '📖 Reference':
+    - Pipeline Context: pipeline_context.md
     - Looping (LoopStep): pipeline_looping.md
     - Branching (ConditionalStep): pipeline_branching.md
     - Modular Workflows: modular_workflows.md
-    - Scoring: scoring.md
-    - Tools: tools.md
-    - Telemetry: telemetry.md
     - Troubleshooting: troubleshooting.md
+    - Use Cases: use_cases.md
+  - '📋 Migration':
+    - 'v0.3.7': migration/v0.3.7.md
+    - 'v0.3.8': migration/v0.3.8.md
+    - 'v0.4.0': migration/v0.4.0.md
 
 plugins:
   - search

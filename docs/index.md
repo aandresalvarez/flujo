@@ -1,35 +1,12 @@
-# flujo Documentation Index
+# Flujo Documentation
 
-Welcome to the flujo documentation!
+Welcome to **Flujo** - a powerful Python library for orchestrating AI workflows with type safety and production-ready features.
 
-## Key Features
+## What is Flujo?
 
-- Compose complex AI workflows from simple steps **and from other pipelines**
-- Modular, type-safe pipeline DSL
-- Shared, typed context for stateful workflows
-- Plugins for validation, scoring, and more
-- Support for loops, branching, and human-in-the-loop
-- Extensible with custom agents, plugins, and backends
+**Flujo** is a Python library that provides a structured approach to building and managing multi-agent AI workflows. Built on top of Pydantic for type safety and data validation, it offers both high-level orchestration patterns and flexible pipeline construction tools.
 
-## Quick Links
-
-- [Pipeline DSL Guide](pipeline_dsl.md)
-- [Typed Pipeline Context](pipeline_context.md)
-- [Branching Pipelines](pipeline_branching.md)
-- [Looping Pipelines](pipeline_looping.md)
-- [Cookbook & Recipes](cookbook/)
-- [API Reference](api_reference.md)
-- [Extending flujo](extending.md)
-
-## What's New
-
-- **v2.1:** You can now chain entire pipelines together using the `>>` operator: `pipeline1 >> pipeline2`. This enables clean, modular, multi-stage workflows.
-
-## Overview
-
-The `flujo` is a powerful Python library that provides a structured approach to building and managing multi-agent AI workflows. Built on top of Pydantic for type safety and data validation, it offers both high-level orchestration patterns and flexible pipeline construction tools.
-
-## Features
+### Key Features
 
 - **🔧 Pydantic Native** – Everything from agents to pipeline context is defined with Pydantic models for reliable type safety
 - **🎯 Opinionated & Flexible** – Start with the built-in `Default` recipe for common patterns or compose custom flows using the Pipeline DSL
@@ -37,6 +14,10 @@ The `flujo` is a powerful Python library that provides a structured approach to 
 - **🧠 Intelligent Evals** – Automated evaluation and self-improvement powered by LLMs
 - **⚡ High Performance** – Async-first design with efficient concurrent execution
 - **🔌 Extensible** – Plugin system for custom validation, scoring, and tools
+
+### How It Works
+
+Flujo orchestrates AI workflows through a multi-agent approach where specialized agents (Review, Solution, Validation, Reflection) work together to solve complex tasks. The system uses a shared, typed context to maintain state across pipeline steps, enabling sophisticated workflows with built-in quality control and self-improvement capabilities.
 
 ## Quick Start
 
@@ -46,26 +27,17 @@ The `flujo` is a powerful Python library that provides a structured approach to 
 pip install flujo
 ```
 
-### Basic Usage
+### Your First Workflow
 
 ```python
 from flujo.recipes import Default
-from flujo import (
-    Task,
-    review_agent, solution_agent, validator_agent, reflection_agent,
-    init_telemetry,
-)
+from flujo import Task, init_telemetry
 
-# Initialize telemetry (optional)
+# Initialize telemetry (optional but recommended)
 init_telemetry()
 
 # Create the default recipe with built-in agents
-orch = Default(
-    review_agent=review_agent,
-    solution_agent=solution_agent,
-    validator_agent=validator_agent,
-    reflection_agent=reflection_agent,
-)
+orch = Default()
 
 # Define and run a task
 task = Task(prompt="Write a Python function to calculate Fibonacci numbers")
@@ -87,48 +59,54 @@ flujo bench "Write a sorting algorithm" --rounds 5
 
 # Show configuration
 flujo show-config
-
-# Generate improvement suggestions
-flujo improve pipeline.py dataset.py
 ```
 
-## Core Concepts
+## Documentation Structure
 
-- **Default recipe**: High-level coordinator for standard multi-agent workflows
-- **Pipeline DSL**: Flexible system for building custom agent workflows
-- **Agents**: Specialized AI models with specific roles (review, solution, validation, reflection)
-- **Tasks**: Input specifications with prompts and metadata
-- **Candidates**: Generated solutions with quality assessments
-- **Scoring**: Multiple strategies for evaluating solution quality
-- **Telemetry**: Built-in monitoring and observability
+### 🚀 Getting Started
+- **[Installation Guide](installation.md)** - Set up Flujo and configure your environment
+- **[Quickstart Guide](quickstart.md)** - Get up and running in 5 minutes
+- **[Core Concepts](concepts.md)** - Understand the fundamental building blocks
+- **[Configuration Guide](configuration.md)** - Configure API keys and settings
 
-## Architecture
+### 📚 Usage Guides
+- **[Basic Usage](usage.md)** - Learn the essential patterns and workflows
+- **[Tutorial](tutorial.md)** - Comprehensive guided tour from simple to advanced
+- **[CLI Reference](cli.md)** - Complete command-line interface documentation
+- **[Pipeline DSL Guide](pipeline_dsl.md)** - Build custom workflows with the DSL
+- **[Tools Guide](tools.md)** - Create and integrate external tools
+- **[Scoring Guide](scoring.md)** - Implement quality control and evaluation
+- **[Telemetry Guide](telemetry.md)** - Monitor and analyze performance
 
-The library follows a clean architecture with clear separation of concerns:
+### 🏗️ Architecture & Development
+- **[Architecture Overview](architecture.md)** - Understand the system design
+- **[API Reference](api_reference.md)** - Complete API documentation
+- **[Extending Guide](extending.md)** - Create custom components and plugins
+- **[Testing Guide](testing_guide.md)** - Best practices for testing workflows
 
-- **Application Layer**: Default recipe, Flujo engine, and high-level coordination
-- **Domain Layer**: Core models, pipeline DSL, and business logic
-- **Infrastructure Layer**: Agents, settings, telemetry, and external integrations
-- **CLI Layer**: Command-line interface for common operations
+### 🍳 Cookbook & Examples
+- **[Cost Control](cookbook/cost_control.md)** - Optimize costs while maintaining quality
+- **[Human-in-the-Loop](cookbook/hitl_simple_approval.md)** - Integrate human feedback
+- **[Advanced Patterns](cookbook/advanced_prompting.md)** - Sophisticated workflow patterns
+- **[Real-time Applications](cookbook/realtime_chatbot.md)** - Build streaming applications
 
-## Next Steps
+### 🔧 Development & Contributing
+- **[Contributing Guide](dev.md)** - How to contribute to Flujo
+- **[Development Setup](dev.md#setting-up-a-development-environment)** - Set up your development environment
+- **[Documentation Guide](documentation_guide.md)** - How to write and maintain documentation
+- **[Testing Guide](testing_guide.md)** - Testing strategies and best practices
 
-Choose your path based on your needs:
+### 📖 Reference
+- **[API Reference](api_reference.md)** - Complete API documentation
+- **[Troubleshooting](troubleshooting.md)** - Common issues and solutions
+- **[Migration Guides](migration/)** - Upgrade guides for version changes
+- **[Use Cases](use_cases.md)** - Real-world examples and patterns
 
-### For Beginners
-1. **[Installation Guide](installation.md)** - Get set up quickly
-2. **[Quickstart Guide](quickstart.md)** - Your first orchestration in 5 minutes
-3. **[Tutorial](tutorial.md)** - Comprehensive guided tour
+## What's New
 
-### For Developers
-1. **[Core Concepts](concepts.md)** - Understand the architecture
-2. **[Pipeline DSL Guide](pipeline_dsl.md)** - Build custom workflows
-3. **[API Reference](api_reference.md)** - Detailed documentation
-
-### For Advanced Users
-1. **[Extending Guide](extending.md)** - Create custom components
-2. **[Intelligent Evals](intelligent_evals.md)** - Automated evaluation and improvement
-3. **[Telemetry Guide](telemetry.md)** - Monitor and optimize performance
+- **v2.1:** Chain entire pipelines together using the `>>` operator: `pipeline1 >> pipeline2`
+- **v2.0:** Enhanced Pipeline DSL with improved type safety and performance
+- **v1.9:** Intelligent evaluation system with automated self-improvement
 
 ## Support & Community
 

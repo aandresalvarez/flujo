@@ -1,10 +1,27 @@
-# Contributing & Local Dev Guide
+# Development & Contributing Guide
 
-Thanks for helping improve **flujo**! This guide will help you set up a fully-featured development environment for Python 3.11+.
+Welcome to the Flujo development community! This guide will help you set up a development environment, understand the codebase, and contribute effectively.
 
----
+## Table of Contents
 
-## 1. Clone and Setup
+- [Getting Started](#getting-started)
+- [Development Environment](#development-environment)
+- [Code Quality & Testing](#code-quality--testing)
+- [Documentation](#documentation)
+- [Package Management](#package-management)
+- [Contributing Guidelines](#contributing-guidelines)
+- [Architecture for Developers](#architecture-for-developers)
+- [Troubleshooting](#troubleshooting)
+
+## Getting Started
+
+### Prerequisites
+
+- Python 3.11 or higher
+- Git
+- Basic familiarity with Python development
+
+### Clone and Setup
 
 ```bash
 # Clone the repository
@@ -23,42 +40,25 @@ python --version                    # should print 3.11.x
 > - Windows: Download from python.org
 > - Or use pyenv: `pyenv install 3.11.x`
 
----
+## Development Environment
 
-## 2. Development Environment Setup
+### Initial Setup
 
-Flujo uses [Hatch](https://hatch.pypa.io/) to manage the development
-environment and command scripts. The provided `Makefile` simply calls these
-`hatch` scripts for convenience.
+Flujo uses [Hatch](https://hatch.pypa.io/) to manage the development environment and command scripts. The provided `Makefile` simply calls these `hatch` scripts for convenience.
 
 ```bash
 pip install hatch
 make setup         # create the Hatch environment and install git hooks
 ```
 
-- `make setup` will:
-  - Install all required development, testing, and documentation dependencies (including `pytest`, `pytest-asyncio`, `vcrpy`, `hypothesis`, etc.)
-  - Set up pre-commit hooks for code quality and secret scanning
-  - Ensure your environment matches the CI pipeline
+The `make setup` command will:
+- Install all required development, testing, and documentation dependencies
+- Set up pre-commit hooks for code quality and secret scanning
+- Ensure your environment matches the CI pipeline
 
-> **Tip:** Always use `make setup` after pulling changes to dependencies or when setting up a new environment. This guarantees all tools (test, lint, type-check) will work as expected.
+> **Tip:** Always use `make setup` after pulling changes to dependencies or when setting up a new environment.
 
-make quality        # run format, lint, types and security checks
-make test           # run the test suite
-# pass extra pytest arguments
-make test args="-k my_test"
-
-Run `make help` to see all available commands.
-
----
-
-### Troubleshooting: mypy and Third-Party Stubs
-
-If you see errors from `mypy` about missing type stubs for third-party libraries (e.g., `pydantic_ai`, `tenacity`, `logfire`), don't worry! The `pyproject.toml` is configured to ignore these using the `[[tool.mypy.overrides]]` section. If you add new dependencies that lack type stubs, add them to this list to keep type checking clean and focused on your code.
-
----
-
-## 3. Environment Configuration
+### Environment Configuration
 
 ```bash
 # Copy the example environment file
@@ -73,9 +73,29 @@ cp .env.example .env
 
 The orchestrator automatically loads this file via **python-dotenv**.
 
----
+### Available Commands
 
-## 4. Testing
+```bash
+# Development workflow
+make quality        # run format, lint, types and security checks
+make test           # run the test suite
+make test args="-k my_test"  # pass extra pytest arguments
+
+# Documentation
+make docs-serve     # start docs server at http://127.0.0.1:8000
+make docs-build     # generate static site
+
+# Package management
+make package        # creates wheel and sdist in dist/
+make clean-package  # removes build artifacts
+
+# Help
+make help           # see all available commands
+```
+
+## Code Quality & Testing
+
+### Testing
 
 Run the test suite with:
 
@@ -87,20 +107,19 @@ Pass additional arguments to `pytest` using the `args` variable:
 
 ```bash
 make test args="-k my_test"
+make test args="--cov=flujo --cov-report=html"
 ```
 
 > **Note:** Async tests are handled automatically by **pytest-asyncio**
 
----
+### Code Quality Checks
 
-## 5. Code Quality
-
-### All-in-One Quality Check
+#### All-in-One Quality Check
 ```bash
 make quality                      # runs all quality checks
 ```
 
-### Individual Quality Checks
+#### Individual Quality Checks
 ```bash
 # Code Style
 make lint        # check with Ruff
@@ -108,7 +127,7 @@ make format      # format code
 make type-check  # static type checking with MyPy
 ```
 
-#### Security: Secret Detection
+### Security: Secret Detection
 
 Our project uses `detect-secrets` to prevent API keys and other sensitive credentials from being committed. This hook runs automatically every time you make a commit.
 
@@ -127,23 +146,32 @@ Our project uses `detect-secrets` to prevent API keys and other sensitive creden
      detect-secrets scan . > .secrets.baseline
      git add .secrets.baseline
      ```
-   - Commit your changes again. This will update the baseline for all contributors.
+   - Commit your changes again.
 
----
+### Troubleshooting: mypy and Third-Party Stubs
 
-## 6. Documentation
+If you see errors from `mypy` about missing type stubs for third-party libraries, don't worry! The `pyproject.toml` is configured to ignore these using the `[[tool.mypy.overrides]]` section. If you add new dependencies that lack type stubs, add them to this list.
 
+## Documentation
+
+### Local Development
 ```bash
-# Local Development
 make docs-serve                 # start docs server at http://127.0.0.1:8000
+```
 
-# Build
+### Building
+```bash
 make docs-build                # generate static site
 ```
 
----
+### Writing Documentation
 
-## 7. Package Management
+- Follow the [Documentation Guide](documentation_guide.md) for style guidelines
+- Use Google-style docstrings for all public APIs
+- Include examples in docstrings where helpful
+- Update the documentation status when adding new features
+
+## Package Management
 
 ### Building
 ```bash
@@ -175,289 +203,223 @@ make release-download      # download current release assets
 make release-delete       # delete current release (requires confirmation)
 ```
 
-> **Release Process Options:**
-> 1. **PyPI Release (Public):**
->    - Update version in `pyproject.toml`
->    - `git commit -am "release: vX.Y.Z"`
->    - `git tag vX.Y.Z && git push --tags`
->    - GitHub Actions will handle the release
->
-> 2. **GitHub Release (Private):**
->    - Update version in `pyproject.toml`
->    - `make release RELEASE_NOTES="Release notes"`
->    - Install using: `pip install https://github.com/username/flujo/releases/download/vX.Y.Z/flujo-X.Y.Z-py3-none-any.whl`
+### Release Process
 
-#### Detailed Release Process
+#### Version Management
+```toml
+# pyproject.toml
+[project]
+version = "0.3.0"  # Follow semantic versioning (MAJOR.MINOR.PATCH)
+```
+- **MAJOR**: Breaking changes
+- **MINOR**: New features (backwards compatible)
+- **PATCH**: Bug fixes (backwards compatible)
 
-1. **Version Management**
-   ```toml
-   # pyproject.toml
-   [project]
-   version = "0.3.0"  # Follow semantic versioning (MAJOR.MINOR.PATCH)
-   ```
-   - MAJOR: Breaking changes
-   - MINOR: New features (backwards compatible)
-   - PATCH: Bug fixes (backwards compatible)
+#### Release Options
 
-2. **Release Notes Best Practices**
-   ```markdown
-   # Example Release Notes
-   
-   ## What's New
-   - Added new AI agent orchestration features
-   - Improved error handling in workflow execution
-   - Enhanced documentation with usage examples
-   
-   ## Breaking Changes
-   - Renamed `Agent.run()` to `Agent.execute()` for clarity
-   - Updated configuration format in `config.yaml`
-   
-   ## Bug Fixes
-   - Fixed memory leak in long-running workflows
-   - Resolved race condition in parallel agent execution
-   
-   ## Dependencies
-   - Updated pydantic to v2.7.0
-   - Added new optional dependency: logfire>=0.3.0
-   ```
+1. **PyPI Release (Public):**
+   - Update version in `pyproject.toml`
+   - `git commit -am "release: vX.Y.Z"`
+   - `git tag vX.Y.Z && git push --tags`
+   - GitHub Actions will handle the release
 
-3. **Release Checklist**
-   - [ ] Update version in `pyproject.toml`
-   - [ ] Update CHANGELOG.md
-   - [ ] Run full test suite: `make test`
-   - [ ] Check code quality: `make quality`
-   - [ ] Build package: `make package`
-   - [ ] Verify wheel contents: `unzip -l dist/flujo-*.whl`
-   - [ ] Create release with notes
-   - [ ] Test installation in clean environment
-   - [ ] Update documentation if needed
+2. **GitHub Release (Private):**
+   - Update version in `pyproject.toml`
+   - `make release RELEASE_NOTES="Release notes"`
+   - Install using: `pip install https://github.com/username/flujo/releases/download/vX.Y.Z/flujo-X.Y.Z-py3-none-any.whl`
 
-4. **Testing the Release**
+## Contributing Guidelines
+
+### Code of Conduct
+
+This project adheres to the [Code of Conduct](CODE_OF_CONDUCT.md). By participating, you are expected to uphold this code.
+
+### How to Contribute
+
+1. **Fork the repository** on GitHub
+2. **Create a feature branch** from `main`:
    ```bash
-   # Create a clean virtual environment
-   python -m venv test_env
-   source test_env/bin/activate
-   
-   # Test PyPI installation
-   pip install flujo==X.Y.Z
-   
-   # Test GitHub release installation
-   pip install https://github.com/username/flujo/releases/download/vX.Y.Z/flujo-X.Y.Z-py3-none-any.whl
+   git checkout -b feature/your-feature-name
    ```
-
-#### Troubleshooting Release Issues
-
-| Issue | Solution |
-|-------|----------|
-| `Error: RELEASE_NOTES environment variable is required` | Provide release notes: `make release RELEASE_NOTES="Your notes"` |
-| `Error: Release vX.Y.Z already exists` | Delete existing release: `make release-delete` or use a new version |
-| `Error: No such file or directory: dist/flujo-*.whl` | Run `make package` first to build the distribution |
-| `Error: Permission denied` | Ensure GitHub CLI is authenticated: `gh auth status` |
-| `Error: Invalid version format` | Check version in `pyproject.toml` follows semantic versioning |
-| `Error: Wheel installation fails` | Verify Python version compatibility in `pyproject.toml` |
-| `Error: GitHub API rate limit exceeded` | Wait for rate limit reset or use GitHub token with higher limits |
-
-#### Common Release Scenarios
-
-1. **Hotfix Release**
+3. **Make your changes** following the coding standards
+4. **Test your changes** thoroughly:
    ```bash
-   # 1. Update patch version
-   # 2. Create release with focused notes
-   make release RELEASE_NOTES="Hotfix: Fixed critical issue in agent execution"
+   make test
+   make quality
    ```
+5. **Update documentation** if needed
+6. **Commit your changes** with clear, descriptive commit messages
+7. **Push to your fork** and create a Pull Request
 
-2. **Feature Release**
-   ```bash
-   # 1. Update minor version
-   # 2. Create comprehensive release notes
-   make release RELEASE_NOTES="New features: Added support for custom agent types and improved workflow monitoring"
-   ```
+### Commit Message Guidelines
 
-3. **Major Version Release**
-   ```bash
-   # 1. Update major version
-   # 2. Create detailed release notes with migration guide
-   make release RELEASE_NOTES="Major update: Completely redesigned agent system. See MIGRATION.md for upgrade instructions"
-   ```
+Use conventional commit format:
 
-#### Security Considerations
+```
+type(scope): description
 
-1. **Private Distribution**
-   - GitHub releases are private by default
-   - Access control via GitHub repository permissions
-   - Consider using GitHub Packages for better access management
+[optional body]
 
-2. **Package Signing**
-   - Consider signing your releases for additional security
-   - Use `twine` with GPG signing for PyPI releases
-   - Document signing process for maintainers
-
-3. **Dependency Management**
-   - Regularly audit dependencies with `pip-audit`
-   - Pin dependency versions in `pyproject.toml`
-   - Document any security-related changes in release notes
-
-#### Automated Release Workflows
-
-The project supports automated releases through GitHub Actions. There are two workflows available:
-
-1. **PyPI Release Workflow**
-   ```yaml
-   # .github/workflows/pypi-release.yml
-   name: PyPI Release
-   on:
-     push:
-       tags:
-         - 'v*'  # Triggers on version tags
-   
-   jobs:
-     release:
-       runs-on: ubuntu-latest
-       steps:
-         - uses: actions/checkout@v4
-         - name: Set up Python
-           uses: actions/setup-python@v5
-           with:
-             python-version: '3.11'
-         - name: Install dependencies
-           run: make pip-dev
-         - name: Run tests
-           run: make test
-         - name: Build package
-           run: make package
-         - name: Publish to PyPI
-           run: make publish
-           env:
-             TWINE_USERNAME: __token__
-             TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
-   ```
-   - Triggered by pushing a version tag (e.g., `v0.3.0`)
-   - Runs tests to ensure quality
-   - Builds and publishes to PyPI automatically
-   - Requires PyPI API token in repository secrets
-
-2. **GitHub Release Workflow**
-   ```yaml
-   # .github/workflows/github-release.yml
-   name: GitHub Release
-   on:
-     push:
-       tags:
-         - 'v*'  # Triggers on version tags
-   
-   jobs:
-     release:
-       runs-on: ubuntu-latest
-       steps:
-         - uses: actions/checkout@v4
-         - name: Set up Python
-           uses: actions/setup-python@v5
-           with:
-             python-version: '3.11'
-         - name: Install dependencies
-           run: make pip-dev
-         - name: Run tests
-           run: make test
-         - name: Build package
-           run: make package
-         - name: Create GitHub Release
-           uses: softprops/action-gh-release@v1
-           with:
-             files: |
-               dist/flujo-*.whl
-               dist/flujo-*.tar.gz
-             body_path: CHANGELOG.md
-           env:
-             GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-   ```
-   - Also triggered by version tags
-   - Creates GitHub releases automatically
-   - Uses CHANGELOG.md for release notes
-   - Uploads built packages as release assets
-
-**How to Use Automated Releases:**
-
-1. **Prepare for Release**
-   ```bash
-   # 1. Update version in pyproject.toml
-   # 2. Update CHANGELOG.md
-   # 3. Commit changes
-   git commit -am "release: v0.3.0"
-   
-   # 4. Create and push tag
-   git tag v0.3.0
-   git push origin v0.3.0
-   ```
-
-2. **What Happens Automatically**
-   - GitHub Actions workflow triggers
-   - Tests run to verify quality
-   - Package is built
-   - Release is created (PyPI and/or GitHub)
-   - Release notes are published
-   - Assets are uploaded
-
-3. **Required Setup**
-   - PyPI API token in repository secrets (for PyPI releases)
-   - GitHub token (automatically provided)
-   - Proper permissions in repository settings
-
-4. **Benefits**
-   - Consistent release process
-   - Automated testing before release
-   - No manual upload steps
-   - Release history tracking
-   - Automatic changelog generation
-   - Reduced human error
-
-5. **Monitoring Releases**
-   - Check Actions tab in GitHub repository
-   - Review release artifacts
-   - Verify PyPI/GitHub release pages
-   - Monitor installation success
-
-> **Note:** The automated workflows are configured in `.github/workflows/`. You can customize them based on your needs.
-
----
-
-## 8. Maintenance
-
-### Cleanup Commands
-```bash
-# Comprehensive cleanup
-make clean                     # removes all artifacts and caches
-
-# Selective cleanup
-make clean-pyc                # Python cache files
-make clean-build             # build/dist artifacts
-make clean-test             # test artifacts
-make clean-docs            # documentation
-make clean-cache          # tool caches (Ruff, MyPy)
+[optional footer]
 ```
 
-### Cache Management
-```bash
-# Clear specific tool caches
-make clean-ruff             # Ruff cache
-make clean-mypy            # MyPy cache
-make clean-cache          # All tool caches
+Types:
+- `feat`: New feature
+- `fix`: Bug fix
+- `docs`: Documentation changes
+- `style`: Code style changes (formatting, etc.)
+- `refactor`: Code refactoring
+- `test`: Adding or updating tests
+- `chore`: Maintenance tasks
+
+Examples:
+```
+feat(pipeline): add support for custom validators
+fix(agents): resolve timeout issue with OpenAI API
+docs(quickstart): improve installation instructions
 ```
 
----
+### Pull Request Guidelines
+
+- **Title**: Clear, descriptive title
+- **Description**: Explain what the PR does and why
+- **Tests**: Include tests for new features
+- **Documentation**: Update docs if needed
+- **Breaking Changes**: Clearly mark and explain breaking changes
+
+### Review Process
+
+1. **Automated Checks**: All PRs must pass CI checks
+2. **Code Review**: At least one maintainer must approve
+3. **Documentation**: Ensure documentation is updated
+4. **Testing**: Verify tests pass and coverage is maintained
+
+## Architecture for Developers
+
+### Project Structure
+
+```
+flujo/
+├── application/          # High-level orchestration
+│   ├── flujo_engine.py   # Core Flujo engine
+│   ├── evaluators.py     # Evaluation systems
+│   └── self_improvement.py # Self-improvement logic
+├── domain/              # Core business logic
+│   ├── models.py        # Core data models
+│   ├── pipeline_dsl.py  # Pipeline DSL implementation
+│   ├── scoring.py       # Scoring and evaluation
+│   ├── commands.py      # Agent command protocol
+│   └── validation.py    # Validation logic
+├── infra/               # Infrastructure components
+│   ├── agents.py        # Built-in agent implementations
+│   ├── backends.py      # Execution backends
+│   ├── settings.py      # Configuration management
+│   └── telemetry.py     # Observability systems
+├── recipes/             # Pre-built workflow patterns
+│   ├── default.py       # Default recipe implementation
+│   └── agentic_loop.py  # AgenticLoop pattern
+├── cli/                 # Command-line interface
+│   └── main.py          # CLI entry points
+└── testing/             # Testing utilities
+    └── assertions.py    # Test assertions and helpers
+```
+
+### Key Design Principles
+
+1. **Type Safety First**: All components use Pydantic models
+2. **Async-First Design**: All I/O operations are asynchronous
+3. **Extensibility**: Plugin system for custom components
+4. **Observability**: Built-in telemetry and tracing
+5. **Production Ready**: Error handling, retries, and resource management
+
+### Adding New Features
+
+#### Adding a New Agent Type
+
+1. **Define the agent** in `flujo/infra/agents.py`
+2. **Add tests** in `tests/unit/test_agents.py`
+3. **Update documentation** in relevant guides
+4. **Add examples** if appropriate
+
+#### Adding a New Recipe
+
+1. **Create the recipe** in `flujo/recipes/`
+2. **Add tests** in `tests/integration/`
+3. **Update documentation** in the recipes section
+4. **Add CLI support** if needed
+
+#### Adding a New Tool
+
+1. **Define the tool** following the Tool protocol
+2. **Add tests** for the tool
+3. **Update documentation** in the tools guide
+4. **Add examples** in the cookbook
+
+### Testing Strategy
+
+#### Unit Tests
+- Test individual components in isolation
+- Mock external dependencies
+- Focus on edge cases and error conditions
+
+#### Integration Tests
+- Test component interactions
+- Use real agents with mock backends
+- Test end-to-end workflows
+
+#### End-to-End Tests
+- Test complete workflows
+- Use real API calls (with VCR for recording)
+- Test CLI functionality
+
+### Performance Considerations
+
+- **Async Operations**: Use async/await for all I/O
+- **Caching**: Implement caching where appropriate
+- **Resource Management**: Clean up resources properly
+- **Monitoring**: Add telemetry for performance tracking
 
 ## Troubleshooting
 
-| Issue | Solution |
-|-------|----------|
-| `ERROR: Package requires a different Python` | Ensure Python 3.11+ is active (`python --version`) |
-| Async test failures | Verify `pytest-asyncio` is installed (included in `[dev]`) |
-| Poetry cache permission errors | `sudo chown -R $USER ~/Library/Caches/pypoetry` |
-| Make not found | Install: `brew install make` (macOS) or `apt install make` (Ubuntu) |
-| Tool-specific errors | Run `make clean-cache` and retry |
+### Common Issues
 
-For all available commands:
+#### Environment Setup
 ```bash
-make help
+# If you get import errors
+pip install -e ".[dev]"
+
+# If mypy fails
+make type-check
+
+# If tests fail
+make test args="-v"
 ```
 
-Happy coding! 🚀
+#### API Key Issues
+- Ensure `.env` file exists and contains valid keys
+- Check that keys have sufficient credits
+- Verify API endpoints are accessible
+
+#### Dependency Issues
+```bash
+# Clean and reinstall
+make clean-package
+make setup
+```
+
+### Getting Help
+
+- **Documentation**: Check the [documentation](index.md)
+- **Issues**: Search [GitHub Issues](https://github.com/aandresalvarez/flujo/issues)
+- **Discussions**: Ask in [GitHub Discussions](https://github.com/aandresalvarez/flujo/discussions)
+- **Code of Conduct**: Review our [Code of Conduct](CODE_OF_CONDUCT.md)
+
+### Development Tips
+
+1. **Use the Makefile**: Leverage the provided commands for consistency
+2. **Run Tests Often**: Test your changes frequently
+3. **Check Quality**: Run `make quality` before committing
+4. **Document Changes**: Update docs when adding features
+5. **Follow Patterns**: Study existing code for consistency
+
+Thank you for contributing to Flujo! Your contributions help make AI workflow orchestration more accessible and powerful for everyone.
