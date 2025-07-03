@@ -113,7 +113,8 @@ module = [
     "sqlvalidator",
     "vcr",
     "orjson",
-    "logfire"
+    "logfire",
+    "numpy"
 ]
 ignore_missing_imports = true
 

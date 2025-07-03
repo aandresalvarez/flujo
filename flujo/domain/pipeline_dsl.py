@@ -86,6 +86,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
     validators: List[Validator] = Field(default_factory=list)
     failure_handlers: List[Callable[[], None]] = Field(default_factory=list)
     processors: "AgentProcessors" = Field(default_factory=AgentProcessors)
+    fallback_step: Optional[Any] = Field(default=None, exclude=True)
     persist_feedback_to_context: Optional[str] = Field(
         default=None,
         description=("If step fails, append feedback to this context attribute (must be a list)."),
@@ -428,6 +429,11 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         self.failure_handlers.append(handler)
         return self
 
+    def fallback(self, step: "Step") -> "Step[StepInT, StepOutT]":
+        """Set a fallback step to execute if this step fails after retries."""
+        self.fallback_step = step
+        return self
+
     @classmethod
     def loop_until(
         cls,
@@ -687,6 +693,9 @@ def step(
 
 # Convenience alias to create mapping steps
 mapper = Step.from_mapper
+
+# Resolve forward references now that ``Step`` is fully defined
+# (handled automatically by Pydantic)
 
 
 def adapter_step(

@@ -50,6 +50,12 @@ class InfiniteRedirectError(OrchestratorError):
     pass
 
 
+class InfiniteFallbackError(OrchestratorError):
+    """Raised when a fallback loop is detected during execution."""
+
+    pass
+
+
 class PipelineContextInitializationError(OrchestratorError):
     """Raised when a typed pipeline context fails to initialize."""
 
