@@ -7,7 +7,7 @@ build-backend = "hatchling.build"
 # --------------------------------------------------------------------------- #
 [project]
 name            = "flujo"
-version         = "0.4.22" # CI/CD workflow fixes, git tag conflict resolution, robust release pipeline
+version         = "0.6.00" # CI/CD workflow fixes, git tag conflict resolution, robust release pipeline
 description     = "Production-ready orchestration for AI agents, built with Pydantic."
 readme          = "README.md"
 requires-python = ">=3.11,<4.0"

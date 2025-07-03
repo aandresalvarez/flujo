@@ -1,5 +1,3 @@
- 
-
 # The Flujo Way: A Developer's Guide to Production-Ready AI Workflows
 
 Welcome to the **official guide for developers using flujo**—a modern framework for orchestrating AI-powered pipelines built with explicit control flow, modular design, and production-grade resilience. This guide teaches you how to build delightful, powerful workflows using **the Flujo way**.
@@ -18,10 +16,13 @@ Welcome to the **official guide for developers using flujo**—a modern framewor
 
 ## 🧠 1. Production Steps with Real Logic
 
-Use `AsyncAgentProtocol` to encapsulate logic in production-ready agents:
+### A. Basic Agents with AsyncAgentProtocol
+
+Use `AsyncAgentProtocol` for simple agents that don't need typed context:
 
 ```python
-from flujo import AppResources, AsyncAgentProtocol
+from flujo.domain.agent_protocol import AsyncAgentProtocol
+from flujo.domain.resources import AppResources
 from pydantic import BaseModel
 
 class TriageContext(BaseModel):
@@ -39,16 +40,45 @@ class TriageAgent(AsyncAgentProtocol[dict, TriageContext]):
         )
 ```
 
+### B. Type-Safe Context with ContextAwareAgentProtocol
+
+For agents that need typed pipeline context, use `ContextAwareAgentProtocol`:
+
+```python
+from flujo.domain.agent_protocol import ContextAwareAgentProtocol
+from flujo.domain.models import BaseModel
+
+class ResearchContext(BaseModel):
+    research_topic: str = "Unknown"
+    sources_found: int = 0
+    summary: str | None = None
+
+class PlanResearchAgent(ContextAwareAgentProtocol[str, str, ResearchContext]):
+    async def run(
+        self,
+        data: str,
+        *,
+        context: ResearchContext,
+        **kwargs: Any,
+    ) -> str:
+        """Identify the core topic and store it in the context."""
+        topic = "The History of the Python Programming Language"
+        context.research_topic = topic
+        return f"Research plan for {topic}"
+```
+
 Declare the step cleanly:
 
 ```python
 from flujo import Step
 triage_step = Step("TriagePost", TriageAgent())
+research_step = Step("PlanResearch", PlanResearchAgent())
 ```
 
 ✅ Encapsulation
-✅ Testability
+✅ Testability  
 ✅ Clear dependency injection
+✅ Type-safe context handling
 
 ---
 
@@ -58,6 +88,7 @@ triage_step = Step("TriagePost", TriageAgent())
 
 ```python
 from flujo import Step, Pipeline
+from flujo.domain.models import BaseModel
 
 def route(ctx: TriageContext, _): 
     if ctx.author_reputation < 0.2: return "high_risk"
@@ -99,18 +130,44 @@ hitl_step = Step.human_in_the_loop(
 )
 ```
 
+### 🔄 D. Refinement Loops
+
+```python
+refine_step = Step.refine_until(
+    name="RefineCode",
+    generator_pipeline=Pipeline.from_step(Step("Generate", code_agent)),
+    critic_pipeline=Pipeline.from_step(Step("Critique", review_agent)),
+    max_refinements=5,
+)
+```
+
 ---
 
 ## 📦 3. Shared State: PipelineContext
 
+### A. Basic Context
+
 ```python
-from pydantic import BaseModel
+from flujo.domain.models import BaseModel
 
 class ModerationContext(BaseModel):
     post_id: int
     triage_decision: str | None = None
     refinement_attempts: int = 0
     final_disposition: str | None = None
+```
+
+### B. Extended Context with Built-in Features
+
+```python
+from flujo.domain.models import PipelineContext
+from pydantic import Field
+
+class ResearchContext(PipelineContext):
+    research_topic: str = "Unknown"
+    sources_found: int = 0
+    summary: str | None = None
+    # Inherits: initial_prompt, scratchpad, hitl_history, command_log
 ```
 
 Use in any agent:
@@ -150,9 +207,14 @@ quality_gate = Step.validate_step(
     name="CheckJustification",
     agent=style_validator_agent,
     validators=[NoPII()],
-    plugins=[StyleGuidePlugin()]
+    plugins=[StyleGuidePlugin()],
+    strict=True,  # Step fails if validation fails
 )
 ```
+
+**Strict vs Non-Strict Validation:**
+- **`strict=True` (default)**: If any validation fails, the entire step fails and the pipeline stops or retries.
+- **`strict=False`**: Step passes but records validation failure in metadata for auditing.
 
 ---
 
@@ -161,7 +223,8 @@ quality_gate = Step.validate_step(
 ### 🔒 Cost Control
 
 ```python
-from flujo import Flujo, UsageLimits
+from flujo import Flujo
+from flujo.domain.models import UsageLimits
 
 runner = Flujo(pipeline, usage_limits=UsageLimits(total_cost_usd_limit=0.50))
 ```
@@ -171,12 +234,19 @@ runner = Flujo(pipeline, usage_limits=UsageLimits(total_cost_usd_limit=0.50))
 ```python
 from flujo.tracing import ConsoleTracer
 
+# Quick enablement with defaults
 runner = Flujo(pipeline, local_tracer="default")
+
+# Or configure it yourself
+custom_tracer = ConsoleTracer(level="debug", log_inputs=True)
+runner = Flujo(pipeline, local_tracer=custom_tracer)
 ```
 
 ---
 
 ## 🧩 6. Composition: Pipelines of Pipelines
+
+### A. Step Composition
 
 ```python
 from flujo import Step, Pipeline
@@ -185,6 +255,20 @@ analysis = triage_step >> router_step >> refine_step
 notify = Step("Format", format_agent) >> Step("Notify", send_agent)
 
 main_pipeline = analysis >> notify
+```
+
+### B. Pipeline Composition (v2.1+)
+
+```python
+from flujo import Step, Pipeline
+
+# Build independent pipelines
+data_processing = Step("Extract", extract_agent) >> Step("Transform", transform_agent)
+analysis = Step("Analyze", analyze_agent) >> Step("Validate", validate_agent)
+reporting = Step("Format", format_agent) >> Step("Send", send_agent)
+
+# Chain entire pipelines together
+workflow = data_processing >> analysis >> reporting
 ```
 
 ---
@@ -235,17 +319,107 @@ Flujo(pipeline, max_retries=2, retry_on_error=True)
 
 ---
 
+## 🔧 8. Advanced Features
+
+### A. Pipeline Validation
+
+```python
+from flujo import Pipeline
+
+# Validate pipeline before running
+validation_report = pipeline.validate()
+if not validation_report.is_valid:
+    print("Pipeline validation failed:")
+    for finding in validation_report.findings:
+        print(f"  - {finding.message}")
+```
+
+### B. CLI Validation
+
+```bash
+flujo validate my_pipeline.py
+```
+
+### C. Streaming Output
+
+```python
+async for chunk in runner.stream_async("hello"):
+    if isinstance(chunk, str):
+        print(chunk, end="")
+    else:
+        result = chunk  # Final PipelineResult
+```
+
+### D. Pipeline as Step
+
+```python
+# Convert a pipeline into a reusable step
+sub_pipeline = Step("A", agent_a) >> Step("B", agent_b)
+pipeline_step = runner.as_step(name="SubWorkflow")
+
+# Use in another pipeline
+main_pipeline = Step("Start", start_agent) >> pipeline_step >> Step("End", end_agent)
+```
+
+---
+
+## 📚 9. Import Structure
+
+### A. Core Components (Top Level)
+
+```python
+from flujo import (
+    Flujo,           # Main pipeline runner
+    Step,            # Pipeline step builder
+    step,            # Step decorator
+    Pipeline,        # Pipeline composition
+    Task,            # Task model
+    Candidate,       # Candidate model
+    make_agent_async, # Agent factory
+    settings,        # Global settings
+    init_telemetry,  # Telemetry initializer
+)
+```
+
+### B. Domain-Specific Imports
+
+```python
+# Agent protocols
+from flujo.domain.agent_protocol import AsyncAgentProtocol, ContextAwareAgentProtocol
+
+# Models and types
+from flujo.domain.models import BaseModel, UsageLimits, PipelineResult
+
+# Resources
+from flujo.domain.resources import AppResources
+
+# Validation
+from flujo.validation import BaseValidator, ValidationResult
+
+# Tracing
+from flujo.tracing import ConsoleTracer
+
+# Testing utilities
+from flujo.testing import StubAgent, gather_result
+```
+
+---
+
 ## ✅ Summary
 
 | Feature         | How to Use                                                    |
 | --------------- | ------------------------------------------------------------- |
-| 🧱 Agents       | `AsyncAgentProtocol`, clean encapsulation                     |
+| 🧱 Basic Agents | `AsyncAgentProtocol`, clean encapsulation                     |
+| 🧠 Context Agents | `ContextAwareAgentProtocol`, type-safe context handling      |
 | 🔁 Control Flow | `Step.branch_on`, `Step.loop_until`, `Step.human_in_the_loop` |
-| 🧠 Context      | `context: MyContext` shared across steps             |
+| 🔄 Refinement   | `Step.refine_until` for generator-critic loops                |
+| 🧠 Context      | `context: MyContext` shared across steps                      |
 | ✅ Validation    | `Step.validate_step(..., validators=[...], plugins=[...])`    |
 | 💵 Cost Limits  | `UsageLimits(total_cost_usd_limit=...)`                       |
 | 📜 Logs         | `ConsoleTracer` for debug visibility                          |
 | 🔧 Tuning       | Use `make_agent_async(...)` and `Step(..., temperature=...)`  |
+| 🔍 Validation   | `pipeline.validate()` and `flujo validate` CLI               |
+| 📦 Composition  | `pipeline1 >> pipeline2` for modular workflows                |
 
 ---
 
