@@ -649,6 +649,34 @@ This feature provides significant performance improvements when:
 - You have many parallel branches
 - Each branch only needs a subset of the context data
 
+### Context Merging and Failure Handling
+
+`Step.parallel` can merge context updates from its branches back into the main
+pipeline context. Use the `merge_strategy` parameter to control how merging is
+performed and `on_branch_failure` to define failure behavior.
+
+```python
+from flujo import Step
+from flujo.domain import MergeStrategy, BranchFailureStrategy
+
+parallel = Step.parallel(
+    name="parallel_merge",
+    branches={"a": Pipeline.from_step(Step("a", a_agent)), "b": Pipeline.from_step(Step("b", b_agent))},
+    merge_strategy=MergeStrategy.MERGE_SCRATCHPAD,
+    on_branch_failure=BranchFailureStrategy.IGNORE,
+)
+```
+
+Available `MergeStrategy` values:
+
+- `NO_MERGE` (default) – discard branch context modifications.
+- `OVERWRITE` – context from the last declared successful branch overwrites matching fields.
+- `MERGE_SCRATCHPAD` – merge `scratchpad` dictionaries from all successful branches.
+
+`on_branch_failure` accepts `PROPAGATE` (default) or `IGNORE`. When set to
+`IGNORE`, the parallel step succeeds as long as one branch succeeds and the
+output dictionary includes the failed `StepResult` objects for inspection.
+
 ### Proactive Governor Cancellation
 
 Parallel steps now support proactive cancellation when usage limits are breached. When any branch exceeds cost or token limits, sibling branches are immediately cancelled to prevent unnecessary resource consumption:
