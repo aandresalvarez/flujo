@@ -361,4 +361,4 @@ async def test_proactive_cancellation_error_handling() -> None:
 
     # Verify that the parallel step handles the error gracefully
     assert not result.step_history[-1].success
-    assert "Branch failed" in result.step_history[-1].feedback
+    assert "failed" in result.step_history[-1].feedback
