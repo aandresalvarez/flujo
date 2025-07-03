@@ -101,6 +101,10 @@ class StepResult(BaseModel):
     token_counts: int = 0
     cost_usd: float = 0.0
     feedback: str | None = None
+    branch_context: Any | None = Field(
+        default=None,
+        description="Final context object for a branch in ParallelStep.",
+    )
     metadata_: dict[str, Any] | None = Field(
         default=None,
         description="Optional metadata about the step execution.",
