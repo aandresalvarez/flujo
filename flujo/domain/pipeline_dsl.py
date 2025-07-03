@@ -38,6 +38,11 @@ from .plugins import ValidationPlugin
 from .validation import Validator
 from .types import ContextT
 from .processors import AgentProcessors
+from flujo.caching import CacheBackend, InMemoryCache
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # pragma: no cover
+    from flujo.steps.cache_step import CacheStep
 
 
 StepInT = TypeVar("StepInT")
@@ -606,6 +611,21 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             config=config,
             pipeline_to_run=pipeline_to_run,
             iterable_input=iterable_input,
+        )
+
+    @classmethod
+    def cached(
+        cls,
+        wrapped_step: "Step[Any, Any]",
+        cache_backend: Optional[CacheBackend] = None,
+    ) -> "CacheStep":
+        """Wrap ``wrapped_step`` so its results are cached."""
+        from flujo.steps.cache_step import CacheStep
+
+        return CacheStep(
+            name=f"Cached({wrapped_step.name})",
+            wrapped_step=wrapped_step,
+            cache_backend=cache_backend or InMemoryCache(),
         )
 
 

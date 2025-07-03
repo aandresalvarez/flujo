@@ -20,6 +20,7 @@ from . import utils
 from . import domain
 from . import application
 from . import infra
+from . import caching
 
 # 2. Expose the most essential core components at the top level for convenience.
 # These are the symbols users will interact with 90% of the time.
@@ -53,4 +54,5 @@ __all__ = [
     "domain",
     "application",
     "infra",
+    "caching",
 ]
