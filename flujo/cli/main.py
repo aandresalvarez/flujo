@@ -227,7 +227,7 @@ def bench(prompt: str, rounds: int = 10) -> None:
         KeyboardInterrupt: If the benchmark is interrupted by the user
     """
     import time
-    import numpy as np  # type: ignore[import-not-found]
+    import numpy as np
 
     try:
         review_agent = make_agent_async(settings.default_review_model, REVIEW_SYS, Checklist)
