@@ -1,337 +1,156 @@
-Of course. Here is a comprehensive, updated roadmap for `flujo` that integrates the unified AI-first strategy with your existing plans.
-
-First, let's analyze the status of your current roadmap items based on the provided project files.
-
-### Analysis of Current Roadmap and Project Status
-
-Based on the file contents, here's what has already been implemented:
-
-*   **`ParallelStep`:** ✅ **Implemented.** The `flujo/domain/pipeline_dsl.py` file contains the `ParallelStep` class and the `Step.parallel` factory. The `flujo_engine.py` also contains the `_execute_parallel_step_logic` function. The core logic for concurrent execution exists.
-*   **Context Safety (`Isolate-and-Merge`):** ✅ **Partially Implemented.** The `DummyRemoteBackend` test hints at serialization/deserialization, and `_execute_parallel_step_logic` creates a `deepcopy` of the context for each branch, which aligns with the "Isolate" part of the strategy. The "Merge" part (handling conflicts) does not appear to be implemented yet.
-*   **`fallback` Logic:** ❌ **Not Implemented.** The `Step` class in `pipeline_dsl.py` does not have a `fallback` method or a `fallback_step` attribute. The engine logic for handling this is also absent. This remains a valid future item.
-
-Now, let's build the new, detailed roadmap.
+Of course. Here is the fully integrated Roadmap v3.0, rewritten to incorporate all the refinements from our conversation. It is now a single, cohesive, and highly detailed strategic document.
 
 ---
 
-# Flujo Project Roadmap: The Path to an AI-First Framework
+# **Flujo Roadmap v3.0: Workflows That Learn**
 
-**Last Updated:** June 25, 2025
-**Status:** In Progress
+## **Executive Summary**
 
-## Vision Statement
+Flujo will evolve from a static orchestration framework into a **self-optimizing, ROI-aware pipeline platform** in seven phases. This roadmap codifies a strategy to deliver on this vision by introducing a canonical YAML specification, AI-driven improvement loops, and enterprise-grade safety mechanisms.
 
-To evolve `flujo` from a developer-centric orchestration library into a truly **AI-native framework**. The primary user persona we are designing for is a generative AI model, which requires an API that is explicit, discoverable, structured, and provides actionable feedback. This roadmap outlines the features and architectural changes required to achieve this vision, enabling both humans and AI agents to build, modify, and reason about complex workflows with ease.
-
----
-
-## Theme 1: Production-Grade Control Flow (Resilience & Performance)
-
-*Goal: Enhance the core DSL with robust patterns for handling real-world complexity like failures and I/O latency.*
-
-| Epic | Status | Description & Key Tasks | Target Release |
-| :--- | :--- | :--- | :--- |
-| **Parallel Execution** | 🚧 **In Progress** | Implement concurrent execution of pipeline branches. | v0.5.0 |
-| | ✅ Implemented | `Step.parallel` factory and `ParallelStep` class. | |
-| | ✅ Implemented | `asyncio.TaskGroup`-based concurrency for structured execution. | |
-| | ✅ Implemented | Basic context isolation via `deepcopy`. | |
-| | ⏳ **To Do** | Implement **conflict-aware context merging**. Add an optional `on_context_conflict` handler to `Step.parallel` for custom merge logic. | |
-| | ⏳ **To Do** | Enhance `StepResult` from `ParallelStep` to include a dictionary of individual branch results for better traceability. | |
-| | ⏳ **To Do** | Write comprehensive documentation and a cookbook recipe for `Step.parallel`. | |
-| **Fallback Logic** | 📝 **Proposed** | Introduce a declarative `fallback` mechanism for steps to handle transient errors gracefully. | v0.6.0 |
-| | ⏳ **To Do** | Add `.fallback(other_step: Step)` method to the `Step` class. | |
-| | ⏳ **To Do** | Modify the `flujo_engine` to catch step failures and execute the `fallback_step` with the original input. | |
-| | ⏳ **To Do** | Enhance `StepResult.metadata_` to include `fallback_triggered` and the results of both the primary and fallback attempts. | |
-| | ⏳ **To Do** | Add unit and integration tests for various fallback scenarios (e.g., fallback succeeds, fallback also fails). | |
+Two new micro-phases are inserted—**4c (Diff-UX Prototype)** and **5b (Policy-DSL Design)**—and Phase 7 now starts with a **Marketplace-Seeding Sprint** to address critical path dependencies. All new components will rely on proven standards (DeepDiff, RFC 6902 JSON Patch, OpenTelemetry, OPA Rego/HashiCorp Sentinel, Prefect 3 rollback hooks) to minimize green-field risk and accelerate delivery.
 
 ---
 
-## Theme 2: AI-Native API & Pipeline Construction
+## **Phase-by-Phase Execution Plan**
 
-*Goal: Make pipeline construction explicit, structured, and intuitive for a generative AI model, reducing reliance on custom syntax and implicit magic.*
+### **Phase 0: Operating Model Baseline (Foundation)**
 
-| Epic | Status | Description & Key Tasks | Target Release |
-| :--- | :--- | :--- | :--- |
-| **Declarative Pipeline Builder** | 📝 **Proposed** | Introduce a primary, AI-friendly way to build pipelines from structured data. | v0.7.0 |
-| | ⏳ **To Do** | Design and implement a stable JSON/YAML schema for pipeline definitions. | |
-| | ⏳ **To Do** | Create `Pipeline.from_definition(dict)` and `pipeline.to_dict()` methods for serialization and deserialization. | |
-| | ⏳ **To Do** | Create an initial version of `docs/ai_patterns.md` demonstrating this new builder pattern as the canonical approach. | |
-| **Fluent Builder API** | 📝 **Proposed** | Add a secondary, fluent API for programmatic pipeline construction. | v0.7.0 |
-| | ⏳ **To Do** | Implement `Pipeline.builder().add_step(step).add_pipeline(pipeline)` methods. | |
-| | ⏳ **To Do** | Ensure the builder correctly handles type flow and context propagation. | |
-| **API Simplification & Consistency** | 🚧 **In Progress** | Deprecate confusing or redundant patterns and enforce consistent naming. | v0.5.0 |
-| | ✅ Implemented | The library already favors a single `Flujo` engine over the `Default` recipe, aligning with simplification. | |
-| | ⏳ **To Do** | Formally deprecate the `Default` recipe in documentation, guiding users to the more flexible `Flujo` engine and builders. | |
-| | ⏳ **To Do** | Add `Step.validate` as an alias for `Step.validate_step` to improve naming consistency. Mark the old name for deprecation. | |
-| | ⏳ **To Do** | Introduce a single, explicit `flujo.configure()` function for setting global configurations (API keys, models). | |
+*   **Deployment Rule:** All automated or manual pipeline updates will follow an **“apply-on-next-run”** policy. Patches will never mutate in-flight executions, simplifying state management and eliminating the risk of partial-state corruption.
+*   **Traceability:** Every pipeline run will be tagged with a `spec_sha256` hash of the YAML definition it used. This version tag will be attached to every OpenTelemetry span, ensuring perfect lineage and debuggability.
 
 ---
 
-## Theme 3: Introspection and Safe Modification
+### **Phase 1: Canonical YAML/JSON Specification (Core Abstraction)**
 
-*Goal: Empower AI agents to understand, analyze, and safely modify pipelines programmatically.*
-
-| Epic | Status | Description & Key Tasks | Target Release |
-| :--- | :--- | :--- | :--- |
-| **Step Registry & Introspection** | 📝 **Proposed** | Create a central registry for discoverability and a public API for introspection. | v0.8.0 |
-| | ⏳ **To Do** | Modify the `@step` decorator and `Step.from_callable` to optionally register steps in a global `STEP_REGISTRY`. | |
-| | ⏳ **To Do** | Create the `flujo.introspect` module with `list_steps()` and `get_step_schema(step_name)` functions. | |
-| | ⏳ **To Do** | Implement `flujo.introspect.explain_pipeline(pipeline)` to return a structured or natural language description. | |
-| **Programmatic Pipeline Editing**| 📝 **Proposed** | Provide safe, high-level methods for an AI to modify a pipeline's structure. | v0.9.0 |
-| | ⏳ **To Do** | Implement `pipeline.insert_after(step_name, new_step)`. | |
-| | ⏳ **To Do** | Implement `pipeline.replace(step_name, new_step)`. | |
-| | ⏳ **To Do** | Implement `pipeline.remove(step_name)`. | |
-| | ⏳ **To Do** | Ensure all modification methods trigger a re-validation of the pipeline's type flow. | |
+*   **Deliverable:** A Pydantic-backed schema defining all `flujo` constructs (steps, loops, branches, validators) in YAML/JSON.
+*   **Deliverable:** A `StepRegistry` (the "Marketplace" foundation) that allows YAML definitions to reference Python agents and tools via stable import paths.
+*   **Deliverable:** `Pipeline.from_yaml()` and `Pipeline.to_yaml()` methods with a comprehensive suite of **round-trip fidelity tests** to guarantee that YAML and Python representations are perfectly interchangeable.
 
 ---
 
-## Theme 4: AI-Centric Feedback and Extensibility
+### **Phase 2: Telemetry with YAML Pointers (Observability)**
 
-*Goal: Make the framework's feedback loop and extension patterns explicit and easy for an AI to learn from.*
-
-| Epic | Status | Description & Key Tasks | Target Release |
-| :--- | :--- | :--- | :--- |
-| **Actionable Error System** | 📝 **Proposed** | Rework exceptions to provide structured, helpful suggestions for AI agents. | v0.8.0 |
-| | ⏳ **To Do** | Create the `flujo.ai_errors` module with `AIFriendlyError` base class containing a `suggestion` field. | |
-| | ⏳ **To Do** | Refactor the `flujo_engine` to catch internal errors (e.g., `TypeMismatchError`) and re-raise them as `AITypeMismatchError` with a concrete suggestion. | |
-| | ⏳ **To Do** | Audit all user-facing exceptions and augment them with AI-friendly guidance. | |
-| **Formalized Extension APIs** | 📝 **Proposed** | Simplify the process of creating new, reusable `Step` types. | v0.9.0 |
-| | ⏳ **To Do** | Create an `AbstractStep` base class or mixins to encapsulate Pydantic initialization logic. | |
-| | ⏳ **To Do** | Document a clear, simple pattern for creating new step types like `RetryStep` or `CacheStep`. | |
-| | ⏳ **To Do** | Add a new "Extending Flujo" guide in the documentation focused on these new patterns. | |
+*   **Deliverable:** Enhance the existing OpenTelemetry integration to include the `yaml_path` (e.g., `steps[2].branches.main.steps[0]`) as a standard attribute on every span, following OTel semantic conventions. This will enable direct navigation from a trace in Jaeger or Dynatrace back to the exact line in the YAML spec that generated it.
+*   **Deliverable:** Emit fine-grained cost, token, and latency metrics for every step, tagged with the same `yaml_path` and `spec_sha256` attributes. This data will be the fuel for the ROI-scoring and opportunity-finding engines in later phases.
 
 ---
 
-## Theme 5: The Vision - Natural Language Orchestration
+### **Phase 3: Meta-Agent & Prompt-Guard SDK (Intelligence Layer)**
 
-*Goal: Achieve the ultimate AI-first experience where the AI describes the workflow and `flujo` builds it.*
+#### **3a: Prompt Guard SDK (New Sub-phase)**
 
-| Epic | Status | Description & Key Tasks | Target Release |
-| :--- | :--- | :--- | :--- |
-| **Natural Language Builder** | 📝 **Proposed** | Create a high-level function that uses an LLM to translate a natural language description into a `flujo` pipeline. | v1.0.0 |
-| | ⏳ **To Do** | Create an internal "Builder Agent" that uses the `flujo.introspect` module as its toolset. | |
-| | ⏳ **To Do** | The Builder Agent's goal is to output a valid pipeline definition dictionary. | |
-| | ⏳ **To Do** | Implement the public-facing `flujo.build_from_description(description: str)` function, which orchestrates the Builder Agent and uses its output to call `Pipeline.from_definition()`. | |
-| | ⏳ **To Do** | Create "AI dogfooding" tests where an LLM is prompted to build and run a pipeline using this new function. | |
+*   **Goal:** Mitigate LLM fragility and hallucinations when generating pipeline patches.
+*   **Deliverable:** An internal SDK that wraps calls to the Meta-Agent.
+    *   **Schema Injector:** Automatically prepends the YAML schema and the full `StepRegistry` manifest (available skills) to the Meta-Agent’s prompt context.
+    *   **Few-Shot Patch Library:** Injects 5-10 validated examples of correct JSON Patch outputs into the prompt to guide the LLM's response format.
+    *   **Response Validator:** Parses the LLM's JSON Patch output and validates it against both the RFC 6902 standard and the `flujo` schema. It will reject any patch that references non-existent steps or contains structural errors *before* it can be proposed.
 
----
+#### **3b: Opportunity Engine v1 (First Learning Loop)**
 
-## Theme 6: PydanticAI-Inspired Ergonomic Enhancements
-
-Of course. Analyzing a mature, parallel library like `PydanticAI` is a fantastic way to identify potential improvements for `flujo`. Based on the extensive documentation you provided, `PydanticAI` has several powerful concepts that could enhance `flujo`'s ergonomics and capabilities, while still respecting "The Flujo Way."
-
-Here is a detailed analysis and a set of formal feature proposals you could send to the Flujo team.
-
----
-
-### **FSD: Proposals for Enhancing `flujo` Inspired by `PydanticAI`**
-
-**To:** The Flujo Development Team  
-**From:** A User of the Concept Discovery V2 Pipeline  
-**Date:** October 26, 2023  
-**Subject:** Proposal for New Convenience Methods and Features to Enhance `flujo`
-
-#### **Executive Summary**
-
-The `flujo` library provides a powerful and explicit DSL for building robust AI workflows. Based on a deep analysis of the `PydanticAI` agent framework, we have identified four key areas where `flujo` could be enhanced to reduce boilerplate, improve testing ergonomics, and offer more granular control over agent interactions. These proposals are designed to be additive and fully aligned with the existing philosophy of "The Flujo Way."
-
-The proposed additions are:
-1. **Granular In-Flight Error Handling**: Introduce a mechanism for agents/plugins to request a retry *with specific feedback* sent to the LLM for self-correction.
-2. **Pre-Request History Processing**: Add a `history_processors` hook to transform the conversation history before it's sent to the LLM, useful for summarization or redaction.
-3. **Enhanced Testing Ergonomics**: Introduce a context manager (`flujo.override_agent`) to simplify unit testing of application code that uses Flujo internally.
-4. **Automatic Pipeline Visualization**: Add a `.to_mermaid()` method to `flujo.Pipeline` for automatic workflow visualization.
+*   **Goal:** Generate the first set of AI-driven improvement suggestions.
+*   **Deliverable:** A `flujo suggest` CLI command that:
+    1.  Ingests historical telemetry data from Phase 2.
+    2.  Identifies patterns (e.g., high-cost steps, frequently failing validators).
+    3.  Uses the Prompt Guard SDK to ask the Meta-Agent for improvement suggestions.
+    4.  Outputs a list of proposed **JSON Patches**, each ranked by an estimated ROI (e.g., "Saves ~$0.10/run with low risk to quality").
+    *At this stage, suggestions are advisory only and not auto-applied.*
 
 ---
 
-### **Proposal 1: Granular In-Flight Error Handling (Inspired by `ModelRetry`)**
+### **Phase 4: Human-In-The-Loop Governance (Trust & Usability)**
 
-**The Opportunity:**  
-`PydanticAI` allows a tool to raise a `ModelRetry` exception with a specific error message. This message is then passed back to the LLM, instructing it to correct its parameters and try the tool call again. This is a powerful, targeted self-correction mechanism.
+#### **4a: Graph-Aware Diff Engine (Expanded Sub-phase)**
 
-**How Flujo Handles This Today:**  
-`flujo` has a robust retry system at the `Step` level (`max_retries`). A `ValidationPlugin` can fail a step by returning `PluginOutcome(success=False, feedback="...")`. If the step is configured to retry, the *entire step* is re-run. The feedback from the failed attempt is prepended to the next attempt's prompt, which is good but not as targeted as `PydanticAI`'s approach.
+*   **Goal:** Translate raw JSON Patches into human-understandable changes.
+*   **Deliverable:** A diff engine that uses `DeepDiff` to get a structural Abstract Syntax Tree (AST) of the YAML changes, then maps those changes to the pipeline graph to provide semantic context.
 
-**The PydanticAI Approach:**
-```python
-# In PydanticAI, a tool can do this:
+#### **4b: PR Workflow**
 
-def my_flaky_tool(query: str) -> str:
-    if query == 'bad':
-        # This message goes directly back to the LLM for the retry.
-        raise ModelRetry("The query 'bad' is not allowed. Please provide a different query.")
-    return 'Success!'
-```
+*   **Goal:** Integrate AI suggestions into standard developer workflows.
+*   **Deliverable:** A `flujo suggest --create-pr` command that automatically opens a pull request on GitHub containing the proposed patch and the human-friendly summary from the diff engine.
+*   **Deliverable:** A feedback mechanism where rejected PRs are logged and fed back to the Meta-Agent as negative examples to improve future suggestions.
 
-**Proposed Flujo Enhancement:**
-Enhance `PluginOutcome` to allow for a more explicit retry signal. This gives developers finer control over the retry mechanism.
+#### **4c: Diff-UX Prototype (New Sub-phase)**
 
-```python
-# In flujo/domain/plugins.py
-class PluginOutcome(BaseModel):
-    # ... existing fields ...
-    # Add a new field:
-    request_retry_with_feedback: bool = False 
-```
-
-The `flujo` engine would then be updated to check for this flag. If `True`, it would immediately trigger a retry of just the agent call (not the whole step logic), using the `feedback` field to inform the LLM.
-
-**Example (Before & After):**
-
-**Before:** A plugin can only mark the whole step for a generic retry.
-```python
-class MyPlugin(ValidationPlugin):
-    async def validate(self, data: dict) -> PluginOutcome:
-        if "bad" in data['output']:
-            return PluginOutcome(success=False, feedback="Query was bad.")
-        return PluginOuputcome(success=True)
-```
-
-**After:** The plugin can explicitly request a targeted, corrective retry.
-```python
-class MyPlugin(ValidationPlugin):
-    async def validate(self, data: dict) -> PluginOutcome:
-        if "bad" in data['output']:
-            # Signal the engine to immediately retry the agent with this specific feedback
-            return PluginOutcome(
-                success=False, 
-                feedback="The query 'bad' is not allowed. Please provide a different query.",
-                request_retry_with_feedback=True 
-            )
-        return PluginOutcome(success=True)
-```
-
-**Benefits:**
-- **More Efficient Correction**: Avoids re-running all plugins on a retry.
-- **Clearer Intent**: Makes the self-correction loop more explicit.
-- **Increased Power**: Aligns `flujo`'s capabilities with advanced patterns seen in other frameworks.
+*   **Goal:** Ensure the diff is trivially easy for a human to approve.
+*   **Deliverable:** A prototype for the PR body and/or a simple web UI that:
+    1.  Summarizes the patch in **natural-language bullets** (e.g., "✅ **Add** validator `ToneCheck` to step `draft_email`").
+    2.  Renders **before/after Mermaid graphs** with color-coded highlights for added, removed, or moved steps.
+*   **Metric:** This deliverable will be considered complete when internal UX testing achieves a **<10-second comprehension time** for a typical go/no-go patch review.
 
 ---
 
-### **Proposal 2: Pre-Request History Processors**
+### **Phase 5: Safe Auto-Patch & Economic Policy (Automation with Guardrails)**
 
-**The Opportunity:**  
-`PydanticAI` allows developers to register `history_processors` on an `Agent`. These are functions that are applied to the conversation history *before* it's sent to the model. This is extremely useful for managing context window size (e.g., by summarizing old messages), redacting sensitive information, or dynamically adding context.
+#### **5a: Three-Tier Trust & Rollback**
 
-**How Flujo Handles This Today:**  
-`flujo` has `AgentProcessors` for `prompt_processors`, which can modify the *current* input. However, there is no built-in, convenient hook specifically for processing the *entire message history* that might be part of the prompt context. A user would have to build this logic into a custom `Processor`, which is less ergonomic.
+*   **Goal:** Enable safe, autonomous application of low-risk changes.
+*   **Deliverable:** A policy system that classifies every proposed patch into one of three tiers:
+    *   **Low-Risk:** `retry/timeout` changes, documentation edits. **Auto-applied** after passing smoke tests.
+    *   **Medium-Risk:** Inserting known validators, reordering non-critical steps. **Staged automatically**, then auto-applied after a 24-hour "bake-in" period with no new errors.
+    *   **High-Risk:** Structural changes, adding new external tools. **Requires manual PR review.**
+*   **Deliverable:** Integration with Prefect 3-style transactional hooks to enable **instant, automatic rollback** if any embedded tests fail post-application.
 
-**The PydanticAI Approach:**
-```python
-# In PydanticAI
+#### **5b: Economic-Policy DSL (New Sub-phase)**
 
-def summarize_old_messages(messages: list[ModelMessage]) -> list[ModelMessage]:
-    if len(messages) > 10:
-        # ... logic to summarize the first 10 messages ...
-        return [summary_message] + messages[10:]
-    return messages
-
-agent = Agent('openai:gpt-4o', history_processors=[summarize_old_messages])
-```
-
-**Proposed Flujo Enhancement:**
-Add a `history_processors` argument to `make_agent_async` and `Step`. This would provide a clean, dedicated hook for this common requirement.
-
-```python
-# In flujo/infra/agents.py
-def make_agent_async(
-    # ... existing args ...,
-    history_processors: List[Callable[[str], str]] | None = None,
-    # ...
-) -> AsyncAgentWrapper:
-    # ...
-```
-
-The engine would apply these processors to the prompt context before making the final LLM call.
-
-**Benefits:**
-- **Context Window Management**: Provides a simple solution to a critical problem in long-running conversations.
-- **Security & Privacy**: Enables easy implementation of PII redaction from conversation history.
-- **Improved Ergonomics**: Offers a more direct and intuitive API than creating a full custom `Processor`.
+*   **Goal:** Move beyond simple cost limits to sophisticated, ROI-aware governance.
+*   **Deliverable:** A `policies:` block in the YAML spec that allows users to define rules using a secure, sandboxed DSL inspired by OPA Rego and HashiCorp Sentinel.
+    ```yaml
+    policies:
+      - id: high_quality_cost_gate
+        when: "result.score >= 0.9"
+        assert: "result.total_cost_usd <= 0.10"
+        action: "FAIL_RUN"
+    ```
+*   **Deliverable:** An embedded evaluator that enforces these policies both **pre-merge** (in CI) and at **runtime** (as a final guardrail).
 
 ---
 
-### **Proposal 3: Enhanced Testing Ergonomics with an `override` Context Manager**
+### **Phase 6: Embedded Tests & Behavioral Assertions (Self-Verification)**
 
-**The Opportunity:**  
-`PydanticAI` provides a context manager, `agent.override(model=...)`, which temporarily replaces an agent's model. This is incredibly useful for unit testing application code that internally instantiates and uses an agent, as it avoids complex mocking or dependency injection into the application code itself.
-
-**How Flujo Handles This Today:**  
-`flujo` has excellent testing utilities like `StubAgent`. However, to use them, you must inject them when the `Flujo` runner is instantiated. If your application code creates its own `Flujo` runner deep inside a function, testing becomes difficult. You would have to refactor your application to accept the agent as a dependency.
-
-**The PydanticAI Approach:**
-```python
-# In a PydanticAI test
-async def test_application_code():
-    with joke_agent.override(model=TestModel()): # Temporarily patches joke_agent
-        joke = await application_code('Tell me a joke.')
-    assert joke.startswith('Did you hear about')
-```
-
-**Proposed Flujo Enhancement:**
-Introduce a similar context manager at the `flujo` module level.
-
-```python
-# New feature in flujo
-import flujo
-
-@flujo.step
-async def real_agent_step(text: str) -> str:
-    # ... makes a real LLM call ...
-
-# In a test file
-from flujo.testing.utils import StubAgent
-import flujo
-
-async def test_my_app_function():
-    # my_app_function internally uses `real_agent_step`
-    with flujo.override_agent(real_agent_step, StubAgent(["fake response"])):
-        result = await my_app_function("test input")
-    
-    assert result == "fake response"
-```
-
-**Benefits:**
-- **Dramatically Simplifies Testing**: Allows testing of application logic without refactoring for dependency injection.
-- **Less Mocking Boilerplate**: Avoids complex `unittest.mock.patch` setups.
-- **Promotes Testability**: Encourages writing tests for higher-level application logic.
+*   **Goal:** Make workflows self-verifying by embedding their success criteria directly within their definition.
+*   **Deliverable:** Enhance the YAML schema's `tests:` section to support **behavioral assertions** on any field in the final `PipelineResult` object, using the same DSL as the Economic Policy engine.
+    ```yaml
+    tests:
+      - name: "assert_cost_and_content"
+        input: { "prompt": "Write a short poem" }
+        assertions:
+          - "result.total_cost_usd < 0.01"
+          - "'roses' in result.output.lower()"
+    ```
+*   **Deliverable:** A `flujo test` CLI command that runs all embedded assertions and reports pass/fail status. This command will be the core of the auto-rollback mechanism in Phase 5.
 
 ---
 
-### **Proposal 4: Automatic Pipeline Visualization (Inspired by `pydantic-graph`)**
+### **Phase 7: Skill Marketplace & JIT Builder (Dynamic Adaptation)**
 
-**The Opportunity:**  
-`pydantic-graph`, which powers `PydanticAI`, can automatically generate Mermaid diagram code from a graph definition (`graph.mermaid_code(...)`). This provides instant, accurate documentation and visualization of complex workflows.
+#### **7a: Marketplace-Seeding Sprint (New Sub-phase)**
 
-**How Flujo Handles This Today:**  
-There is no built-in visualization tool. Developers must manually create diagrams, which can easily become outdated as the pipeline code evolves.
+*   **Goal:** Solve the "cold-start" problem for the step registry.
+*   **Deliverable:** An automated **characterization test suite** that runs on every built-in `flujo` step to generate baseline `est_cost`, `est_latency`, and `est_success` metadata.
+*   **Deliverable:** A "baseline only" badge in the registry UI to distinguish estimated metrics from real-world telemetry, incentivizing usage to generate real data.
 
-**Proposed Flujo Enhancement:**
-Add a `.to_mermaid()` method to the `flujo.Pipeline` class. This method would inspect the `steps` list and generate a Mermaid `graph TD` definition.
+#### **7b & 7c: Marketplace API and JIT Builder**
 
-**Example:**
-```python
-pipeline = (
-    find_seed_concepts >> 
-    discovery_loop >> 
-    rank_and_select_concepts
-)
+*   **Goal:** Enable the creation of ephemeral, on-demand pipelines.
+*   **Deliverable:** A `MarketplaceQuery` API for the JIT Builder Agent to perform **constraint-based planning** (e.g., "find me the cheapest sequence of steps to get from `str` to `ValidatedSQL`").
+*   **Deliverable:** A `JITStep` that takes a high-level goal, uses the Builder Agent to generate a new pipeline definition in memory, and executes it as an ephemeral sub-pipeline.
 
-# New proposed method
-mermaid_code = pipeline.to_mermaid()
-print(mermaid_code)
-```
+---
 
-**Generated Output:**
-```mermaid
-graph TD
-    A[find_seed_concepts] --> B(IntelligentGraphTraversalLoop);
-    B --> C[rank_and_select_concepts];
-```
-*(Node shapes could indicate step type, e.g., `()` for loops, `{}` for conditionals)*
+## **Implementation Timeline (High-Level)**
 
-**Benefits:**
-- **Living Documentation**: Ensures that workflow diagrams are always in sync with the code.
-- **Improved Understanding**: Helps developers visualize and reason about complex control flow.
-- **Enhanced Debugging**: Makes it easier to trace the flow of execution and identify potential issues.
+| Half-Year   | Key Deliverables                                                              | Status      |
+|:------------|:------------------------------------------------------------------------------|:------------|
+| **H2 2025** | Phases 0 & 1 GA; Phase 2 (Telemetry) beta; Phase 3a (Prompt Guard) prototype.  | **Upcoming**|
+| **H1 2026** | Phase 3b (Meta-Agent v1); Phase 4c (Diff-UX) beta; Phase 5b (Policy DSL) alpha.| **Planned**   |
+| **H2 2026** | Diff-UX GA; Low-risk Auto-Patch gated by Economic DSL and embedded tests.      | **Planned**   |
+| **H1 2027** | Phase 7a (Marketplace Seeding) complete; JIT Builder Agent alpha.             | **Future**    |
+| **H2 2027** | JIT pipelines GA; Medium-risk Auto-Patch; full ROI dashboards.                 | **Future**    |
 
-By adopting these proven concepts from `PydanticAI`, `flujo` can become even more powerful, robust, and developer-friendly, solidifying its position as a leading framework for production-grade AI orchestration.
+---
+
+## **Why This Roadmap Creates a Durable Moat**
+
+This plan positions `flujo` to leapfrog the competition by focusing on the full lifecycle of an AI workflow. While others focus on initial creation, `flujo` will be the only framework that provides an end-to-end, enterprise-safe path from **explicit definition → observable execution → AI-generated improvements → ROI-aware auto-deployment.** This unique combination of explicitness, safety, and adaptive ROI optimization is the foundation for delivering true *Workflows That Learn*.

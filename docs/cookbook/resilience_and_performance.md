@@ -1,4 +1,8 @@
-# Cookbook: Improving Performance with Caching
+# Cookbook: Building Resilient Pipelines with Caching and Fallbacks
+
+This guide covers two key strategies for building robust and performant pipelines: caching for performance optimization and fallbacks for error handling.
+
+## Improving Performance with Caching
 
 Expensive or deterministic steps can be wrapped with `Step.cached()` to avoid
 recomputing results. The wrapper stores successful `StepResult` objects in a
@@ -20,3 +24,24 @@ step definition) is encountered again, the cached result is returned and
 Cache keys include a stable hash of the wrapped step's entire configuration so
 that steps with the same name but different behaviors do not collide.
 
+## Building Resilient Pipelines with Fallbacks
+
+The `Step.fallback()` method lets you declare a backup step that runs if the primary step fails.
+This is useful for handling transient errors or providing a simpler model when a complex one is unreliable.
+
+```python
+from flujo import Step, Flujo
+from flujo.testing.utils import StubAgent
+
+primary = Step("primary", StubAgent(["fail"]), max_retries=1)
+backup = Step("backup", StubAgent(["ok"]))
+primary.fallback(backup)
+
+runner = Flujo(primary)
+result = runner.run("data")
+print(result.step_history[0].output)  # -> "ok"
+```
+
+When the fallback runs successfully, `StepResult.metadata_['fallback_triggered']` is set to `True` and the pipeline continues normally.
+Resource usage from the fallback is added to the main step result, and circular
+fallbacks raise `InfiniteFallbackError`.

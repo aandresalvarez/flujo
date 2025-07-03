@@ -109,6 +109,17 @@ Each trace includes:
 
 ## Logging
 
+`flujo` uses `logfire` for structured logging and tracing. If `logfire` is not installed or telemetry export is disabled, `flujo` falls back to standard Python logging.
+
+### `logfire` Object
+
+The `logfire` object (imported as `from flujo.infra.telemetry import logfire`) is the primary interface for logging and creating spans within `flujo`. Its behavior depends on whether `logfire` is successfully initialized:
+
+*   **When `logfire` is enabled**: The `logfire` object will be the actual `logfire` library instance, providing full tracing and logging capabilities.
+*   **When `logfire` is disabled or not installed**: The `logfire` object will be a mock implementation that redirects calls to standard Python logging. This ensures that your application continues to log messages even if the full telemetry setup is not active.
+
+This allows you to use `logfire.info()`, `logfire.error()`, and `logfire.span()` consistently throughout your code, regardless of the telemetry configuration.
+
 ### Log Levels
 
 ```python

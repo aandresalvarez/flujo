@@ -72,3 +72,52 @@ runner = Flujo(pipeline, backend=custom_backend)
 
 For remote back-ends, use the `agent_registry` to safely map agent names to
 trusted objects.
+
+## Automatic Context and Resource Injection
+
+`flujo` can automatically inject `PipelineContext` and `AppResources` into your custom functions and methods if they are type-hinted as keyword-only arguments. This allows you to write cleaner, more reusable code without having to manually pass these objects around.
+
+### How it Works
+
+When you use a custom function as a `mapper` in a `Step`, `flujo` analyzes its signature to determine if it needs `context` or `resources`. If it finds a keyword-only argument named `context` that is a subclass of `BaseModel`, or a keyword-only argument named `resources` that is a subclass of `AppResources`, it will automatically inject the corresponding object at runtime.
+
+### Example
+
+```python
+from flujo import Step, Flujo
+from flujo.domain.models import PipelineContext
+from flujo.domain.resources import AppResources
+
+class MyContext(PipelineContext):
+    counter: int = 0
+
+class MyResources(AppResources):
+    db_pool: Any
+
+async def my_mapper(text: str, *, context: MyContext, resources: MyResources) -> str:
+    context.counter += 1
+    # Access the database pool from resources
+    db_conn = await resources.db_pool.acquire()
+    # ... do something with the database connection ...
+    await resources.db_pool.release(db_conn)
+    return text.upper()
+
+# Create a pipeline with the custom mapper
+custom_pipeline = Step.from_mapper(my_mapper)
+
+# Initialize Flujo with the context and resources
+runner = Flujo(
+    custom_pipeline,
+    context_model=MyContext,
+    initial_context_data={"counter": 0},
+    resources=MyResources(db_pool=make_pool()),
+)
+
+# Run the pipeline
+result = runner.run("some input")
+
+# The counter in the context will be incremented
+assert result.final_pipeline_context.counter == 1
+```
+
+In this example, `flujo` automatically injects the `MyContext` and `MyResources` objects into the `my_mapper` function because they are type-hinted as keyword-only arguments named `context` and `resources`.

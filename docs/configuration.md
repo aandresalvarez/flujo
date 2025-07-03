@@ -2,86 +2,118 @@
 
 This guide explains all configuration options available in `flujo`.
 
-## Environment Variables
+## Settings Overview
 
-The orchestrator uses environment variables for configuration. These can be set in your `.env` file or directly in your environment.
+`flujo` uses a `Settings` class (powered by Pydantic-settings) to manage its configuration. Settings are primarily loaded from environment variables, with support for `.env` files for local development. This provides a flexible and robust way to configure your `flujo` applications.
 
-### API Keys
+### How Settings are Loaded
 
-```env
-# Required for OpenAI models
-OPENAI_API_KEY=your_key_here
+1.  **Environment Variables**: `flujo` will automatically read environment variables. For example, `OPENAI_API_KEY`.
+2.  **.env files**: For local development, you can create a `.env` file in your project root. Variables defined in this file will be loaded and take precedence over system environment variables.
 
-# Required for Anthropic models
-ANTHROPIC_API_KEY=your_key_here
+### `Settings` Class Properties
 
-# Required for Google models
-GOOGLE_API_KEY=your_key_here
+Below is a comprehensive list of all available settings, their types, default values, and a brief description.
 
-# Optional: For telemetry
-LOGFIRE_API_KEY=your_key_here
-```
+#### API Keys
 
-### Core Settings
+These settings manage API keys for various language model providers. They support `AliasChoices` for backward compatibility with older environment variable names.
 
-```env
-# Enable/disable reflection (default: true)
-REFLECTION_ENABLED=true
+*   `openai_api_key`: `Optional[SecretStr]`
+    *   **Environment Variables**: `OPENAI_API_KEY`, `ORCH_OPENAI_API_KEY`, `orch_openai_api_key`
+    *   **Description**: API key for OpenAI models.
 
-# Enable/disable reward model scoring (default: true)
-REWARD_ENABLED=true
+*   `google_api_key`: `Optional[SecretStr]`
+    *   **Environment Variables**: `GOOGLE_API_KEY`, `ORCH_GOOGLE_API_KEY`, `orch_google_api_key`
+    *   **Description**: API key for Google models (e.g., Gemini).
 
-# Maximum number of iterations (default: 3)
-MAX_ITERS=3
+*   `anthropic_api_key`: `Optional[SecretStr]`
+    *   **Environment Variables**: `ANTHROPIC_API_KEY`, `ORCH_ANTHROPIC_API_KEY`, `orch_anthropic_api_key`
+    *   **Description**: API key for Anthropic models.
 
-# Number of variants to generate (default: 2)
-K_VARIANTS=2
-```
+*   `logfire_api_key`: `Optional[SecretStr]`
+    *   **Environment Variables**: `LOGFIRE_API_KEY`, `ORCH_LOGFIRE_API_KEY`, `orch_logfire_api_key`
+    *   **Description**: API key for Logfire telemetry integration.
 
-### Telemetry Settings
+*   `provider_api_keys`: `Dict[str, SecretStr]`
+    *   **Description**: Dynamically loaded dictionary for any other `_API_KEY` environment variables not explicitly listed above (e.g., `MYPROVIDER_API_KEY`).
 
-```env
-# Enable telemetry export (default: false)
-TELEMETRY_EXPORT_ENABLED=false
+#### Feature Toggles
 
-# Enable OTLP export (default: false)
-OTLP_EXPORT_ENABLED=false
+These boolean settings enable or disable specific `flujo` features.
 
-# OTLP endpoint URL (optional)
-OTLP_ENDPOINT=https://your-otlp-endpoint
-```
+*   `reflection_enabled`: `bool = True`
+    *   **Description**: Enables or disables the reflection agent in multi-agent pipelines.
 
-## Python Configuration
+*   `reward_enabled`: `bool = True`
+    *   **Description**: Enables or disables reward model scoring.
 
-You can also configure the orchestrator programmatically:
+*   `telemetry_export_enabled`: `bool = False`
+    *   **Description**: Enables or disables the export of telemetry data.
 
-### Basic Configuration
+*   `otlp_export_enabled`: `bool = False`
+    *   **Description**: Enables or disables OpenTelemetry Protocol (OTLP) export for distributed tracing.
+
+#### Default Models
+
+These settings define the default language models used by various agents within `flujo`.
+
+*   `default_solution_model`: `str = "openai:gpt-4o"`
+    *   **Description**: Default model for the Solution agent.
+
+*   `default_review_model`: `str = "openai:gpt-4o"`
+    *   **Description**: Default model for the Review agent.
+
+*   `default_validator_model`: `str = "openai:gpt-4o"`
+    *   **Description**: Default model for the Validator agent.
+
+*   `default_reflection_model`: `str = "openai:gpt-4o"`
+    *   **Description**: Default model for the Reflection agent.
+
+*   `default_self_improvement_model`: `str = "openai:gpt-4o"`
+    *   **Description**: Default model for the `SelfImprovementAgent`.
+
+*   `default_repair_model`: `str = "openai:gpt-4o"`
+    *   **Description**: Default model for the internal JSON repair agent.
+
+#### Orchestrator Tuning
+
+These settings control the behavior and performance of the `flujo` orchestrator.
+
+*   `max_iters`: `int = 5`
+    *   **Description**: Maximum number of iterations for multi-agent loops.
+
+*   `k_variants`: `int = 3`
+    *   **Description**: Number of solution variants to generate per iteration.
+
+*   `reflection_limit`: `int = 3`
+    *   **Description**: Maximum number of reflection steps allowed.
+
+*   `scorer`: `Literal["ratio", "weighted", "reward"] = "ratio"`
+    *   **Description**: The default scoring strategy to use.
+
+*   `t_schedule`: `list[float] = [1.0, 0.8, 0.5, 0.2]`
+    *   **Description**: A list of floating-point numbers representing the temperature for each iteration round. The last value is used for any rounds beyond the schedule's length. This setting is validated to ensure it's not empty.
+
+*   `otlp_endpoint`: `Optional[str] = None`
+    *   **Description**: The endpoint URL for OpenTelemetry Protocol (OTLP) export.
+
+*   `agent_timeout`: `int = 60`
+    *   **Description**: Timeout in seconds for individual agent calls.
+
+### Python Configuration
+
+You can also configure the orchestrator programmatically by importing the `settings` object and modifying its attributes directly. This is useful for dynamic configuration or testing scenarios.
 
 ```python
-from flujo.recipes import Default
-from flujo import Task
+from flujo.infra.settings import settings
 
-# Create the default recipe with custom settings
-orch = Default(
-    review_agent,
-    solution_agent,
-    validator_agent,
-    max_iters=5,  # Override MAX_ITERS
-    k_variants=3  # Override K_VARIANTS
-)
-```
+# Override a setting programmatically
+settings.max_iters = 10
+settings.reflection_enabled = False
 
-### Telemetry Configuration
-
-```python
-from flujo import init_telemetry
-
-# Initialize with custom settings
-init_telemetry(
-    service_name="my-app",
-    environment="production",
-    version="1.0.0"
-)
+# Access a setting
+print(f"Current solution model: {settings.default_solution_model}")
 ```
 
 ## Model Configuration
