@@ -11,6 +11,8 @@ from .pipeline_dsl import (
     StepConfig,
     MapStep,
     ParallelStep,
+    MergeStrategy,
+    BranchFailureStrategy,
 )
 from .models import (
     Task,
@@ -40,6 +42,8 @@ __all__ = [
     "StepConfig",
     "MapStep",
     "ParallelStep",
+    "MergeStrategy",
+    "BranchFailureStrategy",
     # Models
     "Task",
     "Candidate",

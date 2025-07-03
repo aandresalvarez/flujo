@@ -22,10 +22,12 @@ from typing import (
     get_origin,
     get_args,
     Iterable,
+    Union,
 )
 import contextvars
 import inspect
 import logging
+from enum import Enum
 
 from .pipeline_validation import ValidationFinding, ValidationReport
 from flujo.domain.models import BaseModel, PipelineContext, RefinementCheck  # noqa: F401
@@ -46,6 +48,21 @@ P = ParamSpec("P")
 
 # BranchKey type alias for ConditionalStep
 BranchKey = Any
+
+
+class MergeStrategy(Enum):
+    """Strategies for merging branch contexts back into the main context."""
+
+    NO_MERGE = "no_merge"
+    OVERWRITE = "overwrite"
+    MERGE_SCRATCHPAD = "merge_scratchpad"
+
+
+class BranchFailureStrategy(Enum):
+    """Policies for handling branch failures in ``ParallelStep``."""
+
+    PROPAGATE = "propagate"
+    IGNORE = "ignore"
 
 
 class StepConfig(BaseModel):
@@ -549,6 +566,10 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         name: str,
         branches: Dict[str, "Step[Any, Any]" | "Pipeline[Any, Any]"],
         context_include_keys: Optional[List[str]] = None,
+        merge_strategy: Union[
+            MergeStrategy, Callable[[ContextT, ContextT], None]
+        ] = MergeStrategy.NO_MERGE,
+        on_branch_failure: BranchFailureStrategy = BranchFailureStrategy.PROPAGATE,
         **config_kwargs: Any,
     ) -> "ParallelStep[ContextT]":
         """Factory to run branches concurrently and aggregate outputs."""
@@ -560,6 +581,8 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                 "name": name,
                 "branches": branches,
                 "context_include_keys": context_include_keys,
+                "merge_strategy": merge_strategy,
+                "on_branch_failure": on_branch_failure,
                 "config": StepConfig(**config_kwargs),
             }
         )
@@ -760,6 +783,14 @@ class ParallelStep(Step[Any, Any], Generic[ContextT]):
         default=None,
         description="If provided, only these top-level context fields will be copied to each branch. "
         "If None, the entire context is deep-copied (default behavior).",
+    )
+    merge_strategy: Union[MergeStrategy, Callable[[ContextT, ContextT], None]] = Field(
+        default=MergeStrategy.NO_MERGE,
+        description="Strategy for merging successful branch contexts back into the main context.",
+    )
+    on_branch_failure: BranchFailureStrategy = Field(
+        default=BranchFailureStrategy.PROPAGATE,
+        description="How the ParallelStep should behave when a branch fails.",
     )
 
     model_config = {"arbitrary_types_allowed": True}

@@ -43,6 +43,8 @@ from ..domain.pipeline_dsl import (
     LoopStep,
     ConditionalStep,
     ParallelStep,
+    MergeStrategy,
+    BranchFailureStrategy,
     HumanInTheLoopStep,
     BranchKey,
 )
@@ -582,6 +584,8 @@ async def _execute_parallel_step_logic(
             branch_res.feedback = f"Branch execution error: {e}"
             branch_res.output = None
 
+        branch_res.branch_context = ctx_copy
+
         outputs[key] = branch_res.output
         branch_results[key] = branch_res
 
@@ -622,14 +626,59 @@ async def _execute_parallel_step_logic(
 
     result.latency_s = time.monotonic() - start
 
-    # Aggregate results from all branches
+    # Aggregate usage metrics
     for br in branch_results.values():
         result.cost_usd += br.cost_usd
         result.token_counts += br.token_counts
-        if not br.success and result.feedback is None:
-            result.feedback = f"Branch failed: {br.feedback}" if br.feedback else "Branch failed"
 
-    result.success = all(br.success for br in branch_results.values())
+    succeeded_branches: Dict[str, StepResult] = {}
+    failed_branches: Dict[str, StepResult] = {}
+    for name, br in branch_results.items():
+        if br.success:
+            succeeded_branches[name] = br
+        else:
+            failed_branches[name] = br
+
+    # --- 1. Handle Failures ---
+    if failed_branches and parallel_step.on_branch_failure == BranchFailureStrategy.PROPAGATE:
+        result.success = False
+        fail_name = next(iter(failed_branches))
+        result.feedback = f"Branch '{fail_name}' failed. Propagating failure."
+        result.output = {
+            **{k: v.output for k, v in succeeded_branches.items()},
+            **{k: v for k, v in failed_branches.items()},
+        }
+        result.attempts = 1
+        return result
+
+    # --- 2. Handle Merging for Successful Branches ---
+    if parallel_step.merge_strategy != MergeStrategy.NO_MERGE and context is not None:
+        if callable(parallel_step.merge_strategy):
+            for res in succeeded_branches.values():
+                if res.branch_context is not None:
+                    parallel_step.merge_strategy(context, res.branch_context)
+        elif parallel_step.merge_strategy == MergeStrategy.OVERWRITE:
+            if succeeded_branches:
+                last_ctx = list(succeeded_branches.values())[-1].branch_context
+                if last_ctx is not None:
+                    validated = context.__class__.model_validate(last_ctx.model_dump())
+                    context.__dict__.clear()
+                    context.__dict__.update(validated.__dict__)
+        elif parallel_step.merge_strategy == MergeStrategy.MERGE_SCRATCHPAD:
+            if hasattr(context, "scratchpad"):
+                for res in succeeded_branches.values():
+                    bc = res.branch_context
+                    if bc is not None and hasattr(bc, "scratchpad"):
+                        context.scratchpad.update(bc.scratchpad)
+
+    # --- 3. Finalize the Result ---
+    result.success = bool(succeeded_branches)
+    final_output = {k: v.output for k, v in succeeded_branches.items()}
+    if parallel_step.on_branch_failure == BranchFailureStrategy.IGNORE:
+        final_output.update(failed_branches)
+
+    result.output = final_output
+    result.attempts = 1
 
     # Final usage limit check (for backward compatibility and safety)
     if usage_limits is not None:
@@ -658,8 +707,6 @@ async def _execute_parallel_step_logic(
             Flujo._set_final_context(pr_tokens, context)
             raise UsageLimitExceededError(result.feedback, pr_tokens)
 
-    result.output = outputs
-    result.attempts = 1
     return result
 
 

@@ -76,4 +76,8 @@ print(result.step_history[-1].output)  # {"a": 1, "b": 2}
 print(result.final_pipeline_context.val)  # 0
 ```
 
+`Step.parallel` also supports merging branch contexts and flexible failure
+handling via the `merge_strategy` and `on_branch_failure` parameters. See
+[`pipeline_dsl.md`](pipeline_dsl.md) for details.
+
 See [pipeline_dsl.md](pipeline_dsl.md) for general DSL usage.
