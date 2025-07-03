@@ -50,6 +50,7 @@ from ..domain.pipeline_dsl import (
     HumanInTheLoopStep,
     BranchKey,
 )
+from flujo.steps.cache_step import CacheStep, _generate_cache_key
 from ..domain.plugins import PluginOutcome
 from ..domain.validation import ValidationResult
 from ..domain.models import (
@@ -76,8 +77,8 @@ from ..domain.events import (
 from ..domain.backends import ExecutionBackend, StepExecutionRequest
 from ..tracing import ConsoleTracer
 
-_fallback_chain_var: contextvars.ContextVar[list[Step[Any, Any]]] = contextvars.ContextVar(
-    "_fallback_chain", default=[]
+_fallback_chain_var: contextvars.ContextVar[list[Step[Any, Any]]] = (
+    contextvars.ContextVar("_fallback_chain", default=[])
 )
 
 _agent_command_adapter: TypeAdapter[AgentCommand] = TypeAdapter(AgentCommand)
@@ -801,6 +802,29 @@ async def _run_step_logic(
 ) -> StepResult:
     """Core logic for executing a single step without engine coupling."""
     visited: set[Any] = set()
+    if isinstance(step, CacheStep):
+        key = _generate_cache_key(
+            step.wrapped_step, data, context=context, resources=resources
+        )
+        cached: StepResult | None = None
+        if key:
+            try:
+                cached = await step.cache_backend.get(key)
+            except Exception as e:  # pragma: no cover - defensive
+                logfire.warn(f"Cache get failed for key {key}: {e}")
+        if isinstance(cached, StepResult):
+            result = cached.model_copy(deep=True)
+            result.metadata_ = result.metadata_ or {}
+            result.metadata_["cache_hit"] = True
+            return result
+
+        result = await step_executor(step.wrapped_step, data, context, resources)
+        if result.success and key:
+            try:
+                await step.cache_backend.set(key, result)
+            except Exception as e:  # pragma: no cover - defensive
+                logfire.warn(f"Cache set failed for key {key}: {e}")
+        return result
     if isinstance(step, LoopStep):
         return await _execute_loop_step_logic(
             step,

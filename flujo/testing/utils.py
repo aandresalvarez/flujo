@@ -22,11 +22,14 @@ class StubAgent:
         self.call_count = 0
         self.inputs: List[Any] = []
 
-    async def run(self, input_data: Any = None, **_: Any) -> Any:
-        self.inputs.append(input_data)
+    async def run(self, data: Any = None, **_: Any) -> Any:
+        self.inputs.append(data)
         idx = min(self.call_count, len(self.outputs) - 1)
         self.call_count += 1
         return self.outputs[idx]
+
+    async def run_async(self, data: Any = None, **kwargs: Any) -> Any:
+        return await self.run(data, **kwargs)
 
 
 class DummyPlugin:

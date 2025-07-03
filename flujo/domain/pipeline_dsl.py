@@ -30,7 +30,10 @@ import logging
 from enum import Enum
 
 from .pipeline_validation import ValidationFinding, ValidationReport
-from flujo.domain.models import BaseModel, PipelineContext, RefinementCheck  # noqa: F401
+from flujo.domain.models import (
+    BaseModel,
+    RefinementCheck,
+)  # noqa: F401
 from flujo.domain.resources import AppResources
 from pydantic import Field, ConfigDict
 from .agent_protocol import AsyncAgentProtocol
@@ -38,6 +41,11 @@ from .plugins import ValidationPlugin
 from .validation import Validator
 from .types import ContextT
 from .processors import AgentProcessors
+from flujo.caching import CacheBackend, InMemoryCache
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # pragma: no cover
+    from flujo.steps.cache_step import CacheStep
 
 
 StepInT = TypeVar("StepInT")
@@ -89,11 +97,15 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
     fallback_step: Optional[Any] = Field(default=None, exclude=True)
     persist_feedback_to_context: Optional[str] = Field(
         default=None,
-        description=("If step fails, append feedback to this context attribute (must be a list)."),
+        description=(
+            "If step fails, append feedback to this context attribute (must be a list)."
+        ),
     )
     persist_validation_results_to: Optional[str] = Field(
         default=None,
-        description=("Append ValidationResult objects to this context attribute (must be a list)."),
+        description=(
+            "Append ValidationResult objects to this context attribute (must be a list)."
+        ),
     )
     updates_context: bool = Field(
         default=False,
@@ -117,9 +129,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             if hasattr(target, "__name__"):
                 agent_repr = f"<function {target.__name__}>"
             elif hasattr(self.agent, "_model_name"):
-                agent_repr = (
-                    f"AsyncAgentWrapper(model={getattr(self.agent, '_model_name', 'unknown')})"
-                )
+                agent_repr = f"AsyncAgentWrapper(model={getattr(self.agent, '_model_name', 'unknown')})"
             else:
                 agent_repr = self.agent.__class__.__name__
         config_repr = ""
@@ -419,7 +429,9 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             }
         )
 
-    def add_plugin(self, plugin: ValidationPlugin, priority: int = 0) -> "Step[StepInT, StepOutT]":
+    def add_plugin(
+        self, plugin: ValidationPlugin, priority: int = 0
+    ) -> "Step[StepInT, StepOutT]":
         """Add a validation plugin to this step."""
         self.plugins.append((plugin, priority))
         return self
@@ -444,7 +456,9 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         initial_input_to_loop_body_mapper: Optional[
             Callable[[Any, Optional[ContextT]], Any]
         ] = None,
-        iteration_input_mapper: Optional[Callable[[Any, Optional[ContextT], int], Any]] = None,
+        iteration_input_mapper: Optional[
+            Callable[[Any, Optional[ContextT], int], Any]
+        ] = None,
         loop_output_mapper: Optional[Callable[[Any, Optional[ContextT]], Any]] = None,
         **config_kwargs: Any,
     ) -> "LoopStep[ContextT]":
@@ -484,7 +498,9 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             f"{name}_artifact", default=None
         )
 
-        async def _store_artifact(artifact: Any, *, context: BaseModel | None = None) -> Any:
+        async def _store_artifact(
+            artifact: Any, *, context: BaseModel | None = None
+        ) -> Any:
             artifact_var.set(artifact)
             if context is not None and hasattr(context, "scratchpad"):
                 context.scratchpad[artifact_key] = artifact
@@ -505,7 +521,9 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                 ctx.scratchpad.setdefault(artifact_key + "__orig", inp)
             return {"original_input": inp, "feedback": None}
 
-        def _iteration_mapper(out: Any, ctx: BaseModel | None, _i: int) -> dict[str, Any]:
+        def _iteration_mapper(
+            out: Any, ctx: BaseModel | None, _i: int
+        ) -> dict[str, Any]:
             if isinstance(out, RefinementCheck):
                 feedback = out.feedback
             else:
@@ -518,13 +536,19 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                 return {"original_input": original, "feedback": feedback}
             return feedback_mapper(
                 original,
-                out
-                if isinstance(out, RefinementCheck)
-                else RefinementCheck(is_complete=False, feedback=feedback),
+                (
+                    out
+                    if isinstance(out, RefinementCheck)
+                    else RefinementCheck(is_complete=False, feedback=feedback)
+                ),
             )
 
         def _output_mapper(_out: Any, ctx: BaseModel | None) -> Any:
-            if ctx is not None and hasattr(ctx, "scratchpad") and artifact_key in ctx.scratchpad:
+            if (
+                ctx is not None
+                and hasattr(ctx, "scratchpad")
+                and artifact_key in ctx.scratchpad
+            ):
                 return ctx.scratchpad.get(artifact_key)
             return artifact_var.get(None)
 
@@ -547,7 +571,9 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         branches: Dict[BranchKey, "Pipeline[Any, Any]"],
         default_branch_pipeline: Optional["Pipeline[Any, Any]"] = None,
         branch_input_mapper: Optional[Callable[[Any, Optional[ContextT]], Any]] = None,
-        branch_output_mapper: Optional[Callable[[Any, BranchKey, Optional[ContextT]], Any]] = None,
+        branch_output_mapper: Optional[
+            Callable[[Any, BranchKey, Optional[ContextT]], Any]
+        ] = None,
         **config_kwargs: Any,
     ) -> "ConditionalStep[ContextT]":
         """Factory method to create a :class:`ConditionalStep`."""
@@ -614,6 +640,21 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             iterable_input=iterable_input,
         )
 
+    @classmethod
+    def cached(
+        cls,
+        wrapped_step: "Step[Any, Any]",
+        cache_backend: Optional[CacheBackend] = None,
+    ) -> "CacheStep":
+        """Wrap ``wrapped_step`` so its results are cached."""
+        from flujo.steps.cache_step import CacheStep
+
+        return CacheStep(
+            name=f"Cached({wrapped_step.name})",
+            wrapped_step=wrapped_step,
+            cache_backend=cache_backend or InMemoryCache(),
+        )
+
 
 @overload
 def step(
@@ -650,7 +691,9 @@ def step(
 
 
 def step(
-    func: (Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]] | None) = None,
+    func: (
+        Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]] | None
+    ) = None,
     *,
     name: str | None = None,
     updates_context: bool = False,
@@ -699,7 +742,9 @@ mapper = Step.from_mapper
 
 
 def adapter_step(
-    func: (Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]] | None) = None,
+    func: (
+        Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]] | None
+    ) = None,
     **kwargs: Any,
 ) -> Any:
     """Alias for :func:`step` that marks the created step as an adapter."""
@@ -728,17 +773,27 @@ class LoopStep(Step[Any, Any], Generic[ContextT]):
     )
     max_loops: int = Field(default=5, gt=0, description="Maximum number of iterations.")
 
-    initial_input_to_loop_body_mapper: Optional[Callable[[Any, Optional[ContextT]], Any]] = Field(
+    initial_input_to_loop_body_mapper: Optional[
+        Callable[[Any, Optional[ContextT]], Any]
+    ] = Field(
         default=None,
-        description=("Callable to map LoopStep's input to the first iteration's body input."),
+        description=(
+            "Callable to map LoopStep's input to the first iteration's body input."
+        ),
     )
-    iteration_input_mapper: Optional[Callable[[Any, Optional[ContextT], int], Any]] = Field(
-        default=None,
-        description=("Callable to map previous iteration's body output to next iteration's input."),
+    iteration_input_mapper: Optional[Callable[[Any, Optional[ContextT], int], Any]] = (
+        Field(
+            default=None,
+            description=(
+                "Callable to map previous iteration's body output to next iteration's input."
+            ),
+        )
     )
     loop_output_mapper: Optional[Callable[[Any, Optional[ContextT]], Any]] = Field(
         default=None,
-        description=("Callable to map the final successful output to the LoopStep's output."),
+        description=(
+            "Callable to map the final successful output to the LoopStep's output."
+        ),
     )
 
     model_config = {"arbitrary_types_allowed": True}
@@ -762,7 +817,9 @@ class ConditionalStep(Step[Any, Any], Generic[ContextT]):
         default=None,
         description="Maps ConditionalStep input to branch input.",
     )
-    branch_output_mapper: Optional[Callable[[Any, BranchKey, Optional[ContextT]], Any]] = Field(
+    branch_output_mapper: Optional[
+        Callable[[Any, BranchKey, Optional[ContextT]], Any]
+    ] = Field(
         default=None,
         description="Maps branch output to ConditionalStep output.",
     )
@@ -887,7 +944,9 @@ class MapStep(LoopStep[ContextT]):
             "_max_loops_var",
             contextvars.ContextVar(f"{name}_max_loops", default=1),
         )
-        object.__setattr__(self, "_body_var", contextvars.ContextVar(f"{name}_body", default=body))
+        object.__setattr__(
+            self, "_body_var", contextvars.ContextVar(f"{name}_body", default=body)
+        )
 
         def _initial_mapper(_: Any, ctx: BaseModel | None) -> Any:
             if ctx is None:
@@ -896,7 +955,9 @@ class MapStep(LoopStep[ContextT]):
             if isinstance(raw_items, (str, bytes, bytearray)) or not isinstance(
                 raw_items, Iterable
             ):
-                raise TypeError(f"context.{iterable_input} must be a non-string iterable")
+                raise TypeError(
+                    f"context.{iterable_input} must be a non-string iterable"
+                )
             items = list(raw_items)
             setattr(ctx, items_attr, items)
             setattr(ctx, results_attr, [])
@@ -1305,7 +1366,9 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
 
             return join_node_id
 
-        def process_parallel_step(step: ParallelStep[Any], prev_node: str | None = None) -> str:
+        def process_parallel_step(
+            step: ParallelStep[Any], prev_node: str | None = None
+        ) -> str:
             """Process a ParallelStep with its parallel branches."""
             para_node_id = get_node_id(step)
             add_node(step, para_node_id)
@@ -1392,7 +1455,9 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
 
             return node_id
 
-        def process_pipeline(pipeline: Pipeline[Any, Any], prev_node: str | None = None) -> str:
+        def process_pipeline(
+            pipeline: Pipeline[Any, Any], prev_node: str | None = None
+        ) -> str:
             """Process a pipeline and return the last node ID."""
             last_node = prev_node
             for step in pipeline.steps:
@@ -1419,7 +1484,9 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
         control_steps = []
 
         for step in self.steps:
-            if isinstance(step, (LoopStep, ConditionalStep, ParallelStep, HumanInTheLoopStep)):
+            if isinstance(
+                step, (LoopStep, ConditionalStep, ParallelStep, HumanInTheLoopStep)
+            ):
                 control_steps.append(step)
             else:
                 simple_steps.append(step)
@@ -1428,7 +1495,9 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
         if simple_steps:
             simple_node_id = "s1"
             simple_names = [step.name for step in simple_steps]
-            lines.append(f'    {simple_node_id}["Processing: {", ".join(simple_names)}"];')
+            lines.append(
+                f'    {simple_node_id}["Processing: {", ".join(simple_names)}"];'
+            )
             current_node = simple_node_id
         else:
             current_node = None
