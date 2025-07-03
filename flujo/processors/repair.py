@@ -62,8 +62,10 @@ class DeterministicRepairProcessor:
         try:
             obj = ast.literal_eval(candidate)
             return self._canonical(obj)
-        except Exception:
-            pass
+        except Exception as e:
+            import logging
+            logging.warning(f"DeterministicRepairProcessor: ast.literal_eval failed: {e}")
+            # pass
 
         raise ValueError("DeterministicRepairProcessor: unable to repair payload.")
 
@@ -72,7 +74,9 @@ class DeterministicRepairProcessor:
         try:
             json.loads(text)
             return True
-        except Exception:
+        except Exception as e:
+            import logging
+            logging.warning(f"DeterministicRepairProcessor: _is_json failed: {e}")
             return False
 
     @staticmethod

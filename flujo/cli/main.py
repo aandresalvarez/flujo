@@ -492,6 +492,58 @@ def validate(
         raise typer.Exit(1)
 
 
+@app.command("pipeline-mermaid")
+def pipeline_mermaid_cmd(
+    file: str = typer.Option(
+        ..., "--file", "-f", help="Path to the Python file containing the pipeline object"
+    ),
+    object_name: str = typer.Option(
+        "pipeline",
+        "--object",
+        "-o",
+        help="Name of the pipeline variable in the file (default: pipeline)",
+    ),
+    detail_level: str = typer.Option(
+        "auto", "--detail-level", "-d", help="Detail level: auto, high, medium, low"
+    ),
+    output: Optional[str] = typer.Option(
+        None, "--output", "-O", help="Output file (default: stdout)"
+    ),
+) -> None:
+    """
+    Output a pipeline's Mermaid diagram at the chosen detail level.
+
+    Example:
+        flujo pipeline-mermaid --file my_pipeline.py --object pipeline --detail-level medium --output diagram.md
+    """
+    import runpy
+
+    try:
+        ns = runpy.run_path(file)
+    except Exception as e:
+        typer.echo(f"[red]Failed to load file: {e}", err=True)
+        raise typer.Exit(1)
+    pipeline = ns.get(object_name)
+    if pipeline is None:
+        typer.echo(f"[red]No object named '{object_name}' found in {file}", err=True)
+        raise typer.Exit(1)
+    if hasattr(pipeline, "to_mermaid_with_detail_level"):
+        mermaid_code = pipeline.to_mermaid_with_detail_level(detail_level)
+    else:
+        typer.echo(f"[red]Object '{object_name}' does not support Mermaid visualization", err=True)
+        raise typer.Exit(1)
+    if output:
+        with open(output, "w") as f:
+            f.write("```mermaid\n")
+            f.write(mermaid_code)
+            f.write("\n```")
+        typer.echo(f"[green]Mermaid diagram written to {output}")
+    else:
+        typer.echo("```mermaid")
+        typer.echo(mermaid_code)
+        typer.echo("```")
+
+
 @app.callback()
 def main(
     profile: Annotated[

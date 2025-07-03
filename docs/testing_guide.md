@@ -111,7 +111,111 @@ async def test_with_resources() -> None:
     assert result.step_history[0].output == "Alice"
 ```
 
-## 6. Common Pitfalls
+## 6. Testing Application Code with `override_agent`
+
+The `override_agent` context manager provides a clean way to test application code that uses `flujo` pipelines internally. This is especially useful when you want to test your application logic without running expensive or slow production agents.
+
+### Basic Usage
+
+```python
+from flujo import Step, Pipeline
+from flujo.testing import override_agent, StubAgent
+
+class ProductionAgent:
+    """A production agent that might be expensive or slow to run."""
+    
+    async def run(self, data: str, **kwargs) -> str:
+        # Simulate expensive operation
+        await asyncio.sleep(0.1)
+        return f"expensive_result: {data.upper()}"
+
+class ApplicationService:
+    """Example application service that uses flujo pipelines internally."""
+    
+    def __init__(self):
+        self.pipeline = (
+            Step("Process", ProductionAgent()) >>
+            Step("Validate", ProductionAgent())
+        )
+        self.runner = Flujo(self.pipeline)
+    
+    async def process_data(self, data: str) -> str:
+        """Process data using the internal pipeline."""
+        result = None
+        async for item in self.runner.run_async(data):
+            result = item
+        return result.step_history[-1].output
+
+# Test the application service with overridden agents
+async def test_application_service():
+    service = ApplicationService()
+    fast_test_agent = StubAgent(["test_processed", "test_validated"])
+    
+    # Override both steps in the pipeline
+    with override_agent(service.pipeline.steps[0], fast_test_agent):
+        with override_agent(service.pipeline.steps[1], fast_test_agent):
+            result = await service.process_data("test_input")
+            assert result == "test_validated"
+```
+
+### Testing Different Scenarios
+
+You can use `override_agent` to test different scenarios without modifying your application code:
+
+```python
+async def test_different_scenarios():
+    service = ApplicationService()
+    
+    # Test success scenario
+    success_agent = StubAgent(["success_output"])
+    with override_agent(service.pipeline.steps[0], success_agent):
+        result = await service.process_data("test")
+        assert result == "success_output"
+    
+    # Test failure scenario
+    failure_agent = StubAgent([RuntimeError("Test failure")])
+    with override_agent(service.pipeline.steps[0], failure_agent):
+        try:
+            await service.process_data("test")
+            assert False, "Expected exception"
+        except RuntimeError as e:
+            assert str(e) == "Test failure"
+```
+
+### Automatic Cleanup
+
+The context manager automatically restores the original agent when the `with` block exits, even if an exception occurs:
+
+```python
+async def test_agent_restoration():
+    original_agent = ProductionAgent()
+    step = Step("test", original_agent)
+    
+    # Verify original agent is set
+    assert step.agent is original_agent
+    
+    # Use context manager and raise an exception
+    try:
+        with override_agent(step, StubAgent(["test"])):
+            assert step.agent is not original_agent
+            raise RuntimeError("Test exception")
+    except RuntimeError:
+        pass
+    
+    # Verify original agent is still restored
+    assert step.agent is original_agent
+```
+
+### Benefits of `override_agent`
+
+1. **Fast Execution**: No expensive operations during testing
+2. **Predictable Outputs**: Use `StubAgent` for controlled responses
+3. **Automatic Cleanup**: Original agents are restored automatically
+4. **Exception Safety**: Agents restored even if tests fail
+5. **Simple Syntax**: Clean context manager interface
+6. **No Code Changes**: Test application code without modifying it
+
+## 7. Common Pitfalls
 
 If a mocked agent returns the default `Mock` object, the engine raises:
 

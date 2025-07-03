@@ -4,10 +4,12 @@ from typing import Any, List, AsyncIterator, Dict
 import asyncio
 import orjson
 from pydantic import BaseModel
+from contextlib import contextmanager
 
 from ..domain.plugins import PluginOutcome
 from ..domain.backends import ExecutionBackend, StepExecutionRequest
 from ..domain.agent_protocol import AsyncAgentProtocol
+from ..domain.pipeline_dsl import Step
 from ..infra.backends import LocalBackend
 from ..domain.models import StepResult
 
@@ -121,3 +123,14 @@ class DummyRemoteBackend(ExecutionBackend):
             request.context.__dict__.update(roundtrip.context.__dict__)
 
         return result
+
+
+@contextmanager
+def override_agent(step: Step[Any, Any], new_agent: Any) -> Any:
+    """Temporarily override an agent in a Step for testing purposes."""
+    original_agent = step.agent
+    step.agent = new_agent
+    try:
+        yield
+    finally:
+        step.agent = original_agent

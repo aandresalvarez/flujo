@@ -268,6 +268,7 @@ pipeline_result = PipelineResult(
     total_cost_usd: float = 0.0,          # Total cost
     final_pipeline_context: Optional[ContextT] = None,  # Final context
 )
+```
 
 ### PipelineContext
 
@@ -520,3 +521,36 @@ flujo add-eval-case --dataset dataset.py # Add evaluation case
 - Read [Intelligent Evals](intelligent_evals.md) for evaluation strategies
 - Check [Telemetry Guide](telemetry.md) for monitoring setup
 - Review [Extending Guide](extending.md) for custom components 
+
+## Pipeline Visualization
+
+### Pipeline.to_mermaid_with_detail_level(detail_level)
+
+Generate a Mermaid diagram of the pipeline with configurable detail levels.
+
+**Signature:**
+
+```python
+Pipeline.to_mermaid_with_detail_level(detail_level: str = "auto") -> str
+```
+
+- `detail_level`: One of `"high"`, `"medium"`, `"low"`, or `"auto"`.
+    - `"high"`: Full detail, all subgraphs, annotations, and control flow.
+    - `"medium"`: Simplified, uses emojis, no subgraphs.
+    - `"low"`: Minimal, groups steps, high-level overview.
+    - `"auto"`: Uses an AI agent to select the best level based on pipeline complexity.
+
+**Returns:**
+A valid Mermaid graph definition string.
+
+**Example:**
+
+```python
+from flujo import Step, Pipeline
+
+pipeline = Step("Extract", agent) >> Step("Transform", agent) >> Step("Load", agent)
+mermaid_code = pipeline.to_mermaid_with_detail_level("medium")
+print(mermaid_code)
+```
+
+See also: [Visualizing Pipelines](cookbook/visualizing_pipelines.md) 

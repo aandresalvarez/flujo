@@ -157,29 +157,10 @@ def _types_compatible(a: Any, b: Any) -> bool:
 
     try:
         return issubclass(a, b)
-    except Exception:
-        pass
-
-    if origin_a is None and origin_b is None:
+    except Exception as e:
+        import logging
+        logging.warning(f"_types_compatible: issubclass({a}, {b}) raised {e}")
         return False
-    if origin_a is None:
-        try:
-            return issubclass(a, origin_b)
-        except Exception:
-            return False
-    if origin_b is None:
-        try:
-            return issubclass(origin_a, b)
-        except Exception:
-            return False
-
-    if origin_a is not origin_b:
-        return False
-
-    args_a, args_b = get_args(a), get_args(b)
-    if len(args_a) != len(args_b):
-        return False
-    return all(_types_compatible(x, y) for x, y in zip(args_a, args_b))
 
 
 RunnerInT = TypeVar("RunnerInT")

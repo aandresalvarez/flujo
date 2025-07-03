@@ -25,6 +25,7 @@ from typing import (
 )
 import contextvars
 import inspect
+import logging
 
 from .pipeline_validation import ValidationFinding, ValidationReport
 from flujo.domain.models import BaseModel, PipelineContext, RefinementCheck  # noqa: F401
@@ -1011,29 +1012,9 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
 
             try:
                 return issubclass(a, b)
-            except Exception:
-                pass
-
-            if origin_a is None and origin_b is None:
+            except Exception as e:
+                logging.warning(f"_compatible: issubclass({a}, {b}) raised {e}")
                 return False
-            if origin_a is None:
-                try:
-                    return issubclass(a, origin_b)
-                except Exception:
-                    return False
-            if origin_b is None:
-                try:
-                    return issubclass(origin_a, b)
-                except Exception:
-                    return False
-
-            if origin_a is not origin_b:
-                return False
-
-            args_a, args_b = get_args(a), get_args(b)
-            if len(args_a) != len(args_b):
-                return False
-            return all(_compatible(x, y) for x, y in zip(args_a, args_b))
 
         report = ValidationReport()
 
@@ -1116,6 +1097,382 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
 
     def iter_steps(self) -> Iterator[Step[Any, Any]]:
         return iter(self.steps)
+
+    def to_mermaid(self) -> str:
+        """Generate a Mermaid graph definition for visualizing this pipeline.
+
+        Returns a valid Mermaid graph TD (Top-Down) definition that represents:
+        - Different step types with distinct shapes
+        - Configuration annotations (plugins/validators, retries)
+        - Control flow structures (loops, branches, parallel execution)
+        - Nested pipeline structures using subgraphs
+
+        Returns:
+            str: A valid Mermaid graph definition string
+        """
+        return self.to_mermaid_with_detail_level("auto")
+
+    def to_mermaid_with_detail_level(self, detail_level: str = "auto") -> str:
+        """Generate a Mermaid graph definition with configurable detail levels.
+
+        Args:
+            detail_level: One of "high", "medium", "low", or "auto".
+                         "auto" uses AI to determine the best level based on complexity.
+
+        Returns:
+            str: A valid Mermaid graph definition string
+        """
+        if detail_level == "auto":
+            detail_level = self._determine_optimal_detail_level()
+
+        if detail_level == "high":
+            return self._generate_high_detail_mermaid()
+        elif detail_level == "medium":
+            return self._generate_medium_detail_mermaid()
+        elif detail_level == "low":
+            return self._generate_low_detail_mermaid()
+        else:
+            raise ValueError(
+                f"Invalid detail_level: {detail_level}. Must be 'high', 'medium', 'low', or 'auto'"
+            )
+
+    def _determine_optimal_detail_level(self) -> str:
+        """Use AI to determine the optimal detail level based on pipeline complexity."""
+        complexity_score = self._calculate_complexity_score()
+
+        if complexity_score >= 15:
+            return "low"
+        elif complexity_score >= 8:
+            return "medium"
+        else:
+            return "high"
+
+    def _calculate_complexity_score(self) -> int:
+        """Calculate a complexity score for the pipeline."""
+        score = 0
+
+        for step in self.steps:
+            # Base score for each step
+            score += 1
+
+            # Additional complexity for different step types
+            if isinstance(step, LoopStep):
+                score += 3  # Loops are complex
+                # Add complexity for nested steps in loop
+                score += len(step.loop_body_pipeline.steps) * 2
+            elif isinstance(step, ConditionalStep):
+                score += 2  # Conditionals add complexity
+                # Add complexity for each branch
+                score += len(step.branches) * 2
+            elif isinstance(step, ParallelStep):
+                score += 2  # Parallel execution adds complexity
+                # Add complexity for each parallel branch
+                score += len(step.branches) * 2
+            elif isinstance(step, HumanInTheLoopStep):
+                score += 1  # Human steps add some complexity
+
+            # Additional complexity for configuration
+            if step.config.max_retries > 1:
+                score += 1
+            if step.plugins or step.validators:
+                score += 1
+
+        return score
+
+    def _generate_high_detail_mermaid(self) -> str:
+        """Generate high-detail Mermaid diagram with all features."""
+        lines = ["graph TD"]
+        node_counter = 0
+        step_nodes: dict[int, str] = {}
+
+        def get_node_id(step: Step[Any, Any]) -> str:
+            step_id = id(step)
+            if step_id not in step_nodes:
+                nonlocal node_counter
+                node_counter += 1
+                step_nodes[step_id] = f"s{node_counter}"
+            return step_nodes[step_id]
+
+        def add_node(step: Step[Any, Any], node_id: str) -> None:
+            """Add a node definition for the given step."""
+            # Determine node shape and label based on step type
+            if isinstance(step, HumanInTheLoopStep):
+                shape = f"[/Human: {step.name}/]"
+            elif isinstance(step, LoopStep):
+                shape = f'("Loop: {step.name}")'
+            elif isinstance(step, ConditionalStep):
+                shape = f'{{"Branch: {step.name}"}}'
+            elif isinstance(step, ParallelStep):
+                shape = f'{{{{"Parallel: {step.name}"}}}}'
+            else:
+                # Standard Step
+                label = step.name
+                # Add validation annotation if step has plugins or validators
+                if step.plugins or step.validators:
+                    label += " 🛡️"
+                shape = f'["{label}"]'
+
+            lines.append(f"    {node_id}{shape};")
+
+        def add_edge(
+            from_node: str, to_node: str, label: str | None = None, style: str = "-->"
+        ) -> None:
+            """Add an edge between two nodes."""
+            if label:
+                lines.append(f'    {from_node} {style} |"{label}"| {to_node};')
+            else:
+                lines.append(f"    {from_node} {style} {to_node};")
+
+        def process_step(step: Step[Any, Any], prev_node: str | None = None) -> str:
+            """Process a single step and return its node ID."""
+            node_id = get_node_id(step)
+            add_node(step, node_id)
+
+            # Add edge from previous node if it exists
+            if prev_node:
+                # Use dashed edge for steps with retries
+                edge_style = "-.->" if step.config.max_retries > 1 else "-->"
+                add_edge(prev_node, node_id, style=edge_style)
+
+            return node_id
+
+        def process_pipeline(
+            pipeline: Pipeline[Any, Any],
+            prev_node: str | None = None,
+            subgraph_name: str | None = None,
+        ) -> str:
+            """Process a pipeline and return the last node ID."""
+            if subgraph_name:
+                lines.append(f'    subgraph "{subgraph_name}"')
+
+            last_node = prev_node
+            for step in pipeline.steps:
+                if isinstance(step, LoopStep):
+                    last_node = process_loop_step(step, last_node)
+                elif isinstance(step, ConditionalStep):
+                    last_node = process_conditional_step(step, last_node)
+                elif isinstance(step, ParallelStep):
+                    last_node = process_parallel_step(step, last_node)
+                else:
+                    last_node = process_step(step, last_node)
+
+            if subgraph_name:
+                lines.append("    end")
+
+            return last_node
+
+        def process_loop_step(step: LoopStep[Any], prev_node: str | None = None) -> str:
+            """Process a LoopStep with its internal pipeline structure."""
+            loop_node_id = get_node_id(step)
+            add_node(step, loop_node_id)
+
+            if prev_node:
+                add_edge(prev_node, loop_node_id)
+
+            # Process the loop body pipeline in a subgraph
+            lines.append(f'    subgraph "Loop Body: {step.name}"')
+            body_start = process_pipeline(step.loop_body_pipeline)
+            lines.append("    end")
+
+            # Connect loop node to body start
+            add_edge(loop_node_id, body_start)
+
+            # Connect body end back to loop node
+            add_edge(body_start, loop_node_id)
+
+            # Create exit path
+            exit_node_id = f"{loop_node_id}_exit"
+            lines.append(f'    {exit_node_id}(("Exit"));')
+            add_edge(loop_node_id, exit_node_id, "Exit")
+
+            return exit_node_id
+
+        def process_conditional_step(
+            step: ConditionalStep[Any], prev_node: str | None = None
+        ) -> str:
+            """Process a ConditionalStep with its branch pipelines."""
+            cond_node_id = get_node_id(step)
+            add_node(step, cond_node_id)
+
+            if prev_node:
+                add_edge(prev_node, cond_node_id)
+
+            # Process each branch
+            branch_end_nodes = []
+            for branch_key, branch_pipeline in step.branches.items():
+                branch_name = f"Branch: {branch_key}"
+                lines.append(f'    subgraph "{branch_name}"')
+                branch_end = process_pipeline(branch_pipeline)
+                lines.append("    end")
+
+                # Connect conditional to branch start
+                add_edge(cond_node_id, branch_end, str(branch_key))
+                branch_end_nodes.append(branch_end)
+
+            # Add default branch if it exists
+            if step.default_branch_pipeline:
+                lines.append('    subgraph "Default Branch"')
+                default_end = process_pipeline(step.default_branch_pipeline)
+                lines.append("    end")
+                add_edge(cond_node_id, default_end, "default")
+                branch_end_nodes.append(default_end)
+
+            # Create join node
+            join_node_id = f"{cond_node_id}_join"
+            lines.append(f"    {join_node_id}(( ));")
+            lines.append(f"    style {join_node_id} fill:none,stroke:none")
+
+            # Connect all branches to join node
+            for branch_end in branch_end_nodes:
+                add_edge(branch_end, join_node_id)
+
+            return join_node_id
+
+        def process_parallel_step(step: ParallelStep[Any], prev_node: str | None = None) -> str:
+            """Process a ParallelStep with its parallel branches."""
+            para_node_id = get_node_id(step)
+            add_node(step, para_node_id)
+
+            if prev_node:
+                add_edge(prev_node, para_node_id)
+
+            # Process each parallel branch
+            branch_end_nodes = []
+            for branch_name, branch_pipeline in step.branches.items():
+                lines.append(f'    subgraph "Parallel: {branch_name}"')
+                branch_end = process_pipeline(branch_pipeline)
+                lines.append("    end")
+
+                # Connect parallel node to branch start
+                add_edge(para_node_id, branch_end)
+                branch_end_nodes.append(branch_end)
+
+            # Create join node
+            join_node_id = f"{para_node_id}_join"
+            lines.append(f"    {join_node_id}(( ));")
+            lines.append(f"    style {join_node_id} fill:none,stroke:none")
+
+            # Connect all branches to join node
+            for branch_end in branch_end_nodes:
+                add_edge(branch_end, join_node_id)
+
+            return join_node_id
+
+        # Process the main pipeline
+        process_pipeline(self)
+
+        return "\n".join(lines)
+
+    def _generate_medium_detail_mermaid(self) -> str:
+        """Generate medium-detail Mermaid diagram with simplified structure."""
+        lines = ["graph TD"]
+        node_counter = 0
+        step_nodes: dict[int, str] = {}
+
+        def get_node_id(step: Step[Any, Any]) -> str:
+            step_id = id(step)
+            if step_id not in step_nodes:
+                nonlocal node_counter
+                node_counter += 1
+                step_nodes[step_id] = f"s{node_counter}"
+            return step_nodes[step_id]
+
+        def add_node(step: Step[Any, Any], node_id: str) -> None:
+            """Add a node definition for the given step."""
+            # Simplified node shapes
+            if isinstance(step, HumanInTheLoopStep):
+                shape = f'["👤 {step.name}"]'
+            elif isinstance(step, LoopStep):
+                shape = f'("🔄 {step.name}")'
+            elif isinstance(step, ConditionalStep):
+                shape = f'{{"🔀 {step.name}"}}'
+            elif isinstance(step, ParallelStep):
+                shape = f'{{{{"⚡ {step.name}"}}}}'
+            else:
+                # Standard Step
+                label = step.name
+                # Add validation annotation if step has plugins or validators
+                if step.plugins or step.validators:
+                    label += " 🛡️"
+                shape = f'["{label}"]'
+
+            lines.append(f"    {node_id}{shape};")
+
+        def add_edge(from_node: str, to_node: str, label: str | None = None) -> None:
+            """Add an edge between two nodes."""
+            if label:
+                lines.append(f'    {from_node} --> |"{label}"| {to_node};')
+            else:
+                lines.append(f"    {from_node} --> {to_node};")
+
+        def process_step(step: Step[Any, Any], prev_node: str | None = None) -> str:
+            """Process a single step and return its node ID."""
+            node_id = get_node_id(step)
+            add_node(step, node_id)
+
+            if prev_node:
+                add_edge(prev_node, node_id)
+
+            return node_id
+
+        def process_pipeline(pipeline: Pipeline[Any, Any], prev_node: str | None = None) -> str:
+            """Process a pipeline and return the last node ID."""
+            last_node = prev_node
+            for step in pipeline.steps:
+                if isinstance(step, (LoopStep, ConditionalStep, ParallelStep)):
+                    # For medium detail, just show the control flow step without subgraphs
+                    last_node = process_step(step, last_node)
+                else:
+                    last_node = process_step(step, last_node)
+
+            return last_node
+
+        # Process the main pipeline
+        process_pipeline(self)
+
+        return "\n".join(lines)
+
+    def _generate_low_detail_mermaid(self) -> str:
+        """Generate low-detail Mermaid diagram with minimal information."""
+        lines = ["graph TD"]
+        # node_counter = 0  # Removed unused variable
+
+        # Group steps by type for high-level overview
+        simple_steps = []
+        control_steps = []
+
+        for step in self.steps:
+            if isinstance(step, (LoopStep, ConditionalStep, ParallelStep, HumanInTheLoopStep)):
+                control_steps.append(step)
+            else:
+                simple_steps.append(step)
+
+        # Create simplified nodes
+        if simple_steps:
+            simple_node_id = "s1"
+            simple_names = [step.name for step in simple_steps]
+            lines.append(f'    {simple_node_id}["Processing: {", ".join(simple_names)}"];')
+            current_node = simple_node_id
+        else:
+            current_node = None
+
+        # Add control flow steps
+        for i, step in enumerate(control_steps, start=2):
+            node_id = f"s{i}"
+            if isinstance(step, LoopStep):
+                lines.append(f'    {node_id}("🔄 {step.name}")')
+            elif isinstance(step, ConditionalStep):
+                lines.append(f'    {node_id}{{"🔀 {step.name}"}}')
+            elif isinstance(step, ParallelStep):
+                lines.append(f"    {node_id}{{{{⚡ {step.name}}}}}")
+            elif isinstance(step, HumanInTheLoopStep):
+                lines.append(f'    {node_id}["👤 {step.name}"]')
+
+            if current_node:
+                lines.append(f"    {current_node} --> {node_id};")
+            current_node = node_id
+
+        return "\n".join(lines)
 
 
 # Explicit exports
