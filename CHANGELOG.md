@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.6.0] - 2025-01-XX
+## [0.6.0] - 2025-01-15
 
 ### Added
 - **Curated Layered Public API**: Complete architectural refactor with organized, layered import structure
@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Related components grouped into logical submodules (`recipes`, `testing`, `plugins`, `processors`, `models`, `exceptions`, `validation`, `tracing`, `utils`, `domain`, `application`, `infra`)
   - Improved discoverability and reduced import complexity
   - Enhanced developer experience with clear module boundaries
+- **ContextAwareAgentProtocol**: Type-safe context handling for agents
+  - New protocol for agents that need typed pipeline context
+  - Eliminates runtime errors and provides better IDE support
+  - Maintains backward compatibility with AsyncAgentProtocol
 - **Comprehensive Test Suite**: Robust testing infrastructure with 359 passing tests
   - Fixed all import errors and circular dependency issues
   - Resolved context mutation and agent protocol signature mismatches
@@ -32,6 +36,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Related functionality grouped into logical submodules
   - Updated all examples and documentation to use new import structure
   - Added migration guide for users transitioning from flat imports
+- **BREAKING CHANGE**: Standardized context parameter injection
+  - Unified context parameter injection to use `context` exclusively
+  - Removed support for `pipeline_context` parameter in step functions, agents, and plugins
+  - All context injection now uses the `context` parameter name
+  - This aligns the implementation with the documented API contract
 - **Improved Module Organization**: Better separation of concerns and encapsulation
   - Domain models and business logic separated from infrastructure
   - Application services isolated from domain logic
@@ -49,6 +58,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Eliminated circular dependencies between submodules
   - Proper module initialization and attribute access
   - Consistent import patterns across the codebase
+- **TypeAdapter Handling**: Enhanced `make_agent_async` to seamlessly handle `pydantic.TypeAdapter` instances
+  - Automatically unwraps TypeAdapter instances to extract underlying types
+  - Supports complex nested types like `List[Dict[str, MyModel]]`
+  - Supports Union types like `Union[ModelA, ModelB]`
+  - Maintains backward compatibility with regular types
 - **Test Infrastructure**: Comprehensive test suite fixes and improvements
   - Fixed settings singleton patching for isolated test execution
   - Resolved context mutation issues in test scenarios
@@ -60,6 +74,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Updated documentation to use new submodule structure
   - Corrected example execution paths and import patterns
   - Enhanced documentation clarity and accuracy
+  - **Updated "The Flujo Way" guide** with current API structure and ContextAwareAgentProtocol
 - **Development Workflow**: Improved development and testing experience
   - Fixed `make quality` command for comprehensive quality checks
   - Enhanced `make test` and `make cov` commands
@@ -72,6 +87,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Eliminated redundant module hierarchies
   - Streamlined module organization for better maintainability
   - Reduced complexity in import resolution
+- **Repository Artifacts**: Cleaned up development artifacts
+  - Removed obsolete backup files (`*.orig`) and temporary documentation
+  - Eliminated patch files and standalone debug scripts
+  - Improved contributor onboarding experience with cleaner repository
 
 ## [0.5.0] - 2025-07-02
 
