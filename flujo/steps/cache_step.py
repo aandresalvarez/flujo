@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Optional, TypeVar
 import hashlib
-import pickle
+import pickle  # nosec B403 - Used for fallback serialization of complex objects in cache keys
 import orjson
 from pydantic import Field
 
@@ -30,15 +30,15 @@ def _serialize_for_key(obj: Any) -> Any:
     if isinstance(obj, PipelineContext):
         return obj.model_dump(mode="json", exclude={"run_id"})
     if isinstance(obj, BaseModel):
-        return {k: _serialize_for_key(v) for k, v in obj.model_dump(mode="python").items()}
+        return {
+            k: _serialize_for_key(v) for k, v in obj.model_dump(mode="python").items()
+        }
     if isinstance(obj, dict):
         return {k: _serialize_for_key(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple, set, frozenset)):
         return [_serialize_for_key(v) for v in obj]
     if callable(obj):
-        return (
-            f"{getattr(obj, '__module__', '<unknown>')}.{getattr(obj, '__qualname__', repr(obj))}"
-        )
+        return f"{getattr(obj, '__module__', '<unknown>')}.{getattr(obj, '__qualname__', repr(obj))}"
     try:
         orjson.dumps(obj)
         return obj
@@ -63,7 +63,9 @@ def _generate_cache_key(
         serialized = orjson.dumps(payload, option=orjson.OPT_SORT_KEYS)
     except Exception:
         try:
-            serialized = pickle.dumps(payload)
+            serialized = pickle.dumps(
+                payload
+            )  # nosec B403 - Fallback serialization for cache keys
         except Exception:
             return None
     digest = hashlib.sha256(serialized).hexdigest()
