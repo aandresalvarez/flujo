@@ -42,7 +42,7 @@ class TypedPlugin(ContextAwarePluginProtocol[Ctx]):
 
 @pytest.mark.asyncio
 async def test_context_aware_agent_no_warning() -> None:
-    step = Step("s", TypedAgent())
+    step = Step.model_validate({"name": "s", "agent": TypedAgent()})
     runner = Flujo(step, context_model=Ctx, initial_context_data={"val": 0})
     with warnings.catch_warnings(record=True) as rec:
         await gather_result(runner, "in")
@@ -51,7 +51,7 @@ async def test_context_aware_agent_no_warning() -> None:
 
 @pytest.mark.asyncio
 async def test_legacy_agent_works_with_context() -> None:
-    step = Step("s", LegacyAgent())
+    step = Step.model_validate({"name": "s", "agent": LegacyAgent()})
     runner = Flujo(step, context_model=Ctx)
     # Should work without warnings since we now use 'context' parameter
     result = await gather_result(runner, "in")

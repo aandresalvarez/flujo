@@ -61,7 +61,7 @@ class KwargsPlugin:
 @pytest.mark.asyncio
 async def test_context_initialization_and_access() -> None:
     agent = CaptureAgent()
-    step = Step("s", agent)
+    step = Step.model_validate({"name": "s", "agent": agent})
     runner = Flujo(step, context_model=Ctx, initial_context_data={"num": 1})
     result = await gather_result(runner, "in")
     assert isinstance(agent.seen, Ctx)
@@ -71,7 +71,9 @@ async def test_context_initialization_and_access() -> None:
 @pytest.mark.asyncio
 async def test_context_initialization_failure() -> None:
     runner = Flujo(
-        Step("s", CaptureAgent()), context_model=Ctx, initial_context_data={"num": "bad"}
+        Step.model_validate({"name": "s", "agent": CaptureAgent()}),
+        context_model=Ctx,
+        initial_context_data={"num": "bad"},
     )
     with pytest.raises(PipelineContextInitializationError):
         await gather_result(runner, "in")
@@ -79,7 +81,9 @@ async def test_context_initialization_failure() -> None:
 
 @pytest.mark.asyncio
 async def test_context_mutation_between_steps() -> None:
-    pipeline = Step("inc", IncAgent()) >> Step("read", ReadAgent())
+    pipeline = Step.model_validate({"name": "inc", "agent": IncAgent()}) >> Step.model_validate(
+        {"name": "read", "agent": ReadAgent()}
+    )
     runner = Flujo(pipeline, context_model=Ctx)
     result = await gather_result(runner, "x")
     assert result.step_history[-1].output == 1
@@ -88,7 +92,7 @@ async def test_context_mutation_between_steps() -> None:
 
 @pytest.mark.asyncio
 async def test_context_isolated_per_run() -> None:
-    step = Step("inc", IncAgent())
+    step = Step.model_validate({"name": "inc", "agent": IncAgent()})
     runner = Flujo(step, context_model=Ctx)
     r1 = await gather_result(runner, "a")
     r2 = await gather_result(runner, "b")
@@ -101,8 +105,12 @@ async def test_plugin_receives_context_and_strict_plugin_errors() -> None:
     ctx_plugin = ContextPlugin()
     kwargs_plugin = KwargsPlugin()
     strict_plugin = StrictPlugin()
-    step = Step(
-        "s", CaptureAgent(), plugins=[(ctx_plugin, 0), (kwargs_plugin, 0), (strict_plugin, 0)]
+    step = Step.model_validate(
+        {
+            "name": "s",
+            "agent": CaptureAgent(),
+            "plugins": [(ctx_plugin, 0), (kwargs_plugin, 0), (strict_plugin, 0)],
+        }
     )
     runner = Flujo(step, context_model=Ctx)
     # This should run without error, as the engine is smart enough not to pass

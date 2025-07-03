@@ -22,7 +22,7 @@ def test_improper_step_call() -> None:
 
 
 def test_missing_agent_errors() -> None:
-    blank = Step("blank")
+    blank = Step.model_validate({"name": "blank"})
     pipeline = Pipeline.from_step(blank)
     report = pipeline.validate()
     assert not report.is_valid

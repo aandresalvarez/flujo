@@ -6,7 +6,7 @@ from flujo.testing import StubAgent
 
 
 async def main() -> None:
-    pipeline = Step("draft", StubAgent(["A short draft"])) >> Step.human_in_the_loop(
+    pipeline = Step.model_validate({"name": "draft", "agent": StubAgent(["A short draft"])}) >> Step.human_in_the_loop(
         "approval", message_for_user="Approve draft?"
     )
     runner = Flujo(pipeline)

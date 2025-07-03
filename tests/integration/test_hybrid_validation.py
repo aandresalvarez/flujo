@@ -73,7 +73,7 @@ async def test_context_aware_validator() -> None:
 async def test_aggregated_feedback() -> None:
     agent = StubAgent(["bad"])
     plugin = DummyPlugin([PluginOutcome(success=False, feedback="plugin fail")])
-    step = Step.validate_step(agent, plugins=[plugin], validators=[FailValidator()])
+    step = Step.validate_step(agent, plugins=[(plugin, 0)], validators=[FailValidator()])
     runner = Flujo(step)
     result = await gather_result(runner, "in")
     fb = result.step_history[0].feedback

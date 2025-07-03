@@ -51,7 +51,7 @@ def mock_resources() -> MyResources:
 
 @pytest.mark.asyncio
 async def test_resources_passed_to_agent(mock_resources: MyResources):
-    pipeline = Step("query_step", ResourceUsingAgent())
+    pipeline = Step.model_validate({"name": "query_step", "agent": ResourceUsingAgent()})
     runner = Flujo(pipeline, resources=mock_resources)
 
     await gather_result(runner, "users")
@@ -62,7 +62,9 @@ async def test_resources_passed_to_agent(mock_resources: MyResources):
 @pytest.mark.asyncio
 async def test_resources_passed_to_plugin(mock_resources: MyResources):
     plugin = ResourceUsingPlugin()
-    step = Step("plugin_step", ResourceUsingAgent(), plugins=[plugin])
+    step = Step.model_validate(
+        {"name": "plugin_step", "agent": ResourceUsingAgent(), "plugins": [(plugin, 0)]}
+    )
     runner = Flujo(step, resources=mock_resources)
 
     result = await gather_result(runner, "products")
@@ -73,7 +75,9 @@ async def test_resources_passed_to_plugin(mock_resources: MyResources):
 
 @pytest.mark.asyncio
 async def test_resource_instance_is_shared_across_steps(mock_resources: MyResources):
-    pipeline = Step("step1", ResourceUsingAgent()) >> Step("step2", ResourceUsingAgent())
+    pipeline = Step.model_validate(
+        {"name": "step1", "agent": ResourceUsingAgent()}
+    ) >> Step.model_validate({"name": "step2", "agent": ResourceUsingAgent()})
     runner = Flujo(pipeline, resources=mock_resources)
 
     await gather_result(runner, "orders")
@@ -87,7 +91,7 @@ async def test_resource_instance_is_shared_across_steps(mock_resources: MyResour
 async def test_pipeline_with_no_resources_succeeds():
     agent = MagicMock(spec=AsyncAgentProtocol)
     agent.run.return_value = "ok"
-    pipeline = Step("simple_step", agent)
+    pipeline = Step.model_validate({"name": "simple_step", "agent": agent})
 
     runner = Flujo(pipeline)
     result = await gather_result(runner, "in")
@@ -98,7 +102,7 @@ async def test_pipeline_with_no_resources_succeeds():
 
 @pytest.mark.asyncio
 async def test_mixing_resources_and_context(mock_resources: MyResources):
-    pipeline = Step("mixed_step", ContextAndResourceAgent())
+    pipeline = Step.model_validate({"name": "mixed_step", "agent": ContextAndResourceAgent()})
     runner = Flujo(
         pipeline,
         context_model=MyContext,

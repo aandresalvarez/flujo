@@ -1,7 +1,7 @@
 """Tests for pipeline visualization functionality."""
 
 from typing import Any
-from flujo.domain import Step, Pipeline
+from flujo.domain import Step, Pipeline, StepConfig
 from flujo.testing import DummyPlugin
 from flujo.domain.plugins import PluginOutcome
 
@@ -15,9 +15,9 @@ class TestAgent:
 
 def test_simple_pipeline_visualization():
     """Test visualization of a simple linear pipeline."""
-    step1 = Step("Extract", TestAgent())
-    step2 = Step("Transform", TestAgent())
-    step3 = Step("Load", TestAgent())
+    step1 = Step.model_validate({"name": "Extract", "agent": TestAgent()})
+    step2 = Step.model_validate({"name": "Transform", "agent": TestAgent()})
+    step3 = Step.model_validate({"name": "Load", "agent": TestAgent()})
 
     pipeline = step1 >> step2 >> step3
     mermaid = pipeline.to_mermaid()
@@ -37,8 +37,10 @@ def test_simple_pipeline_visualization():
 def test_pipeline_with_validation_steps():
     """Test visualization of steps with plugins/validators."""
     plugin = DummyPlugin([PluginOutcome(success=True, feedback="ok")])
-    step1 = Step("Validate", TestAgent(), plugins=[plugin])
-    step2 = Step("Process", TestAgent(), validators=[])
+    step1 = Step.model_validate(
+        {"name": "Validate", "agent": TestAgent(), "plugins": [(plugin, 0)]}
+    )
+    step2 = Step.model_validate({"name": "Process", "agent": TestAgent(), "validators": []})
 
     pipeline = step1 >> step2
     mermaid = pipeline.to_mermaid()
@@ -49,8 +51,10 @@ def test_pipeline_with_validation_steps():
 
 def test_pipeline_with_retry_config():
     """Test visualization of steps with retry configuration."""
-    step1 = Step("NormalStep", TestAgent())
-    step2 = Step("RetryStep", TestAgent(), max_retries=3)
+    step1 = Step.model_validate({"name": "NormalStep", "agent": TestAgent()})
+    step2 = Step.model_validate(
+        {"name": "RetryStep", "agent": TestAgent(), "config": StepConfig(max_retries=3)}
+    )
 
     pipeline = step1 >> step2
     mermaid = pipeline.to_mermaid()
@@ -61,7 +65,7 @@ def test_pipeline_with_retry_config():
 
 def test_loop_step_visualization():
     """Test visualization of LoopStep with nested pipeline."""
-    inner_step = Step("Inner", TestAgent())
+    inner_step = Step.model_validate({"name": "Inner", "agent": TestAgent()})
     inner_pipeline = Pipeline.from_step(inner_step)
 
     loop_step = Step.loop_until(
@@ -86,8 +90,8 @@ def test_loop_step_visualization():
 
 def test_conditional_step_visualization():
     """Test visualization of ConditionalStep with branches."""
-    branch1_step = Step("CodeGen", TestAgent())
-    branch2_step = Step("QAStep", TestAgent())
+    branch1_step = Step.model_validate({"name": "CodeGen", "agent": TestAgent()})
+    branch2_step = Step.model_validate({"name": "QAStep", "agent": TestAgent()})
 
     branch1_pipeline = Pipeline.from_step(branch1_step)
     branch2_pipeline = Pipeline.from_step(branch2_step)
@@ -118,8 +122,8 @@ def test_conditional_step_visualization():
 
 def test_parallel_step_visualization():
     """Test visualization of ParallelStep with concurrent branches."""
-    branch1_step = Step("ProcessA", TestAgent())
-    branch2_step = Step("ProcessB", TestAgent())
+    branch1_step = Step.model_validate({"name": "ProcessA", "agent": TestAgent()})
+    branch2_step = Step.model_validate({"name": "ProcessB", "agent": TestAgent()})
 
     parallel_step = Step.parallel(
         name="ParallelProcess",
@@ -154,7 +158,7 @@ def test_human_in_the_loop_visualization():
 def test_complex_nested_pipeline_visualization():
     """Test visualization of a complex pipeline with nested structures."""
     # Create a complex pipeline: loop -> conditional -> parallel
-    inner_step = Step("Inner", TestAgent())
+    inner_step = Step.model_validate({"name": "Inner", "agent": TestAgent()})
     inner_pipeline = Pipeline.from_step(inner_step)
 
     # Loop step
@@ -166,7 +170,7 @@ def test_complex_nested_pipeline_visualization():
     )
 
     # Conditional step
-    branch_step = Step("BranchStep", TestAgent())
+    branch_step = Step.model_validate({"name": "BranchStep", "agent": TestAgent()})
     conditional_step = Step.branch_on(
         name="Decision",
         condition_callable=lambda out, ctx: "branch",
@@ -177,8 +181,8 @@ def test_complex_nested_pipeline_visualization():
     parallel_step = Step.parallel(
         name="Concurrent",
         branches={
-            "X": Pipeline.from_step(Step("TaskX", TestAgent())),
-            "Y": Pipeline.from_step(Step("TaskY", TestAgent())),
+            "X": Pipeline.from_step(Step.model_validate({"name": "TaskX", "agent": TestAgent()})),
+            "Y": Pipeline.from_step(Step.model_validate({"name": "TaskY", "agent": TestAgent()})),
         },
     )
 
@@ -211,18 +215,22 @@ def test_complex_nested_pipeline_visualization():
 def test_pipeline_with_mixed_configurations():
     """Test visualization of pipeline with mixed step configurations."""
     # Step with validation and retries
-    validated_step = Step(
-        "ValidatedStep",
-        TestAgent(),
-        plugins=[DummyPlugin([PluginOutcome(success=True)])],
-        max_retries=3,
+    validated_step = Step.model_validate(
+        {
+            "name": "ValidatedStep",
+            "agent": TestAgent(),
+            "plugins": [(DummyPlugin([PluginOutcome(success=True)]), 0)],
+            "config": StepConfig(max_retries=3),
+        }
     )
 
     # Step with just retries
-    retry_step = Step("RetryStep", TestAgent(), max_retries=2)
+    retry_step = Step.model_validate(
+        {"name": "RetryStep", "agent": TestAgent(), "config": StepConfig(max_retries=2)}
+    )
 
     # Normal step
-    normal_step = Step("NormalStep", TestAgent())
+    normal_step = Step.model_validate({"name": "NormalStep", "agent": TestAgent()})
 
     pipeline = validated_step >> retry_step >> normal_step
     mermaid = pipeline.to_mermaid()
@@ -234,4 +242,4 @@ def test_pipeline_with_mixed_configurations():
     assert "-.->" in mermaid
 
     # Check that normal step doesn't have validation annotation
-    assert "NormalStep ��️" not in mermaid
+    assert "NormalStep ️" not in mermaid

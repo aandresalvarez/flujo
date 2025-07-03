@@ -46,8 +46,8 @@ class GeneralQAAgent(AsyncAgentProtocol[str, str]):
 
 
 # 1. Define the different pipelines for each branch. These are our routes.
-code_pipeline = Pipeline.from_step(Step("GenerateCode", CodeGenerationAgent()))
-qa_pipeline = Pipeline.from_step(Step("AnswerQuestion", GeneralQAAgent()))
+code_pipeline = Pipeline.from_step(Step.model_validate({"name": "GenerateCode", "agent": CodeGenerationAgent()}))
+qa_pipeline = Pipeline.from_step(Step.model_validate({"name": "AnswerQuestion", "agent": GeneralQAAgent()}))
 
 
 # 2. Define the `ConditionalStep`. This is our router.
@@ -67,7 +67,7 @@ branch_step = Step.branch_on(
 )
 
 # 3. Assemble the full pipeline: first classify, then route.
-full_pipeline = Step("ClassifyQuery", ClassifyQueryAgent()) >> branch_step
+full_pipeline = Step.model_validate({"name": "ClassifyQuery", "agent": ClassifyQueryAgent()}) >> branch_step
 
 runner = Flujo(full_pipeline)
 

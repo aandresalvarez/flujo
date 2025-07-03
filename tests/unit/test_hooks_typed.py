@@ -10,7 +10,9 @@ from flujo.domain.events import HookPayload, PostStepPayload
 
 @pytest.mark.asyncio  # type: ignore[misc]
 async def test_hook_receives_typed_payload() -> None:
-    step = Step("s1", cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok"])))
+    step = Step.model_validate(
+        {"name": "s1", "agent": cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok"]))}
+    )
     recorder = MagicMock()
 
     async def hook(payload: HookPayload) -> None:

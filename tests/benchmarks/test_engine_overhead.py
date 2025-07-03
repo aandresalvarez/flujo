@@ -11,7 +11,12 @@ def test_pipeline_runner_overhead(benchmark):
     """Measures the execution time of the Flujo engine's orchestration logic,
     minimizing agent execution time by using a fast stub."""
     agent = StubAgent(["output"])
-    pipeline = Step("s1", agent) >> Step("s2", agent) >> Step("s3", agent) >> Step("s4", agent)
+    pipeline = (
+        Step.model_validate({"name": "s1", "agent": agent})
+        >> Step.model_validate({"name": "s2", "agent": agent})
+        >> Step.model_validate({"name": "s3", "agent": agent})
+        >> Step.model_validate({"name": "s4", "agent": agent})
+    )
     runner = Flujo(pipeline)
 
     @benchmark

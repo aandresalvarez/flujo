@@ -33,8 +33,8 @@ class EchoAgent:
 
 @pytest.mark.asyncio
 async def test_dummy_remote_backend_preserves_context() -> None:
-    step1 = Step("a", IncrementAgent())
-    step2 = Step("b", IncrementAgent())
+    step1 = Step.model_validate({"name": "a", "agent": IncrementAgent()})
+    step2 = Step.model_validate({"name": "b", "agent": IncrementAgent()})
     backend = DummyRemoteBackend()
     runner = Flujo(
         step1 >> step2,
@@ -50,7 +50,7 @@ async def test_dummy_remote_backend_preserves_context() -> None:
 
 @pytest.mark.asyncio
 async def test_dummy_remote_backend_roundtrip_complex_input() -> None:
-    step = Step("echo", EchoAgent())
+    step = Step.model_validate({"name": "echo", "agent": EchoAgent()})
     backend = DummyRemoteBackend()
     runner = Flujo(step, backend=backend)
     payload = Container(nested=Nested(foo="hi", bar=42), items=[1, 2, 3])

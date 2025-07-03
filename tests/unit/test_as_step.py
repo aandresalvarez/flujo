@@ -21,7 +21,7 @@ async def test_agentic_loop_as_step_basic() -> None:
 
 @pytest.mark.asyncio
 async def test_flujo_as_step_basic() -> None:
-    base_step = Step("s", StubAgent(["ok"]))
+    base_step = Step.model_validate({"name": "s", "agent": StubAgent(["ok"])})
     runner = Flujo(base_step)
 
     step = runner.as_step(name="runner")

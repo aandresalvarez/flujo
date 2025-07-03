@@ -28,7 +28,7 @@ async def main():
 
     # 2. Define a minimal custom pipeline using the DSL.
     #    For more on the DSL, see docs/pipeline_dsl.md
-    pipeline = Pipeline.from_step(Step("GenerateExplanation", cast(Any, solution_agent)))
+    pipeline = Pipeline.from_step(Step.model_validate({"name": "GenerateExplanation", "agent": cast(Any, solution_agent)}))
 
     # 3. Initialize the Flujo engine with our custom pipeline.
     runner = Flujo(pipeline)

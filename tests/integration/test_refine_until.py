@@ -12,7 +12,7 @@ from pydantic import BaseModel
 @pytest.mark.asyncio
 async def test_refine_until_basic() -> None:
     gen_agent = StubAgent(["draft1", "draft2"])
-    gen_pipeline = Pipeline.from_step(Step("gen", gen_agent))
+    gen_pipeline = Pipeline.from_step(Step.model_validate({"name": "gen", "agent": gen_agent}))
 
     critic_agent = StubAgent(
         [
@@ -20,7 +20,9 @@ async def test_refine_until_basic() -> None:
             RefinementCheck(is_complete=True, feedback="good"),
         ]
     )
-    critic_pipeline = Pipeline.from_step(Step("crit", critic_agent))
+    critic_pipeline = Pipeline.from_step(
+        Step.model_validate({"name": "crit_conc", "agent": critic_agent})
+    )
 
     loop = Step.refine_until(
         name="refine",
@@ -44,7 +46,7 @@ async def test_refine_until_basic() -> None:
 @pytest.mark.asyncio
 async def test_refine_until_with_feedback_mapper() -> None:
     gen_agent = StubAgent(["v1", "v2"])
-    gen_pipeline = Pipeline.from_step(Step("gen", gen_agent))
+    gen_pipeline = Pipeline.from_step(Step.model_validate({"name": "gen", "agent": gen_agent}))
 
     critic_agent = StubAgent(
         [
@@ -52,7 +54,9 @@ async def test_refine_until_with_feedback_mapper() -> None:
             RefinementCheck(is_complete=True, feedback="done"),
         ]
     )
-    critic_pipeline = Pipeline.from_step(Step("crit", critic_agent))
+    critic_pipeline = Pipeline.from_step(
+        Step.model_validate({"name": "crit_conc", "agent": critic_agent})
+    )
 
     def fmap(original: str | None, check: RefinementCheck) -> dict[str, str | None]:
         return {"original_input": f"{original}-orig", "feedback": f"fix:{check.feedback}"}
@@ -79,10 +83,12 @@ class SimpleCtx(BaseModel):
 @pytest.mark.asyncio
 async def test_refine_until_with_custom_context() -> None:
     gen_agent = StubAgent(["one", "two"])
-    gen_pipeline = Pipeline.from_step(Step("gen", gen_agent))
+    gen_pipeline = Pipeline.from_step(Step.model_validate({"name": "gen", "agent": gen_agent}))
 
     critic_agent = StubAgent([RefinementCheck(is_complete=True)])
-    critic_pipeline = Pipeline.from_step(Step("crit", critic_agent))
+    critic_pipeline = Pipeline.from_step(
+        Step.model_validate({"name": "crit_conc", "agent": critic_agent})
+    )
 
     loop = Step.refine_until(
         name="refine_ctx",
@@ -117,9 +123,11 @@ async def test_refine_until_concurrent_runs_isolated() -> None:
             return RefinementCheck(is_complete=True)
 
     gen_agent = GenAgent()
-    gen_pipeline = Pipeline.from_step(Step("gen_conc", gen_agent))
+    gen_pipeline = Pipeline.from_step(Step.model_validate({"name": "gen_conc", "agent": gen_agent}))
     critic_agent = CriticAgent()
-    critic_pipeline = Pipeline.from_step(Step("crit_conc", critic_agent))
+    critic_pipeline = Pipeline.from_step(
+        Step.model_validate({"name": "crit_conc", "agent": critic_agent})
+    )
 
     loop = Step.refine_until(
         name="refine_concurrent",

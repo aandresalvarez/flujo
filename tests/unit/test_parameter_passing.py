@@ -1,9 +1,9 @@
 """Test parameter passing to ensure context injection works correctly."""
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 from flujo.application.flujo_engine import Flujo
-from flujo.domain.pipeline_dsl import Pipeline, Step
+from flujo.domain.pipeline_dsl import Pipeline, Step, StepConfig
 from flujo.domain.models import PipelineContext
 from flujo.domain.plugins import PluginOutcome
 
@@ -36,7 +36,9 @@ class MockPluginWithContext:
 async def test_agent_receives_context_parameter():
     """Test that agents receive 'context' parameter when they expect it."""
     agent = MockAgentWithContext()
-    step = Step(name="test_step", agent=agent, config=MagicMock(max_retries=1, timeout_s=30))
+    step = Step.model_validate(
+        {"name": "test_step", "agent": agent, "config": StepConfig(max_retries=1, timeout_s=30)}
+    )
 
     pipeline = Pipeline(steps=[step])
 
@@ -61,11 +63,13 @@ async def test_plugin_receives_context_parameter():
     agent = MockAgentWithContext()
     plugin = MockPluginWithContext()
 
-    step = Step(
-        name="test_step",
-        agent=agent,
-        plugins=[(plugin, 1)],
-        config=MagicMock(max_retries=1, timeout_s=30),
+    step = Step.model_validate(
+        {
+            "name": "test_step",
+            "agent": agent,
+            "plugins": [(plugin, 1)],
+            "config": StepConfig(max_retries=1, timeout_s=30),
+        }
     )
 
     pipeline = Pipeline(steps=[step])

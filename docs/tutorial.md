@@ -308,9 +308,9 @@ accumulate data or pass configuration during a run. See
 [Typed Pipeline Context](pipeline_context.md) for more details.
 
 ```python
-from pydantic import BaseModel
+from flujo.domain.models import PipelineContext
 
-class Stats(BaseModel):
+class Stats(PipelineContext):
     calls: int = 0
 
 @step

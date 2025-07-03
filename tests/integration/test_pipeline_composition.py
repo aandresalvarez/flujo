@@ -85,11 +85,13 @@ def build_concept_pipeline() -> Pipeline[str, Dict[str, Any]]:
     concept_agent = ConceptResolutionAgent()
 
     # Step 1: Resolve concepts from text
-    resolve_step = Step(
-        "resolve_concepts",
-        agent=concept_agent,
-        updates_context=True,
-        persist_feedback_to_context="concept_resolution_feedback",
+    resolve_step = Step.model_validate(
+        {
+            "name": "resolve_concepts",
+            "agent": concept_agent,
+            "updates_context": True,
+            "persist_feedback_to_context": "concept_resolution_feedback",
+        }
     )
 
     return Pipeline.from_step(resolve_step)
@@ -101,19 +103,23 @@ def build_sql_pipeline() -> Pipeline[Dict[str, Any], Dict[str, Any]]:
     sql_val_agent = SQLValidationAgent()
 
     # Step 1: Generate SQL from resolved concepts
-    generate_step = Step(
-        "generate_sql",
-        agent=sql_gen_agent,
-        updates_context=True,
-        persist_feedback_to_context="sql_generation_feedback",
+    generate_step = Step.model_validate(
+        {
+            "name": "generate_sql",
+            "agent": sql_gen_agent,
+            "updates_context": True,
+            "persist_feedback_to_context": "sql_generation_feedback",
+        }
     )
 
     # Step 2: Validate the generated SQL
-    validate_step = Step(
-        "validate_sql",
-        agent=sql_val_agent,
-        updates_context=True,
-        persist_validation_results_to="sql_validation_results",
+    validate_step = Step.model_validate(
+        {
+            "name": "validate_sql",
+            "agent": sql_val_agent,
+            "updates_context": True,
+            "persist_validation_results_to": "sql_validation_results",
+        }
     )
 
     return generate_step >> validate_step
@@ -200,9 +206,15 @@ async def test_pipeline_composition_context_sharing() -> None:
 async def test_pipeline_composition_multiple_chains() -> None:
     """Test chaining multiple pipelines together."""
     # Create three simple pipelines
-    pipeline1 = Pipeline.from_step(Step("step1", StubAgent(["output1"])))
-    pipeline2 = Pipeline.from_step(Step("step2", StubAgent(["output2"])))
-    pipeline3 = Pipeline.from_step(Step("step3", StubAgent(["output3"])))
+    pipeline1 = Pipeline.from_step(
+        Step.model_validate({"name": "step1", "agent": StubAgent(["output1"])})
+    )
+    pipeline2 = Pipeline.from_step(
+        Step.model_validate({"name": "step2", "agent": StubAgent(["output2"])})
+    )
+    pipeline3 = Pipeline.from_step(
+        Step.model_validate({"name": "step3", "agent": StubAgent(["output3"])})
+    )
 
     # Chain them together
     composed = pipeline1 >> pipeline2 >> pipeline3
@@ -225,16 +237,18 @@ async def test_pipeline_composition_multiple_chains() -> None:
 async def test_pipeline_composition_backward_compatibility() -> None:
     """Test that pipeline composition doesn't break existing functionality."""
     # Test Step >> Step still works
-    step1 = Step("step1", StubAgent(["output1"]))
-    step2 = Step("step2", StubAgent(["output2"]))
+    step1 = Step.model_validate({"name": "step1", "agent": StubAgent(["output1"])})
+    step2 = Step.model_validate({"name": "step2", "agent": StubAgent(["output2"])})
     pipeline1 = step1 >> step2
 
     # Test Pipeline >> Step still works
-    step3 = Step("step3", StubAgent(["output3"]))
+    step3 = Step.model_validate({"name": "step3", "agent": StubAgent(["output3"])})
     pipeline2 = pipeline1 >> step3
 
     # Test Pipeline >> Pipeline works (new functionality)
-    pipeline3 = Pipeline.from_step(Step("step4", StubAgent(["output4"])))
+    pipeline3 = Pipeline.from_step(
+        Step.model_validate({"name": "step4", "agent": StubAgent(["output4"])})
+    )
     composed = pipeline2 >> pipeline3
 
     # Verify all combinations work
@@ -277,10 +291,14 @@ async def test_pipeline_composition_error_handling() -> None:
         async def run(self, data: Any, **kwargs) -> Any:
             raise Exception("Simulated failure")
 
-    failing_pipeline = Pipeline.from_step(Step("failing_step", FailingAgent()))
+    failing_pipeline = Pipeline.from_step(
+        Step.model_validate({"name": "failing_step", "agent": FailingAgent()})
+    )
 
     # Create a working pipeline
-    working_pipeline = Pipeline.from_step(Step("working_step", StubAgent(["success"])))
+    working_pipeline = Pipeline.from_step(
+        Step.model_validate({"name": "working_step", "agent": StubAgent(["success"])})
+    )
 
     # Compose them
     composed = failing_pipeline >> working_pipeline

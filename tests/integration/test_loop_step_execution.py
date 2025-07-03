@@ -15,7 +15,7 @@ class IncrementAgent:
 
 @pytest.mark.asyncio
 async def test_basic_loop_until_condition_met() -> None:
-    body = Pipeline.from_step(Step("inc", IncrementAgent()))
+    body = Pipeline.from_step(Step.model_validate({"name": "inc", "agent": IncrementAgent()}))
     loop = Step.loop_until(
         name="loop",
         loop_body_pipeline=body,
@@ -32,7 +32,7 @@ async def test_basic_loop_until_condition_met() -> None:
 
 @pytest.mark.asyncio
 async def test_loop_max_loops_reached() -> None:
-    body = Pipeline.from_step(Step("inc", IncrementAgent()))
+    body = Pipeline.from_step(Step.model_validate({"name": "inc", "agent": IncrementAgent()}))
     loop = Step.loop_until(
         name="loop",
         loop_body_pipeline=body,
@@ -58,7 +58,7 @@ async def test_loop_with_context_modification() -> None:
                 context.counter += 1
             return x + 1
 
-    body = Pipeline.from_step(Step("inc", IncRecordAgent()))
+    body = Pipeline.from_step(Step.model_validate({"name": "inc", "agent": IncRecordAgent()}))
     loop = Step.loop_until(
         name="loop_ctx",
         loop_body_pipeline=body,
@@ -74,7 +74,7 @@ async def test_loop_with_context_modification() -> None:
 
 @pytest.mark.asyncio
 async def test_loop_step_error_in_exit_condition_callable() -> None:
-    body = Pipeline.from_step(Step("inc", IncrementAgent()))
+    body = Pipeline.from_step(Step.model_validate({"name": "inc", "agent": IncrementAgent()}))
 
     def bad_exit(_: int, __: Ctx | None) -> bool:
         raise RuntimeError("boom")
@@ -85,7 +85,7 @@ async def test_loop_step_error_in_exit_condition_callable() -> None:
         exit_condition_callable=bad_exit,
         max_loops=3,
     )
-    after = Step("after", IncrementAgent())
+    after = Step.model_validate({"name": "after", "agent": IncrementAgent()})
     runner = Flujo(loop >> after, context_model=Ctx)
     result = await gather_result(runner, 0)
     assert len(result.step_history) == 1
@@ -96,7 +96,7 @@ async def test_loop_step_error_in_exit_condition_callable() -> None:
 
 @pytest.mark.asyncio
 async def test_loop_step_error_in_initial_input_mapper() -> None:
-    body = Pipeline.from_step(Step("inc", IncrementAgent()))
+    body = Pipeline.from_step(Step.model_validate({"name": "inc", "agent": IncrementAgent()}))
 
     def bad_initial_mapper(_: int, __: Ctx | None) -> int:
         raise RuntimeError("init map err")
@@ -108,7 +108,7 @@ async def test_loop_step_error_in_initial_input_mapper() -> None:
         max_loops=2,
         initial_input_to_loop_body_mapper=bad_initial_mapper,
     )
-    after = Step("after", IncrementAgent())
+    after = Step.model_validate({"name": "after", "agent": IncrementAgent()})
     runner = Flujo(loop >> after, context_model=Ctx)
     result = await gather_result(runner, 0)
     assert len(result.step_history) == 1
@@ -120,7 +120,7 @@ async def test_loop_step_error_in_initial_input_mapper() -> None:
 
 @pytest.mark.asyncio
 async def test_loop_step_error_in_iteration_input_mapper() -> None:
-    body = Pipeline.from_step(Step("inc", IncrementAgent()))
+    body = Pipeline.from_step(Step.model_validate({"name": "inc", "agent": IncrementAgent()}))
 
     def iteration_mapper(_: int, __: Ctx | None, ___: int) -> int:
         raise RuntimeError("iter map err")
@@ -142,7 +142,7 @@ async def test_loop_step_error_in_iteration_input_mapper() -> None:
 
 @pytest.mark.asyncio
 async def test_loop_step_error_in_loop_output_mapper() -> None:
-    body = Pipeline.from_step(Step("inc", IncrementAgent()))
+    body = Pipeline.from_step(Step.model_validate({"name": "inc", "agent": IncrementAgent()}))
 
     def bad_output_mapper(_: int, __: Ctx | None) -> int:
         raise RuntimeError("output map err")
@@ -154,7 +154,7 @@ async def test_loop_step_error_in_loop_output_mapper() -> None:
         max_loops=2,
         loop_output_mapper=bad_output_mapper,
     )
-    after = Step("after", IncrementAgent())
+    after = Step.model_validate({"name": "after", "agent": IncrementAgent()})
     runner = Flujo(loop >> after, context_model=Ctx)
     result = await gather_result(runner, 0)
     assert len(result.step_history) == 1
@@ -166,7 +166,9 @@ async def test_loop_step_error_in_loop_output_mapper() -> None:
 @pytest.mark.asyncio
 async def test_loop_step_body_failure_with_robust_exit_condition() -> None:
     fail_plugin = DummyPlugin([PluginOutcome(success=False, feedback="bad")])
-    bad_step = Step("bad", StubAgent(["oops"]), plugins=[fail_plugin])
+    bad_step = Step.model_validate(
+        {"name": "bad", "agent": StubAgent(["oops"]), "plugins": [(fail_plugin, 0)]}
+    )
     body = Pipeline.from_step(bad_step)
 
     loop = Step.loop_until(
@@ -184,7 +186,9 @@ async def test_loop_step_body_failure_with_robust_exit_condition() -> None:
 @pytest.mark.asyncio
 async def test_loop_step_body_failure_causing_exit_condition_error() -> None:
     fail_plugin = DummyPlugin([PluginOutcome(success=False, feedback="bad")])
-    bad_step = Step("bad", StubAgent([{}]), plugins=[fail_plugin])
+    bad_step = Step.model_validate(
+        {"name": "bad", "agent": StubAgent([{}]), "plugins": [(fail_plugin, 0)]}
+    )
     body = Pipeline.from_step(bad_step)
 
     def exit_condition(out: dict, _: Ctx | None) -> bool:
@@ -211,7 +215,7 @@ async def test_loop_step_initial_input_mapper_flow() -> None:
         return inp + 5
 
     body_agent = StubAgent([0])
-    body = Pipeline.from_step(Step("body", body_agent))
+    body = Pipeline.from_step(Step.model_validate({"name": "body", "agent": body_agent}))
     loop = Step.loop_until(
         name="loop_init_map",
         loop_body_pipeline=body,
@@ -234,7 +238,7 @@ async def test_loop_step_iteration_input_mapper_flow() -> None:
         return out + 1
 
     body_agent = StubAgent([1, 3])
-    body = Pipeline.from_step(Step("body", body_agent))
+    body = Pipeline.from_step(Step.model_validate({"name": "body", "agent": body_agent}))
     loop = Step.loop_until(
         name="loop_iter_flow",
         loop_body_pipeline=body,
@@ -258,7 +262,7 @@ async def test_loop_step_loop_output_mapper_flow() -> None:
         received.append((last, ctx))
         return last * 10
 
-    body = Pipeline.from_step(Step("inc", IncrementAgent()))
+    body = Pipeline.from_step(Step.model_validate({"name": "inc", "agent": IncrementAgent()}))
     loop = Step.loop_until(
         name="loop_out_flow",
         loop_body_pipeline=body,
@@ -293,7 +297,7 @@ async def test_loop_step_mappers_with_context_modification() -> None:
             ctx.val += 1
         return out
 
-    body = Pipeline.from_step(Step("inc", IncrementAgent()))
+    body = Pipeline.from_step(Step.model_validate({"name": "inc", "agent": IncrementAgent()}))
     loop = Step.loop_until(
         name="loop_ctx_mod",
         loop_body_pipeline=body,
@@ -310,7 +314,7 @@ async def test_loop_step_mappers_with_context_modification() -> None:
 @pytest.mark.asyncio
 async def test_loop_step_default_mapper_behavior() -> None:
     body_agent = StubAgent([1, 2])
-    body = Pipeline.from_step(Step("body", body_agent))
+    body = Pipeline.from_step(Step.model_validate({"name": "body", "agent": body_agent}))
     loop = Step.loop_until(
         name="loop_default_map",
         loop_body_pipeline=body,
@@ -346,7 +350,7 @@ async def test_loop_step_overall_span(monkeypatch) -> None:
     monkeypatch.setattr(telemetry, "logfire", mock_logfire)
     monkeypatch.setattr(pr, "logfire", mock_logfire)
 
-    body = Pipeline.from_step(Step("inc", IncrementAgent()))
+    body = Pipeline.from_step(Step.model_validate({"name": "inc", "agent": IncrementAgent()}))
     loop = Step.loop_until(
         name="span_loop",
         loop_body_pipeline=body,
@@ -390,7 +394,7 @@ async def test_loop_step_iteration_spans_and_logging(monkeypatch) -> None:
     monkeypatch.setattr(telemetry, "logfire", mock_logfire)
     monkeypatch.setattr(pr, "logfire", mock_logfire)
 
-    body = Pipeline.from_step(Step("inc", IncrementAgent()))
+    body = Pipeline.from_step(Step.model_validate({"name": "inc", "agent": IncrementAgent()}))
     loop = Step.loop_until(
         name="loop_log",
         loop_body_pipeline=body,
@@ -440,7 +444,7 @@ async def test_loop_step_error_logging_in_callables(monkeypatch) -> None:
     def bad_iter(out: int, ctx: Ctx | None, i: int) -> int:
         raise RuntimeError("iter fail")
 
-    body = Pipeline.from_step(Step("inc", IncrementAgent()))
+    body = Pipeline.from_step(Step.model_validate({"name": "inc", "agent": IncrementAgent()}))
     loop = Step.loop_until(
         name="loop_err_log",
         loop_body_pipeline=body,

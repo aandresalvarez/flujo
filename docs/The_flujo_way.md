@@ -23,9 +23,9 @@ Use `AsyncAgentProtocol` for simple agents that don't need typed context:
 ```python
 from flujo.domain.agent_protocol import AsyncAgentProtocol
 from flujo.domain.resources import AppResources
-from pydantic import BaseModel
+from flujo.domain.models import PipelineContext
 
-class TriageContext(BaseModel):
+class TriageContext(PipelineContext):
     post_content: str
     author_id: int
     author_reputation: float
@@ -46,9 +46,9 @@ For agents that need typed pipeline context, use `ContextAwareAgentProtocol`:
 
 ```python
 from flujo.domain.agent_protocol import ContextAwareAgentProtocol
-from flujo.domain.models import BaseModel
+from flujo.domain.models import PipelineContext
 
-class ResearchContext(BaseModel):
+class ResearchContext(PipelineContext):
     research_topic: str = "Unknown"
     sources_found: int = 0
     summary: str | None = None
@@ -148,9 +148,9 @@ refine_step = Step.refine_until(
 ### A. Basic Context
 
 ```python
-from flujo.domain.models import BaseModel
+from flujo.domain.models import PipelineContext
 
-class ModerationContext(BaseModel):
+class ModerationContext(PipelineContext):
     post_id: int
     triage_decision: str | None = None
     refinement_attempts: int = 0

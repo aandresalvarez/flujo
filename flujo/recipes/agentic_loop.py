@@ -40,10 +40,13 @@ class AgenticLoop:
         self._pipeline = self._build_internal_pipeline()
 
     def _build_internal_pipeline(self) -> LoopStep[PipelineContext]:
-        executor_step: Step[Any, Any] = Step(
-            "ExecuteCommand", _CommandExecutor(self.agent_registry)
+        executor_step: Step[Any, Any] = Step.model_validate(
+            {"name": "ExecuteCommand", "agent": _CommandExecutor(self.agent_registry)}
         )
-        loop_body = Step("DecideNextCommand", self.planner_agent) >> executor_step
+        loop_body = (
+            Step.model_validate({"name": "DecideNextCommand", "agent": self.planner_agent})
+            >> executor_step
+        )
 
         def exit_condition(_: Any, context: PipelineContext | None) -> bool:
             if not context or not context.command_log:

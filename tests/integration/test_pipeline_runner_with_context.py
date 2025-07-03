@@ -21,8 +21,8 @@ class AddOneAgent:
 
 @pytest.mark.asyncio
 async def test_pipeline_runner_shared_context_flow() -> None:
-    step1 = Step("a", AddOneAgent())
-    step2 = Step("b", AddOneAgent())
+    step1 = Step.model_validate({"name": "a", "agent": AddOneAgent()})
+    step2 = Step.model_validate({"name": "b", "agent": AddOneAgent()})
     runner = Flujo(step1 >> step2, context_model=Ctx, initial_context_data={"count": 0})
     result = await gather_result(runner, 1)
     assert result.final_pipeline_context.count == 2
@@ -32,7 +32,7 @@ async def test_pipeline_runner_shared_context_flow() -> None:
 @pytest.mark.asyncio
 async def test_existing_agents_without_context() -> None:
     agent = StubAgent(["ok"])
-    step = Step("s", agent)
+    step = Step.model_validate({"name": "s", "agent": agent})
     runner = Flujo(step)
     result = await gather_result(runner, "hi")
     assert result.step_history[0].output == "ok"
@@ -51,7 +51,7 @@ class IncrementAgent:
 
 @pytest.mark.asyncio
 async def test_concurrent_runs_with_typed_context_are_isolated() -> None:
-    step = Step("inc", IncrementAgent())
+    step = Step.model_validate({"name": "inc", "agent": IncrementAgent()})
     runner = Flujo(step, context_model=_TestContext)
 
     async def run_one() -> PipelineResult:

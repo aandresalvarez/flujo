@@ -20,16 +20,16 @@ sql_agent = StubAgent(["SELEC * FRM users WHERE id = 1;"])  # Intentionally inco
 validation_agent = StubAgent([None])
 
 # 1. Create a solution step with our SQL-generating agent.
-solution_step = Step("GenerateSQL", agent=cast(Any, sql_agent))
+solution_step = Step.model_validate({"name": "GenerateSQL", "agent": cast(Any, sql_agent)})
 
 # 2. Create a validation step and attach the `SQLSyntaxValidator` plugin.
 #    The plugin runs *after* the agent and checks its output. If the plugin
 #    finds an issue, it will mark the step as failed and provide feedback.
-validation_step = Step(
-    "ValidateSQL",
-    agent=cast(Any, validation_agent),
-    plugins=[SQLSyntaxValidator()],
-)
+validation_step = Step.model_validate({
+    "name": "ValidateSQL",
+    "agent": cast(Any, validation_agent),
+    "plugins": [SQLSyntaxValidator()],
+})
 
 # 3. Compose the steps into a pipeline using the '>>' operator.
 sql_pipeline = solution_step >> validation_step

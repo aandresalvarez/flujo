@@ -21,7 +21,7 @@ class DoubleAgent:
 
 @pytest.mark.asyncio
 async def test_map_over_sequential() -> None:
-    body = Pipeline.from_step(Step("double", DoubleAgent()))
+    body = Pipeline.from_step(Step.model_validate({"name": "double", "agent": DoubleAgent()}))
     mapper = Step.map_over("mapper", body, iterable_input="nums")
     runner = Flujo(mapper, context_model=Ctx)
     result = await gather_result(runner, None, initial_context_data={"nums": [1, 2, 3]})
@@ -36,7 +36,7 @@ class SleepAgent:
 
 @pytest.mark.asyncio
 async def test_map_over_parallel() -> None:
-    body = Pipeline.from_step(Step("sleep", SleepAgent()))
+    body = Pipeline.from_step(Step.model_validate({"name": "sleep", "agent": SleepAgent()}))
     mapper = Step.map_over("mapper_par", body, iterable_input="nums")
     runner = Flujo(mapper, context_model=Ctx)
     result = await gather_result(runner, None, initial_context_data={"nums": [0, 1, 2, 3]})
@@ -45,7 +45,7 @@ async def test_map_over_parallel() -> None:
 
 @pytest.mark.asyncio
 async def test_map_over_empty() -> None:
-    body = Pipeline.from_step(Step("double", DoubleAgent()))
+    body = Pipeline.from_step(Step.model_validate({"name": "double", "agent": DoubleAgent()}))
     mapper = Step.map_over("mapper_empty", body, iterable_input="nums")
     runner = Flujo(mapper, context_model=Ctx)
     result = await gather_result(runner, None, initial_context_data={"nums": []})
@@ -58,7 +58,7 @@ class LooseCtx(BaseModel):
 
 @pytest.mark.asyncio
 async def test_map_over_invalid_input() -> None:
-    body = Pipeline.from_step(Step("double", DoubleAgent()))
+    body = Pipeline.from_step(Step.model_validate({"name": "double", "agent": DoubleAgent()}))
     mapper = Step.map_over("mapper_invalid", body, iterable_input="nums")
     runner = Flujo(mapper, context_model=LooseCtx)
     result = await gather_result(runner, None, initial_context_data={"nums": 42})
@@ -68,7 +68,7 @@ async def test_map_over_invalid_input() -> None:
 
 @pytest.mark.asyncio
 async def test_map_over_reusable_after_empty() -> None:
-    body = Pipeline.from_step(Step("double", DoubleAgent()))
+    body = Pipeline.from_step(Step.model_validate({"name": "double", "agent": DoubleAgent()}))
     mapper = Step.map_over("mapper_reuse", body, iterable_input="nums")
     runner = Flujo(mapper, context_model=Ctx)
     first = await gather_result(runner, None, initial_context_data={"nums": []})
@@ -83,7 +83,7 @@ async def test_map_over_reusable_after_empty() -> None:
 
 @pytest.mark.asyncio
 async def test_map_over_concurrent_runs() -> None:
-    body = Pipeline.from_step(Step("double", DoubleAgent()))
+    body = Pipeline.from_step(Step.model_validate({"name": "double", "agent": DoubleAgent()}))
     mapper = Step.map_over("mapper_concurrent", body, iterable_input="nums")
     runner = Flujo(mapper, context_model=Ctx)
 

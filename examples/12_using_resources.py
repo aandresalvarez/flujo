@@ -27,7 +27,7 @@ def build_runner() -> tuple[Flujo[int, str], MyWebAppResources]:
     resources = MyWebAppResources(db_conn=MagicMock())
     resources.db_conn.get_user_by_id.return_value = "Alice"
 
-    pipeline = Step("lookup_user", UserLookupAgent())
+    pipeline = Step.model_validate({"name": "lookup_user", "agent": UserLookupAgent()})
     runner = Flujo(pipeline, resources=resources)
     return runner, resources
 

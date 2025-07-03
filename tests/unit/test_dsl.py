@@ -3,16 +3,17 @@ from flujo.domain.models import BaseModel
 from unittest.mock import AsyncMock, MagicMock, Mock
 from flujo.domain.plugins import ValidationPlugin
 import pytest
+from flujo.domain import StepConfig
 
 
 def test_step_chaining_operator() -> None:
-    a = Step("A")
-    b = Step("B")
+    a = Step.model_validate({"name": "A"})
+    b = Step.model_validate({"name": "B"})
     pipeline = a >> b
     assert isinstance(pipeline, Pipeline)
     assert [s.name for s in pipeline.steps] == ["A", "B"]
 
-    c = Step("C")
+    c = Step.model_validate({"name": "C"})
     pipeline2 = pipeline >> c
     assert [s.name for s in pipeline2.steps] == ["A", "B", "C"]
 
@@ -29,17 +30,17 @@ def test_role_based_constructor() -> None:
 
 
 def test_step_configuration() -> None:
-    step = Step("A", max_retries=5)
+    step = Step.model_validate({"name": "A", "config": StepConfig(max_retries=5)})
     assert step.config.max_retries == 5
 
 
 def test_dsl() -> None:
-    step = Step("dummy")
+    step = Step.model_validate({"name": "dummy"})
     assert step.name == "dummy"
 
 
 def test_dsl_with_step() -> None:
-    step = Step("A")
+    step = Step.model_validate({"name": "A"})
     pipeline = Pipeline.from_step(step)
     assert pipeline.steps == [step]
 
@@ -84,12 +85,13 @@ def test_step_fluent_builder_methods() -> None:
     handler1 = Mock()
     handler2 = Mock()
 
-    step = (
-        Step("test_step", agent)
-        .add_plugin(plugin1)
-        .add_plugin(plugin2, priority=10)
-        .on_failure(handler1)
-        .on_failure(handler2)
+    step = Step.model_validate(
+        {
+            "name": "test_step",
+            "agent": agent,
+            "plugins": [(plugin1, 0), (plugin2, 10)],
+            "failure_handlers": [handler1, handler2],
+        }
     )
 
     assert isinstance(step, Step)
@@ -105,7 +107,9 @@ def test_step_init_handles_mixed_plugin_formats() -> None:
     plugin1 = MagicMock(spec=ValidationPlugin)
     plugin2 = MagicMock(spec=ValidationPlugin)
 
-    step = Step("test_init", agent, plugins=[plugin1, (plugin2, 5)])
+    step = Step.model_validate(
+        {"name": "test_init", "agent": agent, "plugins": [(plugin1, 0), (plugin2, 5)]}
+    )
 
     assert len(step.plugins) == 2
     assert step.plugins[0] == (plugin1, 0)
@@ -220,17 +224,17 @@ async def test_step_arun_with_context() -> None:
 
 @pytest.mark.asyncio
 async def test_step_arun_no_agent() -> None:
-    step_without_agent = Step("blank")
+    step_without_agent = Step.model_validate({"name": "blank"})
     with pytest.raises(ValueError):
         await step_without_agent.arun(None)  # type: ignore[arg-type]
 
 
 def test_pipeline_chaining_operator() -> None:
     """Ensure that `Pipeline >> Pipeline` concatenates their steps in order."""
-    a1 = Step("A1")
-    a2 = Step("A2")
-    b1 = Step("B1")
-    b2 = Step("B2")
+    a1 = Step.model_validate({"name": "A1"})
+    a2 = Step.model_validate({"name": "A2"})
+    b1 = Step.model_validate({"name": "B1"})
+    b2 = Step.model_validate({"name": "B2"})
 
     pipeline_one = a1 >> a2  # Pipeline with steps [A1, A2]
     pipeline_two = b1 >> b2  # Pipeline with steps [B1, B2]

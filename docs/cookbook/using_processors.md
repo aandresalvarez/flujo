@@ -8,9 +8,9 @@
 from flujo import Step, AgentProcessors
 from flujo.processors import AddContextVariables, StripMarkdownFences
 from flujo.testing.utils import StubAgent
-from pydantic import BaseModel
+from flujo.domain.models import PipelineContext
 
-class Ctx(BaseModel):
+class Ctx(PipelineContext):
     product: str
 
 agent = StubAgent(["```text\nHello!\n```"])

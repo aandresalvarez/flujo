@@ -66,11 +66,11 @@ async def test_uppercase() -> None:
 When your pipeline uses a context model, provide `initial_context_data` to the runner and assert the `final_pipeline_context` in your test.
 
 ```python
-from pydantic import BaseModel
 from flujo import Flujo, Step, step
+from flujo.domain.models import PipelineContext
 from flujo.testing.utils import StubAgent
 
-class Ctx(BaseModel):
+class Ctx(PipelineContext):
     counter: int = 0
 
 @step

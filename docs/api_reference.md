@@ -60,7 +60,9 @@ class MyResources(AppResources):
 
 my_resources = MyResources(db_pool=make_pool())
 
-class MyContext(BaseModel):
+from flujo.domain.models import PipelineContext
+
+class MyContext(PipelineContext):
     counter: int = 0
 
 # Create a pipeline

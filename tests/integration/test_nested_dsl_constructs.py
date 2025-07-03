@@ -33,7 +33,7 @@ class CostAgent:
 
 @pytest.mark.asyncio
 async def test_nested_loop_in_loop() -> None:
-    inner_body = Pipeline.from_step(Step("inc", IncrementAgent()))
+    inner_body = Pipeline.from_step(Step.model_validate({"name": "inc", "agent": IncrementAgent()}))
     inner_loop = Step.loop_until(
         name="inner",
         loop_body_pipeline=inner_body,
@@ -60,9 +60,13 @@ async def test_nested_conditional_in_loop() -> None:
     conditional = Step.branch_on(
         name="cond",
         condition_callable=lambda out, ctx: "inc",
-        branches={"inc": Pipeline.from_step(Step("inc2", IncrementAgent()))},
+        branches={
+            "inc": Pipeline.from_step(
+                Step.model_validate({"name": "inc2", "agent": IncrementAgent()})
+            )
+        },
     )
-    body = Step("inc", IncrementAgent()) >> conditional
+    body = Step.model_validate({"name": "inc", "agent": IncrementAgent()}) >> conditional
     loop = Step.loop_until(
         name="loop_cond",
         loop_body_pipeline=body,
@@ -79,7 +83,7 @@ async def test_nested_conditional_in_loop() -> None:
 
 @pytest.mark.asyncio
 async def test_nested_loop_in_conditional_branch() -> None:
-    loop_body = Pipeline.from_step(Step("inc", IncrementAgent()))
+    loop_body = Pipeline.from_step(Step.model_validate({"name": "inc", "agent": IncrementAgent()}))
     inner_loop = Step.loop_until(
         name="loop_inner",
         loop_body_pipeline=loop_body,
@@ -103,7 +107,9 @@ async def test_nested_conditional_in_conditional_branch() -> None:
     inner_cond = Step.branch_on(
         name="inner",
         condition_callable=lambda out, ctx: "b",
-        branches={"b": Pipeline.from_step(Step("b", IncrementAgent()))},
+        branches={
+            "b": Pipeline.from_step(Step.model_validate({"name": "b", "agent": IncrementAgent()}))
+        },
     )
     outer_cond = Step.branch_on(
         name="outer",
@@ -137,7 +143,7 @@ async def test_deeply_nested_context_modification_and_access() -> None:
             ctx.val += 1
         return out
 
-    inner_body = Pipeline.from_step(Step("inc", IncrementAgent()))
+    inner_body = Pipeline.from_step(Step.model_validate({"name": "inc", "agent": IncrementAgent()}))
     inner_loop = Step.loop_until(
         name="inner",
         loop_body_pipeline=inner_body,
@@ -161,7 +167,9 @@ async def test_deeply_nested_context_modification_and_access() -> None:
 @pytest.mark.asyncio
 async def test_deeply_nested_error_propagation() -> None:
     fail_plugin = DummyPlugin([PluginOutcome(success=False, feedback="bad")])
-    bad_step = Step("bad", StubAgent(["oops"]), plugins=[fail_plugin])
+    bad_step = Step.model_validate(
+        {"name": "bad", "agent": StubAgent(["oops"]), "plugins": [(fail_plugin, 0)]}
+    )
     loop_body = Pipeline.from_step(bad_step)
     inner_loop = Step.loop_until(
         name="inner",
@@ -182,7 +190,7 @@ async def test_deeply_nested_error_propagation() -> None:
 
 @pytest.mark.asyncio
 async def test_deeply_nested_metric_aggregation() -> None:
-    cost_step = Step("cost", CostAgent(1, cost=0.5, tokens=5))
+    cost_step = Step.model_validate({"name": "cost", "agent": CostAgent(1, cost=0.5, tokens=5)})
     inner_loop = Step.loop_until(
         name="inner",
         loop_body_pipeline=Pipeline.from_step(cost_step),

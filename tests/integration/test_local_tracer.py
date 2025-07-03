@@ -8,7 +8,9 @@ from flujo.domain.agent_protocol import AsyncAgentProtocol
 
 @pytest.mark.asyncio  # type: ignore[misc]
 async def test_default_local_tracer_added() -> None:
-    step = Step("s", cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok"])))
+    step = Step.model_validate(
+        {"name": "s", "agent": cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok"]))}
+    )
     runner = Flujo(step, local_tracer="default")
     assert len(runner.hooks) == 1
     assert callable(runner.hooks[0])
@@ -17,14 +19,18 @@ async def test_default_local_tracer_added() -> None:
 @pytest.mark.asyncio  # type: ignore[misc]
 async def test_custom_console_tracer_instance() -> None:
     tracer = ConsoleTracer(level="info")
-    step = Step("s", cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok"])))
+    step = Step.model_validate(
+        {"name": "s", "agent": cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok"]))}
+    )
     runner = Flujo(step, local_tracer=tracer)
     assert tracer.hook in runner.hooks
 
 
 @pytest.mark.asyncio  # type: ignore[misc]
 async def test_tracer_outputs_info_level(capsys: pytest.CaptureFixture[str]) -> None:
-    step = Step("s", cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok"])))
+    step = Step.model_validate(
+        {"name": "s", "agent": cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok"]))}
+    )
     runner = Flujo(step, local_tracer="default")
     await gather_result(runner, "in")
     captured = capsys.readouterr().out
@@ -36,7 +42,9 @@ async def test_tracer_outputs_info_level(capsys: pytest.CaptureFixture[str]) -> 
 @pytest.mark.asyncio  # type: ignore[misc]
 async def test_tracer_outputs_debug_level(capsys: pytest.CaptureFixture[str]) -> None:
     tracer = ConsoleTracer(level="debug")
-    step = Step("s", cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok"])))
+    step = Step.model_validate(
+        {"name": "s", "agent": cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok"]))}
+    )
     runner = Flujo(step, local_tracer=tracer)
     await gather_result(runner, "in")
     captured = capsys.readouterr().out

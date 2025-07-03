@@ -24,8 +24,8 @@ class AddAgent:
 @pytest.mark.asyncio
 async def test_parallel_step_context_isolation() -> None:
     branches = {
-        "a": Step("a", AddAgent(1)),
-        "b": Step("b", AddAgent(2)),
+        "a": Step.model_validate({"name": "a", "agent": AddAgent(1)}),
+        "b": Step.model_validate({"name": "b", "agent": AddAgent(2)}),
     }
     parallel = Step.parallel("par", branches)
     runner = Flujo(parallel, context_model=Ctx)
@@ -38,8 +38,8 @@ async def test_parallel_step_context_isolation() -> None:
 @pytest.mark.asyncio
 async def test_parallel_step_result_structure() -> None:
     branches = {
-        "x": Step("x", AddAgent(3)),
-        "y": Step("y", AddAgent(4)),
+        "x": Step.model_validate({"name": "x", "agent": AddAgent(3)}),
+        "y": Step.model_validate({"name": "y", "agent": AddAgent(4)}),
     }
     parallel = Step.parallel("par_out", branches)
     runner = Flujo(parallel, context_model=Ctx)

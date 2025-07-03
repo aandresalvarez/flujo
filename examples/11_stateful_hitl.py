@@ -11,7 +11,7 @@ from flujo.testing import StubAgent
 
 
 def build_runner() -> Flujo[str, str]:
-    loop_body = Step("draft", StubAgent(["bad", "good"])) >> Step.human_in_the_loop("fix")
+    loop_body = Step.model_validate({"name": "draft", "agent": StubAgent(["bad", "good"])}) >> Step.human_in_the_loop("fix")
     loop = Step.loop_until(
         name="correction",
         loop_body_pipeline=Pipeline.from_step(loop_body),

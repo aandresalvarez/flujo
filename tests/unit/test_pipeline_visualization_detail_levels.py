@@ -1,7 +1,9 @@
 """Unit tests for pipeline visualization detail levels."""
 
 import pytest
-from flujo import Step, Pipeline
+
+from flujo.domain import Step, StepConfig
+from flujo.domain.pipeline_dsl import Pipeline
 from typing import Any
 
 
@@ -17,7 +19,7 @@ class TestPipelineVisualizationDetailLevels:
 
     def test_detail_level_validation(self):
         """Test that invalid detail levels raise ValueError."""
-        pipeline = Pipeline.from_step(Step("Test", TestAgent()))
+        pipeline = Pipeline.from_step(Step.model_validate({"name": "Test", "agent": TestAgent()}))
 
         with pytest.raises(ValueError, match="Invalid detail_level"):
             pipeline.to_mermaid_with_detail_level("invalid")
@@ -25,15 +27,23 @@ class TestPipelineVisualizationDetailLevels:
     def test_complexity_score_calculation(self):
         """Test complexity score calculation for different pipeline types."""
         # Simple pipeline
-        simple_pipeline = Pipeline.from_step(Step("Test", TestAgent()))
+        simple_pipeline = Pipeline.from_step(
+            Step.model_validate({"name": "Test", "agent": TestAgent()})
+        )
         assert simple_pipeline._calculate_complexity_score() == 1
 
         # Pipeline with retries
-        retry_pipeline = Pipeline.from_step(Step("Test", TestAgent(), max_retries=3))
+        retry_pipeline = Pipeline.from_step(
+            Step.model_validate(
+                {"name": "Test", "agent": TestAgent(), "config": StepConfig(max_retries=3)}
+            )
+        )
         assert retry_pipeline._calculate_complexity_score() == 2
 
         # Pipeline with loop
-        loop_body = Pipeline.from_step(Step("LoopStep", TestAgent()))
+        loop_body = Pipeline.from_step(
+            Step.model_validate({"name": "LoopStep", "agent": TestAgent()})
+        )
         loop_step = Step.loop_until(
             name="TestLoop",
             loop_body_pipeline=loop_body,
@@ -47,7 +57,11 @@ class TestPipelineVisualizationDetailLevels:
         conditional_step = Step.branch_on(
             name="TestBranch",
             condition_callable=lambda out, ctx: "a",
-            branches={"a": Pipeline.from_step(Step("BranchA", TestAgent()))},
+            branches={
+                "a": Pipeline.from_step(
+                    Step.model_validate({"name": "BranchA", "agent": TestAgent()})
+                )
+            },
         )
         conditional_pipeline = Pipeline.from_step(conditional_step)
         # Score: 1 (base) + 2 (conditional) + 2 (branch) = 5
@@ -56,14 +70,18 @@ class TestPipelineVisualizationDetailLevels:
     def test_optimal_detail_level_detection(self):
         """Test automatic detail level detection based on complexity."""
         # Low complexity (score < 8) -> high detail
-        simple_pipeline = Pipeline.from_step(Step("Test", TestAgent()))
+        simple_pipeline = Pipeline.from_step(
+            Step.model_validate({"name": "Test", "agent": TestAgent()})
+        )
         assert simple_pipeline._determine_optimal_detail_level() == "high"
 
         # Medium complexity (score 8-14) -> medium detail
         # Create a pipeline with score around 10
         steps = []
         for i in range(5):
-            step = Step(f"Step{i}", TestAgent(), max_retries=2)
+            step = Step.model_validate(
+                {"name": f"Step{i}", "agent": TestAgent(), "config": StepConfig(max_retries=2)}
+            )
             steps.append(step)
 
         # Create pipeline by chaining steps
@@ -76,9 +94,13 @@ class TestPipelineVisualizationDetailLevels:
 
         # High complexity (score >= 15) -> low detail
         # Create a complex pipeline with loops and conditionals
-        loop_body = Pipeline.from_step(Step("LoopStep", TestAgent()))
+        loop_body = Pipeline.from_step(
+            Step.model_validate({"name": "LoopStep", "agent": TestAgent()})
+        )
         for i in range(3):
-            loop_body = loop_body >> Step(f"LoopStep{i}", TestAgent())
+            loop_body = loop_body >> Step.model_validate(
+                {"name": f"LoopStep{i}", "agent": TestAgent()}
+            )
 
         loop_step = Step.loop_until(
             name="ComplexLoop",
@@ -90,10 +112,14 @@ class TestPipelineVisualizationDetailLevels:
             name="ComplexBranch",
             condition_callable=lambda out, ctx: "a",
             branches={
-                "a": Pipeline.from_step(Step("BranchA", TestAgent()))
-                >> Step("BranchA2", TestAgent()),
-                "b": Pipeline.from_step(Step("BranchB", TestAgent()))
-                >> Step("BranchB2", TestAgent()),
+                "a": Pipeline.from_step(
+                    Step.model_validate({"name": "BranchA", "agent": TestAgent()})
+                )
+                >> Step.model_validate({"name": "BranchA2", "agent": TestAgent()}),
+                "b": Pipeline.from_step(
+                    Step.model_validate({"name": "BranchB", "agent": TestAgent()})
+                )
+                >> Step.model_validate({"name": "BranchB2", "agent": TestAgent()}),
             },
         )
 
@@ -104,7 +130,9 @@ class TestPipelineVisualizationDetailLevels:
     def test_high_detail_mermaid_generation(self):
         """Test high detail Mermaid generation with all features."""
         # Create a pipeline with various step types
-        loop_body = Pipeline.from_step(Step("LoopStep", TestAgent()))
+        loop_body = Pipeline.from_step(
+            Step.model_validate({"name": "LoopStep", "agent": TestAgent()})
+        )
         loop_step = Step.loop_until(
             name="TestLoop",
             loop_body_pipeline=loop_body,
@@ -114,7 +142,11 @@ class TestPipelineVisualizationDetailLevels:
         conditional_step = Step.branch_on(
             name="TestBranch",
             condition_callable=lambda out, ctx: "a",
-            branches={"a": Pipeline.from_step(Step("BranchA", TestAgent()))},
+            branches={
+                "a": Pipeline.from_step(
+                    Step.model_validate({"name": "BranchA", "agent": TestAgent()})
+                )
+            },
         )
 
         pipeline = Pipeline.from_step(loop_step) >> conditional_step
@@ -132,14 +164,20 @@ class TestPipelineVisualizationDetailLevels:
         # Create a pipeline with various step types
         loop_step = Step.loop_until(
             name="TestLoop",
-            loop_body_pipeline=Pipeline.from_step(Step("LoopStep", TestAgent())),
+            loop_body_pipeline=Pipeline.from_step(
+                Step.model_validate({"name": "LoopStep", "agent": TestAgent()})
+            ),
             exit_condition_callable=lambda out, ctx: True,
         )
 
         conditional_step = Step.branch_on(
             name="TestBranch",
             condition_callable=lambda out, ctx: "a",
-            branches={"a": Pipeline.from_step(Step("BranchA", TestAgent()))},
+            branches={
+                "a": Pipeline.from_step(
+                    Step.model_validate({"name": "BranchA", "agent": TestAgent()})
+                )
+            },
         )
 
         pipeline = Pipeline.from_step(loop_step) >> conditional_step
@@ -154,10 +192,14 @@ class TestPipelineVisualizationDetailLevels:
     def test_low_detail_mermaid_generation(self):
         """Test low detail Mermaid generation with minimal information."""
         # Create a pipeline with various step types
-        simple_steps = [Step(f"Step{i}", TestAgent()) for i in range(3)]
+        simple_steps = [
+            Step.model_validate({"name": f"Step{i}", "agent": TestAgent()}) for i in range(3)
+        ]
         loop_step = Step.loop_until(
             name="TestLoop",
-            loop_body_pipeline=Pipeline.from_step(Step("LoopStep", TestAgent())),
+            loop_body_pipeline=Pipeline.from_step(
+                Step.model_validate({"name": "LoopStep", "agent": TestAgent()})
+            ),
             exit_condition_callable=lambda out, ctx: True,
         )
 
@@ -180,15 +222,21 @@ class TestPipelineVisualizationDetailLevels:
     def test_auto_detail_level_selection(self):
         """Test that auto detail level selects the appropriate level."""
         # Simple pipeline should select high detail
-        simple_pipeline = Pipeline.from_step(Step("Test", TestAgent()))
+        simple_pipeline = Pipeline.from_step(
+            Step.model_validate({"name": "Test", "agent": TestAgent()})
+        )
         mermaid_auto = simple_pipeline.to_mermaid_with_detail_level("auto")
         mermaid_high = simple_pipeline.to_mermaid_with_detail_level("high")
         assert mermaid_auto == mermaid_high
 
         # Complex pipeline should select low detail
-        loop_body = Pipeline.from_step(Step("LoopStep", TestAgent()))
+        loop_body = Pipeline.from_step(
+            Step.model_validate({"name": "LoopStep", "agent": TestAgent()})
+        )
         for i in range(5):
-            loop_body = loop_body >> Step(f"LoopStep{i}", TestAgent())
+            loop_body = loop_body >> Step.model_validate(
+                {"name": f"LoopStep{i}", "agent": TestAgent()}
+            )
 
         loop_step = Step.loop_until(
             name="ComplexLoop",
@@ -203,15 +251,17 @@ class TestPipelineVisualizationDetailLevels:
 
     def test_default_to_mermaid_uses_auto(self):
         """Test that the default to_mermaid() method uses auto detail level."""
-        pipeline = Pipeline.from_step(Step("Test", TestAgent()))
+        pipeline = Pipeline.from_step(Step.model_validate({"name": "Test", "agent": TestAgent()}))
         mermaid_default = pipeline.to_mermaid()
         mermaid_auto = pipeline.to_mermaid_with_detail_level("auto")
         assert mermaid_default == mermaid_auto
 
     def test_retry_annotations_in_different_levels(self):
         """Test that retry annotations appear appropriately in different detail levels."""
-        step1 = Step("A", TestAgent())
-        step2 = Step("B", TestAgent(), max_retries=3)
+        step1 = Step.model_validate({"name": "A", "agent": TestAgent()})
+        step2 = Step.model_validate(
+            {"name": "B", "agent": TestAgent(), "config": StepConfig(max_retries=3)}
+        )
         pipeline = Pipeline.from_step(step1) >> step2
 
         # High detail should show retry edges
@@ -230,7 +280,7 @@ class TestPipelineVisualizationDetailLevels:
     def test_validation_annotations_in_different_levels(self):
         """Test that validation annotations appear appropriately in different detail levels."""
         # Create a step with plugins/validators (simulated)
-        step = Step("Test", TestAgent())
+        step = Step.model_validate({"name": "Test", "agent": TestAgent()})
         step.plugins = ["plugin1"]  # Simulate having plugins
         pipeline = Pipeline.from_step(step)
 
@@ -251,8 +301,12 @@ class TestPipelineVisualizationDetailLevels:
         parallel_step = Step.parallel(
             name="TestParallel",
             branches={
-                "Branch1": Pipeline.from_step(Step("Branch1Step", TestAgent())),
-                "Branch2": Pipeline.from_step(Step("Branch2Step", TestAgent())),
+                "Branch1": Pipeline.from_step(
+                    Step.model_validate({"name": "Branch1Step", "agent": TestAgent()})
+                ),
+                "Branch2": Pipeline.from_step(
+                    Step.model_validate({"name": "Branch2Step", "agent": TestAgent()})
+                ),
             },
         )
         pipeline = Pipeline.from_step(parallel_step)

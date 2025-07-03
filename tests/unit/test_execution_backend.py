@@ -19,7 +19,7 @@ class DummyBackend:
 @pytest.mark.asyncio
 async def test_custom_backend_invoked() -> None:
     backend = DummyBackend()
-    step = Step("s", StubAgent(["ignored"]))
+    step = Step.model_validate({"name": "s", "agent": StubAgent(["ignored"])})
     runner = Flujo(step, backend=backend)
     result = await gather_result(runner, "in")
     assert backend.called == 1

@@ -58,10 +58,14 @@ async def post_run_abort_hook(payload: HookPayload) -> None:
 async def test_all_hooks_are_called_in_correct_order(
     call_recorder: List[HookPayload],
 ) -> None:
-    pipeline = Step(
-        "s1",
-        agent=cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok1"])),
-    ) >> Step("s2", agent=cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok2"])))
+    pipeline = Step.model_validate(
+        {
+            "name": "s1",
+            "agent": cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok1"])),
+        }
+    ) >> Step.model_validate(
+        {"name": "s2", "agent": cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok2"]))}
+    )
 
     async def recorder(payload: HookPayload) -> None:
         await generic_recorder_hook(call_recorder, payload)
@@ -85,10 +89,14 @@ async def test_on_step_failure_hook_is_called(
     call_recorder: List[HookPayload],
 ) -> None:
     failing_plugin = DummyPlugin([PluginOutcome(success=False)])
-    pipeline = Step("s1", agent=cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok"]))) >> Step(
-        "s2",
-        agent=cast(AsyncAgentProtocol[Any, Any], StubAgent(["bad"])),
-        plugins=[failing_plugin],
+    pipeline = Step.model_validate(
+        {"name": "s1", "agent": cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok"]))}
+    ) >> Step.model_validate(
+        {
+            "name": "s2",
+            "agent": cast(AsyncAgentProtocol[Any, Any], StubAgent(["bad"])),
+            "plugins": [(failing_plugin, 0)],
+        }
     )
 
     async def recorder(payload: HookPayload) -> None:
@@ -112,7 +120,9 @@ async def test_on_step_failure_hook_is_called(
 async def test_hook_receives_correct_arguments(
     call_recorder: List[HookPayload],
 ) -> None:
-    pipeline = Step("s1", agent=cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok"])))
+    pipeline = Step.model_validate(
+        {"name": "s1", "agent": cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok"]))}
+    )
 
     async def recorder(payload: HookPayload) -> None:
         await generic_recorder_hook(call_recorder, payload)
@@ -133,13 +143,19 @@ async def test_pipeline_aborts_gracefully_from_hook(
 ) -> None:
     failing_plugin = DummyPlugin([PluginOutcome(success=False)])
     pipeline = (
-        Step("s1", agent=cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok"])))
-        >> Step(
-            "s2",
-            agent=cast(AsyncAgentProtocol[Any, Any], StubAgent(["bad"])),
-            plugins=[failing_plugin],
+        Step.model_validate(
+            {"name": "s1", "agent": cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok"]))}
         )
-        >> Step("s3", agent=cast(AsyncAgentProtocol[Any, Any], StubAgent(["unused"])))
+        >> Step.model_validate(
+            {
+                "name": "s2",
+                "agent": cast(AsyncAgentProtocol[Any, Any], StubAgent(["bad"])),
+                "plugins": [(failing_plugin, 0)],
+            }
+        )
+        >> Step.model_validate(
+            {"name": "s3", "agent": cast(AsyncAgentProtocol[Any, Any], StubAgent(["unused"]))}
+        )
     )
 
     async def hook(payload: HookPayload) -> None:
@@ -158,7 +174,9 @@ async def test_pipeline_aborts_gracefully_from_hook(
 async def test_faulty_hook_does_not_crash_pipeline(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    pipeline = Step("s1", agent=cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok"])))
+    pipeline = Step.model_validate(
+        {"name": "s1", "agent": cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok"]))}
+    )
     runner = Flujo(pipeline, hooks=[erroring_hook])
 
     result = await gather_result(runner, "start")
@@ -172,7 +190,9 @@ async def test_faulty_hook_does_not_crash_pipeline(
 async def test_hooks_receive_context_and_resources(
     call_recorder: List[HookPayload],
 ) -> None:
-    pipeline = Step("s1", agent=cast(AsyncAgentProtocol[Any, Any], IncrementingStubAgent()))
+    pipeline = Step.model_validate(
+        {"name": "s1", "agent": cast(AsyncAgentProtocol[Any, Any], IncrementingStubAgent())}
+    )
     mock_res = HookResources(db=MagicMock())
 
     async def recorder(payload: HookPayload) -> None:
@@ -198,7 +218,9 @@ async def test_hooks_receive_context_and_resources(
 async def test_post_run_abort_does_not_mask_errors() -> None:
     """Abort signal in post_run should not hide UsageLimitExceededError."""
     limits = UsageLimits(total_cost_usd_limit=0.0, total_tokens_limit=None)
-    pipeline = Pipeline.from_step(Step("metric_step", FixedMetricAgent()))
+    pipeline = Pipeline.from_step(
+        Step.model_validate({"name": "metric_step", "agent": FixedMetricAgent()})
+    )
     runner = Flujo(pipeline, usage_limits=limits, hooks=[post_run_abort_hook])
 
     with pytest.raises(UsageLimitExceededError):
@@ -216,7 +238,9 @@ class IncrementingStubAgent:
 async def test_incrementing_stub_agent(
     call_recorder: List[HookPayload],
 ) -> None:
-    pipeline = Step("s1", agent=cast(AsyncAgentProtocol[Any, Any], IncrementingStubAgent()))
+    pipeline = Step.model_validate(
+        {"name": "s1", "agent": cast(AsyncAgentProtocol[Any, Any], IncrementingStubAgent())}
+    )
 
     async def recorder(payload: HookPayload) -> None:
         await generic_recorder_hook(call_recorder, payload)

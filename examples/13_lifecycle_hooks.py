@@ -27,8 +27,8 @@ async def abort_on_failure_hook(payload: OnStepFailurePayload) -> None:
 
 
 def build_runner() -> Flujo[str, str]:
-    failing_step = Step("failing", agent=MagicMock(side_effect=RuntimeError("oops")))
-    pipeline = Step("start", agent=MagicMock(return_value="ok")) >> failing_step
+    failing_step = Step.model_validate({"name": "failing", "agent": MagicMock(side_effect=RuntimeError("oops"))})
+    pipeline = Step.model_validate({"name": "start", "agent": MagicMock(return_value="ok")}) >> failing_step
     runner = Flujo(pipeline, hooks=[simple_logger_hook, abort_on_failure_hook])
     return runner
 

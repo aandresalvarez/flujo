@@ -2,7 +2,7 @@ import asyncio
 from unittest.mock import Mock
 import pytest
 
-from flujo.domain import Step
+from flujo.domain import Step, StepConfig
 from flujo.application.flujo_engine import Flujo
 from flujo.domain.models import PipelineResult
 from flujo.testing.utils import StubAgent, DummyPlugin, gather_result
@@ -19,7 +19,14 @@ async def test_runner_respects_max_retries() -> None:
             PluginOutcome(success=True),
         ]
     )
-    step = Step("test", agent, max_retries=3, plugins=[plugin])
+    step = Step.model_validate(
+        {
+            "name": "test",
+            "agent": agent,
+            "config": StepConfig(max_retries=3),
+            "plugins": [(plugin, 0)],
+        }
+    )
     pipeline = step
     runner = Flujo(pipeline)
     result = await gather_result(runner, "in")
@@ -36,7 +43,7 @@ async def test_feedback_enriches_prompt() -> None:
             PluginOutcome(success=True),
         ]
     )
-    step = Step.solution(sol_agent, max_retries=2, plugins=[plugin])
+    step = Step.solution(sol_agent, max_retries=2, plugins=[(plugin, 0)])
     runner = Flujo(step)
     await gather_result(runner, "SELECT *")
     assert sol_agent.call_count == 2
@@ -52,7 +59,14 @@ async def test_conditional_redirection() -> None:
             PluginOutcome(success=True),
         ]
     )
-    step = Step("s", primary, max_retries=2, plugins=[plugin])
+    step = Step.model_validate(
+        {
+            "name": "s",
+            "agent": primary,
+            "config": StepConfig(max_retries=2),
+            "plugins": [(plugin, 0)],
+        }
+    )
     pipeline = step
     runner = Flujo(pipeline)
     await gather_result(runner, "prompt")
@@ -65,7 +79,15 @@ async def test_on_failure_called_with_fluent_api() -> None:
     plugin = DummyPlugin([PluginOutcome(success=False)])
     handler = Mock()
 
-    step = Step("s", agent, max_retries=1, plugins=[plugin]).on_failure(handler)
+    step = Step.model_validate(
+        {
+            "name": "s",
+            "agent": agent,
+            "config": StepConfig(max_retries=1),
+            "plugins": [(plugin, 0)],
+            "failure_handlers": [handler],
+        }
+    )
     runner = Flujo(step)
     await gather_result(runner, "prompt")
 
@@ -83,7 +105,14 @@ async def test_timeout_and_redirect_loop_detection() -> None:
 
     plugin = SlowPlugin()
     agent = StubAgent(["ok"])
-    step = Step("s", agent, plugins=[plugin], max_retries=1, timeout_s=0.01)
+    step = Step.model_validate(
+        {
+            "name": "s",
+            "agent": agent,
+            "plugins": [(plugin, 0)],
+            "config": StepConfig(max_retries=1, timeout_s=0.01),
+        }
+    )
     runner = Flujo(step)
     try:
         await gather_result(runner, "prompt")
@@ -99,15 +128,21 @@ async def test_timeout_and_redirect_loop_detection() -> None:
             PluginOutcome(success=False, redirect_to=a1),
         ]
     )
-    step2 = Step("loop", a1, max_retries=3, plugins=[plugin_loop])
-    runner2 = Flujo(step2)
+    Step.model_validate(
+        {
+            "name": "loop",
+            "agent": a1,
+            "config": StepConfig(max_retries=3),
+            "plugins": [(plugin_loop, 0)],
+        }
+    )
     with pytest.raises(Exception):
         await gather_result(runner2, "p")
 
 
 async def test_pipeline_cancellation() -> None:
     agent = StubAgent(["out"])
-    step = Step("s", agent)
+    step = Step.model_validate({"name": "s", "agent": agent})
     runner = Flujo(step)
     task = asyncio.create_task(gather_result(runner, "prompt"))
     await asyncio.sleep(0)
@@ -135,7 +170,7 @@ class WrappedResult:
 async def test_runner_unpacks_agent_result() -> None:
     agent = StubAgent([WrappedResult("ok")])
     plugin = CapturePlugin()
-    step = Step("s", agent, plugins=[plugin])
+    step = Step.model_validate({"name": "s", "agent": agent, "plugins": [(plugin, 0)]})
     runner = Flujo(step)
     result = await gather_result(runner, "in")
     history = result.step_history[0]
@@ -155,7 +190,7 @@ async def test_step_config_temperature_passed() -> None:
             return "ok"
 
     agent = CaptureAgent()
-    step = Step("s", agent, temperature=0.3)
+    step = Step.model_validate({"name": "s", "agent": agent, "config": StepConfig(temperature=0.3)})
     runner = Flujo(step)
     await gather_result(runner, "in")
     assert agent.kwargs is not None
@@ -172,7 +207,7 @@ async def test_step_config_temperature_omitted() -> None:
             return "ok"
 
     agent = CaptureAgent()
-    step = Step("s", agent)
+    step = Step.model_validate({"name": "s", "agent": agent})
     runner = Flujo(step)
     await gather_result(runner, "in")
     assert agent.kwargs is not None

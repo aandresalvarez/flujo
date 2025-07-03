@@ -5,7 +5,9 @@ from flujo.testing.utils import StubAgent, DummyRemoteBackend
 
 def test_pipeline_runs_correctly_with_custom_backend() -> None:
     backend = DummyRemoteBackend()
-    pipeline = Step("a", StubAgent(["x"])) >> Step("b", StubAgent(["y"]))
+    pipeline = Step.model_validate({"name": "a", "agent": StubAgent(["x"])}) >> Step.model_validate(
+        {"name": "b", "agent": StubAgent(["y"])}
+    )
     runner = Flujo(pipeline, backend=backend)
 
     result = runner.run("start")
@@ -14,3 +16,5 @@ def test_pipeline_runs_correctly_with_custom_backend() -> None:
     assert len(result.step_history) == 2
     assert all(sr.success for sr in result.step_history)
     assert result.step_history[-1].output == "y"
+
+    Step.model_validate({"name": "s", "agent": StubAgent(["ok"])})

@@ -282,7 +282,9 @@ def test_cli_solve_configuration_error(monkeypatch) -> None:
 
 def test_cli_explain(tmp_path) -> None:
     file = tmp_path / "pipe.py"
-    file.write_text("from flujo.domain import Step\npipeline = Step('A') >> Step('B')\n")
+    file.write_text(
+        "from flujo.domain import Step\npipeline = Step.model_validate({'name': 'A'}) >> Step.model_validate({'name': 'B'})\n"
+    )
 
     result = runner.invoke(app, ["explain", str(file)])
     assert result.exit_code == 0
@@ -293,7 +295,7 @@ def test_cli_explain(tmp_path) -> None:
 def test_cli_validate_success(tmp_path) -> None:
     file = tmp_path / "pipe.py"
     file.write_text(
-        "from flujo.domain import Step\nfrom flujo.testing.utils import StubAgent\npipeline = Step('A', StubAgent(['x'])) >> Step('B', StubAgent(['y']))\n"
+        "from flujo.domain import Step\nfrom flujo.testing.utils import StubAgent\npipeline = Step.model_validate({'name': 'A', 'agent': StubAgent(['x'])}) >> Step.model_validate({'name': 'B', 'agent': StubAgent(['y'])})\n"
     )
     result = runner.invoke(app, ["validate", str(file)])
     assert result.exit_code == 0
@@ -302,7 +304,9 @@ def test_cli_validate_success(tmp_path) -> None:
 
 def test_cli_validate_failure(tmp_path) -> None:
     file = tmp_path / "pipe.py"
-    file.write_text("from flujo.domain import Step\npipeline = Step('A') >> Step('B')\n")
+    file.write_text(
+        "from flujo.domain import Step\npipeline = Step.model_validate({'name': 'A'}) >> Step.model_validate({'name': 'B'})\n"
+    )
     result = runner.invoke(app, ["validate", str(file), "--strict"])
     assert result.exit_code == 1
 
@@ -312,7 +316,7 @@ def test_cli_improve_output_formatting(monkeypatch, tmp_path) -> None:
     pipe.write_text(
         "from flujo.domain import Step\n"
         "from flujo.testing.utils import StubAgent\n"
-        "pipeline = Step.solution(StubAgent(['a']))\n"
+        "pipeline = Step.model_validate({'name': 'A', 'agent': StubAgent(['a'])})\n"
     )
     data = tmp_path / "data.py"
     data.write_text(
@@ -339,7 +343,7 @@ def test_cli_improve_json_output(monkeypatch, tmp_path) -> None:
     pipe.write_text(
         "from flujo.domain import Step\n"
         "from flujo.testing.utils import StubAgent\n"
-        "pipeline = Step.solution(StubAgent(['a']))\n"
+        "pipeline = Step.model_validate({'name': 'A', 'agent': StubAgent(['a'])})\n"
     )
     data = tmp_path / "data.py"
     data.write_text(
@@ -615,7 +619,7 @@ def test_cli_improve_uses_custom_improvement_model(monkeypatch, tmp_path) -> Non
     pipe.write_text(
         "from flujo.domain import Step\n"
         "from flujo.testing.utils import StubAgent\n"
-        "pipeline = Step.solution(StubAgent(['a']))\n"
+        "pipeline = Step.model_validate({'name': 'A', 'agent': StubAgent(['a'])})\n"
     )
     data = tmp_path / "data.py"
     data.write_text(

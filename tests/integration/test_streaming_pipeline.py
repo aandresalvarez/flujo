@@ -68,7 +68,7 @@ class CtxStreamAgent(ContextAwareAgentProtocol[int, list, Ctx]):
 
 @pytest.mark.asyncio
 async def test_context_and_resources_in_stream() -> None:
-    pipeline = Step("s", CtxStreamAgent())
+    pipeline = Step.model_validate({"name": "s", "agent": CtxStreamAgent()})
     resources = MyResources(increment=2)
     runner = Flujo(
         pipeline,

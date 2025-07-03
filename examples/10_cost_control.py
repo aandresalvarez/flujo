@@ -26,9 +26,9 @@ class CostlyAgent:
 
 def build_runner() -> Flujo[int, BaseModel]:
     pipeline = (
-        Step("step_1", CostlyAgent())
-        >> Step("step_2", CostlyAgent())
-        >> Step("step_3", CostlyAgent())
+        Step.model_validate({"name": "step_1", "agent": CostlyAgent()})
+        >> Step.model_validate({"name": "step_2", "agent": CostlyAgent()})
+        >> Step.model_validate({"name": "step_3", "agent": CostlyAgent()})
     )
     limits = UsageLimits(total_cost_usd_limit=0.12)
     return Flujo(pipeline, usage_limits=limits)

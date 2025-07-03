@@ -94,12 +94,12 @@ def build_concept_pipeline() -> Pipeline[str, Dict[str, Any]]:
     concept_agent = ConceptResolutionAgent()
     
     # Step 1: Resolve concepts from text
-    resolve_step = Step(
-        "resolve_concepts",
-        agent=concept_agent,
-        updates_context=True,
-        persist_feedback_to_context="concept_resolution_feedback"
-    )
+    resolve_step = Step.model_validate({
+        "name": "resolve_concepts",
+        "agent": concept_agent,
+        "updates_context": True,
+        "persist_feedback_to_context": "concept_resolution_feedback"
+    })
     
     return Pipeline.from_step(resolve_step)
 
@@ -115,20 +115,20 @@ def build_sql_pipeline() -> Pipeline[Dict[str, Any], Dict[str, Any]]:
     sql_val_agent = SQLValidationAgent()
     
     # Step 1: Generate SQL from resolved concepts
-    generate_step = Step(
-        "generate_sql",
-        agent=sql_gen_agent,
-        updates_context=True,
-        persist_feedback_to_context="sql_generation_feedback"
-    )
+    generate_step = Step.model_validate({
+        "name": "generate_sql",
+        "agent": sql_gen_agent,
+        "updates_context": True,
+        "persist_feedback_to_context": "sql_generation_feedback"
+    })
     
     # Step 2: Validate the generated SQL
-    validate_step = Step(
-        "validate_sql",
-        agent=sql_val_agent,
-        updates_context=True,
-        persist_validation_results_to="sql_validation_results"
-    )
+    validate_step = Step.model_validate({
+        "name": "validate_sql",
+        "agent": sql_val_agent,
+        "updates_context": True,
+        "persist_validation_results_to": "sql_validation_results"
+    })
     
     return generate_step >> validate_step
 

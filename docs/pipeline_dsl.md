@@ -304,9 +304,9 @@ pipeline = Step.review(review_agent) >> loop_step >> Step.validate_step(validato
 a `Flujo` runner can share a mutable Pydantic model instance across all steps in a single run. Pass a context model when creating the runner and declare a `context` parameter in your step functions or agents. See [Typed Pipeline Context](pipeline_context.md) for a full explanation.
 
 ```python
-from pydantic import BaseModel
+from flujo.domain.models import PipelineContext
 
-class MyContext(BaseModel):
+class MyContext(PipelineContext):
     counter: int = 0
 
 @step

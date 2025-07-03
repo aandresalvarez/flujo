@@ -90,42 +90,6 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         "arbitrary_types_allowed": True,
     }
 
-    def __init__(
-        self,
-        name: str,
-        agent: Optional[AsyncAgentProtocol[StepInT, StepOutT]] = None,
-        plugins: Optional[List[ValidationPlugin | tuple[ValidationPlugin, int]]] = None,
-        validators: Optional[List[Validator]] = None,
-        on_failure: Optional[List[Callable[[], None]]] = None,
-        updates_context: bool = False,
-        processors: Optional[AgentProcessors] = None,
-        persist_feedback_to_context: Optional[str] = None,
-        persist_validation_results_to: Optional[str] = None,
-        meta: Optional[Dict[str, Any]] = None,
-        **config: Any,
-    ) -> None:
-        plugin_list: List[tuple[ValidationPlugin, int]] = []
-        if plugins:
-            for p in plugins:
-                if isinstance(p, tuple):
-                    plugin_list.append(p)
-                else:
-                    plugin_list.append((p, 0))
-
-        super().__init__(  # type: ignore[misc]
-            name=name,
-            agent=agent,
-            config=StepConfig(**config),
-            plugins=plugin_list,
-            validators=validators or [],
-            failure_handlers=on_failure or [],
-            updates_context=updates_context,
-            processors=processors or AgentProcessors(),
-            persist_feedback_to_context=persist_feedback_to_context,
-            persist_validation_results_to=persist_validation_results_to,
-            meta=meta or {},
-        )
-
     def __repr__(self) -> str:  # pragma: no cover - simple utility
         agent_repr: str
         if self.agent is None:
@@ -206,6 +170,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         cls,
         agent: AsyncAgentProtocol[Any, Any],
         *,
+        plugins: Optional[list[tuple[ValidationPlugin, int]]] = None,
         validators: Optional[List[Validator]] = None,
         processors: Optional[AgentProcessors] = None,
         persist_feedback_to_context: Optional[str] = None,
@@ -213,14 +178,17 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         **config: Any,
     ) -> "Step[Any, Any]":
         """Construct a review step using the provided agent."""
-        return cls(
-            "review",
-            agent,
-            validators=validators,
-            processors=processors,
-            persist_feedback_to_context=persist_feedback_to_context,
-            persist_validation_results_to=persist_validation_results_to,
-            **config,
+        return cls.model_validate(
+            {
+                "name": "review",
+                "agent": agent,
+                "plugins": plugins or [],
+                "validators": validators or [],
+                "processors": processors or AgentProcessors(),
+                "persist_feedback_to_context": persist_feedback_to_context,
+                "persist_validation_results_to": persist_validation_results_to,
+                "config": StepConfig(**config),
+            }
         )
 
     @classmethod
@@ -228,6 +196,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         cls,
         agent: AsyncAgentProtocol[Any, Any],
         *,
+        plugins: Optional[list[tuple[ValidationPlugin, int]]] = None,
         validators: Optional[List[Validator]] = None,
         processors: Optional[AgentProcessors] = None,
         persist_feedback_to_context: Optional[str] = None,
@@ -235,14 +204,17 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         **config: Any,
     ) -> "Step[Any, Any]":
         """Construct a solution step using the provided agent."""
-        return cls(
-            "solution",
-            agent,
-            validators=validators,
-            processors=processors,
-            persist_feedback_to_context=persist_feedback_to_context,
-            persist_validation_results_to=persist_validation_results_to,
-            **config,
+        return cls.model_validate(
+            {
+                "name": "solution",
+                "agent": agent,
+                "plugins": plugins or [],
+                "validators": validators or [],
+                "processors": processors or AgentProcessors(),
+                "persist_feedback_to_context": persist_feedback_to_context,
+                "persist_validation_results_to": persist_validation_results_to,
+                "config": StepConfig(**config),
+            }
         )
 
     @classmethod
@@ -250,6 +222,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         cls,
         agent: AsyncAgentProtocol[Any, Any],
         *,
+        plugins: Optional[list[tuple[ValidationPlugin, int]]] = None,
         validators: Optional[List[Validator]] = None,
         processors: Optional[AgentProcessors] = None,
         persist_feedback_to_context: Optional[str] = None,
@@ -259,15 +232,18 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
     ) -> "Step[Any, Any]":
         """Construct a validation step using the provided agent."""
         meta = {"is_validation_step": True, "strict_validation": strict}
-        return cls(
-            "validate",
-            agent,
-            validators=validators,
-            processors=processors,
-            persist_feedback_to_context=persist_feedback_to_context,
-            persist_validation_results_to=persist_validation_results_to,
-            meta=meta,
-            **config,
+        return cls.model_validate(
+            {
+                "name": "validate",
+                "agent": agent,
+                "plugins": plugins or [],
+                "validators": validators or [],
+                "processors": processors or AgentProcessors(),
+                "persist_feedback_to_context": persist_feedback_to_context,
+                "persist_validation_results_to": persist_validation_results_to,
+                "meta": meta,
+                "config": StepConfig(**config),
+            }
         )
 
     @classmethod
@@ -367,14 +343,16 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
 
         agent_wrapper = _CallableAgent()
 
-        step = cls(
-            step_name,
-            agent_wrapper,
-            updates_context=updates_context,
-            processors=processors,
-            persist_feedback_to_context=persist_feedback_to_context,
-            persist_validation_results_to=persist_validation_results_to,
-            **config,
+        step = cls.model_validate(
+            {
+                "name": step_name,
+                "agent": agent_wrapper,
+                "updates_context": updates_context,
+                "processors": processors or AgentProcessors(),
+                "persist_feedback_to_context": persist_feedback_to_context,
+                "persist_validation_results_to": persist_validation_results_to,
+                "config": StepConfig(**config),
+            }
         )
         object.__setattr__(step, "__step_input_type__", input_type)
         object.__setattr__(step, "__step_output_type__", output_type)
@@ -415,10 +393,12 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         input_schema: Type[BaseModel] | None = None,
     ) -> "HumanInTheLoopStep":
         """Create a step that pauses execution for human input."""
-        return HumanInTheLoopStep(
-            name=name,
-            message_for_user=message_for_user,
-            input_schema=input_schema,
+        return HumanInTheLoopStep.model_validate(
+            {
+                "name": name,
+                "message_for_user": message_for_user,
+                "input_schema": input_schema,
+            }
         )
 
     def add_plugin(self, plugin: ValidationPlugin, priority: int = 0) -> "Step[StepInT, StepOutT]":
@@ -448,15 +428,18 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         """Factory method to create a :class:`LoopStep`."""
         from .pipeline_dsl import LoopStep
 
-        return LoopStep(
-            name=name,
-            loop_body_pipeline=loop_body_pipeline,
-            exit_condition_callable=exit_condition_callable,
-            max_loops=max_loops,
-            initial_input_to_loop_body_mapper=initial_input_to_loop_body_mapper,
-            iteration_input_mapper=iteration_input_mapper,
-            loop_output_mapper=loop_output_mapper,
-            **config_kwargs,
+        # Create the LoopStep directly using Pydantic model instantiation
+        return LoopStep.model_validate(
+            {
+                "name": name,
+                "loop_body_pipeline": loop_body_pipeline,
+                "exit_condition_callable": exit_condition_callable,
+                "max_loops": max_loops,
+                "initial_input_to_loop_body_mapper": initial_input_to_loop_body_mapper,
+                "iteration_input_mapper": iteration_input_mapper,
+                "loop_output_mapper": loop_output_mapper,
+                "config": StepConfig(**config_kwargs),
+            }
         )
 
     @classmethod
@@ -547,14 +530,17 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         """Factory method to create a :class:`ConditionalStep`."""
         from .pipeline_dsl import ConditionalStep
 
-        return ConditionalStep(
-            name=name,
-            condition_callable=condition_callable,
-            branches=branches,
-            default_branch_pipeline=default_branch_pipeline,
-            branch_input_mapper=branch_input_mapper,
-            branch_output_mapper=branch_output_mapper,
-            **config_kwargs,
+        # Create the ConditionalStep directly using Pydantic model instantiation
+        return ConditionalStep.model_validate(
+            {
+                "name": name,
+                "condition_callable": condition_callable,
+                "branches": branches,
+                "default_branch_pipeline": default_branch_pipeline,
+                "branch_input_mapper": branch_input_mapper,
+                "branch_output_mapper": branch_output_mapper,
+                "config": StepConfig(**config_kwargs),
+            }
         )
 
     @classmethod
@@ -567,7 +553,14 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         """Factory to run branches concurrently and aggregate outputs."""
         from .pipeline_dsl import ParallelStep
 
-        return ParallelStep(name=name, branches=branches, **config_kwargs)
+        # Create the ParallelStep directly using Pydantic model instantiation
+        return ParallelStep.model_validate(
+            {
+                "name": name,
+                "branches": branches,
+                "config": StepConfig(**config_kwargs),
+            }
+        )
 
     @classmethod
     def map_over(
@@ -580,11 +573,14 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
     ) -> "MapStep[ContextT]":
         """Factory to process each item of ``iterable_input`` with ``pipeline_to_run``."""
 
+        # Separate config from specific fields
+        config = StepConfig(**config_kwargs)
+
         return MapStep(
             name=name,
+            config=config,
             pipeline_to_run=pipeline_to_run,
             iterable_input=iterable_input,
-            **config_kwargs,
         )
 
 
@@ -680,27 +676,9 @@ class HumanInTheLoopStep(Step[Any, Any]):
     """A step that pauses the pipeline for human input."""
 
     message_for_user: str | None = Field(default=None)
-    input_schema: Type[BaseModel] | None = Field(default=None)
+    input_schema: Any | None = Field(default=None)
 
     model_config = {"arbitrary_types_allowed": True}
-
-    def __init__(
-        self,
-        *,
-        name: str,
-        message_for_user: str | None = None,
-        input_schema: Type[BaseModel] | None = None,
-        **config: Any,
-    ) -> None:
-        super().__init__(
-            name=name,
-            agent=None,
-            config=StepConfig(**config),
-            plugins=[],
-            failure_handlers=[],
-        )
-        object.__setattr__(self, "message_for_user", message_for_user)
-        object.__setattr__(self, "input_schema", input_schema)
 
 
 class LoopStep(Step[Any, Any], Generic[ContextT]):
@@ -731,38 +709,6 @@ class LoopStep(Step[Any, Any], Generic[ContextT]):
 
     model_config = {"arbitrary_types_allowed": True}
 
-    def __init__(
-        self,
-        *,
-        name: str,
-        loop_body_pipeline: "Pipeline[Any, Any]",
-        exit_condition_callable: Callable[[Any, Optional[ContextT]], bool],
-        max_loops: int = 5,
-        initial_input_to_loop_body_mapper: Optional[
-            Callable[[Any, Optional[ContextT]], Any]
-        ] = None,
-        iteration_input_mapper: Optional[Callable[[Any, Optional[ContextT], int], Any]] = None,
-        loop_output_mapper: Optional[Callable[[Any, Optional[ContextT]], Any]] = None,
-        **config_kwargs: Any,
-    ) -> None:
-        if max_loops <= 0:
-            raise ValueError("max_loops must be a positive integer.")
-
-        BaseModel.__init__(  # type: ignore[misc]
-            self,
-            name=name,
-            agent=None,
-            config=StepConfig(**config_kwargs),
-            plugins=[],
-            failure_handlers=[],
-            loop_body_pipeline=loop_body_pipeline,
-            exit_condition_callable=exit_condition_callable,
-            max_loops=max_loops,
-            initial_input_to_loop_body_mapper=initial_input_to_loop_body_mapper,
-            iteration_input_mapper=iteration_input_mapper,
-            loop_output_mapper=loop_output_mapper,
-        )
-
 
 class ConditionalStep(Step[Any, Any], Generic[ContextT]):
     """A step that selects and executes a branch pipeline based on a condition."""
@@ -789,33 +735,17 @@ class ConditionalStep(Step[Any, Any], Generic[ContextT]):
 
     model_config = {"arbitrary_types_allowed": True}
 
-    def __init__(
-        self,
-        *,
-        name: str,
-        condition_callable: Callable[[Any, Optional[ContextT]], BranchKey],
-        branches: Dict[BranchKey, "Pipeline[Any, Any]"],
-        default_branch_pipeline: Optional["Pipeline[Any, Any]"] = None,
-        branch_input_mapper: Optional[Callable[[Any, Optional[ContextT]], Any]] = None,
-        branch_output_mapper: Optional[Callable[[Any, BranchKey, Optional[ContextT]], Any]] = None,
-        **config_kwargs: Any,
-    ) -> None:
+    @classmethod
+    def model_validate(cls, *args, **kwargs):
+        """Validate branches before creating the instance."""
+        # Support both dict input (args[0]) and kwargs
+        if args and isinstance(args[0], dict):
+            branches = args[0].get("branches", {})
+        else:
+            branches = kwargs.get("branches", {})
         if not branches:
             raise ValueError("'branches' dictionary cannot be empty.")
-
-        BaseModel.__init__(  # type: ignore[misc]
-            self,
-            name=name,
-            agent=None,
-            config=StepConfig(**config_kwargs),
-            plugins=[],
-            failure_handlers=[],
-            condition_callable=condition_callable,
-            branches=branches,
-            default_branch_pipeline=default_branch_pipeline,
-            branch_input_mapper=branch_input_mapper,
-            branch_output_mapper=branch_output_mapper,
-        )
+        return super().model_validate(*args, **kwargs)
 
 
 class ParallelStep(Step[Any, Any], Generic[ContextT]):
@@ -827,29 +757,29 @@ class ParallelStep(Step[Any, Any], Generic[ContextT]):
 
     model_config = {"arbitrary_types_allowed": True}
 
-    def __init__(
-        self,
-        *,
-        name: str,
-        branches: Dict[str, "Step[Any, Any]" | "Pipeline[Any, Any]"],
-        **config_kwargs: Any,
-    ) -> None:
+    @classmethod
+    def model_validate(cls, *args, **kwargs):
+        """Validate and normalize branches before creating the instance."""
+        # Support both dict input (args[0]) and kwargs
+        if args and isinstance(args[0], dict):
+            branches = args[0].get("branches", {})
+        else:
+            branches = kwargs.get("branches", {})
         if not branches:
             raise ValueError("'branches' dictionary cannot be empty.")
-
-        normalized: Dict[str, Pipeline[Any, Any]] = {}
+        # Normalize branches: convert Steps to Pipelines
+        normalized: Dict[str, "Pipeline[Any, Any]"] = {}
         for key, branch in branches.items():
-            normalized[key] = Pipeline.from_step(branch) if isinstance(branch, Step) else branch
-
-        BaseModel.__init__(  # type: ignore[misc]
-            self,
-            name=name,
-            agent=None,
-            config=StepConfig(**config_kwargs),
-            plugins=[],
-            failure_handlers=[],
-            branches=normalized,
-        )
+            if isinstance(branch, Step):
+                normalized[key] = Pipeline.from_step(branch)
+            else:
+                normalized[key] = branch
+        # Update the input dict or kwargs with normalized branches
+        if args and isinstance(args[0], dict):
+            args = (dict(args[0], branches=normalized),) + args[1:]
+        else:
+            kwargs["branches"] = normalized
+        return super().model_validate(*args, **kwargs)
 
 
 class MapStep(LoopStep[ContextT]):

@@ -33,8 +33,8 @@ async def test_agentic_loop_as_composable_step() -> None:
 
 @pytest.mark.asyncio
 async def test_pipeline_of_pipelines_via_as_step() -> None:
-    step1 = Step("a", StubAgent([1]))
-    step2 = Step("b", StubAgent([2]))
+    step1 = Step.model_validate({"name": "a", "agent": StubAgent([1])})
+    step2 = Step.model_validate({"name": "b", "agent": StubAgent([2])})
 
     sub_runner1 = Flujo(step1, context_model=PipelineContext)
     sub_runner2 = Flujo(step2, context_model=PipelineContext)
@@ -73,7 +73,7 @@ async def test_as_step_context_propagation() -> None:
             return {"scratchpad": {"counter": current + data}}
 
     inner_runner = Flujo(
-        Step("inc", Incrementer(), updates_context=True),
+        Step.model_validate({"name": "inc", "agent": Incrementer(), "updates_context": True}),
         context_model=PipelineContext,
     )
 
@@ -100,7 +100,7 @@ async def test_as_step_resource_propagation() -> None:
             return resources.counter
 
     inner_runner = Flujo(
-        Step("res", UseRes()),
+        Step.model_validate({"name": "res", "agent": UseRes()}),
         context_model=PipelineContext,
     )
 
@@ -149,7 +149,7 @@ async def test_as_step_inherit_context_false() -> None:
             return {"scratchpad": {"counter": current + data}}
 
     inner_runner = Flujo(
-        Step("inc", Incrementer(), updates_context=True),
+        Step.model_validate({"name": "inc", "agent": Incrementer(), "updates_context": True}),
         context_model=PipelineContext,
     )
 
@@ -171,8 +171,9 @@ class ChildCtx(PipelineContext):
 
 @pytest.mark.asyncio
 async def test_as_step_context_inheritance_error() -> None:
-    inner_runner = Flujo(Step("s", StubAgent(["ok"])), context_model=ChildCtx)
+    step = Step.model_validate({"name": "s", "agent": StubAgent(["ok"])})
 
+    inner_runner = Flujo(step, context_model=ChildCtx)
     pipeline = inner_runner.as_step(name="inner")
     runner = Flujo(pipeline, context_model=PipelineContext)
 

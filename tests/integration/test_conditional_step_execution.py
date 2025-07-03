@@ -15,10 +15,10 @@ class EchoAgent:
 
 @pytest.mark.asyncio
 async def test_branch_a_executes() -> None:
-    classify = Step("classify", StubAgent(["a"]))
+    classify = Step.model_validate({"name": "classify", "agent": StubAgent(["a"])})
     branches = {
-        "a": Pipeline.from_step(Step("a", StubAgent(["A"]))),
-        "b": Pipeline.from_step(Step("b", StubAgent(["B"]))),
+        "a": Pipeline.from_step(Step.model_validate({"name": "a", "agent": StubAgent(["A"])})),
+        "b": Pipeline.from_step(Step.model_validate({"name": "b", "agent": StubAgent(["B"])})),
     }
     branch_step = Step.branch_on(
         name="branch",
@@ -35,10 +35,10 @@ async def test_branch_a_executes() -> None:
 
 @pytest.mark.asyncio
 async def test_branch_b_executes() -> None:
-    classify = Step("classify", StubAgent(["b"]))
+    classify = Step.model_validate({"name": "classify", "agent": StubAgent(["b"])})
     branches = {
-        "a": Pipeline.from_step(Step("a", StubAgent(["A"]))),
-        "b": Pipeline.from_step(Step("b", StubAgent(["B"]))),
+        "a": Pipeline.from_step(Step.model_validate({"name": "a", "agent": StubAgent(["A"])})),
+        "b": Pipeline.from_step(Step.model_validate({"name": "b", "agent": StubAgent(["B"])})),
     }
     branch_step = Step.branch_on(
         name="branch",
@@ -53,11 +53,11 @@ async def test_branch_b_executes() -> None:
 
 @pytest.mark.asyncio
 async def test_default_branch_used() -> None:
-    classify = Step("classify", StubAgent(["x"]))
+    classify = Step.model_validate({"name": "classify", "agent": StubAgent(["x"])})
     branches = {
-        "a": Pipeline.from_step(Step("a", StubAgent(["A"]))),
+        "a": Pipeline.from_step(Step.model_validate({"name": "a", "agent": StubAgent(["A"])})),
     }
-    default = Pipeline.from_step(Step("def", StubAgent(["DEF"])))
+    default = Pipeline.from_step(Step.model_validate({"name": "def", "agent": StubAgent(["DEF"])}))
     branch_step = Step.branch_on(
         name="branch",
         condition_callable=lambda out, ctx: out,
@@ -72,8 +72,10 @@ async def test_default_branch_used() -> None:
 
 @pytest.mark.asyncio
 async def test_no_match_no_default_fails() -> None:
-    classify = Step("classify", StubAgent(["x"]))
-    branches = {"a": Pipeline.from_step(Step("a", StubAgent(["A"])))}
+    classify = Step.model_validate({"name": "classify", "agent": StubAgent(["x"])})
+    branches = {
+        "a": Pipeline.from_step(Step.model_validate({"name": "a", "agent": StubAgent(["A"])}))
+    }
     branch_step = Step.branch_on(
         name="branch",
         condition_callable=lambda out, ctx: out,
@@ -92,10 +94,10 @@ class FlagCtx(BaseModel):
 
 @pytest.mark.asyncio
 async def test_condition_uses_context() -> None:
-    classify = Step("classify", StubAgent(["ignored"]))
+    classify = Step.model_validate({"name": "classify", "agent": StubAgent(["ignored"])})
     branches = {
-        "a": Pipeline.from_step(Step("a", StubAgent(["A"]))),
-        "b": Pipeline.from_step(Step("b", StubAgent(["B"]))),
+        "a": Pipeline.from_step(Step.model_validate({"name": "a", "agent": StubAgent(["A"])})),
+        "b": Pipeline.from_step(Step.model_validate({"name": "b", "agent": StubAgent(["B"])})),
     }
     branch_step = Step.branch_on(
         name="branch",
@@ -115,7 +117,7 @@ async def test_condition_uses_context() -> None:
 @pytest.mark.asyncio
 async def test_mappers_applied() -> None:
     branches = {
-        "x": Pipeline.from_step(Step("inc", EchoAgent())),
+        "x": Pipeline.from_step(Step.model_validate({"name": "inc", "agent": EchoAgent()})),
     }
     branch_step = Step.branch_on(
         name="branch",
@@ -132,7 +134,9 @@ async def test_mappers_applied() -> None:
 @pytest.mark.asyncio
 async def test_failure_in_branch_propagates() -> None:
     fail_plugin = DummyPlugin([PluginOutcome(success=False, feedback="bad")])
-    bad_step = Step("bad", StubAgent(["oops"]), plugins=[fail_plugin])
+    bad_step = Step.model_validate(
+        {"name": "bad", "agent": StubAgent(["oops"]), "plugins": [(fail_plugin, 0)]}
+    )
     branches = {"a": Pipeline.from_step(bad_step)}
     branch_step = Step.branch_on(
         name="branch",
@@ -148,7 +152,9 @@ async def test_failure_in_branch_propagates() -> None:
 
 @pytest.mark.asyncio
 async def test_condition_exception_fails_step() -> None:
-    branches = {"a": Pipeline.from_step(Step("a", StubAgent(["A"])))}
+    branches = {
+        "a": Pipeline.from_step(Step.model_validate({"name": "a", "agent": StubAgent(["A"])}))
+    }
 
     def condition(_: str, __: FlagCtx | None) -> str:
         raise RuntimeError("boom")
@@ -167,7 +173,9 @@ async def test_condition_exception_fails_step() -> None:
 
 @pytest.mark.asyncio
 async def test_conditional_step_error_in_condition_callable() -> None:
-    branches = {"a": Pipeline.from_step(Step("a", StubAgent(["A"])))}
+    branches = {
+        "a": Pipeline.from_step(Step.model_validate({"name": "a", "agent": StubAgent(["A"])}))
+    }
 
     def bad_condition(_: str, __: BaseModel | None) -> str:
         raise RuntimeError("cond err")
@@ -177,7 +185,7 @@ async def test_conditional_step_error_in_condition_callable() -> None:
         condition_callable=bad_condition,
         branches=branches,
     )
-    after = Step("after", StubAgent(["after"]))
+    after = Step.model_validate({"name": "after", "agent": StubAgent(["after"])})
     runner = Flujo(branch_step >> after)
     result = await gather_result(runner, "in")
     assert len(result.step_history) == 1
@@ -188,7 +196,9 @@ async def test_conditional_step_error_in_condition_callable() -> None:
 
 @pytest.mark.asyncio
 async def test_conditional_step_error_in_branch_input_mapper() -> None:
-    branches = {"a": Pipeline.from_step(Step("a", StubAgent(["A"])))}
+    branches = {
+        "a": Pipeline.from_step(Step.model_validate({"name": "a", "agent": StubAgent(["A"])}))
+    }
 
     def branch_input(_: str, __: BaseModel | None) -> str:
         raise RuntimeError("input map err")
@@ -208,7 +218,9 @@ async def test_conditional_step_error_in_branch_input_mapper() -> None:
 
 @pytest.mark.asyncio
 async def test_conditional_step_error_in_branch_output_mapper() -> None:
-    branches = {"a": Pipeline.from_step(Step("a", StubAgent([1])))}
+    branches = {
+        "a": Pipeline.from_step(Step.model_validate({"name": "a", "agent": StubAgent([1])}))
+    }
 
     def out_map(_: int, __: str, ___: BaseModel | None) -> int:
         raise RuntimeError("output map err")
@@ -235,7 +247,7 @@ async def test_conditional_step_branch_input_mapper_flow() -> None:
         return inp + 1
 
     agent = StubAgent([0])
-    branches = {"a": Pipeline.from_step(Step("a", agent))}
+    branches = {"a": Pipeline.from_step(Step.model_validate({"name": "a", "agent": agent}))}
     step = Step.branch_on(
         name="cond_in_map",
         condition_callable=lambda out, ctx: "a",
@@ -258,7 +270,7 @@ async def test_conditional_step_branch_output_mapper_flow() -> None:
         return out * 10
 
     agent = StubAgent([1])
-    branches = {"a": Pipeline.from_step(Step("a", agent))}
+    branches = {"a": Pipeline.from_step(Step.model_validate({"name": "a", "agent": agent}))}
     step = Step.branch_on(
         name="cond_out_map",
         condition_callable=lambda out, ctx: "a",
@@ -289,7 +301,7 @@ async def test_conditional_step_mappers_with_context_modification() -> None:
         return out
 
     agent = StubAgent([0])
-    branches = {"a": Pipeline.from_step(Step("a", agent))}
+    branches = {"a": Pipeline.from_step(Step.model_validate({"name": "a", "agent": agent}))}
     step = Step.branch_on(
         name="cond_ctx_mod",
         condition_callable=lambda out, ctx: "a",
@@ -305,7 +317,7 @@ async def test_conditional_step_mappers_with_context_modification() -> None:
 @pytest.mark.asyncio
 async def test_conditional_step_default_mapper_behavior() -> None:
     agent = StubAgent(["ok"])
-    branches = {"a": Pipeline.from_step(Step("a", agent))}
+    branches = {"a": Pipeline.from_step(Step.model_validate({"name": "a", "agent": agent}))}
     step = Step.branch_on(
         name="cond_default_map",
         condition_callable=lambda out, ctx: "a",
@@ -340,7 +352,9 @@ async def test_conditional_step_overall_span(monkeypatch) -> None:
     monkeypatch.setattr(telemetry, "logfire", mock_logfire)
     monkeypatch.setattr(pr, "logfire", mock_logfire)
 
-    branches = {"a": Pipeline.from_step(Step("a", StubAgent(["A"])))}
+    branches = {
+        "a": Pipeline.from_step(Step.model_validate({"name": "a", "agent": StubAgent(["A"])}))
+    }
     branch_step = Step.branch_on(
         name="span_cond",
         condition_callable=lambda out, ctx: "a",
@@ -385,7 +399,9 @@ async def test_conditional_step_branch_selection_logging_and_span_attributes(mon
     monkeypatch.setattr(telemetry, "logfire", mock_logfire)
     monkeypatch.setattr(pr, "logfire", mock_logfire)
 
-    branches = {"a": Pipeline.from_step(Step("step_a", StubAgent(["A"])))}
+    branches = {
+        "a": Pipeline.from_step(Step.model_validate({"name": "step_a", "agent": StubAgent(["A"])}))
+    }
     branch_step = Step.branch_on(
         name="cond_span",
         condition_callable=lambda out, ctx: "a",
@@ -429,7 +445,9 @@ async def test_conditional_step_no_branch_match_logging(monkeypatch) -> None:
     monkeypatch.setattr(telemetry, "logfire", mock_logfire)
     monkeypatch.setattr(pr, "logfire", mock_logfire)
 
-    branches = {"a": Pipeline.from_step(Step("a", StubAgent(["A"])))}
+    branches = {
+        "a": Pipeline.from_step(Step.model_validate({"name": "a", "agent": StubAgent(["A"])}))
+    }
     step = Step.branch_on(
         name="no_branch",
         condition_callable=lambda out, ctx: "b",
@@ -476,7 +494,9 @@ async def test_conditional_step_error_logging_in_callables(monkeypatch) -> None:
     step = Step.branch_on(
         name="cond_err",
         condition_callable=bad_condition,
-        branches={"a": Pipeline.from_step(Step("a", StubAgent(["A"])))},
+        branches={
+            "a": Pipeline.from_step(Step.model_validate({"name": "a", "agent": StubAgent(["A"])}))
+        },
     )
     await gather_result(Flujo(step), "in")
     assert any("cond boom" in m for m in errors)

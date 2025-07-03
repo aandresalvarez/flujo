@@ -605,9 +605,13 @@ async def _run_step_logic(
     last_raw_output = None
     last_unpacked_output = None
     validation_failed = False
+    last_attempt_feedbacks: list[str] = []
+    last_attempt_output = None
     for attempt in range(1, step.config.max_retries + 1):
         validation_failed = False
         result.attempts = attempt
+        feedbacks: list[str] = []  # feedbacks for this attempt only
+        plugin_failed_this_attempt = False  # Always initialize at start of attempt
         if current_agent is None:
             raise MissingAgentError(
                 f"Step '{step.name}' is missing an agent. Assign one via `Step('name', agent=...)` "
@@ -675,7 +679,6 @@ async def _run_step_logic(
         last_unpacked_output = unpacked_output
 
         success = True
-        feedback: str | None = None
         redirect_to = None
         final_plugin_outcome: PluginOutcome | None = None
         is_validation_step, is_strict = _get_validation_flags(step)
@@ -713,11 +716,11 @@ async def _run_step_logic(
 
             if not validated.success:
                 validation_failed = True
-                feedback = validated.feedback
+                plugin_failed_this_attempt = True
+                if validated.feedback:
+                    feedbacks.append(validated.feedback)
                 redirect_to = validated.redirect_to
                 final_plugin_outcome = validated
-                if is_strict or not is_validation_step:
-                    success = False
             if validated.new_solution is not None:
                 final_plugin_outcome = validated
 
@@ -764,16 +767,20 @@ async def _run_step_logic(
 
             if failed_checks_feedback:
                 validation_failed = True
+                feedbacks.extend(failed_checks_feedback)
                 if is_strict or not is_validation_step:
                     success = False
-                combined_feedback = (feedback + "\n" if feedback else "") + "\n".join(
-                    failed_checks_feedback
-                )
-                feedback = combined_feedback.strip()
 
-        if validation_failed and is_validation_step and not is_strict:
-            success = True
-
+        # --- RETRY LOGIC FIX ---
+        if plugin_failed_this_attempt:
+            success = False
+        # --- END FIX ---
+        # --- JOIN ALL FEEDBACKS ---
+        feedback = "\n".join(feedbacks).strip() if feedbacks else None
+        # --- END JOIN ---
+        if not success and attempt == step.config.max_retries:
+            last_attempt_feedbacks = feedbacks.copy()
+            last_attempt_output = last_unpacked_output
         if success:
             result.output = unpacked_output
             result.success = True
@@ -807,13 +814,16 @@ async def _run_step_logic(
                 data = f"{str(data)}\n{feedback}"
         last_feedback = feedback
 
+    # After all retries, set feedback to last attempt's feedbacks
+    result.success = False
+    result.feedback = (
+        "\n".join(last_attempt_feedbacks).strip() if last_attempt_feedbacks else last_feedback
+    )
     is_validation_step, is_strict = _get_validation_flags(step)
     if validation_failed and is_strict:
         result.output = None
     else:
-        result.output = last_unpacked_output
-    result.success = False
-    result.feedback = last_feedback
+        result.output = last_attempt_output
     result.token_counts += (
         getattr(last_raw_output, "token_counts", 1) if last_raw_output is not None else 0
     )

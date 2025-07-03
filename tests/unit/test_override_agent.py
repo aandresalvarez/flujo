@@ -21,7 +21,7 @@ def test_override_agent_basic_functionality():
     original_agent = TestAgent("original")
     replacement_agent = TestAgent("replacement")
 
-    step = Step("test_step", original_agent)
+    step = Step.model_validate({"name": "test_step", "agent": original_agent})
 
     # Verify original agent is set
     assert step.agent is original_agent
@@ -39,7 +39,7 @@ def test_override_agent_with_exception():
     original_agent = TestAgent("original")
     replacement_agent = TestAgent("replacement")
 
-    step = Step("test_step", original_agent)
+    step = Step.model_validate({"name": "test_step", "agent": original_agent})
 
     # Verify original agent is set
     assert step.agent is original_agent
@@ -60,7 +60,7 @@ def test_override_agent_none_agent():
     """Test overriding with None agent."""
     original_agent = TestAgent("original")
 
-    step = Step("test_step", original_agent)
+    step = Step.model_validate({"name": "test_step", "agent": original_agent})
 
     # Use context manager to override with None
     with override_agent(step, None):
@@ -77,8 +77,8 @@ def test_override_agent_multiple_steps():
     replacement1 = TestAgent("replacement1")
     replacement2 = TestAgent("replacement2")
 
-    step1 = Step("step1", agent1)
-    step2 = Step("step2", agent2)
+    step1 = Step.model_validate({"name": "step1", "agent": agent1})
+    step2 = Step.model_validate({"name": "step2", "agent": agent2})
 
     # Override both steps
     with override_agent(step1, replacement1):
@@ -96,7 +96,7 @@ def test_override_agent_integration_with_arun():
     original_agent = TestAgent("original")
     replacement_agent = TestAgent("replacement")
 
-    step = Step("test_step", original_agent)
+    step = Step.model_validate({"name": "test_step", "agent": original_agent})
 
     # Test with original agent
     import asyncio
@@ -125,7 +125,7 @@ def test_override_agent_with_stub_agent():
     original_agent = TestAgent("original")
     stub_agent = StubAgent(["stub_output_1", "stub_output_2"])
 
-    step = Step("test_step", original_agent)
+    step = Step.model_validate({"name": "test_step", "agent": original_agent})
 
     with override_agent(step, stub_agent):
         import asyncio

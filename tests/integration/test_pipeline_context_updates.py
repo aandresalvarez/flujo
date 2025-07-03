@@ -26,10 +26,12 @@ class ContextWithNesting(BaseModel):
 
 @pytest.mark.asyncio
 async def test_update_nested_model() -> None:
-    update_step = Step(
-        "update",
-        StubAgent([{"nested_item": {"value": 123}}]),
-        updates_context=True,
+    update_step = Step.model_validate(
+        {
+            "name": "update",
+            "agent": StubAgent([{"nested_item": {"value": 123}}]),
+            "updates_context": True,
+        }
     )
 
     class ReaderAgent:
@@ -40,7 +42,7 @@ async def test_update_nested_model() -> None:
             assert isinstance(context.nested_item, NestedModel)
             return context.nested_item.value
 
-    read_step = Step("read", ReaderAgent())
+    read_step = Step.model_validate({"name": "read", "agent": ReaderAgent()})
     runner = Flujo(update_step >> read_step, context_model=ContextWithNesting)
     result = await gather_result(runner, None)
 
@@ -52,10 +54,12 @@ async def test_update_nested_model() -> None:
 
 @pytest.mark.asyncio
 async def test_update_list_of_nested_models() -> None:
-    update_step = Step(
-        "update_list",
-        StubAgent([{"list_of_items": [{"value": 1}, {"value": 2}]}]),
-        updates_context=True,
+    update_step = Step.model_validate(
+        {
+            "name": "update_list",
+            "agent": StubAgent([{"list_of_items": [{"value": 1}, {"value": 2}]}]),
+            "updates_context": True,
+        }
     )
 
     class ListReader:
@@ -67,7 +71,7 @@ async def test_update_list_of_nested_models() -> None:
                 assert isinstance(item, NestedModel)
             return [i.value for i in context.list_of_items]
 
-    reader = Step("reader", ListReader())
+    reader = Step.model_validate({"name": "reader", "agent": ListReader()})
     runner = Flujo(update_step >> reader, context_model=ContextWithNesting)
     result = await gather_result(runner, None)
 
@@ -77,10 +81,12 @@ async def test_update_list_of_nested_models() -> None:
 
 @pytest.mark.asyncio
 async def test_invalid_field_type_fails() -> None:
-    bad_step = Step(
-        "bad",
-        StubAgent([{"counter": "not-an-int"}]),
-        updates_context=True,
+    bad_step = Step.model_validate(
+        {
+            "name": "bad",
+            "agent": StubAgent([{"counter": "not-an-int"}]),
+            "updates_context": True,
+        }
     )
     runner = Flujo(bad_step, context_model=ContextWithNesting)
     result = await gather_result(runner, None)
@@ -93,10 +99,12 @@ async def test_invalid_field_type_fails() -> None:
 
 @pytest.mark.asyncio
 async def test_model_level_validation_failure() -> None:
-    inc_step = Step(
-        "inc",
-        StubAgent([{"counter": 11}]),
-        updates_context=True,
+    inc_step = Step.model_validate(
+        {
+            "name": "inc",
+            "agent": StubAgent([{"counter": 11}]),
+            "updates_context": True,
+        }
     )
     runner = Flujo(
         inc_step,
@@ -113,7 +121,9 @@ async def test_model_level_validation_failure() -> None:
 
 @pytest.mark.asyncio
 async def test_incompatible_output_type_skips_update() -> None:
-    step_no_update = Step("no_update", StubAgent(["hello"]), updates_context=True)
+    step_no_update = Step.model_validate(
+        {"name": "no_update", "agent": StubAgent(["hello"]), "updates_context": True}
+    )
     runner = Flujo(step_no_update, context_model=ContextWithNesting)
     result = await gather_result(runner, None)
 

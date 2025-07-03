@@ -8,7 +8,7 @@ from flujo.testing.utils import StubAgent, gather_result
 
 @pytest.mark.asyncio
 async def test_concrete_value_passes() -> None:
-    step = Step("s", StubAgent(["ok"]))
+    step = Step.model_validate({"name": "s", "agent": StubAgent(["ok"])})
     runner = Flujo(step)
     result = await gather_result(runner, "in")
     history = result.step_history[0]
@@ -23,7 +23,7 @@ async def test_mock_output_raises_type_error() -> None:
             return Mock()
 
     agent = BadAgent()
-    step = Step("s", agent)
+    step = Step.model_validate({"name": "s", "agent": agent})
     runner = Flujo(step)
     with pytest.raises(TypeError, match="returned a Mock object"):
         await gather_result(runner, "in")
@@ -38,7 +38,7 @@ async def test_nested_mock_not_caught() -> None:
             return {"data": nested}
 
     agent = NestedAgent()
-    step = Step("s", agent)
+    step = Step.model_validate({"name": "s", "agent": agent})
     runner = Flujo(step)
     result = await gather_result(runner, "in")
     history = result.step_history[0]
@@ -57,9 +57,9 @@ async def test_pipeline_stops_on_mock() -> None:
     bad_agent = BadAgent()
     final_agent = StubAgent(["end"])
 
-    step1 = Step("a", good_agent)
-    step2 = Step("b", bad_agent)
-    step3 = Step("c", final_agent)
+    step1 = Step.model_validate({"name": "a", "agent": good_agent})
+    step2 = Step.model_validate({"name": "b", "agent": bad_agent})
+    step3 = Step.model_validate({"name": "c", "agent": final_agent})
     pipeline = step1 >> step2 >> step3
     runner = Flujo(pipeline)
 

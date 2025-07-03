@@ -23,8 +23,12 @@ class KwargCheckingAgent:
 
 @pytest.mark.asyncio
 async def test_pydantic_models_are_serialized_for_agents():
-    first = Step("produce", StubAgent([Checklist(items=[ChecklistItem(description="a")])]))
-    second = Step("consume", AsyncAgentWrapper(TypeCheckingAgent()))
+    first = Step.model_validate(
+        {"name": "produce", "agent": StubAgent([Checklist(items=[ChecklistItem(description="a")])])}
+    )
+    second = Step.model_validate(
+        {"name": "consume", "agent": AsyncAgentWrapper(TypeCheckingAgent())}
+    )
     pipeline = first >> second
     runner = Flujo(pipeline)
 
@@ -39,8 +43,10 @@ class SimpleContext(BaseModel):
 
 @pytest.mark.asyncio
 async def test_pipeline_context_serialized_for_agent_kwargs():
-    first = Step("produce", StubAgent(["x"]))
-    second = Step("consume", AsyncAgentWrapper(KwargCheckingAgent()))
+    first = Step.model_validate({"name": "produce", "agent": StubAgent(["x"])})
+    second = Step.model_validate(
+        {"name": "consume", "agent": AsyncAgentWrapper(KwargCheckingAgent())}
+    )
     pipeline = first >> second
     runner = Flujo(
         pipeline,

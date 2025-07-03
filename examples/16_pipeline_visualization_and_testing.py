@@ -42,12 +42,12 @@ def create_complex_pipeline() -> Pipeline[str, str]:
     """Create a complex pipeline with loops, conditionals, and parallel execution."""
     
     # Simple processing steps
-    extract_step = Step("Extract", DataProcessor())
-    validate_step = Step("Validate", Validator(), max_retries=3)
-    transform_step = Step("Transform", DataProcessor())
+    extract_step = Step.model_validate({"name": "Extract", "agent": DataProcessor()})
+    validate_step = Step.model_validate({"name": "Validate", "agent": Validator(), "config": StepConfig(max_retries=3)})
+    transform_step = Step.model_validate({"name": "Transform", "agent": DataProcessor()})
     
     # Loop body: refine the data
-    refine_step = Step("Refine", DataProcessor())
+    refine_step = Step.model_validate({"name": "Refine", "agent": DataProcessor()})
     loop_body = Pipeline.from_step(refine_step)
     
     # Loop step
@@ -59,8 +59,8 @@ def create_complex_pipeline() -> Pipeline[str, str]:
     )
     
     # Conditional step with branches
-    code_step = Step("GenerateCode", DataProcessor())
-    qa_step = Step("AnswerQuestion", DataProcessor())
+    code_step = Step.model_validate({"name": "GenerateCode", "agent": DataProcessor()})
+    qa_step = Step.model_validate({"name": "AnswerQuestion", "agent": DataProcessor()})
     
     conditional_step = Step.branch_on(
         name="TaskRouter",
@@ -75,8 +75,8 @@ def create_complex_pipeline() -> Pipeline[str, str]:
     parallel_step = Step.parallel(
         name="ParallelProcess",
         branches={
-            "Analysis": Pipeline.from_step(Step("Analyze", DataProcessor())),
-            "Summary": Pipeline.from_step(Step("Summarize", DataProcessor())),
+            "Analysis": Pipeline.from_step(Step.model_validate({"name": "Analyze", "agent": DataProcessor()})),
+            "Summary": Pipeline.from_step(Step.model_validate({"name": "Summarize", "agent": DataProcessor()})),
         },
     )
     
@@ -154,8 +154,8 @@ class ApplicationService:
     
     def __init__(self):
         self.pipeline = (
-            Step("Process", ProductionAgent()) >>
-            Step("Validate", ProductionAgent())
+            Step.model_validate({"name": "Process", "agent": ProductionAgent()}) >>
+            Step.model_validate({"name": "Validate", "agent": ProductionAgent()})
         )
         self.runner = Flujo(self.pipeline)
     
@@ -202,9 +202,9 @@ async def demonstrate_complex_testing_scenario():
     
     # Create a complex pipeline for testing
     complex_pipeline = (
-        Step("Step1", ProductionAgent()) >>
-        Step("Step2", ProductionAgent()) >>
-        Step("Step3", ProductionAgent())
+        Step.model_validate({"name": "Step1", "agent": ProductionAgent()}) >>
+        Step.model_validate({"name": "Step2", "agent": ProductionAgent()}) >>
+        Step.model_validate({"name": "Step3", "agent": ProductionAgent()})
     )
     
     # Create different test agents for different scenarios

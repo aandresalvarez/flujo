@@ -30,7 +30,9 @@ class FixedMetricAgent(AsyncAgentProtocol[int, MockAgentOutput]):
 @pytest.fixture
 def metric_pipeline() -> Pipeline[int, MockAgentOutput]:
     """Provides a simple pipeline with one step that incurs usage."""
-    return Pipeline.from_step(Step("metric_step", FixedMetricAgent()))
+    return Pipeline.from_step(
+        Step.model_validate({"name": "metric_step", "agent": FixedMetricAgent()})
+    )
 
 
 @pytest.mark.asyncio
@@ -39,10 +41,9 @@ async def test_governor_halts_on_cost_limit_breach(
 ) -> None:
     """Verify pipeline stops when cost limit is exceeded."""
     limits = UsageLimits(total_cost_usd_limit=0.15, total_tokens_limit=None)
-    pipeline: Pipeline[int, MockAgentOutput] = metric_pipeline >> Step(
-        "second_step",
-        FixedMetricAgent(),
-    )  # type: ignore[arg-type]
+    pipeline: Pipeline[int, MockAgentOutput] = metric_pipeline >> Step.model_validate(
+        {"name": "s1", "agent": FixedMetricAgent()}
+    )
     runner = Flujo(pipeline, usage_limits=limits)
 
     with pytest.raises(UsageLimitExceededError) as exc_info:
@@ -60,10 +61,9 @@ async def test_governor_halts_on_token_limit_breach(
 ) -> None:
     """Verify pipeline stops when token limit is exceeded."""
     limits = UsageLimits(total_cost_usd_limit=None, total_tokens_limit=150)
-    pipeline: Pipeline[int, MockAgentOutput] = metric_pipeline >> Step(
-        "second_step",
-        FixedMetricAgent(),
-    )  # type: ignore[arg-type]
+    pipeline: Pipeline[int, MockAgentOutput] = metric_pipeline >> Step.model_validate(
+        {"name": "s1", "agent": FixedMetricAgent()}
+    )
     runner = Flujo(pipeline, usage_limits=limits)
 
     with pytest.raises(UsageLimitExceededError) as exc_info:
@@ -81,10 +81,9 @@ async def test_governor_allows_completion_within_limits(
 ) -> None:
     """Verify pipeline completes when usage is within limits."""
     limits = UsageLimits(total_cost_usd_limit=0.2, total_tokens_limit=200)
-    pipeline: Pipeline[int, MockAgentOutput] = metric_pipeline >> Step(
-        "second_step",
-        FixedMetricAgent(),
-    )  # type: ignore[arg-type]
+    pipeline: Pipeline[int, MockAgentOutput] = metric_pipeline >> Step.model_validate(
+        {"name": "s1", "agent": FixedMetricAgent()}
+    )
     runner = Flujo(pipeline, usage_limits=limits)
 
     result = await gather_result(runner, 0)
@@ -99,10 +98,9 @@ async def test_governor_inactive_when_no_limits_provided(
     metric_pipeline: Pipeline[int, MockAgentOutput],
 ) -> None:
     """Verify pipeline runs normally when no limits are set."""
-    pipeline: Pipeline[int, MockAgentOutput] = metric_pipeline >> Step(
-        "second_step",
-        FixedMetricAgent(),
-    )  # type: ignore[arg-type]
+    pipeline: Pipeline[int, MockAgentOutput] = metric_pipeline >> Step.model_validate(
+        {"name": "s1", "agent": FixedMetricAgent()}
+    )
     runner = Flujo(pipeline)
     result = await gather_result(runner, 0)
 
@@ -174,8 +172,8 @@ async def test_governor_halts_loop_step_mid_iteration(
 async def test_governor_parallel_step_limit() -> None:
     """Governor stops a ParallelStep when cumulative usage exceeds limits."""
     branches = {
-        "a": Step("a", FixedMetricAgent()),
-        "b": Step("b", FixedMetricAgent()),
+        "a": Step.model_validate({"name": "a", "agent": FixedMetricAgent()}),
+        "b": Step.model_validate({"name": "b", "agent": FixedMetricAgent()}),
     }
     parallel = Step.parallel("parallel_usage", branches)
     limits = UsageLimits(total_cost_usd_limit=0.15)

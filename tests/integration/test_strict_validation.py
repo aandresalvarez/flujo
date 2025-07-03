@@ -38,7 +38,7 @@ async def test_strict_validation_drops_output() -> None:
 @pytest.mark.asyncio
 async def test_regular_step_keeps_output_on_validation_failure() -> None:
     agent = StubAgent(["value"])
-    step = Step("regular", agent, validators=[FailValidator()])
+    step = Step.model_validate({"name": "regular", "agent": agent, "validators": [FailValidator()]})
     runner = Flujo(step)
     result = await gather_result(runner, "in")
     hist = result.step_history[0]

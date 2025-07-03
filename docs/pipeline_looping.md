@@ -19,10 +19,10 @@ All mappers receive the shared typed pipeline context when provided.
 A single context instance is passed into every iteration. The loop body can modify this context and the exit condition can inspect it.
 
 ```python
-from pydantic import BaseModel
 from flujo.domain import Step, Pipeline
+from flujo.domain.models import PipelineContext
 
-class Ctx(BaseModel):
+class Ctx(PipelineContext):
     counter: int = 0
 
 async def inc(x: int, *, context: Ctx | None = None) -> int:
