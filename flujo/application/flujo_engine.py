@@ -48,6 +48,7 @@ from ..domain.pipeline_dsl import (
     HumanInTheLoopStep,
     BranchKey,
 )
+from flujo.steps.cache_step import CacheStep, _generate_cache_key
 from ..domain.plugins import PluginOutcome
 from ..domain.validation import ValidationResult
 from ..domain.models import (
@@ -795,6 +796,19 @@ async def _run_step_logic(
 ) -> StepResult:
     """Core logic for executing a single step without engine coupling."""
     visited: set[Any] = set()
+    if isinstance(step, CacheStep):
+        key = _generate_cache_key(step.wrapped_step.name, data)
+        if key:
+            cached = await step.cache_backend.get(key)
+            if isinstance(cached, StepResult):
+                cached.metadata_ = cached.metadata_ or {}
+                cached.metadata_["cache_hit"] = True
+                return cached
+
+        result = await step_executor(step.wrapped_step, data, context, resources)
+        if result.success and key:
+            await step.cache_backend.set(key, result)
+        return result
     if isinstance(step, LoopStep):
         return await _execute_loop_step_logic(
             step,
