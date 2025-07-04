@@ -1,8 +1,8 @@
 """CLI entry point for flujo."""
 
-# mypy: ignore-errors
-
 from __future__ import annotations
+
+# mypy: ignore-errors
 
 from typing import Any, Dict, List, Optional, Union, cast, Literal
 import typer
@@ -31,7 +31,7 @@ from flujo.domain.models import ImprovementSuggestion
 from flujo.application.flujo_engine import Flujo
 from flujo.infra.settings import settings
 from flujo.exceptions import ConfigurationError, SettingsError
-from flujo.infra.telemetry import init_telemetry, logfire
+from flujo.infra import telemetry
 from typing_extensions import Annotated
 from rich.table import Table
 from rich.console import Console
@@ -47,7 +47,8 @@ ScorerType = Literal["ratio", "weighted", "reward"]
 app: typer.Typer = typer.Typer(rich_markup_mode="markdown")
 
 # Initialize telemetry at the start of CLI execution
-init_telemetry()
+telemetry.init_telemetry()
+logfire = telemetry.logfire
 
 
 @app.command()

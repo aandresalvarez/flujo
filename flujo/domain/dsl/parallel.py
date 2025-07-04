@@ -2,7 +2,7 @@ from __future__ import annotations
 
 # mypy: ignore-errors
 
-from typing import Any, Callable, Dict, Generic, List, Optional, TypeVar, Union
+from typing import Any, Callable, Dict, Generic, List, Optional, TypeVar, Union, cast, Self
 
 from pydantic import Field
 
@@ -38,7 +38,7 @@ class ParallelStep(Step[Any, Any], Generic[TContext]):
     model_config = {"arbitrary_types_allowed": True}
 
     @classmethod
-    def model_validate(cls, *args, **kwargs):  # type: ignore[override]
+    def model_validate(cls: type[Self], *args: Any, **kwargs: Any) -> Self:
         """Validate and normalize branches before creating the instance."""
         if args and isinstance(args[0], dict):
             branches = args[0].get("branches", {})
@@ -58,7 +58,7 @@ class ParallelStep(Step[Any, Any], Generic[TContext]):
             args = (dict(args[0], branches=normalized),) + args[1:]
         else:
             kwargs["branches"] = normalized
-        return super().model_validate(*args, **kwargs)
+        return cast(Self, super().model_validate(*args, **kwargs))
 
     def __repr__(self) -> str:
         return f"ParallelStep(name={self.name!r}, branches={list(self.branches.keys())})"

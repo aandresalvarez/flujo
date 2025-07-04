@@ -1,6 +1,6 @@
 """Scoring logic for flujo."""
 
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Callable, Awaitable, cast
 from .models import Checklist
 from pydantic_ai import Agent
 import sys
@@ -71,7 +71,12 @@ class RewardScorer:
             output_type=float,
         )
 
-    @logfire.instrument("reward_score")  # type: ignore[misc]
+    _instrument = cast(
+        Callable[[Callable[..., Awaitable[float]]], Callable[..., Awaitable[float]]],
+        logfire.instrument("reward_score"),
+    )
+
+    @_instrument
     async def score(self, text: str) -> float:
         """Calls the LLM judge to score the given text, returning its raw output. Async."""
         try:
