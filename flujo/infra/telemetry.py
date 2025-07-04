@@ -68,6 +68,9 @@ class _MockLogfire:
     def span(self, name: str, *args: Any, **kwargs: Any) -> _MockLogfireSpan:
         return _MockLogfireSpan()
 
+    def enable_stdout_viewer(self) -> None:
+        self._logger.info("Logfire.enable_stdout_viewer called, but Logfire is mocked.")
+
 
 # We initially set `logfire` to a mocked implementation. Once
 # `init_telemetry()` runs, we may replace it with the real `logfire` module.
