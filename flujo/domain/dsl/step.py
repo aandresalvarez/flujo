@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+# mypy: ignore-errors
+
 # NOTE: This module was extracted from flujo.domain.pipeline_dsl as part of FSD1 refactor
 # It contains the core Step DSL primitives (StepConfig, Step, decorators, etc.)
 # Original implementation remains largely unchanged aside from relative import updates
 # and lazy imports to avoid circular dependencies with other DSL modules.
-
-# mypy: ignore-errors
 
 from typing import (
     Any,
@@ -466,7 +466,9 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         async def _store_artifact(artifact: Any, *, context: BaseModel | None = None) -> Any:
             if context is None:
                 raise ValueError("refine_until requires a context")
-            context._artifacts.append(artifact)  # type: ignore[attr-defined]
+            artifacts = getattr(context, "_artifacts", [])
+            artifacts.append(artifact)
+            setattr(context, "_artifacts", artifacts)
             return artifact
 
         artifacts_saver = Step.from_callable(_store_artifact, name="_save_artifact")
@@ -665,7 +667,7 @@ def step(
 
     # If used without parentheses, func is the callable
     if func is not None:
-        return decorator(func)  # type: ignore[misc]
+        return decorator(func)
 
     return decorator
 

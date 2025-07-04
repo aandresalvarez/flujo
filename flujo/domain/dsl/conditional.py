@@ -2,7 +2,7 @@ from __future__ import annotations
 
 # mypy: ignore-errors
 
-from typing import Any, Callable, Dict, Generic, Optional, TypeVar
+from typing import Any, Callable, Dict, Generic, Optional, TypeVar, cast, Self
 
 from pydantic import Field
 
@@ -43,7 +43,7 @@ class ConditionalStep(Step[Any, Any], Generic[TContext]):
 
     # Ensure non-empty branch mapping and validate pipeline types
     @classmethod
-    def model_validate(cls, *args, **kwargs):  # type: ignore[override]
+    def model_validate(cls: type[Self], *args: Any, **kwargs: Any) -> Self:
         if args and isinstance(args[0], dict):
             branches = args[0].get("branches", {})
         else:
@@ -66,7 +66,7 @@ class ConditionalStep(Step[Any, Any], Generic[TContext]):
                 f"default_branch_pipeline must be a Pipeline instance, got {type(default_branch)}"
             )
 
-        return super().model_validate(*args, **kwargs)
+        return cast(Self, super().model_validate(*args, **kwargs))
 
     def __repr__(self) -> str:
         return f"ConditionalStep(name={self.name!r}, branches={list(self.branches.keys())})"

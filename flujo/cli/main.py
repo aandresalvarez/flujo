@@ -1,8 +1,8 @@
 """CLI entry point for flujo."""
 
-# mypy: ignore-errors
-
 from __future__ import annotations
+
+# mypy: ignore-errors
 
 from typing import Any, Dict, List, Optional, Union, cast, Literal
 import typer

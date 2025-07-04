@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Callable, Awaitable, Iterable, Optional
+from typing import Any, Callable, Awaitable, Iterable, Optional, cast
 
 from pydantic_evals.reporting import EvaluationReport, ReportCase
 
@@ -31,7 +31,7 @@ class SelfImprovementAgent:
             data = json.dumps(raw)
         else:
             data = str(raw)
-        return ImprovementReport.model_validate_json(data)  # type: ignore[return-value]
+        return cast(ImprovementReport, ImprovementReport.model_validate_json(data))
 
 
 def _find_step(
