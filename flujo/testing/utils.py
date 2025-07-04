@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from ..domain.plugins import PluginOutcome
 from ..domain.backends import ExecutionBackend, StepExecutionRequest
 from ..domain.agent_protocol import AsyncAgentProtocol
-from ..domain.pipeline_dsl import Step
+from ..domain.dsl.step import Step
 from ..infra.backends import LocalBackend
 from ..domain.models import StepResult
 

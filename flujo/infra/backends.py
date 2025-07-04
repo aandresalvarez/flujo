@@ -1,14 +1,16 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, TYPE_CHECKING
 
-from ..domain.pipeline_dsl import Step
 from ..domain.resources import AppResources
 
 from ..domain.backends import ExecutionBackend, StepExecutionRequest
 from ..domain.agent_protocol import AsyncAgentProtocol
 from ..domain.models import StepResult, BaseModel
 from ..application.flujo_engine import _run_step_logic
+
+if TYPE_CHECKING:
+    from ..domain.dsl import Step
 
 
 class LocalBackend(ExecutionBackend):
@@ -21,7 +23,7 @@ class LocalBackend(ExecutionBackend):
 
     async def execute_step(self, request: StepExecutionRequest) -> StepResult:
         async def executor(
-            step: Step[Any, Any],
+            step: "Step[Any, Any]",
             data: Any,
             context: Optional[BaseModel],
             resources: Optional[AppResources],

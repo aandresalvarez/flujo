@@ -2,11 +2,10 @@
 Domain components for flujo.
 """
 
-from .pipeline_dsl import (
+from .dsl import (
     Step,
     step,
     adapter_step,
-    mapper,
     Pipeline,
     StepConfig,
     MapStep,
@@ -32,18 +31,21 @@ from .validation import Validator, ValidationResult
 from .pipeline_validation import ValidationFinding, ValidationReport
 from .resources import AppResources
 
+# ``mapper`` alias preserved for backwards compatibility
+mapper = Step.from_mapper
+
 __all__ = [
     # Pipeline DSL
     "Step",
     "step",
     "adapter_step",
-    "mapper",
     "Pipeline",
     "StepConfig",
     "MapStep",
     "ParallelStep",
     "MergeStrategy",
     "BranchFailureStrategy",
+    "mapper",
     # Models
     "Task",
     "Candidate",

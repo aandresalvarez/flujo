@@ -6,7 +6,7 @@ import pickle  # nosec B403 - Used for fallback serialization of complex objects
 import orjson
 from pydantic import Field
 
-from flujo.domain.pipeline_dsl import Step
+from flujo.domain.dsl import Step
 from flujo.domain.models import BaseModel, PipelineContext
 from flujo.caching import CacheBackend, InMemoryCache
 
@@ -21,6 +21,19 @@ class CacheStep(Step[StepInT, StepOutT]):
     cache_backend: CacheBackend = Field(default_factory=InMemoryCache)
 
     model_config = {"arbitrary_types_allowed": True}
+
+    @classmethod
+    def cached(
+        cls,
+        wrapped_step: Step[Any, Any],
+        cache_backend: Optional[CacheBackend] = None,
+    ) -> "CacheStep[Any, Any]":
+        """Create a CacheStep that wraps the given step with caching."""
+        return cls(
+            name=wrapped_step.name,
+            wrapped_step=wrapped_step,
+            cache_backend=cache_backend or InMemoryCache(),
+        )
 
 
 def _serialize_for_key(obj: Any) -> Any:

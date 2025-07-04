@@ -39,12 +39,12 @@ from ..exceptions import (
     ContextInheritanceError,
     InfiniteFallbackError,
 )
-from ..domain.pipeline_dsl import (
-    Pipeline,
-    Step,
-    LoopStep,
-    ConditionalStep,
-    ParallelStep,
+from ..domain.dsl.step import Step
+from ..domain.dsl.pipeline import Pipeline
+from ..domain.dsl.loop import LoopStep
+from ..domain.dsl.conditional import ConditionalStep
+from ..domain.dsl.parallel import ParallelStep
+from ..domain.dsl.step import (
     MergeStrategy,
     BranchFailureStrategy,
     HumanInTheLoopStep,
@@ -725,21 +725,28 @@ async def _execute_parallel_step_logic(
                     parallel_step.merge_strategy(context, res.branch_context)
         elif parallel_step.merge_strategy == MergeStrategy.OVERWRITE:
             if succeeded_branches:
-                for name in reversed(branch_order):
+                for name in branch_order:
                     if name in succeeded_branches:
-                        last_ctx = succeeded_branches[name].branch_context
-                        if last_ctx is not None:
+                        branch_ctx = succeeded_branches[name].branch_context
+                        if branch_ctx is not None:
                             merged = context.model_dump()
-                            last_data = last_ctx.model_dump()
+                            branch_data = branch_ctx.model_dump()
                             keys = parallel_step.context_include_keys or list(
-                                last_data.keys()
+                                branch_data.keys()
                             )
                             for key in keys:
-                                if key in last_data:
-                                    merged[key] = last_data[key]
+                                if key in branch_data:
+                                    if (
+                                        key == "scratchpad"
+                                        and key in merged
+                                        and isinstance(merged[key], dict)
+                                        and isinstance(branch_data[key], dict)
+                                    ):
+                                        merged[key].update(branch_data[key])
+                                    else:
+                                        merged[key] = branch_data[key]
                             validated = context.__class__.model_validate(merged)
                             context.__dict__.update(validated.__dict__)
-                        break
         elif parallel_step.merge_strategy == MergeStrategy.MERGE_SCRATCHPAD:
             if hasattr(context, "scratchpad"):
                 for res in succeeded_branches.values():
@@ -1037,6 +1044,7 @@ async def _run_step_logic(
             if failed_checks_feedback:
                 validation_failed = True
                 feedbacks.extend(failed_checks_feedback)
+                # For non-strict validation steps, don't fail the step when validation fails
                 if is_strict or not is_validation_step:
                     success = False
 
@@ -1379,6 +1387,11 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 ContextT,
                 PipelineContext(initial_prompt=str(initial_input)),
             )
+
+        # Initialize _artifacts for refine_until functionality
+        if hasattr(current_context_instance, "__dict__"):
+            if not hasattr(current_context_instance, "_artifacts"):
+                object.__setattr__(current_context_instance, "_artifacts", [])
 
         if isinstance(current_context_instance, PipelineContext):
             current_context_instance.scratchpad["status"] = "running"

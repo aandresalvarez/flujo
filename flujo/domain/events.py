@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-from typing import Any, Literal, Optional, Union
+from typing import Any, Literal, Optional, Union, TYPE_CHECKING
 
 from pydantic import BaseModel
 
 from .models import PipelineResult, StepResult
-from .pipeline_dsl import Step
+
+if TYPE_CHECKING:
+    pass
 from .resources import AppResources
 
 
@@ -43,10 +45,20 @@ class PreStepPayload(BaseModel):
     """
 
     event_name: Literal["pre_step"]
-    step: Step[Any, Any]
+    step: Any  # Step[Any, Any] - using Any to avoid forward reference issues
     step_input: Any
     context: Optional[BaseModel] = None
     resources: Optional[AppResources] = None
+
+    # Runtime validation to ensure step is a Step instance
+    @classmethod
+    def model_validate(cls, *args: Any, **kwargs: Any) -> "PreStepPayload":
+        from .dsl.step import Step
+
+        step = kwargs.get("step")
+        if step is not None and not isinstance(step, Step):
+            raise ValueError(f"step must be a Step instance, got {type(step)}")
+        return super().model_validate(*args, **kwargs)
 
 
 class PostStepPayload(BaseModel):

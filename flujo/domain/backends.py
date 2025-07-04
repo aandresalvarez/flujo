@@ -4,7 +4,12 @@ from typing import Protocol, Any, Dict, Optional
 from dataclasses import dataclass
 from flujo.domain.models import BaseModel
 
-from .pipeline_dsl import Step
+# Local import to avoid circular import
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .dsl import Step
+
 from .models import StepResult, UsageLimits
 from .resources import AppResources
 from .agent_protocol import AsyncAgentProtocol
@@ -20,7 +25,7 @@ class StepExecutionRequest:
 
     # Use unparameterized ``Step`` type so Pydantic will not recreate the object
     # and accidentally reset attributes like ``max_retries``.
-    step: Step[Any, Any]
+    step: "Step[Any, Any]"
     input_data: Any
     context: Optional[BaseModel] | None = None
     resources: Optional[AppResources] = None

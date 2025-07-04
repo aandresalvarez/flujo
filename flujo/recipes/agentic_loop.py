@@ -19,7 +19,9 @@ from ..exceptions import (
     ContextInheritanceError,
 )
 from ..domain.models import PipelineResult, PipelineContext
-from ..domain.pipeline_dsl import Step, LoopStep, Pipeline
+from ..domain.dsl.step import Step
+from ..domain.dsl.loop import LoopStep
+from ..domain.dsl.pipeline import Pipeline
 from ..application.flujo_engine import Flujo, _accepts_param, _extract_missing_fields
 
 _command_adapter: TypeAdapter[AgentCommand] = TypeAdapter(AgentCommand)

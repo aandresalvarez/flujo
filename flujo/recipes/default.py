@@ -10,7 +10,7 @@ from flujo.domain.models import PipelineContext
 if TYPE_CHECKING:  # pragma: no cover - used for typing only
     from ..infra.agents import AsyncAgentProtocol
 
-from ..domain.pipeline_dsl import Step
+from ..domain.dsl.step import Step
 from ..domain.models import Candidate, PipelineResult, Task, Checklist
 from ..domain.scoring import ratio_score
 from ..application.flujo_engine import Flujo
@@ -72,8 +72,12 @@ class Default:
                 return await self.run(_data, context=context)
 
         pipeline = (
-            Step.review(cast("AsyncAgentProtocol[Any, Any]", ReviewWrapper()), max_retries=3)
-            >> Step.solution(cast("AsyncAgentProtocol[Any, Any]", SolutionWrapper()), max_retries=3)
+            Step.review(
+                cast("AsyncAgentProtocol[Any, Any]", ReviewWrapper()), max_retries=3
+            )
+            >> Step.solution(
+                cast("AsyncAgentProtocol[Any, Any]", SolutionWrapper()), max_retries=3
+            )
             >> Step.validate_step(
                 cast("AsyncAgentProtocol[Any, Any]", ValidatorWrapper()), max_retries=3
             )
