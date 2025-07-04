@@ -33,9 +33,9 @@ class SignatureAnalysis(NamedTuple):
     output_type: Any
 
 
-_analysis_cache_weak: (
-    "weakref.WeakKeyDictionary[Callable[..., Any], SignatureAnalysis]"
-) = weakref.WeakKeyDictionary()
+_analysis_cache_weak: "weakref.WeakKeyDictionary[Callable[..., Any], SignatureAnalysis]" = (
+    weakref.WeakKeyDictionary()
+)
 _analysis_cache_id: weakref.WeakValueDictionary[int, SignatureAnalysis] = (
     weakref.WeakValueDictionary()
 )
@@ -103,9 +103,7 @@ def analyze_signature(func: Callable[..., Any]) -> SignatureAnalysis:
                 origin = get_origin(ann)
                 if origin in {Union, getattr(types, "UnionType", Union)}:
                     args = get_args(ann)
-                    if not any(
-                        isinstance(a, type) and issubclass(a, BaseModel) for a in args
-                    ):
+                    if not any(isinstance(a, type) and issubclass(a, BaseModel) for a in args):
                         raise ConfigurationError(
                             f"Parameter '{p.name}' must be annotated with a BaseModel subclass"
                         )
@@ -124,10 +122,7 @@ def analyze_signature(func: Callable[..., Any]) -> SignatureAnalysis:
                 origin = get_origin(ann)
                 if origin in {Union, getattr(types, "UnionType", Union)}:
                     args = get_args(ann)
-                    if not any(
-                        isinstance(a, type) and issubclass(a, AppResources)
-                        for a in args
-                    ):
+                    if not any(isinstance(a, type) and issubclass(a, AppResources) for a in args):
                         raise ConfigurationError(
                             "Parameter 'resources' must be annotated with an AppResources subclass"
                         )
@@ -137,8 +132,6 @@ def analyze_signature(func: Callable[..., Any]) -> SignatureAnalysis:
                     )
                 needs_resources = True
 
-    result = SignatureAnalysis(
-        needs_context, needs_resources, context_kw, input_type, output_type
-    )
+    result = SignatureAnalysis(needs_context, needs_resources, context_kw, input_type, output_type)
     _cache_set(func, result)
     return result

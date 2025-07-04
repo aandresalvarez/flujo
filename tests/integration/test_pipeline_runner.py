@@ -1,9 +1,9 @@
 import asyncio
 from unittest.mock import Mock
-# import pytest  # Removed unused import
+import pytest
 
 from flujo.domain import Step, StepConfig
-from flujo.application.flujo_engine import Flujo
+from flujo.application.flujo_engine import Flujo, InfiniteRedirectError
 from flujo.domain.models import PipelineResult
 from flujo.testing.utils import StubAgent, DummyPlugin, gather_result
 from typing import Any
@@ -128,7 +128,7 @@ async def test_timeout_and_redirect_loop_detection() -> None:
             PluginOutcome(success=False, redirect_to=a1),
         ]
     )
-    Step.model_validate(
+    step_loop = Step.model_validate(
         {
             "name": "loop",
             "agent": a1,
@@ -136,9 +136,9 @@ async def test_timeout_and_redirect_loop_detection() -> None:
             "plugins": [(plugin_loop, 0)],
         }
     )
-    # TODO: Fix or implement this test properly. For now, comment out the problematic line.
-    # with pytest.raises(Exception):
-    #     await gather_result(runner2, "p")
+    runner2 = Flujo(step_loop)
+    with pytest.raises(InfiniteRedirectError):
+        await gather_result(runner2, "p")
 
 
 async def test_pipeline_cancellation() -> None:

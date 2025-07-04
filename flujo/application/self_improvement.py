@@ -70,9 +70,7 @@ def _format_step_output(
     out_str = _truncate(_safe_str(step.output), MAX_STEP_OUTPUT_LENGTH)
     feedback = getattr(step, "feedback", None)
     feedback_str = f", feedback='{feedback}'" if feedback is not None else ""
-    lines.append(
-        f"- Step '{step.name}': Output='{out_str}' (success={step.success}{feedback_str})"
-    )
+    lines.append(f"- Step '{step.name}': Output='{out_str}' (success={step.success}{feedback_str})")
     step_obj = _find_step(pipeline_definition, step.name)
     if step_obj is not None:
         cfg = step_obj.config
@@ -81,9 +79,7 @@ def _format_step_output(
             parts.append(f"temperature={cfg.temperature}")
         lines.append(f"  Config({', '.join(parts)})")
         if step_obj.agent is not None:
-            summary = summarize_and_redact_prompt(
-                getattr(step_obj.agent, "system_prompt", "")
-            )
+            summary = summarize_and_redact_prompt(getattr(step_obj.agent, "system_prompt", ""))
             lines.append(f'  SystemPromptSummary: "{summary}"')
     return lines
 
@@ -130,12 +126,8 @@ async def evaluate_and_improve(
 ) -> ImprovementReport:
     """Run dataset evaluation and return improvement suggestions."""
     report: EvaluationReport = await dataset.evaluate(task_function)
-    failures = [
-        c for c in report.cases if any(not s.success for s in c.output.step_history)
-    ]
-    success = next(
-        (c for c in report.cases if all(s.success for s in c.output.step_history)), None
-    )
+    failures = [c for c in report.cases if any(not s.success for s in c.output.step_history)]
+    success = next((c for c in report.cases if all(s.success for s in c.output.step_history)), None)
     prompt = _build_context(failures, success, pipeline_definition)
     return await improvement_agent.run(prompt)
 

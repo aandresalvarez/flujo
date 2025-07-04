@@ -29,9 +29,7 @@ __all__ = ["LoopStep", "MapStep"]
 class LoopStep(Step[Any, Any], Generic[TContext]):
     """A specialized step that executes a pipeline in a loop."""
 
-    loop_body_pipeline: Any = Field(
-        description="The pipeline to execute in each iteration."
-    )
+    loop_body_pipeline: Any = Field(description="The pipeline to execute in each iteration.")
     exit_condition_callable: Callable[[Any, Optional[TContext]], bool] = Field(
         description=(
             "Callable that takes (last_body_output, pipeline_context) and returns True to exit loop."
@@ -39,27 +37,17 @@ class LoopStep(Step[Any, Any], Generic[TContext]):
     )
     max_loops: int = Field(default=5, gt=0, description="Maximum number of iterations.")
 
-    initial_input_to_loop_body_mapper: Optional[
-        Callable[[Any, Optional[TContext]], Any]
-    ] = Field(
+    initial_input_to_loop_body_mapper: Optional[Callable[[Any, Optional[TContext]], Any]] = Field(
         default=None,
-        description=(
-            "Callable to map LoopStep's input to the first iteration's body input."
-        ),
+        description=("Callable to map LoopStep's input to the first iteration's body input."),
     )
-    iteration_input_mapper: Optional[Callable[[Any, Optional[TContext], int], Any]] = (
-        Field(
-            default=None,
-            description=(
-                "Callable to map previous iteration's body output to next iteration's input."
-            ),
-        )
+    iteration_input_mapper: Optional[Callable[[Any, Optional[TContext], int], Any]] = Field(
+        default=None,
+        description=("Callable to map previous iteration's body output to next iteration's input."),
     )
     loop_output_mapper: Optional[Callable[[Any, Optional[TContext]], Any]] = Field(
         default=None,
-        description=(
-            "Callable to map the final successful output to the LoopStep's output."
-        ),
+        description=("Callable to map the final successful output to the LoopStep's output."),
     )
 
     model_config = {"arbitrary_types_allowed": True}
@@ -137,9 +125,7 @@ class MapStep(LoopStep[TContext]):
             "_max_loops_var",
             contextvars.ContextVar(f"{name}_max_loops", default=1),
         )
-        object.__setattr__(
-            self, "_body_var", contextvars.ContextVar(f"{name}_body", default=body)
-        )
+        object.__setattr__(self, "_body_var", contextvars.ContextVar(f"{name}_body", default=body))
 
         def _initial_mapper(_: Any, ctx: BaseModel | None) -> Any:  # noqa: D401
             if ctx is None:
@@ -149,9 +135,7 @@ class MapStep(LoopStep[TContext]):
             if isinstance(raw_items, (str, bytes, bytearray)) or not isinstance(
                 raw_items, Iterable
             ):
-                raise TypeError(
-                    f"context.{iterable_input} must be a non-string iterable"
-                )
+                raise TypeError(f"context.{iterable_input} must be a non-string iterable")
             items = list(raw_items)
             setattr(ctx, items_attr, items)
             setattr(ctx, results_attr, [])

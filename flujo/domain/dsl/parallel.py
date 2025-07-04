@@ -61,6 +61,4 @@ class ParallelStep(Step[Any, Any], Generic[TContext]):
         return super().model_validate(*args, **kwargs)
 
     def __repr__(self) -> str:
-        return (
-            f"ParallelStep(name={self.name!r}, branches={list(self.branches.keys())})"
-        )
+        return f"ParallelStep(name={self.name!r}, branches={list(self.branches.keys())})"
