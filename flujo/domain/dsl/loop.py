@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-# NOTE: Extracted LoopStep and MapStep from pipeline_dsl for FSD1 refactor.
 # mypy: ignore-errors
+
+# NOTE: Extracted LoopStep and MapStep from pipeline_dsl for FSD1 refactor.
 
 from typing import (
     Any,
@@ -11,13 +12,15 @@ from typing import (
     Optional,
     TypeVar,
     Iterable,
+    cast,
+    Self,
 )
 import contextvars
 
 from pydantic import Field
 
 from ..models import BaseModel
-from .step import Step, StepConfig  # type: ignore
+from .step import Step, StepConfig
 from .pipeline import Pipeline  # Import for runtime use in MapStep
 
 # Generic type var reused
@@ -54,13 +57,13 @@ class LoopStep(Step[Any, Any], Generic[TContext]):
 
     # Runtime validation of pipeline type
     @classmethod
-    def model_validate(cls, *args, **kwargs):  # type: ignore[override]
+    def model_validate(cls: type[Self], *args: Any, **kwargs: Any) -> Self:
         loop_body = kwargs.get("loop_body_pipeline")
         if loop_body is not None and not isinstance(loop_body, Pipeline):
             raise ValueError(
                 f"loop_body_pipeline must be a Pipeline instance, got {type(loop_body)}"
             )
-        return super().model_validate(*args, **kwargs)
+        return cast(Self, super().model_validate(*args, **kwargs))
 
     def __repr__(self) -> str:
         return f"LoopStep(name={self.name!r}, loop_body_pipeline={self.loop_body_pipeline!r})"
@@ -92,7 +95,7 @@ class MapStep(LoopStep[TContext]):
         body = pipeline_to_run >> collector
 
         # Initialize base Step/DataModel via pydantic BaseModel.__init__
-        BaseModel.__init__(  # type: ignore[misc]
+        BaseModel.__init__(
             self,
             name=name,
             agent=None,

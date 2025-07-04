@@ -33,8 +33,14 @@ pip install "flujo[docs]"
 # For OpenTelemetry support
 pip install "flujo[opentelemetry]"
 
+# For Logfire-based telemetry
+pip install "flujo[logfire]"
+
+# For the SQL syntax validator plugin
+pip install "flujo[sql]"
+
 # Install all extras
-pip install "flujo[dev,docs,opentelemetry,bench]"
+pip install "flujo[dev,docs,opentelemetry,logfire,sql,bench]"
 ```
 
 ## Development Installation
