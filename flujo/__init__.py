@@ -24,7 +24,7 @@ from . import caching
 
 # 2. Expose the most essential core components at the top level for convenience.
 # These are the symbols users will interact with 90% of the time.
-from .application.flujo_engine import Flujo
+from .application.runner import Flujo
 from .domain.dsl.step import Step, step
 from .domain.dsl.pipeline import Pipeline
 from .domain.models import Task, Candidate
