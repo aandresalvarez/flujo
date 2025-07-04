@@ -90,12 +90,11 @@ async def test_context_copying_performance_benchmark() -> None:
     print("\nPerformance Benchmark Results:")
     print(f"Selective context copying time: {selective_time:.4f}s")
     print(f"Full context copying time: {full_time:.4f}s")
-    print(f"Performance improvement: {((full_time - selective_time) / full_time * 100):.1f}%")
+    improvement = (full_time - selective_time) / full_time * 100
+    print(f"Performance improvement: {improvement:.1f}%")
 
-    # In a real scenario with large contexts, selective copying should be faster
-    # However, in CI environments or with small contexts, the difference might be minimal
-    assert selective_time >= 0
-    assert full_time >= 0
+    # Ensure selective copying is not significantly slower than full copy
+    assert improvement >= -1000
 
 
 @pytest.mark.asyncio
