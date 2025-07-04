@@ -93,15 +93,11 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
     fallback_step: Optional[Any] = Field(default=None, exclude=True)
     persist_feedback_to_context: Optional[str] = Field(
         default=None,
-        description=(
-            "If step fails, append feedback to this context attribute (must be a list)."
-        ),
+        description=("If step fails, append feedback to this context attribute (must be a list)."),
     )
     persist_validation_results_to: Optional[str] = Field(
         default=None,
-        description=(
-            "Append ValidationResult objects to this context attribute (must be a list)."
-        ),
+        description=("Append ValidationResult objects to this context attribute (must be a list)."),
     )
     updates_context: bool = Field(
         default=False,
@@ -129,7 +125,9 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             if hasattr(target, "__name__"):
                 agent_repr = f"<function {target.__name__}>"
             elif hasattr(self.agent, "_model_name"):
-                agent_repr = f"AsyncAgentWrapper(model={getattr(self.agent, '_model_name', 'unknown')})"
+                agent_repr = (
+                    f"AsyncAgentWrapper(model={getattr(self.agent, '_model_name', 'unknown')})"
+                )
             else:
                 agent_repr = self.agent.__class__.__name__
         config_repr = ""
@@ -435,9 +433,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         initial_input_to_loop_body_mapper: Optional[
             Callable[[Any, Optional[ContextT]], Any]
         ] = None,
-        iteration_input_mapper: Optional[
-            Callable[[Any, Optional[ContextT], int], Any]
-        ] = None,
+        iteration_input_mapper: Optional[Callable[[Any, Optional[ContextT], int], Any]] = None,
         loop_output_mapper: Optional[Callable[[Any, Optional[ContextT]], Any]] = None,
         **config_kwargs: Any,
     ) -> "LoopStep[ContextT]":
@@ -467,9 +463,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         """Convenience for the generator -> critic refinement loop pattern."""
         from .loop import LoopStep  # local import
 
-        async def _store_artifact(
-            artifact: Any, *, context: BaseModel | None = None
-        ) -> Any:
+        async def _store_artifact(artifact: Any, *, context: BaseModel | None = None) -> Any:
             if context is None:
                 raise ValueError("refine_until requires a context")
             context._artifacts.append(artifact)  # type: ignore[attr-defined]
@@ -492,9 +486,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                     object.__setattr__(ctx, key, value)
             return result
 
-        def _iteration_mapper(
-            out: Any, ctx: BaseModel | None, _i: int
-        ) -> dict[str, Any]:
+        def _iteration_mapper(out: Any, ctx: BaseModel | None, _i: int) -> dict[str, Any]:
             if feedback_mapper is None:
                 # If no feedback_mapper provided, use the feedback from RefinementCheck directly
                 feedback = out.feedback if isinstance(out, RefinementCheck) else None
@@ -540,9 +532,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         branches: Dict[BranchKey, "Pipeline[Any, Any]"],
         default_branch_pipeline: Optional["Pipeline[Any, Any]"] = None,
         branch_input_mapper: Optional[Callable[[Any, Optional[ContextT]], Any]] = None,
-        branch_output_mapper: Optional[
-            Callable[[Any, BranchKey, Optional[ContextT]], Any]
-        ] = None,
+        branch_output_mapper: Optional[Callable[[Any, BranchKey, Optional[ContextT]], Any]] = None,
         **config_kwargs: Any,
     ) -> "ConditionalStep[ContextT]":
         from .conditional import ConditionalStep  # local import
@@ -647,9 +637,7 @@ def step(
 
 
 def step(
-    func: (
-        Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]] | None
-    ) = None,
+    func: (Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]] | None) = None,
     *,
     name: str | None = None,
     updates_context: bool = False,
@@ -683,9 +671,7 @@ def step(
 
 
 def adapter_step(
-    func: (
-        Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]] | None
-    ) = None,
+    func: (Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]] | None) = None,
     **kwargs: Any,
 ) -> Any:
     """Alias for :func:`step` that marks the created step as an adapter."""

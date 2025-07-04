@@ -24,9 +24,7 @@ class ConditionalStep(Step[Any, Any], Generic[TContext]):
     condition_callable: Callable[[Any, Optional[TContext]], BranchKey] = Field(
         description=("Callable that returns a key to select a branch.")
     )
-    branches: Dict[BranchKey, Any] = Field(
-        description="Mapping of branch keys to sub-pipelines."
-    )
+    branches: Dict[BranchKey, Any] = Field(description="Mapping of branch keys to sub-pipelines.")
     default_branch_pipeline: Optional[Any] = Field(
         default=None,
         description="Pipeline to execute when no branch key matches.",
@@ -36,9 +34,7 @@ class ConditionalStep(Step[Any, Any], Generic[TContext]):
         default=None,
         description="Maps ConditionalStep input to branch input.",
     )
-    branch_output_mapper: Optional[
-        Callable[[Any, BranchKey, Optional[TContext]], Any]
-    ] = Field(
+    branch_output_mapper: Optional[Callable[[Any, BranchKey, Optional[TContext]], Any]] = Field(
         default=None,
         description="Maps branch output to ConditionalStep output.",
     )

@@ -72,12 +72,8 @@ class Default:
                 return await self.run(_data, context=context)
 
         pipeline = (
-            Step.review(
-                cast("AsyncAgentProtocol[Any, Any]", ReviewWrapper()), max_retries=3
-            )
-            >> Step.solution(
-                cast("AsyncAgentProtocol[Any, Any]", SolutionWrapper()), max_retries=3
-            )
+            Step.review(cast("AsyncAgentProtocol[Any, Any]", ReviewWrapper()), max_retries=3)
+            >> Step.solution(cast("AsyncAgentProtocol[Any, Any]", SolutionWrapper()), max_retries=3)
             >> Step.validate_step(
                 cast("AsyncAgentProtocol[Any, Any]", ValidatorWrapper()), max_retries=3
             )

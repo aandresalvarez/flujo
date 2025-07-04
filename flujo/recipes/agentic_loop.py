@@ -46,9 +46,7 @@ class AgenticLoop:
             {"name": "ExecuteCommand", "agent": _CommandExecutor(self.agent_registry)}
         )
         loop_body: Pipeline[Any, Any] = (
-            Step.model_validate(
-                {"name": "DecideNextCommand", "agent": self.planner_agent}
-            )
+            Step.model_validate({"name": "DecideNextCommand", "agent": self.planner_agent})
             >> executor_step
         )
 
@@ -146,9 +144,7 @@ class AgenticLoop:
                 missing_fields = _extract_missing_fields(cause)
                 raise ContextInheritanceError(
                     missing_fields=missing_fields,
-                    parent_context_keys=(
-                        list(context.model_dump().keys()) if context else []
-                    ),
+                    parent_context_keys=(list(context.model_dump().keys()) if context else []),
                     child_model_name=PipelineContext.__name__,
                 ) from e
 
@@ -163,9 +159,7 @@ class AgenticLoop:
                 missing_fields = _extract_missing_fields(cause)
                 raise ContextInheritanceError(
                     missing_fields=missing_fields,
-                    parent_context_keys=(
-                        list(context.model_dump().keys()) if context else []
-                    ),
+                    parent_context_keys=(list(context.model_dump().keys()) if context else []),
                     child_model_name=PipelineContext.__name__,
                 ) from e
             if final_result is None:
@@ -263,9 +257,7 @@ class _CommandExecutor:
                     {"__builtins__": {}},
                     local_scope,
                 )
-                exec_result = local_scope.get(
-                    "result", "Python code executed successfully."
-                )
+                exec_result = local_scope.get("result", "Python code executed successfully.")
             elif cmd.type == "ask_human":
                 if isinstance(context_obj, PipelineContext):
                     context_obj.scratchpad["paused_step_input"] = cmd

@@ -52,12 +52,8 @@ async def test_caching_pipeline_speed_and_hits() -> None:
 async def test_cache_keys_distinct_for_same_name_steps() -> None:
     a1: StubAgent = StubAgent(["a", "a"])
     a2: StubAgent = StubAgent(["b", "b"])
-    s1: Step[Any, Any] = Step.cached(
-        Step.solution(a1, name="dup"), cache_backend=InMemoryCache()
-    )
-    s2: Step[Any, Any] = Step.cached(
-        Step.solution(a2, name="dup"), cache_backend=InMemoryCache()
-    )
+    s1: Step[Any, Any] = Step.cached(Step.solution(a1, name="dup"), cache_backend=InMemoryCache())
+    s2: Step[Any, Any] = Step.cached(Step.solution(a2, name="dup"), cache_backend=InMemoryCache())
     runner: Flujo[Any, Any, Any] = Flujo(s1 >> s2)
 
     await gather_result(runner, "x")
@@ -82,13 +78,9 @@ async def test_pipeline_step_fallback() -> None:
             "config": StepConfig(max_retries=1),
         }
     )
-    fb: Step[Any, Any] = Step.model_validate(
-        {"name": "fb", "agent": StubAgent(["good"])}
-    )
+    fb: Step[Any, Any] = Step.model_validate({"name": "fb", "agent": StubAgent(["good"])})
     failing.fallback(fb)
-    s3: Step[Any, Any] = Step.model_validate(
-        {"name": "s3", "agent": StubAgent(["end"])}
-    )
+    s3: Step[Any, Any] = Step.model_validate({"name": "s3", "agent": StubAgent(["end"])})
     pipeline: Pipeline[Any, Any] = s1 >> failing >> s3
     result = await gather_result(Flujo(pipeline), "in")
     assert result.step_history[1].output == "good"
@@ -147,9 +139,7 @@ async def test_conditional_branch_with_fallback() -> None:
         condition_callable=lambda *_: "a",
         branches={"a": Pipeline.from_step(branch_step)},
     )
-    final: Step[Any, Any] = Step.model_validate(
-        {"name": "final", "agent": StubAgent(["end"])}
-    )
+    final: Step[Any, Any] = Step.model_validate({"name": "final", "agent": StubAgent(["end"])})
     pipeline: Pipeline[Any, Any] = cond >> final
     result = await gather_result(Flujo(pipeline), "x")
     assert fb_agent.call_count == 1

@@ -68,9 +68,7 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
     # Validation helpers
     # ------------------------------------------------------------------
 
-    def validate(
-        self, *, raise_on_error: bool = False
-    ) -> ValidationReport:  # noqa: D401
+    def validate(self, *, raise_on_error: bool = False) -> ValidationReport:  # noqa: D401
         """Validate that all steps have agents and compatible types."""
         from typing import Any, get_origin, get_args, Union as TypingUnion
 
@@ -185,9 +183,7 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
         """Generate a Mermaid graph definition for visualizing this pipeline."""
         return self.to_mermaid_with_detail_level("auto")
 
-    def to_mermaid_with_detail_level(
-        self, detail_level: str = "auto"
-    ) -> str:  # noqa: D401
+    def to_mermaid_with_detail_level(self, detail_level: str = "auto") -> str:  # noqa: D401
         """Generate a Mermaid graph definition with configurable detail levels."""
         if detail_level == "auto":
             detail_level = self._determine_optimal_detail_level()
@@ -328,9 +324,7 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
 
             return last_node
 
-        def process_loop_step(
-            step: "LoopStep[Any]", prev_node: Optional[str] = None
-        ) -> str:
+        def process_loop_step(step: "LoopStep[Any]", prev_node: Optional[str] = None) -> str:
             loop_node_id = get_node_id(step)
             add_node(step, loop_node_id)
             if prev_node:
@@ -457,9 +451,7 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
         prev_node = None
 
         def is_special(step):
-            return isinstance(
-                step, (LoopStep, ConditionalStep, ParallelStep, HumanInTheLoopStep)
-            )
+            return isinstance(step, (LoopStep, ConditionalStep, ParallelStep, HumanInTheLoopStep))
 
         steps = list(self.steps)
         i = 0
