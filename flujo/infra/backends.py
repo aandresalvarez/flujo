@@ -7,7 +7,7 @@ from ..domain.resources import AppResources
 from ..domain.backends import ExecutionBackend, StepExecutionRequest
 from ..domain.agent_protocol import AsyncAgentProtocol
 from ..domain.models import StepResult, BaseModel
-from ..application.flujo_engine import _run_step_logic
+from ..application.runner import _run_step_logic
 
 if TYPE_CHECKING:
     from ..domain.dsl import Step
