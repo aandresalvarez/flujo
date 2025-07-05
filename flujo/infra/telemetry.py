@@ -79,6 +79,14 @@ logfire: _TypeAny = _MockLogfire(_fallback_logger)
 
 
 def init_telemetry(settings_obj: Optional["TelemetrySettings"] = None) -> None:
+    """Configure global logging and tracing for the process.
+
+    Call once at application startup. If ``settings_obj`` is not provided the
+    default :class:`~flujo.infra.settings.Settings` object is used. When telemetry
+    is enabled the real ``logfire`` library is configured, otherwise a fallback
+    logger that proxies to ``logging`` is provided.
+    """
+
     global _initialized, logfire
     if _initialized:
         return
