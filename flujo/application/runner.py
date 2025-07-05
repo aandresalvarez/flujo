@@ -490,7 +490,9 @@ async def _run_step_logic(
     usage_limits: UsageLimits | None = None,
 ) -> StepResult:
     """Core logic for executing a single step without engine coupling."""
-    visited: set[Any] = set()
+    visited_ids: set[int] = set()
+    if step.agent is not None:
+        visited_ids.add(id(step.agent))
     if isinstance(step, CacheStep):
         key = _generate_cache_key(step.wrapped_step, data, context=context, resources=resources)
         cached: StepResult | None = None
@@ -751,10 +753,10 @@ async def _run_step_logic(
             handler()
 
         if redirect_to:
-            if hasattr(redirect_to, "__hash__") and redirect_to.__hash__ is not None:
-                if redirect_to in visited:
-                    raise InfiniteRedirectError(f"Redirect loop detected in step {step.name}")
-                visited.add(redirect_to)
+            redirect_id = id(redirect_to)
+            if redirect_id in visited_ids:
+                raise InfiniteRedirectError(f"Redirect loop detected in step {step.name}")
+            visited_ids.add(redirect_id)
             current_agent = redirect_to
         else:
             current_agent = original_agent
