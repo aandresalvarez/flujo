@@ -37,7 +37,13 @@ __all__ = ["Pipeline"]
 
 
 class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
-    """A sequential pipeline of steps."""
+    """Ordered collection of :class:`Step` objects.
+
+    ``Pipeline`` instances are immutable containers that define the execution
+    graph. They can be composed with the ``>>`` operator and validated before
+    running. Execution is handled by the :class:`~flujo.application.runner.Flujo`
+    class.
+    """
 
     steps: Sequence[Step[Any, Any]]
 

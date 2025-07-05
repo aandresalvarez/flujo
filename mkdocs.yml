@@ -56,6 +56,9 @@ nav:
     - 'Console Tracer': cookbook/console_tracer.md
     - 'Redacting Secrets': cookbook/redacting_secrets.md  # pragma: allowlist secret
     - 'Custom Validators': cookbook/custom_validators.md
+    - 'Error Recovery': cookbook/error_recovery.md
+    - 'Configuring Telemetry': cookbook/telemetry_setup.md
+    - 'Async Map': cookbook/async_map.md
     - 'Agentic Loop': recipes/agentic_loop.md
   - Guides:
     - 'Choosing Your Loop': guides/choosing_your_loop.md

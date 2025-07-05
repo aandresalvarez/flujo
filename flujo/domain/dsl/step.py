@@ -70,7 +70,17 @@ class BranchFailureStrategy(Enum):
 
 
 class StepConfig(BaseModel):
-    """Configuration options for a pipeline step."""
+    """Configuration options applied to every step.
+
+    Parameters
+    ----------
+    max_retries:
+        How many times the step should be retried on failure.
+    timeout_s:
+        Optional timeout in seconds for the agent execution.
+    temperature:
+        Optional temperature setting for LLM based agents.
+    """
 
     max_retries: int = 1
     timeout_s: float | None = None
@@ -78,9 +88,14 @@ class StepConfig(BaseModel):
 
 
 class Step(BaseModel, Generic[StepInT, StepOutT]):
-    """Represents a single step in a pipeline.
+    """Declarative node in a pipeline.
 
-    Use :meth:`arun` to execute the step's agent directly when unit testing.
+    A ``Step`` holds a reference to the agent that will execute, configuration
+    such as retries and timeout, and optional plugins.  It does **not** execute
+    anything by itself.  Steps are composed into :class:`Pipeline` objects and
+    run by the :class:`~flujo.application.runner.Flujo` engine.
+
+    Use :meth:`arun` to invoke the underlying agent directly during unit tests.
     """
 
     name: str
