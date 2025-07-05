@@ -213,3 +213,24 @@ async def test_step_config_temperature_omitted() -> None:
     await gather_result(runner, "in")
     assert agent.kwargs is not None
     assert "temperature" not in agent.kwargs
+
+@pytest.mark.asyncio
+async def test_failure_handler_exception_propagates() -> None:
+    agent = StubAgent(["bad"])
+    plugin = DummyPlugin([PluginOutcome(success=False)])
+
+    def handler() -> None:
+        raise RuntimeError("handler fail")
+
+    step = Step.model_validate(
+        {
+            "name": "s",
+            "agent": agent,
+            "config": StepConfig(max_retries=1),
+            "plugins": [(plugin, 0)],
+            "failure_handlers": [handler],
+        }
+    )
+    runner = Flujo(step)
+    with pytest.raises(RuntimeError, match="handler fail"):
+        await gather_result(runner, "in")
