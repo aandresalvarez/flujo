@@ -2,7 +2,7 @@ import pytest
 from typing import Any
 from flujo.domain.models import BaseModel
 
-from flujo.application.flujo_engine import Flujo
+from flujo.application.runner import Flujo
 from flujo.domain import Step, Pipeline
 from flujo.testing.utils import StubAgent, DummyPlugin, gather_result
 from flujo.domain.plugins import PluginOutcome
@@ -344,11 +344,9 @@ async def test_loop_step_overall_span(monkeypatch) -> None:
 
     from unittest.mock import Mock
     from flujo.infra import telemetry
-    from flujo.application import flujo_engine as pr
 
     mock_logfire = Mock(span=lambda name: FakeSpan(name))
     monkeypatch.setattr(telemetry, "logfire", mock_logfire)
-    monkeypatch.setattr(pr, "logfire", mock_logfire)
 
     body = Pipeline.from_step(Step.model_validate({"name": "inc", "agent": IncrementAgent()}))
     loop = Step.loop_until(
@@ -383,7 +381,6 @@ async def test_loop_step_iteration_spans_and_logging(monkeypatch) -> None:
 
     from unittest.mock import Mock
     from flujo.infra import telemetry
-    from flujo.application import flujo_engine as pr
 
     mock_logfire = Mock(
         span=lambda name: FakeSpan(name),
@@ -392,7 +389,6 @@ async def test_loop_step_iteration_spans_and_logging(monkeypatch) -> None:
         error=lambda *a, **k: None,
     )
     monkeypatch.setattr(telemetry, "logfire", mock_logfire)
-    monkeypatch.setattr(pr, "logfire", mock_logfire)
 
     body = Pipeline.from_step(Step.model_validate({"name": "inc", "agent": IncrementAgent()}))
     loop = Step.loop_until(
@@ -430,7 +426,6 @@ async def test_loop_step_error_logging_in_callables(monkeypatch) -> None:
 
     from unittest.mock import Mock
     from flujo.infra import telemetry
-    from flujo.application import flujo_engine as pr
 
     mock_logfire = Mock(
         span=lambda name: FakeSpan(name),
@@ -439,7 +434,6 @@ async def test_loop_step_error_logging_in_callables(monkeypatch) -> None:
         error=lambda msg, *a, **k: errors.append(msg),
     )
     monkeypatch.setattr(telemetry, "logfire", mock_logfire)
-    monkeypatch.setattr(pr, "logfire", mock_logfire)
 
     def bad_iter(out: int, ctx: Ctx | None, i: int) -> int:
         raise RuntimeError("iter fail")

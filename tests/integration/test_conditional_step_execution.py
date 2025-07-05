@@ -3,7 +3,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from flujo.domain import Step, Pipeline
-from flujo.application.flujo_engine import Flujo
+from flujo.application.runner import Flujo
 from flujo.testing.utils import StubAgent, DummyPlugin, gather_result
 from flujo.domain.plugins import PluginOutcome
 
@@ -346,11 +346,9 @@ async def test_conditional_step_overall_span(monkeypatch) -> None:
 
     from unittest.mock import Mock
     from flujo.infra import telemetry
-    from flujo.application import flujo_engine as pr
 
     mock_logfire = Mock(span=lambda name: FakeSpan(name))
     monkeypatch.setattr(telemetry, "logfire", mock_logfire)
-    monkeypatch.setattr(pr, "logfire", mock_logfire)
 
     branches = {
         "a": Pipeline.from_step(Step.model_validate({"name": "a", "agent": StubAgent(["A"])}))
@@ -388,7 +386,6 @@ async def test_conditional_step_branch_selection_logging_and_span_attributes(mon
 
     from unittest.mock import Mock
     from flujo.infra import telemetry
-    from flujo.application import flujo_engine as pr
 
     mock_logfire = Mock(
         span=lambda name: FakeSpan(name),
@@ -397,7 +394,6 @@ async def test_conditional_step_branch_selection_logging_and_span_attributes(mon
         error=lambda *a, **k: None,
     )
     monkeypatch.setattr(telemetry, "logfire", mock_logfire)
-    monkeypatch.setattr(pr, "logfire", mock_logfire)
 
     branches = {
         "a": Pipeline.from_step(Step.model_validate({"name": "step_a", "agent": StubAgent(["A"])}))
@@ -434,7 +430,6 @@ async def test_conditional_step_no_branch_match_logging(monkeypatch) -> None:
 
     from unittest.mock import Mock
     from flujo.infra import telemetry
-    from flujo.application import flujo_engine as pr
 
     mock_logfire = Mock(
         span=lambda name: FakeSpan(name),
@@ -443,7 +438,6 @@ async def test_conditional_step_no_branch_match_logging(monkeypatch) -> None:
         error=lambda *a, **k: None,
     )
     monkeypatch.setattr(telemetry, "logfire", mock_logfire)
-    monkeypatch.setattr(pr, "logfire", mock_logfire)
 
     branches = {
         "a": Pipeline.from_step(Step.model_validate({"name": "a", "agent": StubAgent(["A"])}))
@@ -477,7 +471,6 @@ async def test_conditional_step_error_logging_in_callables(monkeypatch) -> None:
 
     from unittest.mock import Mock
     from flujo.infra import telemetry
-    from flujo.application import flujo_engine as pr
 
     mock_logfire = Mock(
         span=lambda name: FakeSpan(name),
@@ -486,7 +479,6 @@ async def test_conditional_step_error_logging_in_callables(monkeypatch) -> None:
         error=lambda msg, *a, **k: errors.append(msg),
     )
     monkeypatch.setattr(telemetry, "logfire", mock_logfire)
-    monkeypatch.setattr(pr, "logfire", mock_logfire)
 
     def bad_condition(_: str, __: BaseModel | None) -> str:
         raise RuntimeError("cond boom")

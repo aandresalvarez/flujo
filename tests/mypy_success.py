@@ -3,7 +3,7 @@ import asyncio
 
 from flujo.domain import Step, step, Pipeline
 from flujo.testing.utils import StubAgent
-from flujo.application.flujo_engine import Flujo
+from flujo.application.runner import Flujo
 from flujo.domain.agent_protocol import AsyncAgentProtocol
 from flujo.domain.models import BaseModel
 

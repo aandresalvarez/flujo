@@ -28,7 +28,7 @@ from flujo.application.self_improvement import (
     ImprovementReport,
 )
 from flujo.domain.models import ImprovementSuggestion
-from flujo.application.flujo_engine import Flujo
+from flujo.application.runner import Flujo
 from flujo.infra.settings import settings
 from flujo.exceptions import ConfigurationError, SettingsError
 from flujo.infra import telemetry

@@ -3,7 +3,7 @@ from unittest.mock import Mock
 import pytest
 
 from flujo.domain import Step, StepConfig
-from flujo.application.flujo_engine import Flujo, InfiniteRedirectError
+from flujo.application.runner import Flujo, InfiniteRedirectError
 from flujo.domain.models import PipelineResult
 from flujo.testing.utils import StubAgent, DummyPlugin, gather_result
 from typing import Any

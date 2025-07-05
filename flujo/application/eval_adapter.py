@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from .flujo_engine import Flujo
+from .runner import Flujo
 from ..domain.models import PipelineResult
 
 

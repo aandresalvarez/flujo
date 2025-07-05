@@ -95,6 +95,17 @@ _type_hints_cache_id: dict[int, tuple[weakref.ref[Any], Dict[str, Any]]] = {}
 
 
 def _cached_signature(func: Callable[..., Any]) -> inspect.Signature | None:
+    """Return and cache the signature of ``func``.
+
+    ``inspect.signature`` is relatively expensive and does not work on all
+    callables. To speed up repeated calls and gracefully handle unhashable
+    callables, we maintain two caches:
+
+    - ``_signature_cache_weak`` keyed by the callable object when it is
+      hashable.
+    - ``_signature_cache_id`` keyed by ``id(func)`` with a weak reference to
+      evict entries once the object is garbage collected.
+    """
     try:
         return _signature_cache_weak[func]
     except KeyError:
@@ -123,6 +134,13 @@ def _cached_signature(func: Callable[..., Any]) -> inspect.Signature | None:
 
 
 def _cached_type_hints(func: Callable[..., Any]) -> Dict[str, Any] | None:
+    """Return and cache the evaluated type hints for ``func``.
+
+    Similar to :func:`_cached_signature`, this function keeps a weak-keyed cache
+    as well as an ``id``-based fallback to support unhashable callables. Any
+    errors from ``get_type_hints`` are swallowed and ``None`` is returned so that
+    hook dispatching can continue even for dynamically typed functions.
+    """
     try:
         return _type_hints_cache_weak[func]
     except KeyError:
@@ -873,6 +891,15 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         self.backend = backend
 
     async def _dispatch_hook(self, event_name: str, **kwargs: Any) -> None:
+        """Invoke registered hooks with type-based filtering.
+
+        The runner supports a simple event system that allows external code to
+        observe pipeline execution. Hooks are plain callables that accept a
+        subclass of :class:`HookPayload`. To avoid unnecessary errors we inspect
+        the hook's first parameter annotation and only call it if it is
+        compatible with the payload type for the current ``event_name``.
+        """
+
         payload_map: dict[str, type[HookPayload]] = {
             "pre_run": PreRunPayload,
             "post_run": PostRunPayload,
@@ -1296,6 +1323,9 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
     ) -> PipelineResult[ContextT]:
         """Resume a paused pipeline with human input."""
         ctx: ContextT | None = paused_result.final_pipeline_context
+        # The ``scratchpad`` on the context stores bookkeeping information about
+        # paused pipelines.  If the context is missing or the status flag is not
+        # ``"paused"`` we cannot safely resume.
         if ctx is None:
             raise OrchestratorError("Cannot resume pipeline without context")
         scratch = getattr(ctx, "scratchpad", {})

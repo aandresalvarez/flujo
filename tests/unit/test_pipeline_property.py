@@ -1,6 +1,6 @@
 from hypothesis import given, strategies as st
 from flujo.domain.pipeline_dsl import Step
-from flujo.application.flujo_engine import Flujo
+from flujo.application.runner import Flujo
 from flujo.testing.utils import StubAgent, gather_result
 import pytest
 

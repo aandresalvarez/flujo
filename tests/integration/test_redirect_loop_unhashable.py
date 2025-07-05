@@ -2,7 +2,7 @@ import pytest
 from flujo.domain.pipeline_dsl import Step, StepConfig
 from flujo.testing.utils import DummyPlugin, gather_result
 from flujo.domain.plugins import PluginOutcome
-from flujo.application.flujo_engine import Flujo, InfiniteRedirectError
+from flujo.application.runner import Flujo, InfiniteRedirectError
 
 
 class UnhashableAgent:
