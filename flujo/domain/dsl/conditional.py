@@ -19,7 +19,13 @@ __all__ = ["ConditionalStep"]
 
 
 class ConditionalStep(Step[Any, Any], Generic[TContext]):
-    """A step that selects and executes a branch pipeline based on a condition."""
+    """Route execution to one of several branch pipelines.
+
+    ``condition_callable`` receives the previous step's output and optional
+    context and returns a key that selects a branch from ``branches``. Each
+    branch is its own :class:`Pipeline`. An optional ``default_branch_pipeline``
+    is executed when no key matches.
+    """
 
     condition_callable: Callable[[Any, Optional[TContext]], BranchKey] = Field(
         description=("Callable that returns a key to select a branch.")

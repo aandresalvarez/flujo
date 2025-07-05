@@ -45,3 +45,11 @@ print(result.step_history[0].output)  # -> "ok"
 When the fallback runs successfully, `StepResult.metadata_['fallback_triggered']` is set to `True` and the pipeline continues normally.
 Resource usage from the fallback is added to the main step result, and circular
 fallbacks raise `InfiniteFallbackError`.
+
+## Performance Tips
+
+- Use the `context_include_keys` parameter of `Step.parallel()` to copy only the
+  context fields required by each branch. This avoids expensive deep copies for
+  large contexts.
+- When processing long iterables with `Step.map_over()` keep the context model
+  minimal so each iteration stays lightweight.

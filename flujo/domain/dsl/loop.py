@@ -30,7 +30,13 @@ __all__ = ["LoopStep", "MapStep"]
 
 
 class LoopStep(Step[Any, Any], Generic[TContext]):
-    """A specialized step that executes a pipeline in a loop."""
+    """Execute a sub-pipeline repeatedly until a condition is met.
+
+    ``LoopStep`` runs ``loop_body_pipeline`` one or more times. After each
+    iteration ``exit_condition_callable`` is evaluated with the last output and
+    the current context. When it returns ``True`` the loop stops and the final
+    output is returned.
+    """
 
     loop_body_pipeline: Any = Field(description="The pipeline to execute in each iteration.")
     exit_condition_callable: Callable[[Any, Optional[TContext]], bool] = Field(
@@ -70,7 +76,12 @@ class LoopStep(Step[Any, Any], Generic[TContext]):
 
 
 class MapStep(LoopStep[TContext]):
-    """A step that maps a pipeline over items in the pipeline context."""
+    """Map a pipeline over an iterable stored on the context.
+
+    ``MapStep`` wraps ``LoopStep`` to iterate over ``context.<iterable_input>``
+    and run ``pipeline_to_run`` for each item. The collected outputs are returned
+    as a list.
+    """
 
     iterable_input: str = Field()
 

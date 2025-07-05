@@ -215,10 +215,25 @@ class HumanInteraction(BaseModel):
 
 
 class PipelineContext(BaseModel):
-    """A built-in context object shared across the pipeline run.
+    """Runtime context shared by all steps in a pipeline run.
 
-    This context object provides common fields for pipeline execution tracking,
-    human-in-the-loop interactions, and command logging for agentic loops.
+    The base ``PipelineContext`` tracks essential execution metadata and is
+    automatically created for every call to :meth:`Flujo.run`. Custom context
+    models should inherit from this class to add application specific fields
+    while retaining the built in ones.
+
+    Attributes
+    ----------
+    run_id:
+        Unique identifier for the pipeline run.
+    initial_prompt:
+        First input provided to the run. Useful for logging and telemetry.
+    scratchpad:
+        Free form dictionary for transient state between steps.
+    hitl_history:
+        Records each human interaction when using HITL steps.
+    command_log:
+        Stores commands executed by an :class:`~flujo.recipes.AgenticLoop`.
     """
 
     run_id: str = Field(default_factory=lambda: f"run_{uuid.uuid4().hex}")

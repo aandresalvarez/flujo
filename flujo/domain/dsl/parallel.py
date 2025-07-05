@@ -2,7 +2,18 @@ from __future__ import annotations
 
 # mypy: ignore-errors
 
-from typing import Any, Callable, Dict, Generic, List, Optional, TypeVar, Union, cast, Self
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Generic,
+    List,
+    Optional,
+    TypeVar,
+    Union,
+    cast,
+    Self,
+)
 
 from pydantic import Field
 
@@ -16,7 +27,13 @@ __all__ = ["ParallelStep"]
 
 
 class ParallelStep(Step[Any, Any], Generic[TContext]):
-    """A step that executes multiple branch pipelines concurrently."""
+    """Execute multiple branch pipelines concurrently.
+
+    Each entry in ``branches`` is run in parallel and the outputs are returned
+    as a dictionary keyed by branch name. Context fields can be selectively
+    copied to branches via ``context_include_keys`` and merged back using
+    ``merge_strategy``.
+    """
 
     branches: Dict[str, Any] = Field(
         description="Mapping of branch names to pipelines to run in parallel."
