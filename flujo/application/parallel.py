@@ -32,7 +32,13 @@ async def _execute_parallel_step_logic(
     usage_limits: UsageLimits | None = None,
     context_setter: Callable[[PipelineResult[TContext], Optional[TContext]], None],
 ) -> StepResult:
-    """Execute all branch pipelines concurrently and aggregate results."""
+    """Execute branch pipelines concurrently and merge their results.
+
+    Each branch receives an isolated copy of the pipeline context so that
+    state mutations do not interfere with one another.  When
+    ``context_include_keys`` is specified on the ``ParallelStep`` only those
+    context fields are deep-copied for efficiency.
+    """
 
     result = StepResult(name=parallel_step.name)
     outputs: Dict[str, Any] = {}
@@ -46,6 +52,12 @@ async def _execute_parallel_step_logic(
         nonlocal limit_breach_error
 
         # Optimized context copying strategy
+        # ---------------------------------
+        # Each branch should operate on its own context instance so that
+        # mutations in one branch do not leak into another.  When specific
+        # ``context_include_keys`` are provided we construct a new context with
+        # just those fields, otherwise a full deepcopy is used as a safe
+        # fallback.
         if context is not None:
             if parallel_step.context_include_keys is not None:
                 # Create a new context with only the specified fields

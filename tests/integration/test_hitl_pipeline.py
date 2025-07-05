@@ -2,7 +2,7 @@ import pickle
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from flujo.application.flujo_engine import Flujo
+from flujo.application.runner import Flujo
 from flujo.domain.pipeline_dsl import Step
 from flujo.domain.models import PipelineContext
 from flujo.exceptions import OrchestratorError

@@ -2,7 +2,7 @@ import pytest
 from flujo.domain.models import BaseModel
 from pydantic import model_validator
 
-from flujo.application.flujo_engine import Flujo
+from flujo.application.runner import Flujo
 from flujo.domain import Step
 from flujo.testing.utils import gather_result, StubAgent
 

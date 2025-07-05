@@ -4,7 +4,7 @@ from typing import Any
 from flujo.domain.models import BaseModel
 import pytest
 
-from flujo.application.flujo_engine import Flujo
+from flujo.application.runner import Flujo
 from flujo.domain import Step, Pipeline
 from flujo.testing.utils import gather_result
 

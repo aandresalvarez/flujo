@@ -1,7 +1,7 @@
 import pytest
 
 from flujo.domain import Step
-from flujo.application.flujo_engine import Flujo
+from flujo.application.runner import Flujo
 from flujo.plugins.sql_validator import SQLSyntaxValidator
 from flujo.testing.utils import StubAgent, gather_result
 

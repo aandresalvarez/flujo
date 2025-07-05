@@ -3,7 +3,7 @@ from typing import AsyncIterator, Any
 
 import pytest
 
-from flujo.application.flujo_engine import Flujo
+from flujo.application.runner import Flujo
 from flujo.domain import Step
 from flujo.domain.models import PipelineResult
 from flujo.domain.resources import AppResources

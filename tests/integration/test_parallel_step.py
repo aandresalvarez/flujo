@@ -7,7 +7,7 @@ from flujo.domain.models import BaseModel, PipelineContext, StepResult
 from flujo.domain import Step, MergeStrategy, BranchFailureStrategy, UsageLimits
 from flujo.exceptions import UsageLimitExceededError
 from flujo.testing.utils import gather_result
-from flujo.application.flujo_engine import Flujo
+from flujo.application.runner import Flujo
 
 os.environ.setdefault("OPENAI_API_KEY", "test-key")
 

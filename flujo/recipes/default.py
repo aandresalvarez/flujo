@@ -13,7 +13,7 @@ if TYPE_CHECKING:  # pragma: no cover - used for typing only
 from ..domain.dsl.step import Step
 from ..domain.models import Candidate, PipelineResult, Task, Checklist
 from ..domain.scoring import ratio_score
-from ..application.flujo_engine import Flujo
+from ..application.runner import Flujo
 from ..testing.utils import gather_result
 
 
