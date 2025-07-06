@@ -38,7 +38,7 @@ When you have the answer, use the FinishCommand to provide the final result.
 planner_agent = make_agent_async(
     model="openai:gpt-4o",
     system_prompt=PLANNER_PROMPT,
-    output_type=TypeAdapter(AgentCommand),  # type: ignore[arg-type]
+    output_type=TypeAdapter(AgentCommand),
 )
 
 # --- 2. Assemble and Run the AgenticLoop ---
@@ -46,7 +46,7 @@ planner_agent = make_agent_async(
 print("🤖 Assembling the AgenticLoop...")
 agentic_loop = AgenticLoop(
     planner_agent=planner_agent,
-    agent_registry={"search_agent": search_agent},  # type: ignore[dict-item]
+    agent_registry={"search_agent": search_agent},
 )
 
 initial_goal = "What is Python?"
@@ -58,7 +58,7 @@ result = agentic_loop.run(initial_goal)
 # --- 3. Inspect the Results ---
 if result and result.final_pipeline_context:
     print("\n✅ Loop finished!")
-    final_context = cast(PipelineContext, result.final_pipeline_context)
+    final_context = result.final_pipeline_context
     print("\n--- Agent Transcript ---")
     for log_entry in final_context.command_log:
         command_type = log_entry.generated_command.type

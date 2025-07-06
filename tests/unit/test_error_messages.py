@@ -18,7 +18,7 @@ def test_improper_step_call() -> None:
     with pytest.raises(ImproperStepInvocationError):
         echo("hi")
     with pytest.raises(ImproperStepInvocationError):
-        echo.run("hi")  # type: ignore[attr-defined]
+        getattr(echo, "run")("hi")
 
 
 def test_missing_agent_errors() -> None:

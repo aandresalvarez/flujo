@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-# mypy: ignore-errors
-
 # NOTE: This module was extracted from flujo.domain.pipeline_dsl as part of FSD1 refactor
 # It contains the core Step DSL primitives (StepConfig, Step, decorators, etc.)
 # Original implementation remains largely unchanged aside from relative import updates
@@ -22,6 +20,7 @@ from typing import (
     Concatenate,
     overload,
     Union,
+    cast,
 )
 import inspect
 from enum import Enum
@@ -32,7 +31,7 @@ from pydantic import Field, ConfigDict
 from ..agent_protocol import AsyncAgentProtocol
 from ..plugins import ValidationPlugin
 from ..validation import Validator
-from ..types import ContextT
+
 from ..processors import AgentProcessors
 from flujo.caching import CacheBackend
 from typing import TYPE_CHECKING
@@ -49,6 +48,8 @@ StepInT = TypeVar("StepInT")
 StepOutT = TypeVar("StepOutT")
 NewOutT = TypeVar("NewOutT")
 P = ParamSpec("P")
+
+ContextModelT = TypeVar("ContextModelT", bound=BaseModel)
 
 # BranchKey type alias for ConditionalStep
 BranchKey = Any
@@ -123,6 +124,9 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         description="Arbitrary metadata about this step.",
     )
 
+    __step_input_type__: type[Any] = Any
+    __step_output_type__: type[Any] = Any
+
     model_config: ClassVar[ConfigDict] = {
         "arbitrary_types_allowed": True,
     }
@@ -196,7 +200,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         if self.agent is None:
             raise ValueError(f"Step '{self.name}' has no agent to run.")
 
-        return await self.agent.run(data, **kwargs)
+        return cast(StepOutT, await self.agent.run(data, **kwargs))
 
     def fallback(self, fallback_step: "Step[Any, Any]") -> "Step[StepInT, StepOutT]":
         """Set a fallback step to execute if this step fails.
@@ -332,13 +336,10 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
 
         # Infer injection signature & wrap callable into an agent-like object
         func = callable_
+        from flujo.signature_tools import analyze_signature
 
         class _CallableAgent:  # pylint: disable=too-few-public-methods
             _step_callable = func
-            from flujo.signature_tools import (
-                analyze_signature,
-            )  # Local import to avoid circular dependency
-
             _injection_spec = analyze_signature(func)
 
             # Store the original function signature for parameter names
@@ -354,11 +355,14 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                 **kwargs: Any,
             ) -> Any:  # noqa: D401
                 # Build the arguments to pass to the callable
-                callable_kwargs = {}
+                call_args: list[Any] = []
+                callable_kwargs: dict[str, Any] = {}
 
-                # Get the first parameter name from the original function signature
-                first_param_name = next(iter(self._original_sig.parameters.keys()))
-                callable_kwargs[first_param_name] = data
+                first_param = next(iter(self._original_sig.parameters.values()))
+                if first_param.kind is inspect.Parameter.POSITIONAL_ONLY:
+                    call_args.append(data)
+                else:
+                    callable_kwargs[first_param.name] = data
 
                 # Add the injected arguments if the callable needs them
                 if self._injection_spec.needs_context and context is not None:
@@ -370,7 +374,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                 callable_kwargs.update(kwargs)
 
                 # Call the original function directly
-                return await func(**callable_kwargs)
+                return await cast(Callable[..., Any], func)(*call_args, **callable_kwargs)
 
         # Analyze signature for type info
         from flujo.signature_tools import analyze_signature
@@ -443,18 +447,18 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         cls,
         name: str,
         loop_body_pipeline: "Pipeline[Any, Any]",
-        exit_condition_callable: Callable[[Any, Optional[ContextT]], bool],
+        exit_condition_callable: Callable[[Any, Optional[ContextModelT]], bool],
         max_loops: int = 5,
         initial_input_to_loop_body_mapper: Optional[
-            Callable[[Any, Optional[ContextT]], Any]
+            Callable[[Any, Optional[ContextModelT]], Any]
         ] = None,
-        iteration_input_mapper: Optional[Callable[[Any, Optional[ContextT], int], Any]] = None,
-        loop_output_mapper: Optional[Callable[[Any, Optional[ContextT]], Any]] = None,
+        iteration_input_mapper: Optional[Callable[[Any, Optional[ContextModelT], int], Any]] = None,
+        loop_output_mapper: Optional[Callable[[Any, Optional[ContextModelT]], Any]] = None,
         **config_kwargs: Any,
-    ) -> "LoopStep[ContextT]":
+    ) -> "LoopStep[ContextModelT]":
         from .loop import LoopStep  # local import to avoid circular
 
-        return LoopStep(
+        return LoopStep[ContextModelT](
             name=name,
             loop_body_pipeline=loop_body_pipeline,
             exit_condition_callable=exit_condition_callable,
@@ -474,7 +478,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         max_refinements: int = 5,
         feedback_mapper: Optional[Callable[[Any, RefinementCheck], Any]] = None,
         **config_kwargs: Any,
-    ) -> "LoopStep[ContextT]":
+    ) -> "LoopStep[ContextModelT]":
         """Convenience for the generator -> critic refinement loop pattern."""
         from .loop import LoopStep  # local import
 
@@ -530,7 +534,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             artifacts = getattr(ctx, "_artifacts", [])
             return artifacts[-1] if artifacts else None
 
-        return LoopStep(
+        return LoopStep[ContextModelT](
             name=name,
             loop_body_pipeline=generator_then_save >> critic_pipeline,
             exit_condition_callable=_exit_condition,
@@ -545,16 +549,18 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
     def branch_on(
         cls,
         name: str,
-        condition_callable: Callable[[Any, Optional[ContextT]], BranchKey],
+        condition_callable: Callable[[Any, Optional[ContextModelT]], BranchKey],
         branches: Dict[BranchKey, "Pipeline[Any, Any]"],
         default_branch_pipeline: Optional["Pipeline[Any, Any]"] = None,
-        branch_input_mapper: Optional[Callable[[Any, Optional[ContextT]], Any]] = None,
-        branch_output_mapper: Optional[Callable[[Any, BranchKey, Optional[ContextT]], Any]] = None,
+        branch_input_mapper: Optional[Callable[[Any, Optional[ContextModelT]], Any]] = None,
+        branch_output_mapper: Optional[
+            Callable[[Any, BranchKey, Optional[ContextModelT]], Any]
+        ] = None,
         **config_kwargs: Any,
-    ) -> "ConditionalStep[ContextT]":
+    ) -> "ConditionalStep[ContextModelT]":
         from .conditional import ConditionalStep  # local import
 
-        return ConditionalStep(
+        return ConditionalStep[ContextModelT](
             name=name,
             condition_callable=condition_callable,
             branches=branches,
@@ -571,14 +577,14 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         branches: Dict[str, "Step[Any, Any]" | "Pipeline[Any, Any]"],
         context_include_keys: Optional[List[str]] = None,
         merge_strategy: Union[
-            MergeStrategy, Callable[[ContextT, ContextT], None]
+            MergeStrategy, Callable[[ContextModelT, ContextModelT], None]
         ] = MergeStrategy.NO_MERGE,
         on_branch_failure: BranchFailureStrategy = BranchFailureStrategy.PROPAGATE,
         **config_kwargs: Any,
-    ) -> "ParallelStep[ContextT]":
+    ) -> "ParallelStep[ContextModelT]":
         from .parallel import ParallelStep  # local import
 
-        return ParallelStep.model_validate(
+        return ParallelStep[ContextModelT].model_validate(
             {
                 "name": name,
                 "branches": branches,
@@ -597,10 +603,10 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         *,
         iterable_input: str,
         **config_kwargs: Any,
-    ) -> "MapStep[ContextT]":
+    ) -> "MapStep[ContextModelT]":
         from .loop import MapStep  # local import
 
-        return MapStep(
+        return MapStep[ContextModelT](
             name=name,
             pipeline_to_run=pipeline_to_run,
             iterable_input=iterable_input,
@@ -612,7 +618,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         cls,
         wrapped_step: "Step[Any, Any]",
         cache_backend: Optional[CacheBackend] = None,
-    ) -> "CacheStep":
+    ) -> "CacheStep[Any, Any]":
         from flujo.steps.cache_step import CacheStep
 
         return CacheStep.cached(wrapped_step, cache_backend)
@@ -687,12 +693,40 @@ def step(
     return decorator
 
 
+@overload
+def adapter_step(
+    func: Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]],
+    *,
+    name: str | None = None,
+    updates_context: bool = False,
+    processors: Optional[AgentProcessors] = None,
+    persist_feedback_to_context: Optional[str] = None,
+    persist_validation_results_to: Optional[str] = None,
+    **config_kwargs: Any,
+) -> "Step[StepInT, StepOutT]": ...
+
+
+@overload
+def adapter_step(
+    *,
+    name: str | None = None,
+    updates_context: bool = False,
+    processors: Optional[AgentProcessors] = None,
+    persist_feedback_to_context: Optional[str] = None,
+    persist_validation_results_to: Optional[str] = None,
+    **config_kwargs: Any,
+) -> Callable[
+    [Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]]],
+    "Step[StepInT, StepOutT]",
+]: ...
+
+
 def adapter_step(
     func: (Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]] | None) = None,
     **kwargs: Any,
 ) -> Any:
     """Alias for :func:`step` that marks the created step as an adapter."""
-    return step(func, is_adapter=True, **kwargs)
+    return cast(Any, step)(func, is_adapter=True, **kwargs)
 
 
 class HumanInTheLoopStep(Step[Any, Any]):

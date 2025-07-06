@@ -6,7 +6,7 @@ from flujo.testing.utils import StubAgent, gather_result
 from flujo.domain.agent_protocol import AsyncAgentProtocol
 
 
-@pytest.mark.asyncio  # type: ignore[misc]
+@pytest.mark.asyncio
 async def test_default_local_tracer_added() -> None:
     step = Step.model_validate(
         {"name": "s", "agent": cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok"]))}
@@ -16,7 +16,7 @@ async def test_default_local_tracer_added() -> None:
     assert callable(runner.hooks[0])
 
 
-@pytest.mark.asyncio  # type: ignore[misc]
+@pytest.mark.asyncio
 async def test_custom_console_tracer_instance() -> None:
     tracer = ConsoleTracer(level="info")
     step = Step.model_validate(
@@ -26,7 +26,7 @@ async def test_custom_console_tracer_instance() -> None:
     assert tracer.hook in runner.hooks
 
 
-@pytest.mark.asyncio  # type: ignore[misc]
+@pytest.mark.asyncio
 async def test_tracer_outputs_info_level(capsys: pytest.CaptureFixture[str]) -> None:
     step = Step.model_validate(
         {"name": "s", "agent": cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok"]))}
@@ -39,7 +39,7 @@ async def test_tracer_outputs_info_level(capsys: pytest.CaptureFixture[str]) -> 
     assert "Status" in captured
 
 
-@pytest.mark.asyncio  # type: ignore[misc]
+@pytest.mark.asyncio
 async def test_tracer_outputs_debug_level(capsys: pytest.CaptureFixture[str]) -> None:
     tracer = ConsoleTracer(level="debug")
     step = Step.model_validate(
