@@ -2,7 +2,7 @@
 
 args = $(filter-out $@,$(MAKECMDGOALS))
 
-.PHONY: help setup quality lint format type-check test cov bandit sbom pip-dev pip-install clean package
+.PHONY: help setup install-dev audit quality lint format type-check test cov bandit sbom pip-dev pip-install clean package
 
 help:
 	@echo "Available commands:"
@@ -21,6 +21,15 @@ help:
 setup:
 	@pip install --upgrade pip hatch pre-commit
 	@hatch run setup
+
+
+install-dev:
+	@pip install --upgrade pip hatch pre-commit
+	@hatch run setup
+
+
+audit:
+	@hatch run pip-audit && hatch run bandit-check
 
 pip-dev:
 	@echo "📦 Installing development dependencies with pip..."
