@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-# mypy: ignore-errors
-
 from typing import (
     Any,
     ClassVar,
@@ -74,7 +72,7 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
     # Validation helpers
     # ------------------------------------------------------------------
 
-    def validate(self, *, raise_on_error: bool = False) -> ValidationReport:  # noqa: D401
+    def validate_graph(self, *, raise_on_error: bool = False) -> ValidationReport:  # noqa: D401
         """Validate that all steps have agents and compatible types."""
         from typing import Any, get_origin, get_args, Union as TypingUnion
 
@@ -314,7 +312,7 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
             if subgraph_name:
                 lines.append(f'    subgraph "{subgraph_name}"')
 
-            last_node = prev_node
+            last_node: str | None = prev_node
             for st in pipeline.steps:
                 if isinstance(st, LoopStep):
                     last_node = process_loop_step(st, last_node)
@@ -328,6 +326,7 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
             if subgraph_name:
                 lines.append("    end")
 
+            assert last_node is not None
             return last_node
 
         def process_loop_step(step: "LoopStep[Any]", prev_node: Optional[str] = None) -> str:
@@ -456,7 +455,7 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
         simple_group = []
         prev_node = None
 
-        def is_special(step):
+        def is_special(step: Step[Any, Any]) -> bool:
             return isinstance(step, (LoopStep, ConditionalStep, ParallelStep, HumanInTheLoopStep))
 
         steps = list(self.steps)

@@ -1,7 +1,7 @@
 """Settings and configuration for flujo."""
 
 import os
-from typing import ClassVar, Dict, Literal, Optional
+from typing import Callable, ClassVar, Dict, Literal, Optional, cast
 
 import dotenv
 from pydantic import (
@@ -120,8 +120,9 @@ class Settings(BaseSettings):
 
 
 # Singleton instance, fail fast if critical vars missing
+
 try:
-    settings = Settings()  # type: ignore[call-arg]
+    settings = cast(Callable[[], Settings], Settings)()
 except ValidationError as e:
     # Use custom exception for better error handling downstream
     raise SettingsError(f"Invalid or missing environment variables for Settings:\n{e}")

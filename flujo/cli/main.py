@@ -489,7 +489,7 @@ def validate(
     if not isinstance(pipeline, Pipeline):
         typer.echo("[red]No 'pipeline' variable of type Pipeline found", err=True)
         raise typer.Exit(1)
-    report = pipeline.validate()
+    report = pipeline.validate_graph()
     if report.errors:
         typer.echo("[red]Validation errors detected:")
         for f in report.errors:
