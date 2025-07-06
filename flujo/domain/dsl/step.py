@@ -354,17 +354,27 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                 temperature: float | None = None,
                 **kwargs: Any,
             ) -> Any:  # noqa: D401
-                call_args = [data]
-                call_kwargs: dict[str, Any] = {}
+                # Build the arguments to pass to the callable
+                call_args: list[Any] = []
+                callable_kwargs: dict[str, Any] = {}
 
+                first_param = next(iter(self._original_sig.parameters.values()))
+                if first_param.kind is inspect.Parameter.POSITIONAL_ONLY:
+                    call_args.append(data)
+                else:
+                    callable_kwargs[first_param.name] = data
+
+                # Add the injected arguments if the callable needs them
                 if self._injection_spec.needs_context and context is not None:
-                    call_kwargs["context"] = context
+                    callable_kwargs["context"] = context
                 if self._injection_spec.needs_resources and resources is not None:
-                    call_kwargs["resources"] = resources
+                    callable_kwargs["resources"] = resources
 
-                call_kwargs.update(kwargs)
+                # Add any additional kwargs
+                callable_kwargs.update(kwargs)
 
-                return await func(*call_args, **call_kwargs)
+                # Call the original function directly
+                return await cast(Callable[..., Any], func)(*call_args, **callable_kwargs)
 
         # Analyze signature for type info
         from flujo.signature_tools import analyze_signature
@@ -543,7 +553,9 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         branches: Dict[BranchKey, "Pipeline[Any, Any]"],
         default_branch_pipeline: Optional["Pipeline[Any, Any]"] = None,
         branch_input_mapper: Optional[Callable[[Any, Optional[ContextModelT]], Any]] = None,
-        branch_output_mapper: Optional[Callable[[Any, BranchKey, Optional[ContextModelT]], Any]] = None,
+        branch_output_mapper: Optional[
+            Callable[[Any, BranchKey, Optional[ContextModelT]], Any]
+        ] = None,
         **config_kwargs: Any,
     ) -> "ConditionalStep[ContextModelT]":
         from .conditional import ConditionalStep  # local import

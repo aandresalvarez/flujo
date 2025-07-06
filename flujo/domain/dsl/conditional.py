@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Generic, Optional, TypeVar, cast, Self
+from typing import Any, Callable, Dict, Generic, Optional, TypeVar, Self
 
 from pydantic import Field
 

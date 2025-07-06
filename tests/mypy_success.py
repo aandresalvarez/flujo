@@ -2,6 +2,8 @@ from typing import Any, cast, Callable, Optional
 import asyncio
 
 from flujo.domain import Step, step, Pipeline
+from flujo.domain.dsl.loop import LoopStep
+from flujo.domain.dsl.conditional import ConditionalStep
 from flujo.testing.utils import StubAgent
 from flujo.application.runner import Flujo
 from flujo.domain.agent_protocol import AsyncAgentProtocol
@@ -58,10 +60,8 @@ def typed_loop_step() -> None:
     def should_exit(out: int, ctx: LoopCtx | None) -> bool:
         return bool(ctx and ctx.is_finished)
 
-    body: Pipeline[Any, Any] = Pipeline.from_step(
-        Step.model_validate({"name": "a"})
-    )
-    loop_step: LoopStep[LoopCtx] = Step.loop_until(
+    body: Pipeline[Any, Any] = Pipeline.from_step(Step.model_validate({"name": "a"}))
+    _loop_step: LoopStep[LoopCtx] = Step.loop_until(
         name="l",
         loop_body_pipeline=body,
         exit_condition_callable=cast(
@@ -82,7 +82,7 @@ def typed_conditional_step() -> None:
     branches: dict[str, Pipeline[Any, Any]] = {
         "a": Step.model_validate({"name": "a"}) >> Step.model_validate({"name": "b"})
     }
-    branch_step: ConditionalStep[LoopCtx] = Step.branch_on(
+    _branch_step: ConditionalStep[LoopCtx] = Step.branch_on(
         name="b",
         condition_callable=cast(
             Callable[[Any, Optional[LoopCtx]], str],
