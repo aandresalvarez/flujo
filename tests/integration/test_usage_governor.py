@@ -1,4 +1,3 @@
-# mypy: ignore-errors
 import pytest
 from flujo.domain.models import BaseModel
 

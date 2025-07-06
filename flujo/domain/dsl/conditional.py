@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-# mypy: ignore-errors
-
 from typing import Any, Callable, Dict, Generic, Optional, TypeVar, cast, Self
 
 from pydantic import Field
@@ -72,7 +70,7 @@ class ConditionalStep(Step[Any, Any], Generic[TContext]):
                 f"default_branch_pipeline must be a Pipeline instance, got {type(default_branch)}"
             )
 
-        return cast(Self, super().model_validate(*args, **kwargs))
+        return super().model_validate(*args, **kwargs)
 
     def __repr__(self) -> str:
         return f"ConditionalStep(name={self.name!r}, branches={list(self.branches.keys())})"

@@ -1,4 +1,3 @@
-# mypy: ignore-errors
 import os
 import asyncio
 from typing import Any, Dict

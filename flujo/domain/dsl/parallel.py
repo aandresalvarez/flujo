@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-# mypy: ignore-errors
-
 from typing import (
     Any,
     Callable,
@@ -75,7 +73,7 @@ class ParallelStep(Step[Any, Any], Generic[TContext]):
             args = (dict(args[0], branches=normalized),) + args[1:]
         else:
             kwargs["branches"] = normalized
-        return cast(Self, super().model_validate(*args, **kwargs))
+        return super().model_validate(*args, **kwargs)
 
     def __repr__(self) -> str:
         return f"ParallelStep(name={self.name!r}, branches={list(self.branches.keys())})"

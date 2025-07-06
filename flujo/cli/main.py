@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-# mypy: ignore-errors
-
 from typing import Any, Dict, List, Optional, Union, cast, Literal
 import typer
 import click
@@ -35,7 +33,7 @@ from flujo.infra import telemetry
 from typing_extensions import Annotated
 from rich.table import Table
 from rich.console import Console
-from flujo.domain import Pipeline, Step
+from flujo.domain.dsl import Pipeline, Step
 import runpy
 from flujo.domain.agent_protocol import AsyncAgentProtocol
 

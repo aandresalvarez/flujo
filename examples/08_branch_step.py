@@ -6,7 +6,6 @@ routes it to a specialized agent based on whether the query is about code
 or a general question. For more details, see docs/pipeline_branching.md.
 """
 
-# mypy: ignore-errors
 
 import asyncio
 from typing import Any, Literal
