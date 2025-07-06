@@ -37,6 +37,20 @@ class SelfImprovementAgent:
 def _find_step(
     pipeline: Pipeline[Any, Any] | Step[Any, Any] | None, name: str
 ) -> Step[Any, Any] | None:
+    """Return the step with ``name`` from ``pipeline`` if present.
+
+    Parameters
+    ----------
+    pipeline:
+        Pipeline or step to search within.
+    name:
+        Name of the desired step.
+
+    Returns
+    -------
+    Step | None
+        The matching step instance or ``None`` if not found.
+    """
     if pipeline is None:
         return None
     if isinstance(pipeline, Step):
@@ -66,6 +80,20 @@ def _format_step_output(
     step: StepResult,
     pipeline_definition: Pipeline[Any, Any] | Step[Any, Any] | None,
 ) -> list[str]:
+    """Return formatted lines describing a step result.
+
+    Parameters
+    ----------
+    step:
+        The :class:`StepResult` to summarize.
+    pipeline_definition:
+        Pipeline definition used to pull step metadata.
+
+    Returns
+    -------
+    list[str]
+        Human-readable lines describing the step's output and configuration.
+    """
     lines: list[str] = []
     out_str = _truncate(_safe_str(step.output), MAX_STEP_OUTPUT_LENGTH)
     feedback = getattr(step, "feedback", None)
@@ -89,6 +117,22 @@ def _build_context(
     success: ReportCase | None,
     pipeline_definition: Pipeline[Any, Any] | Step[Any, Any] | None = None,
 ) -> str:
+    """Construct the prompt fed to the improvement agent.
+
+    Parameters
+    ----------
+    failures:
+        Iterable of failing evaluation cases.
+    success:
+        Optional successful case for comparison.
+    pipeline_definition:
+        Pipeline or single step definition used for additional context.
+
+    Returns
+    -------
+    str
+        The text prompt summarizing the evaluation results.
+    """
     lines: list[str] = []
     lines.append(
         "Analyze the following failed and successful pipeline runs to identify root causes and suggest improvements."

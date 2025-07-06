@@ -89,6 +89,7 @@ class DummyRemoteBackend(ExecutionBackend):
         original_step = request.step
 
         def pydantic_default(obj: Any) -> Any:
+            """Serialize Pydantic models for ``orjson`` dumping."""
             if isinstance(obj, BaseModel):
                 return obj.model_dump()
             raise TypeError
@@ -105,6 +106,7 @@ class DummyRemoteBackend(ExecutionBackend):
         data = orjson.loads(serialized)
 
         def reconstruct(original: Any, value: Any) -> Any:
+            """Rebuild a value using the type of ``original``."""
             if original is None:
                 return None
             if isinstance(original, BaseModel):
