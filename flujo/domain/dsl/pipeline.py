@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-# mypy: ignore-errors
-
 from typing import (
     Any,
     ClassVar,
@@ -74,7 +72,7 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
     # Validation helpers
     # ------------------------------------------------------------------
 
-    def validate(self, *, raise_on_error: bool = False) -> ValidationReport:  # noqa: D401
+    def validate_graph(self, *, raise_on_error: bool = False) -> ValidationReport:  # noqa: D401
         """Validate that all steps have agents and compatible types."""
         from typing import Any, get_origin, get_args, Union as TypingUnion
 
@@ -302,7 +300,7 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
             pipeline: "Pipeline[Any, Any]",
             prev_node: Optional[str] = None,
             subgraph_name: Optional[str] = None,
-        ) -> str:
+        ) -> Optional[str]:
             from .loop import LoopStep  # Runtime import to avoid circular dependency
             from .conditional import (
                 ConditionalStep,
@@ -314,7 +312,7 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
             if subgraph_name:
                 lines.append(f'    subgraph "{subgraph_name}"')
 
-            last_node = prev_node
+            last_node: str | None = prev_node
             for st in pipeline.steps:
                 if isinstance(st, LoopStep):
                     last_node = process_loop_step(st, last_node)
@@ -340,6 +338,9 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
             body_start = process_pipeline(step.loop_body_pipeline)
             lines.append("    end")
 
+            if body_start is None:
+                body_start = loop_node_id
+
             add_edge(loop_node_id, body_start)
             add_edge(body_start, loop_node_id)
 
@@ -361,6 +362,8 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                 lines.append(f'    subgraph "Branch: {branch_key}"')
                 branch_end = process_pipeline(branch_pipeline)
                 lines.append("    end")
+                if branch_end is None:
+                    branch_end = cond_node_id
                 add_edge(cond_node_id, branch_end, str(branch_key))
                 branch_end_nodes.append(branch_end)
 
@@ -368,6 +371,8 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                 lines.append('    subgraph "Default Branch"')
                 default_end = process_pipeline(step.default_branch_pipeline)
                 lines.append("    end")
+                if default_end is None:
+                    default_end = cond_node_id
                 add_edge(cond_node_id, default_end, "default")
                 branch_end_nodes.append(default_end)
 
@@ -391,6 +396,8 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                 lines.append(f'    subgraph "Parallel: {branch_name}"')
                 branch_end = process_pipeline(branch_pipeline)
                 lines.append("    end")
+                if branch_end is None:
+                    branch_end = para_node_id
                 add_edge(para_node_id, branch_end, branch_name)
                 branch_end_nodes.append(branch_end)
 
@@ -456,7 +463,7 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
         simple_group = []
         prev_node = None
 
-        def is_special(step):
+        def is_special(step: Step[Any, Any]) -> bool:
             return isinstance(step, (LoopStep, ConditionalStep, ParallelStep, HumanInTheLoopStep))
 
         steps = list(self.steps)
