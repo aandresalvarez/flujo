@@ -1,11 +1,12 @@
-# Documentation Status Report
+# Documentation Status (Aligned with Flujo v0.6.x)
+This file tracks documentation coverage across modules.
 
 *Generated: June 2025*
-*Project Version: 0.4.22*
+*Project Version: 0.6.0*
 
 ## Overview
 
-This report provides a comprehensive review of the `flujo` documentation status and updates made to align with the current codebase (v0.3.1).
+This report provides a comprehensive review of the `flujo` documentation status and updates made to align with the current codebase (v0.6.x).
 
 ## Documentation Review Summary
 
@@ -73,7 +74,7 @@ The documentation has been systematically reviewed and updated to reflect the cu
 - **Core Models**: All documented data models exist in `domain/models.py`
 
 ### ✅ Version Information
-- **Project Version**: 0.4.22 (confirmed in `pyproject.toml`)
+- **Project Version**: 0.6.0 (confirmed in `pyproject.toml`)
 - **Python Requirements**: 3.11+ (confirmed)
 - **Dependencies**: All documented dependencies verified in `pyproject.toml`
 
@@ -173,7 +174,7 @@ All 9 example files referenced in documentation are confirmed to exist:
 
 ## Conclusion
 
-The documentation is now **fully aligned** with the current codebase (v0.3.1). All major discrepancies have been resolved, and the documentation provides accurate, comprehensive coverage of the library's capabilities.
+The documentation is now **fully aligned** with the current codebase (v0.6.x). All major discrepancies have been resolved, and the documentation provides accurate, comprehensive coverage of the library's capabilities.
 
 ### Summary of Changes
 - ✅ 5 major documentation files updated
