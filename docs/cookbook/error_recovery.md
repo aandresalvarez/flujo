@@ -23,4 +23,4 @@ print(result.step_history[0].output)  # -> "ok"
 
 `StepResult.metadata_["fallback_triggered"]` will be `True` when the fallback runs successfully.
 
-A full, runnable version of this example can be found in [examples/18_error_recovery.py](https://github.com/aandresalvarez/flujo/blob/main/examples/18_error_recovery.py).
+A full, runnable version of this example can be found in [legacy_examples/18_error_recovery.py](https://github.com/aandresalvarez/flujo/blob/main/legacy_examples/18_error_recovery.py).
