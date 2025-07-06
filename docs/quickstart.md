@@ -29,7 +29,6 @@ Create a new file `hello_agentic.py`:
 from flujo.recipes import AgenticLoop
 from flujo import make_agent_async, init_telemetry
 from flujo.domain.commands import AgentCommand, FinishCommand, RunAgentCommand
-from pydantic import TypeAdapter
 
 init_telemetry()
 
@@ -44,7 +43,7 @@ When you have an answer, respond with `FinishCommand`.
 planner_agent = make_agent_async(
     "openai:gpt-4o",
     PLANNER_PROMPT,
-    TypeAdapter(AgentCommand),
+    AgentCommand,
 )
 
 loop = AgenticLoop(planner_agent=planner_agent, agent_registry={"search_agent": search_agent})

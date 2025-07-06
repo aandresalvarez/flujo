@@ -39,7 +39,6 @@ We'll begin with the `AgenticLoop` pattern. A planner agent decides which tool a
 from flujo.recipes import AgenticLoop
 from flujo import make_agent_async, init_telemetry
 from flujo.domain.commands import AgentCommand, FinishCommand, RunAgentCommand
-from pydantic import TypeAdapter
 
 init_telemetry()
 
@@ -53,7 +52,7 @@ When ready, reply with `FinishCommand` containing the final haiku.
 planner = make_agent_async(
     "openai:gpt-4o",
     PLANNER_PROMPT,
-    TypeAdapter(AgentCommand),
+    AgentCommand,
 )
 
 loop = AgenticLoop(planner_agent=planner, agent_registry={"search_agent": search_agent})

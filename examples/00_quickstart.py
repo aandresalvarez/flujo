@@ -11,7 +11,6 @@ from flujo.domain.models import PipelineContext
 from flujo import make_agent_async, init_telemetry
 from flujo.recipes import AgenticLoop
 from flujo.domain.commands import AgentCommand, FinishCommand, RunAgentCommand
-from pydantic import TypeAdapter
 
 
 # It's good practice to initialize telemetry at the start of your application.
@@ -38,7 +37,7 @@ When you have the answer, use the FinishCommand to provide the final result.
 planner_agent = make_agent_async(
     model="openai:gpt-4o",
     system_prompt=PLANNER_PROMPT,
-    output_type=TypeAdapter(AgentCommand),
+    output_type=AgentCommand,
 )
 
 # --- 2. Assemble and Run the AgenticLoop ---
