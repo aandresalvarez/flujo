@@ -13,12 +13,10 @@ the `PipelineContext`.
 from flujo.recipes import AgenticLoop
 from flujo import make_agent_async
 from flujo.domain.commands import AgentCommand
-from pydantic import TypeAdapter
-
 planner = make_agent_async(
     "openai:gpt-4o",
     "Plan the next command and finish when done.",
-    TypeAdapter(AgentCommand),
+    AgentCommand,
 )
 loop = AgenticLoop(planner_agent=planner, agent_registry={})
 ```
