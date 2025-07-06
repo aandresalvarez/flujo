@@ -55,5 +55,4 @@ print(f"\n✅ Agent successfully used the database connection to find: {result.s
 
 This dependency injection pattern keeps your agents clean and decoupled from how resources are created, making them much easier to test and maintain.
 
-A full, runnable version of this example can be found in [legacy_examples/12_using_resources.py](https://github.com/aandresalvarez/flujo/blob/main/legacy_examples/12_using_resources.py).
 

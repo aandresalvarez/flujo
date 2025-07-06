@@ -22,4 +22,3 @@ runner.run("hello")
 
 When telemetry export is disabled or `logfire` is not installed, `flujo` falls back to Python's standard logging module.
 
-A full, runnable version of this example can be found in [legacy_examples/19_telemetry.py](https://github.com/aandresalvarez/flujo/blob/main/legacy_examples/19_telemetry.py).

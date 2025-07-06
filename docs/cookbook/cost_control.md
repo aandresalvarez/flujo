@@ -51,5 +51,4 @@ except UsageLimitExceededError as e:
 
 This mechanism is a critical safety feature for running `Flujo` in production.
 
-A full, runnable version of this example can be found in [legacy_examples/10_cost_control.py](https://github.com/aandresalvarez/flujo/blob/main/legacy_examples/10_cost_control.py).
 
