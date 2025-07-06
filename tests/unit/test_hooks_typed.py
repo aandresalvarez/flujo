@@ -8,7 +8,7 @@ from flujo.testing.utils import StubAgent, gather_result
 from flujo.domain.events import HookPayload, PostStepPayload
 
 
-@pytest.mark.asyncio  # type: ignore[misc]
+@pytest.mark.asyncio
 async def test_hook_receives_typed_payload() -> None:
     step = Step.model_validate(
         {"name": "s1", "agent": cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok"]))}

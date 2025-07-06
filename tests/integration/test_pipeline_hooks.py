@@ -27,7 +27,7 @@ class HookContext(BaseModel):
     call_count: int = 0
 
 
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def call_recorder() -> List[HookPayload]:
     return []
 
@@ -54,7 +54,7 @@ async def post_run_abort_hook(payload: HookPayload) -> None:
         raise PipelineAbortSignal("abort in post_run")
 
 
-@pytest.mark.asyncio  # type: ignore[misc]
+@pytest.mark.asyncio
 async def test_all_hooks_are_called_in_correct_order(
     call_recorder: List[HookPayload],
 ) -> None:
@@ -84,7 +84,7 @@ async def test_all_hooks_are_called_in_correct_order(
     ]
 
 
-@pytest.mark.asyncio  # type: ignore[misc]
+@pytest.mark.asyncio
 async def test_on_step_failure_hook_is_called(
     call_recorder: List[HookPayload],
 ) -> None:
@@ -116,7 +116,7 @@ async def test_on_step_failure_hook_is_called(
     ]
 
 
-@pytest.mark.asyncio  # type: ignore[misc]
+@pytest.mark.asyncio
 async def test_hook_receives_correct_arguments(
     call_recorder: List[HookPayload],
 ) -> None:
@@ -137,7 +137,7 @@ async def test_hook_receives_correct_arguments(
     assert isinstance(post_step_call, PostStepPayload)
 
 
-@pytest.mark.asyncio  # type: ignore[misc]
+@pytest.mark.asyncio
 async def test_pipeline_aborts_gracefully_from_hook(
     call_recorder: List[HookPayload],
 ) -> None:
@@ -170,7 +170,7 @@ async def test_pipeline_aborts_gracefully_from_hook(
     assert result.step_history[1].success is False
 
 
-@pytest.mark.asyncio  # type: ignore[misc]
+@pytest.mark.asyncio
 async def test_faulty_hook_does_not_crash_pipeline(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -186,7 +186,7 @@ async def test_faulty_hook_does_not_crash_pipeline(
     assert "Hook failed!" in caplog.text
 
 
-@pytest.mark.asyncio  # type: ignore[misc]
+@pytest.mark.asyncio
 async def test_hooks_receive_context_and_resources(
     call_recorder: List[HookPayload],
 ) -> None:
@@ -214,7 +214,7 @@ async def test_hooks_receive_context_and_resources(
     assert result.final_pipeline_context.call_count > 0
 
 
-@pytest.mark.asyncio  # type: ignore[misc]
+@pytest.mark.asyncio
 async def test_post_run_abort_does_not_mask_errors() -> None:
     """Abort signal in post_run should not hide UsageLimitExceededError."""
     limits = UsageLimits(total_cost_usd_limit=0.0, total_tokens_limit=None)
@@ -234,7 +234,7 @@ class IncrementingStubAgent:
         return "ok"
 
 
-@pytest.mark.asyncio  # type: ignore[misc]
+@pytest.mark.asyncio
 async def test_incrementing_stub_agent(
     call_recorder: List[HookPayload],
 ) -> None:

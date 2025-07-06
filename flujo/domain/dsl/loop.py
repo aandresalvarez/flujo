@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-# mypy: ignore-errors
-
 # NOTE: Extracted LoopStep and MapStep from pipeline_dsl for FSD1 refactor.
 
 from typing import (
@@ -12,7 +10,6 @@ from typing import (
     Optional,
     TypeVar,
     Iterable,
-    cast,
     Self,
 )
 import contextvars
@@ -69,7 +66,7 @@ class LoopStep(Step[Any, Any], Generic[TContext]):
             raise ValueError(
                 f"loop_body_pipeline must be a Pipeline instance, got {type(loop_body)}"
             )
-        return cast(Self, super().model_validate(*args, **kwargs))
+        return super().model_validate(*args, **kwargs)
 
     def __repr__(self) -> str:
         return f"LoopStep(name={self.name!r}, loop_body_pipeline={self.loop_body_pipeline!r})"
@@ -108,23 +105,25 @@ class MapStep(LoopStep[TContext]):
         # Initialize base Step/DataModel via pydantic BaseModel.__init__
         BaseModel.__init__(
             self,
-            name=name,
-            agent=None,
-            config=StepConfig(**config_kwargs),
-            plugins=[],
-            failure_handlers=[],
-            loop_body_pipeline=body,
-            exit_condition_callable=lambda _o, ctx: len(getattr(ctx, results_attr, []))
-            >= len(getattr(ctx, items_attr, [])),
-            max_loops=1,
-            initial_input_to_loop_body_mapper=None,
-            iteration_input_mapper=None,
-            loop_output_mapper=None,
-            iterable_input=iterable_input,
+            **{
+                "name": name,
+                "agent": None,
+                "config": StepConfig(**config_kwargs),
+                "plugins": [],
+                "failure_handlers": [],
+                "loop_body_pipeline": body,
+                "exit_condition_callable": lambda _o, ctx: len(getattr(ctx, results_attr, []))
+                >= len(getattr(ctx, items_attr, [])),
+                "max_loops": 1,
+                "initial_input_to_loop_body_mapper": None,
+                "iteration_input_mapper": None,
+                "loop_output_mapper": None,
+                "iterable_input": iterable_input,
+            },
         )
         object.__setattr__(self, "_original_body_pipeline", body)
 
-        async def _noop(item: Any, **_: Any) -> Any:  # noqa: D401
+        async def _noop(item: Any, /, **_: Any) -> Any:  # noqa: D401
             return item
 
         object.__setattr__(

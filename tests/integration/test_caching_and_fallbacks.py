@@ -10,7 +10,7 @@ from flujo.domain.plugins import PluginOutcome
 from typing import Any
 
 
-@pytest.mark.asyncio  # type: ignore[misc]
+@pytest.mark.asyncio
 async def test_caching_pipeline_speed_and_hits() -> None:
     agent: StubAgent = StubAgent(["ok"])
     slow_step: Step[Any, Any] = Step.solution(agent)
@@ -48,7 +48,7 @@ async def test_caching_pipeline_speed_and_hits() -> None:
     assert third_time >= 0
 
 
-@pytest.mark.asyncio  # type: ignore[misc]
+@pytest.mark.asyncio
 async def test_cache_keys_distinct_for_same_name_steps() -> None:
     a1: StubAgent = StubAgent(["a", "a"])
     a2: StubAgent = StubAgent(["b", "b"])
@@ -66,7 +66,7 @@ async def test_cache_keys_distinct_for_same_name_steps() -> None:
     assert a2.call_count == 1
 
 
-@pytest.mark.asyncio  # type: ignore[misc]
+@pytest.mark.asyncio
 async def test_pipeline_step_fallback() -> None:
     s1: Step[Any, Any] = Step.model_validate({"name": "s1", "agent": StubAgent(["a"])})
     plugin: DummyPlugin = DummyPlugin([PluginOutcome(success=False, feedback="err")])
@@ -88,7 +88,7 @@ async def test_pipeline_step_fallback() -> None:
     assert result.step_history[2].output == "end"
 
 
-@pytest.mark.asyncio  # type: ignore[misc]
+@pytest.mark.asyncio
 async def test_loop_step_fallback_continues() -> None:
     body_agent: StubAgent = StubAgent(["bad", "done"])
     plugin: DummyPlugin = DummyPlugin(
@@ -119,7 +119,7 @@ async def test_loop_step_fallback_continues() -> None:
     assert sr.output == "done"
 
 
-@pytest.mark.asyncio  # type: ignore[misc]
+@pytest.mark.asyncio
 async def test_conditional_branch_with_fallback() -> None:
     branch_agent: StubAgent = StubAgent(["bad"])
     plugin: DummyPlugin = DummyPlugin([PluginOutcome(success=False, feedback="err")])

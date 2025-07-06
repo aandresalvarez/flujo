@@ -5,11 +5,11 @@ from flujo.domain.models import StepResult
 from flujo.domain.events import PostStepPayload
 
 
-@pytest.mark.asyncio  # type: ignore[misc]
+@pytest.mark.asyncio
 async def test_console_tracer_hook_prints() -> None:
     tracer = ConsoleTracer(level="debug")
     spy = MagicMock()
-    tracer.console.print = spy
+    setattr(tracer.console, "print", spy)
     result = StepResult(name="s", output="out")
     payload = PostStepPayload(event_name="post_step", step_result=result)
     await tracer.hook(payload)

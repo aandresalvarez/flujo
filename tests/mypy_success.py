@@ -2,6 +2,8 @@ from typing import Any, cast, Callable, Optional
 import asyncio
 
 from flujo.domain import Step, step, Pipeline
+from flujo.domain.dsl.loop import LoopStep
+from flujo.domain.dsl.conditional import ConditionalStep
 from flujo.testing.utils import StubAgent
 from flujo.application.runner import Flujo
 from flujo.domain.agent_protocol import AsyncAgentProtocol
@@ -58,34 +60,36 @@ def typed_loop_step() -> None:
     def should_exit(out: int, ctx: LoopCtx | None) -> bool:
         return bool(ctx and ctx.is_finished)
 
-    body: Pipeline[Any, Any] = Pipeline.from_step(Step("a"))
-    Step.loop_until(
+    body: Pipeline[Any, Any] = Pipeline.from_step(Step.model_validate({"name": "a"}))
+    _loop_step: LoopStep[LoopCtx] = Step.loop_until(
         name="l",
         loop_body_pipeline=body,
         exit_condition_callable=cast(
             Callable[[Any, Optional[LoopCtx]], bool],
             should_exit,
         ),
-    )  # type: ignore[type-var]
+    )
 
     # Uncommenting the following should fail mypy:
     # def bad(out: int, ctx: LoopCtx | None) -> bool:
-    #     return ctx.missing  # type: ignore[attr-defined]
+    #     return ctx.missing  # attr-defined error expected
 
 
 def typed_conditional_step() -> None:
     def choose(_out: str, ctx: LoopCtx | None) -> str:
         return "a" if ctx and ctx.is_finished else "b"
 
-    branches: dict[str, Pipeline[Any, Any]] = {"a": Step("a") >> Step("b")}
-    Step.branch_on(
+    branches: dict[str, Pipeline[Any, Any]] = {
+        "a": Step.model_validate({"name": "a"}) >> Step.model_validate({"name": "b"})
+    }
+    _branch_step: ConditionalStep[LoopCtx] = Step.branch_on(
         name="b",
         condition_callable=cast(
             Callable[[Any, Optional[LoopCtx]], str],
             choose,
         ),
         branches=branches,
-    )  # type: ignore[type-var]
+    )
 
 
 def typed_arun() -> None:

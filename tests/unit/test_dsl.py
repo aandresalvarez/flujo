@@ -2,6 +2,7 @@ from flujo.domain import Step, Pipeline, step, AgentProcessors
 from flujo.domain.models import BaseModel
 from unittest.mock import AsyncMock, MagicMock, Mock
 from flujo.domain.plugins import ValidationPlugin
+from typing import Any
 import pytest
 from flujo.domain import StepConfig
 
@@ -123,7 +124,7 @@ async def test_step_from_callable_basic() -> None:
 
     step = Step.from_callable(echo)
     assert step.name == "echo"
-    result = await step.agent.run("hi")  # type: ignore[call-arg]
+    result = await step.arun("hi")
     assert result == 2
 
 
@@ -135,7 +136,7 @@ async def test_step_from_callable_name_and_config() -> None:
     step = Step.from_callable(do, name="increment", timeout_s=5)
     assert step.name == "increment"
     assert step.config.timeout_s == 5
-    out = await step.agent.run(1)  # type: ignore[call-arg]
+    out = await step.arun(1)
     assert out == 2
 
 
@@ -149,17 +150,17 @@ async def test_step_from_callable_bound_method() -> None:
     svc = _Service()
     step = Step.from_callable(svc.process)
     assert step.name == "process"
-    assert await step.agent.run("ok") == "OK"  # type: ignore[call-arg]
+    assert await step.arun("ok") == "OK"
 
 
 @pytest.mark.asyncio
 async def test_step_from_callable_untyped_defaults_any() -> None:
-    async def untyped(x):  # type: ignore[no-untyped-def]
+    async def untyped(x: Any) -> Any:
         return x
 
     step = Step.from_callable(untyped)
     assert step.name == "untyped"
-    assert await step.agent.run(5) == 5  # type: ignore[call-arg]
+    assert await step.arun(5) == 5
 
 
 @pytest.mark.asyncio
@@ -180,7 +181,7 @@ async def test_step_decorator_basic() -> None:
 
     assert isinstance(echo, Step)
     assert echo.name == "echo"
-    result = await echo.agent.run("hi")  # type: ignore[call-arg]
+    result = await echo.arun("hi")
     assert result == 2
 
 
@@ -192,7 +193,7 @@ async def test_step_decorator_name_and_config() -> None:
 
     assert do.name == "inc"
     assert do.config.timeout_s == 10
-    assert await do.agent.run(1) == 2  # type: ignore[call-arg]
+    assert await do.arun(1) == 2
 
 
 @pytest.mark.asyncio
@@ -226,7 +227,7 @@ async def test_step_arun_with_context() -> None:
 async def test_step_arun_no_agent() -> None:
     step_without_agent = Step.model_validate({"name": "blank"})
     with pytest.raises(ValueError):
-        await step_without_agent.arun(None)  # type: ignore[arg-type]
+        await step_without_agent.arun(None)
 
 
 def test_pipeline_chaining_operator() -> None:
