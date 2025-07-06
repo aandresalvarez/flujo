@@ -327,7 +327,7 @@ Flujo(pipeline, max_retries=2, retry_on_error=True)
 from flujo import Pipeline
 
 # Validate pipeline before running
-validation_report = pipeline.validate()
+validation_report = pipeline.validate_graph()
 if not validation_report.is_valid:
     print("Pipeline validation failed:")
     for finding in validation_report.findings:
@@ -418,7 +418,7 @@ from flujo.testing import StubAgent, gather_result
 | 💵 Cost Limits  | `UsageLimits(total_cost_usd_limit=...)`                       |
 | 📜 Logs         | `ConsoleTracer` for debug visibility                          |
 | 🔧 Tuning       | Use `make_agent_async(...)` and `Step(..., temperature=...)`  |
-| 🔍 Validation   | `pipeline.validate()` and `flujo validate` CLI               |
+| 🔍 Validation   | `pipeline.validate_graph()` and `flujo validate` CLI         |
 | 📦 Composition  | `pipeline1 >> pipeline2` for modular workflows                |
 
 ---

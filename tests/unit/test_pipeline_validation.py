@@ -18,11 +18,11 @@ async def modern_step(x: int, *, context: Ctx) -> int:
 
 def test_no_warning_for_context() -> None:
     pipeline = Pipeline.from_step(deprecated_step)
-    report = pipeline.validate()
+    report = pipeline.validate_graph()
     assert not any(f.rule_id == "V-A4" for f in report.warnings)
 
 
 def test_no_warning_for_modern_context() -> None:
     pipeline = Pipeline.from_step(modern_step)
-    report = pipeline.validate()
+    report = pipeline.validate_graph()
     assert not any(f.rule_id == "V-A4" for f in report.warnings)
