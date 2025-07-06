@@ -19,4 +19,4 @@ print(result.step_history[-1].output)  # [2, 4, 6]
 
 The mapping happens asynchronously when the body pipeline's steps do not share state.
 
-A full, runnable version of this example can be found in [examples/20_async_map.py](https://github.com/aandresalvarez/flujo/blob/main/examples/20_async_map.py).
+A full, runnable version of this example can be found in [legacy_examples/20_async_map.py](https://github.com/aandresalvarez/flujo/blob/main/legacy_examples/20_async_map.py).
