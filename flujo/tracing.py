@@ -29,6 +29,20 @@ class ConsoleTracer:
         log_outputs: bool = True,
         colorized: bool = True,
     ) -> None:
+        """Create the tracer.
+
+        Parameters
+        ----------
+        level:
+            Output verbosity; either ``"info"`` or ``"debug"``.
+        log_inputs:
+            Whether to print step inputs when ``level`` is ``"debug"``.
+        log_outputs:
+            Whether to print step outputs when ``level`` is ``"debug"``.
+        colorized:
+            If ``True`` use colored output via Rich.
+        """
+
         self.level = level
         self.log_inputs = log_inputs
         self.log_outputs = log_outputs
@@ -45,6 +59,7 @@ class ConsoleTracer:
         }
 
     def _handle_pre_run(self, payload: PreRunPayload) -> None:
+        """Handle the ``pre_run`` event."""
         initial_input = payload.initial_input
         title = "Pipeline Start"
         details = Text(f"Input: {initial_input!r}")
@@ -52,6 +67,7 @@ class ConsoleTracer:
         self._depth = 0
 
     def _handle_post_run(self, payload: PostRunPayload) -> None:
+        """Handle the ``post_run`` event."""
         pipeline_result = payload.pipeline_result
         title = "Pipeline End"
         is_success = all(s.success for s in pipeline_result.step_history)
@@ -64,6 +80,7 @@ class ConsoleTracer:
         self.console.print(Panel(details, title=title, border_style="bold blue"))
 
     def _handle_pre_step(self, payload: PreStepPayload) -> None:
+        """Handle the ``pre_step`` event."""
         step = payload.step
         step_input = payload.step_input
         indent = "  " * self._depth
@@ -76,6 +93,7 @@ class ConsoleTracer:
         self._depth += 1
 
     def _handle_post_step(self, payload: PostStepPayload) -> None:
+        """Handle the ``post_step`` event."""
         step_result = payload.step_result
         self._depth = max(0, self._depth - 1)
         indent = "  " * self._depth
@@ -88,6 +106,7 @@ class ConsoleTracer:
         self.console.print(Panel(body_text, title=title))
 
     def _handle_on_step_failure(self, payload: OnStepFailurePayload) -> None:
+        """Handle the ``on_step_failure`` event."""
         step_result = payload.step_result
         self._depth = max(0, self._depth - 1)
         indent = "  " * self._depth
@@ -99,6 +118,7 @@ class ConsoleTracer:
         self.console.print(Panel(details, title=title, border_style="bold red"))
 
     async def hook(self, payload: HookPayload) -> None:
+        """Dispatch hook payloads to the appropriate handler."""
         handler = self.event_handlers.get(payload.event_name)
         if handler:
             import inspect

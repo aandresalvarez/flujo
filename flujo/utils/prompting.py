@@ -12,9 +12,19 @@ class AdvancedPromptFormatter:
     """Format prompt templates with conditionals, loops and nested data."""
 
     def __init__(self, template: str) -> None:
+        """Initialize the formatter with a template string.
+
+        Parameters
+        ----------
+        template:
+            Template string containing ``{{`` placeholders and optional
+            ``#if`` and ``#each`` blocks.
+        """
         self.template = template
 
     def _get_nested_value(self, data: Dict[str, Any], key: str) -> Any:
+        """Retrieve ``key`` from ``data`` using dotted attribute syntax."""
+
         value: Any = data
         for part in key.split("."):
             if isinstance(value, dict):
@@ -26,6 +36,8 @@ class AdvancedPromptFormatter:
         return value
 
     def _serialize(self, value: Any) -> str:
+        """Serialize ``value`` for interpolation into a template."""
+
         if value is None:
             return ""
         if isinstance(value, BaseModel):
@@ -35,6 +47,8 @@ class AdvancedPromptFormatter:
         return str(value)
 
     def format(self, **kwargs: Any) -> str:
+        """Render the template with the provided keyword arguments."""
+
         ESC_MARKER = "__ESCAPED_OPEN__"
         processed = self.template.replace(r"\{{", ESC_MARKER)
 
@@ -71,5 +85,20 @@ class AdvancedPromptFormatter:
 
 
 def format_prompt(template: str, **kwargs: Any) -> str:
+    """Convenience wrapper around :class:`AdvancedPromptFormatter`.
+
+    Parameters
+    ----------
+    template:
+        Template string to render.
+    **kwargs:
+        Values referenced inside the template.
+
+    Returns
+    -------
+    str
+        The rendered template.
+    """
+
     formatter = AdvancedPromptFormatter(template)
     return formatter.format(**kwargs)

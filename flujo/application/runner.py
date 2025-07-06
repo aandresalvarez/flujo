@@ -949,6 +949,31 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         context: Optional[ContextT],
         resources: Optional[AppResources],
     ) -> StepResult:
+        """Execute a single step and update context if required.
+
+        Parameters
+        ----------
+        step:
+            The :class:`Step` to execute.
+        data:
+            Input data for the step.
+        context:
+            Current pipeline context instance or ``None``.
+        resources:
+            Application resources passed to the step.
+
+        Returns
+        -------
+        StepResult
+            Result object describing the step outcome.
+
+        Notes
+        -----
+        If ``step`` is configured with ``updates_context=True`` the returned
+        output is merged into ``context`` and revalidated against the context
+        model. Validation errors are logged and cause the step to be marked as
+        failed.
+        """
         request = StepExecutionRequest(
             step=step,
             input_data=data,
@@ -999,6 +1024,21 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         pipeline_result: PipelineResult[ContextT],
         span: Any | None,
     ) -> None:
+        """Enforce token and cost limits for the current run.
+
+        Parameters
+        ----------
+        pipeline_result:
+            The aggregated :class:`PipelineResult` so far.
+        span:
+            Optional telemetry span used to annotate governor breaches.
+
+        Raises
+        ------
+        UsageLimitExceededError
+            If either cost or token limits configured in ``usage_limits`` are
+            exceeded.
+        """
         if self.usage_limits is None:
             return
 
@@ -1042,6 +1082,8 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
 
     @staticmethod
     def _set_final_context(result: PipelineResult[ContextT], ctx: Optional[ContextT]) -> None:
+        """Write ``ctx`` into ``result`` if present."""
+
         if ctx is not None:
             result.final_pipeline_context = ctx
 
@@ -1054,6 +1096,36 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         *,
         stream_last: bool = False,
     ) -> AsyncIterator[Any]:
+        """Iterate over pipeline steps yielding streaming output.
+
+        Parameters
+        ----------
+        start_idx:
+            Index of the first step to execute.
+        data:
+            Input to the first step.
+        context:
+            Mutable context object passed between steps.
+        result:
+            Aggregated :class:`PipelineResult` to populate.
+        stream_last:
+            If ``True`` and the final step supports ``stream``, yield chunks as
+            they are produced.
+
+        Yields
+        ------
+        Any
+            Streaming output chunks from the final step when ``stream_last`` is
+            enabled.
+
+        Raises
+        ------
+        PausedException
+            If a step pauses the pipeline for human input.
+        TypeMismatchError
+            If the output type of a step does not match the next step's
+            expected input type.
+        """
         for idx, step in enumerate(self.pipeline.steps[start_idx:], start=start_idx):
             await self._dispatch_hook(
                 "pre_step",

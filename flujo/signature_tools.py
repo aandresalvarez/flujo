@@ -42,6 +42,8 @@ _analysis_cache_id: weakref.WeakValueDictionary[int, SignatureAnalysis] = (
 
 
 def _cache_get(func: Callable[..., Any]) -> SignatureAnalysis | None:
+    """Return cached :class:`SignatureAnalysis` for ``func`` if available."""
+
     try:
         return _analysis_cache_weak.get(func)
     except TypeError:
@@ -49,6 +51,8 @@ def _cache_get(func: Callable[..., Any]) -> SignatureAnalysis | None:
 
 
 def _cache_set(func: Callable[..., Any], spec: SignatureAnalysis) -> None:
+    """Store ``spec`` in the cache for ``func``."""
+
     try:
         _analysis_cache_weak[func] = spec
     except TypeError:
@@ -56,6 +60,27 @@ def _cache_set(func: Callable[..., Any], spec: SignatureAnalysis) -> None:
 
 
 def analyze_signature(func: Callable[..., Any]) -> SignatureAnalysis:
+    """Inspect ``func`` and determine its pipeline injection requirements.
+
+    Parameters
+    ----------
+    func:
+        Callable to inspect. It may be a standard function or a callable
+        object.
+
+    Returns
+    -------
+    SignatureAnalysis
+        Named tuple describing whether ``context`` or ``resources`` keyword
+        parameters are required and the inferred input/output types.
+
+    Raises
+    ------
+    ConfigurationError
+        If ``context`` or ``resources`` parameters are annotated with invalid
+        types.
+    """
+
     cached = _cache_get(func)
     if cached is not None:
         return cached

@@ -289,9 +289,12 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
         self.target_output_type = getattr(agent, "output_type", Any)
 
     def _call_agent_with_dynamic_args(self, *args: Any, **kwargs: Any) -> Any:
+        """Invoke the underlying agent with arbitrary arguments."""
+
         return self._agent.run(*args, **kwargs)
 
     async def _run_with_retry(self, *args: Any, **kwargs: Any) -> Any:
+        """Run the agent with retry, timeout and processor support."""
         temp = kwargs.pop("temperature", None)
         if temp is not None:
             if "generation_kwargs" not in kwargs or not isinstance(

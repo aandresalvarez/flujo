@@ -72,6 +72,7 @@ class DeterministicRepairProcessor:
 
     @staticmethod
     def _is_json(text: str) -> bool:
+        """Return ``True`` if ``text`` is valid JSON."""
         try:
             json.loads(text)
             return True
@@ -83,6 +84,7 @@ class DeterministicRepairProcessor:
 
     @staticmethod
     def _canonical(data: Any) -> str:
+        """Serialize ``data`` to canonical JSON string form."""
         obj = data if not isinstance(data, str) else json.loads(data)
         return json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
 
@@ -133,6 +135,7 @@ class DeterministicRepairProcessor:
 
     @classmethod
     def _repair_literals_and_quotes(cls, text: str) -> str:
+        """Fix common JSON issues like Python literals and single quotes."""
         text = cls._RE_PY_LITERALS.sub(
             lambda m: {"None": "null", "True": "true", "False": "false"}[m.group(1)],
             text,
