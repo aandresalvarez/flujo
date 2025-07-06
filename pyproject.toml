@@ -57,12 +57,11 @@ dev = [
   "pytest-asyncio",
   "hypothesis",
   "vcrpy",
-  "rich",
   "build",     # Added for package building
   "twine",     # Added for package uploading
   "pytest-benchmark>=4.0.0",
   "bandit>=1.7.5",
-  "cyclonedx-python-lib>=5.2.0",
+  "cyclonedx-python-lib>=5.2.0,<9",
   "cyclonedx-py",  # Added for CycloneDX CLI support
   "logfire>=0.3",
   "sqlvalidator>=0.0.8",
