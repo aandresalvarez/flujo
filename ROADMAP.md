@@ -1,83 +1,92 @@
-Of course. Here is the fully integrated Roadmap v3.0, rewritten to incorporate all the refinements from our conversation. It is now a single, cohesive, and highly detailed strategic document.
+Of course. This is a critical refinement. By explicitly defining the relationship between the human-readable YAML and the AI-Native Pydantic Spec, the entire strategy becomes clearer, safer, and more powerful.
+
+Here is the fully rewritten roadmap, architected around this core synthesis.
 
 ---
 
 # **Flujo Roadmap v3.0: Workflows That Learn**
 
-## **Executive Summary**
+## **1. Executive Summary & Core Architecture**
 
-Flujo will evolve from a static orchestration framework into a **self-optimizing, ROI-aware pipeline platform** in seven phases. This roadmap codifies a strategy to deliver on this vision by introducing a canonical YAML specification, AI-driven improvement loops, and enterprise-grade safety mechanisms.
+Flujo will evolve from a static orchestration framework into a **self-optimizing, ROI-aware pipeline platform.** This evolution is built on a single, powerful architectural principle:
 
-Two new micro-phases are inserted—**4c (Diff-UX Prototype)** and **5b (Policy-DSL Design)**—and Phase 7 now starts with a **Marketplace-Seeding Sprint** to address critical path dependencies. All new components will rely on proven standards (DeepDiff, RFC 6902 JSON Patch, OpenTelemetry, OPA Rego/HashiCorp Sentinel, Prefect 3 rollback hooks) to minimize green-field risk and accelerate delivery.
+**The Canonical Source of Truth for any workflow is a declarative YAML file stored in version control. At runtime, this YAML is parsed into a perfect, type-safe graph of Pydantic objects—the AI-Native Spec—which the engine executes.**
+
+This dual representation provides the best of both worlds:
+*   **For Humans & Governance:** A simple, auditable, and version-controlled YAML file (`pipeline.yml`).
+*   **For the System & AI:** A high-fidelity, in-memory Pydantic object graph for safe, unambiguous execution and validation.
+
+All AI-driven improvements will be generated as **JSON Patches (RFC 6902)** against the YAML spec. These patches are instantly verifiable against the Pydantic models *before* they are ever proposed, creating an enterprise-grade safety loop. This roadmap codifies the seven phases to deliver this vision.
 
 ---
 
-## **Phase-by-Phase Execution Plan**
+## **2. Phase-by-Phase Execution Plan**
 
 ### **Phase 0: Operating Model Baseline (Foundation)**
 
-*   **Deployment Rule:** All automated or manual pipeline updates will follow an **“apply-on-next-run”** policy. Patches will never mutate in-flight executions, simplifying state management and eliminating the risk of partial-state corruption.
-*   **Traceability:** Every pipeline run will be tagged with a `spec_sha256` hash of the YAML definition it used. This version tag will be attached to every OpenTelemetry span, ensuring perfect lineage and debuggability.
+*   **Deployment Rule:** All automated or manual pipeline updates follow an **“apply-on-next-run”** policy. Patches will never mutate in-flight executions, ensuring transactional integrity.
+*   **Traceability:** Every pipeline run is tagged with the `spec_sha256` hash of the `pipeline.yml` definition it was loaded from. This version tag is attached to every OpenTelemetry span, ensuring perfect lineage and debuggability from a trace back to the exact version of the code that ran.
 
 ---
 
-### **Phase 1: Canonical YAML/JSON Specification (Core Abstraction)**
+### **Phase 1: The Canonical Spec & Bi-Directional Compiler (Core Abstraction)**
 
-*   **Deliverable:** A Pydantic-backed schema defining all `flujo` constructs (steps, loops, branches, validators) in YAML/JSON.
-*   **Deliverable:** A `StepRegistry` (the "Marketplace" foundation) that allows YAML definitions to reference Python agents and tools via stable import paths.
-*   **Deliverable:** `Pipeline.from_yaml()` and `Pipeline.to_yaml()` methods with a comprehensive suite of **round-trip fidelity tests** to guarantee that YAML and Python representations are perfectly interchangeable.
+*   **Goal:** Establish the YAML-to-Pydantic architecture as the heart of `flujo`.
+*   **Deliverable 1: The AI-Native Spec.** A comprehensive set of Pydantic models defining the Intermediate Representation (IR) of all `flujo` constructs: `Step`, `Loop`, `Conditional`, `Parallel`, `Policy`, `Test`, etc. This is the perfect internal representation.
+*   **Deliverable 2: The Human-Readable Spec.** A formal YAML schema that maps directly to the Pydantic models. This is the canonical source of truth stored in `git`.
+*   **Deliverable 3: The Compiler.**
+    *   `Pipeline.from_yaml()`: A robust parser that reads a `pipeline.yml` file and constructs the in-memory graph of Pydantic objects (the AI-Native Spec).
+    *   `Pipeline.to_yaml()`: A serializer that takes the in-memory Pydantic graph and writes it back to a clean, formatted YAML file.
+*   **Deliverable 4: The Skill Registry.** A registry for cataloging every available component (Python functions, LLM agents, API calls) with a unique ID, description, and its **input/output JSON Schema**. This registry is the "dictionary" of available skills for the Meta-Agent.
 
 ---
 
 ### **Phase 2: Telemetry with YAML Pointers (Observability)**
 
-*   **Deliverable:** Enhance the existing OpenTelemetry integration to include the `yaml_path` (e.g., `steps[2].branches.main.steps[0]`) as a standard attribute on every span, following OTel semantic conventions. This will enable direct navigation from a trace in Jaeger or Dynatrace back to the exact line in the YAML spec that generated it.
-*   **Deliverable:** Emit fine-grained cost, token, and latency metrics for every step, tagged with the same `yaml_path` and `spec_sha256` attributes. This data will be the fuel for the ROI-scoring and opportunity-finding engines in later phases.
+*   **Goal:** Make every action within a pipeline run directly traceable to a specific line in the source YAML file.
+*   **Deliverable:** Enhance the OpenTelemetry integration to add the `yaml_path` (e.g., `steps[2].branches.main.steps[0]`) as a standard attribute on every span. This enables direct navigation from a trace in Jaeger or Dynatrace back to the exact line in the YAML spec that generated it.
+*   **Deliverable:** Emit fine-grained cost, token, and latency metrics for every step, tagged with the same `yaml_path` and `spec_sha256` attributes. This data is the fuel for the ROI-scoring and opportunity-finding engines.
 
 ---
 
-### **Phase 3: Meta-Agent & Prompt-Guard SDK (Intelligence Layer)**
+### **Phase 3: The Meta-Agent & Prompt-Guard SDK (Intelligence Layer)**
 
-#### **3a: Prompt Guard SDK (New Sub-phase)**
+#### **3a: Prompt Guard SDK**
 
-*   **Goal:** Mitigate LLM fragility and hallucinations when generating pipeline patches.
-*   **Deliverable:** An internal SDK that wraps calls to the Meta-Agent.
-    *   **Schema Injector:** Automatically prepends the YAML schema and the full `StepRegistry` manifest (available skills) to the Meta-Agent’s prompt context.
-    *   **Few-Shot Patch Library:** Injects 5-10 validated examples of correct JSON Patch outputs into the prompt to guide the LLM's response format.
-    *   **Response Validator:** Parses the LLM's JSON Patch output and validates it against both the RFC 6902 standard and the `flujo` schema. It will reject any patch that references non-existent steps or contains structural errors *before* it can be proposed.
+*   **Goal:** Create a secure, reliable interface for an LLM to reason about and suggest modifications to a pipeline.
+*   **Deliverable:** An internal SDK that wraps calls to the Meta-Agent. It will:
+    1.  **Inject Context:** Prepend the prompt with the target `pipeline.yml`, the **full `SkillRegistry` manifest** (available skills), and the JSON Schema of the Pydantic models.
+    2.  **Provide Examples:** Inject a library of 5-10 validated examples of correct **JSON Patch** outputs to guide the LLM's response format.
+    3.  **Validate & Verify:**
+        *   Parse the LLM's output, ensuring it is valid JSON Patch.
+        *   Apply the patch to an in-memory copy of the Pydantic object graph.
+        *   **Instantly reject any patch that produces an object that fails Pydantic validation.** This is the core safety guarantee.
 
-#### **3b: Opportunity Engine v1 (First Learning Loop)**
+#### **3b: Opportunity Engine v1**
 
 *   **Goal:** Generate the first set of AI-driven improvement suggestions.
-*   **Deliverable:** A `flujo suggest` CLI command that:
-    1.  Ingests historical telemetry data from Phase 2.
-    2.  Identifies patterns (e.g., high-cost steps, frequently failing validators).
-    3.  Uses the Prompt Guard SDK to ask the Meta-Agent for improvement suggestions.
-    4.  Outputs a list of proposed **JSON Patches**, each ranked by an estimated ROI (e.g., "Saves ~$0.10/run with low risk to quality").
-    *At this stage, suggestions are advisory only and not auto-applied.*
+*   **Deliverable:** A `flujo suggest` CLI command that ingests historical telemetry, identifies patterns (e.g., high-cost steps), uses the Prompt Guard SDK to ask the Meta-Agent for a **JSON Patch**, and outputs the proposed patch with an estimated ROI. *Suggestions are advisory only.*
 
 ---
 
 ### **Phase 4: Human-In-The-Loop Governance (Trust & Usability)**
 
-#### **4a: Graph-Aware Diff Engine (Expanded Sub-phase)**
+#### **4a: Graph-Aware Diff Engine**
 
 *   **Goal:** Translate raw JSON Patches into human-understandable changes.
-*   **Deliverable:** A diff engine that uses `DeepDiff` to get a structural Abstract Syntax Tree (AST) of the YAML changes, then maps those changes to the pipeline graph to provide semantic context.
+*   **Deliverable:** A diff engine that uses `DeepDiff` on the YAML structures to understand the change and then maps it to the pipeline graph to provide semantic context (e.g., "This patch adds a validator to the `draft_email` step").
 
-#### **4b: PR Workflow**
+#### **4b: PR-Based Workflow**
 
 *   **Goal:** Integrate AI suggestions into standard developer workflows.
-*   **Deliverable:** A `flujo suggest --create-pr` command that automatically opens a pull request on GitHub containing the proposed patch and the human-friendly summary from the diff engine.
-*   **Deliverable:** A feedback mechanism where rejected PRs are logged and fed back to the Meta-Agent as negative examples to improve future suggestions.
+*   **Deliverable:** A `flujo suggest --create-pr` command that opens a GitHub pull request containing the human-friendly summary and the proposed change to the `pipeline.yml` file.
+*   **Deliverable:** A feedback mechanism where rejected PRs are logged and fed back to the Meta-Agent as negative examples.
 
-#### **4c: Diff-UX Prototype (New Sub-phase)**
+#### **4c: Diff-UX Prototype**
 
-*   **Goal:** Ensure the diff is trivially easy for a human to approve.
-*   **Deliverable:** A prototype for the PR body and/or a simple web UI that:
-    1.  Summarizes the patch in **natural-language bullets** (e.g., "✅ **Add** validator `ToneCheck` to step `draft_email`").
-    2.  Renders **before/after Mermaid graphs** with color-coded highlights for added, removed, or moved steps.
-*   **Metric:** This deliverable will be considered complete when internal UX testing achieves a **<10-second comprehension time** for a typical go/no-go patch review.
+*   **Goal:** Ensure any proposed change is trivially easy for a human to approve.
+*   **Deliverable:** A prototype for the PR body that renders **before/after Mermaid graphs** of the pipeline with color-coded highlights for changes, and a natural-language summary.
+*   **Metric:** Achieve a **<10-second comprehension time** for a go/no-go patch review in internal UX testing.
 
 ---
 
@@ -86,16 +95,13 @@ Two new micro-phases are inserted—**4c (Diff-UX Prototype)** and **5b (Policy-
 #### **5a: Three-Tier Trust & Rollback**
 
 *   **Goal:** Enable safe, autonomous application of low-risk changes.
-*   **Deliverable:** A policy system that classifies every proposed patch into one of three tiers:
-    *   **Low-Risk:** `retry/timeout` changes, documentation edits. **Auto-applied** after passing smoke tests.
-    *   **Medium-Risk:** Inserting known validators, reordering non-critical steps. **Staged automatically**, then auto-applied after a 24-hour "bake-in" period with no new errors.
-    *   **High-Risk:** Structural changes, adding new external tools. **Requires manual PR review.**
-*   **Deliverable:** Integration with Prefect 3-style transactional hooks to enable **instant, automatic rollback** if any embedded tests fail post-application.
+*   **Deliverable:** A policy system that classifies every proposed patch into three tiers (Low, Medium, High risk) and defines the action (auto-apply, stage-and-bake, require PR).
+*   **Deliverable:** Integration with Prefect 3-style transactional hooks for **instant, automatic rollback** of the `pipeline.yml` file if any embedded tests fail post-application.
 
-#### **5b: Economic-Policy DSL (New Sub-phase)**
+#### **5b: Economic-Policy DSL**
 
 *   **Goal:** Move beyond simple cost limits to sophisticated, ROI-aware governance.
-*   **Deliverable:** A `policies:` block in the YAML spec that allows users to define rules using a secure, sandboxed DSL inspired by OPA Rego and HashiCorp Sentinel.
+*   **Deliverable:** A `policies:` block in the YAML spec that allows users to define rules using a secure, sandboxed DSL (inspired by OPA Rego/HashiCorp Sentinel) that is evaluated by the runtime.
     ```yaml
     policies:
       - id: high_quality_cost_gate
@@ -103,54 +109,45 @@ Two new micro-phases are inserted—**4c (Diff-UX Prototype)** and **5b (Policy-
         assert: "result.total_cost_usd <= 0.10"
         action: "FAIL_RUN"
     ```
-*   **Deliverable:** An embedded evaluator that enforces these policies both **pre-merge** (in CI) and at **runtime** (as a final guardrail).
+*   **Deliverable:** An embedded evaluator that enforces these policies both pre-merge (in CI) and at runtime.
 
 ---
 
 ### **Phase 6: Embedded Tests & Behavioral Assertions (Self-Verification)**
 
 *   **Goal:** Make workflows self-verifying by embedding their success criteria directly within their definition.
-*   **Deliverable:** Enhance the YAML schema's `tests:` section to support **behavioral assertions** on any field in the final `PipelineResult` object, using the same DSL as the Economic Policy engine.
-    ```yaml
-    tests:
-      - name: "assert_cost_and_content"
-        input: { "prompt": "Write a short poem" }
-        assertions:
-          - "result.total_cost_usd < 0.01"
-          - "'roses' in result.output.lower()"
-    ```
-*   **Deliverable:** A `flujo test` CLI command that runs all embedded assertions and reports pass/fail status. This command will be the core of the auto-rollback mechanism in Phase 5.
+*   **Deliverable:** A `tests:` block in the YAML schema that supports behavioral assertions on the final `PipelineResult` object, using the same DSL as the Economic Policy engine.
+*   **Deliverable:** A `flujo test` CLI command that runs all embedded assertions. This command is the core of the auto-rollback mechanism.
 
 ---
 
 ### **Phase 7: Skill Marketplace & JIT Builder (Dynamic Adaptation)**
 
-#### **7a: Marketplace-Seeding Sprint (New Sub-phase)**
+#### **7a: Marketplace-Seeding Sprint**
 
-*   **Goal:** Solve the "cold-start" problem for the step registry.
-*   **Deliverable:** An automated **characterization test suite** that runs on every built-in `flujo` step to generate baseline `est_cost`, `est_latency`, and `est_success` metadata.
-*   **Deliverable:** A "baseline only" badge in the registry UI to distinguish estimated metrics from real-world telemetry, incentivizing usage to generate real data.
+*   **Goal:** Solve the "cold-start" problem for the `SkillRegistry`.
+*   **Deliverable:** An automated characterization test suite that runs on every built-in `flujo` skill to generate baseline `est_cost` and `est_latency` metadata for the registry.
 
 #### **7b & 7c: Marketplace API and JIT Builder**
 
 *   **Goal:** Enable the creation of ephemeral, on-demand pipelines.
-*   **Deliverable:** A `MarketplaceQuery` API for the JIT Builder Agent to perform **constraint-based planning** (e.g., "find me the cheapest sequence of steps to get from `str` to `ValidatedSQL`").
-*   **Deliverable:** A `JITStep` that takes a high-level goal, uses the Builder Agent to generate a new pipeline definition in memory, and executes it as an ephemeral sub-pipeline.
+*   **Deliverable:** A `MarketplaceQuery` API for a new **JIT Builder Agent** to perform constraint-based planning against the `SkillRegistry` (e.g., "find the cheapest sequence of skills to get from `str` to `ValidatedSQL`").
+*   **Deliverable:** A `JITStep` in the YAML spec. This step takes a high-level goal, uses the Builder Agent to generate a new **in-memory Pydantic graph (AI-Native Spec)**, and executes it as an ephemeral sub-pipeline.
 
 ---
 
-## **Implementation Timeline (High-Level)**
+## **3. Implementation Timeline (High-Level)**
 
 | Half-Year   | Key Deliverables                                                              | Status      |
 |:------------|:------------------------------------------------------------------------------|:------------|
-| **H2 2025** | Phases 0 & 1 GA; Phase 2 (Telemetry) beta; Phase 3a (Prompt Guard) prototype.  | **Upcoming**|
-| **H1 2026** | Phase 3b (Meta-Agent v1); Phase 4c (Diff-UX) beta; Phase 5b (Policy DSL) alpha.| **Planned**   |
+| **H2 2025** | Phases 0 & 1 GA (Canonical Spec); Phase 2 (Telemetry) beta; Phase 3a (Prompt Guard) prototype. | **Upcoming**|
+| **H1 2026** | Phase 3b (Meta-Agent v1); Phase 4c (Diff-UX) beta; Phase 5b (Policy DSL) alpha. | **Planned**   |
 | **H2 2026** | Diff-UX GA; Low-risk Auto-Patch gated by Economic DSL and embedded tests.      | **Planned**   |
 | **H1 2027** | Phase 7a (Marketplace Seeding) complete; JIT Builder Agent alpha.             | **Future**    |
 | **H2 2027** | JIT pipelines GA; Medium-risk Auto-Patch; full ROI dashboards.                 | **Future**    |
 
 ---
 
-## **Why This Roadmap Creates a Durable Moat**
+## **4. Strategic Moat**
 
-This plan positions `flujo` to leapfrog the competition by focusing on the full lifecycle of an AI workflow. While others focus on initial creation, `flujo` will be the only framework that provides an end-to-end, enterprise-safe path from **explicit definition → observable execution → AI-generated improvements → ROI-aware auto-deployment.** This unique combination of explicitness, safety, and adaptive ROI optimization is the foundation for delivering true *Workflows That Learn*.
+This plan positions `flujo` to leapfrog the competition by focusing on the full lifecycle of an AI workflow. While others focus on initial creation, `flujo` will be the only framework that provides an end-to-end, enterprise-safe path from **explicit definition (YAML) → verifiable execution (Pydantic Spec) → AI-generated improvements (JSON Patch) → ROI-aware auto-deployment.** This unique combination of auditable source code, perfect runtime representation, and adaptive optimization is the foundation for delivering true *Workflows That Learn*.
