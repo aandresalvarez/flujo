@@ -658,7 +658,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         if scratch.get("status") != "paused":
             raise OrchestratorError("Pipeline is not paused")
         start_idx = len(paused_result.step_history)
-        if start_idx >= len(self.pipeline.steps):
+        if start_idx > len(self.pipeline.steps):
             raise OrchestratorError("No steps remaining to resume")
         paused_step = self.pipeline.steps[start_idx]
 
