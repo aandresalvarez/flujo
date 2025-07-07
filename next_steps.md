@@ -2,214 +2,75 @@
 
 ## Overview
 
-This document details the next steps for solidifying the Flujo codebase, structured as a set of Functional Specification Documents (FSDs) for each major improvement area. Each FSD includes rationale, functional requirements, implementation notes, and acceptance criteria.
-
----
+ 
  
 
-## FSD 9: Golden Transcript Testing
-
-### Rationale
-- Regression testing for complex orchestration logic is critical for stability.
-
-### Functional Requirements
-- Implement transcript generation for pipeline runs (step-by-step summary).
-- Store golden transcripts for core recipes and pipelines.
-- Compare new runs to golden files and fail tests on unexpected changes.
-- Provide tools to update and review golden files.
-
-### Implementation Notes
-- Integrate with existing test suite and CI pipeline.
-- Document how to create and update golden files.
-
-### Acceptance Criteria
-- Golden transcript tests exist for all core recipes.
-- Regressions are caught automatically in CI.
-
----
- 
----
-
-## FSD 1: Refactor Core DSL into Dedicated Sub-Package
-
-### Rationale
-- The current `pipeline_dsl.py` is too large and complex, making maintenance and onboarding difficult.
-- Separation of concerns will improve clarity, testability, and extensibility.
-
-### Functional Requirements
-- Move each major DSL class (`Step`, `Pipeline`, `LoopStep`, `ConditionalStep`, `ParallelStep`, etc.) into its own file under `flujo/domain/dsl/`.
-- Create a new `__init__.py` to expose the public DSL API.
-- Update all internal and public imports to use the new structure.
-- Maintain backward compatibility for public API imports.
-- Update documentation and code examples to reflect the new structure.
-
-### Implementation Notes
-- Use clear, descriptive filenames (e.g., `step.py`, `pipeline.py`, `loop.py`).
-- Add module-level docstrings to each new file.
-- Ensure all tests pass after refactor.
-
-### Acceptance Criteria
-- All DSL classes are in their own files under `flujo/domain/dsl/`.
-- No direct imports from the old monolithic file remain.
-- All tests and examples pass without modification.
-- Documentation is updated and accurate.
+This roadmap synthesizes all proposed next steps into a single, unified plan. It is prioritized based on foundational impact (what's required for other features), immediate value (what provides the most safety and utility right now), and implementation complexity.
 
 ---
 
-## FSD 2: Formalize and Centralize the Agent Registry
+### **Tier 1: Core Architecture & Safety Net**
 
-### Rationale
-- Decoupling agent references from step definitions is required for YAML specs, remote execution, and security.
-- Centralized registry enables easier configuration and management.
+This tier focuses on implementing the most critical missing architectural pieces and establishing a safety net against regressions. These tasks are foundational for all future development.
 
-### Functional Requirements
-- Implement an `AgentRegistry` class with methods to register, retrieve, and list agents.
-- Update `Flujo` to accept an `agent_registry` parameter.
-- Allow `Step.agent` to be either an agent object or a string reference.
-- Update step execution logic to resolve agent names via the registry.
-- Add validation to ensure all referenced agents are registered.
+**1. Golden Transcript Testing (FSD 9)**
+*   *Status: Not Started*
+*   **Rationale:** This is the highest priority. Establishing a strong regression testing framework is essential before undertaking further architectural changes. It will provide a critical safety net to prevent regressions in the complex orchestration logic, ensure stability, and increase developer confidence.
 
-### Implementation Notes
-- Provide migration notes for users with custom agents.
-- Ensure registry supports metadata for versioning and provenance.
-- Add tests for agent lookup, error handling, and registry validation.
+**2. Formalize Agent Registry (FSD 2)**
+*   *Status: Partially Completed*
+*   **Rationale:** This is the most critical missing architectural piece. A formal agent registry is a foundational prerequisite for enabling YAML-based pipelines, remote execution, and future security features like RBAC. It's a key enabler for making Flujo more flexible and production-ready.
 
-### Acceptance Criteria
-- Steps can reference agents by name or object.
-- All agent lookups are routed through the registry.
-- YAML and remote execution scenarios are supported.
-- Tests cover registry usage and error cases.
+**3. Granular Cost Controls**
+*   *Status: Partially Completed*
+*   **Rationale:** This feature builds upon the excellent `UsageGovernor` already implemented. It's a low-complexity, high-impact task that delivers immediate and critical value by allowing users to prevent cost overruns at a fine-grained, per-step level.
 
 ---
 
-## FSD 3: Enhance Usage Governor for Control Flow Steps
+### **Tier 2: Production Readiness - Security & Observability**
 
-### Rationale
-- Current cost controls are reactive; loops and parallel steps can exceed limits before checks occur.
-- Proactive checks are required for enterprise safety and cost predictability.
+With the core architecture stabilized, this tier focuses on the essential features required to run Flujo securely and transparently in a production environment.
 
-### Functional Requirements
-- Pass `UsageLimits` and current usage stats into all control flow step logic.
-- In `LoopStep`, check usage after each iteration and exit immediately if limits are breached.
-- In `ParallelStep`, check usage after each branch completes; if breached, cancel all running branches.
-- Provide clear error messages indicating which step/branch caused the breach.
-- Add tests for all edge cases (mid-loop breach, parallel cancellation, etc.).
+**4. Health & Metrics Endpoints (FSD 7)**
+*   *Status: Partially Completed*
+*   **Rationale:** The foundation for observability is already strong with OTLP export support. Adding standard `/metrics` (Prometheus) and `/healthz` endpoints is a standard requirement for production monitoring and alerting, making it a natural and high-value next step.
 
-### Implementation Notes
-- Use `asyncio.Task.cancel()` for parallel branch cancellation.
-- Ensure partial results are preserved in the event of a breach.
-- Document governor behavior in user docs and API reference.
+**5. Secrets Management Integration**
+*   *Status: Not Started*
+*   **Rationale:** This is a crucial security improvement. Moving beyond environment variables to integrate with a dedicated secrets backend (like Vault or AWS Secrets Manager) aligns with enterprise security standards and is a more fundamental step than role-based access.
 
-### Acceptance Criteria
-- Usage governor halts execution as soon as limits are breached in loops/parallel steps.
-- Error messages are clear and actionable.
-- All relevant tests pass and cover new logic.
+**6. RBAC for Pipelines/Steps**
+*   *Status: Not Started*
+*   **Rationale:** Once secrets are managed securely, controlling *who* can execute *what* is the next logical security layer. The proposed implementation via hooks makes this a relatively low-complexity feature with high value in multi-user or multi-tenant deployments.
 
 ---
 
-## FSD 5: Enhanced Error Handling and Recovery
+### **Tier 3: Advanced Governance & Developer Experience**
 
-### Rationale
-- Robust error handling is essential for reliability and maintainability.
+This tier focuses on features that enable managing Flujo at scale and dramatically improving the day-to-day developer workflow.
 
-### Functional Requirements
-- Implement circuit breaker pattern for external API calls.
-- Add graceful degradation and fallback strategies for optional components.
-- Classify errors as transient or permanent and handle accordingly.
-- Provide user-friendly error messages and recovery options.
-- Add comprehensive error reporting and logging.
+**7. Pipeline Versioning & Registry**
+*   *Status: Not Started*
+*   **Rationale:** This is the logical evolution of the Agent Registry. A versioned Pipeline Registry is essential for managing a large suite of pipelines, enabling true CI/CD, A/B testing, and safe, governed deployments at scale.
 
-### Implementation Notes
-- Integrate with existing fallback and retry logic.
-- Ensure all error paths are covered by tests.
-
-### Acceptance Criteria
-- Circuit breakers and graceful degradation are implemented and tested.
-- Error messages are clear and actionable.
-- All error handling logic is covered by tests.
+**8. Live Pipeline Debugger UI**
+*   *Status: Not Started*
+*   **Rationale:** This represents a massive improvement for developer experience. While not a runtime dependency, a live debugger radically reduces the time it takes to build and troubleshoot complex pipelines. Flujo's hook-based architecture is perfectly suited to emit the real-time events needed to power such a tool.
 
 ---
 
-## FSD 4: Security Hardening
+### **Tier 4: Ultimate Reliability & Performance Enhancements**
 
-### Rationale
-- Enterprise users require robust security: input validation, rate limiting, audit logging, and secure defaults.
+This final tier includes the most complex architectural work for mission-critical reliability and performance tuning, which should be built upon the mature foundation established in the previous tiers.
 
-### Functional Requirements
-- Implement comprehensive input sanitization for all user and agent inputs.
-- Add rate limiting to all external API calls and user-facing endpoints.
-- Implement audit logging for sensitive operations (agent execution, config changes, etc.).
-- Review and enforce secure default settings (e.g., disable dangerous features by default).
-- Add security-focused configuration options (e.g., allowed agent list, max retries, etc.).
+**9. Durable State Backend**
+*   *Status: Not Started*
+*   **Rationale:** This is the "holy grail" for reliability and the most architecturally significant feature. It would allow long-running pipelines to survive process restarts, guaranteeing completion. This should be tackled last, as it requires deep modifications to the core runner and state management.
 
-### Implementation Notes
-- Use existing validation and logging frameworks where possible.
-- Document all new security features and configuration options.
-- Add security regression tests.
+**10. Advanced Performance Optimization (FSD 6)**
+*   *Status: Partially Completed*
+*   **Rationale:** With the core architecture in place, performance tuning becomes the focus. Implementing features like connection pooling is an enhancement that becomes critical as usage scales, placing it after the foundational features.
 
-### Acceptance Criteria
-- All inputs are sanitized and validated.
-- Rate limiting and audit logging are active and configurable.
-- Security features are documented and tested.
-
----
-
-## FSD 6: Advanced Performance Optimization
-
-### Rationale
-- As usage grows, performance bottlenecks can impact user experience and cost.
-
-### Functional Requirements
-- Implement connection pooling for HTTP/API calls.
-- Add batch processing capabilities for steps that support it.
-- Optimize memory management for large contexts and results.
-- Profile and optimize async streaming and resource cleanup.
-- Add performance monitoring and reporting.
-
-### Implementation Notes
-- Use standard libraries for pooling and batching.
-- Add benchmarks and performance regression tests.
-
-### Acceptance Criteria
-- Performance improvements are measurable (e.g., throughput, latency).
-- No regressions in existing benchmarks.
-- Performance metrics are available for monitoring.
-
----
-
-## FSD 7: Enhanced Monitoring and Observability
-
-### Rationale
-- Enterprise readiness requires deep observability, alerting, and business metrics.
-
-### Functional Requirements
-- Implement health check endpoints for all critical services.
-- Add configurable alerting for failures, cost overruns, and anomalies.
-- Track business metrics (e.g., pipeline success rates, cost per run).
-- Integrate with Prometheus, OpenTelemetry, and dashboard tools.
-- Add anomaly detection for unusual usage patterns.
-
-### Implementation Notes
-- Leverage existing telemetry and logging infrastructure.
-- Provide example dashboards and alert configurations.
-
-### Acceptance Criteria
-- Health checks, alerting, and metrics are available and documented.
-- Dashboards and alerts can be configured by users.
-
----
-
-## Implementation Timeline (Summary)
-
-- **Q1**: FSD 10, 9, 8 (Documentation, golden transcript testing, developer experience)
-- **Q2**: FSD 1, 2, 3 (DSL refactor, agent registry, usage governor)
-- **Q3**: FSD 5, 4 (Error handling, security)
-- **Q4**: FSD 6, 7 (Performance, monitoring)
-
----
-
-## Success Metrics
-
-- All acceptance criteria for each FSD are met and verified by tests and documentation.
-- Codebase is maintainable, secure, performant, and easy to use.
-- Community engagement and enterprise adoption increase measurably. 
+**11. Enhanced Error Handling (Circuit Breaker - FSD 5)**
+*   *Status: Largely Completed*
+*   **Rationale:** The project's current retry and fallback logic is already excellent. Adding a full, stateful circuit breaker pattern is an enhancement for extreme cases of service instability, making it the lowest priority item on the roadmap.
