@@ -5,6 +5,7 @@ import inspect
 import time
 import weakref
 import copy
+from datetime import datetime
 from typing import (
     Any,
     Callable,
@@ -51,6 +52,7 @@ from ..domain.resources import AppResources
 from ..domain.types import HookCallable
 from ..domain.backends import ExecutionBackend, StepExecutionRequest
 from ..tracing import ConsoleTracer
+from ..state import StateBackend, WorkflowState
 
 from .context_manager import (
     _accepts_param,
@@ -169,6 +171,8 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         usage_limits: Optional[UsageLimits] = None,
         hooks: Optional[list[HookCallable]] = None,
         backend: Optional[ExecutionBackend] = None,
+        state_backend: Optional[StateBackend] = None,
+        delete_on_completion: bool = False,
         local_tracer: Union[str, "ConsoleTracer", None] = None,
     ) -> None:
         if isinstance(pipeline, Step):
@@ -191,6 +195,8 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
 
             backend = LocalBackend()
         self.backend = backend
+        self.state_backend = state_backend
+        self.delete_on_completion = delete_on_completion
 
     async def _dispatch_hook(
         self,
@@ -349,6 +355,9 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         result: PipelineResult[ContextT],
         *,
         stream_last: bool = False,
+        run_id: str | None = None,
+        state_backend: StateBackend | None = None,
+        state_created_at: datetime | None = None,
     ) -> AsyncIterator[Any]:
         """Iterate over pipeline steps yielding streaming output.
 
@@ -475,6 +484,18 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     context=context,
                     resources=self.resources,
                 )
+                if state_backend is not None and context is not None and run_id is not None:
+                    wf_state = WorkflowState(
+                        run_id=run_id,
+                        pipeline_id=str(id(self.pipeline)),
+                        pipeline_version="0",
+                        current_step_index=idx + 1,
+                        pipeline_context=context.model_dump(),
+                        status="running",
+                        created_at=state_created_at or datetime.utcnow(),
+                        updated_at=datetime.utcnow(),
+                    )
+                    await state_backend.save_state(run_id, wf_state.model_dump())
             else:
                 await self._dispatch_hook(
                     "on_step_failure",
@@ -545,6 +566,34 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
 
         data: Optional[RunnerInT] = initial_input
         pipeline_result_obj: PipelineResult[ContextT] = PipelineResult()
+        start_idx = 0
+        state_created_at: datetime | None = None
+        if self.state_backend is not None and hasattr(current_context_instance, "run_id"):
+            loaded = await self.state_backend.load_state(current_context_instance.run_id)
+            if loaded is not None:
+                wf_state = WorkflowState.model_validate(loaded)
+                start_idx = wf_state.current_step_index
+                state_created_at = wf_state.created_at
+                if wf_state.pipeline_context:
+                    if self.context_model is not None:
+                        current_context_instance = self.context_model.model_validate(
+                            wf_state.pipeline_context
+                        )
+                    else:
+                        current_context_instance = cast(
+                            ContextT, PipelineContext.model_validate(wf_state.pipeline_context)
+                        )
+            wf_state = WorkflowState(
+                run_id=getattr(current_context_instance, "run_id", ""),
+                pipeline_id=str(id(self.pipeline)),
+                pipeline_version="0",
+                current_step_index=start_idx,
+                pipeline_context=current_context_instance.model_dump(),
+                status="running",
+                created_at=state_created_at or datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+            )
+            await self.state_backend.save_state(wf_state.run_id, wf_state.model_dump())
         try:
             await self._dispatch_hook(
                 "pre_run",
@@ -553,11 +602,14 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 resources=self.resources,
             )
             async for chunk in self._execute_steps(
-                0,
+                start_idx,
                 data,
                 cast(Optional[ContextT], current_context_instance),
                 pipeline_result_obj,
                 stream_last=True,
+                run_id=getattr(current_context_instance, "run_id", None),
+                state_backend=self.state_backend,
+                state_created_at=state_created_at,
             ):
                 yield chunk
         except asyncio.CancelledError:
@@ -579,14 +631,31 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     pipeline_result_obj,
                     cast(Optional[ContextT], current_context_instance),
                 )
+                final_status: Literal["running", "paused", "completed", "failed"]
+                final_status = (
+                    "completed"
+                    if all(s.success for s in pipeline_result_obj.step_history)
+                    else "failed"
+                )
                 if isinstance(current_context_instance, PipelineContext):
                     if current_context_instance.scratchpad.get("status") != "paused":
-                        status = (
-                            "completed"
-                            if all(s.success for s in pipeline_result_obj.step_history)
-                            else "failed"
-                        )
-                        current_context_instance.scratchpad["status"] = status
+                        current_context_instance.scratchpad["status"] = final_status
+                    else:
+                        final_status = "paused"
+                if self.state_backend is not None and hasattr(current_context_instance, "run_id"):
+                    wf_state = WorkflowState(
+                        run_id=current_context_instance.run_id,
+                        pipeline_id=str(id(self.pipeline)),
+                        pipeline_version="0",
+                        current_step_index=len(pipeline_result_obj.step_history),
+                        pipeline_context=current_context_instance.model_dump(),
+                        status=final_status,
+                        created_at=state_created_at or datetime.utcnow(),
+                        updated_at=datetime.utcnow(),
+                    )
+                    await self.state_backend.save_state(wf_state.run_id, wf_state.model_dump())
+                    if self.delete_on_completion:
+                        await self.state_backend.delete_state(wf_state.run_id)
             try:
                 await self._dispatch_hook(
                     "post_run",
@@ -703,6 +772,9 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             cast(Optional[ContextT], ctx),
             paused_result,
             stream_last=False,
+            run_id=getattr(ctx, "run_id", None),
+            state_backend=self.state_backend,
+            state_created_at=None,
         ):
             pass
 
