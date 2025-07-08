@@ -1,92 +1,85 @@
-site_name: flujo
-site_url: https://aandresalvarez.github.io/flujo/
+# mkdocs.yml for the Flujo project
 
+site_name: Flujo
+site_description: A powerful Python library for orchestrating AI workflows.
+site_url: https://flujo.dev # Aspirational URL
+
+repo_name: your-github-username/flujo
+repo_url: https://github.com/your-github-username/flujo
+edit_uri: edit/main/docs/
+
+# Enforce high quality standards for the documentation
+strict: true
+
+# Define the site navigation structure
+nav:
+  - 'Introduction': 'index.md'
+  - 'Getting Started': 'getting-started.md'
+  - 'User Guide':
+    - 'Pipelines & Steps': 'user_guide/pipelines-and-steps.md'
+    - 'Context & Resources': 'user_guide/context-and-resources.md'
+    - 'Agentic Patterns': 'user_guide/agentic-patterns.md'
+    - 'Testing Your Pipelines': 'user_guide/testing.md'
+  - 'Examples':
+    - 'Basic Pipeline': 'examples/basic-pipeline.md'
+  - 'API Reference':
+    - 'Application': 'api/application.md'
+    - 'Domain (DSL)': 'api/domain.md'
+    - 'Models': 'api/models.md'
+    - 'Exceptions': 'api/exceptions.md'
+
+# Configure the theme (Material for MkDocs is the best choice)
 theme:
-  name: material
-  features:
-    - navigation.tabs
-    - navigation.sections
-    - toc.integrate
-    - navigation.top
-    - search.suggest
-    - search.highlight
-    - content.code.copy
-  language: en
+  name: "material"
   palette:
     - scheme: default
-      toggle:
-        icon: material/weather-night
-        name: Switch to dark mode
-    - scheme: slate
+      primary: indigo
+      accent: indigo
       toggle:
         icon: material/weather-sunny
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
         name: Switch to light mode
+  features:
+    - search.suggest
+    - search.highlight
+    - content.tabs.link
+    - content.code.annotate
+    - content.code.copy
+    - navigation.tracking
+    - navigation.sections
 
-nav:
-  - Home: index.md
-  - Getting Started:
-    - Installation: installation.md
-    - Quickstart: quickstart.md
-    - Concepts: concepts.md
-    - Configuration: configuration.md
-  - Usage: usage.md
-  - Tutorial: tutorial.md
-  - 'Intelligent Evals': intelligent_evals.md
-  - Extending: extending.md
-  - Development:
-    - 'Contributing Guide': dev.md
-    - 'Documentation Guide': documentation_guide.md
-    - 'Documentation Status': documentation_status.md
-    - 'Testing Guide': testing_guide.md
-  - 'Use Cases': use_cases.md
-  - Cookbook:
-    - 'Controlling Costs': cookbook/cost_control.md
-    - 'Lifecycle Hooks': cookbook/lifecycle_hooks.md
-    - 'Console Tracer': cookbook/console_tracer.md
-    - 'Using Resources': cookbook/using_resources.md
-    - 'HITL Simple Approval': cookbook/hitl_simple_approval.md
-    - 'HITL Dynamic Clarification': cookbook/hitl_dynamic_clarification.md
-    - 'HITL Structured Input': cookbook/hitl_structured_input.md
-    - 'HITL Correction Loop': cookbook/hitl_stateful_correction_loop.md
-    - 'Real-Time Chatbot': cookbook/realtime_chatbot.md
-    - 'Advanced Prompt Formatting': cookbook/advanced_prompt_formatting.md # pragma: allowlist secret # pragma: allowlist secret
-    - 'Adapter Step': cookbook/adapter_step.md
-    - 'Serialize Pydantic': cookbook/serialize_pydantic.md
-    - 'Using the Repair Processor': cookbook/using_repair_processor.md
-    - 'Console Tracer': cookbook/console_tracer.md
-    - 'Redacting Secrets': cookbook/redacting_secrets.md  # pragma: allowlist secret
-    - 'Custom Validators': cookbook/custom_validators.md
-    - 'Error Recovery': cookbook/error_recovery.md
-    - 'Configuring Telemetry': cookbook/telemetry_setup.md
-    - 'Async Map': cookbook/async_map.md
-    - 'Agentic Loop': recipes/agentic_loop.md
-  - Guides:
-    - 'Choosing Your Loop': guides/choosing_your_loop.md
-    - 'Durable Workflows': guides/durable_workflows.md
-    - 'Managing Pipeline Versions': guides/pipeline_versioning.md
-    - 'Custom StateBackend': guides/custom_state_backend.md
-  - Migration:
-    - 'v0.3.7': migration/v0.3.7.md
-    - 'v0.3.8': migration/v0.3.8.md
-  - API Reference:
-    - Overview: api_reference.md
-    - Pipeline DSL: pipeline_dsl.md
-    - Typed Pipeline Context: pipeline_context.md
-    - Looping (LoopStep): pipeline_looping.md
-    - Branching (ConditionalStep): pipeline_branching.md
-    - Modular Workflows: modular_workflows.md
-    - Scoring: scoring.md
-    - Tools: tools.md
-    - Telemetry: telemetry.md
-    - State Backends: state.md
-    - Pipeline Registry: registry.md
-    - Troubleshooting: troubleshooting.md
+# Extensions for rendering rich markdown content
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
 
+# The core plugin for auto-generating API docs from your code
 plugins:
   - search
   - mkdocstrings:
       handlers:
         python:
+          # Tell mkdocstrings where to find the source code
+          paths: [flujo]
           options:
-            show_source: true
-            docstring_style: google
+            # Recommended options for a clean look
+            show_root_heading: true
+            show_source: false
+            members_order: source
+            separate_signature: true
+            show_signature_annotations: true
+          import:
+            - url: https://docs.python.org/3/objects.inv
+            - url: https://docs.pydantic.dev/latest/objects.inv
