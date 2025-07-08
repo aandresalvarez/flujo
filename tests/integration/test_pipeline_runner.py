@@ -45,9 +45,54 @@ async def test_feedback_enriches_prompt() -> None:
     )
     step = Step.solution(sol_agent, max_retries=2, plugins=[(plugin, 0)])
     runner = Flujo(step)
-    await gather_result(runner, "SELECT *")
+    result = await gather_result(runner, "SELECT *")
     assert sol_agent.call_count == 2
     assert "SQL Error: XYZ" in sol_agent.inputs[1]
+    step_result = result.step_history[0]
+    assert step_result.feedback == "SQL Error: XYZ"
+
+
+@pytest.mark.asyncio
+async def test_feedback_history_persists_across_retries() -> None:
+    agent = StubAgent(["out1", "out2", "out3"])
+    plugin = DummyPlugin(
+        [
+            PluginOutcome(success=False, feedback="err1"),
+            PluginOutcome(success=False, feedback="err2"),
+            PluginOutcome(success=True),
+        ]
+    )
+    step = Step.solution(agent, max_retries=3, plugins=[(plugin, 0)])
+    runner = Flujo(step)
+    result = await gather_result(runner, "in")
+    assert agent.call_count == 3
+    assert "err1" in agent.inputs[1]
+    assert "err1" in agent.inputs[2] and "err2" in agent.inputs[2]
+    step_result = result.step_history[0]
+    assert step_result.success is True
+    assert step_result.feedback == "err1\nerr2"
+
+
+@pytest.mark.asyncio
+async def test_initial_feedback_preserved_on_retry() -> None:
+    agent = StubAgent(["o1", "o2", "o3"])
+    plugin = DummyPlugin(
+        [
+            PluginOutcome(success=False),
+            PluginOutcome(success=False, feedback="e1"),
+            PluginOutcome(success=True),
+        ]
+    )
+    step = Step.solution(agent, max_retries=3, plugins=[(plugin, 0)])
+    runner = Flujo(step)
+    original = {"prompt": "q", "feedback": "start"}
+    result = await gather_result(runner, original)
+    assert agent.call_count == 3
+    assert agent.inputs[0]["feedback"] == "start"
+    assert agent.inputs[1]["feedback"] == "start"
+    assert agent.inputs[2]["feedback"] == "start\ne1"
+    step_result = result.step_history[0]
+    assert step_result.feedback == "e1"
 
 
 async def test_conditional_redirection() -> None:
