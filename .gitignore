@@ -50,6 +50,7 @@ site/
 settings.json
 .ruff_cache/
 .mypy_cache/
+.benchmarks/
 .dmypy.json
 dmypy.json
 
@@ -155,3 +156,4 @@ pip-delete-this-directory.txt
 docs/_build/
 site/
 /sbom.json
+uv.lock
