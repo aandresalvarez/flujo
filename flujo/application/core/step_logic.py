@@ -630,6 +630,8 @@ async def _run_step_logic(
     context_model_defined: bool,
     usage_limits: UsageLimits | None = None,
     context_setter: Callable[[PipelineResult[TContext], Optional[TContext]], None] | None = None,
+    stream: bool = False,
+    on_chunk: Callable[[Any], Awaitable[None]] | None = None,
 ) -> StepResult:
     """Core logic for executing a single step without engine coupling."""
     if context_setter is None:
@@ -734,7 +736,10 @@ async def _run_step_logic(
         from ...signature_tools import analyze_signature
 
         target = getattr(current_agent, "_agent", current_agent)
-        func = getattr(target, "_step_callable", target.run)
+        func = getattr(target, "_step_callable", None)
+        if func is None:
+            func = target.stream if stream and hasattr(target, "stream") else target.run
+        func = cast(Callable[..., Any], func)
         spec = analyze_signature(func)
 
         if spec.needs_context:
@@ -751,9 +756,39 @@ async def _run_step_logic(
                 agent_kwargs["resources"] = resources
         if step.config.temperature is not None and _accepts_param(func, "temperature"):
             agent_kwargs["temperature"] = step.config.temperature
-        raw_output = await current_agent.run(data, **agent_kwargs)
-        result.latency_s += time.monotonic() - start
-        last_raw_output = raw_output
+        stream_failed = False
+        if stream and hasattr(current_agent, "stream"):
+            chunks: list[Any] = []
+            try:
+                async for chunk in current_agent.stream(data, **agent_kwargs):
+                    if on_chunk is not None:
+                        await on_chunk(chunk)
+                    chunks.append(chunk)
+                result.latency_s += time.monotonic() - start
+                raw_output = (
+                    "".join(chunks)
+                    if chunks and all(isinstance(c, str) for c in chunks)
+                    else chunks
+                )
+                last_raw_output = raw_output
+            except Exception as e:
+                stream_failed = True
+                result.latency_s += time.monotonic() - start
+                partial = (
+                    "".join(chunks)
+                    if chunks and all(isinstance(c, str) for c in chunks)
+                    else chunks
+                )
+                raw_output = partial
+                last_raw_output = raw_output
+                result.output = partial
+                result.feedback = str(e)
+                feedbacks.append(str(e))
+                last_feedback = str(e)
+        else:
+            raw_output = await current_agent.run(data, **agent_kwargs)
+            result.latency_s += time.monotonic() - start
+            last_raw_output = raw_output
 
         if isinstance(raw_output, Mock):
             raise TypeError(
@@ -777,7 +812,7 @@ async def _run_step_logic(
                 unpacked_output = processed
         last_unpacked_output = unpacked_output
 
-        success = True
+        success = not stream_failed
         redirect_to = None
         final_plugin_outcome: PluginOutcome | None = None
         is_validation_step, is_strict = _get_validation_flags(step)
@@ -788,7 +823,9 @@ async def _run_step_logic(
                 from ...signature_tools import analyze_signature
 
                 plugin_kwargs: Dict[str, Any] = {}
-                func = getattr(plugin, "_plugin_callable", plugin.validate)
+                func = cast(
+                    Callable[..., Any], getattr(plugin, "_plugin_callable", plugin.validate)
+                )
                 spec = analyze_signature(func)
 
                 if spec.needs_context:

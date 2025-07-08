@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Protocol, Any, Dict, Optional
+from typing import Protocol, Any, Dict, Optional, Callable, Awaitable
 from dataclasses import dataclass
 from flujo.domain.models import BaseModel
 
@@ -35,6 +35,9 @@ class StepExecutionRequest:
     # Usage limits, propagated so nested executions (e.g., LoopStep) can enforce
     # governor checks mid-execution.
     usage_limits: Optional["UsageLimits"] = None
+    # Streaming support
+    stream: bool = False
+    on_chunk: Optional[Callable[[Any], Awaitable[None]]] = None
 
 
 class ExecutionBackend(Protocol):
