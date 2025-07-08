@@ -1,22 +1,51 @@
+# .pre-commit-config.yaml
+# Configuration for pre-commit hooks, ensuring code quality on every commit.
+
 repos:
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.4.5
+  # Standard hooks for file formatting and syntax checks.
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
     hooks:
-      - id: ruff
-  - repo: https://github.com/psf/black
-    rev: 24.4.2
+      - id: check-yaml
+      - id: check-toml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-merge-conflict
+
+  # Automated spell checking for code and documentation.
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.3.0
     hooks:
-      - id: black
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.10.0
+      - id: codespell
+        # Add words to a 'codespell.txt' file to ignore them.
+        # Example:
+        # flujo
+        # llm
+        args: ["-L", "flujo,llm"]
+
+  # Local hooks that leverage our Makefile for a single source of truth.
+  - repo: local
     hooks:
-      - id: mypy
-        additional_dependencies:
-          - pydantic
-          - pydantic-settings
-  - repo: https://github.com/Yelp/detect-secrets
-    rev: v1.4.0
-    hooks:
-      - id: detect-secrets
-        args: ['--baseline', '.secrets.baseline']
-        exclude: .secrets.baseline
+      # Runs 'make format' to auto-format Python files.
+      - id: format
+        name: Format Python Code
+        entry: make format
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      # Runs 'make lint' to check for linting and formatting errors.
+      - id: lint
+        name: Lint Python Code
+        entry: make lint
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      # Runs 'make type-check' to ensure type safety.
+      - id: typecheck
+        name: Type Check Python Code
+        entry: make type-check
+        language: system
+        types: [python]
+        pass_filenames: false
