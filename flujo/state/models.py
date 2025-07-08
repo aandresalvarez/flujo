@@ -12,6 +12,7 @@ class WorkflowState(BaseModel):
 
     run_id: str
     pipeline_id: str
+    pipeline_name: str
     pipeline_version: str
     current_step_index: int
     pipeline_context: Dict[str, Any]

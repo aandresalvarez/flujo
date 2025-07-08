@@ -2,6 +2,8 @@ from datetime import datetime
 from pathlib import Path
 import asyncio
 
+import aiosqlite
+
 import pytest
 
 from flujo.state.backends.file import FileBackend
@@ -35,6 +37,7 @@ async def test_sqlite_backend_roundtrip(tmp_path: Path) -> None:
     state = {
         "run_id": "run1",
         "pipeline_id": "p",
+        "pipeline_name": "p",
         "pipeline_version": "0",
         "current_step_index": 1,
         "pipeline_context": {"a": 1},
@@ -52,3 +55,44 @@ async def test_sqlite_backend_roundtrip(tmp_path: Path) -> None:
     assert loaded["updated_at"] == now
     await backend.delete_state("run1")
     assert await backend.load_state("run1") is None
+
+
+@pytest.mark.asyncio
+async def test_sqlite_backend_migrates_existing_db(tmp_path: Path) -> None:
+    db = tmp_path / "state.db"
+    async with aiosqlite.connect(db) as conn:
+        await conn.execute(
+            """
+            CREATE TABLE workflow_state (
+                run_id TEXT PRIMARY KEY,
+                pipeline_id TEXT,
+                pipeline_version TEXT,
+                current_step_index INTEGER,
+                pipeline_context TEXT,
+                last_step_output TEXT,
+                status TEXT,
+                created_at TEXT,
+                updated_at TEXT
+            )
+            """
+        )
+        await conn.commit()
+
+    backend = SQLiteBackend(db)
+    now = datetime.utcnow().replace(microsecond=0)
+    state = {
+        "run_id": "run1",
+        "pipeline_id": "p",
+        "pipeline_name": "p",
+        "pipeline_version": "0",
+        "current_step_index": 0,
+        "pipeline_context": {},
+        "last_step_output": None,
+        "status": "running",
+        "created_at": now,
+        "updated_at": now,
+    }
+    await backend.save_state("run1", state)
+    loaded = await backend.load_state("run1")
+    assert loaded is not None
+    assert loaded["pipeline_name"] == "p"
