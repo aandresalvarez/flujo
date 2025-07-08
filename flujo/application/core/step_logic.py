@@ -262,10 +262,25 @@ async def _execute_parallel_step_logic(
                             context.__dict__.update(validated.__dict__)
         elif parallel_step.merge_strategy == MergeStrategy.MERGE_SCRATCHPAD:
             if hasattr(context, "scratchpad"):
-                for res in succeeded_branches.values():
+                base_snapshot = dict(context.scratchpad)
+                seen_keys: set[str] = set()
+                for branch_name in sorted(succeeded_branches):
+                    res = succeeded_branches[branch_name]
                     bc = res.branch_context
                     if bc is not None and hasattr(bc, "scratchpad"):
-                        context.scratchpad.update(bc.scratchpad)
+                        for key, val in bc.scratchpad.items():
+                            if key in base_snapshot and base_snapshot[key] == val:
+                                continue
+                            if key in context.scratchpad and context.scratchpad[key] != val:
+                                raise ValueError(
+                                    f"Scratchpad key collision for '{key}' in branch '{branch_name}'"
+                                )
+                            if key in seen_keys:
+                                raise ValueError(
+                                    f"Scratchpad key collision for '{key}' in branch '{branch_name}'"
+                                )
+                            context.scratchpad[key] = val
+                            seen_keys.add(key)
 
     result.success = bool(succeeded_branches)
     final_output = {k: v.output for k, v in succeeded_branches.items()}

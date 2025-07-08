@@ -691,7 +691,7 @@ Available `MergeStrategy` values:
 
 - `NO_MERGE` (default) – discard branch context modifications.
 - `OVERWRITE` – context from the last declared successful branch overwrites matching fields.
-- `MERGE_SCRATCHPAD` – merge `scratchpad` dictionaries from all successful branches.
+- `MERGE_SCRATCHPAD` – merge `scratchpad` dictionaries from all successful branches. Branch scratchpads are merged in alphabetical order and key collisions raise a `ValueError`.
 
 `on_branch_failure` accepts `PROPAGATE` (default) or `IGNORE`. When set to
 `IGNORE`, the parallel step succeeds as long as one branch succeeds and the
