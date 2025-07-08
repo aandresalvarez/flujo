@@ -40,5 +40,6 @@ print(result.final_pipeline_context.scratchpad)
 ```
 
 Running this pipeline yields a scratchpad dictionary containing the findings
-from both branches.
+from both branches. If two branches attempt to write the same scratchpad key,
+a `ValueError` is raised to avoid accidental overwrites.
 

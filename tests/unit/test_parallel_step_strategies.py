@@ -91,6 +91,18 @@ async def test_merge_strategy_merge_scratchpad() -> None:
     assert result.final_pipeline_context.scratchpad["y"] == 2
 
 
+@pytest.mark.asyncio
+async def test_merge_scratchpad_detects_collision() -> None:
+    branches = {
+        "a": Step.model_validate({"name": "a", "agent": ScratchAgent("dup", 1)}),
+        "b": Step.model_validate({"name": "b", "agent": ScratchAgent("dup", 2)}),
+    }
+    parallel = Step.parallel("par", branches, merge_strategy=MergeStrategy.MERGE_SCRATCHPAD)
+    runner = Flujo(parallel, context_model=Ctx)
+    with pytest.raises(ValueError):
+        await gather_result(runner, "data", initial_context_data={"initial_prompt": "goal"})
+
+
 def custom_merge(main: Ctx, branch: Ctx) -> None:
     main.scratchpad.setdefault("vals", []).append(branch.scratchpad["val"])
 
