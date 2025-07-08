@@ -161,7 +161,41 @@ ContextT = TypeVar("ContextT", bound=BaseModel)
 
 
 class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
-    """Execute a pipeline sequentially."""
+    """Execute a pipeline sequentially.
+
+    Parameters
+    ----------
+    pipeline:
+        *(Deprecated)* Pipeline object to run directly. Prefer registering
+        pipelines in a :class:`~flujo.registry.PipelineRegistry` and specifying
+        ``registry``, ``pipeline_name`` and ``pipeline_version`` instead.
+    context_model:
+        Optional Pydantic model class for the shared pipeline context.
+    initial_context_data:
+        Initial values used to construct the context model.
+    resources:
+        Optional container of resources passed to each step.
+    usage_limits:
+        Optional :class:`~flujo.domain.models.UsageLimits` for governor checks.
+    hooks:
+        List of lifecycle hook callables.
+    backend:
+        Execution backend used to run steps.
+    state_backend:
+        Optional :class:`~flujo.state.backends.base.StateBackend` for persisting
+        workflow progress. See :doc:`durable_workflows`.
+    delete_on_completion:
+        Delete persisted state when the run finishes successfully.
+    pipeline_version:
+        Version string for the pipeline when using a registry.
+    local_tracer:
+        ``"default"`` to enable console tracing or pass a ``ConsoleTracer``.
+    registry:
+        Optional :class:`~flujo.registry.PipelineRegistry` holding named
+        pipelines. See :doc:`pipeline_versioning`.
+    pipeline_name:
+        Name of the pipeline to load from the registry.
+    """
 
     def __init__(
         self,

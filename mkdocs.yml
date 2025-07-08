@@ -29,10 +29,15 @@ nav:
     - Quickstart: quickstart.md
     - Concepts: concepts.md
     - Configuration: configuration.md
+  - Core Concepts:
+    - 'Durable and Resumable Workflows': durable_workflows.md
+    - 'Managing Pipeline Versions': pipeline_versioning.md
   - Usage: usage.md
   - Tutorial: tutorial.md
   - 'Intelligent Evals': intelligent_evals.md
-  - Extending: extending.md
+  - Extending:
+    - Overview: extending.md
+    - 'Custom StateBackend': custom_state_backend.md
   - Development:
     - 'Contributing Guide': dev.md
     - 'Documentation Guide': documentation_guide.md
@@ -76,6 +81,8 @@ nav:
     - Tools: tools.md
     - Telemetry: telemetry.md
     - Troubleshooting: troubleshooting.md
+    - State Module: state.md
+    - Registry Module: registry.md
 
 plugins:
   - search

@@ -91,7 +91,14 @@ async def add_excitement(text: str) -> str:
     return f"{text}!"
 
 pipeline = to_upper >> add_excitement
-runner = Flujo(pipeline)
+registry = PipelineRegistry()
+registry.register(pipeline, "hello-pipeline", "1.0.0")
+runner = Flujo(
+    registry=registry,
+    pipeline_name="hello-pipeline",
+    pipeline_version="1.0.0",
+    # state_backend=SQLiteBackend(Path("state.db"))  # add for durability
+)
 result: PipelineResult[str] = runner.run("hello")
 print(result.step_history[-1].output)  # HELLO!
 ```

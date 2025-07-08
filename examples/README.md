@@ -11,6 +11,7 @@
 | **06_typed_context.py** | Sharing state with Typed Pipeline Context. |
 | **07_loop_step.py** | Iterative refinement using LoopStep. |
 | **08_branch_step.py** | Dynamic routing with ConditionalStep. |
+| **durable_workflow.py** | Resumable pipeline with the SQLiteBackend. |
 
 Each script is standalone – activate your virtualenv, set `OPENAI_API_KEY`, then:
 
