@@ -42,10 +42,10 @@ repos:
         types: [python]
         pass_filenames: false
 
-      # Runs 'make type-check' to ensure type safety.
+      # Runs 'make typecheck' to ensure type safety.
       - id: typecheck
         name: Type Check Python Code
-        entry: make type-check
+        entry: make typecheck
         language: system
         types: [python]
         pass_filenames: false
