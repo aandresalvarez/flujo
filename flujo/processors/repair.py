@@ -70,9 +70,7 @@ class DeterministicRepairProcessor:
         except Exception as e:
             import logging
 
-            logging.warning(
-                f"DeterministicRepairProcessor: ast.literal_eval failed: {e}"
-            )
+            logging.warning(f"DeterministicRepairProcessor: ast.literal_eval failed: {e}")
             # pass
 
         raise ValueError("DeterministicRepairProcessor: unable to repair payload.")
