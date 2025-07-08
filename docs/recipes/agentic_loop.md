@@ -30,24 +30,7 @@ if paused.status == "paused":
 Your planner agent must emit one of the following commands on each turn:
 
 - `RunAgentCommand(agent_name, input_data)` – delegate work to a registered sub-agent.
-- `RunPythonCodeCommand(code)` – run a Python snippet. The result should be stored in a variable named `result`.
 - `AskHumanCommand(question)` – pause the loop and wait for human input.
 - `FinishCommand(final_answer)` – end the loop with a final answer.
 
-For example, you can run Python code safely:
-
-```python
-planner = StubAgent([
-    RunPythonCodeCommand(code="result = 1 + 1"),
-    FinishCommand(final_answer="done"),
-])
-loop = AgenticLoop(planner, {})
-result = loop.run("goal")
-print(result.final_pipeline_context.command_log[0].execution_result)
-```
-
-## Security Note
-
-`RunPythonCodeCommand` executes Python code with built-ins disabled and will
-reject any `import` statements. It still runs in-process, so you must ensure a
-safe sandbox for untrusted input.
+The previously supported `RunPythonCodeCommand` has been removed due to security concerns.
