@@ -40,21 +40,39 @@ class TestStateManager:
     @pytest.mark.asyncio
     async def test_load_workflow_state_no_backend(self, state_manager):
         """Test loading state when no backend is configured."""
-        context, output, idx, created = await state_manager.load_workflow_state("test-id")
+        (
+            context,
+            output,
+            idx,
+            created,
+            pipeline_name,
+            pipeline_version,
+        ) = await state_manager.load_workflow_state("test-id")
         assert context is None
         assert output is None
         assert idx == 0
         assert created is None
+        assert pipeline_name is None
+        assert pipeline_version is None
 
     @pytest.mark.asyncio
     async def test_load_workflow_state_no_run_id(self, mock_state_backend):
         """Test loading state when no run_id is provided."""
         state_manager = StateManager(mock_state_backend)
-        context, output, idx, created = await state_manager.load_workflow_state("")
+        (
+            context,
+            output,
+            idx,
+            created,
+            pipeline_name,
+            pipeline_version,
+        ) = await state_manager.load_workflow_state("")
         assert context is None
         assert output is None
         assert idx == 0
         assert created is None
+        assert pipeline_name is None
+        assert pipeline_version is None
 
     @pytest.mark.asyncio
     async def test_load_workflow_state_not_found(self, mock_state_backend):
@@ -62,11 +80,20 @@ class TestStateManager:
         mock_state_backend.load_state.return_value = None
         state_manager = StateManager(mock_state_backend)
 
-        context, output, idx, created = await state_manager.load_workflow_state("test-id")
+        (
+            context,
+            output,
+            idx,
+            created,
+            pipeline_name,
+            pipeline_version,
+        ) = await state_manager.load_workflow_state("test-id")
         assert context is None
         assert output is None
         assert idx == 0
         assert created is None
+        assert pipeline_name is None
+        assert pipeline_version is None
 
     @pytest.mark.asyncio
     async def test_persist_workflow_state_no_backend(self, state_manager):
@@ -209,8 +236,9 @@ class TestTypeValidator:
         next_step.name = "next_step"
         next_step.__step_input_type__ = str
 
-        # Should not raise any exceptions for None
-        type_validator.validate_step_output(mock_step, None, next_step)
+        # Should raise TypeMismatchError when None is passed to str type
+        with pytest.raises(TypeMismatchError, match="Type mismatch"):
+            type_validator.validate_step_output(mock_step, None, next_step)
 
     def test_get_step_input_type(self, type_validator, mock_step):
         """Test getting step input type."""
@@ -323,11 +351,15 @@ class TestExecutionManager:
     @pytest.mark.asyncio
     async def test_execute_steps_basic(self, execution_manager, mock_step_executor):
         """Test basic step execution."""
-        step_result = StepResult(name="step1", output="output", success=True)
+        step1_result = StepResult(name="step1", output="output1", success=True)
+        step2_result = StepResult(name="step2", output="output2", success=True)
 
-        # Create a proper async generator mock
-        async def mock_executor(*args, **kwargs):
-            yield step_result
+        # Create a proper async generator mock that handles both steps
+        async def mock_executor(step, data, context, resources, stream=False):
+            if step.name == "step1":
+                yield step1_result
+            elif step.name == "step2":
+                yield step2_result
 
         result = PipelineResult()
         results = []

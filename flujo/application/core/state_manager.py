@@ -21,18 +21,18 @@ class StateManager(Generic[ContextT]):
         self,
         run_id: str,
         context_model: Optional[type[ContextT]] = None,
-    ) -> tuple[Optional[ContextT], Any, int, Optional[datetime]]:
+    ) -> tuple[Optional[ContextT], Any, int, Optional[datetime], Optional[str], Optional[str]]:
         """Load workflow state from persistence backend.
 
         Returns:
-            Tuple of (context, last_step_output, current_step_index, created_at)
+            Tuple of (context, last_step_output, current_step_index, created_at, pipeline_name, pipeline_version)
         """
         if self.state_backend is None or not run_id:
-            return None, None, 0, None
+            return None, None, 0, None, None, None
 
         loaded = await self.state_backend.load_state(run_id)
         if loaded is None:
-            return None, None, 0, None
+            return None, None, 0, None, None, None
 
         wf_state = WorkflowState.model_validate(loaded)
 
@@ -44,7 +44,20 @@ class StateManager(Generic[ContextT]):
             else:
                 context = PipelineContext.model_validate(wf_state.pipeline_context)  # type: ignore
 
-        return context, wf_state.last_step_output, wf_state.current_step_index, wf_state.created_at
+            # Restore pipeline metadata from state
+            if context is not None and hasattr(context, "pipeline_name"):
+                context.pipeline_name = wf_state.pipeline_name
+            if context is not None and hasattr(context, "pipeline_version"):
+                context.pipeline_version = wf_state.pipeline_version
+
+        return (
+            context,
+            wf_state.last_step_output,
+            wf_state.current_step_index,
+            wf_state.created_at,
+            wf_state.pipeline_name,
+            wf_state.pipeline_version,
+        )
 
     async def persist_workflow_state(
         self,
@@ -99,3 +112,10 @@ class StateManager(Generic[ContextT]):
         if context is None:
             return None
         return getattr(context, "run_id", None)
+
+    async def delete_workflow_state(self, run_id: str | None) -> None:
+        """Delete workflow state from backend."""
+        if self.state_backend is None or run_id is None:
+            return
+
+        await self.state_backend.delete_state(run_id)

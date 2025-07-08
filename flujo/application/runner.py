@@ -483,9 +483,14 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         run_id_for_state = state_manager.get_run_id_from_context(current_context_instance)
 
         if run_id_for_state:
-            context, last_output, current_idx, created_at = await state_manager.load_workflow_state(
-                run_id_for_state, self.context_model
-            )
+            (
+                context,
+                last_output,
+                current_idx,
+                created_at,
+                pipeline_name,
+                pipeline_version,
+            ) = await state_manager.load_workflow_state(run_id_for_state, self.context_model)
             if context is not None:
                 # Resume from persisted state
                 current_context_instance = context
@@ -494,11 +499,13 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 if start_idx > 0:
                     data = last_output
 
+                # Restore pipeline version from state
+                if pipeline_version is not None:
+                    self.pipeline_version = pipeline_version
+                if pipeline_name is not None:
+                    self.pipeline_name = pipeline_name
+
                 # Ensure pipeline is loaded with correct version
-                if hasattr(current_context_instance, "pipeline_name"):
-                    self.pipeline_name = current_context_instance.pipeline_name
-                if hasattr(current_context_instance, "pipeline_version"):
-                    self.pipeline_version = current_context_instance.pipeline_version
                 self._ensure_pipeline()
 
                 # Validate step index
@@ -599,6 +606,16 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     state_created_at=state_created_at,
                     final_status=final_status,
                 )
+
+                # Delete state if delete_on_completion is True and pipeline completed successfully
+                if (
+                    self.delete_on_completion
+                    and final_status == "completed"
+                    and state_manager.get_run_id_from_context(current_context_instance) is not None
+                ):
+                    await state_manager.delete_workflow_state(
+                        state_manager.get_run_id_from_context(current_context_instance)
+                    )
             try:
                 await self._dispatch_hook(
                     "post_run",
@@ -763,6 +780,14 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             state_created_at=state_created_at,
             final_status=final_status,
         )
+
+        # Delete state if delete_on_completion is True and pipeline completed successfully
+        if (
+            self.delete_on_completion
+            and final_status == "completed"
+            and run_id_for_state is not None
+        ):
+            await state_manager.delete_workflow_state(run_id_for_state)
 
         execution_manager.set_final_context(paused_result, cast(Optional[ContextT], ctx))
         return paused_result

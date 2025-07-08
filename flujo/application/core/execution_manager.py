@@ -8,6 +8,12 @@ from typing import Any, AsyncIterator, Optional, TypeVar, Generic
 from ...domain.dsl.pipeline import Pipeline
 from ...domain.models import BaseModel, PipelineResult, StepResult
 
+from ...exceptions import (
+    PausedException,
+    PipelineAbortSignal,
+    UsageLimitExceededError,
+    PipelineContextInitializationError,
+)
 from ...infra import telemetry
 
 from .state_manager import StateManager
@@ -70,53 +76,129 @@ class ExecutionManager(Generic[ContextT]):
             Streaming output chunks or step results
         """
         for idx, step in enumerate(self.pipeline.steps[start_idx:], start=start_idx):
-            # Execute step with coordination
             step_result = None
-            async for item in self.step_coordinator.execute_step(
-                step,
-                data,
-                context,
-                stream=stream_last and idx == len(self.pipeline.steps) - 1,
-                step_executor=step_executor,
-            ):
-                if isinstance(item, StepResult):
-                    step_result = item
-                else:
-                    yield item
+            try:
+                try:
+                    async for item in self.step_coordinator.execute_step(
+                        step,
+                        data,
+                        context,
+                        stream=stream_last and idx == len(self.pipeline.steps) - 1,
+                        step_executor=step_executor,
+                    ):
+                        if isinstance(item, StepResult):
+                            step_result = item
+                        else:
+                            yield item
+
+                    # Persist state if needed
+                    if step_result and step_result.success and run_id is not None:
+                        await self.state_manager.persist_workflow_state(
+                            run_id=run_id,
+                            context=context,
+                            current_step_index=idx + 1,
+                            last_step_output=step_result.output,
+                            status="running",
+                            state_created_at=state_created_at,
+                        )
+
+                    # Validate type compatibility with next step - this may raise TypeMismatchError
+                    if step_result and idx < len(self.pipeline.steps) - 1:
+                        next_step = self.pipeline.steps[idx + 1]
+                        self.type_validator.validate_step_output(
+                            step, step_result.output, next_step
+                        )
+
+                    # Pass output to next step
+                    if step_result:
+                        data = step_result.output
+
+                except PipelineAbortSignal:
+                    # Update pipeline result before aborting
+                    if step_result is not None:
+                        self.step_coordinator.update_pipeline_result(result, step_result)
+                    self.set_final_context(result, context)
+                    yield result
+                    return
+                except PausedException as e:
+                    # Handle pause by updating context and returning current result
+                    if context is not None:
+                        if hasattr(context, "scratchpad"):
+                            context.scratchpad["status"] = "paused"
+                            context.scratchpad["pause_message"] = str(e)
+                    self.set_final_context(result, context)
+                    yield result
+                    return
+                except UsageLimitExceededError:
+                    # Re-raise usage limit errors to be handled by the runner
+                    raise
+                except PipelineContextInitializationError as e:
+                    # Convert to ContextInheritanceError if appropriate
+                    from ...exceptions import ContextInheritanceError
+                    from ..context_manager import _extract_missing_fields
+
+                    # Attach the exception itself to a dummy StepResult for finally block
+                    step_result = StepResult(
+                        name=step.name,
+                        output=None,
+                        success=False,
+                        attempts=0,
+                        feedback=str(e),
+                        metadata_={
+                            "_context_init_cause": e.__cause__
+                            if e.__cause__ is not None
+                            else e.__context__
+                        },
+                    )
+                    # Do not raise here; let finally block handle
+
+            finally:
+                if step_result is not None and (
+                    not result.step_history or result.step_history[-1] is not step_result
+                ):
+                    self.step_coordinator.update_pipeline_result(result, step_result)
+
+                    # Check usage limits after step result is added to pipeline result
+                    with telemetry.logfire.span(step.name) as span:
+                        self.usage_governor.check_usage_limits(result, span)
+                        self.usage_governor.update_telemetry_span(span, result)
+
+                    # If the step failed due to context inheritance, propagate the error
+                    if step_result is not None and not step_result.success and step_result.feedback:
+                        if (
+                            "Failed to inherit context" in step_result.feedback
+                            or "Missing required fields" in step_result.feedback
+                        ):
+                            from ...exceptions import ContextInheritanceError
+                            from ..context_manager import _extract_missing_fields
+
+                            cause = None
+                            if (
+                                step_result.metadata_
+                                and "_context_init_cause" in step_result.metadata_
+                            ):
+                                cause = step_result.metadata_["_context_init_cause"]
+                            missing_fields = _extract_missing_fields(cause)
+                            if not missing_fields and step_result.feedback:
+                                import re
+
+                                match = re.search(
+                                    r"Missing required fields: ([\w, ]+)", step_result.feedback
+                                )
+                                if match:
+                                    missing_fields = [f.strip() for f in match.group(1).split(",")]
+                            raise ContextInheritanceError(
+                                missing_fields=missing_fields,
+                                parent_context_keys=[],
+                                child_model_name="Unknown",
+                            )
 
             if step_result is None:
                 continue
 
-            # Update pipeline result
-            self.step_coordinator.update_pipeline_result(result, step_result)
-
-            # Check usage limits - this may raise UsageLimitExceededError
-            with telemetry.logfire.span(step.name) as span:
-                self.usage_governor.check_usage_limits(result, span)
-                self.usage_governor.update_telemetry_span(span, result)
-
-            # Persist state if needed
-            if step_result.success and run_id is not None:
-                await self.state_manager.persist_workflow_state(
-                    run_id=run_id,
-                    context=context,
-                    current_step_index=idx + 1,
-                    last_step_output=step_result.output,
-                    status="running",
-                    state_created_at=state_created_at,
-                )
-
             # Stop on step failure
             if not step_result.success:
                 break
-
-            # Validate type compatibility with next step - this may raise TypeMismatchError
-            if idx < len(self.pipeline.steps) - 1:
-                next_step = self.pipeline.steps[idx + 1]
-                self.type_validator.validate_step_output(step, step_result.output, next_step)
-
-            # Pass output to next step
-            data = step_result.output
 
     def set_final_context(
         self,

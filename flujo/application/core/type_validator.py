@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Type, TypeVar
+from typing import Any, Type, TypeVar, get_args, get_origin, Union
 
 from ...domain.dsl.step import Step
 from ...exceptions import TypeMismatchError
@@ -36,9 +36,23 @@ class TypeValidator:
         expected = getattr(next_step, "__step_input_type__", Any)
         actual_type = type(step_result)
 
-        # Handle None values specially - they should be compatible with any type
+        # Only allow None if the expected type is compatible with None
         if step_result is None:
-            return  # None is compatible with any type
+            import types
+
+            origin = get_origin(expected)
+            if origin is Union:
+                if type(None) in get_args(expected):
+                    return
+            elif hasattr(types, "UnionType") and isinstance(expected, types.UnionType):
+                if type(None) in expected.__args__:
+                    return
+            if expected is Any:
+                return
+            raise TypeMismatchError(
+                f"Type mismatch: Output of '{step.name}' was None, but '{next_step.name}' expects '{expected}'. "
+                "For best results, use a static type checker like mypy to catch these issues before runtime."
+            )
 
         if not _types_compatible(actual_type, expected):
             raise TypeMismatchError(

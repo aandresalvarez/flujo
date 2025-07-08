@@ -9,7 +9,7 @@ from ...domain.models import BaseModel, PipelineResult, StepResult, PipelineCont
 from ...domain.resources import AppResources
 from ...domain.types import HookCallable
 from typing import Literal
-from ...exceptions import PausedException
+from ...exceptions import PausedException, PipelineAbortSignal, PipelineContextInitializationError
 from ...infra import telemetry
 from ..core.hook_dispatcher import _dispatch_hook as _dispatch_hook_impl
 
@@ -75,6 +75,9 @@ class StepCoordinator(Generic[ContextT]):
                     if "paused_step_input" not in scratch:
                         scratch["paused_step_input"] = data
                 raise
+            except PipelineContextInitializationError:
+                # Re-raise context initialization errors to be handled by ExecutionManager
+                raise
 
             # Update telemetry span with step metadata
             if step_result and step_result.metadata_:
@@ -94,12 +97,17 @@ class StepCoordinator(Generic[ContextT]):
                     resources=self.resources,
                 )
             else:
-                await self._dispatch_hook(
-                    "on_step_failure",
-                    step_result=step_result,
-                    context=context,
-                    resources=self.resources,
-                )
+                try:
+                    await self._dispatch_hook(
+                        "on_step_failure",
+                        step_result=step_result,
+                        context=context,
+                        resources=self.resources,
+                    )
+                except PipelineAbortSignal:
+                    # Yield the failed step result before aborting
+                    yield step_result
+                    raise
                 telemetry.logfire.warn(f"Step '{step.name}' failed. Halting pipeline execution.")
 
             yield step_result
@@ -110,7 +118,11 @@ class StepCoordinator(Generic[ContextT]):
         **kwargs: Any,
     ) -> None:
         """Dispatch hooks for the given event."""
-        await _dispatch_hook_impl(self.hooks, event_name, **kwargs)
+        try:
+            await _dispatch_hook_impl(self.hooks, event_name, **kwargs)
+        except PipelineAbortSignal:
+            # Re-raise PipelineAbortSignal so it propagates up to ExecutionManager
+            raise
 
     def update_pipeline_result(
         self,
