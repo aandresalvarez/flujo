@@ -717,13 +717,13 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             return
         except PipelineAbortSignal as e:
             telemetry.logfire.info(str(e))
-        except UsageLimitExceededError as e:
+        except UsageLimitExceededError:
             if current_context_instance is not None:
                 self._set_final_context(
                     pipeline_result_obj,
                     cast(Optional[ContextT], current_context_instance),
                 )
-            raise e
+            raise
         finally:
             if current_context_instance is not None:
                 self._set_final_context(
