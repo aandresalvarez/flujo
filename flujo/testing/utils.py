@@ -100,6 +100,7 @@ class DummyRemoteBackend(ExecutionBackend):
             "resources": request.resources,
             "context_model_defined": request.context_model_defined,
             "usage_limits": request.usage_limits,
+            "stream": request.stream,
         }
 
         serialized = orjson.dumps(payload, default=pydantic_default)
@@ -120,6 +121,8 @@ class DummyRemoteBackend(ExecutionBackend):
             resources=reconstruct(request.resources, data.get("resources")),
             context_model_defined=data.get("context_model_defined", False),
             usage_limits=reconstruct(request.usage_limits, data.get("usage_limits")),
+            stream=data.get("stream", False),
+            on_chunk=request.on_chunk,
         )
         roundtrip.step = original_step
         result = await self.local.execute_step(roundtrip)

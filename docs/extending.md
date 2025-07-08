@@ -63,7 +63,19 @@ class LoggingBackend(ExecutionBackend):
     async def execute_step(self, request: StepExecutionRequest) -> StepResult:
         print(f"Executing {request.step.name}")
         agent = request.step.agent
-        output = await agent.run(request.input_data)
+        if request.stream and hasattr(agent, "stream"):
+            chunks: list[Any] = []
+            async for c in agent.stream(request.input_data):
+                if request.on_chunk is not None:
+                    await request.on_chunk(c)
+                chunks.append(c)
+        else:
+            chunks = [await agent.run(request.input_data)]
+        output = (
+            "".join(chunks)
+            if chunks and all(isinstance(c, str) for c in chunks)
+            else chunks
+        )
         return StepResult(name=request.step.name, output=output)
 
 custom_backend = LoggingBackend({})

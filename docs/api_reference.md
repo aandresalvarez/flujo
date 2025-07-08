@@ -479,9 +479,11 @@ local_backend = LocalBackend(agent_registry={
 # When a step is executed, a StepExecutionRequest is sent to the backend:
 request = StepExecutionRequest(
     step=Step(...),
-    input_data=..., 
+    input_data=...,
     context=PipelineContext(initial_prompt=""),
     resources=None,
+    stream=False,  # Set to True to enable streaming
+    on_chunk=None,  # Optional callback for streamed chunks
 )
 
 # The execute_step method handles the actual running of the step's logic

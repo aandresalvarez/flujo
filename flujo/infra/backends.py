@@ -35,6 +35,8 @@ class LocalBackend(ExecutionBackend):
                 resources=resources,
                 context_model_defined=request.context_model_defined,
                 usage_limits=request.usage_limits,
+                stream=request.stream,
+                on_chunk=request.on_chunk,
             )
             return await self.execute_step(nested_request)
 
@@ -46,4 +48,6 @@ class LocalBackend(ExecutionBackend):
             step_executor=executor,
             context_model_defined=request.context_model_defined,
             usage_limits=request.usage_limits,
+            stream=request.stream,
+            on_chunk=request.on_chunk,
         )
