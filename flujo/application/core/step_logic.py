@@ -143,7 +143,9 @@ async def _execute_parallel_step_logic(
                         ):
                             limit_breach_error = UsageLimitExceededError(
                                 f"Cost limit of ${usage_limits.total_cost_usd_limit} exceeded",
-                                PipelineResult(step_history=[result], total_cost_usd=total_cost_so_far),
+                                PipelineResult(
+                                    step_history=[result], total_cost_usd=total_cost_so_far
+                                ),
                             )
                             limit_breached.set()
                         elif (
@@ -152,7 +154,9 @@ async def _execute_parallel_step_logic(
                         ):
                             limit_breach_error = UsageLimitExceededError(
                                 f"Token limit of {usage_limits.total_tokens_limit} exceeded",
-                                PipelineResult(step_history=[result], total_cost_usd=total_cost_so_far),
+                                PipelineResult(
+                                    step_history=[result], total_cost_usd=total_cost_so_far
+                                ),
                             )
                             limit_breached.set()
 
@@ -358,15 +362,28 @@ async def _execute_loop_step_logic(
 
         iteration_succeeded_fully = True
         current_iteration_data_for_body_step = current_body_input
+        iteration_context = copy.deepcopy(context) if context is not None else None
 
         with telemetry.logfire.span(f"Loop '{loop_step.name}' - Iteration {i}"):
             for body_s in loop_step.loop_body_pipeline.steps:
-                body_step_result_obj = await step_executor(
-                    body_s,
-                    current_iteration_data_for_body_step,
-                    context,
-                    resources,
-                )
+                try:
+                    body_step_result_obj = await step_executor(
+                        body_s,
+                        current_iteration_data_for_body_step,
+                        iteration_context,
+                        resources,
+                    )
+                except PausedException:
+                    if context is not None and iteration_context is not None:
+                        if hasattr(context, "__dict__") and hasattr(iteration_context, "__dict__"):
+                            context.__dict__.update(iteration_context.__dict__)
+                        elif hasattr(iteration_context, "__dict__"):
+                            for key, value in iteration_context.__dict__.items():
+                                try:
+                                    setattr(context, key, value)
+                                except Exception:
+                                    pass
+                    raise
 
                 loop_overall_result.latency_s += body_step_result_obj.latency_s
                 loop_overall_result.cost_usd += getattr(body_step_result_obj, "cost_usd", 0.0)
