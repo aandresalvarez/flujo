@@ -14,7 +14,10 @@ loop = Step.loop_until(
     max_loops=2,
 )
 runner = Flujo(loop)
-paused = await runner.run_async("start")
+result = None
+async for item in runner.run_async("start"):
+    result = item
+paused = result
 paused = await runner.resume_async(paused, "not ok")
 final = await runner.resume_async(paused, "ok")
 ```

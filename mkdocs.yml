@@ -62,6 +62,9 @@ nav:
     - 'Agentic Loop': recipes/agentic_loop.md
   - Guides:
     - 'Choosing Your Loop': guides/choosing_your_loop.md
+    - 'Durable Workflows': guides/durable_workflows.md
+    - 'Managing Pipeline Versions': guides/pipeline_versioning.md
+    - 'Custom StateBackend': guides/custom_state_backend.md
   - Migration:
     - 'v0.3.7': migration/v0.3.7.md
     - 'v0.3.8': migration/v0.3.8.md
@@ -75,6 +78,8 @@ nav:
     - Scoring: scoring.md
     - Tools: tools.md
     - Telemetry: telemetry.md
+    - State Backends: state.md
+    - Pipeline Registry: registry.md
     - Troubleshooting: troubleshooting.md
 
 plugins:

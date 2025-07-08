@@ -31,8 +31,9 @@ orchestrator = Default(
 # Run a task synchronously
 result = orchestrator.run_sync(Task(prompt="Generate a poem"))
 
-# Run a task asynchronously
-candidate = await orchestrator.run_async(Task(prompt="Generate a poem"))
+# Run a task asynchronously and gather the result
+from flujo.testing import gather_result
+candidate = await gather_result(orchestrator.run_async(Task(prompt="Generate a poem")))
 
 # Stream the response chunk by chunk
 async for piece in orchestrator.stream_async(Task(prompt="Generate a poem")):
@@ -47,7 +48,8 @@ The Pipeline DSL lets you create flexible, custom workflows and execute them
 with `Flujo`.
 
 ```python
-from flujo import Step, Flujo, Task
+from flujo import Step, Flujo, Task, PipelineRegistry
+from flujo.state import SQLiteBackend
 from flujo.infra.agents import review_agent, solution_agent, validator_agent
 from flujo.infra.backends import LocalBackend
 from pydantic import BaseModel
@@ -91,16 +93,25 @@ async def to_upper(text: str) -> str:
 
 upper_step = Step.from_mapper(to_upper)
 
-runner = Flujo(custom_pipeline)
+registry = PipelineRegistry()
+registry.register(custom_pipeline, "custom", "1.0.0")
+runner = Flujo(
+    registry=registry,
+    pipeline_name="custom",
+    pipeline_version="1.0.0",
+)
 # With a shared typed context
 runner_with_ctx = Flujo(
-    custom_pipeline,
+    registry=registry,
+    pipeline_name="custom",
+    pipeline_version="1.0.0",
     context_model=MyContext,
     initial_context_data={"counter": 0},
     resources=my_resources,
     usage_limits=UsageLimits(total_cost_usd_limit=10.0),
     hooks=[my_hook],
     backend=LocalBackend(),
+    state_backend=SQLiteBackend("state.db"),
 )
 
 # Advanced constructs
