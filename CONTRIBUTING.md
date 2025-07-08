@@ -48,28 +48,18 @@ python --version                    # should print 3.11.x
 
 ### Local Development Workflow
 
-All `make` commands are thin wrappers around `hatch` scripts defined in
-`pyproject.toml`.
+The project uses [uv](https://github.com/astral-sh/uv) for dependency management and provides convenient `make` commands.
 
-1. **Install Hatch:**
+1. **Create Environment & Install Dependencies:**
    ```bash
-   pip install hatch
+   make install       # creates .venv and installs all dependencies
+   pre-commit install # optional: set up git hooks
    ```
+   > **Tip:** Re-run `make install` after pulling dependency changes to keep your environment in sync with CI.
 
-2. **Create Environment & Install All Dev Dependencies:**
+2. **Run Quality Checks:**
    ```bash
-   make setup
-   ```
-   This command will:
-   - Install all required development, testing, and documentation dependencies (including `pytest`, `pytest-asyncio`, `vcrpy`, `hypothesis`, etc.)
-   - Set up pre-commit hooks for code quality and secret scanning
-   - Ensure your environment matches the CI pipeline
-
-   > **Tip:** Always use `make setup` after pulling changes to dependencies or when setting up a new environment. This guarantees all tools (test, lint, type-check) will work as expected.
-
-3. **Run Quality Checks:**
-   ```bash
-   make quality
+   make all
    ```
 
 4. **Run Tests:**
@@ -150,7 +140,7 @@ these tests manually via GitHub Actions:
 
 ### All-in-One Quality Check
 ```bash
-make quality  # runs formatting, lint, type check and security scan
+make all  # runs formatting, lint, type check and tests
 ```
 
 ### Individual Quality Checks
@@ -287,7 +277,7 @@ make release-delete       # delete current release (requires confirmation)
    - [ ] Update version in `pyproject.toml`
    - [ ] Update CHANGELOG.md
    - [ ] Run full test suite: `make test`
-   - [ ] Check code quality: `make quality`
+   - [ ] Check code quality: `make all`
    - [ ] Build package: `make package`
    - [ ] Verify wheel contents: `unzip -l dist/flujo-*.whl`
    - [ ] Create release with notes
@@ -521,10 +511,10 @@ make clean-cache          # All tool caches
 
 Our GitHub Actions workflow mirrors the local development environment. If a job fails in CI but succeeds locally, check the following:
 
-1. **Have you installed the latest dependencies?** Run `make setup` to match the CI environment.
-2. **Is the issue in the `quality_checks` job?** This job runs `hatch run quality`. Execute the same command locally to reproduce lint or type errors.
-3. **Is the issue in the `test_and_security` job?** This job runs `hatch run cov` and `hatch run bandit-check`. Run them locally to pinpoint the failing step.
-4. **Review the Workflow File:** The CI logic lives in `.github/workflows/ci.yml` and uses the unified setup script for consistency.
+1. **Have you installed the latest dependencies?** Run `make install` to match the CI environment.
+2. **Is the issue in the `lint-and-typecheck` job?** This job runs `make lint` and `make typecheck`. Execute them locally to reproduce lint or type errors.
+3. **Is the issue in the `test` job?** This job runs the test suite with coverage enabled. Run `make test` locally to reproduce failures.
+4. **Review the Workflow File:** The CI logic lives in `.github/workflows/ci.yml` and uses the same Makefile commands for consistency.
 
 For all available commands:
 ```bash
