@@ -143,7 +143,9 @@ async def _execute_parallel_step_logic(
                         ):
                             limit_breach_error = UsageLimitExceededError(
                                 f"Cost limit of ${usage_limits.total_cost_usd_limit} exceeded",
-                                PipelineResult(step_history=[result], total_cost_usd=total_cost_so_far),
+                                PipelineResult(
+                                    step_history=[result], total_cost_usd=total_cost_so_far
+                                ),
                             )
                             limit_breached.set()
                         elif (
@@ -152,7 +154,9 @@ async def _execute_parallel_step_logic(
                         ):
                             limit_breach_error = UsageLimitExceededError(
                                 f"Token limit of {usage_limits.total_tokens_limit} exceeded",
-                                PipelineResult(step_history=[result], total_cost_usd=total_cost_so_far),
+                                PipelineResult(
+                                    step_history=[result], total_cost_usd=total_cost_so_far
+                                ),
                             )
                             limit_breached.set()
 

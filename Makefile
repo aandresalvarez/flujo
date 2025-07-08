@@ -1,86 +1,108 @@
+# Makefile for the Flujo project
+# Provides a consistent set of commands for development, testing, and quality checks.
+
 .DEFAULT_GOAL := help
 
-args = $(filter-out $@,$(MAKECMDGOALS))
+# Allow passing extra pytest arguments like `make test args="-k pattern"`
+args ?=
 
-.PHONY: help setup install-dev audit quality lint format type-check test cov bandit sbom pip-dev pip-install clean package
+# ------------------------------------------------------------------------------
+# Tooling Checks
+# ------------------------------------------------------------------------------
 
-help:
-	@echo "Available commands:"
-	@echo "  setup         - Install dependencies and pre-commit hooks."
-	@echo "  quality       - Run all code quality checks."
-	@echo "  lint          - Run Ruff linting."
-	@echo "  format        - Auto-format the code."
-	@echo "  type-check    - Run MyPy type checking."
-	@echo "  test          - Run the test suite (use 'make test args=\"-k expr\"')."
-	@echo "  cov           - Run tests with coverage (uses args too)."
-	@echo "  bandit        - Run Bandit security scan."
-	@echo "  sbom          - Generate a CycloneDX SBOM."
-	@echo "  package       - Build the package using Hatch."
-	@echo "  clean         - Remove build artifacts and caches."
-
-setup:
-	@pip install --upgrade pip hatch pre-commit
-	@hatch run setup
+# Ensure uv is installed, as it's the core tool for this workflow.
+.PHONY: .uv
+.uv:
+	@uv --version > /dev/null 2>&1 || (printf "\033[0;31m✖ Error: uv is not installed.\033[0m\n  Please install it via: https://github.com/astral-sh/uv\n" && exit 1)
 
 
-install-dev:
-	@pip install --upgrade pip hatch pre-commit
-	@hatch run setup
+# ------------------------------------------------------------------------------
+# Project Setup & Dependency Management
+# ------------------------------------------------------------------------------
+
+.PHONY: install
+install: .uv ## Install dependencies into a virtual environment
+	@echo "🚀 Creating virtual environment and installing dependencies..."
+	@uv venv
+	@uv sync --all-extras
+	@echo "\n✅ Done! Activate the environment with 'source .venv/bin/activate'"
+
+.PHONY: sync
+sync: .uv ## Update dependencies based on pyproject.toml
+	@echo "🔄 Syncing dependencies..."
+	@uv sync --all-extras
 
 
-audit:
-	@hatch run pip-audit && hatch run bandit-check
+# ------------------------------------------------------------------------------
+# Code Quality & Formatting
+# ------------------------------------------------------------------------------
 
-pip-dev:
-	@echo "📦 Installing development dependencies with pip..."
-	@python -m pip install --upgrade pip
-	@python -m pip install -e ".[dev]"
+.PHONY: format
+format: .uv ## Auto-format the code with ruff
+	@echo "🎨 Formatting code..."
+	@uv run ruff format flujo/ tests/
 
-pip-install:
-	@echo "📦 Installing package in development mode with pip..."
-	@python -m pip install --upgrade pip
-	@python -m pip install -e .
+.PHONY: lint
+lint: .uv ## Lint the code and check for formatting issues
+	@echo "🔎 Linting code..."
+	@uv run ruff format --check flujo/ tests/
+	@uv run ruff check flujo/ tests/
 
-quality:
-	@hatch run quality
+.PHONY: typecheck
+typecheck: .uv ## Run static type checking with mypy
+	@echo "🧐 Running static type checking..."
+	@uv run mypy flujo/
 
-lint:
-	@hatch run lint
 
-format:
-	@hatch run format
+# ------------------------------------------------------------------------------
+# Testing & Coverage
+# ------------------------------------------------------------------------------
 
-type-check:
-	@hatch run type-check
+.PHONY: test
+test: .uv ## Run all tests
+	@echo "🧪 Running tests..."
+	@uv run pytest tests/ $(args)
 
-test:
-	@hatch run test $(args)
+.PHONY: testcov
+testcov: .uv ## Run tests and generate an HTML coverage report
+	@echo "🧪 Running tests with coverage..."
+	@uv run coverage run --source=flujo -m pytest tests/ $(args)
+	@uv run coverage html
+	@echo "\n✅ Coverage report generated in 'htmlcov/'. Open htmlcov/index.html to view."
 
-cov:
-	@hatch run cov $(args)
+# ------------------------------------------------------------------------------
+# Packaging
+# ------------------------------------------------------------------------------
 
-bandit:
-	@hatch run bandit-check
+.PHONY: package
+package: .uv ## Build the package using Hatch
+	@echo "📦 Building package..."
+	@uv run hatch build
 
-sbom:
-	@hatch run cyclonedx
+.PHONY: clean-package
+clean-package: ## Remove build artifacts
+	@echo "🧹 Cleaning build artifacts..."
+	@rm -rf build/ dist/ *.egg-info/
 
-cyclonedx: sbom
 
-package:
-	@echo "📦 Building package with Hatch..."
-	@hatch build
+# ------------------------------------------------------------------------------
+# All-in-one & Help
+# ------------------------------------------------------------------------------
 
-clean:
-	@echo "🧹 Cleaning up build artifacts and caches..."
-	@rm -rf build/
-	@rm -rf dist/
-	@rm -rf *.egg-info/
-	@rm -rf .pytest_cache/
-	@rm -rf .mypy_cache/
-	@rm -rf .ruff_cache/
-	@rm -rf .coverage
-	@rm -rf coverage.xml
-	@rm -rf htmlcov/
-	@find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-	@find . -type f -name "*.pyc" -delete 2>/dev/null || true
+.PHONY: all
+all: format lint typecheck test ## Run all quality checks (format, lint, typecheck, test)
+	@echo "\n✅ All local checks passed! You are ready to push."
+
+.PHONY: help
+help: ## ✨ Show this help message
+	@echo "Usage: make [target]"
+	@echo ""
+	@echo "Targets:"
+	@awk '/^[a-zA-Z0-9_-]+:.*?##/ { \
+helpMessage = match($$0, /## (.*)/); \
+if (helpMessage) { \
+recipe = $$1; \
+sub(/:/, "", recipe); \
+printf "  \033[36m%-20s\033[0m %s\n", recipe, substr($$0, RSTART + 3, RLENGTH); \
+} \
+}' $(MAKEFILE_LIST)

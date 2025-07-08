@@ -7,7 +7,5 @@ from flujo.processors.repair import DeterministicRepairProcessor, MAX_LITERAL_EV
 async def test_literal_eval_size_guard() -> None:
     proc = DeterministicRepairProcessor()
     oversized = "x" * (MAX_LITERAL_EVAL_SIZE + 1)
-    with pytest.raises(
-        ValueError, match="Input too large for safe literal evaluation."
-    ):
+    with pytest.raises(ValueError, match="Input too large for safe literal evaluation."):
         await proc.process(oversized)
