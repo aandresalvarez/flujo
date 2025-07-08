@@ -47,7 +47,8 @@ TContext = TypeVar("TContext", bound=BaseModel)
 
 # Alias used across step logic helpers
 StepExecutor = Callable[
-    [Step[Any, Any], Any, Optional[TContext], Optional[AppResources]], Awaitable[StepResult]
+    [Step[Any, Any], Any, Optional[TContext], Optional[AppResources]],
+    Awaitable[StepResult],
 ]
 
 __all__ = [
@@ -89,6 +90,7 @@ async def _execute_parallel_step_logic(
     result = StepResult(name=parallel_step.name)
     outputs: Dict[str, Any] = {}
     branch_results: Dict[str, StepResult] = {}
+    branch_contexts: Dict[str, Optional[TContext]] = {}
 
     limit_breached = asyncio.Event()
     limit_breach_error: Optional[UsageLimitExceededError] = None
@@ -143,7 +145,10 @@ async def _execute_parallel_step_logic(
                         ):
                             limit_breach_error = UsageLimitExceededError(
                                 f"Cost limit of ${usage_limits.total_cost_usd_limit} exceeded",
-                                PipelineResult(step_history=[result], total_cost_usd=total_cost_so_far),
+                                PipelineResult(
+                                    step_history=[result],
+                                    total_cost_usd=total_cost_so_far,
+                                ),
                             )
                             limit_breached.set()
                         elif (
@@ -152,7 +157,10 @@ async def _execute_parallel_step_logic(
                         ):
                             limit_breach_error = UsageLimitExceededError(
                                 f"Token limit of {usage_limits.total_tokens_limit} exceeded",
-                                PipelineResult(step_history=[result], total_cost_usd=total_cost_so_far),
+                                PipelineResult(
+                                    step_history=[result],
+                                    total_cost_usd=total_cost_so_far,
+                                ),
                             )
                             limit_breached.set()
 
@@ -179,6 +187,7 @@ async def _execute_parallel_step_logic(
 
         outputs[key] = branch_res.output
         branch_results[key] = branch_res
+        branch_contexts[key] = ctx_copy
 
     start = time.monotonic()
 
@@ -234,53 +243,75 @@ async def _execute_parallel_step_logic(
         return result
 
     if parallel_step.merge_strategy != MergeStrategy.NO_MERGE and context is not None:
-        if callable(parallel_step.merge_strategy):
-            for res in succeeded_branches.values():
-                if res.branch_context is not None:
-                    parallel_step.merge_strategy(context, res.branch_context)
-        elif parallel_step.merge_strategy == MergeStrategy.OVERWRITE:
-            if succeeded_branches:
-                for name in branch_order:
-                    if name in succeeded_branches:
-                        branch_ctx = succeeded_branches[name].branch_context
-                        if branch_ctx is not None:
-                            merged = context.model_dump()
-                            branch_data = branch_ctx.model_dump()
-                            keys = parallel_step.context_include_keys or list(branch_data.keys())
-                            for key in keys:
-                                if key in branch_data:
-                                    if (
-                                        key == "scratchpad"
-                                        and key in merged
-                                        and isinstance(merged[key], dict)
-                                        and isinstance(branch_data[key], dict)
-                                    ):
-                                        merged[key].update(branch_data[key])
-                                    else:
-                                        merged[key] = branch_data[key]
-                            validated = context.__class__.model_validate(merged)
-                            context.__dict__.update(validated.__dict__)
-        elif parallel_step.merge_strategy == MergeStrategy.MERGE_SCRATCHPAD:
+        base_snapshot: Dict[str, Any] = {}
+        seen_keys: set[str] = set()
+        if parallel_step.merge_strategy == MergeStrategy.MERGE_SCRATCHPAD:
             if hasattr(context, "scratchpad"):
-                base_snapshot = dict(context.scratchpad)
-                seen_keys: set[str] = set()
-                for branch_name in sorted(succeeded_branches):
-                    res = succeeded_branches[branch_name]
-                    bc = res.branch_context
-                    if bc is not None and hasattr(bc, "scratchpad"):
-                        for key, val in bc.scratchpad.items():
-                            if key in base_snapshot and base_snapshot[key] == val:
-                                continue
-                            if key in context.scratchpad and context.scratchpad[key] != val:
-                                raise ValueError(
-                                    f"Scratchpad key collision for '{key}' in branch '{branch_name}'"
-                                )
-                            if key in seen_keys:
-                                raise ValueError(
-                                    f"Scratchpad key collision for '{key}' in branch '{branch_name}'"
-                                )
-                            context.scratchpad[key] = val
-                            seen_keys.add(key)
+                base_snapshot = dict(getattr(context, "scratchpad") or {})
+            else:
+                raise ValueError(
+                    "MERGE_SCRATCHPAD strategy requires context with 'scratchpad' attribute"
+                )
+
+        branch_iter = (
+            sorted(succeeded_branches)
+            if parallel_step.merge_strategy == MergeStrategy.MERGE_SCRATCHPAD
+            else branch_order
+        )
+
+        merged: Dict[str, Any] | None = None
+        if parallel_step.merge_strategy == MergeStrategy.OVERWRITE:
+            merged = context.model_dump()
+
+        for branch_name in branch_iter:
+            if branch_name not in succeeded_branches:
+                continue
+            branch_ctx = branch_contexts.get(branch_name)
+            if branch_ctx is None:
+                continue
+
+            if callable(parallel_step.merge_strategy):
+                parallel_step.merge_strategy(context, branch_ctx)
+                continue
+
+            if parallel_step.merge_strategy == MergeStrategy.OVERWRITE and merged is not None:
+                branch_data = branch_ctx.model_dump()
+                keys = parallel_step.context_include_keys or list(branch_data.keys())
+                for key in keys:
+                    if key in branch_data:
+                        if (
+                            key == "scratchpad"
+                            and key in merged
+                            and isinstance(merged[key], dict)
+                            and isinstance(branch_data[key], dict)
+                        ):
+                            merged[key].update(branch_data[key])
+                        else:
+                            merged[key] = branch_data[key]
+            elif parallel_step.merge_strategy == MergeStrategy.MERGE_SCRATCHPAD and hasattr(
+                branch_ctx, "scratchpad"
+            ):
+                branch_pc = cast(PipelineContext, branch_ctx)
+                context_pc = cast(PipelineContext, context)
+                if getattr(context_pc, "scratchpad", None) is None:
+                    context_pc.scratchpad = {}
+                for key, val in branch_pc.scratchpad.items():
+                    if key in base_snapshot and base_snapshot[key] == val:
+                        continue
+                    if key in context_pc.scratchpad and context_pc.scratchpad[key] != val:
+                        raise ValueError(
+                            f"Scratchpad key collision for '{key}' in branch '{branch_name}'"
+                        )
+                    if key in seen_keys:
+                        raise ValueError(
+                            f"Scratchpad key collision for '{key}' in branch '{branch_name}'"
+                        )
+                    context_pc.scratchpad[key] = val
+                    seen_keys.add(key)
+
+        if parallel_step.merge_strategy == MergeStrategy.OVERWRITE and merged is not None:
+            validated = context.__class__.model_validate(merged)
+            context.__dict__.update(validated.__dict__)
 
     result.success = bool(succeeded_branches)
     final_output = {k: v.output for k, v in succeeded_branches.items()}
@@ -629,7 +660,7 @@ async def _run_step_logic(
     step_executor: StepExecutor[TContext],
     context_model_defined: bool,
     usage_limits: UsageLimits | None = None,
-    context_setter: Callable[[PipelineResult[TContext], Optional[TContext]], None] | None = None,
+    context_setter: (Callable[[PipelineResult[TContext], Optional[TContext]], None] | None) = None,
     stream: bool = False,
     on_chunk: Callable[[Any], Awaitable[None]] | None = None,
 ) -> StepResult:
@@ -706,8 +737,11 @@ async def _run_step_logic(
     last_raw_output = None
     last_unpacked_output = None
     validation_failed = False
-    last_attempt_feedbacks: list[str] = []
     last_attempt_output = None
+
+    original_data = copy.deepcopy(data)
+    # Aggregate feedback across retries
+    all_feedbacks: list[str] = []
     for attempt in range(1, step.config.max_retries + 1):
         validation_failed = False
         result.attempts = attempt
@@ -824,7 +858,8 @@ async def _run_step_logic(
 
                 plugin_kwargs: Dict[str, Any] = {}
                 func = cast(
-                    Callable[..., Any], getattr(plugin, "_plugin_callable", plugin.validate)
+                    Callable[..., Any],
+                    getattr(plugin, "_plugin_callable", plugin.validate),
                 )
                 spec = analyze_signature(func)
 
@@ -912,16 +947,17 @@ async def _run_step_logic(
         if plugin_failed_this_attempt:
             success = False
         # --- END FIX ---
-        # --- JOIN ALL FEEDBACKS ---
+
         feedback = "\n".join(feedbacks).strip() if feedbacks else None
-        # --- END JOIN ---
+        if feedbacks:
+            all_feedbacks.extend(feedbacks)
+
         if not success and attempt == step.config.max_retries:
-            last_attempt_feedbacks = feedbacks.copy()
             last_attempt_output = last_unpacked_output
         if success:
             result.output = unpacked_output
             result.success = True
-            result.feedback = feedback
+            result.feedback = "\n".join(all_feedbacks) if all_feedbacks else None
             result.token_counts += getattr(raw_output, "token_counts", 0)
             result.cost_usd += getattr(raw_output, "cost_usd", 0.0)
             _apply_validation_metadata(
@@ -944,18 +980,27 @@ async def _run_step_logic(
         else:
             current_agent = original_agent
 
-        if feedback:
-            if isinstance(data, dict):
-                data["feedback"] = data.get("feedback", "") + "\n" + feedback
+        joined_feedback = "\n".join(all_feedbacks)
+        if isinstance(original_data, dict):
+            data = copy.deepcopy(original_data)
+            raw_existing = original_data.get("feedback")
+            existing_feedback = str(raw_existing) if raw_existing is not None else ""
+            initial = existing_feedback.strip()
+            combined = "\n".join(filter(None, [initial, joined_feedback]))
+            if combined:
+                data["feedback"] = combined
             else:
-                data = f"{str(data)}\n{feedback}"
+                data.pop("feedback", None)
+        else:
+            if joined_feedback:
+                data = f"{original_data}\n{joined_feedback}"
+            else:
+                data = original_data
         last_feedback = feedback
 
-    # After all retries, set feedback to last attempt's feedbacks
+    # After all retries, aggregate all feedback collected
     result.success = False
-    result.feedback = (
-        "\n".join(last_attempt_feedbacks).strip() if last_attempt_feedbacks else last_feedback
-    )
+    result.feedback = "\n".join(all_feedbacks) if all_feedbacks else last_feedback
     is_validation_step, is_strict = _get_validation_flags(step)
     if validation_failed and is_strict:
         result.output = None

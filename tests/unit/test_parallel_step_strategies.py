@@ -1,3 +1,4 @@
+# mypy: ignore-errors
 import os
 import asyncio
 from typing import Any, Dict
@@ -7,6 +8,8 @@ from flujo import Flujo, Step
 from flujo.domain import MergeStrategy, BranchFailureStrategy
 from flujo.testing.utils import gather_result
 from flujo.domain.models import StepResult, PipelineContext
+from pydantic import ConfigDict
+from flujo.domain.models import BaseModel as FlujoBaseModel
 
 os.environ.setdefault("OPENAI_API_KEY", "test-key")
 
@@ -29,6 +32,32 @@ class ScratchAgent:
         if context is not None:
             context.scratchpad[self.key] = self.val
         return data
+
+
+class SafeScratchAgent:
+    def __init__(self, key: str, val: Any) -> None:
+        self.key = key
+        self.val = val
+
+    async def run(self, data: Any, *, context: FlujoBaseModel | None = None) -> Any:
+        if context is not None:
+            if not hasattr(context, "scratchpad") or getattr(context, "scratchpad") is None:
+                context.scratchpad = {}
+            context.scratchpad[self.key] = self.val
+        return data
+
+
+class NoScratchCtx(FlujoBaseModel):
+    initial_prompt: str
+
+    model_config = ConfigDict(extra="allow")
+
+
+class OptionalScratchCtx(FlujoBaseModel):
+    initial_prompt: str
+    scratchpad: Dict[str, Any] | None = None
+
+    model_config = ConfigDict(extra="allow")
 
 
 @pytest.mark.asyncio
@@ -101,6 +130,45 @@ async def test_merge_scratchpad_detects_collision() -> None:
     runner = Flujo(parallel, context_model=Ctx)
     with pytest.raises(ValueError):
         await gather_result(runner, "data", initial_context_data={"initial_prompt": "goal"})
+
+
+@pytest.mark.asyncio
+async def test_merge_scratchpad_requires_scratchpad() -> None:
+    branches = {
+        "a": Step.model_validate({"name": "a", "agent": SafeScratchAgent("x", 1)}),
+    }
+    parallel = Step.parallel("par", branches, merge_strategy=MergeStrategy.MERGE_SCRATCHPAD)
+    runner = Flujo(parallel, context_model=NoScratchCtx)
+    with pytest.raises(ValueError):
+        await gather_result(runner, "data", initial_context_data={"initial_prompt": "goal"})
+
+
+@pytest.mark.asyncio
+async def test_merge_scratchpad_handles_none() -> None:
+    branches = {
+        "a": Step.model_validate({"name": "a", "agent": SafeScratchAgent("x", 1)}),
+    }
+    parallel = Step.parallel("par", branches, merge_strategy=MergeStrategy.MERGE_SCRATCHPAD)
+    runner = Flujo(parallel, context_model=OptionalScratchCtx)
+    result = await gather_result(runner, "data", initial_context_data={"initial_prompt": "goal"})
+    assert result.final_pipeline_context.scratchpad["x"] == 1
+
+
+@pytest.mark.asyncio
+async def test_merge_scratchpad_alphabetical_order() -> None:
+    branches = {
+        "b": Step.model_validate({"name": "b", "agent": ScratchAgent("dup", 2)}),
+        "a": Step.model_validate({"name": "a", "agent": ScratchAgent("dup", 1)}),
+    }
+    parallel = Step.parallel("par", branches, merge_strategy=MergeStrategy.MERGE_SCRATCHPAD)
+    runner = Flujo(parallel, context_model=Ctx)
+    with pytest.raises(ValueError) as exc:
+        await gather_result(
+            runner,
+            "data",
+            initial_context_data={"initial_prompt": "goal", "scratchpad": {"dup": 0}},
+        )
+    assert "branch 'a'" in str(exc.value)
 
 
 def custom_merge(main: Ctx, branch: Ctx) -> None:

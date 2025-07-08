@@ -5,6 +5,8 @@ import json
 import re
 from typing import Any, Final
 
+MAX_LITERAL_EVAL_SIZE = 1_000_000
+
 
 class DeterministicRepairProcessor:
     """Tier-1 deterministic fixer for malformed JSON emitted by LLMs."""
@@ -58,6 +60,9 @@ class DeterministicRepairProcessor:
         candidate = self._repair_literals_and_quotes(candidate)
         if self._is_json(candidate):
             return self._canonical(candidate)
+
+        if len(candidate) > MAX_LITERAL_EVAL_SIZE:
+            raise ValueError("Input too large for safe literal evaluation.")
 
         try:
             obj = ast.literal_eval(candidate)
