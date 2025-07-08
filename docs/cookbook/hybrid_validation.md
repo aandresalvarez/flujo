@@ -16,7 +16,7 @@ class ShortAnswerValidator(BaseValidator):
         )
 
 validation_step = Step.validate_step(
-    validator_agent,
+    make_validator_agent(),
     validators=[ShortAnswerValidator()]
 )
 ```

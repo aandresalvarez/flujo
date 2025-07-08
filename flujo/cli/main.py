@@ -11,11 +11,10 @@ import yaml
 from pathlib import Path
 from flujo.domain.models import Task, Checklist
 from flujo.infra.agents import (
-    make_agent_async,
     make_self_improvement_agent,
-    REVIEW_SYS,
-    SOLUTION_SYS,
-    VALIDATE_SYS,
+    make_review_agent,
+    make_solution_agent,
+    make_validator_agent,
     get_reflection_agent,
 )
 from flujo.recipes import Default
@@ -146,14 +145,14 @@ def solve(
 
         review: AsyncAgentProtocol[Any, Checklist] = cast(
             AsyncAgentProtocol[Any, Checklist],
-            make_agent_async(rev_model, REVIEW_SYS, Checklist),
+            make_review_agent(rev_model),
         )
         solution: AsyncAgentProtocol[Any, str] = cast(
-            AsyncAgentProtocol[Any, str], make_agent_async(sol_model, SOLUTION_SYS, str)
+            AsyncAgentProtocol[Any, str], make_solution_agent(sol_model)
         )
         validator: AsyncAgentProtocol[Any, Checklist] = cast(
             AsyncAgentProtocol[Any, Checklist],
-            make_agent_async(val_model, VALIDATE_SYS, Checklist),
+            make_validator_agent(val_model),
         )
         reflection_agent: AsyncAgentProtocol[Any, str] = cast(
             AsyncAgentProtocol[Any, str], get_reflection_agent(ref_model)
@@ -234,11 +233,9 @@ def bench(prompt: str, rounds: int = 10) -> None:
     import numpy as np
 
     try:
-        review_agent = make_agent_async(settings.default_review_model, REVIEW_SYS, Checklist)
-        solution_agent = make_agent_async(settings.default_solution_model, SOLUTION_SYS, str)
-        validator_agent = make_agent_async(
-            settings.default_validator_model, VALIDATE_SYS, Checklist
-        )
+        review_agent = make_review_agent()
+        solution_agent = make_solution_agent()
+        validator_agent = make_validator_agent()
         orch: Default = Default(
             review_agent, solution_agent, validator_agent, get_reflection_agent()
         )

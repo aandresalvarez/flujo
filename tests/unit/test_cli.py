@@ -13,6 +13,21 @@ from flujo.infra.settings import Settings
 runner = CliRunner()
 
 
+# Helper dummy agent
+class DummyAgent:
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def run(self, *args, **kwargs):
+        return "mocked agent output"
+
+    async def run_async(self, *args, **kwargs):
+        return "mocked agent output"
+
+    def model_dump(self):
+        return {"solution": "mocked", "score": 1.0}
+
+
 @pytest.fixture(autouse=True)
 def _set_api_key(monkeypatch) -> None:
     """Ensure OPENAI_API_KEY is present and refresh settings for each test."""
@@ -47,7 +62,9 @@ def test_cli_solve_happy_path(monkeypatch) -> None:
         return DummyCandidate()
 
     monkeypatch.setattr("flujo.cli.main.Default.run_sync", dummy_run_sync)
-    monkeypatch.setattr("flujo.cli.main.make_agent_async", lambda *a, **k: object())
+    monkeypatch.setattr("flujo.cli.main.make_review_agent", lambda *a, **k: DummyAgent())
+    monkeypatch.setattr("flujo.cli.main.make_solution_agent", lambda *a, **k: DummyAgent())
+    monkeypatch.setattr("flujo.cli.main.make_validator_agent", lambda *a, **k: DummyAgent())
     from flujo.cli.main import app
 
     result = runner.invoke(app, ["solve", "write a poem"])
@@ -63,8 +80,11 @@ def test_cli_solve_custom_models(monkeypatch) -> None:
     def dummy_run_sync(self, task):
         return DummyCandidate()
 
+    # Patch the correct agent factories
     monkeypatch.setattr("flujo.cli.main.Default.run_sync", dummy_run_sync)
-    monkeypatch.setattr("flujo.cli.main.make_agent_async", lambda *a, **k: object())
+    monkeypatch.setattr("flujo.cli.main.make_review_agent", lambda *a, **k: DummyAgent())
+    monkeypatch.setattr("flujo.cli.main.make_solution_agent", lambda *a, **k: DummyAgent())
+    monkeypatch.setattr("flujo.cli.main.make_validator_agent", lambda *a, **k: DummyAgent())
     result = runner.invoke(app, ["solve", "write", "--solution-model", "gemini:gemini-1.5-pro"])
     assert result.exit_code == 0
 
@@ -82,7 +102,9 @@ def test_cli_bench_command(monkeypatch) -> None:
         return DummyCandidate()
 
     monkeypatch.setattr("flujo.cli.main.Default.run_sync", dummy_run_sync)
-    monkeypatch.setattr("flujo.cli.main.make_agent_async", lambda *a, **k: object())
+    monkeypatch.setattr("flujo.cli.main.make_review_agent", lambda *a, **k: DummyAgent())
+    monkeypatch.setattr("flujo.cli.main.make_solution_agent", lambda *a, **k: DummyAgent())
+    monkeypatch.setattr("flujo.cli.main.make_validator_agent", lambda *a, **k: DummyAgent())
     from flujo.cli.main import app
 
     result = runner.invoke(app, ["bench", "test prompt", "--rounds", "2"])
@@ -121,12 +143,11 @@ def test_cli_solve_with_weights(monkeypatch) -> None:
         def model_dump(self):
             return {"solution": "mocked", "score": self.score}
 
-    # Mock agent that satisfies AgentProtocol
     mock_agent = AsyncMock()
     mock_agent.run.return_value = "mocked agent output"
+    mock_agent.run_async.return_value = "mocked agent output"
 
     with patch("flujo.cli.main.Default") as MockDefault:
-        # Create a mock instance with a proper run_sync method
         mock_instance = MagicMock()
 
         async def mock_run_async(task: Task) -> DummyCandidate:
@@ -140,9 +161,9 @@ def test_cli_solve_with_weights(monkeypatch) -> None:
             side_effect=lambda task: asyncio.run(mock_run_async(task))
         )
         MockDefault.return_value = mock_instance
-
-        # Patch make_agent_async to return our mock agent
-        monkeypatch.setattr("flujo.cli.main.make_agent_async", lambda *a, **k: mock_agent)
+        monkeypatch.setattr("flujo.cli.main.make_review_agent", lambda *a, **k: mock_agent)
+        monkeypatch.setattr("flujo.cli.main.make_solution_agent", lambda *a, **k: mock_agent)
+        monkeypatch.setattr("flujo.cli.main.make_validator_agent", lambda *a, **k: mock_agent)
 
         from flujo.cli.main import app
         import tempfile
@@ -228,7 +249,9 @@ def test_cli_solve_keyboard_interrupt(monkeypatch) -> None:
         raise KeyboardInterrupt()
 
     monkeypatch.setattr("flujo.cli.main.Default.run_sync", raise_keyboard)
-    monkeypatch.setattr("flujo.cli.main.make_agent_async", lambda *a, **k: object())
+    monkeypatch.setattr("flujo.cli.main.make_review_agent", lambda *a, **k: DummyAgent())
+    monkeypatch.setattr("flujo.cli.main.make_solution_agent", lambda *a, **k: DummyAgent())
+    monkeypatch.setattr("flujo.cli.main.make_validator_agent", lambda *a, **k: DummyAgent())
     result = runner.invoke(app, ["solve", "prompt"])
     assert result.exit_code == 130
 
@@ -240,7 +263,9 @@ def test_cli_bench_keyboard_interrupt(monkeypatch) -> None:
         raise KeyboardInterrupt()
 
     monkeypatch.setattr("flujo.cli.main.Default.run_sync", raise_keyboard)
-    monkeypatch.setattr("flujo.cli.main.make_agent_async", lambda *a, **k: object())
+    monkeypatch.setattr("flujo.cli.main.make_review_agent", lambda *a, **k: DummyAgent())
+    monkeypatch.setattr("flujo.cli.main.make_solution_agent", lambda *a, **k: DummyAgent())
+    monkeypatch.setattr("flujo.cli.main.make_validator_agent", lambda *a, **k: DummyAgent())
     result = runner.invoke(app, ["bench", "prompt"])
     assert result.exit_code == 130
 
@@ -265,15 +290,15 @@ def test_cli_main_callback_profile(monkeypatch) -> None:
 def test_cli_solve_configuration_error(monkeypatch) -> None:
     """Test that configuration errors surface with exit code 2."""
 
-    def raise_config_error(*args, **kwargs):
-        from flujo.exceptions import ConfigurationError
+    from flujo.exceptions import ConfigurationError
 
+    def raise_config_error(*args, **kwargs):
         raise ConfigurationError("Missing API key!")
 
-    monkeypatch.setattr(
-        "flujo.cli.main.make_agent_async",
-        raise_config_error,
-    )
+    # Patch all agent factories to raise ConfigurationError
+    monkeypatch.setattr("flujo.cli.main.make_review_agent", raise_config_error)
+    monkeypatch.setattr("flujo.cli.main.make_solution_agent", raise_config_error)
+    monkeypatch.setattr("flujo.cli.main.make_validator_agent", raise_config_error)
 
     result = runner.invoke(app, ["solve", "prompt"])
     assert result.exit_code == 2
@@ -426,7 +451,7 @@ def test_cli_run() -> None:
 
 def test_cli_run_with_args() -> None:
     """Test run with various command line arguments."""
-    from unittest.mock import patch
+    from unittest.mock import patch, MagicMock
 
     class DummyCandidate:
         def model_dump(self):
@@ -440,18 +465,17 @@ def test_cli_run_with_args() -> None:
     dummy_settings.reflection_enabled = True
     dummy_settings.scorer = "ratio"
     dummy_settings.reflection_limit = 1
-
     with (
         patch("flujo.cli.main.Default") as MockDefault,
-        patch("flujo.cli.main.make_agent_async") as mock_make_agent,
-        patch("flujo.cli.main.get_reflection_agent") as mock_get_reflection_agent,
+        patch("flujo.cli.main.make_review_agent", return_value=DummyAgent()),
+        patch("flujo.cli.main.make_solution_agent", return_value=DummyAgent()),
+        patch("flujo.cli.main.make_validator_agent", return_value=DummyAgent()),
+        patch("flujo.cli.main.get_reflection_agent"),
         patch("flujo.cli.main.settings", dummy_settings),
     ):
         mock_instance = MagicMock()
         mock_instance.run_sync.return_value = DummyCandidate()
         MockDefault.return_value = mock_instance
-        mock_make_agent.return_value = MagicMock()
-        mock_get_reflection_agent.return_value = MagicMock()
 
         result = runner.invoke(
             app,
@@ -503,8 +527,8 @@ def test_cli_run_with_invalid_model() -> None:
     from unittest.mock import patch
     from flujo.exceptions import ConfigurationError
 
-    with patch("flujo.cli.main.make_agent_async") as mock_make_agent:
-        mock_make_agent.side_effect = ConfigurationError("Invalid model name")
+    with patch("flujo.cli.main.make_review_agent") as mock_review:
+        mock_review.side_effect = ConfigurationError("Invalid model name")
         result = runner.invoke(app, ["solve", "test prompt", "--solution-model", "invalid-model"])
         assert result.exit_code == 2
         assert "Configuration Error" in result.stderr
@@ -527,8 +551,8 @@ def test_cli_run_with_invalid_review_model() -> None:
     from unittest.mock import patch
     from flujo.exceptions import ConfigurationError
 
-    with patch("flujo.cli.main.make_agent_async") as mock_make_agent:
-        mock_make_agent.side_effect = ConfigurationError("Invalid review model")
+    with patch("flujo.cli.main.make_review_agent") as mock_review:
+        mock_review.side_effect = ConfigurationError("Invalid review model")
         result = runner.invoke(app, ["solve", "test prompt", "--review-model", "invalid-model"])
         assert result.exit_code == 2
         assert "Configuration Error" in result.stderr
@@ -551,8 +575,8 @@ def test_cli_run_with_invalid_review_model_path() -> None:
     from unittest.mock import patch
     from flujo.exceptions import ConfigurationError
 
-    with patch("flujo.cli.main.make_agent_async") as mock_make_agent:
-        mock_make_agent.side_effect = ConfigurationError("Invalid review model path")
+    with patch("flujo.cli.main.make_review_agent") as mock_review:
+        mock_review.side_effect = ConfigurationError("Invalid review model path")
         result = runner.invoke(app, ["solve", "test prompt", "--review-model", "/invalid/path"])
         assert result.exit_code == 2
         assert "Configuration Error" in result.stderr

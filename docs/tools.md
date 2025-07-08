@@ -22,11 +22,11 @@ from typing import Optional
 
 def get_weather(city: str, country: Optional[str] = None) -> str:
     """Get current weather for a city.
-    
+
     Args:
         city: The city name
         country: Optional country code
-        
+
     Returns:
         A string describing the weather
     """
@@ -52,12 +52,12 @@ from flujo import Step, Flujo
 
 # Create a pipeline with tools
 pipeline = (
-    Step.review(review_agent)
+    Step.review(make_review_agent())
     >> Step.solution(
-        solution_agent,
+        make_solution_agent(),
         tools=[weather_tool]
     )
-    >> Step.validate(validator_agent)
+    >> Step.validate(make_validator_agent())
 )
 
 # Run it
@@ -74,11 +74,11 @@ The simplest type of tool is a function:
 ```python
 def calculate_total(items: list[float], tax_rate: float = 0.1) -> float:
     """Calculate total with tax.
-    
+
     Args:
         items: List of prices
         tax_rate: Tax rate (default: 0.1)
-        
+
     Returns:
         Total price including tax
     """
@@ -99,29 +99,29 @@ from pydantic import BaseModel
 
 class DatabaseTool:
     """Tool for database operations."""
-    
+
     def __init__(self, connection_string: str):
         self.connection_string = connection_string
-        
+
     def query(self, sql: str) -> list[dict]:
         """Execute a SQL query.
-        
+
         Args:
             sql: SQL query string
-            
+
         Returns:
             List of result rows
         """
         # Implementation here
         return [{"id": 1, "name": "example"}]
-        
+
     def insert(self, table: str, data: dict) -> int:
         """Insert a row into a table.
-        
+
         Args:
             table: Table name
             data: Row data
-            
+
         Returns:
             Inserted row ID
         """
@@ -142,11 +142,11 @@ from typing import Optional
 
 async def fetch_data(url: str, timeout: Optional[int] = 30) -> dict:
     """Fetch data from a URL.
-    
+
     Args:
         url: URL to fetch
         timeout: Request timeout in seconds
-        
+
     Returns:
         Response data as dict
     """
@@ -219,7 +219,7 @@ from pydantic import BaseModel, Field
 class SearchParams(BaseModel):
     query: str = Field(..., min_length=1, max_length=100)
     limit: int = Field(default=10, ge=1, le=100)
-    
+
 def search_database(params: SearchParams) -> list[dict]:
     """Search database with validated parameters."""
     # Implementation here
@@ -253,11 +253,11 @@ import time
 
 class RateLimitedTool:
     """Tool with rate limiting."""
-    
+
     def __init__(self, calls_per_minute: int):
         self.calls_per_minute = calls_per_minute
         self.last_call = 0
-        
+
     def call(self, param: str) -> str:
         """Make a rate-limited call."""
         # Implement rate limiting
@@ -265,7 +265,7 @@ class RateLimitedTool:
         if now - self.last_call < 60 / self.calls_per_minute:
             time.sleep(60 / self.calls_per_minute)
         self.last_call = time.time()
-        
+
         # Implementation here
         return f"Processed: {param}"
 
@@ -321,16 +321,16 @@ from pydantic_ai import Tool
 
 class DatabaseTool:
     """Tool for database operations."""
-    
+
     def __init__(self, connection_string: str):
         self.engine = create_engine(connection_string)
-        
+
     def query(self, sql: str, params: dict = None) -> list[dict]:
         """Execute a SQL query."""
         with self.engine.connect() as conn:
             result = conn.execute(text(sql), params or {})
             return [dict(row) for row in result]
-            
+
     def insert(self, table: str, data: dict) -> int:
         """Insert a row into a table."""
         with self.engine.connect() as conn:
@@ -408,4 +408,4 @@ write_tool = Tool(write_file)
 
 - Read the [Usage Guide](usage.md)
 - Explore [Advanced Topics](extending.md)
-- Check out [Use Cases](use_cases.md) 
+- Check out [Use Cases](use_cases.md)

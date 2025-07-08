@@ -15,9 +15,9 @@ except ImportError:  # pragma: no cover - skip if dependency missing
 from flujo.recipes import Default
 from flujo.domain.models import Task, Candidate
 from flujo.infra.agents import (
-    review_agent,
-    solution_agent,
-    validator_agent,
+    make_review_agent,
+    make_solution_agent,
+    make_validator_agent,
     get_reflection_agent,
 )
 
@@ -40,9 +40,9 @@ def test_golden_transcript():
     to ensure the entire orchestration flow produces a valid, scored candidate.
     """
     orch = Default(
-        review_agent,
-        solution_agent,
-        validator_agent,
+        make_review_agent(),
+        make_solution_agent(),
+        make_validator_agent(),
         get_reflection_agent(),
         k_variants=1,
         max_iters=1,

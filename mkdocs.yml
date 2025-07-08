@@ -20,6 +20,7 @@ nav:
     - 'Context & Resources': 'user_guide/context-and-resources.md'
     - 'Agentic Patterns': 'user_guide/agentic-patterns.md'
     - 'Testing Your Pipelines': 'user_guide/testing.md'
+  - 'Agent Infrastructure': 'agent_infrastructure.md'
   - 'Examples':
     - 'Basic Pipeline': 'examples/basic-pipeline.md'
   - 'API Reference':
@@ -61,7 +62,7 @@ markdown_extensions:
       custom_fences:
         - name: mermaid
           class: mermaid
-          format: !!python/name:pymdownx.superfences.fence_code_format
+          format: fence_code_format
   - pymdownx.tabbed:
       alternate_style: true
 

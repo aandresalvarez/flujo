@@ -16,9 +16,9 @@ Before we write any code, let's understand the main components you'll be working
 *   **The Default Recipe (Class):** A simplified helper for running a fixed Review → Solution → Validate workflow. Useful for quick prototypes when you don't need full agentic control.
 
 *   **An Agent:** An **Agent** is a specialized AI model given a specific role and instructions (a "system prompt"). In the default pipeline we use three agents:
-    1.  **`review_agent` (The Planner):** Looks at your request and creates a detailed checklist of what a "good" solution should look like.
-    2.  **`solution_agent` (The Doer):** The main worker. It takes your request and tries to produce a solution (e.g., write code, a poem, or an email).
-    3.  **`validator_agent` (The Quality Analyst):** Takes the `solution_agent`'s work and grades it against the `review_agent`'s checklist.
+    1.  **Review Agent (The Planner):** Looks at your request and creates a detailed checklist of what a "good" solution should look like.
+2.  **Solution Agent (The Doer):** The main worker. It takes your request and tries to produce a solution (e.g., write code, a poem, or an email).
+3.  **Validator Agent (The Quality Analyst):** Takes the solution agent's work and grades it against the review agent's checklist.
 
 *   **A Task:** This is a simple object that holds your request. It's how you tell the **Default** recipe what you want to achieve.
 
@@ -108,22 +108,22 @@ print(result.step_history[-1].output)  # HELLO!
 
 The `Default` recipe is still handy for simple, fixed workflows. You can customize its agents to mix models for cost and quality.
 
-Professional AI workflows often involve a mix of models to balance cost, speed, and quality. Here, we'll use a **cheaper, faster model** for the initial draft (`solution_agent`) but retain the **smarter models** for the critical thinking roles (planning, quality control, and strategy).
+Professional AI workflows often involve a mix of models to balance cost, speed, and quality. Here, we'll use a **cheaper, faster model** for the initial draft (solution agent) but retain the **smarter models** for the critical thinking roles (planning, quality control, and strategy).
 
 ```python
 # 📂 step_3_mixing_models.py
 from flujo.recipes import Default
 from flujo import make_agent_async, init_telemetry
 from flujo.models import Task
-from flujo.infra.agents import review_agent, validator_agent
+from flujo.infra.agents import make_review_agent, make_validator_agent
 init_telemetry()
 print("🚀 Building a workflow with a custom Solution Agent for the Default recipe...")
 FAST_SOLUTION_PROMPT = "You are a creative but junior marketing copywriter. Write a catchy and concise slogan. Be quick and creative."
 fast_copywriter_agent = make_agent_async("openai:gpt-4o-mini", FAST_SOLUTION_PROMPT, str)
 flujo = Default(
-    review_agent=review_agent,
+    review_agent=make_review_agent(),
     solution_agent=fast_copywriter_agent,
-    validator_agent=validator_agent,
+    validator_agent=make_validator_agent(),
 )
 task = Task(prompt="Write a slogan for a new brand of ultra-durable luxury coffee mugs.")
 best_candidate = orch.run_sync(task)

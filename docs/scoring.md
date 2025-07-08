@@ -72,7 +72,7 @@ def custom_scorer(checklist):
     """Calculate a custom score based on checklist items."""
     total_score = 0
     total_weight = 0
-    
+
     for item in checklist.items:
         # Define custom weights based on item type
         weight = 1.0
@@ -80,19 +80,19 @@ def custom_scorer(checklist):
             weight = 2.0
         elif "optional" in item.description.lower():
             weight = 0.5
-            
+
         # Add to total
         total_score += weight * (1.0 if item.passed else 0.0)
         total_weight += weight
-    
+
     return total_score / total_weight if total_weight > 0 else 0.0
 
 # Use in pipeline
 pipeline = (
-    Step.review(review_agent)
-    >> Step.solution(solution_agent)
+    Step.review(make_review_agent())
+    >> Step.solution(make_solution_agent())
     >> Step.validate(
-        validator_agent,
+        make_validator_agent(),
         scorer=custom_scorer
     )
 )
@@ -107,7 +107,7 @@ Configure scoring for individual steps:
 ```python
 # Review step with custom scoring
 review_step = Step.review(
-    review_agent,
+    make_review_agent(),
     scorer=lambda c: weighted_score(c, {
         "completeness": 0.4,
         "clarity": 0.6
@@ -116,7 +116,7 @@ review_step = Step.review(
 
 # Validation step with model scoring
 validate_step = Step.validate(
-    validator_agent,
+    make_validator_agent(),
     scorer=lambda c: model_score(c, scorer_agent)
 )
 ```
@@ -128,9 +128,9 @@ Configure scoring for the entire pipeline:
 ```python
 # Create a pipeline with custom scoring
 pipeline = (
-    Step.review(review_agent)
-    >> Step.solution(solution_agent)
-    >> Step.validate(validator_agent)
+    Step.review(make_review_agent())
+    >> Step.solution(make_solution_agent())
+    >> Step.validate(make_validator_agent())
 )
 
 # Configure the runner with custom scoring
@@ -199,7 +199,7 @@ def progressive_scorer(checklist):
     critical_items = [i for i in checklist.items if i.critical]
     if not all(i.passed for i in critical_items):
         return 0.0  # Fail if any critical item fails
-        
+
     # Then, calculate weighted score for remaining items
     non_critical = [i for i in checklist.items if not i.critical]
     return weighted_score(Checklist(items=non_critical), {
@@ -225,10 +225,10 @@ code_scorer = make_agent_async(
 
 # Use in pipeline
 pipeline = (
-    Step.review(review_agent)
-    >> Step.solution(solution_agent)
+    Step.review(make_review_agent())
+    >> Step.solution(make_solution_agent())
     >> Step.validate(
-        validator_agent,
+        make_validator_agent(),
         scorer=lambda c: model_score(c, code_scorer)
     )
 )
@@ -256,10 +256,10 @@ code_weights = {
 
 # Create a code generation pipeline
 pipeline = (
-    Step.review(review_agent)
+    Step.review(make_review_agent())
     >> Step.solution(code_agent)
     >> Step.validate(
-        validator_agent,
+        make_validator_agent(),
         plugins=[
             SQLSyntaxValidator(),
             CodeStyleValidator()
@@ -282,10 +282,10 @@ content_weights = {
 
 # Create a content generation pipeline
 pipeline = (
-    Step.review(review_agent)
+    Step.review(make_review_agent())
     >> Step.solution(writer_agent)
     >> Step.validate(
-        validator_agent,
+        make_validator_agent(),
         scorer=lambda c: weighted_score(c, content_weights)
     )
 )
@@ -323,4 +323,4 @@ pipeline = (
 
 - Read the [Usage Guide](usage.md)
 - Explore [Advanced Topics](extending.md)
-- Check out [Use Cases](use_cases.md) 
+- Check out [Use Cases](use_cases.md)
