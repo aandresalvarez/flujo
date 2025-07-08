@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from ..domain.resources import AppResources
-import ast
 import asyncio
 from pydantic import TypeAdapter, ValidationError
 
@@ -241,23 +240,6 @@ class _CommandExecutor:
                     if resources is not None and _accepts_param(agent.run, "resources"):
                         agent_kwargs["resources"] = resources
                     exec_result = await agent.run(cmd.input_data, **agent_kwargs)
-            elif cmd.type == "run_python":
-                tree = ast.parse(cmd.code, mode="exec")
-                for node in ast.walk(tree):
-                    if isinstance(node, (ast.Import, ast.ImportFrom)):
-                        raise ValueError("Imports are not allowed in run_python")
-                local_scope: Dict[str, Any] = {}
-                # WARNING: The following use of exec is sandboxed with empty __builtins__ for security.
-                # Only trusted code should be executed here. Review all inputs to this exec carefully.
-                import logging
-
-                logging.info(f"Executing trusted user code in agentic_loop: {cmd.code}")
-                exec(  # nosec B102 - Sandboxed exec with empty __builtins__ for trusted user code
-                    compile(tree, filename="<agentic_loop>", mode="exec"),
-                    {"__builtins__": {}},
-                    local_scope,
-                )
-                exec_result = local_scope.get("result", "Python code executed successfully.")
             elif cmd.type == "ask_human":
                 if isinstance(context_obj, PipelineContext):
                     context_obj.scratchpad["paused_step_input"] = cmd

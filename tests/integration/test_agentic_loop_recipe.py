@@ -4,7 +4,6 @@ import pytest
 from flujo.recipes.agentic_loop import AgenticLoop
 from flujo.domain.commands import (
     RunAgentCommand,
-    RunPythonCodeCommand,
     AskHumanCommand,
     FinishCommand,
 )
@@ -72,31 +71,3 @@ async def test_max_loops_failure() -> None:
     assert len(ctx.command_log) == 3
     last_step = result.step_history[-1]
     assert last_step.success is False
-
-
-@pytest.mark.asyncio
-async def test_run_python_safe() -> None:
-    planner = StubAgent(
-        [
-            RunPythonCodeCommand(code="result = 1 + 1"),
-            FinishCommand(final_answer="done"),
-        ]
-    )
-    loop = AgenticLoop(planner, {})
-    result = await loop.run_async("goal")
-    ctx = result.final_pipeline_context
-    assert ctx.command_log[0].execution_result == 2
-
-
-@pytest.mark.asyncio
-async def test_run_python_rejects_imports() -> None:
-    planner = StubAgent(
-        [
-            RunPythonCodeCommand(code="import os\nresult = 42"),
-            FinishCommand(final_answer="done"),
-        ]
-    )
-    loop = AgenticLoop(planner, {})
-    result = await loop.run_async("goal")
-    log_entry = result.final_pipeline_context.command_log[0]
-    assert "Imports are not allowed" in str(log_entry.execution_result)

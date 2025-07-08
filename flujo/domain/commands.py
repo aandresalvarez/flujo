@@ -16,14 +16,6 @@ class RunAgentCommand(BaseModel):
     input_data: Any = Field(..., description="The input data to pass to the sub-agent.")
 
 
-class RunPythonCodeCommand(BaseModel):
-    """Execute a snippet of Python code. Requires a secure sandbox."""
-
-    type: Literal["run_python"] = "run_python"
-    code: str = Field(..., description="The Python code to execute.")
-    # Result is expected in variable 'result'
-
-
 class AskHumanCommand(BaseModel):
     """Pause execution and ask a human for input."""
 
@@ -38,7 +30,7 @@ class FinishCommand(BaseModel):
     final_answer: Any = Field(..., description="The final result or summary of the task.")
 
 
-AgentCommand = Union[RunAgentCommand, RunPythonCodeCommand, AskHumanCommand, FinishCommand]
+AgentCommand = Union[RunAgentCommand, AskHumanCommand, FinishCommand]
 
 
 class ExecutedCommandLog(BaseModel):
