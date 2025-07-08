@@ -1,0 +1,3 @@
+# Exceptions API
+
+::: flujo.exceptions
