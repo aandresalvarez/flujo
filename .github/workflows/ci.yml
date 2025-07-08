@@ -1,25 +1,147 @@
-name: CI
+# .github/workflows/ci.yml
+# Continuous Integration workflow for the Flujo project.
+
+name: Flujo CI
 
 on:
   push:
-    branches: [main]
+    branches: [ "main" ]
   pull_request:
-    branches: [main]
+    branches: [ "main" ]
+
+# Cancel any in-progress jobs for the same PR/branch when new commits are pushed.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  quality:
+  # ----------------------------------------------------------------------------
+  # Job 1: Linting and Static Type Checking
+  # ----------------------------------------------------------------------------
+  lint-and-typecheck:
+    name: Lint & Typecheck
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ['3.11', '3.12']
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v1
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Run Linter
+        run: make lint
+
+      - name: Run Type Checker
+        run: make typecheck
+
+  # ----------------------------------------------------------------------------
+  # Job 2: Run Tests on a Matrix of Python Versions
+  # ----------------------------------------------------------------------------
+  test:
+    name: Test on Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    needs: lint-and-typecheck
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-          cache: pip
-      - run: make install-dev
-      - run: make quality
-      - run: make cov
-      - run: hatch run pytest tests/benchmarks
-      - run: make audit
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v1
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Run tests with coverage
+        run: uv run coverage run --source=flujo --parallel-mode -m pytest tests/
+
+      - name: Store coverage file
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-data-${{ matrix.python-version }}
+          path: .coverage.*
+
+  # ----------------------------------------------------------------------------
+  # Job 3: Combine and Report Code Coverage
+  # ----------------------------------------------------------------------------
+  coverage:
+    name: Report Coverage
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v1
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Download coverage data
+        uses: actions/download-artifact@v4
+        with:
+          path: .
+          pattern: coverage-data-*
+          merge-multiple: true
+
+      - name: Combine coverage reports and check threshold
+        run: |
+          uv run coverage combine
+          uv run coverage report --fail-under=90
+          uv run coverage xml
+          uv run coverage html
+
+      - name: Upload coverage report as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report-html
+          path: htmlcov
+
+  # ----------------------------------------------------------------------------
+  # Job 4: Live API Tests (Optional but Recommended)
+  # ----------------------------------------------------------------------------
+  # This job is a placeholder for a critical testing practice.
+  # To enable it, you would need to:
+  # 1. Create live tests in a separate directory (e.g., tests/live/).
+  # 2. Add API key secrets to your GitHub repository settings.
+  # 3. Uncomment this job.
+  # test-live:
+  #   name: Live API Tests
+  #   runs-on: ubuntu-latest
+  #   if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: astral-sh/setup-uv@v1
+  #     - name: Install dependencies
+  #       run: uv sync --all-extras
+  #     - name: Run live tests
+  #       run: uv run pytest tests/live/
+  #       env:
+  #         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+  #         GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+  #         ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
