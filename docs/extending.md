@@ -63,8 +63,13 @@ class LoggingBackend(ExecutionBackend):
     async def execute_step(self, request: StepExecutionRequest) -> StepResult:
         print(f"Executing {request.step.name}")
         agent = request.step.agent
-        output = await agent.run(request.input_data)
-        return StepResult(name=request.step.name, output=output)
+        if request.stream and hasattr(agent, "stream"):
+            chunks = []
+            async for c in agent.stream(request.input_data):
+                chunks.append(c)
+        else:
+            chunks = [await agent.run(request.input_data)]
+        return StepResult(name=request.step.name, output="".join(chunks))
 
 custom_backend = LoggingBackend({})
 runner = Flujo(pipeline, backend=custom_backend)

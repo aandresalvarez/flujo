@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import inspect
-import time
 import weakref
 import copy
 from datetime import datetime
@@ -248,7 +247,9 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         data: Any,
         context: Optional[ContextT],
         resources: Optional[AppResources],
-    ) -> StepResult:
+        *,
+        stream: bool = False,
+    ) -> AsyncIterator[Any]:
         """Execute a single step and update context if required.
 
         Parameters
@@ -274,6 +275,12 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         model. Validation errors are logged and cause the step to be marked as
         failed.
         """
+        q: asyncio.Queue[Any] | None = None
+
+        async def _capture(chunk: Any) -> None:
+            assert q is not None
+            await q.put(chunk)
+
         request = StepExecutionRequest(
             step=step,
             input_data=data,
@@ -281,8 +288,24 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             resources=resources,
             context_model_defined=self.context_model is not None,
             usage_limits=self.usage_limits,
+            stream=stream,
+            on_chunk=_capture if stream else None,
         )
-        result = await self.backend.execute_step(request)
+
+        if stream:
+            q = asyncio.Queue()
+            task = asyncio.create_task(self.backend.execute_step(request))
+            while True:
+                if task.done() and q.empty():
+                    result = task.result()
+                    break
+                try:
+                    item = await asyncio.wait_for(q.get(), timeout=0.1)
+                    yield item
+                except asyncio.TimeoutError:
+                    continue
+        else:
+            result = await self.backend.execute_step(request)
         if getattr(step, "updates_context", False):
             if self.context_model is not None and context is not None:
                 update_data = _build_context_update(result.output)
@@ -291,7 +314,8 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                         f"Step '{step.name}' has updates_context=True but did not return a dict or Pydantic model. "
                         "Skipping context update."
                     )
-                    return result
+                    yield result
+                    return
 
                 err = _inject_context(context, update_data, self.context_model)
                 if err is not None:
@@ -301,12 +325,13 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     telemetry.logfire.error(error_msg)
                     result.success = False
                     result.feedback = error_msg
-                    return result
+                    yield result
+                    return
 
                 telemetry.logfire.info(
                     f"Context successfully updated and re-validated by step '{step.name}'."
                 )
-        return result
+        yield result
 
     def _check_usage_limits(
         self,
@@ -470,59 +495,25 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                         and step.agent is not None
                         and hasattr(step.agent, "stream")
                     ):
-                        agent_kwargs: Dict[str, Any] = {}
-                        target = getattr(step.agent, "_agent", step.agent)
-                        if context is not None and _accepts_param(target.stream, "context"):
-                            agent_kwargs["context"] = context
-                        if self.resources is not None and _accepts_param(
-                            target.stream, "resources"
-                        ):
-                            agent_kwargs["resources"] = self.resources
-                        if step.config.temperature is not None and _accepts_param(
-                            target.stream, "temperature"
-                        ):
-                            agent_kwargs["temperature"] = step.config.temperature
-                        chunks: list[Any] = []
-                        start = time.monotonic()
-                        try:
-                            async for chunk in step.agent.stream(data, **agent_kwargs):
-                                chunks.append(chunk)
-                                yield chunk
-                            latency = time.monotonic() - start
-                            final_output_success: Any
-                            if chunks and all(isinstance(c, str) for c in chunks):
-                                final_output_success = "".join(chunks)
-                            else:
-                                final_output_success = chunks
-                            step_result = StepResult(
-                                name=step.name,
-                                output=final_output_success,
-                                success=True,
-                                attempts=1,
-                                latency_s=latency,
-                            )
-                        except Exception as e:
-                            latency = time.monotonic() - start
-                            final_output_error: Any
-                            if chunks and all(isinstance(c, str) for c in chunks):
-                                final_output_error = "".join(chunks)
-                            else:
-                                final_output_error = chunks
-                            step_result = StepResult(
-                                name=step.name,
-                                output=final_output_error,
-                                success=False,
-                                feedback=str(e),
-                                attempts=1,
-                                latency_s=latency,
-                            )
-                    else:
-                        step_result = await self._run_step(
+                        async for item in self._run_step(
                             step,
                             data,
                             context=context,
                             resources=self.resources,
-                        )
+                            stream=True,
+                        ):
+                            if isinstance(item, StepResult):
+                                step_result = item
+                            else:
+                                yield item
+                    else:
+                        async for item in self._run_step(
+                            step,
+                            data,
+                            context=context,
+                            resources=self.resources,
+                        ):
+                            step_result = cast(StepResult, item)
                 except PausedException as e:
                     if isinstance(context, PipelineContext):
                         context.scratchpad["status"] = "paused"
