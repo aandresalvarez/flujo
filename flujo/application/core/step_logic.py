@@ -143,7 +143,9 @@ async def _execute_parallel_step_logic(
                         ):
                             limit_breach_error = UsageLimitExceededError(
                                 f"Cost limit of ${usage_limits.total_cost_usd_limit} exceeded",
-                                PipelineResult(step_history=[result], total_cost_usd=total_cost_so_far),
+                                PipelineResult(
+                                    step_history=[result], total_cost_usd=total_cost_so_far
+                                ),
                             )
                             limit_breached.set()
                         elif (
@@ -152,7 +154,9 @@ async def _execute_parallel_step_logic(
                         ):
                             limit_breach_error = UsageLimitExceededError(
                                 f"Token limit of {usage_limits.total_tokens_limit} exceeded",
-                                PipelineResult(step_history=[result], total_cost_usd=total_cost_so_far),
+                                PipelineResult(
+                                    step_history=[result], total_cost_usd=total_cost_so_far
+                                ),
                             )
                             limit_breached.set()
 
@@ -706,8 +710,10 @@ async def _run_step_logic(
     last_raw_output = None
     last_unpacked_output = None
     validation_failed = False
-    last_attempt_feedbacks: list[str] = []
     last_attempt_output = None
+
+    original_data = copy.deepcopy(data)
+    all_feedbacks: list[str] = []
     for attempt in range(1, step.config.max_retries + 1):
         validation_failed = False
         result.attempts = attempt
@@ -912,16 +918,17 @@ async def _run_step_logic(
         if plugin_failed_this_attempt:
             success = False
         # --- END FIX ---
-        # --- JOIN ALL FEEDBACKS ---
+
         feedback = "\n".join(feedbacks).strip() if feedbacks else None
-        # --- END JOIN ---
+        if feedbacks:
+            all_feedbacks.extend(feedbacks)
+
         if not success and attempt == step.config.max_retries:
-            last_attempt_feedbacks = feedbacks.copy()
             last_attempt_output = last_unpacked_output
         if success:
             result.output = unpacked_output
             result.success = True
-            result.feedback = feedback
+            result.feedback = "\n".join(all_feedbacks) if all_feedbacks else None
             result.token_counts += getattr(raw_output, "token_counts", 0)
             result.cost_usd += getattr(raw_output, "cost_usd", 0.0)
             _apply_validation_metadata(
@@ -944,18 +951,26 @@ async def _run_step_logic(
         else:
             current_agent = original_agent
 
-        if feedback:
-            if isinstance(data, dict):
-                data["feedback"] = data.get("feedback", "") + "\n" + feedback
+        joined_feedback = "\n".join(all_feedbacks)
+        if isinstance(original_data, dict):
+            data = copy.deepcopy(original_data)
+            existing_feedback = str(original_data.get("feedback", ""))
+            initial = existing_feedback.strip()
+            combined = "\n".join(filter(None, [initial, joined_feedback]))
+            if combined:
+                data["feedback"] = combined
             else:
-                data = f"{str(data)}\n{feedback}"
+                data.pop("feedback", None)
+        else:
+            if joined_feedback:
+                data = f"{original_data}\n{joined_feedback}"
+            else:
+                data = original_data
         last_feedback = feedback
 
-    # After all retries, set feedback to last attempt's feedbacks
+    # After all retries, aggregate all feedback collected
     result.success = False
-    result.feedback = (
-        "\n".join(last_attempt_feedbacks).strip() if last_attempt_feedbacks else last_feedback
-    )
+    result.feedback = "\n".join(all_feedbacks) if all_feedbacks else last_feedback
     is_validation_step, is_strict = _get_validation_flags(step)
     if validation_failed and is_strict:
         result.output = None
