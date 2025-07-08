@@ -89,6 +89,7 @@ async def _execute_parallel_step_logic(
     result = StepResult(name=parallel_step.name)
     outputs: Dict[str, Any] = {}
     branch_results: Dict[str, StepResult] = {}
+    branch_contexts: Dict[str, Optional[TContext]] = {}
 
     limit_breached = asyncio.Event()
     limit_breach_error: Optional[UsageLimitExceededError] = None
@@ -143,7 +144,9 @@ async def _execute_parallel_step_logic(
                         ):
                             limit_breach_error = UsageLimitExceededError(
                                 f"Cost limit of ${usage_limits.total_cost_usd_limit} exceeded",
-                                PipelineResult(step_history=[result], total_cost_usd=total_cost_so_far),
+                                PipelineResult(
+                                    step_history=[result], total_cost_usd=total_cost_so_far
+                                ),
                             )
                             limit_breached.set()
                         elif (
@@ -152,7 +155,9 @@ async def _execute_parallel_step_logic(
                         ):
                             limit_breach_error = UsageLimitExceededError(
                                 f"Token limit of {usage_limits.total_tokens_limit} exceeded",
-                                PipelineResult(step_history=[result], total_cost_usd=total_cost_so_far),
+                                PipelineResult(
+                                    step_history=[result], total_cost_usd=total_cost_so_far
+                                ),
                             )
                             limit_breached.set()
 
@@ -179,6 +184,7 @@ async def _execute_parallel_step_logic(
 
         outputs[key] = branch_res.output
         branch_results[key] = branch_res
+        branch_contexts[key] = ctx_copy
 
     start = time.monotonic()
 
@@ -234,53 +240,57 @@ async def _execute_parallel_step_logic(
         return result
 
     if parallel_step.merge_strategy != MergeStrategy.NO_MERGE and context is not None:
-        if callable(parallel_step.merge_strategy):
-            for res in succeeded_branches.values():
-                if res.branch_context is not None:
-                    parallel_step.merge_strategy(context, res.branch_context)
-        elif parallel_step.merge_strategy == MergeStrategy.OVERWRITE:
-            if succeeded_branches:
-                for name in branch_order:
-                    if name in succeeded_branches:
-                        branch_ctx = succeeded_branches[name].branch_context
-                        if branch_ctx is not None:
-                            merged = context.model_dump()
-                            branch_data = branch_ctx.model_dump()
-                            keys = parallel_step.context_include_keys or list(branch_data.keys())
-                            for key in keys:
-                                if key in branch_data:
-                                    if (
-                                        key == "scratchpad"
-                                        and key in merged
-                                        and isinstance(merged[key], dict)
-                                        and isinstance(branch_data[key], dict)
-                                    ):
-                                        merged[key].update(branch_data[key])
-                                    else:
-                                        merged[key] = branch_data[key]
-                            validated = context.__class__.model_validate(merged)
-                            context.__dict__.update(validated.__dict__)
-        elif parallel_step.merge_strategy == MergeStrategy.MERGE_SCRATCHPAD:
-            if hasattr(context, "scratchpad"):
-                base_snapshot = dict(context.scratchpad)
-                seen_keys: set[str] = set()
-                for branch_name in sorted(succeeded_branches):
-                    res = succeeded_branches[branch_name]
-                    bc = res.branch_context
-                    if bc is not None and hasattr(bc, "scratchpad"):
-                        for key, val in bc.scratchpad.items():
-                            if key in base_snapshot and base_snapshot[key] == val:
-                                continue
-                            if key in context.scratchpad and context.scratchpad[key] != val:
-                                raise ValueError(
-                                    f"Scratchpad key collision for '{key}' in branch '{branch_name}'"
-                                )
-                            if key in seen_keys:
-                                raise ValueError(
-                                    f"Scratchpad key collision for '{key}' in branch '{branch_name}'"
-                                )
-                            context.scratchpad[key] = val
-                            seen_keys.add(key)
+        if parallel_step.merge_strategy == MergeStrategy.MERGE_SCRATCHPAD and hasattr(
+            context, "scratchpad"
+        ):
+            base_snapshot = dict(context.scratchpad)
+            seen_keys: set[str] = set()
+        for branch_name in branch_order:
+            if branch_name not in succeeded_branches:
+                continue
+            branch_ctx = branch_contexts.get(branch_name)
+            if branch_ctx is None:
+                continue
+
+            if callable(parallel_step.merge_strategy):
+                parallel_step.merge_strategy(context, branch_ctx)
+                continue
+
+            if parallel_step.merge_strategy == MergeStrategy.OVERWRITE:
+                merged = context.model_dump()
+                branch_data = branch_ctx.model_dump()
+                keys = parallel_step.context_include_keys or list(branch_data.keys())
+                for key in keys:
+                    if key in branch_data:
+                        if (
+                            key == "scratchpad"
+                            and key in merged
+                            and isinstance(merged[key], dict)
+                            and isinstance(branch_data[key], dict)
+                        ):
+                            merged[key].update(branch_data[key])
+                        else:
+                            merged[key] = branch_data[key]
+                validated = context.__class__.model_validate(merged)
+                context.__dict__.update(validated.__dict__)
+            elif parallel_step.merge_strategy == MergeStrategy.MERGE_SCRATCHPAD and hasattr(
+                branch_ctx, "scratchpad"
+            ):
+                branch_pc = cast(PipelineContext, branch_ctx)
+                context_pc = cast(PipelineContext, context)
+                for key, val in branch_pc.scratchpad.items():
+                    if key in base_snapshot and base_snapshot[key] == val:
+                        continue
+                    if key in context_pc.scratchpad and context_pc.scratchpad[key] != val:
+                        raise ValueError(
+                            f"Scratchpad key collision for '{key}' in branch '{branch_name}'"
+                        )
+                    if key in seen_keys:
+                        raise ValueError(
+                            f"Scratchpad key collision for '{key}' in branch '{branch_name}'"
+                        )
+                    context_pc.scratchpad[key] = val
+                    seen_keys.add(key)
 
     result.success = bool(succeeded_branches)
     final_output = {k: v.output for k, v in succeeded_branches.items()}
