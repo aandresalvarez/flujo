@@ -50,6 +50,7 @@ async def test_resume_from_saved_state() -> None:
     ctx_after_first = Ctx(initial_prompt="x", run_id=run_id)
     state = WorkflowState(
         run_id=run_id,
+        pipeline_name="test",
         pipeline_id=str(id(s1 >> s2)),
         pipeline_version="0",
         current_step_index=1,
@@ -100,6 +101,7 @@ async def test_invalid_step_index_raises() -> None:
     ctx = Ctx(initial_prompt="x", run_id=run_id)
     state = WorkflowState(
         run_id=run_id,
+        pipeline_name="test",
         pipeline_id=str(id(s1 >> s2)),
         pipeline_version="0",
         current_step_index=3,

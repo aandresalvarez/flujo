@@ -25,6 +25,7 @@ from . import caching
 # 2. Expose the most essential core components at the top level for convenience.
 # These are the symbols users will interact with 90% of the time.
 from .application.runner import Flujo
+from .registry import PipelineRegistry
 from .domain.dsl.step import Step, step
 from .domain.dsl.pipeline import Pipeline
 from .domain.models import Task, Candidate
@@ -36,6 +37,7 @@ from .infra.telemetry import init_telemetry
 __all__ = [
     # Core Components
     "Flujo",
+    "PipelineRegistry",
     "Step",
     "step",
     "Pipeline",

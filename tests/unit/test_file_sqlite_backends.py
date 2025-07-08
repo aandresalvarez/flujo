@@ -34,6 +34,7 @@ async def test_sqlite_backend_roundtrip(tmp_path: Path) -> None:
     now = datetime.utcnow().replace(microsecond=0)
     state = {
         "run_id": "run1",
+        "pipeline_name": "pname",
         "pipeline_id": "p",
         "pipeline_version": "0",
         "current_step_index": 1,

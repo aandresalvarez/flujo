@@ -11,6 +11,7 @@ class WorkflowState(BaseModel):
     """Serialized snapshot of a running workflow."""
 
     run_id: str
+    pipeline_name: str
     pipeline_id: str
     pipeline_version: str
     current_step_index: int

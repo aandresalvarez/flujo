@@ -38,6 +38,7 @@ from ..exceptions import (
 from ..domain.dsl.step import Step
 from ..domain.dsl.pipeline import Pipeline
 from ..domain.dsl.step import HumanInTheLoopStep
+from ..registry import PipelineRegistry
 from ..domain.models import (
     BaseModel,
     PipelineResult,
@@ -164,7 +165,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
 
     def __init__(
         self,
-        pipeline: Pipeline[RunnerInT, RunnerOutT] | Step[RunnerInT, RunnerOutT],
+        pipeline: Pipeline[RunnerInT, RunnerOutT] | Step[RunnerInT, RunnerOutT] | None = None,
         context_model: Optional[Type[ContextT]] = None,
         initial_context_data: Optional[Dict[str, Any]] = None,
         resources: Optional[AppResources] = None,
@@ -174,11 +175,14 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         state_backend: Optional[StateBackend] = None,
         delete_on_completion: bool = False,
         pipeline_version: str = "0",
+        *,
+        registry: "PipelineRegistry | None" = None,
+        pipeline_name: str | None = None,
         local_tracer: Union[str, "ConsoleTracer", None] = None,
     ) -> None:
-        if isinstance(pipeline, Step):
+        if pipeline is not None and isinstance(pipeline, Step):
             pipeline = Pipeline.from_step(pipeline)
-        self.pipeline: Pipeline[RunnerInT, RunnerOutT] = pipeline
+        self.pipeline: Pipeline[RunnerInT, RunnerOutT] | None = pipeline
         self.context_model = context_model
         self.initial_context_data: Dict[str, Any] = initial_context_data or {}
         self.resources = resources
@@ -199,6 +203,8 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         self.state_backend = state_backend
         self.delete_on_completion = delete_on_completion
         self.pipeline_version = pipeline_version
+        self.registry = registry
+        self.pipeline_name = pipeline_name or "default"
 
     async def _dispatch_hook(
         self,
@@ -368,6 +374,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
 
         wf_state = WorkflowState(
             run_id=run_id,
+            pipeline_name=self.pipeline_name,
             pipeline_id=str(id(self.pipeline)),
             pipeline_version=self.pipeline_version,
             current_step_index=current_step_index,
@@ -423,6 +430,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             If the output type of a step does not match the next step's
             expected input type.
         """
+        assert self.pipeline is not None
         for idx, step in enumerate(self.pipeline.steps[start_idx:], start=start_idx):
             await self._dispatch_hook(
                 "pre_step",
@@ -607,10 +615,8 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 wf_state = WorkflowState.model_validate(loaded)
                 start_idx = wf_state.current_step_index
                 state_created_at = wf_state.created_at
-                if start_idx > len(self.pipeline.steps):
-                    raise OrchestratorError(
-                        f"Invalid persisted step index {start_idx} for pipeline with {len(self.pipeline.steps)} steps"
-                    )
+                self.pipeline_name = wf_state.pipeline_name
+                self.pipeline_version = wf_state.pipeline_version
                 if wf_state.pipeline_context is not None:
                     if self.context_model is not None:
                         current_context_instance = self.context_model.model_validate(
@@ -630,6 +636,25 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 status="running",
                 state_created_at=state_created_at,
                 state_backend=self.state_backend,
+            )
+
+        if self.pipeline is None:
+            if self.registry is None:
+                raise OrchestratorError("Pipeline registry not configured")
+            pipeline = (
+                self.registry.get_latest(self.pipeline_name)
+                if self.pipeline_version == "latest"
+                else self.registry.get(self.pipeline_name, self.pipeline_version)
+            )
+            if pipeline is None:
+                raise OrchestratorError(
+                    f"Pipeline '{self.pipeline_name}' version '{self.pipeline_version}' not found"
+                )
+            self.pipeline = pipeline
+
+        if start_idx > len(self.pipeline.steps):
+            raise OrchestratorError(
+                f"Invalid persisted step index {start_idx} for pipeline with {len(self.pipeline.steps)} steps"
             )
         cancelled = False
         try:
@@ -774,6 +799,27 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         if scratch.get("status") != "paused":
             raise OrchestratorError("Pipeline is not paused")
         start_idx = len(paused_result.step_history)
+        run_id_for_state = getattr(ctx, "run_id", None)
+        if self.pipeline is None:
+            if self.state_backend is not None and run_id_for_state is not None:
+                loaded = await self.state_backend.load_state(run_id_for_state)
+                if loaded is not None:
+                    wf_state_loaded = WorkflowState.model_validate(loaded)
+                    self.pipeline_name = wf_state_loaded.pipeline_name
+                    self.pipeline_version = wf_state_loaded.pipeline_version
+            if self.registry is None:
+                raise OrchestratorError("Pipeline registry not configured")
+            pipeline = (
+                self.registry.get_latest(self.pipeline_name)
+                if self.pipeline_version == "latest"
+                else self.registry.get(self.pipeline_name, self.pipeline_version)
+            )
+            if pipeline is None:
+                raise OrchestratorError(
+                    f"Pipeline '{self.pipeline_name}' version '{self.pipeline_version}' not found"
+                )
+            self.pipeline = pipeline
+
         if start_idx >= len(self.pipeline.steps):
             raise OrchestratorError("No steps remaining to resume")
         paused_step = self.pipeline.steps[start_idx]

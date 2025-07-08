@@ -71,9 +71,7 @@ async def test_file_backend_resume_after_crash(tmp_path: Path) -> None:
     rc = _run_crashing_process("FileBackend", state_dir, run_id)
     assert rc != 0
     backend = FileBackend(state_dir)
-    pipeline = Step.from_callable(step_one, name="s1") >> Step.from_callable(
-        step_two, name="s2"
-    )
+    pipeline = Step.from_callable(step_one, name="s1") >> Step.from_callable(step_two, name="s2")
     runner = Flujo(
         pipeline,
         context_model=Ctx,
@@ -100,9 +98,7 @@ async def test_sqlite_backend_resume_after_crash(tmp_path: Path) -> None:
     rc = _run_crashing_process("SQLiteBackend", db_path, run_id)
     assert rc != 0
     backend = SQLiteBackend(db_path)
-    pipeline = Step.from_callable(step_one, name="s1") >> Step.from_callable(
-        step_two, name="s2"
-    )
+    pipeline = Step.from_callable(step_one, name="s1") >> Step.from_callable(step_two, name="s2")
     runner = Flujo(
         pipeline,
         context_model=Ctx,
@@ -141,9 +137,7 @@ async def test_file_backend_concurrent(tmp_path: Path) -> None:
             delete_on_completion=False,
             initial_context_data={"run_id": rid},
         )
-        await gather_result(
-            runner, 0, initial_context_data={"initial_prompt": "x", "run_id": rid}
-        )
+        await gather_result(runner, 0, initial_context_data={"initial_prompt": "x", "run_id": rid})
 
     await asyncio.gather(*(run_one(i) for i in range(5)))
 
