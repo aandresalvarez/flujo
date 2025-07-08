@@ -28,11 +28,12 @@ from ..exceptions import (
     PipelineContextInitializationError,
     UsageLimitExceededError,
     PipelineAbortSignal,
-    PausedException,
-    TypeMismatchError,
     ContextInheritanceError,
     InfiniteFallbackError,
     InfiniteRedirectError as _InfiniteRedirectError,
+    PausedException,
+    MissingAgentError,
+    TypeMismatchError,
 )
 from ..domain.dsl.step import Step
 from ..domain.dsl.pipeline import Pipeline
@@ -57,11 +58,14 @@ from ..registry import PipelineRegistry
 from .context_manager import (
     _accepts_param,
     _extract_missing_fields,
-    _types_compatible,
 )
 from .core.step_logic import _run_step_logic
 from .core.context_adapter import _build_context_update, _inject_context
 from .core.hook_dispatcher import _dispatch_hook as _dispatch_hook_impl
+from .core.execution_manager import ExecutionManager
+from .core.state_manager import StateManager
+from .core.usage_governor import UsageGovernor
+from .core.step_coordinator import StepCoordinator
 
 _signature_cache_weak: weakref.WeakKeyDictionary[Callable[..., Any], inspect.Signature] = (
     weakref.WeakKeyDictionary()
@@ -320,6 +324,19 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                         yield q.get_nowait()
                     try:
                         result = task.result()
+                    except (
+                        UsageLimitExceededError,
+                        InfiniteFallbackError,
+                        InfiniteRedirectError,
+                        PausedException,
+                        MissingAgentError,
+                        TypeMismatchError,
+                        TypeError,
+                        ValueError,
+                        RuntimeError,
+                    ):
+                        # Allow critical exceptions to propagate
+                        raise
                     except Exception as e:  # pragma: no cover - defensive
                         telemetry.logfire.error(
                             f"Streaming task for step '{step.name}' failed: {e}"
@@ -366,108 +383,6 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 )
         yield result
 
-    def _check_usage_limits(
-        self,
-        pipeline_result: PipelineResult[ContextT],
-        span: Any | None,
-    ) -> None:
-        """Enforce token and cost limits for the current run.
-
-        Parameters
-        ----------
-        pipeline_result:
-            The aggregated :class:`PipelineResult` so far.
-        span:
-            Optional telemetry span used to annotate governor breaches.
-
-        Raises
-        ------
-        UsageLimitExceededError
-            If either cost or token limits configured in ``usage_limits`` are
-            exceeded.
-        """
-        if self.usage_limits is None:
-            return
-
-        total_tokens = sum(sr.token_counts for sr in pipeline_result.step_history)
-
-        if (
-            self.usage_limits.total_cost_usd_limit is not None
-            and pipeline_result.total_cost_usd > self.usage_limits.total_cost_usd_limit
-        ):
-            if span is not None:
-                try:
-                    span.set_attribute("governor_breached", True)
-                except Exception as e:
-                    # Defensive: log and ignore errors setting span attributes
-                    telemetry.logfire.error(f"Error setting span attribute: {e}")
-                telemetry.logfire.warn(
-                    f"Cost limit of ${self.usage_limits.total_cost_usd_limit} exceeded"
-                )
-                raise UsageLimitExceededError(
-                    f"Cost limit of ${self.usage_limits.total_cost_usd_limit} exceeded",
-                    pipeline_result,
-                )
-
-        if (
-            self.usage_limits.total_tokens_limit is not None
-            and total_tokens > self.usage_limits.total_tokens_limit
-        ):
-            if span is not None:
-                try:
-                    span.set_attribute("governor_breached", True)
-                except Exception as e:
-                    # Defensive: log and ignore errors setting span attributes
-                    telemetry.logfire.error(f"Error setting span attribute: {e}")
-                telemetry.logfire.warn(
-                    f"Token limit of {self.usage_limits.total_tokens_limit} exceeded"
-                )
-                raise UsageLimitExceededError(
-                    f"Token limit of {self.usage_limits.total_tokens_limit} exceeded",
-                    pipeline_result,
-                )
-
-    @staticmethod
-    def _set_final_context(result: PipelineResult[ContextT], ctx: Optional[ContextT]) -> None:
-        """Write ``ctx`` into ``result`` if present."""
-
-        if ctx is not None:
-            result.final_pipeline_context = ctx
-
-    async def _persist_workflow_state(
-        self,
-        *,
-        run_id: str | None,
-        context: Optional[ContextT],
-        current_step_index: int,
-        last_step_output: Any | None,
-        status: Literal["running", "paused", "completed", "failed", "cancelled"],
-        state_created_at: datetime | None,
-        state_backend: StateBackend | None = None,
-    ) -> None:
-        """Persist workflow state if a backend is configured."""
-
-        backend = state_backend or self.state_backend
-        if backend is None or not run_id or context is None:
-            return
-
-        self._ensure_pipeline()
-        wf_state = WorkflowState(
-            run_id=run_id,
-            pipeline_id=str(id(self.pipeline)),
-            pipeline_name=self.pipeline_name or "",
-            pipeline_version=self.pipeline_version,
-            current_step_index=current_step_index,
-            pipeline_context=context.model_dump(),
-            last_step_output=last_step_output,
-            status=status,
-            created_at=state_created_at or datetime.utcnow(),
-            updated_at=datetime.utcnow(),
-        )
-        await backend.save_state(run_id, wf_state.model_dump())
-        if self.delete_on_completion and status in {"completed", "failed"}:
-            await backend.delete_state(run_id)
-
     async def _execute_steps(
         self,
         start_idx: int,
@@ -480,130 +395,39 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         state_backend: StateBackend | None = None,
         state_created_at: datetime | None = None,
     ) -> AsyncIterator[Any]:
-        """Iterate over pipeline steps yielding streaming output.
+        """Execute pipeline steps using the new execution manager.
 
-        Parameters
-        ----------
-        start_idx:
-            Index of the first step to execute.
-        data:
-            Input to the first step.
-        context:
-            Mutable context object passed between steps.
-        result:
-            Aggregated :class:`PipelineResult` to populate.
-        stream_last:
-            If ``True`` and the final step supports ``stream``, yield chunks as
-            they are produced.
-
-        Yields
-        ------
-        Any
-            Streaming output chunks from the final step when ``stream_last`` is
-            enabled.
-
-        Raises
-        ------
-        PausedException
-            If a step pauses the pipeline for human input.
-        TypeMismatchError
-            If the output type of a step does not match the next step's
-            expected input type.
+        This method now delegates to the ExecutionManager which coordinates
+        all execution components in a clean, testable way.
         """
         assert self.pipeline is not None
-        for idx, step in enumerate(self.pipeline.steps[start_idx:], start=start_idx):
-            await self._dispatch_hook(
-                "pre_step",
-                step=step,
-                step_input=data,
-                context=context,
-                resources=self.resources,
-            )
-            with telemetry.logfire.span(step.name) as span:
-                try:
-                    is_last = idx == len(self.pipeline.steps) - 1
-                    if (
-                        stream_last
-                        and is_last
-                        and step.agent is not None
-                        and hasattr(step.agent, "stream")
-                    ):
-                        async for item in self._run_step(
-                            step,
-                            data,
-                            context=context,
-                            resources=self.resources,
-                            stream=True,
-                        ):
-                            if isinstance(item, StepResult):
-                                step_result = item
-                            else:
-                                yield item
-                    else:
-                        async for item in self._run_step(
-                            step,
-                            data,
-                            context=context,
-                            resources=self.resources,
-                        ):
-                            step_result = cast(StepResult, item)
-                except PausedException as e:
-                    if isinstance(context, PipelineContext):
-                        context.scratchpad["status"] = "paused"
-                        context.scratchpad["pause_message"] = str(e)
-                        scratch = context.scratchpad
-                        if "paused_step_input" not in scratch:
-                            scratch["paused_step_input"] = data
-                    self._set_final_context(result, context)
-                    break
-                if step_result.metadata_:
-                    for key, value in step_result.metadata_.items():
-                        try:
-                            span.set_attribute(key, value)
-                        except Exception as e:
-                            telemetry.logfire.error(f"Error setting span attribute: {e}")
-                result.step_history.append(step_result)
-                result.total_cost_usd += step_result.cost_usd
-                self._check_usage_limits(result, span)
-            if step_result.success:
-                await self._dispatch_hook(
-                    "post_step",
-                    step_result=step_result,
-                    context=context,
-                    resources=self.resources,
-                )
-                if state_backend is not None and context is not None and run_id is not None:
-                    await self._persist_workflow_state(
-                        run_id=run_id,
-                        context=context,
-                        current_step_index=idx + 1,
-                        last_step_output=step_result.output,
-                        status="running",
-                        state_created_at=state_created_at,
-                        state_backend=state_backend,
-                    )
-            else:
-                await self._dispatch_hook(
-                    "on_step_failure",
-                    step_result=step_result,
-                    context=context,
-                    resources=self.resources,
-                )
-                telemetry.logfire.warn(f"Step '{step.name}' failed. Halting pipeline execution.")
-                break
-            if idx < len(self.pipeline.steps) - 1:
-                next_step = self.pipeline.steps[idx + 1]
-                expected = getattr(next_step, "__step_input_type__", Any)
-                actual_type = type(step_result.output)
-                if step_result.output is None:
-                    actual_type = type(None)
-                if not _types_compatible(actual_type, expected):
-                    raise TypeMismatchError(
-                        f"Type mismatch: Output of '{step.name}' (returns `{actual_type}`) "
-                        f"is not compatible with '{next_step.name}' (expects `{expected}`). "
-                        "For best results, use a static type checker like mypy to catch these issues before runtime."
-                    )
-            data = step_result.output
+
+        # Create execution manager with all components
+        state_manager: StateManager[ContextT] = StateManager[ContextT](state_backend)
+        usage_governor: UsageGovernor[ContextT] = UsageGovernor[ContextT](self.usage_limits)
+        step_coordinator: StepCoordinator[ContextT] = StepCoordinator[ContextT](
+            self.hooks, self.resources
+        )
+
+        execution_manager = ExecutionManager(
+            self.pipeline,
+            state_manager=state_manager,
+            usage_governor=usage_governor,
+            step_coordinator=step_coordinator,
+        )
+
+        # Execute steps using the manager
+        async for item in execution_manager.execute_steps(
+            start_idx=start_idx,
+            data=data,
+            context=context,
+            result=result,
+            stream_last=stream_last,
+            run_id=run_id,
+            state_created_at=state_created_at,
+            step_executor=self._run_step,
+        ):
+            yield item
 
     async def run_async(
         self,
@@ -654,40 +478,44 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         pipeline_result_obj: PipelineResult[ContextT] = PipelineResult()
         start_idx = 0
         state_created_at: datetime | None = None
-        run_id_for_state = getattr(current_context_instance, "run_id", None)
-        if self.state_backend is not None and run_id_for_state:
-            loaded = await self.state_backend.load_state(run_id_for_state)
-            if loaded is not None:
-                wf_state = WorkflowState.model_validate(loaded)
-                self.pipeline_name = wf_state.pipeline_name
-                self.pipeline_version = wf_state.pipeline_version
+        # Initialize state manager and load existing state if available
+        state_manager: StateManager[ContextT] = StateManager[ContextT](self.state_backend)
+        run_id_for_state = state_manager.get_run_id_from_context(current_context_instance)
+
+        if run_id_for_state:
+            context, last_output, current_idx, created_at = await state_manager.load_workflow_state(
+                run_id_for_state, self.context_model
+            )
+            if context is not None:
+                # Resume from persisted state
+                current_context_instance = context
+                start_idx = current_idx
+                state_created_at = created_at
+                if start_idx > 0:
+                    data = last_output
+
+                # Ensure pipeline is loaded with correct version
+                if hasattr(current_context_instance, "pipeline_name"):
+                    self.pipeline_name = current_context_instance.pipeline_name
+                if hasattr(current_context_instance, "pipeline_version"):
+                    self.pipeline_version = current_context_instance.pipeline_version
                 self._ensure_pipeline()
-                start_idx = wf_state.current_step_index
-                state_created_at = wf_state.created_at
+
+                # Validate step index
                 assert self.pipeline is not None
                 if start_idx > len(self.pipeline.steps):
                     raise OrchestratorError(
                         f"Invalid persisted step index {start_idx} for pipeline with {len(self.pipeline.steps)} steps"
                     )
-                if wf_state.pipeline_context is not None:
-                    if self.context_model is not None:
-                        current_context_instance = self.context_model.model_validate(
-                            wf_state.pipeline_context
-                        )
-                    else:
-                        current_context_instance = cast(
-                            ContextT, PipelineContext.model_validate(wf_state.pipeline_context)
-                        )
-                if start_idx > 0:
-                    data = wf_state.last_step_output
-            await self._persist_workflow_state(
+
+            # Persist initial state
+            await state_manager.persist_workflow_state(
                 run_id=run_id_for_state,
                 context=current_context_instance,
                 current_step_index=start_idx,
                 last_step_output=data,
                 status="running",
                 state_created_at=state_created_at,
-                state_backend=self.state_backend,
             )
         else:
             self._ensure_pipeline()
@@ -719,14 +547,20 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             telemetry.logfire.info(str(e))
         except UsageLimitExceededError:
             if current_context_instance is not None:
-                self._set_final_context(
+                assert self.pipeline is not None
+                execution_manager: ExecutionManager[ContextT] = ExecutionManager[ContextT](
+                    self.pipeline
+                )
+                execution_manager.set_final_context(
                     pipeline_result_obj,
                     cast(Optional[ContextT], current_context_instance),
                 )
             raise
         finally:
             if current_context_instance is not None:
-                self._set_final_context(
+                assert self.pipeline is not None
+                execution_manager = ExecutionManager[ContextT](self.pipeline)
+                execution_manager.set_final_context(
                     pipeline_result_obj,
                     cast(Optional[ContextT], current_context_instance),
                 )
@@ -751,17 +585,19 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     if current_context_instance.scratchpad.get("status") == "paused":
                         final_status = "paused"
                     current_context_instance.scratchpad["status"] = final_status
-                await self._persist_workflow_state(
-                    run_id=getattr(current_context_instance, "run_id", None),
+
+                # Use execution manager to persist final state
+                execution_manager = ExecutionManager[ContextT](
+                    self.pipeline,
+                    state_manager=state_manager,
+                )
+                await execution_manager.persist_final_state(
+                    run_id=state_manager.get_run_id_from_context(current_context_instance),
                     context=current_context_instance,
-                    current_step_index=start_idx + len(pipeline_result_obj.step_history),
-                    last_step_output=(
-                        pipeline_result_obj.step_history[-1].output
-                        if pipeline_result_obj.step_history
-                        else None
-                    ),
-                    status=final_status,
+                    result=pipeline_result_obj,
+                    start_idx=start_idx,
                     state_created_at=state_created_at,
+                    final_status=final_status,
                 )
             try:
                 await self._dispatch_hook(
@@ -912,18 +748,23 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 final_status = "paused"
             ctx.scratchpad["status"] = final_status
 
-        await self._persist_workflow_state(
+        # Use execution manager to persist final state
+        state_manager: StateManager[ContextT] = StateManager[ContextT](self.state_backend)
+        assert self.pipeline is not None
+        execution_manager: ExecutionManager[ContextT] = ExecutionManager[ContextT](
+            self.pipeline,
+            state_manager=state_manager,
+        )
+        await execution_manager.persist_final_state(
             run_id=run_id_for_state,
             context=ctx,
-            current_step_index=len(paused_result.step_history),
-            last_step_output=(
-                paused_result.step_history[-1].output if paused_result.step_history else None
-            ),
-            status=final_status,
+            result=paused_result,
+            start_idx=len(paused_result.step_history),
             state_created_at=state_created_at,
+            final_status=final_status,
         )
 
-        self._set_final_context(paused_result, cast(Optional[ContextT], ctx))
+        execution_manager.set_final_context(paused_result, cast(Optional[ContextT], ctx))
         return paused_result
 
     def as_step(
