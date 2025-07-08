@@ -154,18 +154,9 @@ pip install flujo
 git clone https://github.com/aandresalvarez/flujo.git
 cd flujo
 
-# Create and activate virtual environment
-python -m venv venv
-source venv/bin/activate  # Linux/macOS
-# or
-.\venv\Scripts\activate  # Windows
-
-# Install development dependencies
-pip install -e ".[dev]"
-
-# Set up the Hatch environment for tooling
-pip install hatch
-make setup
+# Create and activate the development environment
+make install       # creates .venv/ and installs all dependencies with uv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
 ```
 
 ## Contributing
