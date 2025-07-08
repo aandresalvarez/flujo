@@ -410,8 +410,10 @@ async def _execute_loop_step_logic(
                             for key, value in iteration_context.__dict__.items():
                                 try:
                                     setattr(context, key, value)
-                                except Exception:
-                                    pass
+                                except Exception as e:
+                                    telemetry.logfire.error(
+                                        f"Failed to set attribute '{key}' on context during PausedException handling: {e}"
+                                    )
                     raise
 
                 loop_overall_result.latency_s += body_step_result_obj.latency_s
@@ -523,8 +525,10 @@ async def _execute_loop_step_logic(
                 i_log = getattr(iteration_context, "command_log", None)
                 if isinstance(c_log, list) and isinstance(i_log, list) and len(i_log) > len(c_log):
                     context.command_log.append(i_log[-1])  # type: ignore[attr-defined]
-            except Exception:
-                pass
+            except Exception as e:
+                telemetry.logfire.error(
+                    f"Failed to append to command_log after max_loops in LoopStep: {e}"
+                )
 
     if loop_overall_result.success and loop_exited_successfully_by_condition:
         if loop_step.loop_output_mapper:

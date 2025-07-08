@@ -14,14 +14,15 @@ The simplified orchestrator no longer performs reflection automatically. To
 incorporate strategic feedback, build a custom pipeline using `Step`:
 
 ```python
-from flujo import Step, Flujo, review_agent, solution_agent, validator_agent, get_reflection_agent
+from flujo import Step, Flujo, get_reflection_agent
+from flujo.infra.agents import make_review_agent, make_solution_agent, make_validator_agent
 
 reflection_agent = get_reflection_agent(model="anthropic:claude-3-haiku")
 
 pipeline = (
-    Step.review(review_agent)
-    >> Step.solution(solution_agent)
-    >> Step.validate(validator_agent)
+    Step.review(make_review_agent())
+    >> Step.solution(make_solution_agent())
+    >> Step.validate(make_validator_agent())
     >> Step.validate(reflection_agent)
 )
 

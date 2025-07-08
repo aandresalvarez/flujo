@@ -76,7 +76,7 @@ research_step = Step("PlanResearch", PlanResearchAgent())
 ```
 
 ✅ Encapsulation
-✅ Testability  
+✅ Testability
 ✅ Clear dependency injection
 ✅ Type-safe context handling
 
@@ -90,7 +90,7 @@ research_step = Step("PlanResearch", PlanResearchAgent())
 from flujo import Step, Pipeline
 from flujo.domain.models import BaseModel
 
-def route(ctx: TriageContext, _): 
+def route(ctx: TriageContext, _):
     if ctx.author_reputation < 0.2: return "high_risk"
     if ctx.author_reputation < 0.6: return "standard_review"
     return "auto_approve"
@@ -100,7 +100,7 @@ router_step = Step.branch_on(
     condition_callable=route,
     branches={
         "high_risk": Pipeline.from_step(Step("Escalate", high_risk_agent)),
-        "standard_review": Pipeline.from_step(Step("Review", llm_review_agent)),
+        "standard_review": Pipeline.from_step(Step("Review", make_review_agent())),
     },
     default_branch_pipeline=Pipeline.from_step(Step("AutoApprove", logging_agent)),
 )
@@ -136,7 +136,7 @@ hitl_step = Step.human_in_the_loop(
 refine_step = Step.refine_until(
     name="RefineCode",
     generator_pipeline=Pipeline.from_step(Step("Generate", code_agent)),
-    critic_pipeline=Pipeline.from_step(Step("Critique", review_agent)),
+    critic_pipeline=Pipeline.from_step(Step("Critique", make_review_agent())),
     max_refinements=5,
 )
 ```
@@ -205,7 +205,7 @@ Use it in a validation step:
 from flujo import Step
 quality_gate = Step.validate_step(
     name="CheckJustification",
-    agent=style_validator_agent,
+    agent=make_validator_agent(),
     validators=[NoPII()],
     plugins=[StyleGuidePlugin()],
     strict=True,  # Step fails if validation fails

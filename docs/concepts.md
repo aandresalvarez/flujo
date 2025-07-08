@@ -30,12 +30,12 @@ Pipeline DSL described later.
 
 ```python
 from flujo.recipes import Default
-from flujo.infra.agents import review_agent, solution_agent, validator_agent
+from flujo.infra.agents import make_review_agent, make_solution_agent, make_validator_agent
 
 recipe = Default(
-    review_agent=review_agent,
-    solution_agent=solution_agent,
-    validator_agent=validator_agent,
+    review_agent=make_review_agent(),
+    solution_agent=make_solution_agent(),
+    validator_agent=make_validator_agent(),
 )
 ```
 
@@ -137,13 +137,13 @@ The built-in [**Default recipe**](#the-default-recipe) uses this DSL under the h
 
 ```python
 from flujo import Step, Flujo
-from flujo.infra.agents import review_agent, solution_agent, validator_agent
+from flujo.infra.agents import make_review_agent, make_solution_agent, make_validator_agent
 
 # Define a pipeline
 pipeline = (
-    Step.review(review_agent)
-    >> Step.solution(solution_agent)
-    >> Step.validate(validator_agent)
+    Step.review(make_review_agent())
+    >> Step.solution(make_solution_agent())
+    >> Step.validate(make_validator_agent())
 )
 
 # Run it
@@ -182,7 +182,7 @@ from flujo import Step, Pipeline
 
 loop_step = Step.loop_until(
     name="refinement_loop",
-    loop_body_pipeline=Pipeline.from_step(Step.solution(solution_agent)),
+    loop_body_pipeline=Pipeline.from_step(Step.solution(make_solution_agent())),
     exit_condition_callable=lambda output, context: "done" in output.lower(),
 )
 ```
@@ -295,7 +295,7 @@ class CustomValidator(ValidationPlugin):
         return PluginOutcome(passed=False, feedback="Validation failed")
 
 # Use in pipeline
-pipeline = Step.validate(validator_agent, plugins=[sql_validator, CustomValidator()])
+pipeline = Step.validate(make_validator_agent(), plugins=[sql_validator, CustomValidator()])
 ```
 
 ## Self-Improvement & Evaluation
@@ -472,4 +472,4 @@ async for chunk in runner.stream_async("hello"):
 - Try the [Tutorial](tutorial.md) for hands-on examples
 - Explore [Use Cases](use_cases.md) for inspiration
 - Read the [API Reference](api_reference.md) for details
-- Learn about [Custom Components](extending.md) 
+- Learn about [Custom Components](extending.md)

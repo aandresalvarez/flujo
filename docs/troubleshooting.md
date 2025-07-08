@@ -137,13 +137,13 @@ This guide helps you resolve common issues when using `flujo`.
 2. Check step configuration:
    ```python
    from flujo import Step, Flujo
-   
+
    pipeline = (
-       Step.review(review_agent)
-       >> Step.solution(solution_agent)
-       >> Step.validate(validator_agent)
-   )
-   
+    Step.review(make_review_agent())
+    >> Step.solution(make_solution_agent())
+    >> Step.validate(make_validator_agent())
+)
+
    # Print pipeline structure
    print(pipeline.structure())
    ```
@@ -151,7 +151,7 @@ This guide helps you resolve common issues when using `flujo`.
 3. Test steps individually:
    ```python
    # Test review step
-   result = review_agent.run("Test prompt")
+   result = make_review_agent().run("Test prompt")
    print(result)
    ```
 
@@ -166,7 +166,7 @@ This guide helps you resolve common issues when using `flujo`.
 1. Check tool configuration:
    ```python
    from pydantic_ai import Tool
-   
+
    tool = Tool(my_function)
    print(tool.config)
    ```
@@ -193,7 +193,7 @@ This guide helps you resolve common issues when using `flujo`.
 1. Profile execution:
    ```python
    from flujo import enable_profiling
-   
+
    with enable_profiling():
        result = orchestrator.run("prompt")
    ```
@@ -202,7 +202,7 @@ This guide helps you resolve common issues when using `flujo`.
    ```python
    import psutil
    import os
-   
+
    process = psutil.Process(os.getpid())
    print(process.memory_info().rss / 1024 / 1024)  # MB
    ```
@@ -242,7 +242,7 @@ This guide helps you resolve common issues when using `flujo`.
 1. Check telemetry configuration:
    ```python
    from flujo import init_telemetry
-   
+
    init_telemetry(
        enable_export=True,
        export_endpoint="http://localhost:4317"
@@ -252,7 +252,7 @@ This guide helps you resolve common issues when using `flujo`.
 2. Verify metrics:
    ```python
    from flujo import get_metrics
-   
+
    metrics = get_metrics()
    print(metrics)
    ```
@@ -268,7 +268,7 @@ This guide helps you resolve common issues when using `flujo`.
 1. Enable tracing:
    ```python
    from flujo import enable_tracing
-   
+
    with enable_tracing():
        result = orchestrator.run("prompt")
    ```
@@ -276,7 +276,7 @@ This guide helps you resolve common issues when using `flujo`.
 2. Check trace export:
    ```python
    from flujo import get_traces
-   
+
    traces = get_traces()
    print(traces)
    ```

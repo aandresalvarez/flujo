@@ -28,9 +28,9 @@ pip install flujo[bench]
 
 ```python
 from flujo.recipes.factories import make_default_pipeline, run_default_pipeline
+from flujo.infra.agents import make_review_agent, make_solution_agent, make_validator_agent
 from flujo import (
     Flujo, Task, init_telemetry,
-    review_agent, solution_agent, validator_agent,
 )
 
 # Initialize telemetry (optional)
@@ -38,9 +38,9 @@ init_telemetry()
 
 # Create the default pipeline using the factory
 pipeline = make_default_pipeline(
-    review_agent=review_agent,
-    solution_agent=solution_agent,
-    validator_agent=validator_agent,
+    review_agent=make_review_agent(),
+    solution_agent=make_solution_agent(),
+    validator_agent=make_validator_agent(),
 )
 
 # Run the pipeline

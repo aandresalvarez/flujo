@@ -1,5 +1,9 @@
 """
-Agent prompt templates and agent factory utilities.
+Agent factory utilities and wrapper classes.
+
+This module provides factory functions for creating agents and wrapper classes
+for async execution. It focuses on agent creation and resilience wrapping,
+while system prompts are now in the flujo.prompts module.
 """
 
 from __future__ import annotations
@@ -9,10 +13,14 @@ from pydantic_ai import Agent, ModelRetry
 from pydantic import BaseModel as PydanticBaseModel, TypeAdapter, ValidationError
 import json
 import os
+import asyncio
+import traceback
+import warnings
+from tenacity import AsyncRetrying, RetryError, stop_after_attempt, wait_exponential
+
 from flujo.infra.settings import settings
 from flujo.domain.models import Checklist
 from flujo.domain.processors import AgentProcessors
-
 from flujo.domain.agent_protocol import (
     AsyncAgentProtocol,
     AgentInT,
@@ -23,11 +31,19 @@ from flujo.exceptions import (
     ConfigurationError,
     OrchestratorError,
 )
-import asyncio
 from flujo.infra.telemetry import logfire
-import traceback
-from tenacity import AsyncRetrying, RetryError, stop_after_attempt, wait_exponential
 from ..processors.repair import DeterministicRepairProcessor
+
+# Import prompts from the new prompts module
+from flujo.prompts import (
+    REVIEW_SYS,
+    SOLUTION_SYS,
+    VALIDATE_SYS,
+    REFLECT_SYS,
+    SELF_IMPROVE_SYS,
+    REPAIR_SYS,
+    _format_repair_prompt,
+)
 
 
 def get_raw_output_from_exception(exc: Exception) -> str:
@@ -53,149 +69,6 @@ def _unwrap_type_adapter(output_type: Any) -> Any:
         if args:
             return args[0]
     return output_type
-
-
-# 1. Prompt Constants
-REVIEW_SYS = """You are an expert software engineer.\nYour task is to generate an objective, comprehensive, and actionable checklist of criteria to evaluate a solution for the user's request.\nThe checklist should be detailed and cover all key aspects of a good solution.\nFocus on correctness, completeness, and best practices.\n\nReturn **JSON only** that conforms to this schema:\nChecklist(items=[ChecklistItem(description:str, passed:bool|None, feedback:str|None)])\n\nExample:\n{\n  \"items\": [\n    {\"description\": \"The code is correct and runs without errors.\", \"passed\": null, \"feedback\": null},\n    {\"description\": \"The code follows best practices.\", \"passed\": null, \"feedback\": null}\n  ]\n}\n"""
-
-SOLUTION_SYS = """You are a world-class programmer.
-Your task is to provide a solution to the user's request.
-Follow the user's instructions carefully and provide a high-quality, production-ready solution.
-If you are given feedback on a previous attempt, use it to improve your solution.
-"""
-
-VALIDATE_SYS = """You are a meticulous QA engineer.\nReturn **JSON only** that conforms to this schema:\nChecklist(items=[ChecklistItem(description:str, passed:bool, feedback:str|None)])\nInput: {{ \"solution\": <string>, \"checklist\": <Checklist JSON> }}\nFor each item, fill `passed` & optional `feedback`.\n"""
-
-REFLECT_SYS = """You are a senior principal engineer and an expert in root cause analysis.
-You will be given a list of failed checklist items from a previous attempt.
-Your task is to analyze these failures and provide a concise, high-level reflection on what went wrong.
-Focus on the root cause of the failures and suggest a concrete, actionable strategy for the next attempt.
-Do not repeat the failed items, but instead provide a new perspective on how to approach the problem.
-Your output should be a single string.
-"""
-
-SELF_IMPROVE_SYS = """You are a debugging assistant specialized in AI pipelines.\n" \
-    "You will receive step-by-step logs from failed evaluation cases and one" \
-    " successful example. Analyze these to find root causes and suggest" \
-    " concrete improvements. Consider pipeline prompts, step configuration" \
-    " parameters such as temperature, retries, and timeout. Each step may" \
-    " include a SystemPromptSummary line showing a redacted snippet of its" \
-    " system prompt. Also consider the evaluation suite itself" \
-    " (proposing new tests or evaluator tweaks). Return JSON ONLY matching" \
-    " ImprovementReport(suggestions=[ImprovementSuggestion(...)])."\n\n" \
-    "Here are some examples of desired input/output:\n\n" \
-    "EXAMPLE 1:\n" \
-    "Input Context:\n" \
-    "Case: test_short_summary_too_long\n" \
-    "- PlanGeneration: Output(content=\"Create a 5-sentence summary.\") (success=True)\n" \
-    "- SummarizationStep: Output(content=\"This is a very long summary that unfortunately exceeds the five sentence limit by quite a bit, going into extensive detail about many different aspects of the topic, providing background, and also some future outlook which was not requested.\") (success=True)\n" \
-    "- ValidationStep: Output(passed=False, feedback=\"Summary exceeds 5 sentences.\") (success=True)\n" \
-    "Successful example:\n" \
-    "Case: test_short_summary_correct_length\n" \
-    "- PlanGeneration: Output(content=\"Create a 3-sentence summary.\") (success=True)\n" \
-    "- SummarizationStep: Output(content=\"Topic is complex. It has three main points. This is the third sentence.\") (success=True)\n" \
-    "- ValidationStep: Output(passed=True, feedback=\"Summary within length.\") (success=True)\n\n" \
-    "Expected JSON Output:\n" \
-    "{\n" \
-    "  \"suggestions\": [\n" \
-    "    {\n" \
-    "      \"target_step_name\": \"SummarizationStep\",\n" \
-    "      \"suggestion_type\": \"PROMPT_MODIFICATION\",\n" \
-    "      \"failure_pattern_summary\": \"Generated summary consistently exceeds specified sentence limits.\",\n" \
-    "      \"detailed_explanation\": \"The agent in 'SummarizationStep' seems to be overly verbose. Its system prompt should be strengthened to strictly adhere to length constraints. Consider adding phrases like 'Be concise and strictly follow the sentence limit provided in the plan.' or 'Do not add extra information beyond the core summary points.'\",\n" \
-    "      \"prompt_modification_details\": {\n" \
-    "        \"modification_instruction\": \"Update system prompt for 'SummarizationStep' to emphasize strict adherence to sentence limits, e.g., add 'Be concise and strictly follow the sentence limit. Do not add extra information.'\"\n" \
-    "      },\n" \
-    "      \"example_failing_input_snippets\": [\"Input for test_short_summary_too_long...\"],\n" \
-    "      \"estimated_impact\": \"HIGH\",\n" \
-    "      \"estimated_effort_to_implement\": \"LOW\"\n" \
-    "    },\n" \
-    "    {\n" \
-    "      \"suggestion_type\": \"EVAL_CASE_REFINEMENT\",\n" \
-    "      \"failure_pattern_summary\": \"Evaluation relies on a simple length check by ValidationStep.\",\n" \
-    "      \"detailed_explanation\": \"The 'ValidationStep' correctly identifies length issues. However, to make the evaluation more robust, consider if the 'SummarizationStep' itself could be made to output a Pydantic model like `SummaryOutput(text: str, sentence_count: int)` which would make length validation trivial and less prone to LLM misinterpretation of 'sentence'.\",\n" \
-    "      \"example_failing_input_snippets\": [\"Input for test_short_summary_too_long...\"],\n" \
-    "      \"estimated_impact\": \"MEDIUM\",\n" \
-    "      \"estimated_effort_to_implement\": \"MEDIUM\"\n" \
-    "    }\n" \
-    "  ]\n" \
-    "}\n\n" \
-    "EXAMPLE 2:\n" \
-    "Input Context:\n" \
-    "Case: test_sql_syntax_error\n" \
-    "- GenerateSQL: Output(content=\"SELEC * FRM Users WHERE id = 1\") (success=True)\n" \
-    "- ValidateSQL: Output(passed=False, feedback=\"Syntax error near 'SELEC'\") (success=True)\n" \
-    "Successful example:\n" \
-    "Case: test_sql_correct_syntax\n" \
-    "- GenerateSQL: Output(content=\"SELECT * FROM Users WHERE id = 1\") (success=True)\n" \
-    "- ValidateSQL: Output(passed=True, feedback=\"Valid SQL\") (success=True)\n\n" \
-    "Expected JSON Output:\n" \
-    "{\n" \
-    "  \"suggestions\": [\n" \
-    "    {\n" \
-    "      \"target_step_name\": \"GenerateSQL\",\n" \
-    "      \"suggestion_type\": \"PROMPT_MODIFICATION\",\n" \
-    "      \"failure_pattern_summary\": \"Agent frequently makes basic SQL syntax errors (e.g., typos like 'SELEC').\",\n" \
-    "      \"detailed_explanation\": \"The agent in 'GenerateSQL' needs stronger guidance on SQL syntax. Its system prompt could include a reminder to double-check keywords or even a small example of correct syntax. Alternatively, if this is a common agent, consider fine-tuning it on valid SQL examples.\",\n" \
-    "      \"prompt_modification_details\": {\n" \
-    "        \"modification_instruction\": \"Add to 'GenerateSQL' system prompt: 'Ensure all SQL keywords like SELECT, FROM, WHERE are spelled correctly.'\"\n" \
-    "      },\n" \
-    "      \"example_failing_input_snippets\": [\"Input for test_sql_syntax_error...\"],\n" \
-    "      \"estimated_impact\": \"HIGH\",\n" \
-    "      \"estimated_effort_to_implement\": \"LOW\"\n" \
-    "    },\n" \
-    "    {\n" \
-    "      \"suggestion_type\": \"NEW_EVAL_CASE\",\n" \
-    "      \"failure_pattern_summary\": \"Current tests only cover basic SELECT typos.\",\n" \
-    "      \"detailed_explanation\": \"To improve robustness, add new evaluation cases that test for other common SQL syntax errors, such as incorrect JOIN syntax, missing commas, or issues with aggregate functions.\",\n" \
-    "      \"suggested_new_eval_case_description\": \"Create an eval case with an input prompt that requires a JOIN statement, and expect the agent to generate it correctly. Another case could test for correct use of GROUP BY.\",\n" \
-    "      \"estimated_impact\": \"MEDIUM\",\n" \
-    "      \"estimated_effort_to_implement\": \"MEDIUM\"\n" \
-    "    }\n" \
-    "  ]\n" \
-    "}\n" \
-    """
-
-REPAIR_PROMPT = """
-You are an expert system that corrects malformed JSON to conform to a given Pydantic JSON schema.
-Analyze the original prompt, the failed output, and the validation error. Your goal is to produce a valid JSON object.
-
-If you can fix the JSON, respond with ONLY the corrected raw JSON object.
-If the request or schema is too complex or ambiguous to fix reliably, respond with a JSON object with this exact schema:
-{{"repair_error": true, "reasoning": "A brief explanation of why the original task is difficult."}}
-
-TARGET SCHEMA:
-{json_schema}
----
-ORIGINAL USER PROMPT:
-{original_prompt}
----
-FAILED LLM OUTPUT:
-{failed_output}
----
-PYDANTIC VALIDATION ERROR:
-{validation_error}
----
-Your response:
-"""
-
-
-def _format_repair_prompt(data: dict[str, Any]) -> str:
-    """Safely format the repair prompt, escaping curly braces."""
-
-    def esc(val: Any) -> str:
-        return str(val).replace("{", "{{").replace("}", "}}")
-
-    escaped = {k: esc(v) for k, v in data.items()}
-    return REPAIR_PROMPT.format(**escaped)
-
-
-# Short system prompt used for the repair agent. The full instructions are sent
-# as a user message with the relevant context and schema.
-REPAIR_SYS = (
-    "You are an expert system that fixes malformed JSON and returns only the "
-    "corrected JSON or a repair_error object."
-)
 
 
 # 2. Agent Factory
@@ -472,24 +345,6 @@ class NoOpChecklistAgent(AsyncAgentProtocol[Any, Checklist]):
         return Checklist(items=[])
 
 
-# 3. Agent Instances
-try:
-    review_agent: AsyncAgentProtocol[Any, Checklist] = make_agent_async(
-        settings.default_review_model, REVIEW_SYS, Checklist
-    )
-    solution_agent: AsyncAgentProtocol[Any, str] = make_agent_async(
-        settings.default_solution_model, SOLUTION_SYS, str
-    )
-    validator_agent: AsyncAgentProtocol[Any, Checklist] = make_agent_async(
-        settings.default_validator_model, VALIDATE_SYS, Checklist
-    )
-except ConfigurationError:
-    # If configuration fails, use a no-op stub agent for all three
-    review_agent = NoOpChecklistAgent()
-    solution_agent = NoOpReflectionAgent()
-    validator_agent = NoOpChecklistAgent()
-
-
 def get_reflection_agent(
     model: str | None = None,
 ) -> AsyncAgentProtocol[Any, Any] | NoOpReflectionAgent:
@@ -506,10 +361,6 @@ def get_reflection_agent(
         return NoOpReflectionAgent()
 
 
-# Create a default instance for convenience and API consistency
-reflection_agent: AsyncAgentProtocol[Any, Any] | NoOpReflectionAgent = get_reflection_agent()
-
-
 def make_self_improvement_agent(
     model: str | None = None,
 ) -> AsyncAgentWrapper[Any, str]:
@@ -524,12 +375,6 @@ def make_repair_agent(model: str | None = None) -> AsyncAgentWrapper[Any, str]:
     return make_agent_async(model_name, REPAIR_SYS, str, auto_repair=False)
 
 
-# Default instance used by high level API
-try:
-    self_improvement_agent: AsyncAgentProtocol[Any, str] = make_self_improvement_agent()
-except ConfigurationError:  # pragma: no cover - config may be missing in tests
-    self_improvement_agent = NoOpReflectionAgent()
-
 _repair_agent: AsyncAgentWrapper[Any, str] | None = None
 
 
@@ -539,6 +384,25 @@ def get_repair_agent() -> AsyncAgentWrapper[Any, str]:
     if _repair_agent is None:
         _repair_agent = make_repair_agent()
     return _repair_agent
+
+
+# Factory functions for creating default agents
+def make_review_agent(model: str | None = None) -> AsyncAgentWrapper[Any, Checklist]:
+    """Create a review agent with default settings."""
+    model_name = model or settings.default_review_model
+    return make_agent_async(model_name, REVIEW_SYS, Checklist)
+
+
+def make_solution_agent(model: str | None = None) -> AsyncAgentWrapper[Any, str]:
+    """Create a solution agent with default settings."""
+    model_name = model or settings.default_solution_model
+    return make_agent_async(model_name, SOLUTION_SYS, str)
+
+
+def make_validator_agent(model: str | None = None) -> AsyncAgentWrapper[Any, Checklist]:
+    """Create a validator agent with default settings."""
+    model_name = model or settings.default_validator_model
+    return make_agent_async(model_name, VALIDATE_SYS, Checklist)
 
 
 class LoggingReviewAgent(AsyncAgentProtocol[Any, Any]):
@@ -569,31 +433,70 @@ class LoggingReviewAgent(AsyncAgentProtocol[Any, Any]):
             raise
 
 
-# Update the review_agent assignment to use proper typing
-review_agent = LoggingReviewAgent(review_agent)
-
 # Explicit exports
 __all__ = [
-    "REVIEW_SYS",
-    "SOLUTION_SYS",
-    "VALIDATE_SYS",
-    "REFLECT_SYS",
-    "SELF_IMPROVE_SYS",
     "make_agent",
     "make_agent_async",
     "AsyncAgentWrapper",
     "NoOpReflectionAgent",
+    "NoOpChecklistAgent",
     "get_reflection_agent",
     "make_self_improvement_agent",
     "make_repair_agent",
     "get_repair_agent",
-    "review_agent",
-    "solution_agent",
-    "validator_agent",
-    "reflection_agent",
-    "self_improvement_agent",
+    "make_review_agent",
+    "make_solution_agent",
+    "make_validator_agent",
+    "LoggingReviewAgent",
     "Agent",
     "AsyncAgentProtocol",
     "AgentInT",
     "AgentOutT",
 ]
+
+
+# Deprecation warnings for removed global agents
+def _deprecated_agent(name: str) -> None:
+    """Create a deprecation warning for removed global agents."""
+    warnings.warn(
+        f"The global {name} instance has been removed. "
+        f"Use make_{name}_agent() to create a new instance instead.",
+        DeprecationWarning,
+        stacklevel=3,
+    )
+    raise AttributeError(
+        f"Global {name} instance has been removed. Use make_{name}_agent() instead."
+    )
+
+
+# Define deprecated global agents that raise helpful errors
+def __getattr__(name: str) -> Any:
+    """Handle access to removed global agent instances."""
+    if name == "review_agent":
+        _deprecated_agent("review")
+    elif name == "solution_agent":
+        _deprecated_agent("solution")
+    elif name == "validator_agent":
+        _deprecated_agent("validator")
+    elif name == "reflection_agent":
+        warnings.warn(
+            "The global reflection_agent instance has been removed. "
+            "Use get_reflection_agent() to create a new instance instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        raise AttributeError(
+            "Global reflection_agent instance has been removed. Use get_reflection_agent() instead."
+        )
+    elif name == "self_improvement_agent":
+        warnings.warn(
+            "The global self_improvement_agent instance has been removed. "
+            "Use make_self_improvement_agent() to create a new instance instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        raise AttributeError(
+            "Global self_improvement_agent instance has been removed. Use make_self_improvement_agent() instead."
+        )
+    else:
+        raise AttributeError(f"module '{__name__}' has no attribute '{name}'")

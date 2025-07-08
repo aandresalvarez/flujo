@@ -50,7 +50,7 @@ with `Flujo`.
 ```python
 from flujo import Step, Flujo, Task, PipelineRegistry
 from flujo.state import SQLiteBackend
-from flujo.infra.agents import review_agent, solution_agent, validator_agent
+from flujo.infra.agents import make_review_agent, make_solution_agent, make_validator_agent
 from flujo.infra.backends import LocalBackend
 from pydantic import BaseModel
 from typing import Any
@@ -69,14 +69,14 @@ class MyContext(PipelineContext):
 
 # Create a pipeline
 custom_pipeline = (
-    Step.review(review_agent)      # Review step
+    Step.review(make_review_agent())      # Review step
     >> Step.solution(              # Solution step
-        solution_agent,
+        make_solution_agent(),
         tools=[tool1, tool2],      # Optional tools
         processors=my_processors   # Optional processors
     )
     >> Step.validate_step(              # Validation step
-        validator_agent,
+        make_validator_agent(),
         plugins=[plugin1],         # Optional validation plugins
         validators=[validator1],   # Optional programmatic validators
         processors=my_processors
@@ -117,7 +117,7 @@ runner_with_ctx = Flujo(
 # Advanced constructs
 looping_step = Step.loop_until(
     name="refinement_loop",
-loop_body_pipeline=Pipeline.from_step(Step.solution(solution_agent)),
+loop_body_pipeline=Pipeline.from_step(Step.solution(make_solution_agent())),
     exit_condition_callable=lambda out, ctx: "done" in out.lower(),
 )
 
@@ -633,7 +633,7 @@ current_settings = settings
 
 # Key settings properties:
 # - default_solution_model: str
-# - default_review_model: str  
+# - default_review_model: str
 # - default_validator_model: str
 # - default_reflection_model: str
 # - default_repair_model: str
@@ -955,7 +955,7 @@ flujo pipeline-mermaid \
 - Explore [Pipeline DSL Guide](pipeline_dsl.md) for advanced workflows
 - Read [Intelligent Evals](intelligent_evals.md) for evaluation strategies
 - Check [Telemetry Guide](telemetry.md) for monitoring setup
-- Review [Extending Guide](extending.md) for custom components 
+- Review [Extending Guide](extending.md) for custom components
 
 ## Pipeline Visualization
 
@@ -988,4 +988,4 @@ mermaid_code = pipeline.to_mermaid_with_detail_level("medium")
 print(mermaid_code)
 ```
 
-See also: [Visualizing Pipelines](cookbook/visualizing_pipelines.md) 
+See also: [Visualizing Pipelines](cookbook/visualizing_pipelines.md)
