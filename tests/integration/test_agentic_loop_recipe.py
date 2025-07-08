@@ -45,8 +45,21 @@ async def test_pause_and_resume_in_loop() -> None:
     ctx = paused.final_pipeline_context
     assert ctx.scratchpad["status"] == "paused"
     resumed = await loop.resume_async(paused, "human")
-    assert resumed.final_pipeline_context.command_log[0].execution_result == "human"
+    assert len(resumed.final_pipeline_context.command_log) == 2
+    assert resumed.final_pipeline_context.command_log[-1].execution_result == "human"
     assert resumed.final_pipeline_context.scratchpad["status"] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_pause_preserves_command_log() -> None:
+    planner = StubAgent([AskHumanCommand(question="Need input")])
+    loop = AgenticLoop(planner, {})
+    paused = await loop.run_async("goal")
+    ctx = paused.final_pipeline_context
+    assert isinstance(ctx, PipelineContext)
+    assert len(ctx.command_log) == 1
+    entry = ctx.command_log[0]
+    assert entry.execution_result is None
 
 
 def test_sync_resume() -> None:
@@ -59,7 +72,8 @@ def test_sync_resume() -> None:
     loop = AgenticLoop(planner, {})
     paused = loop.run("goal")
     resumed = loop.resume(paused, "human")
-    assert resumed.final_pipeline_context.command_log[0].execution_result == "human"
+    assert len(resumed.final_pipeline_context.command_log) == 2
+    assert resumed.final_pipeline_context.command_log[-1].execution_result == "human"
 
 
 @pytest.mark.asyncio
@@ -68,6 +82,6 @@ async def test_max_loops_failure() -> None:
     loop = AgenticLoop(planner, {}, max_loops=3)
     result = await loop.run_async("goal")
     ctx = result.final_pipeline_context
-    assert len(ctx.command_log) == 3
+    assert len(ctx.command_log) == 2
     last_step = result.step_history[-1]
     assert last_step.success is False
