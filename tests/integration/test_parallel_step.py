@@ -143,6 +143,20 @@ async def test_parallel_overwrite_preserves_context() -> None:
 
 
 @pytest.mark.asyncio
+async def test_parallel_overwrite_multi_branch_order() -> None:
+    branches = {
+        "a": Step.model_validate({"name": "a", "agent": ScratchAgent("v", 1)}),
+        "b": Step.model_validate({"name": "b", "agent": ScratchAgent("v", 2)}),
+        "c": Step.model_validate({"name": "c", "agent": ScratchAgent("w", 3)}),
+    }
+    parallel = Step.parallel("overwrite_multi", branches, merge_strategy=MergeStrategy.OVERWRITE)
+    runner = Flujo(parallel, context_model=ScratchCtx)
+    result = await gather_result(runner, 0, initial_context_data={"initial_prompt": "x"})
+    assert result.final_pipeline_context.scratchpad["v"] == 2
+    assert result.final_pipeline_context.scratchpad["w"] == 3
+
+
+@pytest.mark.asyncio
 async def test_parallel_propagate_failure() -> None:
     branches = {
         "good": Step.model_validate({"name": "good", "agent": ScratchAgent("a", 1)}),

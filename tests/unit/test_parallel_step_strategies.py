@@ -7,6 +7,8 @@ from flujo import Flujo, Step
 from flujo.domain import MergeStrategy, BranchFailureStrategy
 from flujo.testing.utils import gather_result
 from flujo.domain.models import StepResult, PipelineContext
+from pydantic import ConfigDict
+from flujo.domain.models import BaseModel as FlujoBaseModel
 
 os.environ.setdefault("OPENAI_API_KEY", "test-key")
 
@@ -29,6 +31,25 @@ class ScratchAgent:
         if context is not None:
             context.scratchpad[self.key] = self.val
         return data
+
+
+class SafeScratchAgent:
+    def __init__(self, key: str, val: Any) -> None:
+        self.key = key
+        self.val = val
+
+    async def run(self, data: Any, *, context: FlujoBaseModel | None = None) -> Any:
+        if context is not None:
+            if not hasattr(context, "scratchpad"):
+                context.scratchpad = {}
+            context.scratchpad[self.key] = self.val
+        return data
+
+
+class NoScratchCtx(FlujoBaseModel):
+    initial_prompt: str
+
+    model_config = ConfigDict(extra="allow")
 
 
 @pytest.mark.asyncio
@@ -99,6 +120,17 @@ async def test_merge_scratchpad_detects_collision() -> None:
     }
     parallel = Step.parallel("par", branches, merge_strategy=MergeStrategy.MERGE_SCRATCHPAD)
     runner = Flujo(parallel, context_model=Ctx)
+    with pytest.raises(ValueError):
+        await gather_result(runner, "data", initial_context_data={"initial_prompt": "goal"})
+
+
+@pytest.mark.asyncio
+async def test_merge_scratchpad_requires_scratchpad() -> None:
+    branches = {
+        "a": Step.model_validate({"name": "a", "agent": SafeScratchAgent("x", 1)}),
+    }
+    parallel = Step.parallel("par", branches, merge_strategy=MergeStrategy.MERGE_SCRATCHPAD)
+    runner = Flujo(parallel, context_model=NoScratchCtx)
     with pytest.raises(ValueError):
         await gather_result(runner, "data", initial_context_data={"initial_prompt": "goal"})
 
