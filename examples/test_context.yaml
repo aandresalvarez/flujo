@@ -1,0 +1,4 @@
+counter: 5
+messages:
+  - "YAML initial message"
+  - "Another message"

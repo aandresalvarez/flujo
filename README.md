@@ -226,3 +226,40 @@ If you use this project in your research, please cite:
   url = {https://github.com/aandresalvarez/flujo}
 }
 ```
+
+## 🚀 New: Run Custom Pipelines from the CLI
+
+You can now run any custom pipeline directly from the command line—no boilerplate needed!
+
+```sh
+flujo run my_pipeline.py --input "Hello world" --context-model MyContext
+```
+
+- Define your pipeline in a Python file (see below for an example)
+- Pass input and context data flexibly
+- See [usage.md](docs/usage.md#running-custom-pipelines-from-the-cli-flujo-run) for full details
+
+**Example pipeline file:**
+
+```python
+from flujo import step, Pipeline
+from flujo.domain.models import PipelineContext
+from pydantic import Field
+
+class MyContext(PipelineContext):
+    counter: int = Field(default=0)
+
+@step
+async def inc(data: str, *, context: MyContext | None = None) -> str:
+    if context:
+        context.counter += 1
+    return data.upper()
+
+pipeline = inc >> inc
+```
+
+**Run it:**
+
+```sh
+flujo run my_pipeline.py --input "hello" --context-model MyContext
+```

@@ -230,6 +230,6 @@ async def _invoke(
             return await agent.run(data, context=context)
         else:
             return await agent.run(data)
-    except Exception as e:
+    except Exception:
         # Handle specific exceptions as needed
         raise
