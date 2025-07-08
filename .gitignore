@@ -155,3 +155,4 @@ pip-delete-this-directory.txt
 docs/_build/
 site/
 /sbom.json
+uv.lock

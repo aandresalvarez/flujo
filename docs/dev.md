@@ -27,26 +27,22 @@ python --version                    # should print 3.11.x
 
 ## 2. Development Environment Setup
 
-Flujo uses [Hatch](https://hatch.pypa.io/) to manage the development
-environment and command scripts. The provided `Makefile` simply calls these
-`hatch` scripts for convenience.
+Flujo uses [uv](https://github.com/astral-sh/uv) to manage dependencies. The provided `Makefile` wraps common commands.
 
 ```bash
-pip install hatch
-make setup         # create the Hatch environment and install git hooks
+make install        # create .venv/ and install dependencies with uv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+pre-commit install  # install git hooks (requires pre-commit in the env)
 ```
 
-- `make setup` will:
-  - Install all required development, testing, and documentation dependencies (including `pytest`, `pytest-asyncio`, `vcrpy`, `hypothesis`, etc.)
-  - Set up pre-commit hooks for code quality and secret scanning
-  - Ensure your environment matches the CI pipeline
+Run quality checks and tests with:
 
-> **Tip:** Always use `make setup` after pulling changes to dependencies or when setting up a new environment. This guarantees all tools (test, lint, type-check) will work as expected.
-
-make quality        # run format, lint, types and security checks
+```bash
+make all            # format, lint, type-check and test
 make test           # run the test suite
 # pass extra pytest arguments
 make test args="-k my_test"
+```
 
 Run `make help` to see all available commands.
 
@@ -97,7 +93,7 @@ make test args="-k my_test"
 
 ### All-in-One Quality Check
 ```bash
-make quality                      # runs all quality checks
+make all                          # run format, lint, type-check and tests
 ```
 
 ### Individual Quality Checks
@@ -225,7 +221,7 @@ make release-delete       # delete current release (requires confirmation)
    - [ ] Update version in `pyproject.toml`
    - [ ] Update CHANGELOG.md
    - [ ] Run full test suite: `make test`
-   - [ ] Check code quality: `make quality`
+   - [ ] Check code quality: `make all`
    - [ ] Build package: `make package`
    - [ ] Verify wheel contents: `unzip -l dist/flujo-*.whl`
    - [ ] Create release with notes
