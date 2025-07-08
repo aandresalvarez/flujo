@@ -46,15 +46,42 @@ async def test_loop_max_loops_reached() -> None:
     assert step_result.attempts == 2
 
 
+@pytest.mark.asyncio
+async def test_iteration_mapper_not_called_on_max_loops() -> None:
+    calls: list[int] = []
+
+    def iter_map(_out: int, _ctx: Ctx | None, iteration: int) -> int:
+        calls.append(iteration)
+        return _out + 1
+
+    body_agent = StubAgent([1, 2])
+    body = Pipeline.from_step(Step.model_validate({"name": "body", "agent": body_agent}))
+    loop = Step.loop_until(
+        name="loop_no_mapper_after_limit",
+        loop_body_pipeline=body,
+        exit_condition_callable=lambda out, ctx: out > 10,
+        max_loops=2,
+        iteration_input_mapper=iter_map,
+    )
+    runner = Flujo(loop, context_model=Ctx)
+    result = await gather_result(runner, 0)
+    step_result = result.step_history[-1]
+    assert step_result.success is False
+    assert calls == [1]
+
+
 class Ctx(BaseModel):
     counter: int = 0
 
 
 @pytest.mark.asyncio
 async def test_loop_with_context_modification() -> None:
+    seen: list[int] = []
+
     class IncRecordAgent:
         async def run(self, x: int, *, context: Ctx | None = None) -> int:
             if context:
+                seen.append(context.counter)
                 context.counter += 1
             return x + 1
 
@@ -62,14 +89,42 @@ async def test_loop_with_context_modification() -> None:
     loop = Step.loop_until(
         name="loop_ctx",
         loop_body_pipeline=body,
-        exit_condition_callable=lambda out, ctx: ctx and ctx.counter >= 2,
+        exit_condition_callable=lambda out, ctx: out >= 2,
         max_loops=5,
     )
     runner = Flujo(loop, context_model=Ctx)
     result = await gather_result(runner, 0)
     step_result = result.step_history[-1]
     assert step_result.success is True
-    assert result.final_pipeline_context.counter == 2
+    assert step_result.output == 2
+    assert result.final_pipeline_context.counter == 0
+    assert seen == [0, 0]
+
+
+@pytest.mark.asyncio
+async def test_loop_iteration_context_isolated() -> None:
+    seen: list[int] = []
+
+    class IncAgent:
+        async def run(self, x: int, *, context: Ctx | None = None) -> int:
+            if context:
+                seen.append(context.counter)
+                context.counter += 1
+            return x + 1
+
+    body = Pipeline.from_step(Step.model_validate({"name": "inc", "agent": IncAgent()}))
+    loop = Step.loop_until(
+        name="loop_isolate",
+        loop_body_pipeline=body,
+        exit_condition_callable=lambda out, ctx: out >= 2,
+        max_loops=5,
+    )
+    runner = Flujo(loop, context_model=Ctx)
+    result = await gather_result(runner, 0)
+    step_result = result.step_history[-1]
+    assert step_result.success is True
+    assert result.final_pipeline_context.counter == 0
+    assert seen == [0, 0]
 
 
 @pytest.mark.asyncio

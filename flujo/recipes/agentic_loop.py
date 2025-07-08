@@ -49,21 +49,32 @@ class AgenticLoop:
             >> executor_step
         )
 
-        def exit_condition(_: Any, context: PipelineContext | None) -> bool:
-            if not context or not context.command_log:
-                return False
-            last_cmd = context.command_log[-1].generated_command
-            return isinstance(last_cmd, FinishCommand)
+        def exit_condition(log: ExecutedCommandLog, _context: PipelineContext | None) -> bool:
+            return isinstance(log.generated_command, FinishCommand)
+
+        def _iter_mapper(
+            log: ExecutedCommandLog, ctx: PipelineContext | None, _i: int
+        ) -> dict[str, Any]:
+            if ctx is not None:
+                ctx.command_log.append(log)
+                goal = ctx.initial_prompt
+            else:
+                goal = ""
+            return {"last_command_result": log.execution_result, "goal": goal}
+
+        def _output_mapper(log: ExecutedCommandLog, ctx: PipelineContext | None) -> Any:
+            if ctx is not None:
+                ctx.command_log.append(log)
+                return ctx.command_log[-1].execution_result
+            return log.execution_result
 
         return Step.loop_until(
             name="AgenticExplorationLoop",
             loop_body_pipeline=loop_body,
             exit_condition_callable=exit_condition,
             max_loops=self.max_loops,
-            iteration_input_mapper=lambda result, ctx, i: {
-                "last_command_result": result,
-                "goal": ctx.initial_prompt if ctx else "",
-            },
+            iteration_input_mapper=_iter_mapper,
+            loop_output_mapper=_output_mapper,
         )
 
     def run(self, initial_goal: str) -> PipelineResult[PipelineContext]:
@@ -218,14 +229,11 @@ class _CommandExecutor:
             cmd = _command_adapter.validate_python(data)
         except ValidationError as e:  # pragma: no cover - planner bug
             validation_error_result = f"Invalid command: {e}"
-            context_obj.command_log.append(
-                ExecutedCommandLog(
-                    turn=turn,
-                    generated_command=data,
-                    execution_result=validation_error_result,
-                )
+            return ExecutedCommandLog(
+                turn=turn,
+                generated_command=data,
+                execution_result=validation_error_result,
             )
-            return validation_error_result
 
         exec_result: Any = "Command type not recognized."
         try:
@@ -241,6 +249,12 @@ class _CommandExecutor:
                         agent_kwargs["resources"] = resources
                     exec_result = await agent.run(cmd.input_data, **agent_kwargs)
             elif cmd.type == "ask_human":
+                log_entry = ExecutedCommandLog(
+                    turn=turn,
+                    generated_command=cmd,
+                    execution_result=None,
+                )
+                context_obj.command_log.append(log_entry)
                 if isinstance(context_obj, PipelineContext):
                     context_obj.scratchpad["paused_step_input"] = cmd
                 raise PausedException(message=cmd.question)
@@ -250,12 +264,10 @@ class _CommandExecutor:
             raise
         except Exception as e:  # noqa: BLE001
             exec_result = f"Error during command execution: {e}"
-
-        context_obj.command_log.append(
-            ExecutedCommandLog(
-                turn=turn,
-                generated_command=cmd,
-                execution_result=exec_result,
-            )
+        log_entry = ExecutedCommandLog(
+            turn=turn,
+            generated_command=cmd,
+            execution_result=exec_result,
         )
-        return exec_result
+        context_obj.command_log.append(log_entry)
+        return log_entry
