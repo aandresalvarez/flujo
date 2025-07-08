@@ -92,9 +92,12 @@ async def _execute_parallel_step_logic(
 
     limit_breached = asyncio.Event()
     limit_breach_error: Optional[UsageLimitExceededError] = None
+    usage_lock = asyncio.Lock()
+    total_cost_so_far = 0.0
+    total_tokens_so_far = 0
 
     async def run_branch(key: str, branch_pipe: Pipeline[Any, Any]) -> None:
-        nonlocal limit_breach_error
+        nonlocal limit_breach_error, total_cost_so_far, total_tokens_so_far
 
         if context is not None:
             if parallel_step.context_include_keys is not None:
@@ -123,38 +126,37 @@ async def _execute_parallel_step_logic(
 
                 sr = await step_executor(s, current, ctx_copy, resources)
                 branch_res.latency_s += sr.latency_s
-                branch_res.cost_usd += getattr(sr, "cost_usd", 0.0)
-                branch_res.token_counts += getattr(sr, "token_counts", 0)
+                cost_delta = getattr(sr, "cost_usd", 0.0)
+                token_delta = getattr(sr, "token_counts", 0)
+                branch_res.cost_usd += cost_delta
+                branch_res.token_counts += token_delta
                 branch_res.attempts += sr.attempts
 
                 if usage_limits is not None:
-                    total_cost = branch_res.cost_usd
-                    total_tokens = branch_res.token_counts
-                    for other_key, other_br in branch_results.items():
-                        if other_key != key:
-                            total_cost += other_br.cost_usd
-                            total_tokens += other_br.token_counts
+                    async with usage_lock:
+                        total_cost_so_far += cost_delta
+                        total_tokens_so_far += token_delta
 
-                    if (
-                        usage_limits.total_cost_usd_limit is not None
-                        and total_cost > usage_limits.total_cost_usd_limit
-                    ):
-                        limit_breach_error = UsageLimitExceededError(
-                            f"Cost limit of ${usage_limits.total_cost_usd_limit} exceeded",
-                            PipelineResult(step_history=[result], total_cost_usd=total_cost),
-                        )
-                        limit_breached.set()
-                        break
+                        if (
+                            usage_limits.total_cost_usd_limit is not None
+                            and total_cost_so_far > usage_limits.total_cost_usd_limit
+                        ):
+                            limit_breach_error = UsageLimitExceededError(
+                                f"Cost limit of ${usage_limits.total_cost_usd_limit} exceeded",
+                                PipelineResult(step_history=[result], total_cost_usd=total_cost_so_far),
+                            )
+                            limit_breached.set()
+                        elif (
+                            usage_limits.total_tokens_limit is not None
+                            and total_tokens_so_far > usage_limits.total_tokens_limit
+                        ):
+                            limit_breach_error = UsageLimitExceededError(
+                                f"Token limit of {usage_limits.total_tokens_limit} exceeded",
+                                PipelineResult(step_history=[result], total_cost_usd=total_cost_so_far),
+                            )
+                            limit_breached.set()
 
-                    if (
-                        usage_limits.total_tokens_limit is not None
-                        and total_tokens > usage_limits.total_tokens_limit
-                    ):
-                        limit_breach_error = UsageLimitExceededError(
-                            f"Token limit of {usage_limits.total_tokens_limit} exceeded",
-                            PipelineResult(step_history=[result], total_cost_usd=total_cost),
-                        )
-                        limit_breached.set()
+                    if limit_breached.is_set():
                         break
 
                 if not sr.success:
