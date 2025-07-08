@@ -14,6 +14,7 @@ provides utilities to manage multi-agent pipelines with minimal setup.
 - 📦 **Pydantic Native** – agents, tools, and pipeline context are all defined with Pydantic models for reliable type safety.
 - 🔁 **Opinionated & Flexible** – the `Default` recipe gives you a ready‑made workflow while the DSL lets you build any pipeline.
 - 🏗️ **Production Ready** – retries, telemetry, and quality controls help you ship reliable systems.
+- 🗄️ **Optimized State Backend** – high-performance SQLite backend with indexing and admin queries for large-scale deployments.
 - 🧠 **Intelligent Evals** – automated scoring and self‑improvement powered by LLMs.
 
 ## Quick Start
