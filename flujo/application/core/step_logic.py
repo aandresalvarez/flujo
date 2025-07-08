@@ -321,30 +321,6 @@ async def _execute_parallel_step_logic(
     result.output = final_output
     result.attempts = 1
 
-    if usage_limits is not None:
-        if (
-            usage_limits.total_cost_usd_limit is not None
-            and result.cost_usd > usage_limits.total_cost_usd_limit
-        ):
-            result.success = False
-            result.feedback = f"Cost limit of ${usage_limits.total_cost_usd_limit} exceeded"
-            pr_cost: PipelineResult[TContext] = PipelineResult(
-                step_history=[result], total_cost_usd=result.cost_usd
-            )
-            context_setter(pr_cost, context)
-            raise UsageLimitExceededError(result.feedback, pr_cost)
-        if (
-            usage_limits.total_tokens_limit is not None
-            and result.token_counts > usage_limits.total_tokens_limit
-        ):
-            result.success = False
-            result.feedback = f"Token limit of {usage_limits.total_tokens_limit} exceeded"
-            pr_tokens: PipelineResult[TContext] = PipelineResult(
-                step_history=[result], total_cost_usd=result.cost_usd
-            )
-            context_setter(pr_tokens, context)
-            raise UsageLimitExceededError(result.feedback, pr_tokens)
-
     return result
 
 

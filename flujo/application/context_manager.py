@@ -3,6 +3,7 @@ from __future__ import annotations
 import inspect
 import weakref
 from typing import Any, Callable, Dict, Optional, Union, get_args, get_origin
+import types
 
 from ..domain.dsl.step import Step
 from ..domain.models import StepResult
@@ -84,16 +85,29 @@ def _extract_missing_fields(cause: Any) -> list[str]:
 
 def _types_compatible(a: Any, b: Any) -> bool:
     """Return ``True`` if type ``a`` is compatible with type ``b``."""
+    # If a is a value, get its type
+    if not isinstance(a, type):
+        a = type(a)
+    if not isinstance(b, type) and get_origin(b) is None:
+        b = type(b)
+
     if a is Any or b is Any:
         return True
 
     origin_a, origin_b = get_origin(a), get_origin(b)
-
+    # Handle typing.Union and types.UnionType (Python 3.10+)
     if origin_b is Union:
         return any(_types_compatible(a, arg) for arg in get_args(b))
+    if hasattr(types, "UnionType") and isinstance(b, types.UnionType):
+        return any(_types_compatible(a, arg) for arg in b.__args__)
     if origin_a is Union:
         return all(_types_compatible(arg, b) for arg in get_args(a))
+    if hasattr(types, "UnionType") and isinstance(a, types.UnionType):
+        return all(_types_compatible(arg, b) for arg in a.__args__)
 
+    # Only call issubclass if both are actual classes
+    if not isinstance(a, type) or not isinstance(b, type):
+        return False
     try:
         return issubclass(a, b)
     except Exception:
