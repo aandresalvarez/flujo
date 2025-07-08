@@ -98,3 +98,137 @@ The default orchestrator always returns a score of `1.0`.
 
 ## Reflection
 Add a reflection step by composing your own pipeline with `Step` and running it with `Flujo`.
+
+## Running Custom Pipelines from the CLI: `flujo run`
+
+The `flujo run` command lets you execute any custom pipeline directly from the command line—no need to write a `if __name__ == "__main__":` script. This makes rapid iteration and testing of your workflows much easier.
+
+### Basic Usage
+
+```sh
+flujo run my_pipeline.py --input "Hello world" --context-model MyContext
+```
+
+- `my_pipeline.py` should define a top-level variable (default: `pipeline`) of type `Pipeline`.
+- `--input` provides the initial input to the pipeline.
+- `--context-model` (optional) specifies the name of a context model class defined in the file.
+
+### Passing Context Data
+
+You can pass initial context data as a JSON string or from a file (JSON or YAML):
+
+```sh
+flujo run my_pipeline.py --input "Prompt" --context-model MyContext --context-data '{"counter": 5}'
+
+flujo run my_pipeline.py --input "Prompt" --context-model MyContext --context-file context.json
+
+flujo run my_pipeline.py --input "Prompt" --context-model MyContext --context-file context.yaml
+```
+
+### Customizing the Pipeline Variable Name
+
+If your pipeline variable is not named `pipeline`, use `--pipeline-name`:
+
+```sh
+flujo run my_pipeline.py --input "Prompt" --pipeline-name my_custom_pipeline
+```
+
+### Output
+
+By default, the CLI prints a summary table and the final context. For machine-readable output, use `--json`:
+
+```sh
+flujo run my_pipeline.py --input "Prompt" --context-model MyContext --json
+```
+
+### Example Pipeline File
+
+```python
+from flujo import step, Pipeline
+from flujo.domain.models import PipelineContext
+from pydantic import Field
+
+class MyContext(PipelineContext):
+    counter: int = Field(default=0)
+
+@step
+async def inc(data: str, *, context: MyContext | None = None) -> str:
+    if context:
+        context.counter += 1
+    return data.upper()
+
+pipeline = inc >> inc
+```
+
+### Example Context File (YAML)
+
+```yaml
+counter: 5
+```
+
+### Example Command
+
+```sh
+flujo run my_pipeline.py --input "hello" --context-model MyContext --context-file context.yaml
+```
+
+### Why Use `flujo run`?
+
+- No boilerplate needed for quick experiments.
+- Test and debug pipelines interactively.
+- Pass context and input flexibly.
+- Integrates with the full DSL and context system.
+
+See also: [Pipeline DSL Guide](pipeline_dsl.md), [Typed Pipeline Context](pipeline_context.md)
+
+### Full CLI Demo Example
+
+Below is a complete example pipeline file you can run directly with the CLI:
+
+```python
+from flujo import step, Pipeline
+from flujo.domain.models import PipelineContext
+from pydantic import Field
+
+class DemoContext(PipelineContext):
+    counter: int = Field(default=0)
+    log: list[str] = Field(default_factory=list)
+
+@step
+async def greet(data: str, *, context: DemoContext | None = None) -> str:
+    msg = f"Hello, {data}!"
+    if context:
+        context.counter += 1
+        context.log.append(msg)
+    return msg
+
+@step
+async def emphasize(data: str, *, context: DemoContext | None = None) -> str:
+    msg = data.upper() + "!!!"
+    if context:
+        context.counter += 1
+        context.log.append(msg)
+    return msg
+
+@step
+async def summarize(data: str, *, context: DemoContext | None = None) -> str:
+    summary = f"Summary: {data} (steps: {context.counter if context else 0})"
+    if context:
+        context.counter += 1
+        context.log.append(summary)
+    return summary
+
+pipeline = greet >> emphasize >> summarize
+```
+
+You can run this file with:
+
+```sh
+flujo run examples/10_cli_run_demo.py --input "quickstart" --context-model DemoContext
+```
+
+Or with context data:
+
+```sh
+flujo run examples/10_cli_run_demo.py --input "with context" --context-model DemoContext --context-data '{"counter": 10}'
+```

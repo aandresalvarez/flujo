@@ -504,6 +504,179 @@ def validate(
         raise typer.Exit(1)
 
 
+@app.command()
+def run(
+    pipeline_file: str = typer.Argument(
+        ...,
+        help="Path to the Python file containing the pipeline to run",
+    ),
+    input_data: Annotated[
+        Optional[str],
+        typer.Option("--input", "-i", help="Initial input data for the pipeline"),
+    ] = None,
+    context_model: Annotated[
+        Optional[str],
+        typer.Option("--context-model", "-c", help="Context model class name to use"),
+    ] = None,
+    context_data: Annotated[
+        Optional[str],
+        typer.Option("--context-data", "-d", help="JSON string for initial context data"),
+    ] = None,
+    context_file: Annotated[
+        Optional[str],
+        typer.Option("--context-file", "-f", help="Path to JSON/YAML file with context data"),
+    ] = None,
+    pipeline_name: Annotated[
+        Optional[str],
+        typer.Option(
+            "--pipeline-name", "-p", help="Name of the pipeline variable (default: pipeline)"
+        ),
+    ] = "pipeline",
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Output raw JSON instead of formatted result"),
+    ] = False,
+) -> None:
+    """
+    Run a custom pipeline from a Python file.
+
+    This command loads a pipeline from a Python file and executes it with the provided input.
+    The pipeline should be defined as a top-level variable (default: 'pipeline') of type Pipeline.
+
+    Examples:
+        flujo run my_pipeline.py --input "Hello world"
+        flujo run my_pipeline.py --input "Process this" --context-model MyContext --context-data '{"key": "value"}'
+        flujo run my_pipeline.py --input "Test" --context-file context.yaml
+    """
+    try:
+        # Load the pipeline file
+        ns: Dict[str, Any] = runpy.run_path(pipeline_file)
+
+        # Find the pipeline object
+        pipeline_obj = ns.get(pipeline_name) if pipeline_name else None
+        if pipeline_obj is None:
+            typer.echo(f"[red]No '{pipeline_name}' variable found in {pipeline_file}", err=True)
+            raise typer.Exit(1)
+
+        if not isinstance(pipeline_obj, Pipeline):
+            typer.echo(f"[red]Variable '{pipeline_name}' is not a Pipeline instance", err=True)
+            raise typer.Exit(1)
+
+        # Parse input data
+        if input_data is None:
+            # Try to get input from stdin if no --input provided
+            import sys
+
+            if not sys.stdin.isatty():
+                input_data = sys.stdin.read().strip()
+            else:
+                typer.echo("[red]No input provided. Use --input or pipe data to stdin", err=True)
+                raise typer.Exit(1)
+
+        # Handle context model
+        context_model_class = None
+        if context_model:
+            try:
+                context_model_class = ns.get(context_model)
+                if context_model_class is None:
+                    typer.echo(
+                        f"[red]Context model '{context_model}' not found in {pipeline_file}",
+                        err=True,
+                    )
+                    raise typer.Exit(1)
+                if not isinstance(context_model_class, type):
+                    typer.echo(f"[red]'{context_model}' is not a class", err=True)
+                    raise typer.Exit(1)
+                # Ensure it's a proper context model class
+                from flujo.domain.models import PipelineContext
+
+                if not issubclass(context_model_class, PipelineContext):
+                    typer.echo(
+                        f"[red]'{context_model}' must inherit from PipelineContext", err=True
+                    )
+                    raise typer.Exit(1)
+            except Exception as e:
+                typer.echo(f"[red]Error loading context model '{context_model}': {e}", err=True)
+                raise typer.Exit(1)
+
+        # Parse context data
+        initial_context_data = None
+        if context_data:
+            try:
+                initial_context_data = json.loads(context_data)
+            except json.JSONDecodeError as e:
+                typer.echo(f"[red]Invalid JSON in --context-data: {e}", err=True)
+                raise typer.Exit(1)
+        elif context_file:
+            try:
+                with open(context_file, "r") as f:
+                    if context_file.endswith((".yaml", ".yml")):
+                        initial_context_data = yaml.safe_load(f)
+                    else:
+                        initial_context_data = json.load(f)
+            except Exception as e:
+                typer.echo(f"[red]Error loading context file '{context_file}': {e}", err=True)
+                raise typer.Exit(1)
+
+        # The Flujo runner will automatically set initial_prompt from the input_data
+        # so we don't need to include it in initial_context_data
+        # Ensure initial_prompt is set for custom context models
+        if context_model_class is not None:
+            if initial_context_data is None:
+                initial_context_data = {}
+            if "initial_prompt" not in initial_context_data:
+                initial_context_data["initial_prompt"] = input_data
+
+        # Create and run the Flujo instance
+        runner: Flujo[Any, Any, Any] = Flujo(
+            pipeline=pipeline_obj,
+            context_model=context_model_class,
+            initial_context_data=initial_context_data,
+        )
+
+        result = runner.run(input_data)
+
+        # Output the result
+        if json_output:
+            typer.echo(json.dumps(result.model_dump(), indent=2))
+        else:
+            console = Console()
+            console.print("[bold green]Pipeline execution completed successfully![/bold green]")
+            final_output = result.step_history[-1].output if result.step_history else None
+            console.print(f"[bold]Final output:[/bold] {final_output}")
+            console.print(f"[bold]Total cost:[/bold] ${result.total_cost_usd:.4f}")
+            total_tokens = sum(s.token_counts for s in result.step_history)
+            console.print(f"[bold]Total tokens:[/bold] {total_tokens}")
+            console.print(f"[bold]Steps executed:[/bold] {len(result.step_history)}")
+
+            if result.step_history:
+                console.print("\n[bold]Step Results:[/bold]")
+                table = Table(show_header=True, header_style="bold magenta")
+                table.add_column("Step")
+                table.add_column("Success")
+                table.add_column("Latency (s)")
+                table.add_column("Cost ($)")
+                table.add_column("Tokens")
+
+                for step_result in result.step_history:
+                    table.add_row(
+                        step_result.name,
+                        "✅" if step_result.success else "❌",
+                        f"{step_result.latency_s:.3f}",
+                        f"{step_result.cost_usd:.4f}",
+                        str(step_result.token_counts),
+                    )
+                console.print(table)
+
+            if result.final_pipeline_context:
+                console.print("\n[bold]Final Context:[/bold]")
+                console.print(json.dumps(result.final_pipeline_context.model_dump(), indent=2))
+
+    except Exception as e:
+        typer.echo(f"[red]Error running pipeline: {e}", err=True)
+        raise typer.Exit(1)
+
+
 @app.command("pipeline-mermaid")
 def pipeline_mermaid_cmd(
     file: str = typer.Option(
@@ -592,6 +765,7 @@ __all__ = [
     "improve",
     "explain",
     "validate",
+    "run",
     "main",
 ]
 
