@@ -22,6 +22,7 @@ from typing import (
     Union,
     cast,
 )
+import contextvars
 import inspect
 from enum import Enum
 
@@ -482,16 +483,16 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         """Convenience for the generator -> critic refinement loop pattern."""
         from .loop import LoopStep  # local import
 
-        async def _store_artifact(artifact: Any, *, context: BaseModel | None = None) -> Any:
-            if context is None:
-                raise ValueError("refine_until requires a context")
-            artifacts = getattr(context, "_artifacts", [])
-            artifacts.append(artifact)
-            setattr(context, "_artifacts", artifacts)
+        last_artifact_var: contextvars.ContextVar[Any | None] = contextvars.ContextVar(
+            f"{name}_last_artifact", default=None
+        )
+
+        async def _capture_artifact(artifact: Any, *, context: BaseModel | None = None) -> Any:
+            last_artifact_var.set(artifact)
             return artifact
 
-        artifacts_saver = Step.from_callable(_store_artifact, name="_save_artifact")
-        generator_then_save = generator_pipeline >> artifacts_saver
+        capture_step = Step.from_callable(_capture_artifact, name="_capture_artifact")
+        generator_then_save = generator_pipeline >> capture_step
 
         def _exit_condition(out: Any, _ctx: BaseModel | None) -> bool:
             return out.is_complete if isinstance(out, RefinementCheck) else True
@@ -530,9 +531,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             return result
 
         def _output_mapper(_out: Any, ctx: BaseModel | None) -> Any:
-            # Return the final successful result (the last generator output)
-            artifacts = getattr(ctx, "_artifacts", [])
-            return artifacts[-1] if artifacts else None
+            return last_artifact_var.get()
 
         return LoopStep[ContextModelT](
             name=name,
