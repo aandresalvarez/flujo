@@ -398,17 +398,6 @@ command = RunAgentCommand(
 )
 ```
 
-#### `RunPythonCodeCommand`
-
-Executes a snippet of Python code within a secure sandbox environment. The result of the execution is expected to be in a variable named `result`.
-
-```python
-from flujo.domain.commands import RunPythonCodeCommand
-
-command = RunPythonCodeCommand(
-    code="result = 1 + 1"
-)
-```
 
 #### `AskHumanCommand`
 
