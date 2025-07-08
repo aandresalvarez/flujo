@@ -628,11 +628,24 @@ def run(
                 initial_context_data["initial_prompt"] = input_data
 
         # Create and run the Flujo instance
-        runner: Flujo[Any, Any, Any] = Flujo(
-            pipeline=pipeline_obj,
-            context_model=context_model_class,
-            initial_context_data=initial_context_data,
-        )
+        # Create and run the Flujo instance with proper typing
+        from typing import Type
+        from flujo.domain.models import PipelineContext
+
+        if context_model_class is not None:
+            # When context model is provided, use it with proper typing
+            runner = Flujo[Any, Any, PipelineContext](
+                pipeline=pipeline_obj,
+                context_model=cast(Type[PipelineContext], context_model_class),
+                initial_context_data=initial_context_data,
+            )
+        else:
+            # When no context model, use default PipelineContext
+            runner = Flujo[Any, Any, PipelineContext](
+                pipeline=pipeline_obj,
+                context_model=None,
+                initial_context_data=initial_context_data,
+            )
 
         result = runner.run(input_data)
 
