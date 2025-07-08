@@ -24,8 +24,10 @@ pip install flujo[bench]
 
 ## API
 
+> **Note:** The class-based `Default` recipe is deprecated. Use the new `make_default_pipeline` factory function for full transparency, composability, and future YAML/AI support.
+
 ```python
-from flujo.recipes import Default
+from flujo.recipes.factories import make_default_pipeline, run_default_pipeline
 from flujo import (
     Flujo, Task, init_telemetry,
     review_agent, solution_agent, validator_agent,
@@ -34,17 +36,19 @@ from flujo import (
 # Initialize telemetry (optional)
 init_telemetry()
 
-# Create the default recipe with built-in agents
-orch = Default(
+# Create the default pipeline using the factory
+pipeline = make_default_pipeline(
     review_agent=review_agent,
     solution_agent=solution_agent,
     validator_agent=validator_agent,
 )
-result = orch.run_sync(Task(prompt="Write a poem."))
+
+# Run the pipeline
+result = await run_default_pipeline(pipeline, Task(prompt="Write a poem."))
 print(result)
 ```
 
-The `Default` recipe runs a fixed Review → Solution → Validate pipeline. It does
+The `make_default_pipeline` factory creates a Review → Solution → Validate pipeline. It does
 not include a reflection step by default, but you can pass a
 `reflection_agent` to enable one. For fully custom workflows or more complex
 reflection logic, use the `Step` API with the `Flujo` engine.

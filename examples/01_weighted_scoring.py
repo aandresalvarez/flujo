@@ -2,56 +2,67 @@
 Demonstrates using weighted scoring to prioritize certain quality criteria.
 For more details on scoring, see docs/scoring.md.
 """
-from flujo import Flujo, Step, Pipeline, make_agent_async, init_telemetry, Task
-from flujo.recipes import Default
+import asyncio
+from flujo import make_agent_async, init_telemetry, Task
+from flujo.recipes.factories import make_default_pipeline, run_default_pipeline
 from flujo.domain.models import Checklist
-from flujo.infra.settings import settings
-from flujo.infra.agents import solution_agent, validator_agent, reflection_agent
+from flujo.domain.scoring import weighted_score
 
 init_telemetry()
 
-# Switch scoring to weighted so the orchestrator honors our weights.
-settings.scorer = "weighted"
+async def main():
+    # Create agents for the pipeline
+    review_agent = make_agent_async(
+        "openai:gpt-4o",
+        "You are an expert Python reviewer. Create a checklist with these items:\n1. 'Includes a docstring'\n2. 'Uses type hints'\n3. 'Function works correctly'",
+        Checklist,
+    )
 
-# Define our checklist items and their relative importance.
-weights = [
-    {"item": "Includes a docstring", "weight": 0.7},
-    {"item": "Uses type hints", "weight": 0.3},
-]
+    solution_agent = make_agent_async(
+        "openai:gpt-4o",
+        "You are a Python developer. Write code that meets the requirements.",
+        str,
+    )
 
-# Create a custom review agent that returns exactly these checklist items.
-REVIEW_SYS = """You are an expert Python reviewer. Provide a checklist with these exact items:\n1. \"Includes a docstring\"\n2. \"Uses type hints\"\nReturn JSON only matching Checklist model."""
-review_agent = make_agent_async(settings.default_review_model, REVIEW_SYS, Checklist)
+    validator_agent = make_agent_async(
+        "openai:gpt-4o",
+        "You are a validator. Check if the solution meets the requirements and mark them as completed.",
+        Checklist,
+    )
 
-# Our task asks for a simple addition function with both a docstring and type hints.
-task = Task(
-    prompt="Write a Python function that adds two numbers using type hints and a clear docstring.",
-    metadata={"weights": weights},
-)
+    # Create the pipeline using the factory
+    pipeline = make_default_pipeline(
+        review_agent=review_agent,
+        solution_agent=solution_agent,
+        validator_agent=validator_agent,
+    )
 
-# The Default recipe will automatically apply the weighted_score function now that
-# settings.scorer is set to 'weighted' and weights are provided via metadata.
-# If your global settings have `scorer` as 'ratio', you can override it
-# in the metadata as well: `metadata={"weights": weights, "scorer": "weighted"}`
-orch = Default(
-    review_agent=review_agent,
-    solution_agent=solution_agent,
-    validator_agent=validator_agent,
-    reflection_agent=reflection_agent,
-)
+    # Run the pipeline
+    task = Task(prompt="Write a Python function that adds two numbers using type hints and a clear docstring.")
+    result = await run_default_pipeline(pipeline, task)
 
-print("🧠 Running workflow with weighted scoring (prioritizing docstrings)...")
-best_candidate = orch.run_sync(task)
+    if result:
+        print("\n🎉 Workflow finished!")
+        print("-" * 50)
+        print(f"Solution:\n{result.solution}")
 
-if best_candidate:
-    print("\n🎉 Workflow finished!")
-    print("-" * 50)
-    print(f"Solution:\n{best_candidate.solution}")
-    print(f"\nWeighted Score: {best_candidate.score:.2f}")
-    if best_candidate.checklist:
-        print("\nFinal Quality Checklist:")
-        for item in best_candidate.checklist.items:
-            status = "✅ Passed" if item.passed else "❌ Failed"
-            print(f"  - {item.description:<60} {status}")
-else:
-    print("\n❌ The workflow did not produce a valid solution.")
+        # Use weighted scoring to prioritize docstrings
+        weights = {
+            "docstring": 2.0,  # Double weight for docstrings
+            "type hints": 1.5,  # Higher weight for type hints
+            "correctness": 1.0,
+        }
+
+        score = weighted_score(result.checklist, weights)
+        print(f"\nWeighted Score: {score:.2f}")
+
+        if result.checklist:
+            print("\nFinal Quality Checklist:")
+            for item in result.checklist.items:
+                status = "✅ Passed" if item.completed else "❌ Failed"
+                print(f"  - {item.description:<60} {status}")
+    else:
+        print("\n❌ The workflow did not produce a valid solution.")
+
+if __name__ == "__main__":
+    asyncio.run(main())

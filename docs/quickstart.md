@@ -23,10 +23,12 @@ OPENAI_API_KEY=your_key_here
 
 ## 3. Your First AgenticLoop
 
+> **Note:** The class-based `AgenticLoop` is deprecated. Use the new `make_agentic_loop_pipeline` factory function for full transparency, composability, and future YAML/AI support.
+
 Create a new file `hello_agentic.py`:
 
 ```python
-from flujo.recipes import AgenticLoop
+from flujo.recipes.factories import make_agentic_loop_pipeline, run_agentic_loop_pipeline
 from flujo import make_agent_async, init_telemetry
 from flujo.domain.commands import AgentCommand, FinishCommand, RunAgentCommand
 
@@ -46,11 +48,16 @@ planner_agent = make_agent_async(
     AgentCommand,
 )
 
-loop = AgenticLoop(planner_agent=planner_agent, agent_registry={"search_agent": search_agent})
-result = loop.run("What is Python?")
-```
+# Create the pipeline using the factory
+pipeline = make_agentic_loop_pipeline(
+    planner_agent=planner_agent,
+    agent_registry={"search_agent": search_agent}
+)
 
-When the loop finishes, inspect `result.final_pipeline_context.command_log` to see each decision and tool invocation.
+# Run the pipeline
+result = await run_agentic_loop_pipeline(pipeline, "What is Python?")
+print(result)
+```
 
 ## 4. Run Your First Loop
 

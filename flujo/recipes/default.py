@@ -1,9 +1,19 @@
-"""Opinionated default workflow built on top of :class:`Flujo`."""
+"""Default recipe for Review → Solution → Validate workflows.
+
+DEPRECATED: This class-based approach is deprecated. Use the new factory functions
+for better transparency, composability, and future YAML/AI support:
+
+- Use `make_default_pipeline()` to create a Pipeline object
+- Use `run_default_pipeline()` to execute the pipeline
+
+See `flujo.recipes.factories` for the new approach.
+"""
 
 from __future__ import annotations
 
 import asyncio
 from typing import Any, Optional, TYPE_CHECKING, cast
+import warnings
 
 from flujo.domain.models import PipelineContext
 
@@ -18,7 +28,16 @@ from ..testing.utils import gather_result
 
 
 class Default:
-    """Pre-configured workflow using the :class:`Flujo` engine."""
+    """Default recipe for Review → Solution → Validate workflows.
+
+    DEPRECATED: This class-based approach is deprecated. Use the new factory functions
+    for better transparency, composability, and future YAML/AI support:
+
+    - Use `make_default_pipeline()` to create a Pipeline object
+    - Use `run_default_pipeline()` to execute the pipeline
+
+    See `flujo.recipes.factories` for the new approach.
+    """
 
     def __init__(
         self,
@@ -30,6 +49,12 @@ class Default:
         k_variants: Optional[int] = None,
         reflection_limit: Optional[int] = None,
     ) -> None:
+        warnings.warn(
+            "The Default class is deprecated. Use make_default_pipeline() and run_default_pipeline() "
+            "from flujo.recipes.factories for better transparency, composability, and future YAML/AI support.",
+            FutureWarning,
+            stacklevel=2,
+        )
         _ = max_iters, k_variants, reflection_limit
 
         async def _invoke(target: Any, data: Any, **kwargs: Any) -> Any:

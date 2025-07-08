@@ -5,12 +5,14 @@ This is the recommended starting point for building powerful, dynamic AI agents
 that can make decisions and use tools to accomplish goals.
 """
 
+import asyncio
 from typing import cast
 
 from flujo.domain.models import PipelineContext
 from flujo import make_agent_async, init_telemetry
-from flujo.recipes import AgenticLoop
+from flujo.recipes.factories import make_agentic_loop_pipeline, run_agentic_loop_pipeline
 from flujo.domain.commands import AgentCommand, FinishCommand, RunAgentCommand
+from pydantic import TypeAdapter
 
 
 # It's good practice to initialize telemetry at the start of your application.
@@ -22,7 +24,8 @@ init_telemetry()
 # This is our "tool" agent. It's a specialist that only knows how to search.
 # In a real app, this would call a search API. We'll simulate it.
 async def search_agent(query: str) -> str:
-    print(f"   -> Tool Agent: Searching for '{query}'...")
+    """A simple tool agent that returns information."""
+    print(f"   -> Tool Agent searching for '{query}'...")
     if "python" in query.lower():
         return "Python is a high-level, general-purpose programming language."
     return "No information found."
@@ -30,29 +33,32 @@ async def search_agent(query: str) -> str:
 
 # This is our planner agent. It decides what to do next.
 PLANNER_PROMPT = """
-You are a research assistant. Your goal is to answer the user's question.
-You can use the 'search_agent' to find information.
-When you have the answer, use the FinishCommand to provide the final result.
+You are a research assistant. Use the `search_agent` tool to gather facts.
+When you know the answer, issue a `FinishCommand` with the final result.
 """
-planner_agent = make_agent_async(
-    model="openai:gpt-4o",
-    system_prompt=PLANNER_PROMPT,
-    output_type=AgentCommand,
+planner = make_agent_async(
+    "openai:gpt-4o",
+    PLANNER_PROMPT,
+    TypeAdapter(AgentCommand),
 )
 
 # --- 2. Assemble and Run the AgenticLoop ---
 
 print("🤖 Assembling the AgenticLoop...")
-agentic_loop = AgenticLoop(
-    planner_agent=planner_agent,
-    agent_registry={"search_agent": search_agent},
+
+# Create the pipeline using the factory
+pipeline = make_agentic_loop_pipeline(
+    planner_agent=planner,
+    agent_registry={"search_agent": search_agent}
 )
 
-initial_goal = "What is Python?"
-print(f"🎯 Setting initial goal: '{initial_goal}'")
-print("🧠 Running the loop...")
+async def main():
+    # Run the pipeline
+    result = await run_agentic_loop_pipeline(pipeline, "What is Python?")
+    print(f"Final result: {result}")
 
-result = agentic_loop.run(initial_goal)
+if __name__ == "__main__":
+    asyncio.run(main())
 
 # --- 3. Inspect the Results ---
 if result and result.final_pipeline_context:

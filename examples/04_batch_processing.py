@@ -4,55 +4,65 @@ This pattern is highly efficient and leverages Python's `asyncio.gather`
 to run multiple `flujo` workflows at the same time.
 """
 import asyncio
-from flujo import Flujo, Step, Pipeline, Task
-from flujo.recipes import Default
-from flujo import (
-    review_agent,
-    solution_agent,
-    validator_agent,
-    reflection_agent,
-    init_telemetry,
-)
-from flujo.infra.agents import review_agent, solution_agent, validator_agent, reflection_agent
+from flujo import make_agent_async, init_telemetry, Task
+from flujo.recipes.factories import make_default_pipeline, run_default_pipeline
+from flujo.domain.models import Checklist
 
 init_telemetry()
 
 
 async def main():
-    # A list of prompts we want to process in a batch.
-    prompts = [
-        "Write a tagline for a new brand of sparkling water.",
-        "Generate a two-sentence horror story.",
-        "Create a simple Python function to reverse a string.",
-    ]
-
-    # We use the same `Default` recipe instance for all tasks.
-    orch = Default(
-        review_agent, solution_agent, validator_agent, reflection_agent
+    # Create agents for the pipeline
+    review_agent = make_agent_async(
+        "openai:gpt-4o",
+        "You are a code reviewer. Create a checklist for the given programming task.",
+        Checklist,
     )
 
-    # Create a list of asyncio tasks. Each task is a call to `run_async`.
-    # This prepares the workflows but doesn't run them yet.
-    print(f"🚀 Preparing a batch of {len(prompts)} workflows to run concurrently...")
-    tasks_to_run = [
-        orch.run_async(Task(prompt=p)) for p in prompts
+    solution_agent = make_agent_async(
+        "openai:gpt-4o",
+        "You are a Python developer. Write code that meets the requirements.",
+        str,
+    )
+
+    validator_agent = make_agent_async(
+        "openai:gpt-4o",
+        "You are a validator. Check if the solution meets the requirements.",
+        Checklist,
+    )
+
+    # Create the pipeline using the factory
+    pipeline = make_default_pipeline(
+        review_agent=review_agent,
+        solution_agent=solution_agent,
+        validator_agent=validator_agent,
+    )
+
+    # Define multiple tasks to process
+    tasks = [
+        Task(prompt="Write a function to calculate factorial"),
+        Task(prompt="Write a function to reverse a string"),
+        Task(prompt="Write a function to check if a number is prime"),
+        Task(prompt="Write a function to find the maximum in a list"),
     ]
 
-    # `asyncio.gather` runs all the prepared tasks concurrently.
-    # This is much faster than running them one by one in a loop.
-    results = await asyncio.gather(*tasks_to_run)
+    print("🚀 Processing multiple tasks concurrently...")
 
-    print("\n✅ Batch processing complete! Here are the results:")
-    print("=" * 60)
+    # Process all tasks concurrently
+    results = await asyncio.gather(
+        *[run_default_pipeline(pipeline, task) for task in tasks],
+        return_exceptions=True
+    )
 
-    for i, candidate in enumerate(results):
-        print(f"\n--- Result for Prompt #{i+1}: '{prompts[i]}' ---")
-        if candidate:
-            print(f"  Solution: {candidate.solution.strip()}")
-            print(f"  Score: {candidate.score:.2f}")
+    # Display results
+    for i, result in enumerate(results):
+        print(f"\n--- Task {i+1}: {tasks[i].prompt} ---")
+        if isinstance(result, Exception):
+            print(f"❌ Error: {result}")
+        elif result:
+            print(f"✅ Solution: {result.solution[:100]}...")
         else:
-            print("  This workflow failed to produce a valid solution.")
-        print("-" * 60)
+            print("❌ No result produced")
 
 
 if __name__ == "__main__":
