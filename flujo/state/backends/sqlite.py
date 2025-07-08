@@ -27,6 +27,7 @@ class SQLiteBackend(StateBackend):
                 CREATE TABLE IF NOT EXISTS workflow_state (
                     run_id TEXT PRIMARY KEY,
                     pipeline_id TEXT,
+                    pipeline_name TEXT,
                     pipeline_version TEXT,
                     current_step_index INTEGER,
                     pipeline_context TEXT,
@@ -37,6 +38,16 @@ class SQLiteBackend(StateBackend):
                 )
                 """
             )
+
+            cursor = await db.execute("PRAGMA table_info(workflow_state)")
+            cols = [row[1] for row in await cursor.fetchall()]
+            await cursor.close()
+            if "pipeline_name" not in cols:
+                await db.execute("ALTER TABLE workflow_state ADD COLUMN pipeline_name TEXT")
+                await db.execute(
+                    "UPDATE workflow_state SET pipeline_name = '' WHERE pipeline_name IS NULL"
+                )
+
             await db.commit()
 
     async def _ensure_init(self) -> None:
@@ -55,6 +66,7 @@ class SQLiteBackend(StateBackend):
                     INSERT OR REPLACE INTO workflow_state (
                         run_id,
                         pipeline_id,
+                        pipeline_name,
                         pipeline_version,
                         current_step_index,
                         pipeline_context,
@@ -62,11 +74,12 @@ class SQLiteBackend(StateBackend):
                         status,
                         created_at,
                         updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         run_id,
                         state["pipeline_id"],
+                        state["pipeline_name"],
                         state["pipeline_version"],
                         state["current_step_index"],
                         orjson.dumps(state["pipeline_context"]).decode(),
@@ -88,7 +101,7 @@ class SQLiteBackend(StateBackend):
             async with aiosqlite.connect(self.db_path) as db:
                 cursor = await db.execute(
                     """
-                    SELECT run_id, pipeline_id, pipeline_version, current_step_index,
+                    SELECT run_id, pipeline_id, pipeline_name, pipeline_version, current_step_index,
                            pipeline_context, last_step_output, status, created_at,
                            updated_at
                     FROM workflow_state WHERE run_id = ?
@@ -99,18 +112,19 @@ class SQLiteBackend(StateBackend):
                 await cursor.close()
         if row is None:
             return None
-        pipeline_context = orjson.loads(row[4]) if row[4] is not None else {}
-        last_step_output = orjson.loads(row[5]) if row[5] is not None else None
+        pipeline_context = orjson.loads(row[5]) if row[5] is not None else {}
+        last_step_output = orjson.loads(row[6]) if row[6] is not None else None
         return {
             "run_id": row[0],
             "pipeline_id": row[1],
-            "pipeline_version": row[2],
-            "current_step_index": row[3],
+            "pipeline_name": row[2],
+            "pipeline_version": row[3],
+            "current_step_index": row[4],
             "pipeline_context": pipeline_context,
             "last_step_output": last_step_output,
-            "status": row[6],
-            "created_at": datetime.fromisoformat(row[7]),
-            "updated_at": datetime.fromisoformat(row[8]),
+            "status": row[7],
+            "created_at": datetime.fromisoformat(row[8]),
+            "updated_at": datetime.fromisoformat(row[9]),
         }
 
     async def delete_state(self, run_id: str) -> None:

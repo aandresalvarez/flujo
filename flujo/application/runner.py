@@ -53,6 +53,7 @@ from ..domain.types import HookCallable
 from ..domain.backends import ExecutionBackend, StepExecutionRequest
 from ..tracing import ConsoleTracer
 from ..state import StateBackend, WorkflowState
+from ..registry import PipelineRegistry
 
 from .context_manager import (
     _accepts_param,
@@ -164,7 +165,8 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
 
     def __init__(
         self,
-        pipeline: Pipeline[RunnerInT, RunnerOutT] | Step[RunnerInT, RunnerOutT],
+        pipeline: Pipeline[RunnerInT, RunnerOutT] | Step[RunnerInT, RunnerOutT] | None = None,
+        *,
         context_model: Optional[Type[ContextT]] = None,
         initial_context_data: Optional[Dict[str, Any]] = None,
         resources: Optional[AppResources] = None,
@@ -173,12 +175,17 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         backend: Optional[ExecutionBackend] = None,
         state_backend: Optional[StateBackend] = None,
         delete_on_completion: bool = False,
-        pipeline_version: str = "0",
+        pipeline_version: str = "latest",
         local_tracer: Union[str, "ConsoleTracer", None] = None,
+        registry: Optional[PipelineRegistry] = None,
+        pipeline_name: Optional[str] = None,
     ) -> None:
         if isinstance(pipeline, Step):
             pipeline = Pipeline.from_step(pipeline)
-        self.pipeline: Pipeline[RunnerInT, RunnerOutT] = pipeline
+        self.pipeline: Pipeline[RunnerInT, RunnerOutT] | None = pipeline
+        self.registry = registry
+        self.pipeline_name = pipeline_name
+        self.pipeline_version = pipeline_version
         self.context_model = context_model
         self.initial_context_data: Dict[str, Any] = initial_context_data or {}
         self.resources = resources
@@ -198,7 +205,27 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         self.backend = backend
         self.state_backend = state_backend
         self.delete_on_completion = delete_on_completion
-        self.pipeline_version = pipeline_version
+
+    def _ensure_pipeline(self) -> Pipeline[RunnerInT, RunnerOutT]:
+        """Load the configured pipeline from the registry if needed."""
+        if self.pipeline is not None:
+            return self.pipeline
+        if self.registry is None or self.pipeline_name is None:
+            raise OrchestratorError("Pipeline not provided and registry missing")
+        if self.pipeline_version == "latest":
+            version = self.registry.get_latest_version(self.pipeline_name)
+            if version is None:
+                raise OrchestratorError(f"No pipeline registered under name '{self.pipeline_name}'")
+            self.pipeline_version = version
+            pipe = self.registry.get(self.pipeline_name, version)
+        else:
+            pipe = self.registry.get(self.pipeline_name, self.pipeline_version)
+        if pipe is None:
+            raise OrchestratorError(
+                f"Pipeline '{self.pipeline_name}' version '{self.pipeline_version}' not found"
+            )
+        self.pipeline = pipe
+        return pipe
 
     async def _dispatch_hook(
         self,
@@ -366,9 +393,11 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         if backend is None or not run_id or context is None:
             return
 
+        self._ensure_pipeline()
         wf_state = WorkflowState(
             run_id=run_id,
             pipeline_id=str(id(self.pipeline)),
+            pipeline_name=self.pipeline_name or "",
             pipeline_version=self.pipeline_version,
             current_step_index=current_step_index,
             pipeline_context=context.model_dump(),
@@ -423,6 +452,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             If the output type of a step does not match the next step's
             expected input type.
         """
+        assert self.pipeline is not None
         for idx, step in enumerate(self.pipeline.steps[start_idx:], start=start_idx):
             await self._dispatch_hook(
                 "pre_step",
@@ -605,8 +635,12 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             loaded = await self.state_backend.load_state(run_id_for_state)
             if loaded is not None:
                 wf_state = WorkflowState.model_validate(loaded)
+                self.pipeline_name = wf_state.pipeline_name
+                self.pipeline_version = wf_state.pipeline_version
+                self._ensure_pipeline()
                 start_idx = wf_state.current_step_index
                 state_created_at = wf_state.created_at
+                assert self.pipeline is not None
                 if start_idx > len(self.pipeline.steps):
                     raise OrchestratorError(
                         f"Invalid persisted step index {start_idx} for pipeline with {len(self.pipeline.steps)} steps"
@@ -631,6 +665,8 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 state_created_at=state_created_at,
                 state_backend=self.state_backend,
             )
+        else:
+            self._ensure_pipeline()
         cancelled = False
         try:
             await self._dispatch_hook(
@@ -773,6 +809,8 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         scratch = getattr(ctx, "scratchpad", {})
         if scratch.get("status") != "paused":
             raise OrchestratorError("Pipeline is not paused")
+        self._ensure_pipeline()
+        assert self.pipeline is not None
         start_idx = len(paused_result.step_history)
         if start_idx >= len(self.pipeline.steps):
             raise OrchestratorError("No steps remaining to resume")
@@ -898,6 +936,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 initial_sub_context_data["initial_prompt"] = str(initial_input)
 
             try:
+                self._ensure_pipeline()
                 sub_runner = Flujo(
                     self.pipeline,
                     context_model=self.context_model,
@@ -906,6 +945,9 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     usage_limits=self.usage_limits,
                     hooks=self.hooks,
                     backend=self.backend,
+                    registry=self.registry,
+                    pipeline_name=self.pipeline_name,
+                    pipeline_version=self.pipeline_version,
                 )
             except PipelineContextInitializationError as e:
                 cause = getattr(e, "__cause__", None)

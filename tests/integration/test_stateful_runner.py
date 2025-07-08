@@ -51,6 +51,7 @@ async def test_resume_from_saved_state() -> None:
     state = WorkflowState(
         run_id=run_id,
         pipeline_id=str(id(s1 >> s2)),
+        pipeline_name="pipeline",
         pipeline_version="0",
         current_step_index=1,
         pipeline_context=ctx_after_first.model_dump(),
@@ -101,6 +102,7 @@ async def test_invalid_step_index_raises() -> None:
     state = WorkflowState(
         run_id=run_id,
         pipeline_id=str(id(s1 >> s2)),
+        pipeline_name="pipeline",
         pipeline_version="0",
         current_step_index=3,
         pipeline_context=ctx.model_dump(),
