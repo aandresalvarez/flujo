@@ -50,6 +50,26 @@ async def test_feedback_enriches_prompt() -> None:
     assert "SQL Error: XYZ" in sol_agent.inputs[1]
 
 
+async def test_feedback_history_persists_across_retries() -> None:
+    agent = StubAgent(["out1", "out2", "out3"])
+    plugin = DummyPlugin(
+        [
+            PluginOutcome(success=False, feedback="err1"),
+            PluginOutcome(success=False, feedback="err2"),
+            PluginOutcome(success=True),
+        ]
+    )
+    step = Step.solution(agent, max_retries=3, plugins=[(plugin, 0)])
+    runner = Flujo(step)
+    result = await gather_result(runner, "start")
+    assert agent.call_count == 3
+    assert "err1" in agent.inputs[1]
+    assert "err1" in agent.inputs[2]
+    assert "err2" in agent.inputs[2]
+    history = result.step_history[0]
+    assert history.feedback == "err1\nerr2"
+
+
 async def test_conditional_redirection() -> None:
     primary = StubAgent(["first"])
     fixit = StubAgent(["fixed"])
