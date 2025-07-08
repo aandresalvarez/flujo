@@ -822,8 +822,8 @@ async def _run_step_logic(
     last_raw_output = None
     last_unpacked_output = None
     validation_failed = False
-    last_attempt_feedbacks: list[str] = []
     last_attempt_output = None
+    accumulated_feedbacks: list[str] = []
     for attempt in range(1, step.config.max_retries + 1):
         validation_failed = False
         result.attempts = attempt
@@ -1035,9 +1035,10 @@ async def _run_step_logic(
         # --- END FIX ---
         # --- JOIN ALL FEEDBACKS ---
         feedback = "\n".join(feedbacks).strip() if feedbacks else None
+        if feedback:
+            accumulated_feedbacks.extend(feedbacks)
         # --- END JOIN ---
         if not success and attempt == step.config.max_retries:
-            last_attempt_feedbacks = feedbacks.copy()
             last_attempt_output = last_unpacked_output
         if success:
             result.output = unpacked_output
@@ -1067,18 +1068,19 @@ async def _run_step_logic(
         else:
             current_agent = original_agent
 
+        aggregated = "\n".join(accumulated_feedbacks).strip() if accumulated_feedbacks else None
         if feedback:
             if isinstance(data, dict):
                 data["feedback"] = data.get("feedback", "") + "\n" + feedback
             else:
                 data = f"{str(data)}\n{feedback}"
-        last_feedback = feedback
+        last_feedback = aggregated
 
-    # After all retries, set feedback to last attempt's feedbacks
+    # After all retries, set feedback to accumulated feedbacks
     result.success = False
     result.feedback = (
-        "\n".join(last_attempt_feedbacks).strip()
-        if last_attempt_feedbacks
+        "\n".join(accumulated_feedbacks).strip()
+        if accumulated_feedbacks
         else last_feedback
     )
     is_validation_step, is_strict = _get_validation_flags(step)
