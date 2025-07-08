@@ -80,7 +80,7 @@ async def shout(text: str) -> str:
 ## 3. Composing Your First Custom Pipeline
 
 ```python
-from flujo import Flujo, step, PipelineResult
+from flujo import Flujo, step, PipelineResult, PipelineRegistry
 
 @step
 async def to_upper(text: str) -> str:
@@ -91,8 +91,16 @@ async def add_excitement(text: str) -> str:
     return f"{text}!"
 
 pipeline = to_upper >> add_excitement
-runner = Flujo(pipeline)
-result: PipelineResult[str] = runner.run("hello")
+registry = PipelineRegistry()
+registry.register(pipeline, "demo", "1.0.0")
+runner = Flujo(
+    registry=registry,
+    pipeline_name="demo",
+    pipeline_version="1.0.0",
+)
+result: PipelineResult[str] = runner.run(
+    "hello", initial_context_data={"run_id": "example"}
+)
 print(result.step_history[-1].output)  # HELLO!
 ```
 
@@ -163,7 +171,12 @@ data_extraction_pipeline = (
     >> Step.validate_step(validator_agent_for_extraction, name="ValidateCard")
 )
 
-pipeline_runner = Flujo(data_extraction_pipeline)
+registry.register(data_extraction_pipeline, "extract", "1.0.0")
+pipeline_runner = Flujo(
+    registry=registry,
+    pipeline_name="extract",
+    pipeline_version="1.0.0",
+)
 unstructured_text = "Reach out to Jane Doe. She works at Innovate Corp and her email is jane.doe@example.com."
 
 print(f"📄 Running custom pipeline to extract from: '{unstructured_text}'")
@@ -289,13 +302,20 @@ This concludes our tour! You've journeyed from a simple prompt to a sophisticate
 The new Pipeline DSL lets you compose your own workflow using `Step` objects. Execute the pipeline with `Flujo`:
 
 ```python
-from flujo import Step, Flujo
+from flujo import Step, Flujo, PipelineRegistry
 from flujo.plugins.sql_validator import SQLSyntaxValidator
 from flujo.testing.utils import StubAgent
 
+registry = PipelineRegistry()
 sql_step = Step.solution(StubAgent(["SELECT FROM"]))
 check_step = Step.validate_step(StubAgent([None]), plugins=[SQLSyntaxValidator()])
-runner = Flujo(sql_step >> check_step)
+pipeline_example = sql_step >> check_step
+registry.register(pipeline_example, "sql", "1.0.0")
+runner = Flujo(
+    registry=registry,
+    pipeline_name="sql",
+    pipeline_version="1.0.0",
+)
 result = runner.run("SELECT FROM")
 print(result.step_history[-1].feedback)
 ```
@@ -319,8 +339,15 @@ async def record(data: str, *, context: Stats | None = None) -> str:
     return data
 
 pipeline = record >> record
-runner = Flujo(pipeline, context_model=Stats)
-final = runner.run("hi")
+registry = PipelineRegistry()
+registry.register(pipeline, "ctx", "1.0.0")
+runner = Flujo(
+    registry=registry,
+    pipeline_name="ctx",
+    pipeline_version="1.0.0",
+    context_model=Stats,
+)
+final = runner.run("hi", initial_context_data={"run_id": "ctx-run"})
 print(final.final_pipeline_context.calls)  # 2
 ```
 
@@ -344,9 +371,14 @@ loop = Step.loop_until(
     exit_condition_callable=lambda out, ctx: out.endswith("!!!"),
     max_loops=3,
 )
-
-runner = Flujo(loop)
-result = runner.run("hi")
+registry = PipelineRegistry()
+registry.register(loop, "loop", "1.0.0")
+runner = Flujo(
+    registry=registry,
+    pipeline_name="loop",
+    pipeline_version="1.0.0",
+)
+result = runner.run("hi", initial_context_data={"run_id": "loop-run"})
 print(result.step_history[-1].output)  # 'hi!!!'
 ```
 
@@ -374,8 +406,16 @@ branch = Step.branch_on(
 )
 
 pipeline = fixer >> branch
-runner = Flujo(pipeline)
-print(runner.run("ok").step_history[-1].output)
+registry = PipelineRegistry()
+registry.register(pipeline, "branch", "1.0.0")
+runner = Flujo(
+    registry=registry,
+    pipeline_name="branch",
+    pipeline_version="1.0.0",
+)
+print(
+    runner.run("ok", initial_context_data={"run_id": "branch-run"}).step_history[-1].output
+)
 ```
 
 You're now ready to build powerful and intelligent AI applications. Happy orchestrating

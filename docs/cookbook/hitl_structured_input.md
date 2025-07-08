@@ -11,9 +11,12 @@ class Answer(BaseModel):
     choice: int
 
 step = Step.human_in_the_loop("pick", input_schema=Answer)
+# Consume run_async to obtain the paused result
 pipeline = Step("start", StubAgent(["Q"])) >> step
 runner = Flujo(pipeline)
-paused = await runner.run_async("x")
+paused = None
+async for item in runner.run_async("x"):
+    paused = item
 # paused.final_pipeline_context.scratchpad["pause_message"] has the question
 resumed = await runner.resume_async(paused, {"choice": 1})
 assert isinstance(resumed.step_history[-1].output, Answer)

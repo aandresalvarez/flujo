@@ -161,7 +161,23 @@ ContextT = TypeVar("ContextT", bound=BaseModel)
 
 
 class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
-    """Execute a pipeline sequentially."""
+    """Execute a pipeline sequentially.
+
+    Parameters
+    ----------
+    pipeline : Pipeline | Step | None, optional
+        Pipeline object to run directly. Deprecated when using ``registry``.
+    registry : PipelineRegistry, optional
+        Registry holding named pipelines.
+    pipeline_name : str, optional
+        Name of the pipeline registered in ``registry``.
+    pipeline_version : str, default "latest"
+        Version to load from the registry when the run starts.
+    state_backend : StateBackend, optional
+        Backend used to persist :class:`WorkflowState` for durable execution.
+    delete_on_completion : bool, default False
+        If ``True`` remove persisted state once the run finishes.
+    """
 
     def __init__(
         self,
