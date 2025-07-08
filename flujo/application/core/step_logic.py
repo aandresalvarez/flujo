@@ -61,9 +61,7 @@ __all__ = [
 
 
 # Default context setter used when running step logic outside the Flujo runner
-def _default_set_final_context(
-    result: PipelineResult[TContext], ctx: Optional[TContext]
-) -> None:
+def _default_set_final_context(result: PipelineResult[TContext], ctx: Optional[TContext]) -> None:
     """Write ``ctx`` into ``result`` if present."""
 
     if ctx is not None:
@@ -71,8 +69,8 @@ def _default_set_final_context(
 
 
 # Track fallback chain per execution context to detect loops
-_fallback_chain_var: contextvars.ContextVar[list[Step[Any, Any]]] = (
-    contextvars.ContextVar("_fallback_chain", default=[])
+_fallback_chain_var: contextvars.ContextVar[list[Step[Any, Any]]] = contextvars.ContextVar(
+    "_fallback_chain", default=[]
 )
 
 
@@ -125,9 +123,7 @@ async def _execute_parallel_step_logic(
                         f"Branch '{key}' cancelled due to limit breach in sibling branch"
                     )
                     branch_res.success = False
-                    branch_res.feedback = (
-                        "Cancelled due to usage limit breach in sibling branch"
-                    )
+                    branch_res.feedback = "Cancelled due to usage limit breach in sibling branch"
                     break
 
                 sr = await step_executor(s, current, ctx_copy, resources)
@@ -150,10 +146,8 @@ async def _execute_parallel_step_logic(
                             limit_breach_error = UsageLimitExceededError(
                                 f"Cost limit of ${usage_limits.total_cost_usd_limit} exceeded",
                                 PipelineResult(
- 
                                     step_history=[result],
                                     total_cost_usd=total_cost_so_far,
- 
                                 ),
                             )
                             limit_breached.set()
@@ -164,10 +158,8 @@ async def _execute_parallel_step_logic(
                             limit_breach_error = UsageLimitExceededError(
                                 f"Token limit of {usage_limits.total_tokens_limit} exceeded",
                                 PipelineResult(
- 
                                     step_history=[result],
                                     total_cost_usd=total_cost_so_far,
- 
                                 ),
                             )
                             limit_breached.set()
@@ -201,19 +193,14 @@ async def _execute_parallel_step_logic(
 
     branch_order = list(parallel_step.branches.keys())
     tasks = {
-        asyncio.create_task(run_branch(k, pipe)): k
-        for k, pipe in parallel_step.branches.items()
+        asyncio.create_task(run_branch(k, pipe)): k for k, pipe in parallel_step.branches.items()
     }
 
     while tasks:
-        done, pending = await asyncio.wait(
-            tasks.keys(), return_when=asyncio.FIRST_COMPLETED
-        )
+        done, pending = await asyncio.wait(tasks.keys(), return_when=asyncio.FIRST_COMPLETED)
 
         if limit_breached.is_set():
-            telemetry.logfire.info(
-                "Usage limit breached, cancelling remaining tasks..."
-            )
+            telemetry.logfire.info("Usage limit breached, cancelling remaining tasks...")
             for task in pending:
                 task.cancel()
             if pending:
@@ -244,10 +231,7 @@ async def _execute_parallel_step_logic(
         else:
             failed_branches[name] = br
 
-    if (
-        failed_branches
-        and parallel_step.on_branch_failure == BranchFailureStrategy.PROPAGATE
-    ):
+    if failed_branches and parallel_step.on_branch_failure == BranchFailureStrategy.PROPAGATE:
         result.success = False
         fail_name = next(iter(failed_branches))
         result.feedback = f"Branch '{fail_name}' failed. Propagating failure."
@@ -290,10 +274,7 @@ async def _execute_parallel_step_logic(
                 parallel_step.merge_strategy(context, branch_ctx)
                 continue
 
-            if (
-                parallel_step.merge_strategy == MergeStrategy.OVERWRITE
-                and merged is not None
-            ):
+            if parallel_step.merge_strategy == MergeStrategy.OVERWRITE and merged is not None:
                 branch_data = branch_ctx.model_dump()
                 keys = parallel_step.context_include_keys or list(branch_data.keys())
                 for key in keys:
@@ -307,9 +288,8 @@ async def _execute_parallel_step_logic(
                             merged[key].update(branch_data[key])
                         else:
                             merged[key] = branch_data[key]
-            elif (
-                parallel_step.merge_strategy == MergeStrategy.MERGE_SCRATCHPAD
-                and hasattr(branch_ctx, "scratchpad")
+            elif parallel_step.merge_strategy == MergeStrategy.MERGE_SCRATCHPAD and hasattr(
+                branch_ctx, "scratchpad"
             ):
                 branch_pc = cast(PipelineContext, branch_ctx)
                 context_pc = cast(PipelineContext, context)
@@ -318,10 +298,7 @@ async def _execute_parallel_step_logic(
                 for key, val in branch_pc.scratchpad.items():
                     if key in base_snapshot and base_snapshot[key] == val:
                         continue
-                    if (
-                        key in context_pc.scratchpad
-                        and context_pc.scratchpad[key] != val
-                    ):
+                    if key in context_pc.scratchpad and context_pc.scratchpad[key] != val:
                         raise ValueError(
                             f"Scratchpad key collision for '{key}' in branch '{branch_name}'"
                         )
@@ -332,10 +309,7 @@ async def _execute_parallel_step_logic(
                     context_pc.scratchpad[key] = val
                     seen_keys.add(key)
 
-        if (
-            parallel_step.merge_strategy == MergeStrategy.OVERWRITE
-            and merged is not None
-        ):
+        if parallel_step.merge_strategy == MergeStrategy.OVERWRITE and merged is not None:
             validated = context.__class__.model_validate(merged)
             context.__dict__.update(validated.__dict__)
 
@@ -353,9 +327,7 @@ async def _execute_parallel_step_logic(
             and result.cost_usd > usage_limits.total_cost_usd_limit
         ):
             result.success = False
-            result.feedback = (
-                f"Cost limit of ${usage_limits.total_cost_usd_limit} exceeded"
-            )
+            result.feedback = f"Cost limit of ${usage_limits.total_cost_usd_limit} exceeded"
             pr_cost: PipelineResult[TContext] = PipelineResult(
                 step_history=[result], total_cost_usd=result.cost_usd
             )
@@ -366,9 +338,7 @@ async def _execute_parallel_step_logic(
             and result.token_counts > usage_limits.total_tokens_limit
         ):
             result.success = False
-            result.feedback = (
-                f"Token limit of {usage_limits.total_tokens_limit} exceeded"
-            )
+            result.feedback = f"Token limit of {usage_limits.total_tokens_limit} exceeded"
             pr_tokens: PipelineResult[TContext] = PipelineResult(
                 step_history=[result], total_cost_usd=result.cost_usd
             )
@@ -404,9 +374,7 @@ async def _execute_loop_step_logic(
                 f"Error in initial_input_to_loop_body_mapper for LoopStep '{loop_step.name}': {e}"
             )
             loop_overall_result.success = False
-            loop_overall_result.feedback = (
-                f"Initial input mapper raised an exception: {e}"
-            )
+            loop_overall_result.feedback = f"Initial input mapper raised an exception: {e}"
             return loop_overall_result
     else:
         current_body_input = loop_step_initial_input
@@ -447,24 +415,21 @@ async def _execute_loop_step_logic(
                     raise
 
                 loop_overall_result.latency_s += body_step_result_obj.latency_s
-                loop_overall_result.cost_usd += getattr(
-                    body_step_result_obj, "cost_usd", 0.0
-                )
-                loop_overall_result.token_counts += getattr(
-                    body_step_result_obj, "token_counts", 0
-                )
+                loop_overall_result.cost_usd += getattr(body_step_result_obj, "cost_usd", 0.0)
+                loop_overall_result.token_counts += getattr(body_step_result_obj, "token_counts", 0)
 
                 if usage_limits is not None:
                     if (
                         usage_limits.total_cost_usd_limit is not None
-                        and loop_overall_result.cost_usd
-                        > usage_limits.total_cost_usd_limit
+                        and loop_overall_result.cost_usd > usage_limits.total_cost_usd_limit
                     ):
                         telemetry.logfire.warn(
                             f"Cost limit of ${usage_limits.total_cost_usd_limit} exceeded"
                         )
                         loop_overall_result.success = False
-                        loop_overall_result.feedback = f"Cost limit of ${usage_limits.total_cost_usd_limit} exceeded"
+                        loop_overall_result.feedback = (
+                            f"Cost limit of ${usage_limits.total_cost_usd_limit} exceeded"
+                        )
                         pr: PipelineResult[TContext] = PipelineResult(
                             step_history=[loop_overall_result],
                             total_cost_usd=loop_overall_result.cost_usd,
@@ -473,8 +438,7 @@ async def _execute_loop_step_logic(
                         raise UsageLimitExceededError(loop_overall_result.feedback, pr)
                     if (
                         usage_limits.total_tokens_limit is not None
-                        and loop_overall_result.token_counts
-                        > usage_limits.total_tokens_limit
+                        and loop_overall_result.token_counts > usage_limits.total_tokens_limit
                     ):
                         telemetry.logfire.warn(
                             f"Token limit of {usage_limits.total_tokens_limit} exceeded"
@@ -488,9 +452,7 @@ async def _execute_loop_step_logic(
                             total_cost_usd=loop_overall_result.cost_usd,
                         )
                         context_setter(pr_tokens, context)
-                        raise UsageLimitExceededError(
-                            loop_overall_result.feedback, pr_tokens
-                        )
+                        raise UsageLimitExceededError(loop_overall_result.feedback, pr_tokens)
 
                 if not body_step_result_obj.success:
                     telemetry.logfire.warn(
@@ -515,9 +477,7 @@ async def _execute_loop_step_logic(
                 f"Error in exit_condition_callable for LoopStep '{loop_step.name}': {e}"
             )
             loop_overall_result.success = False
-            loop_overall_result.feedback = (
-                f"Exit condition callable raised an exception: {e}"
-            )
+            loop_overall_result.feedback = f"Exit condition callable raised an exception: {e}"
             break
 
         if should_exit:
@@ -577,16 +537,16 @@ async def _execute_loop_step_logic(
                     f"Error in loop_output_mapper for LoopStep '{loop_step.name}': {e}"
                 )
                 loop_overall_result.success = False
-                loop_overall_result.feedback = (
-                    f"Loop output mapper raised an exception: {e}"
-                )
+                loop_overall_result.feedback = f"Loop output mapper raised an exception: {e}"
                 loop_overall_result.output = None
         else:
             loop_overall_result.output = last_successful_iteration_body_output
     else:
         loop_overall_result.output = final_body_output_of_last_iteration
         if not loop_overall_result.feedback:
-            loop_overall_result.feedback = "Loop did not complete successfully or exit condition not met positively."
+            loop_overall_result.feedback = (
+                "Loop did not complete successfully or exit condition not met positively."
+            )
 
     return loop_overall_result
 
@@ -608,9 +568,7 @@ async def _execute_conditional_step_logic(
     branch_succeeded = False
 
     try:
-        branch_key_to_execute = conditional_step.condition_callable(
-            conditional_step_input, context
-        )
+        branch_key_to_execute = conditional_step.condition_callable(conditional_step_input, context)
         telemetry.logfire.info(
             f"ConditionalStep '{conditional_step.name}': Condition evaluated to branch key '{branch_key_to_execute}'."
         )
@@ -634,9 +592,7 @@ async def _execute_conditional_step_logic(
             )
 
         if conditional_step.branch_input_mapper:
-            input_for_branch = conditional_step.branch_input_mapper(
-                conditional_step_input, context
-            )
+            input_for_branch = conditional_step.branch_input_mapper(conditional_step_input, context)
         else:
             input_for_branch = conditional_step_input
 
@@ -649,9 +605,7 @@ async def _execute_conditional_step_logic(
             ) as span:
                 if executed_branch_key is not None:
                     try:
-                        span.set_attribute(
-                            "executed_branch_key", str(executed_branch_key)
-                        )
+                        span.set_attribute("executed_branch_key", str(executed_branch_key))
                     except Exception as e:
                         telemetry.logfire.error(f"Error setting span attribute: {e}")
                 branch_step_result_obj = await step_executor(
@@ -662,9 +616,7 @@ async def _execute_conditional_step_logic(
                 )
 
             conditional_overall_result.latency_s += branch_step_result_obj.latency_s
-            conditional_overall_result.cost_usd += getattr(
-                branch_step_result_obj, "cost_usd", 0.0
-            )
+            conditional_overall_result.cost_usd += getattr(branch_step_result_obj, "cost_usd", 0.0)
             conditional_overall_result.token_counts += getattr(
                 branch_step_result_obj, "token_counts", 0
             )
@@ -690,19 +642,15 @@ async def _execute_conditional_step_logic(
             exc_info=True,
         )
         conditional_overall_result.success = False
-        conditional_overall_result.feedback = (
-            f"Error executing conditional logic or branch: {e}"
-        )
+        conditional_overall_result.feedback = f"Error executing conditional logic or branch: {e}"
         return conditional_overall_result
 
     conditional_overall_result.success = branch_succeeded
     if branch_succeeded:
         if conditional_step.branch_output_mapper:
             try:
-                conditional_overall_result.output = (
-                    conditional_step.branch_output_mapper(
-                        branch_output, executed_branch_key, context
-                    )
+                conditional_overall_result.output = conditional_step.branch_output_mapper(
+                    branch_output, executed_branch_key, context
                 )
             except Exception as e:
                 telemetry.logfire.error(
@@ -720,12 +668,8 @@ async def _execute_conditional_step_logic(
 
     conditional_overall_result.attempts = 1
     if executed_branch_key is not None:
-        conditional_overall_result.metadata_ = (
-            conditional_overall_result.metadata_ or {}
-        )
-        conditional_overall_result.metadata_["executed_branch_key"] = str(
-            executed_branch_key
-        )
+        conditional_overall_result.metadata_ = conditional_overall_result.metadata_ or {}
+        conditional_overall_result.metadata_["executed_branch_key"] = str(executed_branch_key)
 
     return conditional_overall_result
 
@@ -739,9 +683,7 @@ async def _run_step_logic(
     step_executor: StepExecutor[TContext],
     context_model_defined: bool,
     usage_limits: UsageLimits | None = None,
-    context_setter: (
-        Callable[[PipelineResult[TContext], Optional[TContext]], None] | None
-    ) = None,
+    context_setter: (Callable[[PipelineResult[TContext], Optional[TContext]], None] | None) = None,
     stream: bool = False,
     on_chunk: Callable[[Any], Awaitable[None]] | None = None,
 ) -> StepResult:
@@ -753,9 +695,7 @@ async def _run_step_logic(
     if step.agent is not None:
         visited_ids.add(id(step.agent))
     if isinstance(step, CacheStep):
-        key = _generate_cache_key(
-            step.wrapped_step, data, context=context, resources=resources
-        )
+        key = _generate_cache_key(step.wrapped_step, data, context=context, resources=resources)
         cached: StepResult | None = None
         if key:
             try:
@@ -808,9 +748,7 @@ async def _run_step_logic(
             context_setter=context_setter,
         )
     if isinstance(step, HumanInTheLoopStep):
-        message = (
-            step.message_for_user if step.message_for_user is not None else str(data)
-        )
+        message = step.message_for_user if step.message_for_user is not None else str(data)
         if isinstance(context, PipelineContext):
             context.scratchpad["status"] = "paused"
         raise PausedException(message)
@@ -991,9 +929,7 @@ async def _run_step_logic(
                 for validator in step.validators
             ]
             try:
-                validation_results = await asyncio.gather(
-                    *validation_tasks, return_exceptions=True
-                )
+                validation_results = await asyncio.gather(*validation_tasks, return_exceptions=True)
             except Exception as e:  # pragma: no cover - defensive
                 validation_results = [e]
 
@@ -1012,9 +948,7 @@ async def _run_step_logic(
                 collected_results.append(vres)
                 if not vres.is_valid:
                     fb = vres.feedback or "No details provided."
-                    failed_checks_feedback.append(
-                        f"Check '{vres.validator_name}' failed: {fb}"
-                    )
+                    failed_checks_feedback.append(f"Check '{vres.validator_name}' failed: {fb}")
 
             if step.persist_validation_results_to and context is not None:
                 if hasattr(context, step.persist_validation_results_to):
@@ -1059,9 +993,7 @@ async def _run_step_logic(
         if redirect_to:
             redirect_id = id(redirect_to)
             if redirect_id in visited_ids:
-                raise InfiniteRedirectError(
-                    f"Redirect loop detected in step {step.name}"
-                )
+                raise InfiniteRedirectError(f"Redirect loop detected in step {step.name}")
             visited_ids.add(redirect_id)
             current_agent = redirect_to
         else:
@@ -1077,9 +1009,7 @@ async def _run_step_logic(
     # After all retries, set feedback to last attempt's feedbacks
     result.success = False
     result.feedback = (
-        "\n".join(last_attempt_feedbacks).strip()
-        if last_attempt_feedbacks
-        else last_feedback
+        "\n".join(last_attempt_feedbacks).strip() if last_attempt_feedbacks else last_feedback
     )
     is_validation_step, is_strict = _get_validation_flags(step)
     if validation_failed and is_strict:
@@ -1087,14 +1017,10 @@ async def _run_step_logic(
     else:
         result.output = last_attempt_output
     result.token_counts += (
-        getattr(last_raw_output, "token_counts", 1)
-        if last_raw_output is not None
-        else 0
+        getattr(last_raw_output, "token_counts", 1) if last_raw_output is not None else 0
     )
     result.cost_usd += (
-        getattr(last_raw_output, "cost_usd", 0.0)
-        if last_raw_output is not None
-        else 0.0
+        getattr(last_raw_output, "cost_usd", 0.0) if last_raw_output is not None else 0.0
     )
     _apply_validation_metadata(
         result,

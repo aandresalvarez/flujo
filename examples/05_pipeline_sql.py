@@ -1,65 +1,65 @@
 """
-Demonstrates building a custom pipeline with the Flujo engine and DSL (`Step`).
-This example uses a built-in `Plugin` to validate the syntax of generated SQL.
-Plugins are a powerful way to add custom, non-LLM logic to your workflows.
+Demonstrates using the pipeline factory with SQL validation plugin.
+This example shows how to add custom validation logic to your workflows.
 For more details, see docs/extending.md.
 """
 import asyncio
-from typing import Any, cast
-
-from flujo import Flujo, Step, Pipeline, Task
+from flujo import make_agent_async, init_telemetry, Task
+from flujo.recipes.factories import make_default_pipeline, run_default_pipeline
+from flujo.domain.models import Checklist
 from flujo.plugins.sql_validator import SQLSyntaxValidator
-from flujo.testing import StubAgent
-from flujo.recipes import Default
 
-# To deterministically demonstrate the plugin, we'll use a `StubAgent` that
-# always produces invalid SQL. In a real app, this would be a powerful LLM agent.
-sql_agent = StubAgent(["SELEC * FRM users WHERE id = 1;"])  # Intentionally incorrect SQL
+init_telemetry()
 
-# A simple agent for the validation step. The real work is done by the plugin.
-validation_agent = StubAgent([None])
+async def main():
+    print("🧠 Running a SQL generation and validation pipeline...")
 
-# 1. Create a solution step with our SQL-generating agent.
-solution_step = Step.model_validate({"name": "GenerateSQL", "agent": cast(Any, sql_agent)})
+    # Create agents for the pipeline
+    review_agent = make_agent_async(
+        "openai:gpt-4o",
+        "You are a SQL expert. Create a checklist for writing correct SQL queries.",
+        Checklist,
+    )
 
-# 2. Create a validation step and attach the `SQLSyntaxValidator` plugin.
-#    The plugin runs *after* the agent and checks its output. If the plugin
-#    finds an issue, it will mark the step as failed and provide feedback.
-validation_step = Step.model_validate({
-    "name": "ValidateSQL",
-    "agent": cast(Any, validation_agent),
-    "plugins": [SQLSyntaxValidator()],
-})
+    solution_agent = make_agent_async(
+        "openai:gpt-4o",
+        "You are a SQL developer. Write SQL queries that meet the requirements.",
+        str,
+    )
 
-# 3. Compose the steps into a pipeline using the '>>' operator.
-sql_pipeline = solution_step >> validation_step
+    validator_agent = make_agent_async(
+        "openai:gpt-4o",
+        "You are a SQL validator. Check if the query meets the requirements.",
+        Checklist,
+    )
 
-# 4. Create a Flujo runner for our custom pipeline.
-runner = Flujo(sql_pipeline)
+    # Create the pipeline using the factory
+    pipeline = make_default_pipeline(
+        review_agent=review_agent,
+        solution_agent=solution_agent,
+        validator_agent=validator_agent,
+    )
 
+    # Add SQL validation plugin to the solution step
+    # This will validate SQL syntax before the validator agent runs
+    pipeline.steps[1].add_plugin(SQLSyntaxValidator())
 
-async def main() -> None:
-    print("🧠 Running a custom SQL generation and validation pipeline...")
-    result = None
-    async for item in runner.run_async("Generate a query to select all users."):
-        result = item
+    # Run the pipeline
+    task = Task(prompt="Write a SQL query to select all users from a table called 'users'")
+    result = await run_default_pipeline(pipeline, task)
 
-    # 5. Inspect the results from the pipeline's `step_history`.
-    solution_result = result.step_history[0]
-    validation_result = result.step_history[1]
+    if result:
+        print("\n✅ SQL Query Generated!")
+        print("-" * 50)
+        print(f"Query:\n{result.solution}")
 
-    print(f"\n🔍 SQL Generation Step ('{solution_result.name}'):")
-    print(f"  - Success: {solution_result.success}")
-    print(f"  - Output: '{solution_result.output}'")
-
-    print(f"\n🔍 SQL Validation Step ('{validation_result.name}'):")
-    print(f"  - Success: {validation_result.success}")
-    if not validation_result.success:
-        print(f"  - Feedback from Plugin: {validation_result.feedback}")
-
-    if not validation_result.success:
-        print("\n\n🎉 The SQLSyntaxValidator plugin correctly identified the invalid SQL!")
-
+        if result.checklist:
+            print("\nValidation Checklist:")
+            for item in result.checklist.items:
+                status = "✅ Passed" if item.completed else "❌ Failed"
+                print(f"  - {item.description:<60} {status}")
+    else:
+        print("\n❌ Failed to generate a valid SQL query.")
 
 if __name__ == "__main__":
     asyncio.run(main())

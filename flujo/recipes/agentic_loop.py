@@ -23,21 +23,40 @@ from ..domain.dsl.loop import LoopStep
 from ..domain.dsl.pipeline import Pipeline
 from ..application.runner import Flujo, _accepts_param, _extract_missing_fields
 
+import warnings
+
 _command_adapter: TypeAdapter[AgentCommand] = TypeAdapter(AgentCommand)
 
 
 class AgenticLoop:
-    """High-level recipe for explorative agentic workflows."""
+    """AgenticLoop recipe for explorative agent workflows.
+
+    DEPRECATED: This class-based approach is deprecated. Use the new factory functions
+    for better transparency, composability, and future YAML/AI support:
+
+    - Use `make_agentic_loop_pipeline()` to create a Pipeline object
+    - Use `run_agentic_loop_pipeline()` to execute the pipeline
+
+    See `flujo.recipes.factories` for the new approach.
+    """
 
     def __init__(
         self,
-        planner_agent: AsyncAgentProtocol[Any, AgentCommand],
+        planner_agent: AsyncAgentProtocol[Any, Any],
         agent_registry: Dict[str, AsyncAgentProtocol[Any, Any]],
-        max_loops: int = 15,
-    ) -> None:
+        max_loops: int = 10,
+        max_retries: int = 3,
+    ):
+        warnings.warn(
+            "The AgenticLoop class is deprecated. Use make_agentic_loop_pipeline() and run_agentic_loop_pipeline() "
+            "from flujo.recipes.factories for better transparency, composability, and future YAML/AI support.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.planner_agent = planner_agent
         self.agent_registry = agent_registry
         self.max_loops = max_loops
+        self.max_retries = max_retries
         self._pipeline = self._build_internal_pipeline()
 
     def _build_internal_pipeline(self) -> LoopStep[PipelineContext]:

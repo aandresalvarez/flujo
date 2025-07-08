@@ -19,9 +19,7 @@ class Ctx(PipelineContext):
 
 
 class ScratchAgent:
-    def __init__(
-        self, key: str, val: Any, delay: float = 0.0, fail: bool = False
-    ) -> None:
+    def __init__(self, key: str, val: Any, delay: float = 0.0, fail: bool = False) -> None:
         self.key = key
         self.val = val
         self.delay = delay
@@ -43,10 +41,7 @@ class SafeScratchAgent:
 
     async def run(self, data: Any, *, context: FlujoBaseModel | None = None) -> Any:
         if context is not None:
-            if (
-                not hasattr(context, "scratchpad")
-                or getattr(context, "scratchpad") is None
-            ):
+            if not hasattr(context, "scratchpad") or getattr(context, "scratchpad") is None:
                 context.scratchpad = {}
             context.scratchpad[self.key] = self.val
         return data
@@ -73,9 +68,7 @@ async def test_merge_strategy_no_merge() -> None:
     }
     parallel = Step.parallel("par", branches, merge_strategy=MergeStrategy.NO_MERGE)
     runner = Flujo(parallel, context_model=Ctx)
-    result = await gather_result(
-        runner, "data", initial_context_data={"initial_prompt": "goal"}
-    )
+    result = await gather_result(runner, "data", initial_context_data={"initial_prompt": "goal"})
     assert "x" not in result.final_pipeline_context.scratchpad
     assert "y" not in result.final_pipeline_context.scratchpad
 
@@ -83,18 +76,12 @@ async def test_merge_strategy_no_merge() -> None:
 @pytest.mark.asyncio
 async def test_merge_strategy_overwrite() -> None:
     branches = {
-        "a": Step.model_validate(
-            {"name": "a", "agent": ScratchAgent("v", 1, delay=0.1)}
-        ),
-        "b": Step.model_validate(
-            {"name": "b", "agent": ScratchAgent("v", 2, delay=0.2)}
-        ),
+        "a": Step.model_validate({"name": "a", "agent": ScratchAgent("v", 1, delay=0.1)}),
+        "b": Step.model_validate({"name": "b", "agent": ScratchAgent("v", 2, delay=0.2)}),
     }
     parallel = Step.parallel("par", branches, merge_strategy=MergeStrategy.OVERWRITE)
     runner = Flujo(parallel, context_model=Ctx)
-    result = await gather_result(
-        runner, "data", initial_context_data={"initial_prompt": "goal"}
-    )
+    result = await gather_result(runner, "data", initial_context_data={"initial_prompt": "goal"})
     assert result.final_pipeline_context.scratchpad["v"] == 2
 
 
@@ -126,13 +113,9 @@ async def test_merge_strategy_merge_scratchpad() -> None:
         "a": Step.model_validate({"name": "a", "agent": ScratchAgent("x", 1)}),
         "b": Step.model_validate({"name": "b", "agent": ScratchAgent("y", 2)}),
     }
-    parallel = Step.parallel(
-        "par", branches, merge_strategy=MergeStrategy.MERGE_SCRATCHPAD
-    )
+    parallel = Step.parallel("par", branches, merge_strategy=MergeStrategy.MERGE_SCRATCHPAD)
     runner = Flujo(parallel, context_model=Ctx)
-    result = await gather_result(
-        runner, "data", initial_context_data={"initial_prompt": "goal"}
-    )
+    result = await gather_result(runner, "data", initial_context_data={"initial_prompt": "goal"})
     assert result.final_pipeline_context.scratchpad["x"] == 1
     assert result.final_pipeline_context.scratchpad["y"] == 2
 
@@ -143,14 +126,10 @@ async def test_merge_scratchpad_detects_collision() -> None:
         "a": Step.model_validate({"name": "a", "agent": ScratchAgent("dup", 1)}),
         "b": Step.model_validate({"name": "b", "agent": ScratchAgent("dup", 2)}),
     }
-    parallel = Step.parallel(
-        "par", branches, merge_strategy=MergeStrategy.MERGE_SCRATCHPAD
-    )
+    parallel = Step.parallel("par", branches, merge_strategy=MergeStrategy.MERGE_SCRATCHPAD)
     runner = Flujo(parallel, context_model=Ctx)
     with pytest.raises(ValueError):
-        await gather_result(
-            runner, "data", initial_context_data={"initial_prompt": "goal"}
-        )
+        await gather_result(runner, "data", initial_context_data={"initial_prompt": "goal"})
 
 
 @pytest.mark.asyncio
@@ -158,14 +137,10 @@ async def test_merge_scratchpad_requires_scratchpad() -> None:
     branches = {
         "a": Step.model_validate({"name": "a", "agent": SafeScratchAgent("x", 1)}),
     }
-    parallel = Step.parallel(
-        "par", branches, merge_strategy=MergeStrategy.MERGE_SCRATCHPAD
-    )
+    parallel = Step.parallel("par", branches, merge_strategy=MergeStrategy.MERGE_SCRATCHPAD)
     runner = Flujo(parallel, context_model=NoScratchCtx)
     with pytest.raises(ValueError):
-        await gather_result(
-            runner, "data", initial_context_data={"initial_prompt": "goal"}
-        )
+        await gather_result(runner, "data", initial_context_data={"initial_prompt": "goal"})
 
 
 @pytest.mark.asyncio
@@ -173,13 +148,9 @@ async def test_merge_scratchpad_handles_none() -> None:
     branches = {
         "a": Step.model_validate({"name": "a", "agent": SafeScratchAgent("x", 1)}),
     }
-    parallel = Step.parallel(
-        "par", branches, merge_strategy=MergeStrategy.MERGE_SCRATCHPAD
-    )
+    parallel = Step.parallel("par", branches, merge_strategy=MergeStrategy.MERGE_SCRATCHPAD)
     runner = Flujo(parallel, context_model=OptionalScratchCtx)
-    result = await gather_result(
-        runner, "data", initial_context_data={"initial_prompt": "goal"}
-    )
+    result = await gather_result(runner, "data", initial_context_data={"initial_prompt": "goal"})
     assert result.final_pipeline_context.scratchpad["x"] == 1
 
 
@@ -189,9 +160,7 @@ async def test_merge_scratchpad_alphabetical_order() -> None:
         "b": Step.model_validate({"name": "b", "agent": ScratchAgent("dup", 2)}),
         "a": Step.model_validate({"name": "a", "agent": ScratchAgent("dup", 1)}),
     }
-    parallel = Step.parallel(
-        "par", branches, merge_strategy=MergeStrategy.MERGE_SCRATCHPAD
-    )
+    parallel = Step.parallel("par", branches, merge_strategy=MergeStrategy.MERGE_SCRATCHPAD)
     runner = Flujo(parallel, context_model=Ctx)
     with pytest.raises(ValueError) as exc:
         await gather_result(
@@ -214,9 +183,7 @@ async def test_merge_strategy_callable() -> None:
     }
     parallel = Step.parallel("par", branches, merge_strategy=custom_merge)
     runner = Flujo(parallel, context_model=Ctx)
-    result = await gather_result(
-        runner, "data", initial_context_data={"initial_prompt": "goal"}
-    )
+    result = await gather_result(runner, "data", initial_context_data={"initial_prompt": "goal"})
     assert sorted(result.final_pipeline_context.scratchpad["vals"]) == [1, 2]
 
 
@@ -224,17 +191,11 @@ async def test_merge_strategy_callable() -> None:
 async def test_branch_failure_propagate() -> None:
     branches = {
         "ok": Step.model_validate({"name": "ok", "agent": ScratchAgent("a", 1)}),
-        "bad": Step.model_validate(
-            {"name": "bad", "agent": ScratchAgent("b", 2, fail=True)}
-        ),
+        "bad": Step.model_validate({"name": "bad", "agent": ScratchAgent("b", 2, fail=True)}),
     }
-    parallel = Step.parallel(
-        "par", branches, on_branch_failure=BranchFailureStrategy.PROPAGATE
-    )
+    parallel = Step.parallel("par", branches, on_branch_failure=BranchFailureStrategy.PROPAGATE)
     runner = Flujo(parallel, context_model=Ctx)
-    result = await gather_result(
-        runner, "data", initial_context_data={"initial_prompt": "goal"}
-    )
+    result = await gather_result(runner, "data", initial_context_data={"initial_prompt": "goal"})
     assert not result.step_history[-1].success
     assert isinstance(result.step_history[-1].output["bad"], StepResult)
 
@@ -243,17 +204,11 @@ async def test_branch_failure_propagate() -> None:
 async def test_branch_failure_ignore() -> None:
     branches = {
         "ok": Step.model_validate({"name": "ok", "agent": ScratchAgent("a", 1)}),
-        "bad": Step.model_validate(
-            {"name": "bad", "agent": ScratchAgent("b", 2, fail=True)}
-        ),
+        "bad": Step.model_validate({"name": "bad", "agent": ScratchAgent("b", 2, fail=True)}),
     }
-    parallel = Step.parallel(
-        "par", branches, on_branch_failure=BranchFailureStrategy.IGNORE
-    )
+    parallel = Step.parallel("par", branches, on_branch_failure=BranchFailureStrategy.IGNORE)
     runner = Flujo(parallel, context_model=Ctx)
-    result = await gather_result(
-        runner, "data", initial_context_data={"initial_prompt": "goal"}
-    )
+    result = await gather_result(runner, "data", initial_context_data={"initial_prompt": "goal"})
     step_result = result.step_history[-1]
     assert step_result.success
     assert isinstance(step_result.output["bad"], StepResult)
@@ -262,20 +217,12 @@ async def test_branch_failure_ignore() -> None:
 @pytest.mark.asyncio
 async def test_branch_failure_ignore_all_fail() -> None:
     branches = {
-        "a": Step.model_validate(
-            {"name": "a", "agent": ScratchAgent("x", 1, fail=True)}
-        ),
-        "b": Step.model_validate(
-            {"name": "b", "agent": ScratchAgent("y", 2, fail=True)}
-        ),
+        "a": Step.model_validate({"name": "a", "agent": ScratchAgent("x", 1, fail=True)}),
+        "b": Step.model_validate({"name": "b", "agent": ScratchAgent("y", 2, fail=True)}),
     }
-    parallel = Step.parallel(
-        "par", branches, on_branch_failure=BranchFailureStrategy.IGNORE
-    )
+    parallel = Step.parallel("par", branches, on_branch_failure=BranchFailureStrategy.IGNORE)
     runner = Flujo(parallel, context_model=Ctx)
-    result = await gather_result(
-        runner, "data", initial_context_data={"initial_prompt": "goal"}
-    )
+    result = await gather_result(runner, "data", initial_context_data={"initial_prompt": "goal"})
     step_result = result.step_history[-1]
     assert not step_result.success
     assert all(isinstance(step_result.output[name], StepResult) for name in branches)

@@ -26,8 +26,10 @@ pip install flujo
 
 ### Basic Usage
 
+> **Note:** The class-based `AgenticLoop` is deprecated. Use the new `make_agentic_loop_pipeline` factory function for full transparency, composability, and future YAML/AI support.
+
 ```python
-from flujo.recipes import AgenticLoop
+from flujo.recipes.factories import make_agentic_loop_pipeline, run_agentic_loop_pipeline
 from flujo import make_agent_async, init_telemetry
 from flujo.domain.commands import AgentCommand
 from pydantic import TypeAdapter
@@ -51,9 +53,15 @@ planner = make_agent_async(
     TypeAdapter(AgentCommand),
 )
 
-loop = AgenticLoop(planner_agent=planner, agent_registry={"search_agent": search_agent})
-result = loop.run("What is Python?")
-print(result.final_pipeline_context.command_log[-1].execution_result)
+# Create the pipeline using the factory
+pipeline = make_agentic_loop_pipeline(
+    planner_agent=planner,
+    agent_registry={"search_agent": search_agent}
+)
+
+# Run the pipeline
+result = await run_agentic_loop_pipeline(pipeline, "What is Python?")
+print(result)
 ```
 
 ### Pipeline Example
