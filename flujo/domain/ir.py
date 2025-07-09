@@ -18,6 +18,7 @@ from typing import (
     List,
     Optional,
     Union,
+    TYPE_CHECKING,
     TypeVar,
     Generic,
 )
@@ -116,6 +117,12 @@ class ProcessorIR(BaseModel):
     )
 
 
+if TYPE_CHECKING:  # pragma: no cover - used only for static type checking
+    FallbackStepT = Optional["BaseStepIR[Any, Any]"]
+else:  # pragma: no cover - runtime uses simplified forward reference
+    FallbackStepT = Optional["BaseStepIR"]
+
+
 class BaseStepIR(BaseModel, Generic[IRInT, IROutT]):
     """Base class for all step IR models."""
 
@@ -140,7 +147,8 @@ class BaseStepIR(BaseModel, Generic[IRInT, IROutT]):
         default=False, description="Whether step updates pipeline context"
     )
     meta: Dict[str, Any] = Field(default_factory=dict, description="Arbitrary metadata")
-    fallback_step: Optional["BaseStepIR[Any, Any]"] = Field(
+
+    fallback_step: FallbackStepT = Field(
         default=None, description="Fallback step to execute if this step fails"
     )
     step_uid: str = Field(description="Globally unique step identifier")

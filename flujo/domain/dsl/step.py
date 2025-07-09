@@ -18,6 +18,7 @@ from typing import (
     ParamSpec,
     Concatenate,
     cast,
+    Self,
     TYPE_CHECKING,
     Tuple,
     Set,
@@ -29,10 +30,12 @@ import uuid
 from flujo.domain.models import BaseModel, RefinementCheck  # noqa: F401
 from pydantic import Field, ConfigDict, field_validator
 from ..processors import AgentProcessors
-from .loop import LoopStep, MapStep
-from .conditional import ConditionalStep
-from .parallel import ParallelStep
-from flujo.steps.cache_step import CacheStep
+
+if TYPE_CHECKING:  # pragma: no cover
+    from .loop import LoopStep, MapStep
+    from .conditional import ConditionalStep
+    from .parallel import ParallelStep
+    from flujo.steps.cache_step import CacheStep
 
 if TYPE_CHECKING:  # pragma: no cover
     from ..execution_strategy import ExecutionStrategy
@@ -41,10 +44,6 @@ if TYPE_CHECKING:  # pragma: no cover
         StandardStepIR,
         AgentReference,
         HumanInTheLoopStepIR,
-        LoopStepIR,
-        ConditionalStepIR,
-        ParallelStepIR,
-        CacheStepIR,
         ValidationPluginIR,
         ValidatorIR,
     )
@@ -140,6 +139,14 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             return str(v)
         return v
 
+    @classmethod
+    def model_validate(cls: type[Self], *args: Any, **kwargs: Any) -> Self:
+        """Dispatch validation to the appropriate concrete step class."""
+        if cls is not Step:
+            return super().model_validate(*args, **kwargs)
+
+        return cast(Self, StandardStep.model_validate(*args, **kwargs))
+
     model_config: ClassVar[ConfigDict] = {
         "arbitrary_types_allowed": True,
     }
@@ -209,16 +216,16 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         agent: _CallableAgent = _CallableAgent(callable_func)
 
         # Use the provided name or the callable's name
-        step_name: str = name or getattr(callable_func, "__name__", "callable_step")
+        step_name = cast(str, name or getattr(callable_func, "__name__", "callable_step"))
 
-        # NOTE: The step_uid assignment below triggers a mypy error due to the union type
-        # (str | Any | None) being assigned to a str field. This is a known mypy limitation
-        # with Pydantic models and dynamic typing. The runtime behavior is correct due to
-        # the field validator and explicit type narrowing in the constructor.
+        # ``StandardStep`` expects ``step_uid`` to be ``str``. When ``step_uid`` is ``None``
+        # we generate one explicitly to satisfy the type checker and avoid ``type: ignore``.
+        step_uid_value = step_uid if step_uid is not None else _generate_step_uid()
+
         return StandardStep(
             name=step_name,
             agent=agent,
-            step_uid=step_uid,  # type: ignore
+            step_uid=step_uid_value,
             **kwargs,
         )
 
@@ -298,6 +305,14 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         from .parallel import ParallelStep
         from flujo.steps.cache_step import CacheStep
         from .step import HumanInTheLoopStep, StandardStep
+        from ..ir import (
+            StandardStepIR,
+            LoopStepIR,
+            ConditionalStepIR,
+            ParallelStepIR,
+            CacheStepIR,
+            HumanInTheLoopStepIR,
+        )
 
         if isinstance(ir_model, StandardStepIR):
             return StandardStep._from_standard_ir(
@@ -434,14 +449,21 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
     @classmethod
     def map_over(cls, *args: Any, **kwargs: Any) -> "MapStep[Any]":
         """Create a map step that applies a pipeline to each item in a collection."""
+        from .loop import MapStep
+
         return MapStep(*args, **kwargs)
 
     @classmethod
-    def parallel(cls, *args: Any, **kwargs: Any) -> "ParallelStep[Any]":
+    def parallel(
+        cls,
+        name: str,
+        branches: Dict[str, Any],
+        **kwargs: Any,
+    ) -> "ParallelStep[Any]":
         """Create a parallel step that executes multiple branches concurrently."""
         from .parallel import ParallelStep
 
-        return ParallelStep(*args, **kwargs)
+        return ParallelStep(name=name, branches=branches, **kwargs)
 
     @classmethod
     def human_in_the_loop(
@@ -694,16 +716,16 @@ def step(
     def decorator(
         callable_func: Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]],
     ) -> StandardStep[StepInT, StepOutT]:
-        step_name = name or getattr(callable_func, "__name__", "step")
+        from .agents import _CallableAgent
 
-        # NOTE: The step_uid assignment below triggers a mypy error due to the union type
-        # (str | Any | None) being assigned to a str field. This is a known mypy limitation
-        # with Pydantic models and dynamic typing. The runtime behavior is correct due to
-        # the field validator and explicit type narrowing in the constructor.
+        step_name = cast(str, name or getattr(callable_func, "__name__", "step"))
+
+        step_uid_value = step_uid if step_uid is not None else _generate_step_uid()
+
         return StandardStep(
             name=step_name,
-            agent=callable_func,
-            step_uid=step_uid,  # type: ignore
+            agent=_CallableAgent(callable_func),
+            step_uid=step_uid_value,
             updates_context=updates_context,
             processors=processors or AgentProcessors(),
             persist_feedback_to_context=persist_feedback_to_context,

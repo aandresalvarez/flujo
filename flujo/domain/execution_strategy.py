@@ -526,6 +526,9 @@ class StandardStepExecutionStrategy(DefaultExecutionStrategy):
                         result.success = True
                         result.output = fallback_result.output
                         result.feedback = None
+                        # Accumulate metrics from the fallback execution
+                        result.token_counts += getattr(fallback_result, "token_counts", 0)
+                        result.cost_usd += getattr(fallback_result, "cost_usd", 0.0)
                         # Standardize fallback metadata
                         result.metadata_ = {
                             **(result.metadata_ or {}),
@@ -549,6 +552,9 @@ class StandardStepExecutionStrategy(DefaultExecutionStrategy):
                             f"Fallback error: {fallback_result.feedback}"
                         )
                         result.output = original_failure_output
+                        # Even when the fallback fails, include its metrics
+                        result.token_counts += getattr(fallback_result, "token_counts", 0)
+                        result.cost_usd += getattr(fallback_result, "cost_usd", 0.0)
                         # Set fallback metadata even when fallback fails
                         result.metadata_ = {
                             **(result.metadata_ or {}),
