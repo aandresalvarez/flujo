@@ -5,12 +5,14 @@ from __future__ import annotations
 from typing import (
     Any,
     Callable,
+    Dict,
     Generic,
     List,
     Optional,
     TypeVar,
     Iterable,
     Self,
+    Set,
 )
 import contextvars
 
@@ -19,6 +21,12 @@ from pydantic import Field
 from ..models import BaseModel
 from .step import Step, StepConfig
 from .pipeline import Pipeline  # Import for runtime use in MapStep
+from ..processors import AgentProcessors
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..ir import StepIR, LoopStepIR, MapStepIR
+    from flujo.registry import CallableRegistry
 
 # Generic type var reused
 TContext = TypeVar("TContext", bound=BaseModel)
@@ -70,6 +78,116 @@ class LoopStep(Step[Any, Any], Generic[TContext]):
 
     def __repr__(self) -> str:
         return f"LoopStep(name={self.name!r}, loop_body_pipeline={self.loop_body_pipeline!r})"
+
+    def to_model(
+        self,
+        callable_registry: Optional["CallableRegistry"] = None,
+        visited: Optional[Set[str]] = None,
+    ) -> "StepIR":
+        """Convert this LoopStep to its IR representation."""
+        from ..ir import LoopStepIR, StepConfigIR, ProcessorIR, CallableReference
+
+        if callable_registry is None:
+            raise ValueError("CallableRegistry required for LoopStep")
+
+        # Create base step IR directly since Step doesn't have to_model()
+        base_ir: LoopStepIR[Any, Any] = LoopStepIR[Any, Any](
+            step_type=self.step_type,  # type: ignore[attr-defined]
+            name=self.name,
+            agent=None,  # LoopStep doesn't have an agent
+            config=StepConfigIR(
+                max_retries=self.config.max_retries,
+                timeout_seconds=self.config.timeout_s,
+                temperature=self.config.temperature,
+            ),
+            plugins=[],
+            validators=[],
+            processors=ProcessorIR(),
+            persist_feedback_to_context=self.persist_feedback_to_context,
+            persist_validation_results_to=self.persist_validation_results_to,
+            updates_context=self.updates_context,
+            meta=self.meta,
+            step_uid=self.step_uid,
+            loop_body_pipeline=self.loop_body_pipeline.to_model(callable_registry),
+            exit_condition_callable=CallableReference(
+                ref_id=callable_registry.register(self.exit_condition_callable)
+            ),
+            max_loops=self.max_loops,
+            initial_input_mapper=CallableReference(
+                ref_id=callable_registry.register(self.initial_input_to_loop_body_mapper)
+            )
+            if self.initial_input_to_loop_body_mapper is not None
+            else None,
+            iteration_input_mapper=CallableReference(
+                ref_id=callable_registry.register(self.iteration_input_mapper)
+            )
+            if self.iteration_input_mapper is not None
+            else None,
+            loop_output_mapper=CallableReference(
+                ref_id=callable_registry.register(self.loop_output_mapper)
+            )
+            if self.loop_output_mapper is not None
+            else None,
+        )
+
+        return base_ir
+
+    @classmethod
+    def _from_loop_ir(
+        cls,
+        ir_model: "LoopStepIR[Any, Any]",
+        agent_registry: Optional[Dict[str, Any]] = None,
+        callable_registry: Optional["CallableRegistry"] = None,
+    ) -> "LoopStep[Any]":
+        """Create a LoopStep from its IR representation."""
+        if callable_registry is None:
+            raise ValueError("CallableRegistry required for LoopStep")
+
+        # Resolve callables
+        exit_condition_callable = callable_registry.get(ir_model.exit_condition_callable.ref_id)
+
+        initial_input_mapper = None
+        if ir_model.initial_input_mapper is not None:
+            initial_input_mapper = callable_registry.get(ir_model.initial_input_mapper.ref_id)
+
+        iteration_input_mapper = None
+        if ir_model.iteration_input_mapper is not None:
+            iteration_input_mapper = callable_registry.get(ir_model.iteration_input_mapper.ref_id)
+
+        loop_output_mapper = None
+        if ir_model.loop_output_mapper is not None:
+            loop_output_mapper = callable_registry.get(ir_model.loop_output_mapper.ref_id)
+
+        # Rehydrate loop body pipeline
+        loop_body_pipeline = Pipeline.from_model(
+            ir_model.loop_body_pipeline, agent_registry, callable_registry
+        )
+
+        # Create step config
+        config = StepConfig(
+            max_retries=ir_model.config.max_retries,
+            timeout_s=ir_model.config.timeout_seconds,
+            temperature=ir_model.config.temperature,
+        )
+
+        return cls(
+            name=ir_model.name,
+            loop_body_pipeline=loop_body_pipeline,
+            exit_condition_callable=exit_condition_callable,
+            max_loops=ir_model.max_loops,
+            initial_input_to_loop_body_mapper=initial_input_mapper,
+            iteration_input_mapper=iteration_input_mapper,
+            loop_output_mapper=loop_output_mapper,
+            config=config,
+            plugins=[],
+            validators=[],
+            processors=AgentProcessors(),
+            persist_feedback_to_context=ir_model.persist_feedback_to_context,
+            persist_validation_results_to=ir_model.persist_validation_results_to,
+            updates_context=ir_model.updates_context,
+            meta=ir_model.meta,
+            step_uid=ir_model.step_uid,
+        )
 
 
 class MapStep(LoopStep[TContext]):
@@ -190,3 +308,116 @@ class MapStep(LoopStep[TContext]):
 
     def __repr__(self) -> str:
         return f"MapStep(name={self.name!r}, iterable_input={self.iterable_input!r})"
+
+    def to_model(
+        self,
+        callable_registry: Optional[CallableRegistry] = None,
+        visited: Optional[Set[str]] = None,
+    ) -> "StepIR":
+        """Convert this MapStep to its IR representation."""
+        from ..ir import MapStepIR, CallableReference
+
+        if callable_registry is None:
+            raise ValueError("CallableRegistry required for MapStep")
+
+        # Get the base step IR
+        base_ir = super().to_model(callable_registry, visited)
+
+        # Register callables
+        exit_condition_ref = CallableReference(
+            ref_id=callable_registry.register(self.exit_condition_callable)
+        )
+
+        initial_mapper_ref = None
+        if self.initial_input_to_loop_body_mapper is not None:
+            initial_mapper_ref = CallableReference(
+                ref_id=callable_registry.register(self.initial_input_to_loop_body_mapper)
+            )
+
+        iteration_mapper_ref = None
+        if self.iteration_input_mapper is not None:
+            iteration_mapper_ref = CallableReference(
+                ref_id=callable_registry.register(self.iteration_input_mapper)
+            )
+
+        # Convert loop body pipeline
+        loop_body_ir = self.loop_body_pipeline.to_model(callable_registry)
+
+        return MapStepIR[Any, Any](
+            step_type=base_ir.step_type,
+            name=base_ir.name,
+            agent=base_ir.agent,
+            config=base_ir.config,
+            plugins=base_ir.plugins,
+            validators=base_ir.validators,
+            processors=base_ir.processors,
+            persist_feedback_to_context=base_ir.persist_feedback_to_context,
+            persist_validation_results_to=base_ir.persist_validation_results_to,
+            updates_context=base_ir.updates_context,
+            meta=base_ir.meta,
+            step_uid=base_ir.step_uid,
+            loop_body_pipeline=loop_body_ir,
+            iterable_input=self.iterable_input,
+            initial_input_mapper=initial_mapper_ref,
+            iteration_input_mapper=iteration_mapper_ref,
+            exit_condition_callable=exit_condition_ref,
+            max_loops=self.max_loops,
+        )
+
+    @classmethod
+    def _from_map_ir(
+        cls,
+        ir_model: "MapStepIR[Any, Any]",
+        agent_registry: Optional[Dict[str, Any]] = None,
+        callable_registry: Optional["CallableRegistry"] = None,
+    ) -> "MapStep[Any]":
+        """Create a MapStep from its IR representation."""
+        if callable_registry is None:
+            raise ValueError("CallableRegistry required for MapStep")
+
+        # Resolve callables
+        exit_condition_callable = callable_registry.get(ir_model.exit_condition_callable.ref_id)
+
+        initial_input_mapper = None
+        if ir_model.initial_input_mapper is not None:
+            initial_input_mapper = callable_registry.get(ir_model.initial_input_mapper.ref_id)
+
+        iteration_input_mapper = None
+        if ir_model.iteration_input_mapper is not None:
+            iteration_input_mapper = callable_registry.get(ir_model.iteration_input_mapper.ref_id)
+
+        loop_output_mapper = None
+        if ir_model.loop_output_mapper is not None:
+            loop_output_mapper = callable_registry.get(ir_model.loop_output_mapper.ref_id)
+
+        # Rehydrate loop body pipeline
+        loop_body_pipeline = Pipeline.from_model(
+            ir_model.loop_body_pipeline, agent_registry, callable_registry
+        )
+
+        # Create step config
+        config = StepConfig(
+            max_retries=ir_model.config.max_retries,
+            timeout_s=ir_model.config.timeout_seconds,
+            temperature=ir_model.config.temperature,
+        )
+
+        # Create MapStep with the required parameters
+        return cls(
+            name=ir_model.name,
+            pipeline_to_run=loop_body_pipeline,
+            iterable_input=ir_model.iterable_input,
+            exit_condition_callable=exit_condition_callable,
+            initial_input_to_loop_body_mapper=initial_input_mapper,
+            iteration_input_mapper=iteration_input_mapper,
+            loop_output_mapper=loop_output_mapper,
+            config=config,
+            plugins=[],
+            validators=[],
+            processors=AgentProcessors(),
+            persist_feedback_to_context=ir_model.persist_feedback_to_context,
+            persist_validation_results_to=ir_model.persist_validation_results_to,
+            updates_context=ir_model.updates_context,
+            meta=ir_model.meta,
+            step_uid=ir_model.step_uid,
+        )

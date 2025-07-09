@@ -9,7 +9,6 @@ from .dsl import (
     Pipeline,
     StepConfig,
     MapStep,
-    ParallelStep,
     MergeStrategy,
     BranchFailureStrategy,
 )
@@ -42,7 +41,6 @@ __all__ = [
     "Pipeline",
     "StepConfig",
     "MapStep",
-    "ParallelStep",
     "MergeStrategy",
     "BranchFailureStrategy",
     "mapper",

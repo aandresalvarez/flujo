@@ -10,6 +10,7 @@ from typing import (
     Sequence,
     TypeVar,
     Dict,
+    TYPE_CHECKING,
 )
 import logging
 from pydantic import ConfigDict
@@ -18,14 +19,13 @@ from ..pipeline_validation import ValidationFinding, ValidationReport
 from ..models import BaseModel
 from ...exceptions import ConfigurationError
 from .step import Step, HumanInTheLoopStep
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .loop import LoopStep
-if TYPE_CHECKING:
     from .conditional import ConditionalStep
-if TYPE_CHECKING:
     from .parallel import ParallelStep
+    from ..ir import PipelineIR, StepIR
+    from flujo.registry import CallableRegistry
 
 PipeInT = TypeVar("PipeInT")
 PipeOutT = TypeVar("PipeOutT")
@@ -67,6 +67,71 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
             new_steps = list(self.steps) + list(other.steps)
             return Pipeline.model_construct(steps=new_steps)
         raise TypeError("Can only chain Pipeline with Step or Pipeline")
+
+    # ------------------------------------------------------------------
+    # IR conversion helpers (TODO: Implement when Step.to_model is available)
+    # ------------------------------------------------------------------
+
+    def to_model(
+        self, callable_registry: Optional["CallableRegistry"] = None
+    ) -> "PipelineIR[PipeInT, PipeOutT]":
+        """Convert this Pipeline to its IR representation."""
+        from ..ir import PipelineIR
+
+        ir_steps: List["StepIR"] = []
+        for step in self.steps:
+            # Handle nested pipelines by flattening them
+            if hasattr(step, "steps") and isinstance(step.steps, list):
+                # This is a nested pipeline, flatten it
+                for nested_step in step.steps:
+                    ir_steps.append(nested_step.to_model(callable_registry))
+            else:
+                # This is a regular step
+                ir_steps.append(step.to_model(callable_registry))
+
+        return PipelineIR(
+            name=getattr(self, "name", None),
+            steps=ir_steps,
+        )
+
+    @classmethod
+    def from_model(
+        cls,
+        ir_model: "PipelineIR[PipeInT, PipeOutT]",
+        agent_registry: Optional[Dict[str, Any]] = None,
+        callable_registry: Optional["CallableRegistry"] = None,
+        plugin_registry: Optional[Dict[str, Any]] = None,
+    ) -> "Pipeline[PipeInT, PipeOutT]":
+        """Create a Pipeline from its IR representation."""
+        from .step import Step
+
+        steps = []
+        circular_fallbacks = []
+        all_steps: list[Any] = []
+
+        def collect_all_steps(step: Any) -> None:
+            if step in all_steps:
+                return
+            all_steps.append(step)
+            if hasattr(step, "fallback_step") and step.fallback_step is not None:
+                collect_all_steps(step.fallback_step)
+
+        for step_ir in ir_model.steps:
+            step = Step.from_model(step_ir, agent_registry, callable_registry, plugin_registry)
+            steps.append(step)
+            collect_all_steps(step)
+            if hasattr(step, "_circular_fallback_uid"):
+                circular_fallbacks.append((step, step._circular_fallback_uid))
+        for step in all_steps:
+            if hasattr(step, "_circular_fallback_uid"):
+                circular_fallbacks.append((step, step._circular_fallback_uid))
+        if circular_fallbacks:
+            step_uid_map = {getattr(step, "step_uid", None): step for step in all_steps}
+            for step, circular_step_uid in circular_fallbacks:
+                if circular_step_uid in step_uid_map:
+                    step.fallback_step = step_uid_map[circular_step_uid]
+                    delattr(step, "_circular_fallback_uid")
+        return cls.model_construct(steps=steps)
 
     # ------------------------------------------------------------------
     # Validation helpers

@@ -10,9 +10,8 @@ This example departs from the Default recipe to show a more advanced pattern:
 import asyncio
 from typing import Any, cast
 
-from flujo import Flujo, Step, Pipeline, make_agent_async, init_telemetry, Task
+from flujo import Flujo, Step, Pipeline, make_agent_async, init_telemetry
 from flujo.domain.scoring import RewardScorer
-from flujo.domain.models import Checklist
 from flujo.exceptions import RewardModelUnavailable, FeatureDisabled
 
 init_telemetry()

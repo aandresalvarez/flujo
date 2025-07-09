@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+import uuid
+from typing import Any, Callable, Dict, Optional
 
 from packaging.version import Version, InvalidVersion
 
@@ -44,4 +45,51 @@ class PipelineRegistry:
         return self._store[name][ver]
 
 
-__all__ = ["PipelineRegistry"]
+class CallableRegistry:
+    """Registry for storing and retrieving callable functions by unique string ID.
+
+    This registry allows callable functions to be serialized and deserialized
+    by storing them with unique identifiers that can be referenced in the IR.
+    """
+
+    def __init__(self) -> None:
+        self._store: Dict[str, Callable[..., Any]] = {}
+        self._reverse_store: Dict[int, str] = {}  # id(func) -> ref_id for deduplication
+
+    def register(self, func: Callable[..., Any]) -> str:
+        """Register a callable function and return its unique reference ID.
+
+        If the function is already registered, returns the existing reference ID.
+        """
+        func_id = id(func)
+
+        # Check if already registered
+        if func_id in self._reverse_store:
+            return self._reverse_store[func_id]
+
+        # Generate new reference ID
+        ref_id = str(uuid.uuid4())
+
+        # Store the function
+        self._store[ref_id] = func
+        self._reverse_store[func_id] = ref_id
+
+        return ref_id
+
+    def get(self, ref_id: str) -> Callable[..., Any]:
+        """Retrieve a callable function by its reference ID."""
+        if ref_id not in self._store:
+            raise KeyError(f"Callable with reference ID '{ref_id}' not found in registry")
+        return self._store[ref_id]
+
+    def clear(self) -> None:
+        """Clear all registered callables."""
+        self._store.clear()
+        self._reverse_store.clear()
+
+    def __len__(self) -> int:
+        """Return the number of registered callables."""
+        return len(self._store)
+
+
+__all__ = ["PipelineRegistry", "CallableRegistry"]

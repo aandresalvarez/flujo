@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, AsyncIterator, Optional, TypeVar, Generic
+from typing import Any, AsyncIterator, Optional, TypeVar, Generic, Dict
 
 from ...domain.dsl.pipeline import Pipeline
 from ...domain.models import BaseModel, PipelineResult, StepResult
+from ...domain.ir import PipelineIR
+from ...registry import CallableRegistry
+from ...testing.utils import get_default_agent_registry
 
 from ...exceptions import (
     PausedException,
@@ -29,18 +32,34 @@ class ExecutionManager(Generic[ContextT]):
 
     def __init__(
         self,
-        pipeline: Pipeline[Any, Any],
+        pipeline: Pipeline[Any, Any] | PipelineIR[Any, Any],
         *,
         state_manager: Optional[StateManager[ContextT]] = None,
         usage_governor: Optional[UsageGovernor[ContextT]] = None,
         step_coordinator: Optional[StepCoordinator[ContextT]] = None,
         type_validator: Optional[TypeValidator] = None,
+        agent_registry: Optional[Dict[str, Any]] = None,
+        callable_registry: Optional[CallableRegistry] = None,
+        plugin_registry: Optional[Dict[str, Any]] = None,
     ) -> None:
         self.pipeline = pipeline
+        self.pipeline_ir = pipeline if isinstance(pipeline, PipelineIR) else None
+
+        # Auto-populate agent registry if not provided
+        if agent_registry is None:
+            try:
+                agent_registry = get_default_agent_registry()
+            except Exception:
+                # Fallback to empty dict if discovery fails
+                agent_registry = {}
+
+        self.agent_registry = agent_registry
+        self.callable_registry = callable_registry or CallableRegistry()
         self.state_manager = state_manager or StateManager()
         self.usage_governor = usage_governor or UsageGovernor()
         self.step_coordinator = step_coordinator or StepCoordinator()
         self.type_validator = type_validator or TypeValidator()
+        self.plugin_registry = plugin_registry or {}
 
     async def execute_steps(
         self,
@@ -75,7 +94,25 @@ class ExecutionManager(Generic[ContextT]):
         Yields:
             Streaming output chunks or step results
         """
-        for idx, step in enumerate(self.pipeline.steps[start_idx:], start=start_idx):
+        # Determine which steps to iterate over
+        steps_to_execute: list[Any]
+        if self.pipeline_ir is not None:
+            # Use IR and rehydrate steps
+            steps_to_execute_ir: list[Any] = []
+            for step_ir in self.pipeline_ir.steps[start_idx:]:
+                step = Pipeline.from_model(
+                    PipelineIR(steps=[step_ir]),
+                    self.agent_registry,
+                    self.callable_registry,
+                    self.plugin_registry,
+                ).steps[0]
+                steps_to_execute_ir.append(step)
+            steps_to_execute = steps_to_execute_ir
+        else:
+            # Use original pipeline steps
+            steps_to_execute = list(self.pipeline.steps[start_idx:])
+
+        for idx, step in enumerate(steps_to_execute, start=start_idx):
             step_result = None
             try:
                 try:
@@ -103,10 +140,28 @@ class ExecutionManager(Generic[ContextT]):
                         )
 
                     # Validate type compatibility with next step - this may raise TypeMismatchError
-                    if step_result and idx < len(self.pipeline.steps) - 1:
-                        next_step = self.pipeline.steps[idx + 1]
+                    total_steps = (
+                        len(self.pipeline_ir.steps)
+                        if self.pipeline_ir
+                        else len(self.pipeline.steps)
+                    )
+                    if step_result and idx < total_steps - 1:
+                        if self.pipeline_ir is not None:
+                            next_step_ir = self.pipeline_ir.steps[idx + 1]
+                            next_step_ir_instance: Any = Pipeline.from_model(
+                                PipelineIR(steps=[next_step_ir]),
+                                self.agent_registry,
+                                self.callable_registry,
+                                self.plugin_registry,
+                            ).steps[0]
+                        else:
+                            next_step_pipeline: Any = self.pipeline.steps[idx + 1]
                         self.type_validator.validate_step_output(
-                            step, step_result.output, next_step
+                            step,
+                            step_result.output,
+                            next_step_ir_instance
+                            if self.pipeline_ir is not None
+                            else next_step_pipeline,
                         )
 
                     # Pass output to next step

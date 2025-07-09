@@ -270,6 +270,7 @@ class _CommandExecutor:
             elif cmd.type == "ask_human":
                 if isinstance(context_obj, PipelineContext):
                     context_obj.scratchpad["paused_step_input"] = cmd
+                    context_obj.scratchpad["status"] = "paused"
                 raise PausedException(message=cmd.question)
             elif cmd.type == "finish":
                 exec_result = cmd.final_answer

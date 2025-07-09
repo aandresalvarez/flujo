@@ -1,4 +1,6 @@
 import pytest
+from pydantic import BaseModel
+from typing import Optional
 
 from flujo.domain import Step
 from flujo.application.runner import Flujo
@@ -8,7 +10,9 @@ from flujo.testing.utils import StubAgent, gather_result
 
 
 class FailValidator(BaseValidator):
-    async def validate(self, output_to_check: str, *, context=None) -> ValidationResult:
+    async def validate(
+        self, output_to_check: str, *, context: Optional[BaseModel] = None
+    ) -> ValidationResult:
         return ValidationResult(is_valid=False, feedback="bad", validator_name=self.name)
 
 

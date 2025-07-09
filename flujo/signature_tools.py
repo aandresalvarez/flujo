@@ -31,6 +31,8 @@ class SignatureAnalysis(NamedTuple):
     context_kw: Optional[str]
     input_type: Any
     output_type: Any
+    needs_stream: bool
+    needs_on_chunk: bool
 
 
 _analysis_cache_weak: "weakref.WeakKeyDictionary[Callable[..., Any], SignatureAnalysis]" = (
@@ -88,6 +90,8 @@ def analyze_signature(func: Callable[..., Any]) -> SignatureAnalysis:
     # Create the analysis
     needs_context = False
     needs_resources = False
+    needs_stream = False
+    needs_on_chunk = False
     context_kw: Optional[str] = None
     input_type = Any
     output_type = Any
@@ -95,7 +99,7 @@ def analyze_signature(func: Callable[..., Any]) -> SignatureAnalysis:
         sig = inspect.signature(func)
     except Exception as e:  # pragma: no cover - defensive
         logfire.debug(f"Could not inspect signature for {func!r}: {e}")
-        result = SignatureAnalysis(False, False, None, Any, Any)
+        result = SignatureAnalysis(False, False, None, Any, Any, False, False)
         _cache_set(func, result)
         return result
 
@@ -122,19 +126,25 @@ def analyze_signature(func: Callable[..., Any]) -> SignatureAnalysis:
             if p.name == "context":
                 ann = hints.get(p.name, p.annotation)
                 if ann is inspect.Signature.empty:
-                    raise ConfigurationError(
-                        f"Parameter '{p.name}' must be annotated with a BaseModel subclass"
-                    )
+                    # Allow untyped context
+                    needs_context = True
+                    context_kw = "context"
+                    continue
                 origin = get_origin(ann)
                 if origin in {Union, getattr(types, "UnionType", Union)}:
                     args = get_args(ann)
-                    if not any(isinstance(a, type) and issubclass(a, BaseModel) for a in args):
+                    if not any(
+                        (isinstance(a, type) and issubclass(a, BaseModel)) or a is type(None)
+                        for a in args
+                    ):
                         raise ConfigurationError(
-                            f"Parameter '{p.name}' must be annotated with a BaseModel subclass"
+                            f"Parameter '{p.name}' must be annotated with a BaseModel subclass or Optional[BaseModel]"
                         )
-                elif not (isinstance(ann, type) and issubclass(ann, BaseModel)):
+                elif not (
+                    (isinstance(ann, type) and issubclass(ann, BaseModel)) or ann is type(None)
+                ):
                     raise ConfigurationError(
-                        f"Parameter '{p.name}' must be annotated with a BaseModel subclass"
+                        f"Parameter '{p.name}' must be annotated with a BaseModel subclass or Optional[BaseModel]"
                     )
                 needs_context = True
                 context_kw = "context"  # Always use "context" as the parameter name
@@ -156,7 +166,19 @@ def analyze_signature(func: Callable[..., Any]) -> SignatureAnalysis:
                         "Parameter 'resources' must be annotated with an AppResources subclass"
                     )
                 needs_resources = True
+            elif p.name == "stream":
+                needs_stream = True
+            elif p.name == "on_chunk":
+                needs_on_chunk = True
 
-    result = SignatureAnalysis(needs_context, needs_resources, context_kw, input_type, output_type)
+    result = SignatureAnalysis(
+        needs_context,
+        needs_resources,
+        context_kw,
+        input_type,
+        output_type,
+        needs_stream,
+        needs_on_chunk,
+    )
     _cache_set(func, result)
     return result

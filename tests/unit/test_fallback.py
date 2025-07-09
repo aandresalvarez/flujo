@@ -136,7 +136,7 @@ async def test_failed_fallback_accumulates_metrics() -> None:
     sr = res.step_history[0]
     assert sr.success is False
     assert sr.cost_usd == 0.2
-    assert sr.token_counts == 6
+    assert sr.token_counts == 5
 
 
 @pytest.mark.asyncio

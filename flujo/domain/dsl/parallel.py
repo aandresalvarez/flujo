@@ -10,13 +10,21 @@ from typing import (
     TypeVar,
     Union,
     Self,
+    TYPE_CHECKING,
+    Set,
 )
 
 from pydantic import Field
 
 from ..models import BaseModel
-from .step import Step, MergeStrategy, BranchFailureStrategy
+from .step import Step, MergeStrategy, BranchFailureStrategy, StepConfig
 from .pipeline import Pipeline  # Import for runtime use in normalization
+from ..processors import AgentProcessors
+from ..ir import StepType, ParallelStepIR
+
+if TYPE_CHECKING:
+    from ..ir import StepIR, ParallelStepIR
+    from flujo.registry import CallableRegistry
 
 TContext = TypeVar("TContext", bound=BaseModel)
 
@@ -40,9 +48,11 @@ class ParallelStep(Step[Any, Any], Generic[TContext]):
         description="If provided, only these top-level context fields will be copied to each branch. "
         "If None, the entire context is deep-copied (default behavior).",
     )
-    merge_strategy: Union[MergeStrategy, Callable[[TContext, TContext], None]] = Field(
-        default=MergeStrategy.NO_MERGE,
-        description="Strategy for merging successful branch contexts back into the main context.",
+    merge_strategy: Union[MergeStrategy, Callable[[TContext, TContext], None], dict[str, Any]] = (
+        Field(
+            default=MergeStrategy.NO_MERGE,
+            description="Strategy for merging successful branch contexts back into the main context.",
+        )
     )
     on_branch_failure: BranchFailureStrategy = Field(
         default=BranchFailureStrategy.PROPAGATE,
@@ -76,3 +86,96 @@ class ParallelStep(Step[Any, Any], Generic[TContext]):
 
     def __repr__(self) -> str:
         return f"ParallelStep(name={self.name!r}, branches={list(self.branches.keys())})"
+
+    def to_model(
+        self,
+        callable_registry: Optional["CallableRegistry"] = None,
+        visited: Optional[Set[str]] = None,
+    ) -> "StepIR":
+        """Convert to IR model."""
+        # Convert branches to PipelineIR
+        ir_branches: Dict[str, Any] = {}
+        for branch_name, branch_step in self.branches.items():
+            # Convert single step to pipeline
+            from .pipeline import Pipeline
+
+            branch_pipeline: Pipeline[Any, Any] = Pipeline.model_construct(steps=[branch_step])
+            ir_branches[branch_name] = branch_pipeline.to_model(callable_registry)
+
+        # Create proper default values for required fields
+        from ..ir import StepConfigIR, ProcessorIR
+
+        default_config = StepConfigIR(max_retries=3, timeout_seconds=30, temperature=0.0)
+        default_processors = ProcessorIR()
+
+        # Handle merge strategy - convert callable to string or use default
+        if callable(self.merge_strategy):
+            merge_strategy_ir = MergeStrategy.NO_MERGE
+        else:
+            merge_strategy_ir = self.merge_strategy  # type: ignore[assignment]
+
+        base_ir: ParallelStepIR[Any, Any] = ParallelStepIR[Any, Any](
+            step_type=StepType.PARALLEL,
+            name=self.name,
+            agent=None,  # ParallelStep doesn't have an agent
+            branches=ir_branches,
+            merge_strategy=merge_strategy_ir,
+            on_branch_failure=self.on_branch_failure,
+            context_include_keys=self.context_include_keys,
+            config=default_config,
+            plugins=[],
+            validators=[],
+            processors=default_processors,
+            persist_feedback_to_context=self.persist_feedback_to_context,
+            persist_validation_results_to=self.persist_validation_results_to,
+            updates_context=self.updates_context,
+            meta=self.meta,
+            step_uid=self.step_uid,
+        )
+        return base_ir
+
+    @classmethod
+    def _from_parallel_ir(
+        cls,
+        ir_model: "ParallelStepIR[Any, Any]",
+        agent_registry: Optional[Dict[str, Any]] = None,
+        callable_registry: Optional["CallableRegistry"] = None,
+    ) -> "ParallelStep[Any]":
+        """Create a ParallelStep from its IR representation."""
+        # Rehydrate branch pipelines
+        branches: Dict[str, Any] = {}
+        for key, pipeline_ir in ir_model.branches.items():
+            branches[key] = Pipeline.from_model(pipeline_ir, agent_registry, callable_registry)
+
+        # Handle merge strategy
+        merge_strategy: Union[
+            MergeStrategy, Callable[[TContext, TContext], None], dict[str, Any]
+        ] = ir_model.merge_strategy
+        if isinstance(merge_strategy, dict) and "ref_id" in merge_strategy:
+            if callable_registry is None:
+                raise ValueError("CallableRegistry required for callable merge strategies")
+            merge_strategy = callable_registry.get(merge_strategy["ref_id"])
+
+        # Create step config
+        config = StepConfig(
+            max_retries=ir_model.config.max_retries,
+            timeout_s=ir_model.config.timeout_seconds,
+            temperature=ir_model.config.temperature,
+        )
+
+        return cls(
+            name=ir_model.name,
+            branches=branches,
+            context_include_keys=ir_model.context_include_keys,
+            merge_strategy=merge_strategy,
+            on_branch_failure=ir_model.on_branch_failure,
+            config=config,
+            plugins=[],
+            validators=[],
+            processors=AgentProcessors(),
+            persist_feedback_to_context=ir_model.persist_feedback_to_context,
+            persist_validation_results_to=ir_model.persist_validation_results_to,
+            updates_context=ir_model.updates_context,
+            meta=ir_model.meta,
+            step_uid=ir_model.step_uid,
+        )

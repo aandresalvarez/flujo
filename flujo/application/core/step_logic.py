@@ -1,3 +1,10 @@
+"""
+Step execution logic using the Strategy pattern.
+
+This module provides the core step execution logic using the Strategy pattern
+to delegate execution to appropriate strategies based on step type.
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -5,7 +12,6 @@ import contextvars
 import copy
 import time
 from typing import Any, Dict, Optional, TypeVar, Callable, Awaitable, cast
-from unittest.mock import Mock
 
 from ...domain.dsl.pipeline import Pipeline
 from ...domain.dsl.loop import LoopStep
@@ -16,7 +22,6 @@ from ...domain.dsl.step import (
     MergeStrategy,
     BranchFailureStrategy,
     BranchKey,
-    HumanInTheLoopStep,
 )
 from ...domain.models import (
     BaseModel,
@@ -25,23 +30,12 @@ from ...domain.models import (
     UsageLimits,
     PipelineContext,
 )
-from ...domain.plugins import PluginOutcome
-from ...domain.validation import ValidationResult
 from ...exceptions import (
     UsageLimitExceededError,
-    MissingAgentError,
-    InfiniteRedirectError,
-    InfiniteFallbackError,
     PausedException,
 )
 from ...infra import telemetry
 from ...domain.resources import AppResources
-from flujo.steps.cache_step import CacheStep, _generate_cache_key
-from ..context_manager import (
-    _accepts_param,
-    _get_validation_flags,
-    _apply_validation_metadata,
-)
 
 TContext = TypeVar("TContext", bound=BaseModel)
 
@@ -663,395 +657,23 @@ async def _run_step_logic(
     step_executor: StepExecutor[TContext],
     context_model_defined: bool,
     usage_limits: UsageLimits | None = None,
-    context_setter: (Callable[[PipelineResult[TContext], Optional[TContext]], None] | None) = None,
+    context_setter: (Callable[[Any, Optional[TContext]], None] | None) = None,
     stream: bool = False,
     on_chunk: Callable[[Any], Awaitable[None]] | None = None,
 ) -> StepResult:
     """Core logic for executing a single step without engine coupling."""
-    if context_setter is None:
-        context_setter = _default_set_final_context
+    # Use the strategy pattern to delegate execution to the appropriate strategy
+    strategy = step.get_strategy()
 
-    visited_ids: set[int] = set()
-    if step.agent is not None:
-        visited_ids.add(id(step.agent))
-    if isinstance(step, CacheStep):
-        key = _generate_cache_key(step.wrapped_step, data, context=context, resources=resources)
-        cached: StepResult | None = None
-        if key:
-            try:
-                cached = await step.cache_backend.get(key)
-            except Exception as e:  # pragma: no cover - defensive
-                telemetry.logfire.warn(f"Cache get failed for key {key}: {e}")
-        if isinstance(cached, StepResult):
-            result = cached.model_copy(deep=True)
-            result.metadata_ = result.metadata_ or {}
-            result.metadata_["cache_hit"] = True
-            return result
-
-        result = await step_executor(step.wrapped_step, data, context, resources)
-        if result.success and key:
-            try:
-                await step.cache_backend.set(key, result)
-            except Exception as e:  # pragma: no cover - defensive
-                telemetry.logfire.warn(f"Cache set failed for key {key}: {e}")
-        return result
-    if isinstance(step, LoopStep):
-        return await _execute_loop_step_logic(
-            step,
-            data,
-            context,
-            resources,
-            step_executor=step_executor,
-            context_model_defined=context_model_defined,
-            usage_limits=usage_limits,
-            context_setter=context_setter,
-        )
-    if isinstance(step, ConditionalStep):
-        return await _execute_conditional_step_logic(
-            step,
-            data,
-            context,
-            resources,
-            step_executor=step_executor,
-            context_model_defined=context_model_defined,
-            usage_limits=usage_limits,
-        )
-    if isinstance(step, ParallelStep):
-        return await _execute_parallel_step_logic(
-            step,
-            data,
-            context,
-            resources,
-            step_executor=step_executor,
-            context_model_defined=context_model_defined,
-            usage_limits=usage_limits,
-            context_setter=context_setter,
-        )
-    if isinstance(step, HumanInTheLoopStep):
-        message = step.message_for_user if step.message_for_user is not None else str(data)
-        if isinstance(context, PipelineContext):
-            context.scratchpad["status"] = "paused"
-        raise PausedException(message)
-
-    result = StepResult(name=step.name)
-    original_agent = step.agent
-    current_agent = original_agent
-    last_feedback = None
-    last_raw_output = None
-    last_unpacked_output = None
-    validation_failed = False
-    last_attempt_output = None
-    accumulated_feedbacks: list[str] = []
-    for attempt in range(1, step.config.max_retries + 1):
-        validation_failed = False
-        result.attempts = attempt
-        feedbacks: list[str] = []  # feedbacks for this attempt only
-        plugin_failed_this_attempt = False  # Always initialize at start of attempt
-        if current_agent is None:
-            raise MissingAgentError(
-                f"Step '{step.name}' is missing an agent. Assign one via `Step('name', agent=...)` "
-                "or by using a step factory like `@step` or `Step.from_callable()`."
-            )
-
-        start = time.monotonic()
-        agent_kwargs: Dict[str, Any] = {}
-        # Apply prompt processors
-        if step.processors.prompt_processors:
-            telemetry.logfire.info(
-                f"Running {len(step.processors.prompt_processors)} prompt processors for step '{step.name}'..."
-            )
-            processed = data
-            for proc in step.processors.prompt_processors:
-                try:
-                    processed = await proc.process(processed, context)
-                except Exception as e:  # pragma: no cover - defensive
-                    telemetry.logfire.error(f"Processor {proc.name} failed: {e}")
-                data = processed
-        from ...signature_tools import analyze_signature
-
-        target = getattr(current_agent, "_agent", current_agent)
-        func = getattr(target, "_step_callable", None)
-        if func is None:
-            func = target.stream if stream and hasattr(target, "stream") else target.run
-        func = cast(Callable[..., Any], func)
-        spec = analyze_signature(func)
-
-        if spec.needs_context:
-            if context is None:
-                raise TypeError(
-                    f"Component in step '{step.name}' requires a context, but no context model was provided to the Flujo runner."
-                )
-            agent_kwargs["context"] = context
-
-        if resources is not None:
-            if spec.needs_resources:
-                agent_kwargs["resources"] = resources
-            elif _accepts_param(func, "resources"):
-                agent_kwargs["resources"] = resources
-        if step.config.temperature is not None and _accepts_param(func, "temperature"):
-            agent_kwargs["temperature"] = step.config.temperature
-        stream_failed = False
-        if stream and hasattr(current_agent, "stream"):
-            chunks: list[Any] = []
-            try:
-                async for chunk in current_agent.stream(data, **agent_kwargs):
-                    if on_chunk is not None:
-                        await on_chunk(chunk)
-                    chunks.append(chunk)
-                result.latency_s += time.monotonic() - start
-                raw_output = (
-                    "".join(chunks)
-                    if chunks and all(isinstance(c, str) for c in chunks)
-                    else chunks
-                )
-                last_raw_output = raw_output
-            except Exception as e:
-                stream_failed = True
-                result.latency_s += time.monotonic() - start
-                partial = (
-                    "".join(chunks)
-                    if chunks and all(isinstance(c, str) for c in chunks)
-                    else chunks
-                )
-                raw_output = partial
-                last_raw_output = raw_output
-                result.output = partial
-                result.feedback = str(e)
-                feedbacks.append(str(e))
-                last_feedback = str(e)
-        else:
-            raw_output = await current_agent.run(data, **agent_kwargs)
-            result.latency_s += time.monotonic() - start
-            last_raw_output = raw_output
-
-        if isinstance(raw_output, Mock):
-            raise TypeError(
-                f"Step '{step.name}' returned a Mock object. This is usually due to "
-                "an unconfigured mock in a test. Please configure your mock agent "
-                "to return a concrete value."
-            )
-
-        unpacked_output = getattr(raw_output, "output", raw_output)
-        # Apply output processors
-        if step.processors.output_processors:
-            telemetry.logfire.info(
-                f"Running {len(step.processors.output_processors)} output processors for step '{step.name}'..."
-            )
-            processed = unpacked_output
-            for proc in step.processors.output_processors:
-                try:
-                    processed = await proc.process(processed, context)
-                except Exception as e:  # pragma: no cover - defensive
-                    telemetry.logfire.error(f"Processor {proc.name} failed: {e}")
-                unpacked_output = processed
-        last_unpacked_output = unpacked_output
-
-        success = not stream_failed
-        redirect_to = None
-        final_plugin_outcome: PluginOutcome | None = None
-        is_validation_step, is_strict = _get_validation_flags(step)
-
-        sorted_plugins = sorted(step.plugins, key=lambda p: p[1], reverse=True)
-        for plugin, _ in sorted_plugins:
-            try:
-                from ...signature_tools import analyze_signature
-
-                plugin_kwargs: Dict[str, Any] = {}
-                func = cast(
-                    Callable[..., Any],
-                    getattr(plugin, "_plugin_callable", plugin.validate),
-                )
-                spec = analyze_signature(func)
-
-                if spec.needs_context:
-                    if context is None:
-                        raise TypeError(
-                            f"Plugin in step '{step.name}' requires a context, but no context model was provided to the Flujo runner."
-                        )
-                    plugin_kwargs["context"] = context
-
-                if resources is not None:
-                    if spec.needs_resources:
-                        plugin_kwargs["resources"] = resources
-                    elif _accepts_param(func, "resources"):
-                        plugin_kwargs["resources"] = resources
-                validated = await asyncio.wait_for(
-                    plugin.validate(
-                        {"output": last_unpacked_output, "feedback": last_feedback},
-                        **plugin_kwargs,
-                    ),
-                    timeout=step.config.timeout_s,
-                )
-            except asyncio.TimeoutError as e:
-                raise TimeoutError(f"Plugin timeout in step {step.name}") from e
-
-            if not validated.success:
-                validation_failed = True
-                plugin_failed_this_attempt = True
-                if validated.feedback:
-                    feedbacks.append(validated.feedback)
-                redirect_to = validated.redirect_to
-                final_plugin_outcome = validated
-            if validated.new_solution is not None:
-                final_plugin_outcome = validated
-
-        if final_plugin_outcome and final_plugin_outcome.new_solution is not None:
-            unpacked_output = final_plugin_outcome.new_solution
-            last_unpacked_output = unpacked_output
-
-        # Run programmatic validators regardless of plugin outcome
-        if step.validators:
-            telemetry.logfire.info(
-                f"Running {len(step.validators)} programmatic validators for step '{step.name}'..."
-            )
-            validation_tasks = [
-                validator.validate(unpacked_output, context=context)
-                for validator in step.validators
-            ]
-            try:
-                validation_results = await asyncio.gather(*validation_tasks, return_exceptions=True)
-            except Exception as e:  # pragma: no cover - defensive
-                validation_results = [e]
-
-            failed_checks_feedback: list[str] = []
-            collected_results: list[ValidationResult] = []
-            for validator, res in zip(step.validators, validation_results):
-                if isinstance(res, Exception):
-                    vname = getattr(
-                        validator,
-                        "name",
-                        getattr(validator, "__class__", type(validator)).__name__,
-                    )
-                    failed_checks_feedback.append(f"Validator '{vname}' crashed: {res}")
-                    continue
-                vres = cast(ValidationResult, res)
-                collected_results.append(vres)
-                if not vres.is_valid:
-                    fb = vres.feedback or "No details provided."
-                    failed_checks_feedback.append(f"Check '{vres.validator_name}' failed: {fb}")
-
-            if step.persist_validation_results_to and context is not None:
-                if hasattr(context, step.persist_validation_results_to):
-                    history_list = getattr(context, step.persist_validation_results_to)
-                    if isinstance(history_list, list):
-                        history_list.extend(collected_results)
-
-            if failed_checks_feedback:
-                validation_failed = True
-                feedbacks.extend(failed_checks_feedback)
-                # For non-strict validation steps, don't fail the step when validation fails
-                if is_strict or not is_validation_step:
-                    success = False
-
-        # --- RETRY LOGIC FIX ---
-        if plugin_failed_this_attempt:
-            success = False
-        # --- END FIX ---
-        # --- JOIN ALL FEEDBACKS ---
-        feedback = "\n".join(feedbacks).strip() if feedbacks else None
-        if feedback:
-            accumulated_feedbacks.extend(feedbacks)
-        # --- END JOIN ---
-        if not success and attempt == step.config.max_retries:
-            last_attempt_output = last_unpacked_output
-        if success:
-            result.output = unpacked_output
-            result.success = True
-            result.feedback = feedback
-            result.token_counts += getattr(raw_output, "token_counts", 0)
-            result.cost_usd += getattr(raw_output, "cost_usd", 0.0)
-            _apply_validation_metadata(
-                result,
-                validation_failed=validation_failed,
-                is_validation_step=is_validation_step,
-                is_strict=is_strict,
-            )
-            return result
-
-        for handler in step.failure_handlers:
-            handler()
-
-        if redirect_to:
-            redirect_id = id(redirect_to)
-            if redirect_id in visited_ids:
-                raise InfiniteRedirectError(f"Redirect loop detected in step {step.name}")
-            visited_ids.add(redirect_id)
-            current_agent = redirect_to
-        else:
-            current_agent = original_agent
-
-        if feedback:
-            if isinstance(data, dict):
-                data["feedback"] = data.get("feedback", "") + "\n" + feedback
-            else:
-                data = f"{str(data)}\n{feedback}"
-        # Store all feedback so far for the next iteration
-        last_feedback = "\n".join(accumulated_feedbacks).strip() if accumulated_feedbacks else None
-
-    # After all retries, set feedback to accumulated feedbacks
-    result.success = False
-    result.feedback = (
-        "\n".join(accumulated_feedbacks).strip() if accumulated_feedbacks else last_feedback
+    return await strategy.execute(
+        step=step,
+        data=data,
+        context=context,
+        resources=resources,
+        step_executor=step_executor,
+        context_model_defined=context_model_defined,
+        usage_limits=usage_limits,
+        context_setter=context_setter,
+        stream=stream,
+        on_chunk=on_chunk,
     )
-    is_validation_step, is_strict = _get_validation_flags(step)
-    if validation_failed and is_strict:
-        result.output = None
-    else:
-        result.output = last_attempt_output
-    result.token_counts += (
-        getattr(last_raw_output, "token_counts", 1) if last_raw_output is not None else 0
-    )
-    result.cost_usd += (
-        getattr(last_raw_output, "cost_usd", 0.0) if last_raw_output is not None else 0.0
-    )
-    _apply_validation_metadata(
-        result,
-        validation_failed=validation_failed,
-        is_validation_step=is_validation_step,
-        is_strict=is_strict,
-    )
-    # If the step failed and a fallback is defined, execute it.
-    if not result.success and step.fallback_step:
-        telemetry.logfire.info(
-            f"Step '{step.name}' failed. Attempting fallback step '{step.fallback_step.name}'."
-        )
-        original_failure_feedback = result.feedback
-
-        chain = _fallback_chain_var.get()
-        if step in chain:
-            raise InfiniteFallbackError(f"Fallback loop detected in step '{step.name}'")
-        token = _fallback_chain_var.set(chain + [step])
-        try:
-            fallback_result = await step_executor(
-                step.fallback_step,
-                data,
-                context,
-                resources,
-            )
-        finally:
-            _fallback_chain_var.reset(token)
-
-        result.latency_s += fallback_result.latency_s
-        result.cost_usd += fallback_result.cost_usd
-        result.token_counts += fallback_result.token_counts
-
-        if fallback_result.success:
-            result.success = True
-            result.output = fallback_result.output
-            result.feedback = None
-            result.metadata_ = {
-                **(result.metadata_ or {}),
-                "fallback_triggered": True,
-                "original_error": original_failure_feedback,
-            }
-        else:
-            result.feedback = (
-                f"Original error: {original_failure_feedback}\n"
-                f"Fallback error: {fallback_result.feedback}"
-            )
-    if not result.success and step.persist_feedback_to_context:
-        if context is not None and hasattr(context, step.persist_feedback_to_context):
-            history_list = getattr(context, step.persist_feedback_to_context)
-            if isinstance(history_list, list) and result.feedback:
-                history_list.append(result.feedback)
-    return result

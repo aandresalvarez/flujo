@@ -53,7 +53,9 @@ from ..domain.types import HookCallable
 from ..domain.backends import ExecutionBackend, StepExecutionRequest
 from ..tracing import ConsoleTracer
 from ..state import StateBackend, WorkflowState
-from ..registry import PipelineRegistry
+from ..registry import PipelineRegistry, CallableRegistry
+from ..domain.ir import PipelineIR
+from ..testing.utils import get_default_agent_registry
 
 from .context_manager import (
     _accepts_param,
@@ -196,12 +198,27 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         delete_on_completion: bool = False,
         pipeline_version: str = "latest",
         local_tracer: Union[str, "ConsoleTracer", None] = None,
-        registry: Optional[PipelineRegistry] = None,
         pipeline_name: Optional[str] = None,
+        registry: Optional[PipelineRegistry] = None,
+        agent_registry: Optional[Dict[str, Any]] = None,
+        callable_registry: Optional[CallableRegistry] = None,
+        plugin_registry: Optional[Dict[str, Any]] = None,
     ) -> None:
+        self._plugin_registry = plugin_registry
         if isinstance(pipeline, Step):
             pipeline = Pipeline.from_step(pipeline)
-        self.pipeline: Pipeline[RunnerInT, RunnerOutT] | None = pipeline
+
+        # Convert pipeline to IR if provided
+        self.pipeline_ir: PipelineIR[RunnerInT, RunnerOutT] | None = None
+        if pipeline is not None:
+            # Create callable registry if not provided
+            if callable_registry is None:
+                callable_registry = CallableRegistry()
+            self.pipeline_ir = pipeline.to_model(callable_registry)
+
+        self.pipeline: Pipeline[RunnerInT, RunnerOutT] | None = (
+            pipeline  # Keep for backward compatibility
+        )
         self.registry = registry
         self.pipeline_name = pipeline_name
         self.pipeline_version = pipeline_version
@@ -210,6 +227,18 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         self.resources = resources
         self.usage_limits = usage_limits
         self.hooks = hooks or []
+
+        # Auto-populate agent registry if not provided
+        if agent_registry is None:
+            try:
+                agent_registry = get_default_agent_registry()
+            except Exception:
+                # Fallback to empty dict if discovery fails
+                agent_registry = {}
+
+        self.agent_registry = agent_registry
+        self.callable_registry = callable_registry or CallableRegistry()
+
         tracer_instance = None
         if isinstance(local_tracer, ConsoleTracer):
             tracer_instance = local_tracer
@@ -244,7 +273,22 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 f"Pipeline '{self.pipeline_name}' version '{self.pipeline_version}' not found"
             )
         self.pipeline = pipe
-        return pipe
+
+        # Convert to IR if not already done
+        if self.pipeline_ir is None:
+            self.pipeline_ir = pipe.to_model(self.callable_registry)
+
+        # When restoring from IR, pass plugin_registry
+        from ..domain.dsl.pipeline import Pipeline as PipelineClass
+
+        self.pipeline = PipelineClass.from_model(
+            self.pipeline_ir,
+            agent_registry=self.agent_registry,
+            callable_registry=self.callable_registry,
+            plugin_registry=self._plugin_registry,
+        )
+
+        return self.pipeline
 
     async def _dispatch_hook(
         self,
@@ -409,11 +453,17 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             self.hooks, self.resources
         )
 
+        # Use IR if available, otherwise fall back to original pipeline
+        pipeline_or_ir = self.pipeline_ir if self.pipeline_ir is not None else self.pipeline
+
         execution_manager = ExecutionManager(
-            self.pipeline,
+            pipeline_or_ir,
             state_manager=state_manager,
             usage_governor=usage_governor,
             step_coordinator=step_coordinator,
+            agent_registry=self.agent_registry,
+            callable_registry=self.callable_registry,
+            plugin_registry=self._plugin_registry,
         )
 
         # Execute steps using the manager
@@ -556,7 +606,8 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             if current_context_instance is not None:
                 assert self.pipeline is not None
                 execution_manager: ExecutionManager[ContextT] = ExecutionManager[ContextT](
-                    self.pipeline
+                    self.pipeline,
+                    plugin_registry=self._plugin_registry,
                 )
                 execution_manager.set_final_context(
                     pipeline_result_obj,
@@ -566,7 +617,11 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         finally:
             if current_context_instance is not None:
                 assert self.pipeline is not None
-                execution_manager = ExecutionManager[ContextT](self.pipeline)
+                execution_manager = ExecutionManager[ContextT](
+                    self.pipeline,
+                    state_manager=state_manager,
+                    plugin_registry=self._plugin_registry,
+                )
                 execution_manager.set_final_context(
                     pipeline_result_obj,
                     cast(Optional[ContextT], current_context_instance),
@@ -597,6 +652,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 execution_manager = ExecutionManager[ContextT](
                     self.pipeline,
                     state_manager=state_manager,
+                    plugin_registry=self._plugin_registry,
                 )
                 await execution_manager.persist_final_state(
                     run_id=state_manager.get_run_id_from_context(current_context_instance),
@@ -771,6 +827,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         execution_manager: ExecutionManager[ContextT] = ExecutionManager[ContextT](
             self.pipeline,
             state_manager=state_manager,
+            plugin_registry=self._plugin_registry,
         )
         await execution_manager.persist_final_state(
             run_id=run_id_for_state,
@@ -838,6 +895,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     registry=self.registry,
                     pipeline_name=self.pipeline_name,
                     pipeline_version=self.pipeline_version,
+                    plugin_registry=self._plugin_registry,
                 )
             except PipelineContextInitializationError as e:
                 cause = getattr(e, "__cause__", None)
