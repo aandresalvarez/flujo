@@ -1,12 +1,11 @@
-import json
 import pytest
 from flujo.infra.agents import SELF_IMPROVE_SYS
 from flujo.application.self_improvement import SelfImprovementAgent, ImprovementReport
 
 
 class DummyAgent:
-    async def run(self, prompt: str) -> str:
-        return json.dumps({"suggestions": []})
+    async def run(self, prompt: str) -> ImprovementReport:
+        return ImprovementReport(suggestions=[])
 
 
 @pytest.mark.asyncio

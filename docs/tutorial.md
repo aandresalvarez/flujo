@@ -36,7 +36,7 @@ We'll begin with the `AgenticLoop` pattern. A planner agent decides which tool a
 
 ```python
 # 📂 step_1_agentic_loop.py
-from flujo.recipes import AgenticLoop
+from flujo.recipes.factories import make_agentic_loop_pipeline, run_agentic_loop_pipeline
 from flujo import make_agent_async, init_telemetry
 from flujo.domain.commands import AgentCommand, FinishCommand, RunAgentCommand
 
@@ -55,8 +55,11 @@ planner = make_agent_async(
     AgentCommand,
 )
 
-loop = AgenticLoop(planner_agent=planner, agent_registry={"search_agent": search_agent})
-result = loop.run("Write a short, optimistic haiku about a rainy day.")
+pipeline = make_agentic_loop_pipeline(
+    planner_agent=planner,
+    agent_registry={"search_agent": search_agent},
+)
+result = run_agentic_loop_pipeline(pipeline, "Write a short, optimistic haiku about a rainy day.")
 
 for entry in result.final_pipeline_context.command_log:
     print(entry)
@@ -112,7 +115,7 @@ Professional AI workflows often involve a mix of models to balance cost, speed, 
 
 ```python
 # 📂 step_3_mixing_models.py
-from flujo.recipes import Default
+from flujo.recipes.factories import make_default_pipeline, run_default_pipeline
 from flujo import make_agent_async, init_telemetry
 from flujo.models import Task
 from flujo.infra.agents import make_review_agent, make_validator_agent
@@ -120,13 +123,14 @@ init_telemetry()
 print("🚀 Building a workflow with a custom Solution Agent for the Default recipe...")
 FAST_SOLUTION_PROMPT = "You are a creative but junior marketing copywriter. Write a catchy and concise slogan. Be quick and creative."
 fast_copywriter_agent = make_agent_async("openai:gpt-4o-mini", FAST_SOLUTION_PROMPT, str)
-flujo = Default(
+pipeline = make_default_pipeline(
     review_agent=make_review_agent(),
     solution_agent=fast_copywriter_agent,
     validator_agent=make_validator_agent(),
 )
 task = Task(prompt="Write a slogan for a new brand of ultra-durable luxury coffee mugs.")
-best_candidate = orch.run_sync(task)
+result = run_default_pipeline(pipeline, task)
+# ... (printing logic)
 # ... (printing logic)
 ```
 This "cheap drafter, smart reviewer" pattern is a powerful way to get high-quality results efficiently. The fast agent produces drafts, and the smart agents ensure the final output is excellent.
@@ -269,11 +273,15 @@ validator_agent = make_agent_async("openai:gpt-4o",
 
 
 # --- 3. Assemble and Run the Default Recipe ---
-flujo = Default(review_agent, solution_agent, validator_agent)
+pipeline = make_default_pipeline(
+    review_agent=review_agent,
+    solution_agent=solution_agent,
+    validator_agent=validator_agent,
+)
 task = Task(prompt="Generate a stock report for Apple Inc. (AAPL).")
 
 print("🧠 Running advanced tool-based workflow...")
-best_candidate = orch.run_sync(task)
+best_candidate = run_default_pipeline(pipeline, task)
 
 if best_candidate:
     print("\n🎉 Advanced workflow complete!")

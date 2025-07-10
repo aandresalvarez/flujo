@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import json
-from typing import Any, Callable, Awaitable, Iterable, Optional, cast
+from typing import Any, Callable, Awaitable, Iterable, Optional
 
 from pydantic_evals.reporting import EvaluationReport, ReportCase
 
@@ -26,12 +25,10 @@ class SelfImprovementAgent:
         self._agent = agent
 
     async def run(self, prompt: str) -> ImprovementReport:
-        raw = await self._agent.run(prompt)
-        if isinstance(raw, (dict, list)):
-            data = json.dumps(raw)
-        else:
-            data = str(raw)
-        return cast(ImprovementReport, ImprovementReport.model_validate_json(data))
+        result = await self._agent.run(prompt)
+        if isinstance(result, ImprovementReport):
+            return result
+        return ImprovementReport.model_validate(result)
 
 
 def _find_step(

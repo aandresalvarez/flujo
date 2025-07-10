@@ -12,7 +12,7 @@ provides utilities to manage multi-agent pipelines with minimal setup.
 ## Features
 
 - 📦 **Pydantic Native** – agents, tools, and pipeline context are all defined with Pydantic models for reliable type safety.
-- 🔁 **Opinionated & Flexible** – the `Default` recipe gives you a ready‑made workflow while the DSL lets you build any pipeline.
+- 🔁 **Opinionated & Flexible** – factory functions like `make_default_pipeline()` provide ready‑made workflows while the DSL lets you build any pipeline.
 - 🏗️ **Production Ready** – retries, telemetry, and quality controls help you ship reliable systems.
 - 🗄️ **Optimized State Backend** – high-performance SQLite backend with indexing and admin queries for large-scale deployments.
 - 🧠 **Intelligent Evals** – automated scoring and self‑improvement powered by LLMs.
@@ -129,7 +129,7 @@ Check out the [examples directory](examples/) for more usage examples:
 
 | Script | What it shows |
 | ------ | ------------- |
-| [**00_quickstart.py**](examples/00_quickstart.py) | Hello World with the AgenticLoop recipe. |
+| [**00_quickstart.py**](examples/00_quickstart.py) | Hello World with the AgenticLoop factory. |
 | [**01_weighted_scoring.py**](examples/01_weighted_scoring.py) | Weighted scoring to prioritize docstrings. |
 | [**02_custom_agents.py**](examples/02_custom_agents.py) | Building creative agents with custom prompts. |
 | [**03_reward_scorer.py**](examples/03_reward_scorer.py) | Using an LLM judge via RewardScorer. |

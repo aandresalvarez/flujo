@@ -138,11 +138,11 @@ result = runner.run("Write a Python function to calculate fibonacci numbers")
 ### Recipe Creation
 
 ```python
-from flujo.recipes import Default
+from flujo.recipes.factories import make_default_pipeline
 from flujo.infra.agents import make_review_agent, make_solution_agent, make_validator_agent
 
-# Create a recipe with factory functions
-recipe = Default(
+# Create a pipeline using the factory functions
+pipeline = make_default_pipeline(
     review_agent=make_review_agent(),
     solution_agent=make_solution_agent(),
     validator_agent=make_validator_agent(),

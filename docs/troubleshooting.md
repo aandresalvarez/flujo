@@ -109,13 +109,16 @@ This guide helps you resolve common issues when using `flujo`.
 
 2. Verify model configuration:
    ```python
-   from flujo.recipes import Default
+   from flujo.recipes.factories import make_default_pipeline
 
-   orchestrator = Default(
+   pipeline = make_default_pipeline(
+       review_agent=review_agent,
+       solution_agent=solution_agent,
+       validator_agent=validator_agent,
        model="openai:gpt-4",
-       temperature=0.7
+       temperature=0.7,
    )
-   print(orchestrator.model_config)
+   print(pipeline)
    ```
 
 ## Runtime Issues
@@ -209,11 +212,16 @@ This guide helps you resolve common issues when using `flujo`.
 
 3. Optimize configuration:
    ```python
-   orchestrator = Default(
+   from flujo.recipes.factories import make_default_pipeline
+
+   pipeline = make_default_pipeline(
+       review_agent=review_agent,
+       solution_agent=solution_agent,
+       validator_agent=validator_agent,
        model="openai:gpt-4",
        max_tokens=1000,  # Limit token usage
        timeout=30,       # Set reasonable timeout
-       cache=True        # Enable caching
+       cache=True,       # Enable caching
    )
    ```
 

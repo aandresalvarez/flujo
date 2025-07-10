@@ -10,7 +10,7 @@ Python, ask a human, or finish. The loop executes the command and records it in
 the `PipelineContext`.
 
 ```python
-from flujo.recipes import AgenticLoop
+from flujo.recipes.factories import make_agentic_loop_pipeline
 from flujo import make_agent_async
 from flujo.domain.commands import AgentCommand
 planner = make_agent_async(
@@ -18,7 +18,10 @@ planner = make_agent_async(
     "Plan the next command and finish when done.",
     AgentCommand,
 )
-loop = AgenticLoop(planner_agent=planner, agent_registry={})
+pipeline = make_agentic_loop_pipeline(
+    planner_agent=planner,
+    agent_registry={},
+)
 ```
 
 ## The Default Recipe (Simplified)
@@ -29,10 +32,14 @@ opinionated pipeline without planning logic. Under the hood it uses the same
 Pipeline DSL described later.
 
 ```python
-from flujo.recipes import Default
-from flujo.infra.agents import make_review_agent, make_solution_agent, make_validator_agent
+from flujo.recipes.factories import make_default_pipeline
+from flujo.infra.agents import (
+    make_review_agent,
+    make_solution_agent,
+    make_validator_agent,
+)
 
-recipe = Default(
+pipeline = make_default_pipeline(
     review_agent=make_review_agent(),
     solution_agent=make_solution_agent(),
     validator_agent=make_validator_agent(),
@@ -208,13 +215,15 @@ Use `Step.human_in_the_loop()` to pause execution and wait for structured human 
 
 #### Composing Workflows with `.as_step()`
 
-High-level runners like `AgenticLoop` or even another `Flujo` instance can be embedded into a larger pipeline. Call `.as_step()` on the configured runner to obtain a `Step` object:
+High-level runners like the pipeline created with `make_agentic_loop_pipeline()` or even another `Flujo` instance can be embedded into a larger pipeline. Call `.as_step()` on the configured runner to obtain a `Step` object:
 
 ```python
-discovery_loop = AgenticLoop(planner, tools)
+from flujo.recipes.factories import make_agentic_loop_pipeline
+
+loop_pipeline = make_agentic_loop_pipeline(planner_agent=planner, agent_registry=tools)
 
 pipeline = (
-    discovery_loop.as_step(name="discover") >>
+    loop_pipeline.as_step(name="discover") >>
     Step.mapper(
         lambda r: r.final_pipeline_context.command_log[-1].execution_result,
         name="extract",

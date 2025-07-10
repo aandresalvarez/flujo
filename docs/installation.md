@@ -113,7 +113,7 @@ import flujo
 print(f"Version: {flujo.__version__}")
 
 # Test basic import
-from flujo.recipes import Default
+from flujo.recipes.factories import make_default_pipeline
 from flujo import Task
 print("✅ Installation successful!")
 ```
