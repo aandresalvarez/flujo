@@ -298,15 +298,37 @@ def make_agent_async(
     timeout: int | None = None,
     processors: Optional[AgentProcessors] = None,
     auto_repair: bool = True,
+    **kwargs: Any,
 ) -> AsyncAgentWrapper[Any, Any]:
     """
     Creates a pydantic_ai.Agent and returns an AsyncAgentWrapper exposing .run_async.
+
+    Parameters
+    ----------
+    model : str
+        The model identifier (e.g., "openai:gpt-4o")
+    system_prompt : str
+        The system prompt for the agent
+    output_type : Type[Any]
+        The expected output type
+    max_retries : int, optional
+        Maximum number of retries for failed calls
+    timeout : int, optional
+        Timeout in seconds for agent calls
+    processors : Optional[AgentProcessors], optional
+        Custom processors for the agent
+    auto_repair : bool, optional
+        Whether to enable automatic repair of failed outputs
+    **kwargs : Any
+        Additional arguments to pass to the underlying pydantic_ai.Agent
+        (e.g., temperature, model_settings, max_tokens, etc.)
     """
     agent, final_processors = make_agent(
         model,
         system_prompt,
         output_type,
         processors=processors,
+        **kwargs,
     )
     return AsyncAgentWrapper(
         agent,
