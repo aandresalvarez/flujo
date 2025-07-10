@@ -65,13 +65,15 @@ async def test_async_agent_wrapper_exception() -> None:
 
 
 @pytest.mark.asyncio
-async def test_async_agent_wrapper_temperature() -> None:
+async def test_async_agent_wrapper_temperature_passed_directly() -> None:
     agent = AsyncMock()
     agent.run.return_value = "ok"
     wrapper = AsyncAgentWrapper(agent)
     await wrapper.run_async("prompt", temperature=0.5)
-    # Should set generation_kwargs["temperature"]
-    agent.run.assert_called()
+    agent.run.assert_called_once()
+    kwargs = agent.run.call_args.kwargs
+    assert kwargs.get("temperature") == 0.5
+    assert "generation_kwargs" not in kwargs
 
 
 @pytest.mark.asyncio

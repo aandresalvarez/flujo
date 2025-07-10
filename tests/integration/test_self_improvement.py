@@ -1,4 +1,5 @@
 import json
+import functools
 import pytest
 from flujo.application.self_improvement import (
     evaluate_and_improve,
@@ -36,7 +37,7 @@ async def test_e2e_self_improvement_with_mocked_llm_suggestions():
     runner = Flujo(pipeline)
     dataset = Dataset(cases=[Case(inputs="hi", expected_output="wrong")])
     report = await evaluate_and_improve(
-        lambda x: run_pipeline_async(x, runner=runner),
+        functools.partial(run_pipeline_async, runner=runner),
         dataset,
         SelfImprovementAgent(DummyAgent()),
     )
@@ -51,7 +52,7 @@ async def test_build_context_for_self_improvement_agent():
     pr = Step.solution(StubAgent(["ok"]))
     runner = Flujo(pr)
     dataset = Dataset(cases=[Case(name="c1", inputs="i", expected_output="o")])
-    report = await dataset.evaluate(lambda x: run_pipeline_async(x, runner=runner))
+    report = await dataset.evaluate(functools.partial(run_pipeline_async, runner=runner))
     context = _build_context(report.cases, None)
     assert "Case: c1" in context
 
@@ -72,7 +73,7 @@ async def test_self_improvement_context_includes_config_and_prompts(monkeypatch)
     dataset = Dataset(cases=[Case(inputs="i", expected_output="o")])
 
     await evaluate_and_improve(
-        lambda x: run_pipeline_async(x, runner=runner),
+        functools.partial(run_pipeline_async, runner=runner),
         dataset,
         SelfImprovementAgent(CaptureAgent()),
         pipeline_definition=pipeline,

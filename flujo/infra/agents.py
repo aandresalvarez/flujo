@@ -168,13 +168,6 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
 
     async def _run_with_retry(self, *args: Any, **kwargs: Any) -> Any:
         """Run the agent with retry, timeout and processor support."""
-        temp = kwargs.pop("temperature", None)
-        if temp is not None:
-            if "generation_kwargs" not in kwargs or not isinstance(
-                kwargs.get("generation_kwargs"), dict
-            ):
-                kwargs["generation_kwargs"] = {}
-            kwargs["generation_kwargs"]["temperature"] = temp
 
         # Get context from kwargs (supports both 'context' and legacy 'pipeline_context')
         context_obj = kwargs.get("context") or kwargs.get("pipeline_context")

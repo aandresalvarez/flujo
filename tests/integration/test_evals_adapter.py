@@ -1,4 +1,5 @@
 import pytest
+import functools
 from flujo.application.eval_adapter import run_pipeline_async
 from flujo.application.runner import Flujo
 from flujo.domain import Step
@@ -14,5 +15,5 @@ async def test_adapter_returns_pipeline_result():
     runner = Flujo(pipeline)
     dataset = Dataset(cases=[Case(inputs="hi", expected_output="ok")])
 
-    report = await dataset.evaluate(lambda x: run_pipeline_async(x, runner=runner))
+    report = await dataset.evaluate(functools.partial(run_pipeline_async, runner=runner))
     assert isinstance(report.cases[0].output, PipelineResult)
