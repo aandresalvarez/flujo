@@ -215,6 +215,25 @@ async def test_step_config_temperature_omitted() -> None:
     assert "temperature" not in agent.kwargs
 
 
+async def test_pipeline_with_temperature_setting() -> None:
+    class CaptureAgent:
+        def __init__(self) -> None:
+            self.kwargs: dict[str, Any] | None = None
+
+        async def run(self, data: Any, **kwargs: Any) -> str:
+            self.kwargs = kwargs
+            return "ok"
+
+    agent = CaptureAgent()
+    step = Step.model_validate(
+        {"name": "s2", "agent": agent, "config": StepConfig(temperature=0.8)}
+    )
+    runner = Flujo(step)
+    await gather_result(runner, "input")
+    assert agent.kwargs is not None
+    assert agent.kwargs.get("temperature") == 0.8
+
+
 @pytest.mark.asyncio
 async def test_failure_handler_exception_propagates() -> None:
     agent = StubAgent(["bad"])
