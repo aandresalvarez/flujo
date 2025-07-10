@@ -147,13 +147,12 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
     def __init__(self, **data: Any) -> None:
         # Robustly handle step_uid before passing to Pydantic
         step_uid_raw = data.get("step_uid")
-        step_uid: str
         if step_uid_raw is not None:
+            # Use assert for proper type narrowing as recommended for mypy >= 1.17
             if not isinstance(step_uid_raw, str):
-                step_uid = str(step_uid_raw)
+                data["step_uid"] = str(step_uid_raw)
             else:
-                step_uid = step_uid_raw
-            data["step_uid"] = step_uid
+                data["step_uid"] = step_uid_raw
         super().__init__(**data)
         self._fallback_step: Optional["Step[Any, Any]"] = None
         self._circular_fallback_uid: Optional[str] = None
@@ -215,10 +214,11 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         # (str | Any | None) being assigned to a str field. This is a known mypy limitation
         # with Pydantic models and dynamic typing. The runtime behavior is correct due to
         # the field validator and explicit type narrowing in the constructor.
+        # Use explicit type conversion to satisfy mypy
         return StandardStep(
             name=step_name,
             agent=agent,
-            step_uid=step_uid,  # type: ignore
+            step_uid=step_uid if step_uid is not None else _generate_step_uid(),  # type: ignore
             **kwargs,
         )
 
@@ -700,10 +700,11 @@ def step(
         # (str | Any | None) being assigned to a str field. This is a known mypy limitation
         # with Pydantic models and dynamic typing. The runtime behavior is correct due to
         # the field validator and explicit type narrowing in the constructor.
+        # Use explicit type conversion to satisfy mypy
         return StandardStep(
             name=step_name,
             agent=callable_func,
-            step_uid=step_uid,  # type: ignore
+            step_uid=step_uid if step_uid is not None else _generate_step_uid(),  # type: ignore
             updates_context=updates_context,
             processors=processors or AgentProcessors(),
             persist_feedback_to_context=persist_feedback_to_context,

@@ -34,7 +34,7 @@ classifiers = [
 
 # Runtime dependencies
 dependencies = [
-  "pydantic>=2.7",
+  "pydantic>=2.11.7",
   "pydantic-ai>=0.2.16",
   "pydantic-settings",
   "python-dotenv>=1.0",
@@ -51,7 +51,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "ruff",
-  "mypy",
+  "mypy>=1.17",
   "pip-audit",
   "pytest",
   "pytest-cov",
@@ -98,6 +98,11 @@ Changelog = "https://github.com/aandresalvarez/flujo/blob/main/CHANGELOG.md"
 [tool.mypy]
 python_version = "3.11"
 strict         = true
+warn_unused_ignores = false  # Disable unused ignore warnings as recommended
+warn_redundant_casts = true
+warn_unused_configs = true
+warn_return_any = true
+warn_unreachable = true
 
 # Focus type checking on the core library first. Examples are excluded as they are
 # meant to be educational and may not follow strict typing.
@@ -162,7 +167,7 @@ features = ["dev"]
 [tool.hatch.envs.default.scripts]
 lint = "ruff check flujo tests"
 format = "ruff format flujo tests"
-type-check = "mypy flujo"
+type-check = "mypy --no-incremental --cache-dir=/dev/null flujo"
 test = "pytest {args}"
 cov = "pytest --cov=flujo --cov-report=term-missing {args}"
 bandit-check = "bandit -c pyproject.toml -r flujo -s B101,B404,B603 --exit-zero"

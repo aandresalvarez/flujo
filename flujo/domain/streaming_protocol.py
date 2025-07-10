@@ -8,5 +8,5 @@ class StreamingAgentProtocol(Protocol):
 
     async def stream(self, data: Any, **kwargs: Any) -> AsyncIterator[Any]:
         """Asynchronously yield output chunks."""
-        if False:  # pragma: no cover - placeholder
-            yield None
+        # This is a protocol method - actual implementations will override this
+        raise NotImplementedError("Subclasses must implement stream")
