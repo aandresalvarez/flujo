@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Generic, Optional, TypeVar, Self
+from typing import Any, Callable, Dict, Generic, Optional, TypeVar, Self, ClassVar
 
 from pydantic import Field
 
 from ..models import BaseModel
-from .step import Step, BranchKey
+from .step import Step, BranchKey, StepType, _resolve_ref
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    pass  # For type hints only
+    from ..ir import StepIR
 
 TContext = TypeVar("TContext", bound=BaseModel)
 
@@ -43,6 +43,8 @@ class ConditionalStep(Step[Any, Any], Generic[TContext]):
         description="Maps branch output to ConditionalStep output.",
     )
 
+    step_type: ClassVar[StepType] = StepType.CONDITIONAL
+
     model_config = {"arbitrary_types_allowed": True}
 
     # Ensure non-empty branch mapping and validate pipeline types
@@ -74,3 +76,58 @@ class ConditionalStep(Step[Any, Any], Generic[TContext]):
 
     def __repr__(self) -> str:
         return f"ConditionalStep(name={self.name!r}, branches={list(self.branches.keys())})"
+
+    # ------------------------------------------------------------------
+    # IR helpers
+    # ------------------------------------------------------------------
+
+    def to_model(self) -> "StepIR":
+        base = super().to_model()
+        base.step_type = self.step_type.value
+        base.condition_callable = self.condition_callable
+        base.branches = {k: p.to_model() for k, p in self.branches.items()}
+        base.default_branch_pipeline = (
+            self.default_branch_pipeline.to_model() if self.default_branch_pipeline else None
+        )
+        base.branch_input_mapper = self.branch_input_mapper
+        base.branch_output_mapper = self.branch_output_mapper
+        return base
+
+    @classmethod
+    def from_model(cls, model: "StepIR") -> "ConditionalStep[Any]":
+        from .pipeline import Pipeline
+
+        branches = {k: Pipeline.from_model(p) for k, p in (model.branches or {}).items()}
+        default_branch = (
+            Pipeline.from_model(model.default_branch_pipeline)
+            if model.default_branch_pipeline
+            else None
+        )
+        from ..plugins import plugin_registry
+
+        plugins = []
+        for p in model.plugins:
+            plugin_cls = plugin_registry.get(p.plugin_type)
+            if plugin_cls is not None:
+                plugins.append((plugin_cls(), p.priority))
+
+        step = cls.model_validate(
+            {
+                "name": model.name,
+                "condition_callable": _resolve_ref(model.condition_callable),
+                "branches": branches,
+                "default_branch_pipeline": default_branch,
+                "branch_input_mapper": _resolve_ref(model.branch_input_mapper),
+                "branch_output_mapper": _resolve_ref(model.branch_output_mapper),
+                "config": model.config,
+                "plugins": plugins,
+                "validators": [],
+                "processors": model.processors,
+                "persist_feedback_to_context": model.persist_feedback_to_context,
+                "persist_validation_results_to": model.persist_validation_results_to,
+                "updates_context": model.updates_context,
+                "meta": model.meta,
+            }
+        )
+        step.step_uid = model.step_uid
+        return step

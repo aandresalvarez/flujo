@@ -12,6 +12,7 @@ from .dsl import (
     ParallelStep,
     MergeStrategy,
     BranchFailureStrategy,
+    StepType,
 )
 from .models import (
     Task,
@@ -30,6 +31,7 @@ from .plugins import PluginOutcome, ValidationPlugin
 from .validation import Validator, ValidationResult
 from .pipeline_validation import ValidationFinding, ValidationReport
 from .resources import AppResources
+from .ir import PipelineIR, StepIR
 
 # ``mapper`` alias preserved for backwards compatibility
 mapper = Step.from_mapper
@@ -45,6 +47,7 @@ __all__ = [
     "ParallelStep",
     "MergeStrategy",
     "BranchFailureStrategy",
+    "StepType",
     "mapper",
     # Models
     "Task",
@@ -70,4 +73,6 @@ __all__ = [
     "ValidationReport",
     # Resources
     "AppResources",
+    "PipelineIR",
+    "StepIR",
 ]

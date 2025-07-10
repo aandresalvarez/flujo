@@ -1,12 +1,17 @@
 from __future__ import annotations
 
-from typing import Any, Optional, TypeVar
+from typing import Any, Optional, TypeVar, ClassVar
 import hashlib
 import pickle  # nosec B403 - Used for fallback serialization of complex objects in cache keys
 import orjson
 from pydantic import Field
 
 from flujo.domain.dsl import Step
+from flujo.domain.dsl.step import StepType
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from flujo.domain.ir import StepIR
 from flujo.domain.models import BaseModel, PipelineContext
 from flujo.caching import CacheBackend, InMemoryCache
 
@@ -19,6 +24,8 @@ class CacheStep(Step[StepInT, StepOutT]):
 
     wrapped_step: Step[StepInT, StepOutT]
     cache_backend: CacheBackend = Field(default_factory=InMemoryCache)
+
+    step_type: ClassVar[StepType] = StepType.CACHE
 
     model_config = {"arbitrary_types_allowed": True}
 
@@ -34,6 +41,43 @@ class CacheStep(Step[StepInT, StepOutT]):
             wrapped_step=wrapped_step,
             cache_backend=cache_backend or InMemoryCache(),
         )
+
+    # ------------------------------------------------------------------
+    # IR helpers
+    # ------------------------------------------------------------------
+
+    def to_model(self) -> "StepIR":
+        base = super().to_model()
+        base.step_type = self.step_type.value
+        base.wrapped_step = self.wrapped_step.to_model()
+        base.cache_backend = self.cache_backend
+        return base
+
+    @classmethod
+    def from_model(cls, model: "StepIR") -> "CacheStep[Any, Any]":
+        wrapped = (
+            Step.from_model(model.wrapped_step)
+            if model.wrapped_step
+            else Step.model_validate({"name": model.name})
+        )
+        from flujo.domain.plugins import plugin_registry
+
+        step = cls.cached(wrapped, cache_backend=model.cache_backend)
+        step.config = model.config
+        plugins = []
+        for p in model.plugins:
+            plugin_cls = plugin_registry.get(p.plugin_type)
+            if plugin_cls is not None:
+                plugins.append((plugin_cls(), p.priority))
+        step.plugins = plugins
+        step.validators = []
+        step.processors = model.processors
+        step.persist_feedback_to_context = model.persist_feedback_to_context
+        step.persist_validation_results_to = model.persist_validation_results_to
+        step.updates_context = model.updates_context
+        step.meta = model.meta
+        step.step_uid = model.step_uid
+        return step
 
 
 def _serialize_for_key(obj: Any) -> Any:

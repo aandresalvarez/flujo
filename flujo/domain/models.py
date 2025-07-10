@@ -23,7 +23,7 @@ class BaseModel(PydanticBaseModel):
 
     def model_dump_json(self, **kwargs: Any) -> str:
         """Override to use orjson for serialization."""
-        data: bytes = orjson.dumps(self.model_dump(), **kwargs)
+        data: bytes = orjson.dumps(self.model_dump(mode="json"), **kwargs)
         return data.decode()
 
     @classmethod

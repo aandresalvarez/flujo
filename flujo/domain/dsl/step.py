@@ -25,6 +25,8 @@ from typing import (
 import contextvars
 import inspect
 from enum import Enum
+import uuid
+import importlib
 
 from flujo.domain.models import BaseModel, RefinementCheck  # noqa: F401
 from flujo.domain.resources import AppResources
@@ -43,6 +45,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from .conditional import ConditionalStep
     from .parallel import ParallelStep
     from .pipeline import Pipeline
+    from ..ir import StepIR
 
 # Type variables
 StepInT = TypeVar("StepInT")
@@ -54,6 +57,17 @@ ContextModelT = TypeVar("ContextModelT", bound=BaseModel)
 
 # BranchKey type alias for ConditionalStep
 BranchKey = Any
+
+
+def _resolve_ref(ref: Any) -> Any:
+    if isinstance(ref, str) and ":" in ref:
+        mod_path, qual = ref.split(":", 1)
+        module = importlib.import_module(mod_path)
+        attr = module
+        for part in qual.split("."):
+            attr = getattr(attr, part)
+        return attr
+    return ref
 
 
 class MergeStrategy(Enum):
@@ -69,6 +83,18 @@ class BranchFailureStrategy(Enum):
 
     PROPAGATE = "propagate"
     IGNORE = "ignore"
+
+
+class StepType(Enum):
+    """Enumeration of step types for IR serialization."""
+
+    STANDARD = "standard"
+    LOOP = "loop"
+    MAP = "map"
+    CONDITIONAL = "conditional"
+    PARALLEL = "parallel"
+    CACHE = "cache"
+    HUMAN = "human"
 
 
 class StepConfig(BaseModel):
@@ -124,6 +150,11 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         default_factory=dict,
         description="Arbitrary metadata about this step.",
     )
+    step_uid: Optional[str] = Field(
+        default_factory=lambda: uuid.uuid4().hex,
+        description="Unique identifier for this step within a pipeline.",
+    )
+    step_type: ClassVar[StepType] = StepType.STANDARD
 
     __step_input_type__: type[Any] = Any
     __step_output_type__: type[Any] = Any
@@ -191,6 +222,127 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         if isinstance(other, Pipeline):
             return Pipeline.from_step(self) >> other
         raise TypeError("Can only chain Step with Step or Pipeline")
+
+    # ------------------------------------------------------------------
+    # IR serialization helpers
+    # ------------------------------------------------------------------
+
+    def to_model(self) -> "StepIR":
+        """Convert this Step into a serializable IR model."""
+        from ..ir import StepIR
+
+        target = getattr(self.agent, "_agent", self.agent)
+        agent_ref = None
+        if target is not None:
+            if hasattr(target, "_step_callable"):
+                func = getattr(target, "_step_callable")
+                mod = getattr(func, "__module__", "<unknown>")
+                qual = getattr(func, "__qualname__", func.__name__)
+                agent_ref = f"{mod}:{qual}"
+            else:
+                mod = getattr(target, "__module__", "<unknown>")
+                qual = getattr(target, "__qualname__", target.__class__.__name__)
+                agent_ref = f"{mod}:{qual}"
+
+        fallback_uid = None
+        if self.fallback_step is not None:
+            fallback_uid = self.fallback_step.step_uid
+
+        from ..ir import ValidationPluginIR, ValidatorIR
+
+        plugin_models = [
+            ValidationPluginIR(plugin_type=p.__class__.__name__, priority=prio)
+            for p, prio in self.plugins
+        ]
+        validator_models = [
+            ValidatorIR(validator_type=v.__class__.__name__) for v in self.validators
+        ]
+
+        return StepIR(
+            step_uid=self.step_uid,
+            step_type=self.step_type.value,
+            name=self.name,
+            agent_ref=agent_ref,
+            agent=self.agent,
+            config=self.config,
+            plugins=plugin_models,
+            validators=validator_models,
+            processors=self.processors,
+            persist_feedback_to_context=self.persist_feedback_to_context,
+            persist_validation_results_to=self.persist_validation_results_to,
+            updates_context=self.updates_context,
+            meta=self.meta,
+            fallback_step_uid=fallback_uid,
+        )
+
+    @classmethod
+    def from_model(cls, model: "StepIR") -> "Step[Any, Any]":
+        """Reconstruct a Step object from a :class:`StepIR`."""
+        step_type = StepType(model.step_type)
+
+        if step_type != StepType.STANDARD and cls is Step:
+            if step_type == StepType.LOOP:
+                from .loop import LoopStep
+
+                return LoopStep.from_model(model)
+            if step_type == StepType.MAP:
+                from .loop import MapStep
+
+                return MapStep.from_model(model)
+            if step_type == StepType.CONDITIONAL:
+                from .conditional import ConditionalStep
+
+                return ConditionalStep.from_model(model)
+            if step_type == StepType.PARALLEL:
+                from .parallel import ParallelStep
+
+                return ParallelStep.from_model(model)
+            if step_type == StepType.CACHE:
+                from flujo.steps.cache_step import CacheStep
+
+                return CacheStep.from_model(model)
+            if step_type == StepType.HUMAN:
+                return HumanInTheLoopStep.from_model(model)
+
+        from ..plugins import plugin_registry
+
+        agent_obj = model.agent
+        if agent_obj is None and model.agent_ref is not None:
+            attr = _resolve_ref(model.agent_ref)
+            if isinstance(attr, Step):
+                agent_obj = attr.agent
+            elif callable(attr) and not hasattr(attr, "run"):
+                agent_obj = cls.from_callable(attr, name=model.name).agent
+            else:
+                agent_obj = attr
+
+        plugins = []
+        for p in model.plugins:
+            plugin_cls = plugin_registry.get(p.plugin_type)
+            if plugin_cls is not None:
+                plugins.append((plugin_cls(), p.priority))
+
+        validators: list[Any] = []
+        for v in model.validators:
+            # Validator registry not implemented; instantiate nothing
+            pass
+
+        step = cls.model_validate(
+            {
+                "name": model.name,
+                "agent": agent_obj,
+                "config": model.config,
+                "plugins": plugins,
+                "validators": validators,
+                "processors": model.processors,
+                "persist_feedback_to_context": model.persist_feedback_to_context,
+                "persist_validation_results_to": model.persist_validation_results_to,
+                "updates_context": model.updates_context,
+                "meta": model.meta,
+            }
+        )
+        step.step_uid = model.step_uid
+        return step
 
     # ------------------------------------------------------------------
     # Execution helpers
@@ -734,7 +886,36 @@ class HumanInTheLoopStep(Step[Any, Any]):
     message_for_user: str | None = Field(default=None)
     input_schema: Any | None = Field(default=None)
 
+    step_type: ClassVar[StepType] = StepType.HUMAN
+
     model_config = {"arbitrary_types_allowed": True}
+
+    def to_model(self) -> "StepIR":
+        base = super().to_model()
+        base.step_type = self.step_type.value
+        base.message_for_user = self.message_for_user
+        base.input_schema = self.input_schema
+        return base
+
+    @classmethod
+    def from_model(cls, model: "StepIR") -> "HumanInTheLoopStep":
+        step = cls.model_validate(
+            {
+                "name": model.name,
+                "message_for_user": model.message_for_user,
+                "input_schema": model.input_schema,
+                "config": model.config,
+                "plugins": model.plugins,
+                "validators": model.validators,
+                "processors": model.processors,
+                "persist_feedback_to_context": model.persist_feedback_to_context,
+                "persist_validation_results_to": model.persist_validation_results_to,
+                "updates_context": model.updates_context,
+                "meta": model.meta,
+            }
+        )
+        step.step_uid = model.step_uid
+        return step
 
 
 __all__ = [
@@ -749,4 +930,5 @@ __all__ = [
     "MergeStrategy",
     "BranchFailureStrategy",
     "BranchKey",
+    "StepType",
 ]

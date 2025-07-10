@@ -10,9 +10,12 @@ from typing import (
     Sequence,
     TypeVar,
     Dict,
+    cast,
 )
+import yaml
+import hashlib
 import logging
-from pydantic import ConfigDict
+from pydantic import ConfigDict, Field
 
 from ..pipeline_validation import ValidationFinding, ValidationReport
 from ..models import BaseModel
@@ -26,6 +29,8 @@ if TYPE_CHECKING:
     from .conditional import ConditionalStep
 if TYPE_CHECKING:
     from .parallel import ParallelStep
+if TYPE_CHECKING:
+    from ..ir import PipelineIR
 
 PipeInT = TypeVar("PipeInT")
 PipeOutT = TypeVar("PipeOutT")
@@ -44,6 +49,7 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
     """
 
     steps: Sequence[Step[Any, Any]]
+    spec_sha256: str | None = Field(default=None, exclude=True)
 
     model_config: ClassVar[ConfigDict] = {
         "arbitrary_types_allowed": True,
@@ -171,6 +177,57 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
             )
 
         return report
+
+    # ------------------------------------------------------------------
+    # IR serialization helpers
+    # ------------------------------------------------------------------
+
+    def to_model(self) -> "PipelineIR":
+        """Convert this Pipeline into a serializable IR model."""
+        from ..ir import PipelineIR
+
+        step_models = [step.to_model() for step in self.steps]
+        return PipelineIR(steps=step_models)
+
+    @classmethod
+    def from_model(cls, model: "PipelineIR") -> "Pipeline[Any, Any]":
+        """Reconstruct a Pipeline from a :class:`PipelineIR`."""
+        step_objects = [Step.from_model(st) for st in model.steps]
+        uid_map = {st.step_uid: step for st, step in zip(model.steps, step_objects)}
+        for st_model, step in zip(model.steps, step_objects):
+            if st_model.fallback_step_uid:
+                fb = uid_map.get(st_model.fallback_step_uid)
+                if fb is not None:
+                    step.fallback_step = fb
+        return cls.model_construct(steps=step_objects)
+
+    def to_yaml(self) -> str:
+        """Serialize this pipeline to a YAML string via the IR."""
+        from ..ir import _default_encoder
+
+        def _clean(obj: Any) -> Any:
+            if isinstance(obj, dict):
+                return {k: _clean(v) for k, v in obj.items()}
+            if isinstance(obj, list):
+                return [_clean(v) for v in obj]
+            if callable(obj):
+                return _default_encoder(obj)
+            return obj
+
+        model = self.to_model()
+        data = _clean(model.model_dump(mode="python", round_trip=True))
+        return cast(str, yaml.safe_dump(data, sort_keys=False))
+
+    @classmethod
+    def from_yaml(cls, yaml_text: str) -> "Pipeline[Any, Any]":
+        """Load a pipeline from a YAML string."""
+        from ..ir import PipelineIR
+
+        data = yaml.safe_load(yaml_text)
+        ir = PipelineIR.model_validate(data)
+        pipeline = cls.from_model(ir)
+        pipeline.spec_sha256 = hashlib.sha256(yaml_text.encode()).hexdigest()
+        return pipeline
 
     # ------------------------------------------------------------------
     # Iteration helpers & visualization methods (delegated mostly)

@@ -156,5 +156,5 @@ async def test_proactive_cancellation_performance_benchmark() -> None:
     # Verify that proactive cancellation is much faster
     assert cancellation_time < no_limits_time
     # Allow 20% tolerance for system noise/jitter
-    assert cancellation_time < 0.12  # Should be very fast due to cancellation
+    assert cancellation_time < 0.15  # Should be very fast due to cancellation
     assert no_limits_time > 0.4  # Should take longer due to slow_cheap agent

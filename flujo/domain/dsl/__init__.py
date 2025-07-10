@@ -21,6 +21,7 @@ __all__ = [
     "Step",
     "step",
     "adapter_step",
+    "StepType",
 ]
 
 # Lazy import pattern for all other symbols
@@ -72,4 +73,9 @@ def __getattr__(name: str) -> Any:
 
         globals()[name] = HumanInTheLoopStep
         return HumanInTheLoopStep
+    if name == "StepType":
+        from .step import StepType
+
+        globals()[name] = StepType
+        return StepType
     raise AttributeError(f"module 'flujo.domain.dsl' has no attribute '{name}'")
