@@ -38,8 +38,13 @@ This pattern is great for research or data gathering tasks where the exact steps
 aren't known ahead of time.
 
 ```python
-agentic_loop = AgenticLoop(planner_agent=planner, agent_registry={"tool": tool})
-result = agentic_loop.run("Find information about Python")
+from flujo.recipes.factories import make_agentic_loop_pipeline, run_agentic_loop_pipeline
+
+pipeline = make_agentic_loop_pipeline(
+    planner_agent=planner,
+    agent_registry={"tool": tool},
+)
+result = run_agentic_loop_pipeline(pipeline, "Find information about Python")
 ```
 
 The loop continues until the planner issues a `FinishCommand`. Every command is
@@ -70,7 +75,9 @@ loop_step = Step.loop_until(
 ### After: `AgenticLoop.as_step()`
 
 ```python
-loop = AgenticLoop(
+from flujo.recipes.factories import make_agentic_loop_pipeline
+
+loop = make_agentic_loop_pipeline(
     planner_agent=planner_agent,
     agent_registry={"execute": execute_command},
 ).as_step(name="ExplorationLoop")

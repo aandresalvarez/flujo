@@ -1,10 +1,10 @@
-import json
 import functools
 import pytest
 from flujo.application.self_improvement import (
     evaluate_and_improve,
     SelfImprovementAgent,
 )
+from flujo.domain.models import ImprovementReport, ImprovementSuggestion
 from flujo.application.runner import Flujo
 from flujo.application.eval_adapter import run_pipeline_async
 from flujo.domain import Step
@@ -13,20 +13,18 @@ from pydantic_evals import Dataset, Case
 
 
 class DummyAgent:
-    async def run(self, prompt: str) -> str:
-        return json.dumps(
-            {
-                "suggestions": [
-                    {
-                        "target_step_name": "solution",
-                        "suggestion_type": "prompt_modification",
-                        "failure_pattern_summary": "error",
-                        "detailed_explanation": "fix it",
-                        "prompt_modification_details": {"modification_instruction": "fix"},
-                        "example_failing_input_snippets": ["c1"],
-                    }
-                ]
-            }
+    async def run(self, prompt: str) -> ImprovementReport:
+        return ImprovementReport(
+            suggestions=[
+                ImprovementSuggestion(
+                    target_step_name="solution",
+                    suggestion_type="prompt_modification",
+                    failure_pattern_summary="error",
+                    detailed_explanation="fix it",
+                    prompt_modification_details={"modification_instruction": "fix"},
+                    example_failing_input_snippets=["c1"],
+                )
+            ]
         )
 
 
@@ -62,9 +60,9 @@ async def test_self_improvement_context_includes_config_and_prompts(monkeypatch)
     captured: dict[str, str] = {}
 
     class CaptureAgent:
-        async def run(self, prompt: str) -> str:
+        async def run(self, prompt: str) -> ImprovementReport:
             captured["prompt"] = prompt
-            return json.dumps({"suggestions": []})
+            return ImprovementReport(suggestions=[])
 
     agent = StubAgent(["ok"])
     agent.system_prompt = "Test prompt"

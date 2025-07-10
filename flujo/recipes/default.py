@@ -52,7 +52,7 @@ class Default:
         warnings.warn(
             "The Default class is deprecated. Use make_default_pipeline() and run_default_pipeline() "
             "from flujo.recipes.factories for better transparency, composability, and future YAML/AI support.",
-            FutureWarning,
+            DeprecationWarning,
             stacklevel=2,
         )
         _ = max_iters, k_variants, reflection_limit

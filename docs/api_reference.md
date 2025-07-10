@@ -12,16 +12,16 @@ provide for these roles. For custom pipelines with different logic, see
 `Flujo` and the `Step` DSL.
 
 ```python
-from flujo.recipes import Default
+from flujo.recipes.factories import make_default_pipeline
 
-orchestrator = Default(
-    review_agent: AsyncAgentProtocol[Any, Checklist],
-    solution_agent: AsyncAgentProtocol[Any, str],
-    validator_agent: AsyncAgentProtocol[Any, Checklist],
-    reflection_agent: Optional[AsyncAgentProtocol[Any, str]] = None,
-    max_iters: Optional[int] = None,
-    k_variants: Optional[int] = None,
-    reflection_limit: Optional[int] = None,
+pipeline = make_default_pipeline(
+    review_agent=review_agent,
+    solution_agent=solution_agent,
+    validator_agent=validator_agent,
+    reflection_agent=reflection_agent,
+    max_iters=max_iters,
+    k_variants=k_variants,
+    reflection_limit=reflection_limit,
 )
 ```
 

@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Maintains test isolation and reliability
 - **Pydantic-AI Compatibility:** Fixed a `TypeError` by updating how generation parameters like `temperature` are passed to the underlying `pydantic-ai` agent, ensuring compatibility with `pydantic-ai>=0.4.1`.
 - **Dependencies:** Updated `pyproject.toml` to require `pydantic-ai>=0.4.1`.
+- **Deprecated Recipes:** Marked `AgenticLoop` and `Default` classes as deprecated. Use the factory functions in `flujo.recipes.factories`.
 
 ## [0.6.0] - 2025-01-15
 

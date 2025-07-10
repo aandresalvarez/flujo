@@ -19,7 +19,7 @@ import warnings
 from tenacity import AsyncRetrying, RetryError, stop_after_attempt, wait_exponential
 
 from flujo.infra.settings import settings
-from flujo.domain.models import Checklist
+from flujo.domain.models import Checklist, ImprovementReport
 from flujo.domain.processors import AgentProcessors
 from flujo.domain.agent_protocol import (
     AsyncAgentProtocol,
@@ -356,10 +356,10 @@ def get_reflection_agent(
 
 def make_self_improvement_agent(
     model: str | None = None,
-) -> AsyncAgentWrapper[Any, str]:
+) -> AsyncAgentWrapper[Any, ImprovementReport]:
     """Create the SelfImprovementAgent."""
     model_name = model or settings.default_self_improvement_model
-    return make_agent_async(model_name, SELF_IMPROVE_SYS, str)
+    return make_agent_async(model_name, SELF_IMPROVE_SYS, ImprovementReport)
 
 
 def make_repair_agent(model: str | None = None) -> AsyncAgentWrapper[Any, str]:

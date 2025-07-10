@@ -11,6 +11,11 @@ from flujo.testing.utils import StubAgent
 from flujo.domain.models import PipelineContext
 
 
+def test_agentic_loop_emits_deprecation_warning() -> None:
+    with pytest.warns(DeprecationWarning):
+        AgenticLoop(StubAgent([]), {})
+
+
 @pytest.mark.asyncio
 async def test_agent_delegation_and_finish() -> None:
     planner = StubAgent(
