@@ -2,6 +2,7 @@ import subprocess
 import sys
 from pathlib import Path
 import asyncio
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -147,3 +148,78 @@ async def test_file_backend_concurrent(tmp_path: Path) -> None:
         wf = WorkflowState.model_validate(loaded)
         assert wf.current_step_index == 2
         assert wf.last_step_output == 2
+
+
+@pytest.mark.asyncio
+async def test_sqlite_backend_admin_queries_integration(tmp_path: Path) -> None:
+    """Integration test for admin queries on SQLiteBackend."""
+    backend = SQLiteBackend(tmp_path / "state.db")
+    now = datetime.utcnow().replace(microsecond=0)
+    past = now - timedelta(days=1)
+    # Insert workflows with different statuses and times
+    for i, status in enumerate(["running", "completed", "failed", "paused", "failed"]):
+        state = {
+            "run_id": f"run{i}",
+            "pipeline_id": "p",
+            "pipeline_name": "p",
+            "pipeline_version": "0",
+            "current_step_index": i,
+            "pipeline_context": {"a": i},
+            "last_step_output": f"out{i}",
+            "status": status,
+            "created_at": past,
+            "updated_at": past,
+            "total_steps": 5,
+            "error_message": "fail" if status == "failed" else None,
+            "execution_time_ms": 1000 * i,
+            "memory_usage_mb": 10.0 * i,
+        }
+        await backend.save_state(f"run{i}", state)
+    # list_workflows
+    all_wf = await backend.list_workflows()
+    assert len(all_wf) == 5
+    failed = await backend.list_workflows(status="failed")
+    assert len(failed) == 2
+    # get_workflow_stats
+    stats = await backend.get_workflow_stats()
+    assert stats["total_workflows"] == 5
+    assert stats["status_counts"]["failed"] == 2
+    # get_failed_workflows
+    failed_wf = await backend.get_failed_workflows(hours_back=48)
+    assert len(failed_wf) == 2
+    # cleanup_old_workflows
+    deleted = await backend.cleanup_old_workflows(days_old=0)
+    assert deleted == 5
+    # After cleanup, should be empty
+    all_wf2 = await backend.list_workflows()
+    assert len(all_wf2) == 0
+
+
+@pytest.mark.asyncio
+async def test_sqlite_backend_concurrent_integration(tmp_path: Path) -> None:
+    """Integration test for concurrent save/load/delete for SQLiteBackend."""
+    import asyncio
+
+    async def worker(backend, run_id):
+        now = datetime.utcnow().replace(microsecond=0)
+        state = {
+            "run_id": run_id,
+            "pipeline_id": "p",
+            "pipeline_name": "p",
+            "pipeline_version": "0",
+            "current_step_index": 1,
+            "pipeline_context": {"a": 1},
+            "last_step_output": "x",
+            "status": "running",
+            "created_at": now,
+            "updated_at": now,
+        }
+        await backend.save_state(run_id, state)
+        loaded = await backend.load_state(run_id)
+        assert loaded is not None
+        await backend.delete_state(run_id)
+        loaded2 = await backend.load_state(run_id)
+        assert loaded2 is None
+
+    backend = SQLiteBackend(tmp_path / "state.db")
+    await asyncio.gather(*(worker(backend, f"run{i}") for i in range(5)))

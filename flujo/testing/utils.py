@@ -122,7 +122,7 @@ class DummyRemoteBackend(ExecutionBackend):
                         elif isinstance(v, list):
                             fixed_value[k] = list(v)
                         else:
-                            fixed_value[k] = [v] if not isinstance(v, list) else v
+                            fixed_value[k] = v
                     return type(original).model_validate(fixed_value)
                 elif isinstance(value, list):
                     return [reconstruct(original, v) for v in value]
