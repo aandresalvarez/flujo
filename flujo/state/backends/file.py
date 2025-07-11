@@ -6,17 +6,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Optional, cast
 
-from .base import StateBackend
-
-
-def _to_jsonable(obj: object) -> object:
-    if hasattr(obj, "model_dump"):
-        return obj.model_dump(mode="python")
-    if isinstance(obj, dict):
-        return {k: _to_jsonable(v) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple, set, frozenset)):
-        return [_to_jsonable(v) for v in obj]
-    return obj
+from .base import StateBackend, _to_jsonable
 
 
 class FileBackend(StateBackend):

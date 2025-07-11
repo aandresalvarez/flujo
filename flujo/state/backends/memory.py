@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-import copy
+from copy import deepcopy
 from typing import Any, Dict, Optional
 
 from .base import StateBackend
@@ -16,11 +16,11 @@ class InMemoryBackend(StateBackend):
 
     async def save_state(self, run_id: str, state: Dict[str, Any]) -> None:
         async with self._lock:
-            self._store[run_id] = copy.deepcopy(state)
+            self._store[run_id] = deepcopy(state)
 
     async def load_state(self, run_id: str) -> Optional[Dict[str, Any]]:
         async with self._lock:
-            return copy.deepcopy(self._store.get(run_id))
+            return deepcopy(self._store.get(run_id))
 
     async def delete_state(self, run_id: str) -> None:
         async with self._lock:

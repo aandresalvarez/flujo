@@ -4,21 +4,11 @@ import asyncio
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Literal
+from typing import Any, Dict, List, Optional
 
 import aiosqlite
 
-from .base import StateBackend
-
-
-def _to_jsonable(obj: object) -> object:
-    if hasattr(obj, "model_dump"):
-        return obj.model_dump(mode="python")
-    if isinstance(obj, dict):
-        return {k: _to_jsonable(v) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple, set, frozenset)):
-        return [_to_jsonable(v) for v in obj]
-    return obj
+from .base import StateBackend, _to_jsonable
 
 
 class SQLiteBackend(StateBackend):
@@ -234,7 +224,7 @@ class SQLiteBackend(StateBackend):
     # New query methods for better observability
     async def list_workflows(
         self,
-        status: Optional[Literal["running", "paused", "completed", "failed", "cancelled"]] = None,
+        status: Optional[str] = None,
         pipeline_id: Optional[str] = None,
         limit: Optional[int] = None,
         offset: int = 0,

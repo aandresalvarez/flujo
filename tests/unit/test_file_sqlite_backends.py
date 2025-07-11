@@ -1,7 +1,6 @@
 from datetime import datetime
 from pathlib import Path
 import asyncio
-from typing import Any
 
 from pydantic import BaseModel
 
@@ -130,17 +129,3 @@ async def test_backends_serialize_pydantic(tmp_path: Path) -> None:
     assert loaded_s["pipeline_context"] == {"model": {"x": 1}}
     assert loaded_f["last_step_output"] == {"x": 2}
     assert loaded_s["last_step_output"] == {"x": 2}
-
-
-@pytest.mark.skip(reason="Custom serializer_default is no longer supported in FileBackend.")
-@pytest.mark.asyncio
-async def test_serializer_default_override(tmp_path: Path) -> None:
-    def handler(obj: Any) -> Any:
-        if isinstance(obj, complex):
-            return {"real": obj.real, "imag": obj.imag}
-        raise TypeError
-
-    backend = FileBackend(tmp_path, serializer_default=handler)
-    await backend.save_state("r", {"foo": 1 + 2j})
-    loaded = await backend.load_state("r")
-    assert loaded == {"foo": {"real": 1.0, "imag": 2.0}}

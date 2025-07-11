@@ -55,7 +55,7 @@ def test_improvement_models_config_and_new_case() -> None:
 
 
 def test_global_custom_serializer_registry():
-    from flujo.utils import register_custom_serializer
+    from flujo.utils.serialization import register_custom_serializer, default_serializer_registry
     from flujo.domain.models import BaseModel
 
     class Custom:
@@ -67,9 +67,16 @@ def test_global_custom_serializer_registry():
         bar: complex
         model_config = {"arbitrary_types_allowed": True}
 
-    register_custom_serializer(Custom, lambda obj: f"custom:{obj.value}")
-    register_custom_serializer(complex, lambda c: f"{c.real}+{c.imag}j")
-    m = MyModel(foo=Custom(42), bar=3 + 4j)
-    d = m.model_dump(mode="json")
-    assert d["foo"] == "custom:42"
-    assert d["bar"] == "3.0+4.0j"
+    # Save the current state of the default_serializer_registry
+    original_registry = default_serializer_registry.copy()
+    try:
+        register_custom_serializer(Custom, lambda obj: f"custom:{obj.value}")
+        register_custom_serializer(complex, lambda c: f"{c.real}+{c.imag}j")
+        m = MyModel(foo=Custom(42), bar=3 + 4j)
+        d = m.model_dump(mode="json")
+        assert d["foo"] == "custom:42"
+        assert d["bar"] == "3.0+4.0j"
+    finally:
+        # Restore the original state of the default_serializer_registry
+        default_serializer_registry.clear()
+        default_serializer_registry.update(original_registry)

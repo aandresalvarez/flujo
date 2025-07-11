@@ -32,7 +32,7 @@ class BaseModel(PydanticBaseModel):
         if value is None:
             return None
 
-        # Check global registry first (import here to avoid circular import)
+        # Check global registry first
         from flujo.utils.serialization import lookup_custom_serializer
 
         func = lookup_custom_serializer(value)

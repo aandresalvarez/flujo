@@ -2,7 +2,6 @@
 
 from typing import Any, Callable, TypeVar, Type
 from pydantic import field_serializer
-import inspect
 
 T = TypeVar("T")
 
@@ -27,33 +26,25 @@ def lookup_custom_serializer(value: Any) -> Callable[[Any], Any] | None:
     return None
 
 
-def serializable_field(serializer_func: Callable[[Any], Any]) -> Callable[[T], T]:
+def serializable_field(field_name: str, serializer_func: Callable[[Any], Any]) -> Callable[[T], T]:
     """Decorator to mark a field as serializable with a custom serializer.
 
     This is a convenience decorator that creates a @field_serializer for a specific field.
 
     Example:
         class MyModel(BaseModel):
-            @serializable_field(lambda x: x.to_dict())
+            @serializable_field("complex_object", lambda x: x.to_dict())
             complex_object: ComplexType
     """
 
     def decorator(cls: T) -> T:
-        # Get the field name from the class
-        field_name = None
-        for name, value in inspect.getmembers(cls):
-            if value is serializer_func:
-                field_name = name
-                break
+        # Create a field_serializer for this field
+        @field_serializer(field_name, when_used="json")
+        def serialize_field(value: Any) -> Any:
+            return serializer_func(value)
 
-        if field_name:
-            # Create a field_serializer for this field
-            @field_serializer(field_name, when_used="json")
-            def serialize_field(value: Any) -> Any:
-                return serializer_func(value)
-
-            # Attach the serializer to the class
-            setattr(cls, f"_serialize_{field_name}", serialize_field)
+        # Attach the serializer to the class
+        setattr(cls, f"_serialize_{field_name}", serialize_field)
 
         return cls
 
@@ -85,7 +76,7 @@ def create_serializer_for_type(
 
 
 def safe_serialize(obj: Any, default_serializer: Callable[[Any], Any] = str) -> Any:
-    """Safely serialize an object with fallback handling.
+    """Safely serialize an object with intelligent fallback handling.
 
     This function attempts to serialize an object using Pydantic's native
     serialization, and falls back to a custom serializer if that fails.
@@ -103,7 +94,27 @@ def safe_serialize(obj: Any, default_serializer: Callable[[Any], Any] = str) -> 
     # Try Pydantic serialization first
     if hasattr(obj, "model_dump"):
         try:
-            return obj.model_dump(mode="python")
+            return obj.model_dump(mode="json")
+        except Exception:
+            pass
+
+    # Try global registry for custom types
+    func = lookup_custom_serializer(obj)
+    if func:
+        try:
+            return func(obj)
+        except Exception:
+            pass
+
+    # Handle nested structures recursively
+    if isinstance(obj, dict):
+        try:
+            return {k: safe_serialize(v, default_serializer) for k, v in obj.items()}
+        except Exception:
+            pass
+    elif isinstance(obj, (list, tuple, set, frozenset)):
+        try:
+            return [safe_serialize(v, default_serializer) for v in obj]
         except Exception:
             pass
 
@@ -116,16 +127,146 @@ def safe_serialize(obj: Any, default_serializer: Callable[[Any], Any] = str) -> 
     except (TypeError, ValueError):
         pass
 
-    # Try global registry
+    # Fallback to default serializer with circular reference protection
+    try:
+        return default_serializer(obj)
+    except (RecursionError, Exception):
+        # Handle circular references and other serialization failures
+        return f"<{type(obj).__name__} circular>"
+
+
+def _serialize_for_key(obj: Any) -> Any:
+    """Best-effort conversion of arbitrary objects to cacheable structures for cache keys and robust serialization."""
+    if obj is None:
+        return None
+    from flujo.domain.models import PipelineContext
+
+    # Special handling for PipelineContext: exclude run_id
+    if isinstance(obj, PipelineContext):
+        try:
+            d = obj.model_dump(mode="json")
+            d.pop("run_id", None)
+            return {k: _serialize_for_key(v) for k, v in d.items()}
+        except (ValueError, RecursionError):
+            return f"<{type(obj).__name__} circular>"
+    # Special handling for Step: serialize agent by class name
+    if "Step" in str(type(obj)):
+        try:
+            d = obj.model_dump(mode="json")
+            if "agent" in d and d["agent"] is not None:
+                d["agent"] = type(d["agent"]).__name__
+            return {k: _serialize_for_key(v) for k, v in d.items()}
+        except (ValueError, RecursionError):
+            return f"<{type(obj).__name__} circular>"
+    # Always check BaseModel before list/tuple/set
+    if hasattr(obj, "model_dump"):
+        try:
+            d = obj.model_dump(mode="json")
+            if "run_id" in d:
+                d.pop("run_id", None)
+            result = {}
+            for k, v in d.items():
+                orig_v = getattr(obj, k, None)
+                if isinstance(v, str) and isinstance(orig_v, dict):
+                    # Serialize the original dict value directly (not wrapped)
+                    result[k] = {kk: _serialize_for_key(vv) for kk, vv in orig_v.items()}
+                else:
+                    result[k] = _serialize_for_key(v)
+            return result
+        except (ValueError, RecursionError):
+            # If model_dump fails, try to serialize manually by checking for custom serializers
+            try:
+                result_dict_fallback = {}
+                for field_name, field_value in obj.__dict__.items():
+                    if field_name.startswith("_"):
+                        continue
+                    func = lookup_custom_serializer(field_value)
+                    if func:
+                        try:
+                            serialized_value = func(field_value)
+                            result_dict_fallback[field_name] = serialized_value
+                        except Exception:
+                            result_dict_fallback[field_name] = _serialize_for_key(field_value)
+                    else:
+                        result_dict_fallback[field_name] = _serialize_for_key(field_value)
+                return result_dict_fallback
+            except Exception:
+                return f"<{type(obj).__name__} circular>"
+    if isinstance(obj, dict):
+        d = dict(obj)
+        if "run_id" in d and "initial_prompt" in d:
+            d.pop("run_id", None)
+        result_dict: dict[Any, Any] = {}
+        for k, v in d.items():
+            if isinstance(v, dict) or isinstance(v, (list, tuple, set, frozenset)):
+                result_dict[k] = _serialize_for_key(v)
+            else:
+                func = lookup_custom_serializer(v)
+                if func:
+                    try:
+                        serialized_value = func(v)
+                        result_dict[k] = serialized_value
+                        continue
+                    except Exception:
+                        pass
+                result_dict[k] = _serialize_for_key(v)
+        return result_dict
+    if isinstance(obj, (list, tuple, set, frozenset)):
+        result_list = []
+        for v in obj:
+            if isinstance(v, dict) or isinstance(v, (list, tuple, set, frozenset)):
+                result_list.append(_serialize_for_key(v))
+            else:
+                func = lookup_custom_serializer(v)
+                if func:
+                    try:
+                        serialized_value = func(v)
+                        result_list.append(serialized_value)
+                        continue
+                    except Exception:
+                        pass
+                result_list.append(_serialize_for_key(v))
+        return result_list
+    if callable(obj):
+        return (
+            f"{getattr(obj, '__module__', '<unknown>')}.{getattr(obj, '__qualname__', repr(obj))}"
+        )
+    # Handle strings that look like lists of model instances
+    if isinstance(obj, str) and ("Model(" in obj or "Context(" in obj) and "run_id=" in obj:
+        import re
+
+        result_str = re.sub(r"run_id='[^']*',?\s*", "", obj)
+        result_str = re.sub(r",\s*\)", ")", result_str)
+        return result_str
+    # --- Check global custom serializer registry for any other type ---
     func = lookup_custom_serializer(obj)
     if func:
         try:
-            return func(obj)
+            return _serialize_for_key(func(obj))
         except Exception:
             pass
-
-    # Fallback to default serializer
     try:
-        return default_serializer(obj)
+        import json
+
+        json.dumps(obj)
+        return obj
     except Exception:
         return repr(obj)
+
+
+def _serialize_list_for_key(obj_list: list[Any]) -> list[Any]:
+    """Helper function to serialize lists, ensuring BaseModel instances are converted to dicts."""
+    result_list: list[Any] = []
+    for v in obj_list:
+        if hasattr(v, "model_dump"):
+            d = v.model_dump(mode="json")
+            if "run_id" in d:
+                d.pop("run_id", None)
+            result_list.append({k: _serialize_for_key(val) for k, val in d.items()})
+        elif isinstance(v, dict):
+            result_list.append({k: _serialize_for_key(val) for k, val in v.items()})
+        elif isinstance(v, (list, tuple, set, frozenset)):
+            result_list.append(_serialize_list_for_key(list(v)))
+        else:
+            result_list.append(_serialize_for_key(v))
+    return result_list
