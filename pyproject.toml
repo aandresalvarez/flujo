@@ -43,7 +43,6 @@ dependencies = [
   "typer>=0.12",
   "rich>=13.7",
   "pydantic-evals>=0.0.47", # Added for Intelligent Evals
-  "orjson>=3.9.0",
   "aiosqlite>=0.21.0",
 ]
 
@@ -114,7 +113,6 @@ module = [
     "yaml",
     "sqlvalidator",
     "vcr",
-    "orjson",
     "logfire",
     "numpy"
 ]

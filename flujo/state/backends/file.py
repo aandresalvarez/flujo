@@ -6,7 +6,8 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Optional, cast
 
-from .base import StateBackend, _to_jsonable
+from .base import StateBackend
+from ...utils.serialization import safe_serialize
 
 
 class FileBackend(StateBackend):
@@ -19,8 +20,8 @@ class FileBackend(StateBackend):
 
     async def save_state(self, run_id: str, state: Dict[str, Any]) -> None:
         file_path = self.path / f"{run_id}.json"
-        # Use native Pydantic serialization for any Pydantic models in the state
-        serialized_state = {k: _to_jsonable(v) for k, v in state.items()}
+        # Use enhanced serialization for any Pydantic models in the state
+        serialized_state = {k: safe_serialize(v) for k, v in state.items()}
         data = json.dumps(serialized_state, default=str)
         async with self._lock:
             await asyncio.to_thread(self._atomic_write, file_path, data.encode())

@@ -5,6 +5,7 @@ from flujo.utils.serialization import (
     lookup_custom_serializer,
     _serialize_for_key,
 )
+import json
 
 
 # --- Recursive Serialization and Custom Serializer Application ---
@@ -28,13 +29,12 @@ class OuterModel(BaseModel):
 
 
 def test_recursive_custom_serialization():
-    """Test that custom serializers are applied recursively to nested models."""
     register_custom_serializer(Custom, custom_serializer)
     obj = OuterModel(nested=NestedModel(custom=Custom(42)))
-    d = _serialize_for_key(obj)
-    # Accept both string and dict outputs for custom field
-    nested_custom = d["nested"]["custom"]
-    assert nested_custom == "custom:42"
+    result = _serialize_for_key(obj)
+    expected = {"nested": {"custom": "custom:42"}}
+    assert result == expected, f"Got: {result}"
+    assert isinstance(json.dumps(result), str)
 
 
 # --- PipelineContext run_id Exclusion ---
@@ -44,12 +44,26 @@ class MyContext(PipelineContext):
 
 
 def test_run_id_exclusion():
-    """Test that run_id is excluded from PipelineContext serialization."""
     ctx = MyContext(initial_prompt="foo", extra="bar")
-    d = _serialize_for_key(ctx)
-    assert "run_id" not in d
-    assert d["initial_prompt"] == "foo"
-    assert d["extra"] == "bar"
+    result = _serialize_for_key(ctx)
+    # Required fields
+    assert "run_id" not in result
+    assert result["initial_prompt"] == "foo"
+    assert result["extra"] == "bar"
+    # Default fields: accept both container and string representation
+    for field, empty in [
+        ("scratchpad", {}),
+        ("hitl_history", []),
+        ("command_log", []),
+    ]:
+        val = result[field]
+        if isinstance(empty, dict):
+            assert val == {} or val == "{}"
+        elif isinstance(empty, list):
+            assert val == [] or val == "[]"
+    import json
+
+    assert isinstance(json.dumps(result), str)
 
 
 # --- Heterogeneous and Deeply Nested Structures ---
@@ -62,13 +76,16 @@ class B(BaseModel):
 
 
 def test_heterogeneous_list_serialization():
-    """Test that heterogeneous lists with models and primitives are handled correctly."""
     data = [A(x=1), B(y="foo"), 42, "bar"]
     result = [_serialize_for_key(v) for v in data]
-    assert result[0]["x"] in [1, "1"]
-    assert result[1]["y"] == "foo"
-    assert result[2] in [42, "42"]
+    # Accept both int and str for numeric fields
+    assert result[0]["x"] == 1 or result[0]["x"] == "1", f"Got: {result[0]}"
+    assert result[1] == {"y": "foo"}
+    assert result[2] == 42 or result[2] == "42"
     assert result[3] == "bar"
+    import json
+
+    assert isinstance(json.dumps(result), str)
 
 
 # --- Circular Reference Handling ---
@@ -82,19 +99,17 @@ Node.model_rebuild()
 
 
 def test_circular_reference_handling():
-    """Test that circular references are handled gracefully without infinite recursion."""
     a = Node(value=1)
     b = Node(value=2, next=a)
     a.next = b
-    d = safe_serialize(a)
-    assert isinstance(d, (dict, str))
-    if isinstance(d, str):
-        assert "circular" in d or "Node" in d
+    result = safe_serialize(a)
+    assert isinstance(result, (dict, str))
+    if isinstance(result, str):
+        assert "circular" in result or "Node" in result
 
 
 # --- Custom Serializer Registry Isolation ---
 def test_registry_isolation():
-    """Test that custom serializer registry is properly isolated between tests."""
     from flujo.utils.serialization import default_serializer_registry
 
     orig = default_serializer_registry.copy()
@@ -113,8 +128,6 @@ def test_registry_isolation():
 
 # --- Fallback for Unserializable Type ---
 def test_fallback_for_unserializable_type():
-    """Test that unserializable types fall back to safe string representation."""
-
     class Weird:
         pass
 
@@ -125,8 +138,6 @@ def test_fallback_for_unserializable_type():
 
 # --- Deep Nested Structure with Custom Types ---
 def test_deep_nested_custom_types():
-    """Test that deeply nested structures with custom types are handled correctly."""
-
     class DeepCustom:
         def __init__(self, value):
             self.value = value
@@ -137,33 +148,29 @@ def test_deep_nested_custom_types():
         level1: dict
         model_config = {"arbitrary_types_allowed": True}
 
-    nested_data = {"level1": {"level2": {"level3": DeepCustom(123)}}}
-
+    nested_data = {"level2": {"level3": DeepCustom(123)}}
     model = DeepNested(level1=nested_data)
     result = _serialize_for_key(model)
-    # Accept both string and dict outputs for deep custom field
-    # Traverse to the deepest value
-    level3 = result["level1"]["level1"]["level2"]["level3"]
-    assert level3 == "deep:123"
+    expected = {"level1": {"level2": {"level3": "deep:123"}}}
+    assert result == expected, f"Got: {result}"
+    assert isinstance(json.dumps(result), str)
 
 
 # --- Mixed Types in Lists and Dicts ---
 def test_mixed_types_in_containers():
-    """Test that lists and dicts with mixed types (models, primitives, custom) work correctly."""
-
     class MixedCustom:
         def __init__(self, name):
             self.name = name
 
     register_custom_serializer(MixedCustom, lambda obj: f"mixed:{obj.name}")
-
     mixed_list = [A(x=1), MixedCustom("test"), 42, "string", {"nested": B(y="nested")}]
-
     result = _serialize_for_key(mixed_list)
-    assert isinstance(result, list)
-    assert result[0]["x"] in [1, "1"]
+    # Accept both int and str for numeric fields
+    assert result[0]["x"] == 1 or result[0]["x"] == "1", f"Got: {result[0]}"
     assert result[1] == "mixed:test"
-    assert result[2] in [42, "42"]
+    assert result[2] == 42 or result[2] == "42"
     assert result[3] == "string"
-    assert isinstance(result[4], dict)
-    assert result[4]["nested"]["y"] == "nested"
+    assert result[4]["nested"] == {"y": "nested"}
+    import json
+
+    assert isinstance(json.dumps(result), str)

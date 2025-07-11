@@ -1067,11 +1067,12 @@ from flujo.utils import safe_serialize
 result = safe_serialize(complex_object)
 ```
 
-#### `serializable_field`
+#### `serializable_field` (Deprecated)
 
-Decorator to mark a field as serializable with a custom serializer.
+Decorator to mark a field as serializable with a custom serializer. **This function is deprecated due to fundamental design issues with Pydantic v2.**
 
 ```python
+# DEPRECATED - Use register_custom_serializer or manual field_serializer instead
 from flujo.utils import serializable_field
 from flujo.domain.models import BaseModel
 
@@ -1080,10 +1081,34 @@ class MyModel(BaseModel):
     complex_object: ComplexType
 ```
 
+**Recommended alternatives:**
+
+1. **Global Registry:**
+```python
+from flujo.utils import register_custom_serializer
+
+register_custom_serializer(ComplexType, lambda x: x.to_dict())
+
+class MyModel(BaseModel):
+    complex_object: ComplexType  # Uses global serializer
+```
+
+2. **Manual field_serializer:**
+```python
+from pydantic import field_serializer
+
+class MyModel(BaseModel):
+    complex_object: ComplexType
+
+    @field_serializer('complex_object', when_used='json')
+    def serialize_complex_object(self, value: ComplexType) -> dict:
+        return value.to_dict()
+```
+
 **Parameters:**
 - `serializer_func: Callable[[Any], Any]` - Function to serialize the field
 
-**Returns:** `Callable[[T], T]` - Decorator function
+**Returns:** `Callable[[T], T]` - Decorator function (deprecated)
 
 #### `create_serializer_for_type`
 
@@ -1103,6 +1128,28 @@ MyTypeSerializer = create_serializer_for_type(MyType, serialize_my_type)
 - `serializer_func: Callable[[Any], Any]` - Function that serializes the type
 
 **Returns:** `Callable[[Any], Any]` - A serializer function that handles the specific type
+
+#### `create_field_serializer`
+
+Create a field_serializer method for a specific field.
+
+```python
+from flujo.utils import create_field_serializer
+from pydantic import field_serializer
+
+class MyModel(BaseModel):
+    complex_field: ComplexType
+
+    @field_serializer('complex_field', when_used='json')
+    def serialize_complex_field(self, value: ComplexType) -> dict:
+        return create_field_serializer('complex_field', lambda x: x.to_dict())(value)
+```
+
+**Parameters:**
+- `field_name: str` - Name of the field to serialize
+- `serializer_func: Callable[[Any], Any]` - Function that serializes the field value
+
+**Returns:** `Callable[[Any], Any]` - A serializer function that can be used within field_serializer methods
 
 ### Enhanced BaseModel
 

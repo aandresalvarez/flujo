@@ -18,9 +18,10 @@ class StateBackend(ABC):
 ## Tutorial: Redis Backend
 
 ```python
-import orjson
+import json
 import redis.asyncio as redis
 from flujo.state.backends.base import StateBackend
+from flujo.utils.serialization import safe_serialize
 
 class RedisBackend(StateBackend):
     def __init__(self, url: str) -> None:
@@ -34,42 +35,81 @@ class RedisBackend(StateBackend):
 
     async def save_state(self, run_id: str, state: dict) -> None:
         r = await self._conn()
-        await r.set(run_id, orjson.dumps(state))
+        # Use enhanced serialization for custom types
+        serialized_state = safe_serialize(state)
+        await r.set(run_id, json.dumps(serialized_state))
 
     async def load_state(self, run_id: str) -> dict | None:
         r = await self._conn()
         data = await r.get(run_id)
-        return orjson.loads(data) if data else None
+        return json.loads(data) if data else None
 
     async def delete_state(self, run_id: str) -> None:
         r = await self._conn()
         await r.delete(run_id)
 ```
 
-### Serializer Customization
+### Enhanced Serialization
 
-`StateBackend` constructors accept a ``serializer_default`` callable used with
-``orjson.dumps``. This lets you handle additional types:
+The enhanced serialization approach automatically handles custom types through the global registry:
 
 ```python
-def my_serializer(obj):
-    if isinstance(obj, MyModel):
+from flujo.utils import register_custom_serializer
+
+# Register custom serializers for your types
+def serialize_my_type(obj: MyCustomType) -> dict:
+    return {"id": obj.id, "name": obj.name}
+
+register_custom_serializer(MyCustomType, serialize_my_type)
+
+# Now your custom types are automatically serialized in state backends
+```
+
+### Custom Serialization for Specific Types
+
+If you need custom serialization for specific types in your backend:
+
+```python
+from flujo.utils import safe_serialize
+
+class CustomBackend(StateBackend):
+    async def save_state(self, run_id: str, state: dict) -> None:
+        # Use safe_serialize for robust handling of custom types
+        serialized = safe_serialize(state)
+        # Your storage logic here...
+```
+
+## Best Practices
+
+1. **Use `safe_serialize`**: This provides robust handling of custom types and nested structures
+2. **Register global serializers**: For application-wide custom types, use the global registry
+3. **Handle errors gracefully**: The enhanced serialization includes error handling and fallbacks
+4. **Test with complex objects**: Ensure your backend works with nested Pydantic models and custom types
+
+## Migration from orjson
+
+If you were previously using orjson, the enhanced serialization approach provides better compatibility:
+
+```python
+# Before (with orjson)
+import orjson
+
+def pydantic_default(obj):
+    if isinstance(obj, BaseModel):
         return obj.model_dump()
     raise TypeError
 
-backend = RedisBackend("redis://localhost:6379/0", serializer_default=my_serializer)
+serialized = orjson.dumps(state, default=pydantic_default)
+
+# After (with enhanced serialization)
+from flujo.utils import safe_serialize
+
+serialized = safe_serialize(state)
+json_string = json.dumps(serialized)
 ```
 
-Use your backend when creating a runner:
-
-```python
-backend = RedisBackend("redis://localhost:6379/0")
-runner = Flujo(
-    registry=registry,
-    pipeline_name="my_pipeline",
-    pipeline_version="1.0.0",
-    state_backend=backend,
-)
-```
-
-This pattern lets you integrate Flujo with any durable storage system.
+The enhanced approach provides:
+- **Better error handling**: Graceful fallbacks for unsupported types
+- **Global registry**: Consistent serialization across your application
+- **Automatic Pydantic support**: No need for custom default handlers
+- **Backward compatibility**: Works with existing code

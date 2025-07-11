@@ -54,7 +54,10 @@ def _serialize_for_key(obj: Any) -> Any:
         try:
             d = obj.model_dump(mode="json")
             if "agent" in d and d["agent"] is not None:
-                d["agent"] = type(d["agent"]).__name__
+                # Get the original agent object, not the serialized value
+                original_agent = getattr(obj, "agent", None)
+                if original_agent is not None:
+                    d["agent"] = type(original_agent).__name__
             return {k: _serialize_for_key(v) for k, v in d.items()}
         except (ValueError, RecursionError):
             return f"<{type(obj).__name__} circular>"

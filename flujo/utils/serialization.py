@@ -1,7 +1,7 @@
 """Serialization utilities for flujo."""
 
+import warnings
 from typing import Any, Callable, TypeVar, Type
-from pydantic import field_serializer
 
 T = TypeVar("T")
 
@@ -26,27 +26,74 @@ def lookup_custom_serializer(value: Any) -> Callable[[Any], Any] | None:
     return None
 
 
-def serializable_field(field_name: str, serializer_func: Callable[[Any], Any]) -> Callable[[T], T]:
-    """Decorator to mark a field as serializable with a custom serializer.
+def create_field_serializer(
+    field_name: str, serializer_func: Callable[[Any], Any]
+) -> Callable[[Any], Any]:
+    """Create a field_serializer method for a specific field.
 
-    This is a convenience decorator that creates a @field_serializer for a specific field.
+    This is a helper function that creates a field_serializer method that can be used
+    within a Pydantic model class.
 
     Example:
         class MyModel(BaseModel):
-            @serializable_field("complex_object", lambda x: x.to_dict())
             complex_object: ComplexType
+
+            @field_serializer('complex_object', when_used='json')
+            def serialize_complex_object(self, value: ComplexType) -> dict:
+                return create_field_serializer('complex_object', lambda x: x.to_dict())(value)
     """
 
-    def decorator(cls: T) -> T:
-        # Create a field_serializer for this field
-        @field_serializer(field_name, when_used="json")
-        def serialize_field(value: Any) -> Any:
-            return serializer_func(value)
+    def serialize_field(value: Any) -> Any:
+        return serializer_func(value)
 
-        # Attach the serializer to the class
-        setattr(cls, f"_serialize_{field_name}", serialize_field)
+    return serialize_field
 
-        return cls
+
+def serializable_field(serializer_func: Callable[[Any], Any]) -> Callable[[T], T]:
+    """Decorator to mark a field as serializable with a custom serializer.
+
+    DEPRECATED: This function has fundamental design issues with Pydantic v2.
+    Use register_custom_serializer() for global serialization or create field_serializer
+    methods manually for field-specific serialization.
+
+    This function was intended to work as a field decorator but doesn't integrate
+    properly with Pydantic's field_serializer system.
+
+    Recommended alternatives:
+    1. Global registry: register_custom_serializer(MyType, lambda x: x.to_dict())
+    2. Manual field_serializer: @field_serializer('field_name', when_used='json')
+    3. Use the global registry with model_dump(mode="json")
+
+    Example of proper usage:
+        # Instead of @serializable_field(lambda x: x.to_dict())
+        # Use the global registry:
+        register_custom_serializer(ComplexType, lambda x: x.to_dict())
+
+        class MyModel(BaseModel):
+            complex_object: ComplexType  # Will use global serializer
+    """
+    warnings.warn(
+        "serializable_field is deprecated due to fundamental design issues with Pydantic v2. "
+        "Use register_custom_serializer() for global serialization or create field_serializer "
+        "methods manually for field-specific serialization.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+
+    def decorator(field: T) -> T:
+        # This doesn't actually work with Pydantic v2, but we'll try to provide
+        # some basic functionality for backward compatibility
+        field_name = getattr(field, "__name__", None)
+        if field_name is None:
+            raise ValueError(
+                "serializable_field must be used as a field decorator, not a class decorator. "
+                "However, this approach is deprecated. Use register_custom_serializer() instead."
+            )
+
+        # Store the serializer function for potential later use
+        setattr(field, "_serializer_func", serializer_func)
+
+        return field
 
     return decorator
 
@@ -154,7 +201,10 @@ def _serialize_for_key(obj: Any) -> Any:
         try:
             d = obj.model_dump(mode="json")
             if "agent" in d and d["agent"] is not None:
-                d["agent"] = type(d["agent"]).__name__
+                # Get the original agent object, not the serialized value
+                original_agent = getattr(obj, "agent", None)
+                if original_agent is not None:
+                    d["agent"] = type(original_agent).__name__
             return {k: _serialize_for_key(v) for k, v in d.items()}
         except (ValueError, RecursionError):
             return f"<{type(obj).__name__} circular>"

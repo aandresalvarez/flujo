@@ -3,38 +3,58 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional, List
 
+from ...utils.serialization import safe_serialize
+
 
 def _to_jsonable(obj: object) -> object:
     """Convert an object to a JSON-serializable format.
 
     This function handles Pydantic models and nested structures by converting
     them to dictionaries and lists that can be serialized to JSON.
+
+    DEPRECATED: Use safe_serialize from flujo.utils.serialization instead.
+    This function is kept for backward compatibility.
     """
-    if hasattr(obj, "model_dump"):
-        return obj.model_dump(mode="json")
-    if isinstance(obj, dict):
-        return {k: _to_jsonable(v) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple, set, frozenset)):
-        return [_to_jsonable(v) for v in obj]
-    return obj
+    return safe_serialize(obj)
 
 
 class StateBackend(ABC):
-    """Abstract base class for state backends."""
+    """Abstract base class for state backends.
+
+    State backends are responsible for persisting and retrieving workflow state.
+    They handle serialization of complex objects automatically using the enhanced
+    serialization utilities.
+    """
 
     @abstractmethod
     async def save_state(self, run_id: str, state: Dict[str, Any]) -> None:
-        """Save state for a run."""
+        """Save workflow state.
+
+        Args:
+            run_id: Unique identifier for the workflow run
+            state: Dictionary containing workflow state data
+        """
         pass
 
     @abstractmethod
     async def load_state(self, run_id: str) -> Optional[Dict[str, Any]]:
-        """Load state for a run."""
+        """Load workflow state.
+
+        Args:
+            run_id: Unique identifier for the workflow run
+
+        Returns:
+            Dictionary containing workflow state data, or None if not found
+        """
         pass
 
     @abstractmethod
     async def delete_state(self, run_id: str) -> None:
-        """Delete state for a run."""
+        """Delete workflow state.
+
+        Args:
+            run_id: Unique identifier for the workflow run
+        """
         pass
 
     # Optional: Observability/admin methods (default: NotImplemented)

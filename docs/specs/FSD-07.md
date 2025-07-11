@@ -16,8 +16,8 @@ This document specifies critical improvements to Flujo's state management and da
 This initiative will deliver a more powerful and developer-friendly state management system by implementing three core enhancements:
 
 1. **Introduce a first-class `run_id` parameter** to the `Flujo.run_async()` and `Flujo.run()` methods, creating an explicit and intuitive API for controlling stateful executions.
-2. **Enhance Flujo's `orjson` serialization layer** to automatically handle nested, user-defined Pydantic models and other common Python types (e.g., `datetime`), resolving `TypeError` exceptions during state persistence.
-3. **Provide an extensible configuration point** for advanced users to supply custom serialization logic.
+2. **Enhance Flujo's serialization layer** to automatically handle nested, user-defined Pydantic models and other common Python types (e.g., `datetime`), resolving `TypeError` exceptions during state persistence.
+3. **Provide an extensible configuration point** for advanced users to supply custom serialization logic through a global registry.
 
 These changes will address major friction points in the framework, making the creation of durable, long-running agentic workflows significantly more reliable and straightforward for all users.
 
@@ -26,7 +26,7 @@ These changes will address major friction points in the framework, making the cr
 Developers building stateful applications with Flujo currently face two significant hurdles:
 
 1. **Implicit and Unintuitive `run_id` Management:** To make a pipeline run resumable, a developer must discover and use an implicit convention: passing a `run_id` within the `initial_context_data` dictionary, which then must be correctly mapped to a `run_id` field in a custom `PipelineContext` model. The primary execution methods, `run()` and `run_async()`, offer no direct parameter for this purpose. This lack of an explicit API makes a critical feature difficult to use and prone to implementation errors.
-2. **Brittle State Serialization:** Flujo's state backends use `orjson` for serialization but lack a comprehensive `default` handler. Consequently, when a developer stores a standard application object—like an instance of a custom Pydantic model—in the `PipelineContext` (e.g., in the `scratchpad`), the serialization process fails with a `TypeError`. This forces developers to manually convert all complex objects to JSON-native types before they can be persisted, adding significant boilerplate and complexity to their application logic.
+2. **Brittle State Serialization:** Flujo's state backends use enhanced serialization but lack comprehensive handling for custom types. Consequently, when a developer stores a standard application object—like an instance of a custom Pydantic model—in the `PipelineContext` (e.g., in the `scratchpad`), the serialization process may fail with a `TypeError`. This forces developers to manually convert all complex objects to JSON-native types before they can be persisted, adding significant boilerplate and complexity to their application logic.
 
 ### **3. Functional Requirements (FR)**
 
@@ -35,23 +35,119 @@ Developers building stateful applications with Flujo currently face two signific
 | FR-17 | The `Flujo.run()` and `Flujo.run_async()` methods **SHALL** accept an optional `run_id: str` keyword argument. | Provides an explicit, discoverable API for initiating or resuming workflows. |
 | FR-17a | If a `run_id` is provided, the Flujo runner **SHALL** automatically attempt to load and resume the workflow state associated with that ID. | Automates resumable execution. |
 | FR-17b | If a `run_id` is provided, it **SHALL** populate the `run_id` field in the `PipelineContext` object at the start of the run. | Simplifies context management. |
-| FR-18 | Flujo's `StateBackend` implementations **SHALL** automatically serialize nested, user-defined Pydantic models and other common Python data types when persisting state. | Fixes serialization failures. |
-| FR-18a | The serialization process **SHALL** use `.model_dump(mode='json')` for Pydantic models and ISO format for `datetime` objects. | Ensures fidelity and compatibility. |
-| FR-19 | `StateBackend` initializers **SHALL** accept an optional `serializer_default: Callable` argument. | Provides an extension point for custom serialization logic. |
+| FR-18 | Flujo's `StateBackend` implementations **SHALL** automatically serialize nested, user-defined Pydantic models and other common Python data types when persisting state using the enhanced serialization utilities. | Fixes serialization failures. |
+| FR-19 | Flujo **SHALL** provide a global custom serializer registry that allows developers to register custom serialization logic for application-specific types. | Enables extensible serialization. |
+| FR-20 | Flujo **SHALL** provide a `safe_serialize` utility function that handles serialization with intelligent fallbacks and error recovery. | Ensures robust serialization. |
 
-### **4. Technical Design & Implementation Plan**
+### **4. Technical Design**
 
-1. **Update Runner API** – Add `run_id` parameters to `Flujo.run` and `run_async`. When provided, this ID is used to load and save workflow state through `StateManager`.
-2. **Default Serialization Handler** – Implement `flujo.state.serialization.flujo_default_serializer` that handles Pydantic models, `datetime`, and `Enum` values. All backends use this handler by default when calling `orjson.dumps`.
-3. **Custom Serializer Hook** – `StateBackend.__init__` accepts a `serializer_default` callable allowing users to override the default handler.
+#### **4.1 Enhanced Serialization Architecture**
 
-### **5. Acceptance Criteria**
+The enhanced serialization system will provide:
 
-* **AC-17** – `Flujo.run` and `Flujo.run_async` accept `run_id`. Resuming a run with the same ID correctly continues execution.
-* **AC-18** – Nested Pydantic models placed in the pipeline context can be persisted to the SQLite backend without errors.
-* **AC-19** – Passing a custom `serializer_default` to a backend is used during serialization.
+1. **Global Custom Serializer Registry**: A centralized registry for custom serialization logic
+2. **Safe Serialization Utility**: A robust serialization function with intelligent fallbacks
+3. **Automatic Type Handling**: Built-in support for common Python types (datetime, complex, sets, etc.)
+4. **Backward Compatibility**: Existing code continues to work without changes
 
-### **6. Risks & Mitigation**
+#### **4.2 API Design**
 
-* **State Schema Changes** – Persisted state schemas may evolve; migrations must be documented.
-* **Serialization Coverage** – Exotic types may still raise `TypeError`. Users can provide a custom handler via `serializer_default`.
+**Global Registry API:**
+```python
+from flujo.utils import register_custom_serializer, safe_serialize
+
+# Register custom serializers
+register_custom_serializer(MyCustomType, lambda x: x.to_dict())
+
+# Use safe serialization
+serialized = safe_serialize(complex_object)
+```
+
+**State Backend Integration:**
+```python
+from flujo.utils import safe_serialize
+
+class CustomBackend(StateBackend):
+    async def save_state(self, run_id: str, state: Dict[str, Any]) -> None:
+        serialized = safe_serialize(state)
+        # Storage logic...
+```
+
+#### **4.3 Migration Strategy**
+
+1. **Phase 1**: Implement enhanced serialization utilities
+2. **Phase 2**: Update state backends to use enhanced serialization
+3. **Phase 3**: Update documentation and examples
+4. **Phase 4**: Deprecate old serialization approaches
+
+### **5. Implementation Plan**
+
+#### **5.1 Core Serialization Utilities**
+
+- [ ] Implement `register_custom_serializer` function
+- [ ] Implement `safe_serialize` function with fallbacks
+- [ ] Add global registry for custom serializers
+- [ ] Implement automatic type handling for common Python types
+
+#### **5.2 State Backend Updates**
+
+- [ ] Update `FileBackend` to use enhanced serialization
+- [ ] Update `SQLiteBackend` to use enhanced serialization
+- [ ] Update `MemoryBackend` to use enhanced serialization
+- [ ] Update base `StateBackend` class
+
+#### **5.3 Documentation and Examples**
+
+- [ ] Update API documentation
+- [ ] Create migration guides
+- [ ] Update examples to use enhanced serialization
+- [ ] Add troubleshooting guides
+
+### **6. Testing Strategy**
+
+#### **6.1 Unit Tests**
+
+- [ ] Test global registry functionality
+- [ ] Test `safe_serialize` with various object types
+- [ ] Test state backend serialization
+- [ ] Test backward compatibility
+
+#### **6.2 Integration Tests**
+
+- [ ] Test end-to-end workflow serialization
+- [ ] Test custom type serialization in state backends
+- [ ] Test error handling and recovery
+
+#### **6.3 Performance Tests**
+
+- [ ] Benchmark serialization performance
+- [ ] Compare with previous serialization approaches
+- [ ] Test memory usage with large objects
+
+### **7. Success Criteria**
+
+1. **Functionality**: All existing workflows continue to work without changes
+2. **Performance**: Serialization performance is comparable to or better than previous approaches
+3. **Usability**: Developers can easily register custom serializers for their types
+4. **Reliability**: Serialization errors are handled gracefully with meaningful error messages
+5. **Documentation**: Comprehensive documentation and examples are provided
+
+### **8. Risks and Mitigation**
+
+| Risk | Impact | Mitigation |
+| :--- | :--- | :--- |
+| Breaking changes to existing code | High | Maintain backward compatibility and provide migration guides |
+| Performance degradation | Medium | Benchmark and optimize serialization performance |
+| Complex custom serialization logic | Low | Provide clear documentation and examples |
+| Memory usage with large objects | Medium | Implement efficient serialization algorithms |
+
+### **9. Future Enhancements**
+
+1. **Compression**: Add optional compression for large state objects
+2. **Encryption**: Add optional encryption for sensitive state data
+3. **Caching**: Add serialization result caching for performance
+4. **Validation**: Add schema validation for serialized state data
+
+### **10. Conclusion**
+
+The enhanced serialization approach provides a robust, extensible, and backward-compatible solution for handling complex object serialization in Flujo. This will significantly improve the developer experience and reduce the complexity of building stateful applications with custom types.

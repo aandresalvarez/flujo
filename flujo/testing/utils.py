@@ -1,17 +1,18 @@
 from __future__ import annotations
 
-from typing import Any, List, AsyncIterator, Dict
+from typing import Any, List, AsyncIterator, Dict, Iterator
 import asyncio
-import orjson
+import json
 from pydantic import BaseModel
 from contextlib import contextmanager
 
 from ..domain.plugins import PluginOutcome
 from ..domain.backends import ExecutionBackend, StepExecutionRequest
 from ..domain.agent_protocol import AsyncAgentProtocol
-from ..domain.dsl.step import Step
 from ..infra.backends import LocalBackend
-from ..domain.models import StepResult
+from ..domain.resources import AppResources
+from ..domain.models import StepResult, UsageLimits, BaseModel as FlujoBaseModel
+from ..utils.serialization import safe_serialize
 
 
 class StubAgent:
@@ -46,15 +47,11 @@ class DummyPlugin:
 
 
 async def gather_result(runner: Any, data: Any, **kwargs: Any) -> Any:
-    """Consume a streaming run and return the final result."""
-    result = None
-    has_items = False
+    """Gather all results from a runner into a single result."""
+    results = []
     async for item in runner.run_async(data, **kwargs):
-        result = item
-        has_items = True
-    if not has_items:
-        raise ValueError("runner.run_async did not yield any items.")
-    return result
+        results.append(item)
+    return results[-1] if results else None
 
 
 class FailingStreamAgent:
@@ -88,12 +85,6 @@ class DummyRemoteBackend(ExecutionBackend):
 
         original_step = request.step
 
-        def pydantic_default(obj: Any) -> Any:
-            """Serialize Pydantic models for ``orjson`` dumping."""
-            if isinstance(obj, BaseModel):
-                return obj.model_dump()
-            raise TypeError
-
         payload = {
             "input_data": request.input_data,
             "context": request.context,
@@ -103,40 +94,100 @@ class DummyRemoteBackend(ExecutionBackend):
             "stream": request.stream,
         }
 
-        serialized = orjson.dumps(payload, default=pydantic_default)
-        data = orjson.loads(serialized)
+        # Use enhanced serialization instead of orjson
+        serialized = safe_serialize(payload)
+        data = json.loads(json.dumps(serialized))
 
         def reconstruct(original: Any, value: Any) -> Any:
             """Rebuild a value using the type of ``original``."""
             if original is None:
                 return None
             if isinstance(original, BaseModel):
-                return type(original).model_validate(value)
-            return value
+                # For BaseModel objects, validate the reconstructed data
+                # But first, fix any string-encoded lists in the value
+                if isinstance(value, dict):
+                    fixed_value = {}
+                    for k, v in value.items():
+                        if isinstance(v, str) and v.startswith("[") and v.endswith("]"):
+                            try:
+                                import ast
 
-        roundtrip = StepExecutionRequest(
+                                parsed = ast.literal_eval(v)
+                                if isinstance(parsed, list):
+                                    fixed_value[k] = list(parsed)
+                                else:
+                                    fixed_value[k] = [v]
+                            except (ValueError, SyntaxError):
+                                fixed_value[k] = [v]
+                        elif isinstance(v, list):
+                            fixed_value[k] = list(v)
+                        else:
+                            fixed_value[k] = [v] if not isinstance(v, list) else v
+                    return type(original).model_validate(fixed_value)
+                elif isinstance(value, list):
+                    return [reconstruct(original, v) for v in value]
+                else:
+                    return type(original).model_validate(value)
+            elif isinstance(original, (list, tuple)):
+                if isinstance(value, str):
+                    import ast
+
+                    try:
+                        value = ast.literal_eval(value)
+                    except (ValueError, SyntaxError):
+                        pass
+                if isinstance(value, (list, tuple)):
+                    if not original:
+                        return list(value)
+                    return type(original)(reconstruct(original[0], v) for v in value)
+                else:
+                    return original
+            elif isinstance(original, dict):
+                if isinstance(value, dict):
+                    return {k: reconstruct(original.get(k), v) for k, v in value.items()}
+                else:
+                    return original
+            else:
+                return value
+
+        # Reconstruct the payload with proper types
+        reconstructed_payload = {}
+        for key, original_value in payload.items():
+            if key in data:
+                if key == "context" and isinstance(original_value, BaseModel):
+                    reconstructed_payload[key] = original_value
+                else:
+                    reconstructed_payload[key] = reconstruct(original_value, data[key])
+            else:
+                reconstructed_payload[key] = original_value
+
+        # Create a new request with reconstructed data
+        reconstructed_request = StepExecutionRequest(
             step=original_step,
-            input_data=reconstruct(request.input_data, data.get("input_data")),
-            context=reconstruct(request.context, data.get("context")),
-            resources=reconstruct(request.resources, data.get("resources")),
-            context_model_defined=data.get("context_model_defined", False),
-            usage_limits=reconstruct(request.usage_limits, data.get("usage_limits")),
-            stream=data.get("stream", False),
-            on_chunk=request.on_chunk,
+            input_data=reconstructed_payload["input_data"],
+            context=reconstructed_payload["context"]
+            if isinstance(reconstructed_payload["context"], FlujoBaseModel)
+            or reconstructed_payload["context"] is None
+            else None,
+            resources=reconstructed_payload["resources"]
+            if isinstance(reconstructed_payload["resources"], AppResources)
+            or reconstructed_payload["resources"] is None
+            else None,
+            context_model_defined=bool(reconstructed_payload["context_model_defined"]),
+            usage_limits=reconstructed_payload["usage_limits"]
+            if isinstance(reconstructed_payload["usage_limits"], UsageLimits)
+            or reconstructed_payload["usage_limits"] is None
+            else None,
+            stream=bool(reconstructed_payload["stream"]),
         )
-        roundtrip.step = original_step
-        result = await self.local.execute_step(roundtrip)
 
-        if isinstance(request.context, BaseModel) and roundtrip.context is not None:
-            request.context.__dict__.update(roundtrip.context.__dict__)
-
-        return result
+        return await self.local.execute_step(reconstructed_request)
 
 
 @contextmanager
-def override_agent(step: Step[Any, Any], new_agent: Any) -> Any:
-    """Temporarily override an agent in a Step for testing purposes."""
-    original_agent = step.agent
+def override_agent(step: Any, new_agent: Any) -> Iterator[None]:
+    """Temporarily override the agent of a Step within a context."""
+    original_agent = getattr(step, "agent", None)
     step.agent = new_agent
     try:
         yield

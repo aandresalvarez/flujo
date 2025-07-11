@@ -10,7 +10,6 @@ import asyncio
 import random
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, Any
 
 from flujo.state import SQLiteBackend
 
@@ -118,12 +117,12 @@ async def demonstrate_statistics(backend: SQLiteBackend) -> None:
 
     stats = await backend.get_workflow_stats()
 
-    print(f"\n📊 Overall Statistics:")
+    print("\n📊 Overall Statistics:")
     print(f"  Total workflows: {stats['total_workflows']}")
     print(f"  Recent workflows (24h): {stats['recent_workflows_24h']}")
     print(f"  Average execution time: {stats['average_execution_time_ms']:.1f}ms")
 
-    print(f"\n📈 Status Breakdown:")
+    print("\n📈 Status Breakdown:")
     for status, count in stats['status_counts'].items():
         percentage = (count / stats['total_workflows']) * 100
         print(f"  {status.capitalize()}: {count} ({percentage:.1f}%)")
@@ -160,7 +159,7 @@ async def demonstrate_failed_workflow_analysis(backend: SQLiteBackend) -> None:
             error_groups[error] = []
         error_groups[error].append(wf)
 
-    print(f"\n📋 Error Analysis:")
+    print("\n📋 Error Analysis:")
     for error, workflows in error_groups.items():
         print(f"\n  Error: {error}")
         print(f"  Occurrences: {len(workflows)}")

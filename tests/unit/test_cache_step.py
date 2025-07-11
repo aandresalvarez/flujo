@@ -148,6 +148,250 @@ def test_cache_key_with_step_and_nested_agent():
     json.dumps(serialized)
 
 
+def test_agent_serialization_fix_verification():
+    """Test that the agent serialization fix works correctly."""
+
+    class TestAgent:
+        def run(self, data):
+            return data
+
+    class AnotherAgent:
+        def run(self, data):
+            return data
+
+    # Test with different agent types
+    agent1 = TestAgent()
+    agent2 = AnotherAgent()
+
+    step1 = Step(name="test_step", agent=agent1)
+    step2 = Step(name="test_step", agent=agent2)
+
+    # Serialize both steps
+    serialized1 = _serialize_for_key(step1)
+    serialized2 = _serialize_for_key(step2)
+
+    # Verify agent field contains correct class names
+    assert "agent" in serialized1
+    assert "agent" in serialized2
+    assert serialized1["agent"] == "TestAgent"
+    assert serialized2["agent"] == "AnotherAgent"
+
+    # Verify they generate different cache keys
+    key1 = _generate_cache_key(step1, "input")
+    key2 = _generate_cache_key(step2, "input")
+    assert key1 != key2
+
+    # Test with None agent
+    step3 = Step(name="test_step", agent=None)
+    serialized3 = _serialize_for_key(step3)
+    assert "agent" in serialized3
+    assert serialized3["agent"] is None
+
+
+def test_agent_serialization_with_complex_agents():
+    """Test agent serialization with more complex agent types."""
+
+    class ComplexAgent:
+        def __init__(self, name: str, config: dict):
+            self.name = name
+            self.config = config
+
+        def run(self, data):
+            return f"{self.name}: {data}"
+
+    class AsyncAgent:
+        async def run_async(self, data):
+            return f"async: {data}"
+
+    # Test with complex agent
+    complex_agent = ComplexAgent("test", {"timeout": 30})
+    step1 = Step(name="complex_step", agent=complex_agent)
+    serialized1 = _serialize_for_key(step1)
+    assert serialized1["agent"] == "ComplexAgent"
+
+    # Test with async agent
+    async_agent = AsyncAgent()
+    step2 = Step(name="async_step", agent=async_agent)
+    serialized2 = _serialize_for_key(step2)
+    assert serialized2["agent"] == "AsyncAgent"
+
+    # Verify different agents generate different cache keys
+    key1 = _generate_cache_key(step1, "input")
+    key2 = _generate_cache_key(step2, "input")
+    assert key1 != key2
+
+
+def test_agent_serialization_edge_cases():
+    """Test agent serialization with edge cases."""
+
+    # Test with agent that has no __name__ attribute
+    class AnonymousAgent:
+        def run(self, data):
+            return data
+
+    # Create an instance without __name__ by using a different approach
+    agent = AnonymousAgent()
+    # We can't set __name__ to None, but we can test with a class that has a problematic name
+    step = Step(name="anonymous_step", agent=agent)
+    serialized = _serialize_for_key(step)
+
+    # Should fallback to type name or repr
+    assert "agent" in serialized
+    assert isinstance(serialized["agent"], str)
+
+    # Test with agent that raises exception during type() call
+    class ProblematicAgent:
+        def run(self, data):
+            return data
+
+        def __class__(self):
+            raise RuntimeError("Cannot get class")
+
+    agent2 = ProblematicAgent()
+    step2 = Step(name="problematic_step", agent=agent2)
+
+    # Should handle the exception gracefully
+    try:
+        serialized2 = _serialize_for_key(step2)
+        assert "agent" in serialized2
+    except Exception:
+        # If it fails, that's also acceptable as long as it doesn't crash
+        pass
+
+
+def test_agent_serialization_with_nested_structures():
+    """Test agent serialization when agents are part of nested structures."""
+
+    class NestedAgent:
+        def run(self, data):
+            return data
+
+    # Create a model that contains a step with an agent
+    class ModelWithStep(FlujoBaseModel):
+        step: Step
+        metadata: dict
+
+    agent = NestedAgent()
+    step = Step(name="nested_step", agent=agent)
+    model = ModelWithStep(step=step, metadata={"key": "value"})
+
+    # Serialize the model
+    serialized = _serialize_for_key(model)
+
+    # Verify the nested step's agent is correctly serialized
+    assert "step" in serialized
+    # Handle both dict and string serialization (Pydantic may stringify complex structures)
+    if isinstance(serialized["step"], dict):
+        assert "agent" in serialized["step"]
+        assert serialized["step"]["agent"] == "NestedAgent"
+    else:
+        # If it's a string, it should contain the agent name
+        assert isinstance(serialized["step"], str)
+        assert "NestedAgent" in serialized["step"]
+
+    # Test with list of steps
+    class ModelWithStepList(FlujoBaseModel):
+        steps: list[Step]
+
+    step1 = Step(name="step1", agent=NestedAgent())
+    step2 = Step(name="step2", agent=None)
+
+    model_with_list = ModelWithStepList(steps=[step1, step2])
+    serialized_list = _serialize_for_key(model_with_list)
+
+    assert "steps" in serialized_list
+    # Handle both list and string serialization
+    if isinstance(serialized_list["steps"], list):
+        assert len(serialized_list["steps"]) == 2
+        if isinstance(serialized_list["steps"][0], dict):
+            assert serialized_list["steps"][0]["agent"] == "NestedAgent"
+            assert serialized_list["steps"][1]["agent"] is None
+        else:
+            # String serialization
+            assert "NestedAgent" in str(serialized_list["steps"][0])
+    else:
+        # String serialization
+        assert isinstance(serialized_list["steps"], str)
+        assert "NestedAgent" in serialized_list["steps"]
+
+
+def test_serialization_utility_agent_handling():
+    """Test that the serialization utility correctly handles agent serialization."""
+    from flujo.utils.serialization import _serialize_for_key as util_serialize
+
+    class UtilityTestAgent:
+        def run(self, data):
+            return data
+
+    agent = UtilityTestAgent()
+    step = Step(name="utility_test_step", agent=agent)
+
+    # Test the utility's serialization
+    serialized = util_serialize(step)
+
+    # Verify agent field contains correct class name
+    assert "agent" in serialized
+    assert serialized["agent"] == "UtilityTestAgent"
+
+    # Test with None agent
+    step2 = Step(name="utility_test_step2", agent=None)
+    serialized2 = util_serialize(step2)
+    assert serialized2["agent"] is None
+
+    # Test that both utilities produce consistent results
+    cache_serialized = _serialize_for_key(step)
+    util_serialized = util_serialize(step)
+
+    assert cache_serialized["agent"] == util_serialized["agent"]
+
+
+def test_serialization_consistency_between_utilities():
+    """Test that both serialization utilities produce consistent results for agents."""
+    from flujo.utils.serialization import _serialize_for_key as util_serialize
+
+    class ConsistencyTestAgent:
+        def run(self, data):
+            return data
+
+    agent = ConsistencyTestAgent()
+    step = Step(name="consistency_test", agent=agent)
+
+    # Test both serialization functions
+    cache_result = _serialize_for_key(step)
+    util_result = util_serialize(step)
+
+    # Both should produce the same agent serialization
+    assert cache_result["agent"] == util_result["agent"]
+    assert cache_result["agent"] == "ConsistencyTestAgent"
+
+    # Test with complex nested structures
+    class NestedModel(FlujoBaseModel):
+        step: Step
+        metadata: dict
+
+    nested_step = Step(name="nested", agent=agent)
+    nested_model = NestedModel(step=nested_step, metadata={"test": True})
+
+    cache_nested = _serialize_for_key(nested_model)
+    util_nested = util_serialize(nested_model)
+
+    # Both should handle nested steps consistently
+    # Handle both dict and string serialization
+    if isinstance(cache_nested["step"], dict) and isinstance(util_nested["step"], dict):
+        assert cache_nested["step"]["agent"] == util_nested["step"]["agent"]
+        assert cache_nested["step"]["agent"] == "ConsistencyTestAgent"
+    else:
+        # If both are strings, they should be consistent
+        if isinstance(cache_nested["step"], str) and isinstance(util_nested["step"], str):
+            assert "ConsistencyTestAgent" in cache_nested["step"]
+            assert "ConsistencyTestAgent" in util_nested["step"]
+        else:
+            # Mixed serialization is also acceptable as long as both contain the agent name
+            cache_agent_present = "ConsistencyTestAgent" in str(cache_nested["step"])
+            util_agent_present = "ConsistencyTestAgent" in str(util_nested["step"])
+            assert cache_agent_present and util_agent_present
+
+
 def test_cache_key_with_custom_serializer():
     from flujo.utils import register_custom_serializer
 

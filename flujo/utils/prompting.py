@@ -1,7 +1,8 @@
 import re
-import orjson
+import json
 from typing import Any, Dict
 from pydantic import BaseModel
+from .serialization import safe_serialize
 
 IF_BLOCK_REGEX = re.compile(r"\{\{#if\s*([^\}]+?)\s*\}\}(.*?)\{\{\/if\}\}", re.DOTALL)
 EACH_BLOCK_REGEX = re.compile(r"\{\{#each\s*([^\}]+?)\s*\}\}(.*?)\{\{\/each\}\}", re.DOTALL)
@@ -43,7 +44,9 @@ class AdvancedPromptFormatter:
         if isinstance(value, BaseModel):
             return value.model_dump_json()
         if isinstance(value, (dict, list)):
-            return str(orjson.dumps(value).decode())
+            # Use enhanced serialization instead of orjson
+            serialized = safe_serialize(value)
+            return json.dumps(serialized)
         return str(value)
 
     def format(self, **kwargs: Any) -> str:

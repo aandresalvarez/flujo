@@ -96,14 +96,39 @@ def serialize_my_type(obj: MyType) -> dict:
 MyTypeSerializer = create_serializer_for_type(MyType, serialize_my_type)
 ```
 
-### Field Decorator
+### Field Decorator (Deprecated)
 
 ```python
+# DEPRECATED - Use global registry or manual field_serializer instead
 from flujo.utils import serializable_field
 
 class MyModel(BaseModel):
     @serializable_field(lambda x: x.to_dict())
     complex_object: ComplexType
+```
+
+**Recommended alternatives:**
+
+1. **Global Registry:**
+```python
+from flujo.utils import register_custom_serializer
+
+register_custom_serializer(ComplexType, lambda x: x.to_dict())
+
+class MyModel(BaseModel):
+    complex_object: ComplexType  # Uses global serializer
+```
+
+2. **Manual field_serializer:**
+```python
+from pydantic import field_serializer
+
+class MyModel(BaseModel):
+    complex_object: ComplexType
+
+    @field_serializer('complex_object', when_used='json')
+    def serialize_complex_object(self, value: ComplexType) -> dict:
+        return value.to_dict()
 ```
 
 ## Automatic Type Handling

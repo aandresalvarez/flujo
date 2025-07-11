@@ -182,17 +182,44 @@ class MyModel(BaseModel):
         }
 ```
 
-## Using the Convenience Decorator
+## Using the Convenience Decorator (Deprecated)
 
-Flujo provides a convenience decorator for simpler field serialization:
+Flujo previously provided a convenience decorator for field serialization, but this approach has fundamental design issues with Pydantic v2 and is now deprecated:
 
 ```python
+# DEPRECATED - Don't use this approach
 from flujo.utils import serializable_field
 from flujo.domain.models import BaseModel
 
 class MyModel(BaseModel):
     @serializable_field(lambda x: x.to_dict())
     complex_object: ComplexType
+```
+
+**Recommended alternatives:**
+
+1. **Global Registry (Recommended):**
+```python
+from flujo.utils import register_custom_serializer
+
+# Register once, use everywhere
+register_custom_serializer(ComplexType, lambda x: x.to_dict())
+
+class MyModel(BaseModel):
+    complex_object: ComplexType  # Will use global serializer automatically
+```
+
+2. **Manual field_serializer:**
+```python
+from pydantic import field_serializer
+from flujo.domain.models import BaseModel
+
+class MyModel(BaseModel):
+    complex_object: ComplexType
+
+    @field_serializer('complex_object', when_used='json')
+    def serialize_complex_object(self, value: ComplexType) -> dict:
+        return value.to_dict()
 ```
 
 ## Creating Custom Serializers

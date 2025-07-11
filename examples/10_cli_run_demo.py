@@ -5,7 +5,7 @@ To try this example:
     flujo run examples/10_cli_run_demo.py --input "with context" --context-model DemoContext --context-data '{"counter": 10}'
 """
 
-from flujo import step, Pipeline
+from flujo import step
 from flujo.domain.models import PipelineContext
 from pydantic import Field
 

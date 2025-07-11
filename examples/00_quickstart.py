@@ -6,9 +6,7 @@ that can make decisions and use tools to accomplish goals.
 """
 
 import asyncio
-from typing import cast
 
-from flujo.domain.models import PipelineContext
 from flujo import make_agent_async, init_telemetry
 from flujo.recipes.factories import make_agentic_loop_pipeline, run_agentic_loop_pipeline
 from flujo.domain.commands import AgentCommand, FinishCommand, RunAgentCommand
@@ -54,27 +52,16 @@ pipeline = make_agentic_loop_pipeline(
 
 async def main():
     # Run the pipeline
-    result = await run_agentic_loop_pipeline(pipeline, "What is Python?")
-    print(f"Final result: {result}")
+    pipeline_result = await run_agentic_loop_pipeline(pipeline, "What is Python?")
+    print(f"Final result: {pipeline_result}")
+
+    # --- 3. Inspect the Results ---
+    if pipeline_result and pipeline_result.final_pipeline_context:
+        print("\n✅ Loop finished!")
+        final_context = pipeline_result.final_pipeline_context
+        print("\n--- Agent Transcript ---")
+        for log_entry in final_context.command_log:
+            print(log_entry)
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-# --- 3. Inspect the Results ---
-if result and result.final_pipeline_context:
-    print("\n✅ Loop finished!")
-    final_context = result.final_pipeline_context
-    print("\n--- Agent Transcript ---")
-    for log_entry in final_context.command_log:
-        command_type = log_entry.generated_command.type
-        print(f"Turn #{log_entry.turn}: Planner decided to '{command_type}'")
-        if isinstance(log_entry.generated_command, RunAgentCommand):
-            print(
-                f"   - Details: Run agent '{log_entry.generated_command.agent_name}' with input '{log_entry.generated_command.input_data}'"
-            )
-            print(f"   - Result: '{log_entry.execution_result}'")
-        elif isinstance(log_entry.generated_command, FinishCommand):
-            print(f"   - Final Answer: '{log_entry.execution_result}'")
-    print("----------------------")
-else:
-    print("\n❌ The loop failed to produce a result.")

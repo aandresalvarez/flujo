@@ -8,7 +8,7 @@ For more details, see docs/pipeline_context.md.
 """
 
 import asyncio
-from typing import Optional, cast, Type
+from typing import Optional, cast, Type, Any
 
 from flujo import Flujo, Step
 from flujo.models import PipelineResult
