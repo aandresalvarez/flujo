@@ -72,4 +72,9 @@ def __getattr__(name: str) -> Any:
 
         globals()[name] = HumanInTheLoopStep
         return HumanInTheLoopStep
+    if name == "DynamicParallelRouterStep":
+        from .dynamic_router import DynamicParallelRouterStep
+
+        globals()[name] = DynamicParallelRouterStep
+        return DynamicParallelRouterStep
     raise AttributeError(f"module 'flujo.domain.dsl' has no attribute '{name}'")

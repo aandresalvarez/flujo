@@ -18,6 +18,7 @@ from ...domain.dsl.step import (
     BranchKey,
     HumanInTheLoopStep,
 )
+from ...domain.dsl.dynamic_router import DynamicParallelRouterStep
 from ...domain.models import (
     BaseModel,
     PipelineResult,
@@ -56,6 +57,7 @@ __all__ = [
     "_execute_parallel_step_logic",
     "_execute_loop_step_logic",
     "_execute_conditional_step_logic",
+    "_execute_dynamic_router_step_logic",
     "_run_step_logic",
 ]
 
@@ -648,10 +650,74 @@ async def _execute_conditional_step_logic(
 
     conditional_overall_result.attempts = 1
     if executed_branch_key is not None:
-        conditional_overall_result.metadata_ = conditional_overall_result.metadata_ or {}
-        conditional_overall_result.metadata_["executed_branch_key"] = str(executed_branch_key)
+        conditional_overall_result.metadata_ = (
+            conditional_overall_result.metadata_ or {}
+        )
+        conditional_overall_result.metadata_["executed_branch_key"] = str(
+            executed_branch_key
+        )
 
     return conditional_overall_result
+
+
+async def _execute_dynamic_router_step_logic(
+    router_step: DynamicParallelRouterStep[TContext],
+    router_input: Any,
+    context: Optional[TContext],
+    resources: Optional[AppResources],
+    *,
+    step_executor: StepExecutor[TContext],
+    context_model_defined: bool,
+    usage_limits: UsageLimits | None = None,
+    context_setter: Callable[[PipelineResult[TContext], Optional[TContext]], None],
+) -> StepResult:
+    """Run router agent then execute selected branches in parallel."""
+
+    result = StepResult(name=router_step.name)
+    try:
+        raw = await router_step.router_agent.run(router_input, context=context, resources=resources)
+        branch_keys = getattr(raw, "output", raw)
+    except Exception as e:  # pragma: no cover - defensive
+        telemetry.logfire.error(f"Router agent error in '{router_step.name}': {e}")
+        result.success = False
+        result.feedback = f"Router agent error: {e}"
+        return result
+
+    if not isinstance(branch_keys, list):
+        branch_keys = [branch_keys]
+
+    selected = {k: v for k, v in router_step.branches.items() if k in branch_keys}
+    if not selected:
+        result.success = True
+        result.output = {}
+        result.attempts = 1
+        result.metadata_ = {"executed_branches": []}
+        return result
+
+    parallel_step = Step.parallel(
+        name=f"{router_step.name}_parallel",
+        branches=selected,
+        context_include_keys=router_step.context_include_keys,
+        merge_strategy=router_step.merge_strategy,
+        on_branch_failure=router_step.on_branch_failure,
+        **router_step.config.model_dump(),
+    )
+
+    parallel_result = await _execute_parallel_step_logic(
+        parallel_step,
+        router_input,
+        context,
+        resources,
+        step_executor=step_executor,
+        context_model_defined=context_model_defined,
+        usage_limits=usage_limits,
+        context_setter=context_setter,
+    )
+
+    parallel_result.name = router_step.name
+    parallel_result.metadata_ = parallel_result.metadata_ or {}
+    parallel_result.metadata_["executed_branches"] = list(branch_keys)
+    return parallel_result
 
 
 async def _run_step_logic(
@@ -715,6 +781,17 @@ async def _run_step_logic(
             step_executor=step_executor,
             context_model_defined=context_model_defined,
             usage_limits=usage_limits,
+        )
+    if isinstance(step, DynamicParallelRouterStep):
+        return await _execute_dynamic_router_step_logic(
+            step,
+            data,
+            context,
+            resources,
+            step_executor=step_executor,
+            context_model_defined=context_model_defined,
+            usage_limits=usage_limits,
+            context_setter=context_setter,
         )
     if isinstance(step, ParallelStep):
         return await _execute_parallel_step_logic(
