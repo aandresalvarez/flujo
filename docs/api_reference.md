@@ -368,7 +368,7 @@ def process_with_context(context: ContextT):
 
 #### `HookCallable`
 
-A type alias for an asynchronous callable that represents a lifecycle hook. Hooks receive a `HookPayload` object containing event-specific data.
+A type alias for an asynchronous callable that represents a lifecycle hook. Hooks receive a `HookPayload` object containing event-specific data. Raise `PipelineAbortSignal` from a hook to stop the run gracefully.
 
 ```python
 from flujo.domain.types import HookCallable
@@ -989,3 +989,361 @@ print(mermaid_code)
 ```
 
 See also: [Visualizing Pipelines](cookbook/visualizing_pipelines.md)
+
+## Serialization Utilities
+
+Flujo provides a comprehensive set of utilities for handling custom serialization scenarios.
+
+### Global Registry Functions
+
+#### `register_custom_serializer`
+
+Register a custom serializer for a specific type globally.
+
+```python
+from flujo.utils import register_custom_serializer
+
+def serialize_my_type(obj: MyType) -> Any:
+    return obj.to_dict()
+
+register_custom_serializer(MyType, serialize_my_type)
+```
+
+**Parameters:**
+- `obj_type: type` - The type to register a serializer for
+- `serializer_func: Callable[[Any], Any]` - Function that converts the type to a serializable format
+
+**Returns:** `None`
+
+**Example:**
+```python
+from datetime import datetime
+from flujo.utils import register_custom_serializer
+
+def serialize_datetime(dt: datetime) -> str:
+    return dt.strftime("%Y-%m-%d %H:%M:%S")
+
+register_custom_serializer(datetime, serialize_datetime)
+```
+
+#### `lookup_custom_serializer`
+
+Look up a registered serializer for a value's type.
+
+```python
+from flujo.utils import lookup_custom_serializer
+
+serializer = lookup_custom_serializer(value)
+if serializer:
+    result = serializer(value)
+```
+
+**Parameters:**
+- `value: Any` - The value to find a serializer for
+
+**Returns:** `Callable[[Any], Any] | None` - The registered serializer function, or None if not found
+
+#### `safe_serialize`
+
+Safely serialize an object with intelligent fallback handling.
+
+```python
+from flujo.utils import safe_serialize
+
+result = safe_serialize(obj, default_serializer=str)
+```
+
+**Parameters:**
+- `obj: Any` - The object to serialize
+- `default_serializer: Callable[[Any], Any]` - Function to use as fallback (default: `str`)
+
+**Returns:** `Any` - Serialized representation of the object
+
+**Example:**
+```python
+from flujo.utils import safe_serialize
+
+# Try Pydantic serialization first, then JSON, then fallback
+result = safe_serialize(complex_object)
+```
+
+#### `serializable_field`
+
+Decorator to mark a field as serializable with a custom serializer.
+
+```python
+from flujo.utils import serializable_field
+from flujo.domain.models import BaseModel
+
+class MyModel(BaseModel):
+    @serializable_field(lambda x: x.to_dict())
+    complex_object: ComplexType
+```
+
+**Parameters:**
+- `serializer_func: Callable[[Any], Any]` - Function to serialize the field
+
+**Returns:** `Callable[[T], T]` - Decorator function
+
+#### `create_serializer_for_type`
+
+Create a serializer function that handles a specific type.
+
+```python
+from flujo.utils import create_serializer_for_type
+
+def serialize_my_type(obj: MyType) -> dict:
+    return {"id": obj.id, "name": obj.name}
+
+MyTypeSerializer = create_serializer_for_type(MyType, serialize_my_type)
+```
+
+**Parameters:**
+- `obj_type: Type[Any]` - The type to create a serializer for
+- `serializer_func: Callable[[Any], Any]` - Function that serializes the type
+
+**Returns:** `Callable[[Any], Any]` - A serializer function that handles the specific type
+
+### Enhanced BaseModel
+
+The `BaseModel` in Flujo includes intelligent fallback serialization for common types:
+
+#### Automatic Type Handling
+
+The following types are automatically handled by the enhanced `BaseModel`:
+
+- **datetime objects**: Converted to ISO format strings
+- **Enum values**: Converted to the enum's value
+- **Complex numbers**: Converted to `{"real": x, "imag": y}` format
+- **Sets and frozensets**: Converted to lists
+- **Bytes and memoryview**: UTF-8 decoded to strings
+- **Callable objects**: Converted to module-qualified names
+- **Custom objects**: Dictionary representation or string representation
+
+#### Usage
+
+```python
+from flujo.domain.models import BaseModel
+from datetime import datetime
+from enum import Enum
+
+class Status(Enum):
+    PENDING = "pending"
+    COMPLETED = "completed"
+
+class MyModel(BaseModel):
+    timestamp: datetime
+    status: Status
+    custom_data: Any
+
+# Automatic serialization
+model = MyModel(
+    timestamp=datetime.now(),
+    status=Status.PENDING,
+    custom_data={"complex": "data"}
+)
+
+# Use JSON mode to trigger custom serialization
+serialized = model.model_dump(mode="json")
+```
+
+### Field Serializer Decorator
+
+For model-specific serialization, use Pydantic's `@field_serializer`:
+
+```python
+from pydantic import field_serializer
+from flujo.domain.models import BaseModel
+
+class MyModel(BaseModel):
+    custom_field: MyCustomType
+
+    @field_serializer('custom_field', when_used='json')
+    def serialize_custom_field(self, value: MyCustomType) -> dict:
+        return {
+            "data": value.data,
+            "metadata": value.metadata
+        }
+```
+
+**Parameters:**
+- `field_name: str` - Name of the field to serialize
+- `when_used: str` - When to use the serializer (e.g., 'json')
+
+**Returns:** `Callable[[Any], Any]` - The serialized value
+
+## Integration Examples
+
+### State Backend Integration
+
+Custom types are automatically handled in state backends:
+
+```python
+from flujo.state.backends.file import FileBackend
+from flujo.utils import register_custom_serializer
+
+class DatabaseConnection:
+    def __init__(self, host: str, port: int):
+        self.host = host
+        self.port = port
+
+def serialize_db_connection(conn: DatabaseConnection) -> dict:
+    return {"host": conn.host, "port": conn.port}
+
+register_custom_serializer(DatabaseConnection, serialize_db_connection)
+
+# State backends automatically use the global registry
+backend = FileBackend("/tmp/state")
+context = PipelineContext(db_connection=DatabaseConnection("localhost", 5432))
+# Custom types are automatically serialized when saving state
+```
+
+### Cache Integration
+
+Custom types in cache keys are automatically serialized:
+
+```python
+from flujo.steps.cache_step import CacheStep
+from flujo.utils import register_custom_serializer
+
+class ComplexKey:
+    def __init__(self, value: str):
+        self.value = value
+
+def serialize_complex_key(key: ComplexKey) -> str:
+    return f"key_{key.value}"
+
+register_custom_serializer(ComplexKey, serialize_complex_key)
+
+# Cache keys automatically use the global registry
+step = CacheStep.cached(some_step)
+# Custom types in cache keys are automatically serialized
+```
+
+### Context Integration
+
+Custom types in pipeline context are automatically handled:
+
+```python
+from flujo.domain.models import PipelineContext
+from flujo.utils import register_custom_serializer
+
+class CustomContext(PipelineContext):
+    custom_data: MyCustomType
+    model_config = {"arbitrary_types_allowed": True}
+
+def serialize_my_custom_type(obj: MyCustomType) -> dict:
+    return obj.to_dict()
+
+register_custom_serializer(MyCustomType, serialize_my_custom_type)
+
+# Context updates automatically use the global registry
+context = CustomContext(custom_data=MyCustomType("value"))
+# Custom types are automatically serialized in context updates
+```
+
+## Best Practices
+
+### When to Use Global Registry
+
+- **Application-wide custom types**: Register once, use everywhere
+- **Third-party types**: Handle types from external libraries
+- **Consistent serialization**: Ensure the same type is always serialized the same way
+- **Performance**: Avoid repeating serialization logic
+
+### When to Use Field Serializers
+
+- **Model-specific serialization**: Different serialization for the same type in different models
+- **Context-dependent serialization**: Serialization that depends on model state
+- **Temporary customizations**: One-off serialization needs
+
+### When to Use Arbitrary Types
+
+- **Simple custom types**: When you just need the object to be serializable
+- **Quick prototypes**: For rapid development and testing
+- **Legacy code**: When migrating existing code
+
+### Performance Considerations
+
+- **Global registry lookups are fast**: Simple dictionary lookups
+- **Avoid complex serialization in hot paths**: Consider pre-serializing data
+- **Use `model_dump(mode="json")` sparingly**: It's slower than `model_dump()`
+- **Cache serialized results**: For frequently serialized objects
+
+## Error Handling
+
+### Common Errors and Solutions
+
+**"Unable to generate pydantic-core schema"**
+
+```python
+# Solution: Add arbitrary_types_allowed
+class MyModel(BaseModel):
+    custom_field: MyCustomType
+    model_config = {"arbitrary_types_allowed": True}
+```
+
+**"Object of type X is not JSON serializable"**
+
+```python
+# Solution: Register a custom serializer
+from flujo.utils import register_custom_serializer
+
+def serialize_my_type(obj):
+    return obj.to_dict()
+
+register_custom_serializer(MyType, serialize_my_type)
+```
+
+**Global registry not working**
+
+```python
+# Solution: Use JSON mode
+# This uses the global registry
+serialized = model.model_dump(mode="json")
+
+# This does NOT use the global registry
+serialized = model.model_dump()
+```
+
+## Migration from Previous Versions
+
+### From v0.6.0 and Earlier
+
+```python
+# Before
+class MyModel(BaseModel):
+    custom_field: MyCustomType
+
+    def model_dump(self, **kwargs):
+        data = super().model_dump(**kwargs)
+        data['custom_field'] = self.custom_field.to_dict()
+        return data
+
+# After
+from flujo.utils import register_custom_serializer
+
+register_custom_serializer(MyCustomType, lambda x: x.to_dict())
+
+class MyModel(BaseModel):
+    custom_field: MyCustomType  # No changes needed
+```
+
+### From Custom State Backends
+
+```python
+# Before
+class CustomStateBackend(StateBackend):
+    def save_state(self, run_id: str, state: Dict[str, Any]) -> None:
+        serialized = self._custom_serialize(state)
+        # ... save logic
+
+# After
+class CustomStateBackend(StateBackend):
+    def save_state(self, run_id: str, state: Dict[str, Any]) -> None:
+        # Custom types are automatically handled
+        serialized = json.dumps(state)
+        # ... save logic
+```
+
+For more detailed examples and advanced usage patterns, see the [Advanced Serialization Guide](cookbook/advanced_serialization.md).

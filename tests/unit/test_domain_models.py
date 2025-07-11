@@ -52,3 +52,24 @@ def test_improvement_models_config_and_new_case() -> None:
     loaded = ImprovementReport.model_validate(dumped)
     assert loaded.suggestions[0].config_change_details is not None
     assert loaded.suggestions[0].suggested_new_eval_case_description == "Add join query case"
+
+
+def test_global_custom_serializer_registry():
+    from flujo.utils import register_custom_serializer
+    from flujo.domain.models import BaseModel
+
+    class Custom:
+        def __init__(self, value):
+            self.value = value
+
+    class MyModel(BaseModel):
+        foo: Custom
+        bar: complex
+        model_config = {"arbitrary_types_allowed": True}
+
+    register_custom_serializer(Custom, lambda obj: f"custom:{obj.value}")
+    register_custom_serializer(complex, lambda c: f"{c.real}+{c.imag}j")
+    m = MyModel(foo=Custom(42), bar=3 + 4j)
+    d = m.model_dump(mode="json")
+    assert d["foo"] == "custom:42"
+    assert d["bar"] == "3.0+4.0j"

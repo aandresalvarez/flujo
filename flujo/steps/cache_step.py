@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Optional, TypeVar
 import hashlib
 import pickle  # nosec B403 - Used for fallback serialization of complex objects in cache keys
-import orjson
+import json
 from pydantic import Field
 
 from flujo.domain.dsl import Step
@@ -37,13 +37,22 @@ class CacheStep(Step[StepInT, StepOutT]):
 
 
 def _serialize_for_key(obj: Any) -> Any:
-    """Best-effort conversion of arbitrary objects to cacheable structures."""
+    """Best-effort conversion of arbitrary objects to cacheable structures for cache keys."""
     if obj is None:
         return None
+    # Special handling for PipelineContext: exclude run_id
     if isinstance(obj, PipelineContext):
-        return obj.model_dump(mode="json", exclude={"run_id"})
+        d = obj.model_dump(mode="python")
+        d.pop("run_id", None)
+        return {k: _serialize_for_key(v) for k, v in d.items()}
+    # Special handling for Step: serialize agent by class name
+    if isinstance(obj, Step):
+        d = obj.model_dump(mode="python")
+        if "agent" in d and d["agent"] is not None:
+            d["agent"] = type(d["agent"]).__name__
+        return {k: _serialize_for_key(v) for k, v in d.items()}
     if isinstance(obj, BaseModel):
-        return {k: _serialize_for_key(v) for k, v in obj.model_dump(mode="python").items()}
+        return obj.model_dump(mode="python")
     if isinstance(obj, dict):
         return {k: _serialize_for_key(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple, set, frozenset)):
@@ -53,7 +62,7 @@ def _serialize_for_key(obj: Any) -> Any:
             f"{getattr(obj, '__module__', '<unknown>')}.{getattr(obj, '__qualname__', repr(obj))}"
         )
     try:
-        orjson.dumps(obj)
+        json.dumps(obj)
         return obj
     except Exception:
         return repr(obj)
@@ -73,11 +82,12 @@ def _generate_cache_key(
         "resources": _serialize_for_key(resources),
     }
     try:
-        serialized = orjson.dumps(payload, option=orjson.OPT_SORT_KEYS)
+        serialized = json.dumps(payload, sort_keys=True).encode()
+        digest = hashlib.sha256(serialized).hexdigest()
     except Exception:
         try:
             serialized = pickle.dumps(payload)  # nosec B403 - Fallback serialization for cache keys
+            digest = hashlib.sha256(serialized).hexdigest()
         except Exception:
             return None
-    digest = hashlib.sha256(serialized).hexdigest()
     return f"{step.name}:{digest}"

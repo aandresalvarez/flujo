@@ -1,12 +1,12 @@
 """Domain models for flujo."""
 
 from typing import Any, List, Optional, Literal, Dict, TYPE_CHECKING, Generic
-import orjson
-from pydantic import BaseModel as PydanticBaseModel, Field, ConfigDict
+from pydantic import BaseModel as PydanticBaseModel, Field, ConfigDict, field_serializer
 from typing import ClassVar
 from datetime import datetime, timezone
 import uuid
 from enum import Enum
+from types import FunctionType, MethodType, BuiltinFunctionType, BuiltinMethodType
 
 from .types import ContextT
 
@@ -15,36 +15,81 @@ if TYPE_CHECKING:
 
 
 class BaseModel(PydanticBaseModel):
-    """BaseModel for all flujo domain models, configured to use orjson."""
+    """BaseModel for all flujo domain models with intelligent fallback serialization."""
 
     model_config: ClassVar[ConfigDict] = {
         # Removed deprecated json_dumps and json_loads config keys
     }
 
-    def model_dump_json(self, **kwargs: Any) -> str:
-        """Override to use orjson for serialization."""
-        data: bytes = orjson.dumps(self.model_dump(), **kwargs)
-        return data.decode()
+    @field_serializer("*", when_used="json")
+    def _serialize_unknown_types(self, value: Any) -> Any:
+        """Intelligent fallback serialization for unknown types.
 
-    @classmethod
-    def model_validate_json(
-        cls,
-        json_data: str | bytes | bytearray,
-        *,
-        strict: bool | None = None,
-        context: Any | None = None,
-        by_alias: bool | None = None,
-        by_name: bool | None = None,
-    ) -> "BaseModel":
-        """Override to use orjson for deserialization."""
-        data = orjson.loads(json_data)
-        return cls.model_validate(
-            data,
-            strict=strict,
-            context=context,
-            by_alias=by_alias,
-            by_name=by_name,
-        )
+        This method is called by Pydantic v2 when it encounters types it cannot
+        serialize natively. It provides backward compatibility for common types
+        that users might include in their models.
+        """
+        if value is None:
+            return None
+
+        # Check global registry first (import here to avoid circular import)
+        from flujo.utils.serialization import lookup_custom_serializer
+
+        func = lookup_custom_serializer(value)
+        if func:
+            try:
+                return func(value)
+            except Exception:
+                pass
+
+        # Handle callable objects (functions, methods, etc.)
+        if callable(value):
+            if isinstance(
+                value, (FunctionType, MethodType, BuiltinFunctionType, BuiltinMethodType)
+            ):
+                # For functions and methods, serialize as module.qualname
+                module = getattr(value, "__module__", "<unknown>")
+                qualname = getattr(value, "__qualname__", repr(value))
+                return f"{module}.{qualname}"
+            else:
+                # For other callables, use repr
+                return repr(value)
+
+        # Handle datetime objects
+        if isinstance(value, datetime):
+            return value.isoformat()
+
+        # Handle Enum values
+        if isinstance(value, Enum):
+            return value.value
+
+        # Handle complex numbers
+        if isinstance(value, complex):
+            return {"real": value.real, "imag": value.imag}
+
+        # Handle sets and frozensets
+        if isinstance(value, (set, frozenset)):
+            return list(value)
+
+        # Handle bytes
+        if isinstance(value, bytes):
+            return value.decode("utf-8", errors="replace")
+
+        # Handle memoryview
+        if isinstance(value, memoryview):
+            return bytes(value).decode("utf-8", errors="replace")
+
+        # For other types, try to get a meaningful representation
+        try:
+            # Try to get a dict representation if available
+            if hasattr(value, "__dict__"):
+                return {k: v for k, v in value.__dict__.items() if not k.startswith("_")}
+
+            # Try to get a string representation
+            return str(value)
+        except Exception:
+            # Last resort: use repr
+            return repr(value)
 
 
 class Task(BaseModel):

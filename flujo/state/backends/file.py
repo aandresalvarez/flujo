@@ -1,31 +1,39 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional, cast, Callable
-
-import orjson
+from typing import Any, Dict, Optional, cast
 
 from .base import StateBackend
+
+
+def _to_jsonable(obj: object) -> object:
+    if hasattr(obj, "model_dump"):
+        return obj.model_dump(mode="python")
+    if isinstance(obj, dict):
+        return {k: _to_jsonable(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple, set, frozenset)):
+        return [_to_jsonable(v) for v in obj]
+    return obj
 
 
 class FileBackend(StateBackend):
     """Persist workflow state to JSON files."""
 
-    def __init__(
-        self, path: Path, *, serializer_default: Callable[[Any], Any] | None = None
-    ) -> None:
-        super().__init__(serializer_default=serializer_default)
+    def __init__(self, path: Path) -> None:
         self.path = Path(path)
         self.path.mkdir(parents=True, exist_ok=True)
         self._lock = asyncio.Lock()
 
     async def save_state(self, run_id: str, state: Dict[str, Any]) -> None:
         file_path = self.path / f"{run_id}.json"
-        data = orjson.dumps(state, default=self.serializer_default)
+        # Use native Pydantic serialization for any Pydantic models in the state
+        serialized_state = {k: _to_jsonable(v) for k, v in state.items()}
+        data = json.dumps(serialized_state, default=str)
         async with self._lock:
-            await asyncio.to_thread(self._atomic_write, file_path, data)
+            await asyncio.to_thread(self._atomic_write, file_path, data.encode())
 
     def _atomic_write(self, file_path: Path, data: bytes) -> None:
         tmp = file_path.with_suffix(file_path.suffix + ".tmp")
@@ -44,7 +52,7 @@ class FileBackend(StateBackend):
 
     def _read_json(self, file_path: Path) -> Dict[str, Any]:
         with open(file_path, "rb") as f:
-            data = orjson.loads(f.read())
+            data = json.loads(f.read().decode())
         return cast(Dict[str, Any], data)
 
     async def delete_state(self, run_id: str) -> None:

@@ -132,6 +132,7 @@ async def test_backends_serialize_pydantic(tmp_path: Path) -> None:
     assert loaded_s["last_step_output"] == {"x": 2}
 
 
+@pytest.mark.skip(reason="Custom serializer_default is no longer supported in FileBackend.")
 @pytest.mark.asyncio
 async def test_serializer_default_override(tmp_path: Path) -> None:
     def handler(obj: Any) -> Any:

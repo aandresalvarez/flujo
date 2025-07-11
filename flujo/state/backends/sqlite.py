@@ -1,23 +1,30 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Literal, Callable
+from typing import Any, Dict, List, Optional, Literal
 
-import orjson
 import aiosqlite
 
 from .base import StateBackend
 
 
+def _to_jsonable(obj: object) -> object:
+    if hasattr(obj, "model_dump"):
+        return obj.model_dump(mode="python")
+    if isinstance(obj, dict):
+        return {k: _to_jsonable(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple, set, frozenset)):
+        return [_to_jsonable(v) for v in obj]
+    return obj
+
+
 class SQLiteBackend(StateBackend):
     """SQLite-backed persistent storage for workflow state with optimized schema."""
 
-    def __init__(
-        self, db_path: Path, *, serializer_default: Callable[[Any], Any] | None = None
-    ) -> None:
-        super().__init__(serializer_default=serializer_default)
+    def __init__(self, db_path: Path) -> None:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = asyncio.Lock()
@@ -158,15 +165,9 @@ class SQLiteBackend(StateBackend):
                         state["pipeline_name"],
                         state["pipeline_version"],
                         state["current_step_index"],
-                        orjson.dumps(
-                            state["pipeline_context"],
-                            default=self.serializer_default,
-                        ).decode(),
+                        json.dumps(_to_jsonable(state["pipeline_context"])),
                         (
-                            orjson.dumps(
-                                state["last_step_output"],
-                                default=self.serializer_default,
-                            ).decode()
+                            json.dumps(_to_jsonable(state["last_step_output"]))
                             if state.get("last_step_output") is not None
                             else None
                         ),
@@ -200,8 +201,8 @@ class SQLiteBackend(StateBackend):
         if row is None:
             return None
 
-        pipeline_context = orjson.loads(row[5]) if row[5] is not None else {}
-        last_step_output = orjson.loads(row[6]) if row[6] is not None else None
+        pipeline_context = json.loads(row[5]) if row[5] is not None else {}
+        last_step_output = json.loads(row[6]) if row[6] is not None else None
 
         return {
             "run_id": row[0],
