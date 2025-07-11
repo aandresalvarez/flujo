@@ -6,15 +6,19 @@ LLM calls occasionally fail or produce unusable results. You want the pipeline t
 
 ## The Solution
 
-Use `Step.fallback()` to declare a backup step that runs when the primary step fails after its retries are exhausted.
+Declare a backup step with the `fallback` argument so it runs when the primary step fails after its retries are exhausted.
 
 ```python
-from flujo import Step, Flujo
+from flujo import step, Flujo
 from flujo.testing.utils import StubAgent
 
-primary = Step("primary", StubAgent(["fail"]), max_retries=1)
-backup = Step("backup", StubAgent(["ok"]))
-primary.fallback(backup)
+@step
+async def backup(x: str) -> str:
+    return "ok"
+
+@step(retries=1, fallback=backup)
+async def primary(x: str) -> str:
+    return "fail"
 
 runner = Flujo(primary)
 result = runner.run("data")

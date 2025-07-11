@@ -328,6 +328,9 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         persist_feedback_to_context: Optional[str] = None,
         persist_validation_results_to: Optional[str] = None,
         is_adapter: bool = False,
+        *,
+        retries: int = 1,
+        fallback: Optional["Step[Any, Any]"] = None,
         **config: Any,
     ) -> "Step[StepInT, StepOutT]":
         """Create a Step from an async callable."""
@@ -384,6 +387,9 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         input_type = sig_info.input_type if hasattr(sig_info, "input_type") else Any
         output_type = sig_info.output_type if hasattr(sig_info, "output_type") else Any
 
+        config_dict = dict(config)
+        config_dict.setdefault("max_retries", retries)
+
         step_instance = cls.model_validate(
             {
                 "name": name,
@@ -395,7 +401,8 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                 "persist_validation_results_to": persist_validation_results_to,
                 "updates_context": updates_context,
                 "meta": {"is_adapter": True} if is_adapter else {},
-                "config": StepConfig(**config),
+                "config": StepConfig(**config_dict),
+                "fallback_step": fallback,
             }
         )
         # Set type info for pipeline validation
@@ -412,6 +419,9 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         processors: Optional[AgentProcessors] = None,
         persist_feedback_to_context: Optional[str] = None,
         persist_validation_results_to: Optional[str] = None,
+        *,
+        retries: int = 1,
+        fallback: Optional["Step[Any, Any]"] = None,
         **config: Any,
     ) -> "Step[StepInT, StepOutT]":
         """Alias for :meth:`from_callable` to improve readability."""
@@ -422,6 +432,8 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             processors=processors,
             persist_feedback_to_context=persist_feedback_to_context,
             persist_validation_results_to=persist_validation_results_to,
+            retries=retries,
+            fallback=fallback,
             **config,
         )
 
@@ -638,6 +650,8 @@ def step(
     persist_feedback_to_context: Optional[str] = None,
     persist_validation_results_to: Optional[str] = None,
     is_adapter: bool = False,
+    retries: int = 1,
+    fallback: Optional["Step[Any, Any]"] = None,
     **config_kwargs: Any,
 ) -> "Step[StepInT, StepOutT]": ...
 
@@ -651,6 +665,8 @@ def step(
     persist_feedback_to_context: Optional[str] = None,
     persist_validation_results_to: Optional[str] = None,
     is_adapter: bool = False,
+    retries: int = 1,
+    fallback: Optional["Step[Any, Any]"] = None,
     **config_kwargs: Any,
 ) -> Callable[
     [Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]]],
@@ -667,6 +683,8 @@ def step(
     persist_feedback_to_context: Optional[str] = None,
     persist_validation_results_to: Optional[str] = None,
     is_adapter: bool = False,
+    retries: int = 1,
+    fallback: Optional["Step[Any, Any]"] = None,
     **config_kwargs: Any,
 ) -> Any:
     """Decorator / factory for creating :class:`Step` instances from async callables."""
@@ -682,6 +700,8 @@ def step(
             persist_feedback_to_context=persist_feedback_to_context,
             persist_validation_results_to=persist_validation_results_to,
             is_adapter=is_adapter,
+            retries=retries,
+            fallback=fallback,
             **config_kwargs,
         )
 
@@ -701,6 +721,8 @@ def adapter_step(
     processors: Optional[AgentProcessors] = None,
     persist_feedback_to_context: Optional[str] = None,
     persist_validation_results_to: Optional[str] = None,
+    retries: int = 1,
+    fallback: Optional["Step[Any, Any]"] = None,
     **config_kwargs: Any,
 ) -> "Step[StepInT, StepOutT]": ...
 
@@ -713,6 +735,8 @@ def adapter_step(
     processors: Optional[AgentProcessors] = None,
     persist_feedback_to_context: Optional[str] = None,
     persist_validation_results_to: Optional[str] = None,
+    retries: int = 1,
+    fallback: Optional["Step[Any, Any]"] = None,
     **config_kwargs: Any,
 ) -> Callable[
     [Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]]],

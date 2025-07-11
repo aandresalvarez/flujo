@@ -407,12 +407,11 @@ pipeline = (
 
 ```python
 # Configure retries at the step level
-step = Step.solution(
-    solution_agent,
-    retries=3,
-    backoff_factor=2,
-    retry_on_error=True
-)
+@step(retries=3)
+async def solve(x: str) -> str:
+    ...  # your logic here
+
+step = solve
 
 # Configure retries at the pipeline level
 runner = Flujo(
@@ -562,16 +561,19 @@ Steps can be configured with various options:
 
 ### Fallback Steps
 
-Use `.fallback(other_step)` to specify an alternate step to run if the primary
-step fails after exhausting its retries. The fallback receives the same input as
-the original step.
+Specify a fallback step directly when defining the primary step. The fallback
+receives the same input as the original step.
 
 ```python
-from flujo import Step
+from flujo import step, Step
 
-primary = Step("generate", primary_agent, max_retries=2)
-backup = Step("backup", backup_agent)
-primary.fallback(backup)
+@step
+async def backup(x: str) -> str:
+    ...
+
+@step(retries=2, fallback=backup)
+async def generate(x: str) -> str:
+    ...
 ```
 
 If the fallback succeeds, the overall step is marked successful and

@@ -26,16 +26,20 @@ that steps with the same name but different behaviors do not collide.
 
 ## Building Resilient Pipelines with Fallbacks
 
-The `Step.fallback()` method lets you declare a backup step that runs if the primary step fails.
+Declare a backup step right in the decorator so it runs if the primary step fails.
 This is useful for handling transient errors or providing a simpler model when a complex one is unreliable.
 
 ```python
-from flujo import Step, Flujo
+from flujo import step, Flujo
 from flujo.testing.utils import StubAgent
 
-primary = Step("primary", StubAgent(["fail"]), max_retries=1)
-backup = Step("backup", StubAgent(["ok"]))
-primary.fallback(backup)
+@step
+async def backup(x: str) -> str:
+    return "ok"
+
+@step(retries=1, fallback=backup)
+async def primary(x: str) -> str:
+    return "fail"
 
 runner = Flujo(primary)
 result = runner.run("data")
