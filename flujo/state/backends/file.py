@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional, cast
+from typing import Any, Dict, Optional, cast, Callable
 
 import orjson
 
@@ -13,14 +13,17 @@ from .base import StateBackend
 class FileBackend(StateBackend):
     """Persist workflow state to JSON files."""
 
-    def __init__(self, path: Path) -> None:
+    def __init__(
+        self, path: Path, *, serializer_default: Callable[[Any], Any] | None = None
+    ) -> None:
+        super().__init__(serializer_default=serializer_default)
         self.path = Path(path)
         self.path.mkdir(parents=True, exist_ok=True)
         self._lock = asyncio.Lock()
 
     async def save_state(self, run_id: str, state: Dict[str, Any]) -> None:
         file_path = self.path / f"{run_id}.json"
-        data = orjson.dumps(state)
+        data = orjson.dumps(state, default=self.serializer_default)
         async with self._lock:
             await asyncio.to_thread(self._atomic_write, file_path, data)
 

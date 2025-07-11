@@ -11,10 +11,10 @@ provides utilities to manage multi-agent pipelines with minimal setup.
 
 ## Features
 
-- 📦 **Pydantic Native** – agents, tools, and pipeline context are all defined with Pydantic models for reliable type safety.
+- 📦 **Pydantic 2 Native** – agents, tools, and pipeline context are all defined with Pydantic models for reliable type safety.
 - 🔁 **Opinionated & Flexible** – factory functions like `make_default_pipeline()` provide ready‑made workflows while the DSL lets you build any pipeline.
 - 🏗️ **Production Ready** – retries, telemetry, and quality controls help you ship reliable systems.
-- 🗄️ **Optimized State Backend** – high-performance SQLite backend with indexing and admin queries for large-scale deployments.
+- 🗄️ **Optimized State Backend** – high-performance SQLite backend with indexing, automatic Pydantic serialization, and admin queries for large-scale deployments.
 - 🧠 **Intelligent Evals** – automated scoring and self‑improvement powered by LLMs.
 
 ## Quick Start

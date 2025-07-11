@@ -46,6 +46,20 @@ class RedisBackend(StateBackend):
         await r.delete(run_id)
 ```
 
+### Serializer Customization
+
+`StateBackend` constructors accept a ``serializer_default`` callable used with
+``orjson.dumps``. This lets you handle additional types:
+
+```python
+def my_serializer(obj):
+    if isinstance(obj, MyModel):
+        return obj.model_dump()
+    raise TypeError
+
+backend = RedisBackend("redis://localhost:6379/0", serializer_default=my_serializer)
+```
+
 Use your backend when creating a runner:
 
 ```python

@@ -43,7 +43,7 @@ runner = Flujo(
     state_backend=SQLiteBackend("state.db"),
 )
 partial = None
-async for item in runner.run_async("DATA", initial_context_data={"run_id": run_id}):
+async for item in runner.run_async("DATA", run_id=run_id):
     partial = item
     break  # Simulate restart after first step
 
@@ -58,7 +58,7 @@ runner_resume = Flujo(
     state_backend=SQLiteBackend("state.db"),
 )
 final = None
-async for item in runner_resume.run_async("DATA", initial_context_data={"run_id": run_id}):
+async for item in runner_resume.run_async("DATA", run_id=run_id):
     final = item
 
 assert final.pipeline_version == "1.0.0"  # Still uses v1

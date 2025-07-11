@@ -433,9 +433,17 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         self,
         initial_input: RunnerInT,
         *,
+        run_id: str | None = None,
         initial_context_data: Optional[Dict[str, Any]] = None,
     ) -> AsyncIterator[PipelineResult[ContextT]]:
         """Run the pipeline asynchronously.
+
+        Parameters
+        ----------
+        run_id:
+            Optional identifier for this run. When provided the runner will load
+            and persist state under this ID, enabling durable execution without
+            embedding the ID in the context model.
 
         This method should be used when an asyncio event loop is already
         running, such as within Jupyter notebooks or async web frameworks.
@@ -449,6 +457,8 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 context_data = {**self.initial_context_data}
                 if initial_context_data:
                     context_data.update(initial_context_data)
+                if run_id is not None:
+                    context_data["run_id"] = run_id
                 current_context_instance = self.context_model(**context_data)
             except ValidationError as e:
                 telemetry.logfire.error(
@@ -465,6 +475,8 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 ContextT,
                 PipelineContext(initial_prompt=str(initial_input)),
             )
+            if run_id is not None:
+                object.__setattr__(current_context_instance, "run_id", run_id)
 
         # Initialize _artifacts for refine_until functionality
         if hasattr(current_context_instance, "__dict__"):
@@ -480,7 +492,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         state_created_at: datetime | None = None
         # Initialize state manager and load existing state if available
         state_manager: StateManager[ContextT] = StateManager[ContextT](self.state_backend)
-        run_id_for_state = state_manager.get_run_id_from_context(current_context_instance)
+        run_id_for_state = run_id or state_manager.get_run_id_from_context(current_context_instance)
 
         if run_id_for_state:
             (
@@ -642,6 +654,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         self,
         initial_input: RunnerInT,
         *,
+        run_id: str | None = None,
         initial_context_data: Optional[Dict[str, Any]] = None,
     ) -> PipelineResult[ContextT]:
         """Run the pipeline synchronously.
@@ -665,7 +678,9 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         async def _consume() -> PipelineResult[ContextT]:
             result: PipelineResult[ContextT] | None = None
             async for item in self.run_async(
-                initial_input, initial_context_data=initial_context_data
+                initial_input,
+                run_id=run_id,
+                initial_context_data=initial_context_data,
             ):
                 result = item  # last yield is the PipelineResult
             assert result is not None

@@ -1,6 +1,9 @@
 from datetime import datetime
 from pathlib import Path
 import asyncio
+from typing import Any
+
+from pydantic import BaseModel
 
 import aiosqlite
 
@@ -96,3 +99,47 @@ async def test_sqlite_backend_migrates_existing_db(tmp_path: Path) -> None:
     loaded = await backend.load_state("run1")
     assert loaded is not None
     assert loaded["pipeline_name"] == "p"
+
+
+class MyModel(BaseModel):
+    x: int
+
+
+@pytest.mark.asyncio
+async def test_backends_serialize_pydantic(tmp_path: Path) -> None:
+    fb = FileBackend(tmp_path)
+    sb = SQLiteBackend(tmp_path / "s.db")
+    now = datetime.utcnow().replace(microsecond=0)
+    state = {
+        "run_id": "run1",
+        "pipeline_id": "p",
+        "pipeline_name": "p",
+        "pipeline_version": "0",
+        "current_step_index": 0,
+        "pipeline_context": {"model": MyModel(x=1)},
+        "last_step_output": MyModel(x=2),
+        "status": "running",
+        "created_at": now,
+        "updated_at": now,
+    }
+    await fb.save_state("run1", state)
+    await sb.save_state("run1", state)
+    loaded_f = await fb.load_state("run1")
+    loaded_s = await sb.load_state("run1")
+    assert loaded_f["pipeline_context"] == {"model": {"x": 1}}
+    assert loaded_s["pipeline_context"] == {"model": {"x": 1}}
+    assert loaded_f["last_step_output"] == {"x": 2}
+    assert loaded_s["last_step_output"] == {"x": 2}
+
+
+@pytest.mark.asyncio
+async def test_serializer_default_override(tmp_path: Path) -> None:
+    def handler(obj: Any) -> Any:
+        if isinstance(obj, complex):
+            return {"real": obj.real, "imag": obj.imag}
+        raise TypeError
+
+    backend = FileBackend(tmp_path, serializer_default=handler)
+    await backend.save_state("r", {"foo": 1 + 2j})
+    loaded = await backend.load_state("r")
+    assert loaded == {"foo": {"real": 1.0, "imag": 2.0}}
