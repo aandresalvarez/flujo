@@ -75,17 +75,16 @@ runner = Flujo(
     pipeline_version="1.0.0",
     state_backend=backend,
 )
+result = runner.run("world", run_id="run1")
 
-result = runner.run("world", initial_context_data={"run_id": "run1"})
-
-# To resume later just create a new runner with the same run_id
+# To resume later just create a new runner with the same ``run_id``
 runner2 = Flujo(
     registry=registry,
     pipeline_name="hello",
     pipeline_version="1.0.0",
     state_backend=backend,
 )
-resumed = runner2.run("world", initial_context_data={"run_id": "run1"})
+resumed = runner2.run("world", run_id="run1")
 ```
 
 ## Built-in Backends

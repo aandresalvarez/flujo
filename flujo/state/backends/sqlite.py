@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Literal
+from typing import Any, Dict, List, Optional, Literal, Callable
 
 import orjson
 import aiosqlite
@@ -14,7 +14,10 @@ from .base import StateBackend
 class SQLiteBackend(StateBackend):
     """SQLite-backed persistent storage for workflow state with optimized schema."""
 
-    def __init__(self, db_path: Path) -> None:
+    def __init__(
+        self, db_path: Path, *, serializer_default: Callable[[Any], Any] | None = None
+    ) -> None:
+        super().__init__(serializer_default=serializer_default)
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = asyncio.Lock()
@@ -155,9 +158,15 @@ class SQLiteBackend(StateBackend):
                         state["pipeline_name"],
                         state["pipeline_version"],
                         state["current_step_index"],
-                        orjson.dumps(state["pipeline_context"]).decode(),
+                        orjson.dumps(
+                            state["pipeline_context"],
+                            default=self.serializer_default,
+                        ).decode(),
                         (
-                            orjson.dumps(state["last_step_output"]).decode()
+                            orjson.dumps(
+                                state["last_step_output"],
+                                default=self.serializer_default,
+                            ).decode()
                             if state.get("last_step_output") is not None
                             else None
                         ),

@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional, List, Literal
+from typing import Any, Dict, Optional, List, Literal, Callable
+
+from ..serialization import flujo_default_serializer
 
 
 class StateBackend(ABC):
     """Abstract interface for workflow state persistence."""
+
+    def __init__(self, *, serializer_default: Callable[[Any], Any] | None = None) -> None:
+        self.serializer_default = serializer_default or flujo_default_serializer
 
     @abstractmethod
     async def save_state(self, run_id: str, state: Dict[str, Any]) -> None:
