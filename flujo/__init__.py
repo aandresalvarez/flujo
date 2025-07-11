@@ -32,6 +32,8 @@ from .domain.models import Task, Candidate
 from .infra.agents import make_agent_async
 from .infra.settings import settings
 from .infra.telemetry import init_telemetry
+from .agents import validated_agent, monitored_agent
+from .monitor import global_monitor, FlujoMonitor, FailureType
 
 # 3. Define __all__ to control `from flujo import *` behavior and document the public API.
 __all__ = [
@@ -44,6 +46,11 @@ __all__ = [
     "Task",
     "Candidate",
     "make_agent_async",
+    "validated_agent",
+    "monitored_agent",
+    "global_monitor",
+    "FlujoMonitor",
+    "FailureType",
     # Global Singletons & Initializers
     "settings",
     "init_telemetry",
