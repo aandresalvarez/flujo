@@ -116,3 +116,9 @@ class TypeMismatchError(ConfigurationError):
     """Raised when consecutive steps have incompatible types."""
 
     pass
+
+
+class AgentIOValidationError(OrchestratorError):
+    """Raised when an agent's input or output validation fails."""
+
+    pass

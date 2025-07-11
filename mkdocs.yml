@@ -21,6 +21,7 @@ nav:
     - 'Agentic Patterns': 'user_guide/agentic-patterns.md'
     - 'Testing Your Pipelines': 'user_guide/testing.md'
   - 'Agent Infrastructure': 'agent_infrastructure.md'
+  - 'Building Resilient Agents': 'building_resilient_agents.md'
   - 'Examples':
     - 'Basic Pipeline': 'examples/basic-pipeline.md'
   - 'API Reference':
