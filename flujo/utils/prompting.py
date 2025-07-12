@@ -36,6 +36,11 @@ class AdvancedPromptFormatter:
                 return None
         return value
 
+    def _serialize_value(self, value: Any) -> str:
+        """Helper to serialize BaseModel, dict, or list using safe_serialize and json.dumps."""
+        serialized = safe_serialize(value)
+        return json.dumps(serialized)
+
     def _serialize(self, value: Any) -> str:
         """Serialize ``value`` for interpolation into a template."""
 
@@ -43,12 +48,10 @@ class AdvancedPromptFormatter:
             return ""
         if isinstance(value, BaseModel):
             # Use robust serialization instead of model_dump_json to avoid deprecated custom serializers
-            serialized = safe_serialize(value)
-            return json.dumps(serialized)
+            return self._serialize_value(value)
         if isinstance(value, (dict, list)):
             # Use enhanced serialization instead of orjson
-            serialized = safe_serialize(value)
-            return json.dumps(serialized)
+            return self._serialize_value(value)
         return str(value)
 
     def format(self, **kwargs: Any) -> str:

@@ -147,7 +147,11 @@ def serializable_field(serializer_func: Callable[[Any], Any]) -> Callable[[T], T
     return decorator
 
 
-def _serialize_for_key(obj: Any, _seen: Optional[Set[int]] = None) -> str:
+def _serialize_for_key(
+    obj: Any,
+    _seen: Optional[Set[int]] = None,
+    default_serializer: Optional[Callable[[Any], Any]] = None,
+) -> str:
     """
     Serialize an object for use as a dictionary key.
 
@@ -157,12 +161,13 @@ def _serialize_for_key(obj: Any, _seen: Optional[Set[int]] = None) -> str:
     Args:
         obj: The object to serialize for use as a key
         _seen: Internal set for circular reference detection (do not use directly)
+        default_serializer: Optional custom serializer for unknown types
 
     Returns:
         A string representation of the object suitable for JSON object keys
     """
     # For keys, we need to ensure the result is a string for JSON compatibility
-    serialized = safe_serialize(obj, _seen=_seen)
+    serialized = safe_serialize(obj, default_serializer=default_serializer, _seen=_seen)
 
     # Convert to string to guarantee JSON-compatible keys
     return str(serialized)
@@ -287,13 +292,20 @@ def safe_serialize(
         # Handle dictionaries
         if isinstance(obj, dict):
             return {
-                str(_serialize_for_key(k, _seen)): safe_serialize(v, default_serializer, _seen)
+                str(_serialize_for_key(k, _seen, default_serializer)): safe_serialize(
+                    v, default_serializer, _seen
+                )
                 for k, v in obj.items()
             }
 
         # Handle sequences (list, tuple, set, frozenset)
-        if isinstance(obj, (list, tuple, set, frozenset)):
+        if isinstance(obj, (list, tuple)):
             return [safe_serialize(item, default_serializer, _seen) for item in obj]
+        # Handle sets and frozensets with sorted order for deterministic output
+        if isinstance(obj, (set, frozenset)):
+            return [
+                safe_serialize(item, default_serializer, _seen) for item in sorted(obj, key=str)
+            ]
 
         # Handle custom serializer if provided
         if default_serializer:

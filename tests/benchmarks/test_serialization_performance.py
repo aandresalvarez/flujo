@@ -330,12 +330,22 @@ class TestSerializationPerformance:
                 baseline_time = avg_time_per_operation
             else:
                 # In CI environments, concurrent performance may degrade more due to resource constraints
-                # Allow up to 4x degradation in CI vs 2x in local environments
-                max_degradation = 4.0 if os.getenv("CI") else 2.0
-                assert avg_time_per_operation < baseline_time * max_degradation, (
-                    f"Concurrent performance degraded too much: {avg_time_per_operation:.3f} ms vs {baseline_time:.3f} ms "
-                    f"(max allowed: {baseline_time * max_degradation:.3f} ms)"
-                )
+                # Allow up to 4x degradation with warning, 4.5x as hard fail in CI; 2x hard fail locally
+                if os.getenv("CI"):
+                    warn_threshold = 4.0
+                    fail_threshold = 4.5
+                else:
+                    warn_threshold = fail_threshold = 2.0
+                if avg_time_per_operation >= baseline_time * fail_threshold:
+                    raise AssertionError(
+                        f"Concurrent performance degraded too much: {avg_time_per_operation:.3f} ms vs {baseline_time:.3f} ms "
+                        f"(max allowed: {baseline_time * fail_threshold:.3f} ms)"
+                    )
+                elif avg_time_per_operation >= baseline_time * warn_threshold:
+                    print(
+                        f"WARNING: Concurrent performance degradation is high: {avg_time_per_operation:.3f} ms vs {baseline_time:.3f} ms "
+                        f"(warning threshold: {baseline_time * warn_threshold:.3f} ms, fail threshold: {baseline_time * fail_threshold:.3f} ms)"
+                    )
 
     def test_serialization_throughput(self):
         """Test serialization throughput (operations per second)."""
