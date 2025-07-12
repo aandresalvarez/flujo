@@ -91,6 +91,42 @@ def make_default_pipeline(
     return pipeline
 
 
+def make_state_machine_pipeline(
+    *,
+    nodes: Dict[str, Step[Any, Any] | Pipeline[Any, Any]],
+    context_model: type[PipelineContext],
+    router_field: str = "next_state",
+    end_state_field: str = "is_complete",
+    max_loops: int = 50,
+) -> Pipeline[Any, Any]:
+    """Create a simple state machine pipeline.
+
+    Each iteration runs the state pipeline specified in ``context.<router_field>``.
+    The loop exits when ``context.<end_state_field>`` evaluates to ``True``.
+    """
+
+    normalized: Dict[str, Pipeline[Any, Any]] = {}
+    for key, val in nodes.items():
+        normalized[key] = Pipeline.from_step(val) if isinstance(val, Step) else val
+
+    dispatcher: Step[Any, Any] = Step.branch_on(
+        name="state_dispatch",
+        condition_callable=lambda _last, ctx: getattr(ctx, router_field),
+        branches=normalized,
+        default_branch_pipeline=None,
+    )
+
+    loop: Step[Any, Any] = Step.loop_until(
+        name="state_machine",
+        loop_body_pipeline=Pipeline.from_step(dispatcher),
+        exit_condition_callable=lambda _out, ctx: bool(getattr(ctx, end_state_field)),
+        max_loops=max_loops,
+        iteration_input_mapper=lambda last, ctx, _i: last,
+    )
+
+    return Pipeline.from_step(loop)
+
+
 def make_agentic_loop_pipeline(
     planner_agent: "AsyncAgentProtocol[Any, Any]",
     agent_registry: Dict[str, "AsyncAgentProtocol[Any, Any]"],

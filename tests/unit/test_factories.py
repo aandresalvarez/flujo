@@ -6,12 +6,21 @@ from unittest.mock import AsyncMock
 from flujo.recipes.factories import (
     make_default_pipeline,
     make_agentic_loop_pipeline,
+    make_state_machine_pipeline,
     run_default_pipeline,
     run_agentic_loop_pipeline,
 )
 from flujo.domain.dsl.pipeline import Pipeline
-from flujo.domain.models import Task, Checklist, Candidate, ChecklistItem
+from flujo.domain.dsl.step import Step
+from flujo.domain.models import (
+    Task,
+    Checklist,
+    Candidate,
+    ChecklistItem,
+    PipelineContext,
+)
 from flujo.domain.commands import FinishCommand
+from flujo.application.runner import Flujo
 from flujo.testing.utils import StubAgent
 
 
@@ -178,3 +187,35 @@ class TestRunAgenticLoopPipeline:
         result = await run_agentic_loop_pipeline(pipeline, "test goal")
 
         assert result == "final result"
+
+
+class TestMakeStateMachinePipeline:
+    """Test the make_state_machine_pipeline factory."""
+
+    def test_creates_pipeline_object(self):
+        step_a = Step.from_mapper(lambda x: x)
+        pipeline = make_state_machine_pipeline(nodes={"A": step_a}, context_model=PipelineContext)
+        assert isinstance(pipeline, Pipeline)
+
+    @pytest.mark.asyncio
+    async def test_runs_until_complete(self):
+        class Ctx(PipelineContext):
+            next_state: str = "only"
+            is_complete: bool = False
+
+        async def only_state(data: str, *, context: Ctx) -> str:
+            context.is_complete = True
+            return "done"
+
+        pipeline = make_state_machine_pipeline(
+            nodes={"only": Step.from_callable(only_state, updates_context=True)},
+            context_model=Ctx,
+        )
+
+        runner = Flujo(pipeline, context_model=Ctx)
+        result = None
+        async for item in runner.run_async("go", initial_context_data={"initial_prompt": "go"}):
+            result = item
+
+        assert result is not None
+        assert result.step_history[-1].output == "done"
