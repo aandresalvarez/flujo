@@ -12,7 +12,6 @@ from ..domain.agent_protocol import AsyncAgentProtocol
 from ..infra.backends import LocalBackend
 from ..domain.resources import AppResources
 from ..domain.models import StepResult, UsageLimits, BaseModel as FlujoBaseModel
-from ..utils.serialization import safe_serialize
 
 
 class StubAgent:
@@ -94,8 +93,21 @@ class DummyRemoteBackend(ExecutionBackend):
             "stream": request.stream,
         }
 
-        # Use enhanced serialization instead of orjson
-        serialized = safe_serialize(payload)
+        # Use robust serialization for nested structures
+        def robust_serialize(obj: Any) -> Any:
+            if obj is None:
+                return None
+            if isinstance(obj, BaseModel):
+                return {k: robust_serialize(v) for k, v in obj.model_dump(mode="json").items()}
+            if isinstance(obj, dict):
+                return {k: robust_serialize(v) for k, v in obj.items()}
+            if isinstance(obj, (list, tuple)):
+                return [robust_serialize(v) for v in obj]
+            if isinstance(obj, (str, int, float, bool)):
+                return obj
+            return str(obj)  # fallback for unknown types
+
+        serialized = robust_serialize(payload)
         data = json.loads(json.dumps(serialized))
 
         def reconstruct(original: Any, value: Any) -> Any:
@@ -103,39 +115,14 @@ class DummyRemoteBackend(ExecutionBackend):
             if original is None:
                 return None
             if isinstance(original, BaseModel):
-                # For BaseModel objects, validate the reconstructed data
-                # But first, fix any string-encoded lists in the value
                 if isinstance(value, dict):
-                    fixed_value = {}
-                    for k, v in value.items():
-                        if isinstance(v, str) and v.startswith("[") and v.endswith("]"):
-                            try:
-                                import ast
-
-                                parsed = ast.literal_eval(v)
-                                if isinstance(parsed, list):
-                                    fixed_value[k] = list(parsed)
-                                else:
-                                    fixed_value[k] = [v]
-                            except (ValueError, SyntaxError):
-                                fixed_value[k] = [v]
-                        elif isinstance(v, list):
-                            fixed_value[k] = list(v)
-                        else:
-                            fixed_value[k] = v
+                    fixed_value = {
+                        k: reconstruct(getattr(original, k, None), v) for k, v in value.items()
+                    }
                     return type(original).model_validate(fixed_value)
-                elif isinstance(value, list):
-                    return [reconstruct(original, v) for v in value]
                 else:
                     return type(original).model_validate(value)
             elif isinstance(original, (list, tuple)):
-                if isinstance(value, str):
-                    import ast
-
-                    try:
-                        value = ast.literal_eval(value)
-                    except (ValueError, SyntaxError):
-                        pass
                 if isinstance(value, (list, tuple)):
                     if not original:
                         return list(value)
