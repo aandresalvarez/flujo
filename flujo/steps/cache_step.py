@@ -7,6 +7,7 @@ import json
 from pydantic import Field
 
 from flujo.domain.dsl import Step
+from flujo.domain.models import PipelineContext
 from flujo.caching import CacheBackend, InMemoryCache
 
 StepInT = TypeVar("StepInT")
@@ -59,7 +60,7 @@ def _serialize_for_key(obj: Any, visited: Optional[Set[int]] = None, _is_root: b
                 if hasattr(obj, "__fields__"):
                     field_names = list(obj.__fields__.keys())
             # Special handling for Step: set 'agent' field to agent's class name
-            if obj.__class__.__name__ == "Step":
+            if isinstance(obj, Step):
                 step_result = {k: "<Step circular>" for k in field_names}
                 if "agent" in field_names:
                     original_agent = getattr(obj, "agent", None)
@@ -67,18 +68,19 @@ def _serialize_for_key(obj: Any, visited: Optional[Set[int]] = None, _is_root: b
                         type(original_agent).__name__ if original_agent else "<unknown>"
                     )
                 return step_result
-            if obj.__class__.__name__ == "PipelineContext":
+            if isinstance(obj, PipelineContext):
                 pipeline_ctx_placeholder = {k: "<PipelineContext circular>" for k in field_names}
                 return pipeline_ctx_placeholder
-            generic_step_placeholder = {k: "<Step circular>" for k in field_names}
-            return generic_step_placeholder
+            # Use actual class name for generic placeholder
+            generic_placeholder = {k: f"<{obj.__class__.__name__} circular>" for k in field_names}
+            return generic_placeholder
         if _is_root and isinstance(obj, dict):
             dict_placeholder = {k: "<dict circular>" for k in obj.keys()}
             return dict_placeholder
         # For fields, use a string placeholder
         if hasattr(obj, "model_dump"):
             # Special handling for Step: set 'agent' field to agent's class name
-            if obj.__class__.__name__ == "Step":
+            if isinstance(obj, Step):
                 original_agent = getattr(obj, "agent", None)
                 if original_agent is not None:
                     return {"agent": type(original_agent).__name__}
@@ -105,7 +107,7 @@ def _serialize_for_key(obj: Any, visited: Optional[Set[int]] = None, _is_root: b
             except Exception:
                 pass
 
-        if hasattr(obj, "model_dump") and obj.__class__.__name__ == "PipelineContext":
+        if hasattr(obj, "model_dump") and isinstance(obj, PipelineContext):
             try:
                 d = obj.model_dump(mode="json")
                 d.pop("run_id", None)
@@ -117,7 +119,7 @@ def _serialize_for_key(obj: Any, visited: Optional[Set[int]] = None, _is_root: b
                 elif hasattr(obj, "__fields__"):
                     field_names = list(obj.__fields__.keys())
                 return {k: "<PipelineContext circular>" for k in field_names}
-        if hasattr(obj, "model_dump") and obj.__class__.__name__ == "Step":
+        if hasattr(obj, "model_dump") and isinstance(obj, Step):
             try:
                 d = obj.model_dump(mode="json")
                 if "run_id" in d:
@@ -212,6 +214,10 @@ def _serialize_for_key(obj: Any, visited: Optional[Set[int]] = None, _is_root: b
         return obj
     except Exception:
         return f"<unserializable: {type(obj).__name__}>"
+    finally:
+        # Remove object from visited set to prevent incorrect circular reference detection
+        # in subsequent serialization paths within the same call
+        visited.discard(obj_id)
 
 
 def _sort_set_deterministically(
