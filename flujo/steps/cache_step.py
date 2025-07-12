@@ -86,7 +86,8 @@ def _serialize_for_cache_key(
                     node_result_dict: dict[str, Any] = {}
 
                     # Process each field individually, only marking fields that are actually circular
-                    for k, v in d.items():
+                    for k in sorted(d.keys(), key=str):
+                        v = d[k]
                         if k == "next":
                             next_obj = getattr(obj, "next", None)
                             if (
@@ -117,7 +118,8 @@ def _serialize_for_cache_key(
 
                     return node_result_dict
                 result_dict: dict[str, Any] = {}
-                for k, v in d.items():
+                for k in sorted(d.keys(), key=str):
+                    v = d[k]
                     # Special-case agent field for Step
                     if isinstance(obj, Step) and k == "agent":
                         original_agent = getattr(obj, "agent", None)
@@ -148,7 +150,8 @@ def _serialize_for_cache_key(
             if "run_id" in d and "initial_prompt" in d:
                 d.pop("run_id", None)
             result: dict[Any, Any] = {}
-            for k, v in d.items():
+            for k in sorted(d.keys(), key=str):
+                v = d[k]
                 # Always check for custom serializer for every value
                 custom_serializer_v = lookup_custom_serializer(v)
                 if custom_serializer_v is not None:
@@ -165,8 +168,8 @@ def _serialize_for_cache_key(
                         if "run_id" in v_dict:
                             v_dict.pop("run_id", None)
                         result[k] = {
-                            kk: _serialize_for_cache_key(vv, visited, _is_root=False)
-                            for kk, vv in v_dict.items()
+                            kk: _serialize_for_cache_key(v_dict[kk], visited, _is_root=False)
+                            for kk in sorted(v_dict.keys(), key=str)
                         }
                     except (ValueError, RecursionError):
                         field_names = []
@@ -183,8 +186,8 @@ def _serialize_for_cache_key(
                     )
                 elif isinstance(v, dict):
                     result[k] = {
-                        kk: _serialize_for_cache_key(vv, visited, _is_root=False)
-                        for kk, vv in v.items()
+                        kk: _serialize_for_cache_key(v[kk], visited, _is_root=False)
+                        for kk in sorted(v.keys(), key=str)
                     }
                 else:
                     result[k] = _serialize_for_cache_key(v, visited, _is_root=False)
@@ -309,15 +312,15 @@ def _serialize_list_for_key(obj_list: list[Any], visited: Optional[Set[int]] = N
                     d.pop("run_id", None)
                 result_list.append(
                     {
-                        k: _serialize_for_cache_key(val, visited, _is_root=False)
-                        for k, val in d.items()
+                        k: _serialize_for_cache_key(d[k], visited, _is_root=False)
+                        for k in sorted(d.keys(), key=str)
                     }
                 )
             elif isinstance(v, dict):
                 result_list.append(
                     {
-                        k: _serialize_for_cache_key(val, visited, _is_root=False)
-                        for k, val in v.items()
+                        k: _serialize_for_cache_key(v[k], visited, _is_root=False)
+                        for k in sorted(v.keys(), key=str)
                     }
                 )
             elif isinstance(v, (list, tuple)):
