@@ -70,8 +70,11 @@ def _serialize_for_key(obj: Any) -> Any:
             # Recursively process all fields, ensuring lists of models are properly serialized
             result_dict = {}
             for k, v in d.items():
-                if isinstance(v, (list, tuple, set, frozenset)):
+                if isinstance(v, (list, tuple)):
                     result_dict[k] = _serialize_list_for_key(list(v))
+                elif isinstance(v, (set, frozenset)):
+                    # Sort sets for deterministic ordering to ensure stable cache keys
+                    result_dict[k] = _serialize_list_for_key(sorted(v, key=lambda x: str(x)))
                 else:
                     result_dict[k] = _serialize_for_key(v)
             return result_dict
@@ -92,15 +95,21 @@ def _serialize_for_key(obj: Any) -> Any:
                     result[k] = {kk: _serialize_for_key(vv) for kk, vv in v_dict.items()}
                 except (ValueError, RecursionError):
                     result[k] = f"<{type(v).__name__} circular>"
-            elif isinstance(v, (list, tuple, set, frozenset)):
+            elif isinstance(v, (list, tuple)):
                 result[k] = _serialize_list_for_key(list(v))
+            elif isinstance(v, (set, frozenset)):
+                # Sort sets for deterministic ordering to ensure stable cache keys
+                result[k] = _serialize_list_for_key(sorted(v, key=lambda x: str(x)))
             elif isinstance(v, dict):
                 result[k] = {kk: _serialize_for_key(vv) for kk, vv in v.items()}
             else:
                 result[k] = _serialize_for_key(v)
         return result
-    if isinstance(obj, (list, tuple, set, frozenset)):
+    if isinstance(obj, (list, tuple)):
         return _serialize_list_for_key(list(obj))
+    if isinstance(obj, (set, frozenset)):
+        # Sort sets for deterministic ordering to ensure stable cache keys
+        return _serialize_list_for_key(sorted(obj, key=lambda x: str(x)))
     if callable(obj):
         return (
             f"{getattr(obj, '__module__', '<unknown>')}.{getattr(obj, '__qualname__', repr(obj))}"
@@ -125,8 +134,11 @@ def _serialize_list_for_key(obj_list: List[Any]) -> List[Any]:
             result_list.append({k: _serialize_for_key(val) for k, val in d.items()})
         elif isinstance(v, dict):
             result_list.append({k: _serialize_for_key(val) for k, val in v.items()})
-        elif isinstance(v, (list, tuple, set, frozenset)):
+        elif isinstance(v, (list, tuple)):
             result_list.append(_serialize_list_for_key(list(v)))
+        elif isinstance(v, (set, frozenset)):
+            # Sort sets for deterministic ordering to ensure stable cache keys
+            result_list.append(_serialize_list_for_key(sorted(v, key=lambda x: str(x))))
         else:
             result_list.append(_serialize_for_key(v))
     return result_list

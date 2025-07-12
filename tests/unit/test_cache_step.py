@@ -493,3 +493,44 @@ def test_cache_key_very_large_structure():
     # The cache serialization returns dictionaries for BaseModel instances
     assert isinstance(serialized, dict)
     assert "items" in serialized
+
+
+def test_cache_key_deterministic_set_ordering():
+    """Test that sets and frozensets are serialized with deterministic ordering."""
+    from flujo.steps.cache_step import _serialize_for_key
+
+    # Test with sets containing different types
+    test_set = {3, 1, 2, "b", "a", "c"}
+    test_frozenset = frozenset([3, 1, 2, "b", "a", "c"])
+
+    # Serialize multiple times to ensure consistent ordering
+    result1 = _serialize_for_key(test_set)
+    result2 = _serialize_for_key(test_set)
+    result3 = _serialize_for_key(test_set)
+
+    # All results should be identical
+    assert result1 == result2 == result3
+
+    # Test frozenset
+    result4 = _serialize_for_key(test_frozenset)
+    result5 = _serialize_for_key(test_frozenset)
+    result6 = _serialize_for_key(test_frozenset)
+
+    # All results should be identical
+    assert result4 == result5 == result6
+
+    # Test with nested sets
+    nested_set = {1, 2, frozenset([3, 1, 2])}
+    result7 = _serialize_for_key(nested_set)
+    result8 = _serialize_for_key(nested_set)
+
+    # Results should be identical
+    assert result7 == result8
+
+    # Test with complex nested structures (using frozensets since sets can't contain sets)
+    complex_set = {frozenset([3, 1, 2]), frozenset([2, 1, 3]), frozenset(["c", "a", "b"])}
+    result9 = _serialize_for_key(complex_set)
+    result10 = _serialize_for_key(complex_set)
+
+    # Results should be identical
+    assert result9 == result10
