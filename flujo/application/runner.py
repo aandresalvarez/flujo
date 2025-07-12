@@ -459,7 +459,30 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     context_data.update(initial_context_data)
                 if run_id is not None:
                     context_data["run_id"] = run_id
-                current_context_instance = self.context_model(**context_data)
+
+                # Process context_data to reconstruct custom types using the deserializer registry
+                from flujo.utils.serialization import lookup_custom_deserializer
+
+                processed_context_data = {}
+                for key, value in context_data.items():
+                    if key in self.context_model.model_fields:
+                        field_info = self.context_model.model_fields[key]
+                        field_type = field_info.annotation
+                        # Try to reconstruct custom types using the global deserializer registry
+                        if field_type is not None and isinstance(value, dict):
+                            custom_deserializer = lookup_custom_deserializer(field_type)
+                            if custom_deserializer:
+                                try:
+                                    reconstructed_value = custom_deserializer(value)
+                                    processed_context_data[key] = reconstructed_value
+                                    continue
+                                except Exception:
+                                    pass  # Fallback to original value
+                        processed_context_data[key] = value
+                    else:
+                        processed_context_data[key] = value
+
+                current_context_instance = self.context_model(**processed_context_data)
             except ValidationError as e:
                 telemetry.logfire.error(
                     f"Context initialization failed for model {self.context_model.__name__}: {e}"

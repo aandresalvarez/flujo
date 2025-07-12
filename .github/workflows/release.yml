@@ -29,16 +29,16 @@ jobs:
         if [[ "$GITHUB_REF" == refs/tags/* ]]; then
           TAG_NAME=${GITHUB_REF#refs/tags/}
           echo "Handling tag: $TAG_NAME"
-          
+
           # Fetch all tags from remote with force to ensure we have the latest
           git fetch --tags --force
-          
+
           # Delete local tag if it exists (to prevent conflicts)
           git tag -d $TAG_NAME || true
-          
+
           # Fetch the specific tag from remote
           git fetch origin tag $TAG_NAME
-          
+
           # Configure git to handle tag conflicts gracefully
           git config pull.rebase false
           git config pull.ff only
@@ -73,14 +73,14 @@ jobs:
         if [[ "$GITHUB_REF" == refs/tags/* ]]; then
           TAG_NAME=${GITHUB_REF#refs/tags/}
           echo "Pre-handling git pull for tag: $TAG_NAME"
-          
+
           # Do the git pull manually to handle conflicts
           git fetch --tags --force
           git tag -d $TAG_NAME || true
           git fetch origin tag $TAG_NAME
           git pull --ff-only || echo "Pull completed or no conflicts"
         fi
-      
+
     - name: Generate changelog with action
       uses: TriPSs/conventional-changelog-action@v3
       with:
@@ -93,4 +93,4 @@ jobs:
         tag-prefix: 'v'
 
     - name: Publish package to PyPI
-      uses: pypa/gh-action-pypi-publish@release/v1 
+      uses: pypa/gh-action-pypi-publish@release/v1

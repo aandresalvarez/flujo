@@ -1,36 +1,66 @@
-from __future__ import annotations
+"""Base classes for state backends."""
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional, List, Literal, Callable
+from typing import Any, Dict, Optional, List
 
-from ..serialization import flujo_default_serializer
+from ...utils.serialization import safe_serialize
+
+
+def _to_jsonable(obj: object) -> object:
+    """Convert an object to a JSON-serializable format.
+
+    This function handles Pydantic models and nested structures by converting
+    them to dictionaries and lists that can be serialized to JSON.
+
+    DEPRECATED: Use safe_serialize from flujo.utils.serialization instead.
+    This function is kept for backward compatibility.
+    """
+    return safe_serialize(obj)
 
 
 class StateBackend(ABC):
-    """Abstract interface for workflow state persistence."""
+    """Abstract base class for state backends.
 
-    def __init__(self, *, serializer_default: Callable[[Any], Any] | None = None) -> None:
-        self.serializer_default = serializer_default or flujo_default_serializer
+    State backends are responsible for persisting and retrieving workflow state.
+    They handle serialization of complex objects automatically using the enhanced
+    serialization utilities.
+    """
 
     @abstractmethod
     async def save_state(self, run_id: str, state: Dict[str, Any]) -> None:
-        """Persist the serialized state for ``run_id``."""
-        ...
+        """Save workflow state.
+
+        Args:
+            run_id: Unique identifier for the workflow run
+            state: Dictionary containing workflow state data
+        """
+        pass
 
     @abstractmethod
     async def load_state(self, run_id: str) -> Optional[Dict[str, Any]]:
-        """Load and return the serialized state for ``run_id`` if present."""
-        ...
+        """Load workflow state.
+
+        Args:
+            run_id: Unique identifier for the workflow run
+
+        Returns:
+            Dictionary containing workflow state data, or None if not found
+        """
+        pass
 
     @abstractmethod
     async def delete_state(self, run_id: str) -> None:
-        """Remove any persisted state for ``run_id``."""
-        ...
+        """Delete workflow state.
+
+        Args:
+            run_id: Unique identifier for the workflow run
+        """
+        pass
 
     # Optional: Observability/admin methods (default: NotImplemented)
     async def list_workflows(
         self,
-        status: Optional[Literal["running", "paused", "completed", "failed", "cancelled"]] = None,
+        status: Optional[str] = None,
         pipeline_id: Optional[str] = None,
         limit: Optional[int] = None,
         offset: int = 0,

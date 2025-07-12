@@ -30,4 +30,4 @@ COPY . .
 RUN poetry install --with dev,docs,bench
 
 # Set default command
-CMD ["make", "help"] 
+CMD ["make", "help"]

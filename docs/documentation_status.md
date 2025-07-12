@@ -21,7 +21,7 @@ The documentation has been systematically reviewed and updated to reflect the cu
 #### `docs/index.md` - Main Landing Page
 - ✅ **UPDATED**: Expanded overview with comprehensive feature list
 - ✅ **UPDATED**: Added quick start examples with correct API usage
-- ✅ **UPDATED**: Added CLI command examples 
+- ✅ **UPDATED**: Added CLI command examples
 - ✅ **UPDATED**: Improved navigation structure for different user types
 - ✅ **UPDATED**: Added community and support links
 
@@ -30,7 +30,7 @@ The documentation has been systematically reviewed and updated to reflect the cu
 - ✅ **UPDATED**: Added reflection agent to examples (was missing)
 - ✅ **UPDATED**: Added all available CLI commands:
   - `flujo solve`
-  - `flujo bench` 
+  - `flujo bench`
   - `flujo show-config`
   - `flujo version-cmd`
   - `flujo explain`
@@ -106,7 +106,7 @@ All documented CLI commands verified in `flujo/cli/main.py`:
 
 ### Complete and Current
 - ✅ `installation.md` - Installation guide
-- ✅ `quickstart.md` - Quick start guide  
+- ✅ `quickstart.md` - Quick start guide
 - ✅ `concepts.md` - Core concepts
 - ✅ `api_reference.md` - API reference
 - ✅ `index.md` - Main landing page
@@ -178,7 +178,7 @@ The documentation is now **fully aligned** with the current codebase (v0.6.x). A
 
 ### Summary of Changes
 - ✅ 5 major documentation files updated
-- ✅ 15+ API inconsistencies resolved  
+- ✅ 15+ API inconsistencies resolved
 - ✅ 7 CLI commands properly documented
 - ✅ Reflection agent integration documented
 - ✅ All examples verified as present

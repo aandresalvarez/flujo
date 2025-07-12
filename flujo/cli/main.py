@@ -35,6 +35,7 @@ from rich.console import Console
 from flujo.domain.dsl import Pipeline, Step
 import runpy
 from flujo.domain.agent_protocol import AsyncAgentProtocol
+from ..utils.serialization import safe_serialize
 
 # Type definitions for CLI
 WeightsType = List[Dict[str, Union[str, float]]]
@@ -169,7 +170,7 @@ def solve(
         )
         best = orch.run_sync(Task(prompt=prompt, metadata=metadata))
         if best is not None:
-            typer.echo(json.dumps(best.model_dump(), indent=2))
+            typer.echo(json.dumps(safe_serialize(best.model_dump()), indent=2))
         else:
             typer.echo("[red]No solution found[/red]", err=True)
             raise typer.Exit(1)
@@ -399,7 +400,7 @@ def improve(
         evaluate_and_improve(task_fn, dataset, agent, pipeline_definition=pipeline)
     )
     if json_output:
-        typer.echo(json.dumps(report.model_dump(), indent=2))
+        typer.echo(json.dumps(safe_serialize(report.model_dump()), indent=2))
         return
 
     console = Console()
@@ -648,7 +649,7 @@ def run(
 
         # Output the result
         if json_output:
-            typer.echo(json.dumps(result.model_dump(), indent=2))
+            typer.echo(json.dumps(safe_serialize(result.model_dump()), indent=2))
         else:
             console = Console()
             console.print("[bold green]Pipeline execution completed successfully![/bold green]")
@@ -680,7 +681,9 @@ def run(
 
             if result.final_pipeline_context:
                 console.print("\n[bold]Final Context:[/bold]")
-                console.print(json.dumps(result.final_pipeline_context.model_dump(), indent=2))
+                console.print(
+                    json.dumps(safe_serialize(result.final_pipeline_context.model_dump()), indent=2)
+                )
 
     except Exception as e:
         typer.echo(f"[red]Error running pipeline: {e}", err=True)

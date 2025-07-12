@@ -18,4 +18,3 @@ print(result.step_history[-1].output)  # [2, 4, 6]
 ```
 
 The mapping happens asynchronously when the body pipeline's steps do not share state.
-

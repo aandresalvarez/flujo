@@ -8,6 +8,18 @@ from flujo.domain import Pipeline
 from flujo.domain.pipeline_dsl import StepConfig
 from flujo.domain.plugins import PluginOutcome
 from typing import Any
+from flujo.utils.serialization import register_custom_serializer
+
+
+class CustomKey:
+    def __init__(self, value):
+        self.value = value
+
+    def __eq__(self, other):
+        return isinstance(other, CustomKey) and self.value == other.value
+
+    def __hash__(self):
+        return hash(self.value)
 
 
 @pytest.mark.asyncio
@@ -150,3 +162,54 @@ async def test_conditional_branch_with_fallback() -> None:
     result = await gather_result(Flujo(pipeline), "x")
     assert fb_agent.call_count == 1
     assert result.step_history[-1].output == "end"
+
+
+@pytest.mark.asyncio
+async def test_cache_with_custom_type_in_input() -> None:
+    register_custom_serializer(CustomKey, lambda x: f"key_{x.value}")
+    agent: StubAgent = StubAgent(["ok"])  # Always returns "ok"
+    slow_step: Step[Any, Any] = Step.solution(agent)
+    cache: InMemoryCache = InMemoryCache()
+    cached: Step[Any, Any] = Step.cached(slow_step, cache_backend=cache)
+    pipeline: Pipeline[Any, Any] = cached
+    runner: Flujo[Any, Any, Any] = Flujo(pipeline)
+
+    input_data = {"user": "abc", "custom": CustomKey("abc")}
+    # First call: cache miss
+    await gather_result(runner, input_data)
+    assert agent.call_count == 1
+
+    # Second call: cache hit
+    await gather_result(runner, input_data)
+    assert agent.call_count == 1, "Agent should not be called on cache hit for same input"
+
+
+@pytest.mark.asyncio
+async def test_cache_custom_key_serialization_and_hit() -> None:
+    register_custom_serializer(CustomKey, lambda x: f"key_{x.value}")
+    agent: StubAgent = StubAgent(["ok"])
+    slow_step: Step[Any, Any] = Step.solution(agent)
+    cache: InMemoryCache = InMemoryCache()
+    cached: Step[Any, Any] = Step.cached(slow_step, cache_backend=cache)
+    pipeline: Pipeline[Any, Any] = cached
+    runner: Flujo[Any, Any, Any] = Flujo(pipeline)
+
+    # Test that custom serializers work for cache key generation
+    input_data1 = {"user": "abc", "custom": CustomKey("abc")}
+    input_data2 = {"user": "def", "custom": CustomKey("def")}
+
+    # First call with input1: cache miss
+    await gather_result(runner, input_data1)
+    assert agent.call_count == 1
+
+    # Second call with input1: should be cache hit
+    await gather_result(runner, input_data1)
+    assert agent.call_count == 1, "Agent should not be called on cache hit for same input"
+
+    # Third call with input2: cache miss (different input)
+    await gather_result(runner, input_data2)
+    assert agent.call_count == 2, "Agent should be called for different input"
+
+    # Fourth call with input2: should be cache hit
+    await gather_result(runner, input_data2)
+    assert agent.call_count == 2, "Agent should not be called on cache hit for same input"

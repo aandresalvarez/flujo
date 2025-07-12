@@ -202,20 +202,20 @@ make release-delete       # delete current release (requires confirmation)
 2. **Release Notes Best Practices**
    ```markdown
    # Example Release Notes
-   
+
    ## What's New
    - Added new AI agent orchestration features
    - Improved error handling in workflow execution
    - Enhanced documentation with usage examples
-   
+
    ## Breaking Changes
    - Renamed `Agent.run()` to `Agent.execute()` for clarity
    - Updated configuration format in `config.yaml`
-   
+
    ## Bug Fixes
    - Fixed memory leak in long-running workflows
    - Resolved race condition in parallel agent execution
-   
+
    ## Dependencies
    - Updated pydantic to v2.7.0
    - Added new optional dependency: logfire>=0.3.0
@@ -237,10 +237,10 @@ make release-delete       # delete current release (requires confirmation)
    # Create a clean virtual environment
    python -m venv test_env
    source test_env/bin/activate
-   
+
    # Test PyPI installation
    pip install flujo==X.Y.Z
-   
+
    # Test GitHub release installation
    pip install https://github.com/username/flujo/releases/download/vX.Y.Z/flujo-X.Y.Z-py3-none-any.whl
    ```
@@ -309,7 +309,7 @@ The project supports automated releases through GitHub Actions. There are two wo
      push:
        tags:
          - 'v*'  # Triggers on version tags
-   
+
    jobs:
      release:
        runs-on: ubuntu-latest
@@ -344,7 +344,7 @@ The project supports automated releases through GitHub Actions. There are two wo
      push:
        tags:
          - 'v*'  # Triggers on version tags
-   
+
    jobs:
      release:
        runs-on: ubuntu-latest
@@ -383,7 +383,7 @@ The project supports automated releases through GitHub Actions. There are two wo
    # 2. Update CHANGELOG.md
    # 3. Commit changes
    git commit -am "release: v0.3.0"
-   
+
    # 4. Create and push tag
    git tag v0.3.0
    git push origin v0.3.0

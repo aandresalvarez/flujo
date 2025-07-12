@@ -330,4 +330,4 @@ For very large pipelines:
 - Use the visualization to identify opportunities for refactoring
 - Focus on the high-level structure rather than every detail
 
-The `.to_mermaid()` method provides a powerful way to understand and communicate complex pipeline structures, making it easier to debug issues, onboard new team members, and maintain clear documentation. 
+The `.to_mermaid()` method provides a powerful way to understand and communicate complex pipeline structures, making it easier to debug issues, onboard new team members, and maintain clear documentation.

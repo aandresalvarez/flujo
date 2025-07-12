@@ -9,6 +9,7 @@ visualization, and AI-driven modification.
 from __future__ import annotations
 
 from typing import Any, Dict, Optional, cast, TYPE_CHECKING
+from pydantic import TypeAdapter
 
 from ..domain.dsl.pipeline import Pipeline
 from ..domain.dsl.step import Step
@@ -20,6 +21,9 @@ from ..testing.utils import gather_result
 
 if TYPE_CHECKING:  # pragma: no cover - used for typing only
     from ..infra.agents import AsyncAgentProtocol
+
+# Type adapter for command validation
+_command_adapter: TypeAdapter[AgentCommand] = TypeAdapter(AgentCommand)
 
 
 def make_default_pipeline(
@@ -113,24 +117,54 @@ def make_agentic_loop_pipeline(
 
         async def run(self, data: Any, *, context: PipelineContext) -> ExecutedCommandLog:
             """Execute a command from the planner."""
-            command = cast(AgentCommand, data)
-            turn: int = len(getattr(context, "command_log", [])) + 1 if context is not None else 1
-            if isinstance(command, FinishCommand):
+            from flujo.application.runner import _accepts_param
+            from flujo.exceptions import PausedException
+            from pydantic import ValidationError
+
+            turn = len(getattr(context, "command_log", [])) + 1 if context is not None else 1
+            try:
+                cmd = _command_adapter.validate_python(data)
+            except ValidationError as e:  # pragma: no cover - planner bug
+                validation_error_result = f"Invalid command: {e}"
                 return ExecutedCommandLog(
                     turn=turn,
-                    generated_command=command,
-                    execution_result=getattr(command, "final_answer", None),
+                    generated_command=data,
+                    execution_result=validation_error_result,
                 )
-            # Handle other command types as needed
-            return ExecutedCommandLog(
+
+            exec_result: Any = "Command type not recognized."
+            try:
+                if cmd.type == "run_agent":
+                    agent = self.agent_registry.get(cmd.agent_name)
+                    if not agent:
+                        exec_result = f"Error: Agent '{cmd.agent_name}' not found."
+                    else:
+                        agent_kwargs: Dict[str, Any] = {}
+                        if _accepts_param(agent.run, "context"):
+                            agent_kwargs["context"] = context
+                        exec_result = await agent.run(cmd.input_data, **agent_kwargs)
+                elif cmd.type == "ask_human":
+                    if isinstance(context, PipelineContext):
+                        context.scratchpad["paused_step_input"] = cmd
+                    raise PausedException(message=cmd.question)
+                elif cmd.type == "finish":
+                    exec_result = cmd.final_answer
+            except PausedException:
+                raise
+            except Exception as e:  # noqa: BLE001
+                exec_result = f"Error during command execution: {e}"
+
+            log_entry = ExecutedCommandLog(
                 turn=turn,
-                generated_command=command,
-                execution_result="Command executed",
+                generated_command=cmd,
+                execution_result=exec_result,
             )
+            context.command_log.append(log_entry)
+            return log_entry
 
     async def planner_step(data: str, *, context: PipelineContext) -> AgentCommand:
         """Get the next command from the planner."""
-        result = await planner_agent.run(data, context=context)
+        result = await _invoke(planner_agent, data, context=context)
         return cast(AgentCommand, getattr(result, "output", result))
 
     async def command_executor_step(
@@ -225,8 +259,10 @@ async def _invoke(
     context: Optional[PipelineContext] = None,
 ) -> Any:
     """Helper function to invoke an agent with proper error handling."""
+    from flujo.application.runner import _accepts_param
+
     try:
-        if context is not None:
+        if context is not None and _accepts_param(agent.run, "context"):
             return await agent.run(data, context=context)
         else:
             return await agent.run(data)

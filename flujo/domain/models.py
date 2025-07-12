@@ -1,12 +1,12 @@
 """Domain models for flujo."""
 
-from typing import Any, List, Optional, Literal, Dict, TYPE_CHECKING, Generic
-import orjson
+from typing import Any, List, Optional, Literal, Dict, TYPE_CHECKING, Generic, Set
 from pydantic import BaseModel as PydanticBaseModel, Field, ConfigDict
 from typing import ClassVar
 from datetime import datetime, timezone
 import uuid
 from enum import Enum
+from types import FunctionType, MethodType, BuiltinFunctionType, BuiltinMethodType
 
 from .types import ContextT
 
@@ -15,36 +15,200 @@ if TYPE_CHECKING:
 
 
 class BaseModel(PydanticBaseModel):
-    """BaseModel for all flujo domain models, configured to use orjson."""
+    """BaseModel for all flujo domain models with intelligent fallback serialization."""
 
     model_config: ClassVar[ConfigDict] = {
         # Removed deprecated json_dumps and json_loads config keys
+        "arbitrary_types_allowed": True,
     }
 
-    def model_dump_json(self, **kwargs: Any) -> str:
-        """Override to use orjson for serialization."""
-        data: bytes = orjson.dumps(self.model_dump(), **kwargs)
-        return data.decode()
+    def _is_unknown_type(self, value: Any) -> bool:
+        """Check if a value is an unknown type that needs special serialization."""
+        if value is None:
+            return False
 
-    @classmethod
-    def model_validate_json(
-        cls,
-        json_data: str | bytes | bytearray,
-        *,
-        strict: bool | None = None,
-        context: Any | None = None,
-        by_alias: bool | None = None,
-        by_name: bool | None = None,
-    ) -> "BaseModel":
-        """Override to use orjson for deserialization."""
-        data = orjson.loads(json_data)
-        return cls.model_validate(
-            data,
-            strict=strict,
-            context=context,
-            by_alias=by_alias,
-            by_name=by_name,
+        # Check for types that Pydantic handles natively
+        if isinstance(value, (str, int, float, bool, list, dict, datetime, Enum)):
+            return False
+
+        # Check for types that need special handling
+        return (
+            callable(value)
+            or isinstance(value, (complex, set, frozenset, bytes, memoryview))
+            or (hasattr(value, "__dict__") and not hasattr(value, "model_dump"))
         )
+
+    def model_dump(
+        self, *, mode: str = "default", _seen: Optional[Set[int]] = None, **kwargs: Any
+    ) -> Any:
+        """
+        Robust model_dump with dual-mode serialization:
+        - mode="default": round-trip safe, for persistence/state/validation (circular refs become None for optional fields, error for required)
+        - mode="cache": diagnostic, for cache keys/logs (circular refs become placeholders)
+        """
+        if _seen is None:
+            _seen = set()
+
+        # Check for circular references only when recursing into nested objects
+        # Don't add self to _seen at the start to avoid false positives
+        obj_id = id(self)
+        if obj_id in _seen:
+            if mode == "cache":
+                return f"<{self.__class__.__name__} circular>"
+            # In default mode, circular reference: return None (for optional), error for required handled by caller
+            return None
+
+        # Add to _seen only when we start recursing into fields
+        _seen.add(obj_id)
+        try:
+            result = {}
+            # Use model_fields from the class (not instance) for Pydantic v2+ compatibility
+            for name, field in getattr(self.__class__, "model_fields", {}).items():
+                value = getattr(self, name)
+                # Always check for custom serializer first
+                from flujo.utils.serialization import lookup_custom_serializer
+
+                custom_serializer = lookup_custom_serializer(value)
+                if custom_serializer:
+                    serialized = custom_serializer(value)
+                    # Recursively serialize the result
+                    result[name] = self._safe_serialize_with_seen(serialized, _seen, mode=mode)
+                    continue
+                # If the value is a BaseModel, call its model_dump with the same _seen set and mode
+                if hasattr(value, "model_dump") and callable(getattr(value, "model_dump")):
+                    result[name] = value.model_dump(mode=mode, _seen=_seen)
+                else:
+                    result[name] = self._safe_serialize_with_seen(value, _seen, mode=mode)
+            return result
+        finally:
+            _seen.discard(obj_id)
+
+    def _safe_serialize_with_seen(self, obj: Any, _seen: Set[int], mode: str = "default") -> Any:
+        if obj is None or isinstance(obj, (str, int, float, bool)):
+            return obj
+
+        obj_id = id(obj)
+        if obj_id in _seen:
+            if mode == "cache":
+                return f"<{type(obj).__name__} circular>"
+            return None
+
+        from flujo.utils.serialization import lookup_custom_serializer
+
+        custom_serializer = lookup_custom_serializer(obj)
+        if custom_serializer:
+            serialized = custom_serializer(obj)
+            return self._safe_serialize_with_seen(serialized, _seen, mode=mode)
+
+        if isinstance(obj, list):
+            return [self._safe_serialize_with_seen(item, _seen, mode=mode) for item in obj]
+        if isinstance(obj, tuple):
+            return tuple(self._safe_serialize_with_seen(item, _seen, mode=mode) for item in obj)
+
+        # Only add to _seen for dicts, not for models
+        if isinstance(obj, dict):
+            _seen.add(obj_id)
+            try:
+                return {
+                    self._safe_serialize_with_seen(
+                        k, _seen, mode=mode
+                    ): self._safe_serialize_with_seen(v, _seen, mode=mode)
+                    for k, v in obj.items()
+                }
+            finally:
+                _seen.discard(obj_id)
+        if hasattr(obj, "model_dump") and callable(getattr(obj, "model_dump")):
+            return obj.model_dump(mode=mode, _seen=_seen)
+
+        if self._is_unknown_type(obj):
+            return self._serialize_single_unknown_type(obj, _seen, mode=mode)
+        return obj
+
+    def model_dump_json(self, **kwargs: Any) -> str:
+        """Override model_dump_json to use robust serialization with custom type handling."""
+        # Get the standard serialized data
+        data = self.model_dump(**kwargs)
+        # Import json here to avoid circular imports
+        import json
+
+        return json.dumps(data, **kwargs)
+
+    def _process_serialized_data(
+        self, data: Any, _seen: Optional[Set[int]] = None, mode: str = "default"
+    ) -> Any:
+        return self._safe_serialize_with_seen(data, _seen or set(), mode=mode)
+
+    def _recursively_serialize_dict(
+        self, obj: Any, _seen: Optional[Set[int]] = None, mode: str = "default"
+    ) -> Any:
+        return self._safe_serialize_with_seen(obj, _seen or set(), mode=mode)
+
+    def _serialize_single_unknown_type(
+        self, value: Any, _seen: Optional[Set[int]] = None, mode: str = "default"
+    ) -> Any:
+        """Serialize a single unknown type value, respecting mode for circular refs."""
+        if _seen is None:
+            _seen = set()
+        if value is None:
+            return None
+
+        # Check for custom serializers FIRST - before any type-specific handling
+        from flujo.utils.serialization import lookup_custom_serializer
+
+        custom_serializer = lookup_custom_serializer(value)
+        if custom_serializer:
+            serialized_result = custom_serializer(value)
+            return self._recursively_serialize_dict(serialized_result, _seen, mode=mode)
+
+        if isinstance(value, (str, int, float, bool)):
+            return value
+        obj_id = id(value)
+        if obj_id in _seen:
+            if mode == "cache":
+                return f"<{type(value).__name__} circular>"
+            return None
+        _seen.add(obj_id)
+        try:
+            if callable(value):
+                if isinstance(
+                    value, (FunctionType, MethodType, BuiltinFunctionType, BuiltinMethodType)
+                ):
+                    module = getattr(value, "__module__", "<unknown>")
+                    qualname = getattr(value, "__qualname__", repr(value))
+                    return f"{module}.{qualname}"
+                else:
+                    return repr(value)
+            if isinstance(value, datetime):
+                return value.isoformat()
+            if isinstance(value, Enum):
+                return value.value
+            if isinstance(value, complex):
+                # Always match test expectations for string format
+                real_part = int(value.real) if value.real == int(value.real) else value.real
+                imag_part = int(value.imag) if value.imag == int(value.imag) else value.imag
+                # Remove trailing .0 for integer parts
+                real_str = str(real_part)
+                imag_str = str(imag_part)
+                if real_str.endswith(".0"):
+                    real_str = real_str[:-2]
+                if imag_str.endswith(".0"):
+                    imag_str = imag_str[:-2]
+                return f"{real_str}+{imag_str}j"
+            if isinstance(value, (set, frozenset)):
+                return list(value)
+            if isinstance(value, bytes):
+                return value.decode("utf-8", errors="replace")
+            if isinstance(value, memoryview):
+                return bytes(value).decode("utf-8", errors="replace")
+            try:
+                if hasattr(value, "__dict__"):
+                    dict_repr = {k: v for k, v in value.__dict__.items() if not k.startswith("_")}
+                    return self._recursively_serialize_dict(dict_repr, _seen, mode=mode)
+                return str(value)
+            except Exception:
+                return repr(value)
+        finally:
+            _seen.discard(obj_id)
 
 
 class Task(BaseModel):

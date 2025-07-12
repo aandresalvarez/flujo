@@ -73,16 +73,16 @@ pip install -e ".[dev]"
    OPENAI_API_KEY=your_key_here
    ANTHROPIC_API_KEY=your_key_here
    GOOGLE_API_KEY=your_key_here
-   
+
    # Optional: Logfire for advanced telemetry
    # LOGFIRE_API_KEY=your_logfire_key
-   
+
    # Optional: Configuration overrides
    REFLECTION_ENABLED=true
    REWARD_ENABLED=false
    AGENT_TIMEOUT=60
    TELEMETRY_EXPORT_ENABLED=false
-   
+
    # Optional: Model overrides
    DEFAULT_SOLUTION_MODEL=openai:gpt-4o
    DEFAULT_REVIEW_MODEL=openai:gpt-4o
@@ -154,4 +154,4 @@ If you encounter any issues:
 
 - Read the [Quickstart Guide](quickstart.md) to get started
 - Explore the [Tutorial](tutorial.md) for a guided tour
-- Check out [Use Cases](use_cases.md) for inspiration 
+- Check out [Use Cases](use_cases.md) for inspiration

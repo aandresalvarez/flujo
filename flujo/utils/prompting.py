@@ -1,7 +1,8 @@
 import re
-import orjson
+import json
 from typing import Any, Dict
 from pydantic import BaseModel
+from .serialization import safe_serialize
 
 IF_BLOCK_REGEX = re.compile(r"\{\{#if\s*([^\}]+?)\s*\}\}(.*?)\{\{\/if\}\}", re.DOTALL)
 EACH_BLOCK_REGEX = re.compile(r"\{\{#each\s*([^\}]+?)\s*\}\}(.*?)\{\{\/each\}\}", re.DOTALL)
@@ -35,15 +36,22 @@ class AdvancedPromptFormatter:
                 return None
         return value
 
+    def _serialize_value(self, value: Any) -> str:
+        """Helper to serialize BaseModel, dict, or list using safe_serialize and json.dumps."""
+        serialized = safe_serialize(value)
+        return json.dumps(serialized)
+
     def _serialize(self, value: Any) -> str:
         """Serialize ``value`` for interpolation into a template."""
 
         if value is None:
             return ""
         if isinstance(value, BaseModel):
-            return value.model_dump_json()
+            # Use robust serialization instead of model_dump_json to avoid deprecated custom serializers
+            return self._serialize_value(value)
         if isinstance(value, (dict, list)):
-            return str(orjson.dumps(value).decode())
+            # Use enhanced serialization instead of orjson
+            return self._serialize_value(value)
         return str(value)
 
     def format(self, **kwargs: Any) -> str:

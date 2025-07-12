@@ -11,7 +11,12 @@ def test_baseline_placeholder_and_json() -> None:
     template = "Hello {{ name }}! Data: {{ person }}"
     person = Person(name="Alice", email="a@example.com")
     result = format_prompt(template, name="World", person=person)
-    assert result == f"Hello World! Data: {person.model_dump_json()}"
+    # Derive expected JSON from the actual serialization logic to keep test in sync
+    from flujo.utils.serialization import safe_serialize
+    import json
+
+    expected_json = json.dumps(safe_serialize(person))
+    assert result == f"Hello World! Data: {expected_json}"
 
 
 def test_if_block() -> None:

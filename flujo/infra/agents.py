@@ -8,34 +8,29 @@ while system prompts are now in the flujo.prompts module.
 
 from __future__ import annotations
 
-from typing import Any, Generic, Optional, Type, get_origin
-from pydantic_ai import Agent, ModelRetry
-from pydantic import BaseModel as PydanticBaseModel, TypeAdapter, ValidationError
-import json
-import os
 import asyncio
-import traceback
+import json
 import warnings
+from typing import Any, Optional, Type, Generic, get_origin
+
+from pydantic import ValidationError
+from pydantic_ai import Agent, ModelRetry
+from pydantic import BaseModel as PydanticBaseModel, TypeAdapter
+import os
+import traceback
 from tenacity import AsyncRetrying, RetryError, stop_after_attempt, wait_exponential
 
-from flujo.infra.settings import settings
-from flujo.domain.models import Checklist, ImprovementReport
-from flujo.domain.processors import AgentProcessors
-from flujo.domain.agent_protocol import (
-    AsyncAgentProtocol,
-    AgentInT,
-    AgentOutT,
-)
-from flujo.exceptions import (
-    OrchestratorRetryError,
-    ConfigurationError,
-    OrchestratorError,
-)
-from flujo.infra.telemetry import logfire
+from ..domain.agent_protocol import AsyncAgentProtocol, AgentInT, AgentOutT
+from ..domain.models import Checklist, ImprovementReport
+from ..domain.processors import AgentProcessors
+from ..exceptions import OrchestratorError, OrchestratorRetryError, ConfigurationError
+from ..utils.serialization import safe_serialize
 from ..processors.repair import DeterministicRepairProcessor
+from .settings import settings
+from .telemetry import logfire
 
 # Import prompts from the new prompts module
-from flujo.prompts import (
+from ..prompts import (
     REVIEW_SYS,
     SOLUTION_SYS,
     VALIDATE_SYS,
@@ -164,7 +159,19 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
     def _call_agent_with_dynamic_args(self, *args: Any, **kwargs: Any) -> Any:
         """Invoke the underlying agent with arbitrary arguments."""
 
-        return self._agent.run(*args, **kwargs)
+        # Check if the underlying agent accepts context parameters
+        from flujo.application.context_manager import _accepts_param
+
+        filtered_kwargs = {}
+        for k, v in kwargs.items():
+            if k in ["context", "pipeline_context"]:
+                # Only pass context if the underlying agent accepts it
+                if _accepts_param(self._agent.run, "context"):
+                    filtered_kwargs["context"] = v
+            else:
+                filtered_kwargs[k] = v
+
+        return self._agent.run(*args, **filtered_kwargs)
 
     async def _run_with_retry(self, *args: Any, **kwargs: Any) -> Any:
         """Run the agent with retry, timeout and processor support."""
@@ -246,7 +253,7 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                         _unwrap_type_adapter(self.target_output_type)
                     ).json_schema()
                     prompt_data = {
-                        "json_schema": json.dumps(schema, ensure_ascii=False),
+                        "json_schema": json.dumps(safe_serialize(schema), ensure_ascii=False),
                         "original_prompt": str(args[0]) if args else "",
                         "failed_output": raw_output,
                         "validation_error": str(last_exc),

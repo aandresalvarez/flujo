@@ -1,23 +1,21 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Literal, Callable
+from typing import Any, Dict, List, Optional
 
-import orjson
 import aiosqlite
 
 from .base import StateBackend
+from ...utils.serialization import safe_serialize
 
 
 class SQLiteBackend(StateBackend):
     """SQLite-backed persistent storage for workflow state with optimized schema."""
 
-    def __init__(
-        self, db_path: Path, *, serializer_default: Callable[[Any], Any] | None = None
-    ) -> None:
-        super().__init__(serializer_default=serializer_default)
+    def __init__(self, db_path: Path) -> None:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = asyncio.Lock()
@@ -54,24 +52,15 @@ class SQLiteBackend(StateBackend):
                 """
             )
 
-            # Create indexes for common query patterns
+            # Create indexes for better query performance
             await db.execute(
                 "CREATE INDEX IF NOT EXISTS idx_workflow_state_status ON workflow_state(status)"
-            )
-            await db.execute(
-                "CREATE INDEX IF NOT EXISTS idx_workflow_state_pipeline_id ON workflow_state(pipeline_id)"
             )
             await db.execute(
                 "CREATE INDEX IF NOT EXISTS idx_workflow_state_created_at ON workflow_state(created_at)"
             )
             await db.execute(
-                "CREATE INDEX IF NOT EXISTS idx_workflow_state_updated_at ON workflow_state(updated_at)"
-            )
-            await db.execute(
-                "CREATE INDEX IF NOT EXISTS idx_workflow_state_status_updated ON workflow_state(status, updated_at)"
-            )
-            await db.execute(
-                "CREATE INDEX IF NOT EXISTS idx_workflow_state_pipeline_status ON workflow_state(pipeline_id, status)"
+                "CREATE INDEX IF NOT EXISTS idx_workflow_state_pipeline_id ON workflow_state(pipeline_id)"
             )
 
             # Run migration for existing databases
@@ -125,6 +114,7 @@ class SQLiteBackend(StateBackend):
                     self._initialized = True
 
     async def save_state(self, run_id: str, state: Dict[str, Any]) -> None:
+        """Save workflow state with enhanced serialization."""
         await self._ensure_init()
         async with self._lock:
             async with aiosqlite.connect(self.db_path) as db:
@@ -133,23 +123,21 @@ class SQLiteBackend(StateBackend):
                 if state.get("execution_time_ms") is not None:
                     execution_time_ms = state["execution_time_ms"]
 
+                # Use enhanced serialization for custom types
+                pipeline_context_json = json.dumps(safe_serialize(state["pipeline_context"]))
+                last_step_output_json = (
+                    json.dumps(safe_serialize(state["last_step_output"]))
+                    if state.get("last_step_output") is not None
+                    else None
+                )
+
                 await db.execute(
                     """
                     INSERT OR REPLACE INTO workflow_state (
-                        run_id,
-                        pipeline_id,
-                        pipeline_name,
-                        pipeline_version,
-                        current_step_index,
-                        pipeline_context,
-                        last_step_output,
-                        status,
-                        created_at,
-                        updated_at,
-                        total_steps,
-                        error_message,
-                        execution_time_ms,
-                        memory_usage_mb
+                        run_id, pipeline_id, pipeline_name, pipeline_version,
+                        current_step_index, pipeline_context, last_step_output,
+                        status, created_at, updated_at, total_steps,
+                        error_message, execution_time_ms, memory_usage_mb
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
@@ -158,18 +146,8 @@ class SQLiteBackend(StateBackend):
                         state["pipeline_name"],
                         state["pipeline_version"],
                         state["current_step_index"],
-                        orjson.dumps(
-                            state["pipeline_context"],
-                            default=self.serializer_default,
-                        ).decode(),
-                        (
-                            orjson.dumps(
-                                state["last_step_output"],
-                                default=self.serializer_default,
-                            ).decode()
-                            if state.get("last_step_output") is not None
-                            else None
-                        ),
+                        pipeline_context_json,
+                        last_step_output_json,
                         state["status"],
                         state["created_at"].isoformat(),
                         state["updated_at"].isoformat(),
@@ -182,6 +160,7 @@ class SQLiteBackend(StateBackend):
                 await db.commit()
 
     async def load_state(self, run_id: str) -> Optional[Dict[str, Any]]:
+        """Load workflow state with enhanced deserialization."""
         await self._ensure_init()
         async with self._lock:
             async with aiosqlite.connect(self.db_path) as db:
@@ -200,8 +179,8 @@ class SQLiteBackend(StateBackend):
         if row is None:
             return None
 
-        pipeline_context = orjson.loads(row[5]) if row[5] is not None else {}
-        last_step_output = orjson.loads(row[6]) if row[6] is not None else None
+        pipeline_context = json.loads(row[5]) if row[5] is not None else {}
+        last_step_output = json.loads(row[6]) if row[6] is not None else None
 
         return {
             "run_id": row[0],
@@ -221,143 +200,224 @@ class SQLiteBackend(StateBackend):
         }
 
     async def delete_state(self, run_id: str) -> None:
+        """Delete workflow state."""
         await self._ensure_init()
         async with self._lock:
             async with aiosqlite.connect(self.db_path) as db:
-                await db.execute(
-                    "DELETE FROM workflow_state WHERE run_id = ?",
-                    (run_id,),
-                )
+                await db.execute("DELETE FROM workflow_state WHERE run_id = ?", (run_id,))
                 await db.commit()
 
-    # New query methods for better observability
+    async def list_states(self, status: Optional[str] = None) -> List[Dict[str, Any]]:
+        """List workflow states with optional status filter."""
+        await self._ensure_init()
+        async with self._lock:
+            async with aiosqlite.connect(self.db_path) as db:
+                if status:
+                    async with db.execute(
+                        "SELECT run_id, status, created_at, updated_at FROM workflow_state WHERE status = ? ORDER BY created_at DESC",
+                        (status,),
+                    ) as cursor:
+                        rows = await cursor.fetchall()
+                else:
+                    async with db.execute(
+                        "SELECT run_id, status, created_at, updated_at FROM workflow_state ORDER BY created_at DESC"
+                    ) as cursor:
+                        rows = await cursor.fetchall()
+
+                return [
+                    {
+                        "run_id": row[0],
+                        "status": row[1],
+                        "created_at": row[2],
+                        "updated_at": row[3],
+                    }
+                    for row in rows
+                ]
+
     async def list_workflows(
         self,
-        status: Optional[Literal["running", "paused", "completed", "failed", "cancelled"]] = None,
+        status: Optional[str] = None,
         pipeline_id: Optional[str] = None,
         limit: Optional[int] = None,
         offset: int = 0,
     ) -> List[Dict[str, Any]]:
-        """List workflows with optional filtering and pagination."""
+        """Enhanced workflow listing with additional filters and metadata."""
         await self._ensure_init()
+        async with self._lock:
+            async with aiosqlite.connect(self.db_path) as db:
+                # Build query with optional filters
+                query = """
+                    SELECT run_id, pipeline_id, pipeline_name, pipeline_version,
+                           current_step_index, status, created_at, updated_at,
+                           total_steps, error_message, execution_time_ms, memory_usage_mb
+                    FROM workflow_state
+                    WHERE 1=1
+                """
+                params: List[Any] = []
 
-        query = "SELECT run_id, pipeline_id, pipeline_name, status, created_at, updated_at, current_step_index FROM workflow_state"
-        params = []
-        conditions = []
+                if status:
+                    query += " AND status = ?"
+                    params.append(status)
 
-        if status is not None:
-            conditions.append("status = ?")
-            params.append(str(status))
+                if pipeline_id:
+                    query += " AND pipeline_id = ?"
+                    params.append(pipeline_id)
 
-        if pipeline_id is not None:
-            conditions.append("pipeline_id = ?")
-            params.append(pipeline_id)
+                query += " ORDER BY created_at DESC"
 
-        if conditions:
-            query += " WHERE " + " AND ".join(conditions)
+                if limit is not None:
+                    query += " LIMIT ?"
+                    params.append(limit)
+                if offset:
+                    query += " OFFSET ?"
+                    params.append(offset)
 
-        query += " ORDER BY updated_at DESC"
+                async with db.execute(query, params) as cursor:
+                    rows = await cursor.fetchall()
 
-        if limit is not None:
-            query += f" LIMIT {limit} OFFSET {offset}"
-
-        async with aiosqlite.connect(self.db_path) as db:
-            cursor = await db.execute(query, params)
-            rows = await cursor.fetchall()
-            await cursor.close()
-
-        return [
-            {
-                "run_id": row[0],
-                "pipeline_id": row[1],
-                "pipeline_name": row[2],
-                "status": row[3],
-                "created_at": datetime.fromisoformat(row[4]),
-                "updated_at": datetime.fromisoformat(row[5]),
-                "current_step_index": row[6],
-            }
-            for row in rows
-        ]
+                result: List[Dict[str, Any]] = []
+                for row in rows:
+                    if row is None:
+                        continue
+                    result.append(
+                        {
+                            "run_id": row[0],
+                            "pipeline_id": row[1],
+                            "pipeline_name": row[2],
+                            "pipeline_version": row[3],
+                            "current_step_index": row[4],
+                            "status": row[5],
+                            "created_at": row[6],
+                            "updated_at": row[7],
+                            "total_steps": row[8] or 0,
+                            "error_message": row[9],
+                            "execution_time_ms": row[10],
+                            "memory_usage_mb": row[11],
+                        }
+                    )
+                return result
 
     async def get_workflow_stats(self) -> Dict[str, Any]:
-        """Get statistics about stored workflows."""
+        """Get comprehensive workflow statistics."""
         await self._ensure_init()
+        async with self._lock:
+            async with aiosqlite.connect(self.db_path) as db:
+                # Get total count
+                cursor = await db.execute("SELECT COUNT(*) FROM workflow_state")
+                total_workflows_row = await cursor.fetchone()
+                total_workflows = total_workflows_row[0] if total_workflows_row else 0
+                await cursor.close()
 
-        async with aiosqlite.connect(self.db_path) as db:
-            # Count by status
-            cursor = await db.execute("SELECT status, COUNT(*) FROM workflow_state GROUP BY status")
-            status_counts: Dict[str, int] = dict(await cursor.fetchall())  # type: ignore[arg-type]
-            await cursor.close()
+                # Get status counts
+                cursor = await db.execute("""
+                    SELECT status, COUNT(*)
+                    FROM workflow_state
+                    GROUP BY status
+                """)
+                status_counts_rows = await cursor.fetchall()
+                status_counts: Dict[str, int] = {
+                    row[0]: row[1] for row in status_counts_rows if row is not None
+                }
+                await cursor.close()
 
-            # Total count
-            cursor = await db.execute("SELECT COUNT(*) FROM workflow_state")
-            row = await cursor.fetchone()
-            total_count = row[0] if row is not None else 0
-            await cursor.close()
-
-            # Recent activity (last 24 hours)
-            cursor = await db.execute(
-                "SELECT COUNT(*) FROM workflow_state WHERE updated_at > datetime('now', '-1 day')"
-            )
-            row = await cursor.fetchone()
-            recent_count = row[0] if row is not None else 0
-            await cursor.close()
-
-            # Average execution time
-            cursor = await db.execute(
-                "SELECT AVG(execution_time_ms) FROM workflow_state WHERE execution_time_ms IS NOT NULL"
-            )
-            row = await cursor.fetchone()
-            avg_execution_time = row[0] if row is not None else None
-            await cursor.close()
-
-        return {
-            "total_workflows": total_count,
-            "recent_workflows_24h": recent_count,
-            "status_counts": status_counts,
-            "average_execution_time_ms": avg_execution_time,
-        }
-
-    async def cleanup_old_workflows(self, days_old: int = 30) -> int:
-        """Delete workflows older than specified days. Returns number of deleted workflows."""
-        await self._ensure_init()
-
-        async with aiosqlite.connect(self.db_path) as db:
-            cursor = await db.execute(
-                "DELETE FROM workflow_state WHERE updated_at < datetime('now', '-{} days')".format(
-                    days_old
+                # Get recent workflows (last 24 hours)
+                cursor = await db.execute("""
+                    SELECT COUNT(*)
+                    FROM workflow_state
+                    WHERE created_at >= datetime('now', '-24 hours')
+                """)
+                recent_workflows_24h_row = await cursor.fetchone()
+                recent_workflows_24h = (
+                    recent_workflows_24h_row[0] if recent_workflows_24h_row else 0
                 )
-            )
-            deleted_count = cursor.rowcount
-            await db.commit()
-            await cursor.close()
+                await cursor.close()
 
-        return deleted_count
+                # Get average execution time
+                cursor = await db.execute("""
+                    SELECT AVG(execution_time_ms)
+                    FROM workflow_state
+                    WHERE execution_time_ms IS NOT NULL
+                """)
+                avg_exec_time_row = await cursor.fetchone()
+                avg_exec_time = avg_exec_time_row[0] if avg_exec_time_row else 0
+                await cursor.close()
+
+                return {
+                    "total_workflows": total_workflows,
+                    "status_counts": status_counts,
+                    "recent_workflows_24h": recent_workflows_24h,
+                    "average_execution_time_ms": avg_exec_time or 0,
+                }
 
     async def get_failed_workflows(self, hours_back: int = 24) -> List[Dict[str, Any]]:
-        """Get failed workflows from the last N hours with error details."""
+        """Get failed workflows from the last N hours."""
         await self._ensure_init()
+        async with self._lock:
+            async with aiosqlite.connect(self.db_path) as db:
+                cursor = await db.execute(
+                    """
+                    SELECT run_id, pipeline_id, pipeline_name, pipeline_version,
+                           current_step_index, status, created_at, updated_at,
+                           total_steps, error_message, execution_time_ms, memory_usage_mb
+                    FROM workflow_state
+                    WHERE status = 'failed'
+                    AND updated_at >= datetime('now', '-' || ? || ' hours')
+                    ORDER BY updated_at DESC
+                """,
+                    (hours_back,),
+                )
 
-        async with aiosqlite.connect(self.db_path) as db:
-            cursor = await db.execute(
-                """
-                SELECT run_id, pipeline_id, pipeline_name, error_message, created_at, updated_at
-                FROM workflow_state
-                WHERE status = 'failed' AND updated_at > datetime('now', '-{} hours')
-                ORDER BY updated_at DESC
-                """.format(hours_back)
-            )
-            rows = await cursor.fetchall()
-            await cursor.close()
+                rows = await cursor.fetchall()
+                await cursor.close()
 
-        return [
-            {
-                "run_id": row[0],
-                "pipeline_id": row[1],
-                "pipeline_name": row[2],
-                "error_message": row[3],
-                "created_at": datetime.fromisoformat(row[4]),
-                "updated_at": datetime.fromisoformat(row[5]),
-            }
-            for row in rows
-        ]
+                result: List[Dict[str, Any]] = []
+                for row in rows:
+                    if row is None:
+                        continue
+                    result.append(
+                        {
+                            "run_id": row[0],
+                            "pipeline_id": row[1],
+                            "pipeline_name": row[2],
+                            "pipeline_version": row[3],
+                            "current_step_index": row[4],
+                            "status": row[5],
+                            "created_at": row[6],
+                            "updated_at": row[7],
+                            "total_steps": row[8] or 0,
+                            "error_message": row[9],
+                            "execution_time_ms": row[10],
+                            "memory_usage_mb": row[11],
+                        }
+                    )
+                return result
+
+    async def cleanup_old_workflows(self, days_old: float = 30) -> int:
+        """Delete workflows older than specified days. Returns number of deleted workflows."""
+        await self._ensure_init()
+        async with self._lock:
+            async with aiosqlite.connect(self.db_path) as db:
+                # First, count how many will be deleted
+                cursor = await db.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM workflow_state
+                    WHERE created_at < datetime('now', '-' || ? || ' days')
+                """,
+                    (days_old,),
+                )
+                count_row = await cursor.fetchone()
+                count = count_row[0] if count_row else 0
+                await cursor.close()
+
+                # Delete old workflows
+                await db.execute(
+                    """
+                    DELETE FROM workflow_state
+                    WHERE created_at < datetime('now', '-' || ? || ' days')
+                """,
+                    (days_old,),
+                )
+                await db.commit()
+
+                return int(count)

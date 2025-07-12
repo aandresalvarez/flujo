@@ -21,5 +21,3 @@ paused = result
 paused = await runner.resume_async(paused, "not ok")
 final = await runner.resume_async(paused, "ok")
 ```
-
-

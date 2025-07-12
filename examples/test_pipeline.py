@@ -1,6 +1,6 @@
 """Example pipeline for testing the flujo run command."""
 
-from flujo import step, Pipeline
+from flujo import step
 from flujo.domain.models import PipelineContext
 from pydantic import Field
 

@@ -52,3 +52,37 @@ def test_improvement_models_config_and_new_case() -> None:
     loaded = ImprovementReport.model_validate(dumped)
     assert loaded.suggestions[0].config_change_details is not None
     assert loaded.suggestions[0].suggested_new_eval_case_description == "Add join query case"
+
+
+def test_global_custom_serializer_registry():
+    """Test that custom serializers work with the new robust serialization approach."""
+    from flujo.utils.serialization import register_custom_serializer
+    from flujo.domain.models import BaseModel
+
+    class Custom:
+        def __init__(self, value):
+            self.value = value
+
+    class MyModel(BaseModel):
+        foo: Custom
+        bar: complex
+        model_config = {"arbitrary_types_allowed": True}
+
+    def custom_serializer(obj):
+        if isinstance(obj, Custom):
+            return f"custom:{obj.value}"
+        if isinstance(obj, complex):
+            real = int(obj.real) if obj.real == int(obj.real) else obj.real
+            imag = int(obj.imag) if obj.imag == int(obj.imag) else obj.imag
+            return f"{real}+{imag}j"
+        raise TypeError(f"Cannot serialize {type(obj)}")
+
+    # Register the custom serializer globally
+    register_custom_serializer(Custom, custom_serializer)
+    register_custom_serializer(complex, custom_serializer)
+
+    m = MyModel(foo=Custom(42), bar=3 + 4j)
+    # Use model_dump to trigger the global registry
+    serialized = m.model_dump(mode="cache")
+    assert serialized["foo"] == "custom:42"
+    assert serialized["bar"] == "3+4j"

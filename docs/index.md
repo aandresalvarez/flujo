@@ -9,6 +9,7 @@ Flujo is a Python library for orchestrating AI workflows. It allows you to defin
 - Integrate loops, branching, and human-in-the-loop patterns
 - Agent infrastructure with factory functions
 - Centralized prompt management
+- **Enhanced serialization with global custom serializer registry**
 
 ## Getting Started
 
@@ -16,5 +17,10 @@ Flujo is a Python library for orchestrating AI workflows. It allows you to defin
 - [Usage Guide](usage.md) - Learn how to use the library
 - [Agent Infrastructure](agent_infrastructure.md) - Understand the agent system
 - [Concepts](concepts.md) - Core concepts and architecture
+
+## Advanced Features
+
+- [Advanced Serialization](cookbook/advanced_serialization.md) - Handle custom types and complex serialization scenarios
+- [Migration Guide](migration/v0.7.0.md) - Upgrade to the latest serialization features
 
 Use the navigation on the left to explore the guides, examples, and API reference.

@@ -22,4 +22,3 @@ print(result.step_history[0].output)  # -> "ok"
 ```
 
 `StepResult.metadata_["fallback_triggered"]` will be `True` when the fallback runs successfully.
-
