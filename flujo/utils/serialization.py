@@ -339,7 +339,7 @@ def serialize_to_json(obj: Any, **kwargs: Any) -> str:
         TypeError: If the object cannot be serialized to JSON
     """
     serialized = safe_serialize(obj)
-    return json.dumps(serialized, **kwargs)
+    return json.dumps(serialized, sort_keys=True, **kwargs)
 
 
 def serialize_to_json_robust(obj: Any, **kwargs: Any) -> str:

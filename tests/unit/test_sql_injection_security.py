@@ -1,11 +1,42 @@
-"""Tests for SQL injection vulnerabilities and security concerns."""
+"""Tests for SQL injection security in state backends."""
 
 import pytest
 from datetime import datetime, timedelta
 from pathlib import Path
 
-
 from flujo.state.backends.sqlite import SQLiteBackend
+
+# Module-level constants for malicious inputs to reduce duplication
+MALICIOUS_NUMERIC_INPUTS = [
+    "24; DROP TABLE workflow_state; --",
+    "24' OR '1'='1",
+    "24 UNION SELECT * FROM workflow_state --",
+    "24; INSERT INTO workflow_state VALUES ('hacked', 'hacked', 'hacked', 'hacked', 0, '{}', NULL, 'running', datetime('now'), datetime('now'), 0, NULL, NULL, NULL); --",
+    "24' AND 1=1 --",
+    "24' OR 1=1 --",
+    "24' UNION SELECT 1,2,3,4,5,6,7,8,9,10,11,12 --",
+]
+
+MALICIOUS_STRING_INPUTS = [
+    "normal'; DROP TABLE workflow_state; --",
+    "normal' OR '1'='1",
+    "normal' UNION SELECT * FROM workflow_state --",
+    "normal'; INSERT INTO workflow_state VALUES ('hacked', 'hacked', 'hacked', 'hacked', 0, '{}', NULL, 'running', datetime('now'), datetime('now'), 0, NULL, NULL, NULL); --",
+    "normal' AND 1=1 --",
+    "normal' OR 1=1 --",
+    "normal' UNION SELECT 1,2,3,4,5,6,7,8,9,10,11,12 --",
+]
+
+
+# Helper function to create context-specific malicious inputs
+def get_malicious_numeric_inputs(prefix: str = "24") -> list[str]:
+    """Get malicious numeric inputs with a custom prefix."""
+    return [input.replace("24", prefix) for input in MALICIOUS_NUMERIC_INPUTS]
+
+
+def get_malicious_string_inputs(prefix: str = "normal") -> list[str]:
+    """Get malicious string inputs with a custom prefix."""
+    return [input.replace("normal", prefix) for input in MALICIOUS_STRING_INPUTS]
 
 
 class TestSQLInjectionSecurity:
@@ -89,15 +120,7 @@ class TestSQLInjectionSecurity:
         assert failed_workflows[0]["run_id"] == "failed_run"
 
         # Test with malicious input that would cause SQL injection
-        malicious_inputs = [
-            "24; DROP TABLE workflow_state; --",
-            "24' OR '1'='1",
-            "24 UNION SELECT * FROM workflow_state --",
-            "24; INSERT INTO workflow_state VALUES ('hacked', 'hacked', 'hacked', 'hacked', 0, '{}', NULL, 'running', datetime('now'), datetime('now'), 0, NULL, NULL, NULL); --",
-            "24' AND 1=1 --",
-            "24' OR 1=1 --",
-            "24' UNION SELECT 1,2,3,4,5,6,7,8,9,10,11,12 --",
-        ]
+        malicious_inputs = get_malicious_numeric_inputs("24")
 
         for malicious_input in malicious_inputs:
             # These should not cause SQL injection and should either:
@@ -171,15 +194,7 @@ class TestSQLInjectionSecurity:
         assert deleted_count >= 1  # At least some workflows should be deleted
 
         # Test with malicious input that would cause SQL injection
-        malicious_inputs = [
-            "30; DROP TABLE workflow_state; --",
-            "30' OR '1'='1",
-            "30 UNION SELECT * FROM workflow_state --",
-            "30; INSERT INTO workflow_state VALUES ('hacked', 'hacked', 'hacked', 'hacked', 0, '{}', NULL, 'running', datetime('now'), datetime('now'), 0, NULL, NULL, NULL); --",
-            "30' AND 1=1 --",
-            "30' OR 1=1 --",
-            "30' UNION SELECT 1,2,3,4,5,6,7,8,9,10,11,12 --",
-        ]
+        malicious_inputs = get_malicious_numeric_inputs("30")
 
         for malicious_input in malicious_inputs:
             try:
@@ -213,15 +228,7 @@ class TestSQLInjectionSecurity:
         assert failed_workflows[0]["run_id"] == "failed_run"
 
         # Test with malicious input that would cause SQL injection
-        malicious_inputs = [
-            "failed'; DROP TABLE workflow_state; --",
-            "failed' OR '1'='1",
-            "failed' UNION SELECT * FROM workflow_state --",
-            "failed'; INSERT INTO workflow_state VALUES ('hacked', 'hacked', 'hacked', 'hacked', 0, '{}', NULL, 'running', datetime('now'), datetime('now'), 0, NULL, NULL, NULL); --",
-            "failed' AND 1=1 --",
-            "failed' OR 1=1 --",
-            "failed' UNION SELECT 1,2,3,4,5,6,7,8,9,10,11,12 --",
-        ]
+        malicious_inputs = MALICIOUS_STRING_INPUTS
 
         for malicious_input in malicious_inputs:
             try:
@@ -258,15 +265,7 @@ class TestSQLInjectionSecurity:
         await backend.save_state("normal_run", normal_state)
 
         # Test with malicious run_id that would cause SQL injection
-        malicious_run_ids = [
-            "normal'; DROP TABLE workflow_state; --",
-            "normal' OR '1'='1",
-            "normal' UNION SELECT * FROM workflow_state --",
-            "normal'; INSERT INTO workflow_state VALUES ('hacked', 'hacked', 'hacked', 'hacked', 0, '{}', NULL, 'running', datetime('now'), datetime('now'), 0, NULL, NULL, NULL); --",
-            "normal' AND 1=1 --",
-            "normal' OR 1=1 --",
-            "normal' UNION SELECT 1,2,3,4,5,6,7,8,9,10,11,12 --",
-        ]
+        malicious_run_ids = MALICIOUS_STRING_INPUTS
 
         for malicious_run_id in malicious_run_ids:
             try:
@@ -305,15 +304,7 @@ class TestSQLInjectionSecurity:
         await backend.save_state("normal_run", normal_state)
 
         # Test with malicious run_id that would cause SQL injection
-        malicious_run_ids = [
-            "normal'; DROP TABLE workflow_state; --",
-            "normal' OR '1'='1",
-            "normal' UNION SELECT * FROM workflow_state --",
-            "normal'; INSERT INTO workflow_state VALUES ('hacked', 'hacked', 'hacked', 'hacked', 0, '{}', NULL, 'running', datetime('now'), datetime('now'), 0, NULL, NULL, NULL); --",
-            "normal' AND 1=1 --",
-            "normal' OR 1=1 --",
-            "normal' UNION SELECT 1,2,3,4,5,6,7,8,9,10,11,12 --",
-        ]
+        malicious_run_ids = MALICIOUS_STRING_INPUTS
 
         for malicious_run_id in malicious_run_ids:
             try:
@@ -350,15 +341,7 @@ class TestSQLInjectionSecurity:
         await backend.save_state("normal_run", normal_state)
 
         # Test with malicious run_id that would cause SQL injection
-        malicious_run_ids = [
-            "normal'; DROP TABLE workflow_state; --",
-            "normal' OR '1'='1",
-            "normal' UNION SELECT * FROM workflow_state --",
-            "normal'; INSERT INTO workflow_state VALUES ('hacked', 'hacked', 'hacked', 'hacked', 0, '{}', NULL, 'running', datetime('now'), datetime('now'), 0, NULL, NULL, NULL); --",
-            "normal' AND 1=1 --",
-            "normal' OR 1=1 --",
-            "normal' UNION SELECT 1,2,3,4,5,6,7,8,9,10,11,12 --",
-        ]
+        malicious_run_ids = MALICIOUS_STRING_INPUTS
 
         for malicious_run_id in malicious_run_ids:
             try:
