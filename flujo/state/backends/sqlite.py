@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 import aiosqlite
 
 from .base import StateBackend
-from ...utils.serialization import safe_serialize
+from ...utils.serialization import safe_serialize, safe_deserialize
 
 
 class SQLiteBackend(StateBackend):
@@ -179,8 +179,8 @@ class SQLiteBackend(StateBackend):
         if row is None:
             return None
 
-        pipeline_context = json.loads(row[5]) if row[5] is not None else {}
-        last_step_output = json.loads(row[6]) if row[6] is not None else None
+        pipeline_context = safe_deserialize(json.loads(row[5])) if row[5] is not None else {}
+        last_step_output = safe_deserialize(json.loads(row[6])) if row[6] is not None else None
 
         return {
             "run_id": row[0],

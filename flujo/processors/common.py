@@ -4,6 +4,8 @@ import re
 import json
 from typing import Any, Optional, List
 
+from ..utils.serialization import safe_deserialize
+
 from ..domain.models import BaseModel
 
 
@@ -55,7 +57,7 @@ class EnforceJsonResponse:
         if not isinstance(data, str):
             return data
         try:
-            return json.loads(data)
+            return safe_deserialize(json.loads(data))
         except Exception:
             return data
 

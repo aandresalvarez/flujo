@@ -92,6 +92,8 @@ resumed = runner2.run("world", run_id="run1")
 ### InMemoryBackend
 
 For tests and demos. Data lives only in memory so everything is lost on restart.
+The backend uses the same serialization helpers as the file and SQLite
+backends, ensuring custom types round-trip consistently.
 
 ### FileBackend
 

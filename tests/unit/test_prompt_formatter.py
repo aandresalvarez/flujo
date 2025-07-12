@@ -1,4 +1,5 @@
 from flujo.domain.models import BaseModel
+from pydantic import BaseModel as PydanticModel
 from flujo.utils import format_prompt
 
 
@@ -46,3 +47,15 @@ def test_nested_placeholders() -> None:
 def test_escaping() -> None:
     template = r"The syntax is \{{ variable_name }}."
     assert format_prompt(template) == "The syntax is {{ variable_name }}."
+
+
+def test_prompt_robust_serialization() -> None:
+    class Unknown:
+        pass
+
+    class Wrapper(PydanticModel):
+        data: object
+
+    template = "Value: {{ wrapper }}"
+    result = format_prompt(template, wrapper=Wrapper(data=Unknown()))
+    assert "<unserializable: Unknown>" in result

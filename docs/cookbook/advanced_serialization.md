@@ -454,3 +454,56 @@ The global serializer registry works seamlessly with all Flujo features:
 - **JSON export**: All custom serializers are used when exporting to JSON
 
 This approach provides maximum flexibility while maintaining backward compatibility and leveraging Pydantic v2's performance benefits.
+
+## Safe Deserialization
+
+Flujo offers a matching `safe_deserialize` helper to reconstruct objects previously serialized with `safe_serialize`. Use it together with the custom deserializer registry when reading JSON back into Python objects.
+
+### Registering Custom Deserializers
+
+```python
+from flujo.utils import (
+    register_custom_serializer,
+    register_custom_deserializer,
+    safe_serialize,
+    safe_deserialize,
+)
+
+class Widget:
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+    def to_dict(self) -> dict:
+        return {"name": self.name}
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Widget":
+        return cls(data["name"])
+
+register_custom_serializer(Widget, lambda w: w.to_dict())
+register_custom_deserializer(Widget, Widget.from_dict)
+
+serialized = safe_serialize(Widget("demo"))
+restored = safe_deserialize(serialized, Widget)
+assert isinstance(restored, Widget)
+```
+
+Flujo state backends and CLI commands call `safe_deserialize` to automatically rebuild custom types when loading data. Register your deserializers to enable full round-trip behavior.
+
+## Robust Serialization for Logging
+
+For debugging or prompt-generation scenarios where serialization errors should not halt execution, use `robust_serialize` or `serialize_to_json_robust`.
+
+```python
+from flujo.utils import robust_serialize, serialize_to_json_robust
+
+try:
+    log_data = complex_object
+    json_str = serialize_to_json_robust(log_data)
+    print(json_str)
+except Exception:
+    # This will never raise; unsupported types become strings
+    pass
+```
+
+These helpers fall back to a string representation for unknown types, ensuring logging and prompt assembly continue even with unexpected data.

@@ -244,6 +244,92 @@ def test_cli_solve_weights_missing_keys(tmp_path) -> None:
     assert "list of objects" in result.stderr
 
 
+def test_cli_solve_context_data_safe_deserialize(tmp_path, monkeypatch) -> None:
+    calls = {}
+
+    def fake_deserialize(data):
+        calls["called"] = True
+        return data
+
+    pipeline = tmp_path / "pipe.py"
+    pipeline.write_text(
+        "from flujo.domain import Step\nfrom flujo.testing.utils import StubAgent\n"
+        "pipeline = Step.model_validate({'name': 'A', 'agent': StubAgent(['x'])}) >> Step.model_validate({'name': 'B', 'agent': StubAgent(['y'])})\n"
+    )
+
+    monkeypatch.setattr("flujo.cli.main.safe_deserialize", fake_deserialize)
+
+    from flujo.domain.models import PipelineResult
+
+    monkeypatch.setattr("flujo.cli.main.Flujo.run", lambda self, inp: PipelineResult())
+
+    result = runner.invoke(
+        app,
+        ["run", str(pipeline), "--input", "hi", "--context-data", '{"a":1}', "--json"],
+    )
+    assert result.exit_code == 0
+    assert calls.get("called")
+
+
+def test_cli_add_eval_case_uses_safe_deserialize(tmp_path, monkeypatch) -> None:
+    file = tmp_path / "data.py"
+    file.write_text("dataset = None")
+
+    calls = {}
+
+    def fake_deserialize(data):
+        calls["called"] = True
+        return data
+
+    monkeypatch.setattr("flujo.cli.main.safe_deserialize", fake_deserialize)
+
+    result = runner.invoke(
+        app,
+        [
+            "add-eval-case",
+            "-d",
+            str(file),
+            "-n",
+            "case",
+            "-i",
+            "x",
+            "--metadata",
+            '{"num":1}',
+            "--expected",
+            "",
+        ],
+    )
+    assert result.exit_code == 0
+    assert calls.get("called")
+
+
+def test_cli_solve_weights_file_safe_deserialize(tmp_path, monkeypatch) -> None:
+    weights = [{"item": "a", "weight": 1.0}]
+    weights_file = tmp_path / "w.json"
+    weights_file.write_text(json.dumps(weights))
+
+    calls = {}
+
+    def fake_deserialize(data):
+        calls["called"] = True
+        return data
+
+    monkeypatch.setattr("flujo.cli.main.safe_deserialize", fake_deserialize)
+
+    class DummyCandidate:
+        def model_dump(self):
+            return {}
+
+    monkeypatch.setattr("flujo.cli.main.Default.run_sync", lambda self, task: DummyCandidate())
+    monkeypatch.setattr("flujo.cli.main.make_review_agent", lambda *a, **k: DummyAgent())
+    monkeypatch.setattr("flujo.cli.main.make_solution_agent", lambda *a, **k: DummyAgent())
+    monkeypatch.setattr("flujo.cli.main.make_validator_agent", lambda *a, **k: DummyAgent())
+
+    result = runner.invoke(app, ["solve", "prompt", "--weights-path", str(weights_file)])
+    assert result.exit_code == 0
+    assert calls.get("called")
+
+
 def test_cli_solve_keyboard_interrupt(monkeypatch) -> None:
     def raise_keyboard(*args, **kwargs):
         raise KeyboardInterrupt()

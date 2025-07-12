@@ -35,7 +35,9 @@ class CacheStep(Step[StepInT, StepOutT]):
         )
 
 
-def _serialize_for_key(obj: Any, visited: Optional[Set[int]] = None, _is_root: bool = True) -> Any:
+def _serialize_for_cache_key(
+    obj: Any, visited: Optional[Set[int]] = None, _is_root: bool = True
+) -> Any:
     """Best-effort conversion of arbitrary objects to cacheable structures for cache keys."""
     from flujo.utils.serialization import lookup_custom_serializer
     from flujo.domain.dsl import Step
@@ -70,7 +72,7 @@ def _serialize_for_key(obj: Any, visited: Optional[Set[int]] = None, _is_root: b
         custom_serializer = lookup_custom_serializer(obj)
         if custom_serializer is not None:
             try:
-                return _serialize_for_key(custom_serializer(obj), visited, _is_root=False)
+                return _serialize_for_cache_key(custom_serializer(obj), visited, _is_root=False)
             except Exception:
                 pass
 
@@ -103,11 +105,15 @@ def _serialize_for_key(obj: Any, visited: Optional[Set[int]] = None, _is_root: b
                                 node_result_dict[k] = f"<{obj.__class__.__name__} circular>"
                             else:
                                 # The 'next' field is not circular, serialize it normally
-                                node_result_dict[k] = _serialize_for_key(v, visited, _is_root=False)
+                                node_result_dict[k] = _serialize_for_cache_key(
+                                    v, visited, _is_root=False
+                                )
                         else:
                             # For non-'next' fields, serialize normally
                             # Only mark as circular if the field itself contains a circular reference
-                            node_result_dict[k] = _serialize_for_key(v, visited, _is_root=False)
+                            node_result_dict[k] = _serialize_for_cache_key(
+                                v, visited, _is_root=False
+                            )
 
                     return node_result_dict
                 result_dict: dict[str, Any] = {}
@@ -126,7 +132,7 @@ def _serialize_for_key(obj: Any, visited: Optional[Set[int]] = None, _is_root: b
                             _sort_set_deterministically(v, visited), visited
                         )
                     else:
-                        result_dict[k] = _serialize_for_key(v, visited, _is_root=False)
+                        result_dict[k] = _serialize_for_cache_key(v, visited, _is_root=False)
                 return result_dict
             except (ValueError, RecursionError):
                 if _is_root:
@@ -147,7 +153,7 @@ def _serialize_for_key(obj: Any, visited: Optional[Set[int]] = None, _is_root: b
                 custom_serializer_v = lookup_custom_serializer(v)
                 if custom_serializer_v is not None:
                     try:
-                        result[k] = _serialize_for_key(
+                        result[k] = _serialize_for_cache_key(
                             custom_serializer_v(v), visited, _is_root=False
                         )
                         continue
@@ -159,7 +165,7 @@ def _serialize_for_key(obj: Any, visited: Optional[Set[int]] = None, _is_root: b
                         if "run_id" in v_dict:
                             v_dict.pop("run_id", None)
                         result[k] = {
-                            kk: _serialize_for_key(vv, visited, _is_root=False)
+                            kk: _serialize_for_cache_key(vv, visited, _is_root=False)
                             for kk, vv in v_dict.items()
                         }
                     except (ValueError, RecursionError):
@@ -177,10 +183,11 @@ def _serialize_for_key(obj: Any, visited: Optional[Set[int]] = None, _is_root: b
                     )
                 elif isinstance(v, dict):
                     result[k] = {
-                        kk: _serialize_for_key(vv, visited, _is_root=False) for kk, vv in v.items()
+                        kk: _serialize_for_cache_key(vv, visited, _is_root=False)
+                        for kk, vv in v.items()
                     }
                 else:
-                    result[k] = _serialize_for_key(v, visited, _is_root=False)
+                    result[k] = _serialize_for_cache_key(v, visited, _is_root=False)
             return result
         if isinstance(obj, (list, tuple)):
             return _serialize_list_for_key(list(obj), visited)
@@ -301,11 +308,17 @@ def _serialize_list_for_key(obj_list: list[Any], visited: Optional[Set[int]] = N
                 if "run_id" in d:
                     d.pop("run_id", None)
                 result_list.append(
-                    {k: _serialize_for_key(val, visited, _is_root=False) for k, val in d.items()}
+                    {
+                        k: _serialize_for_cache_key(val, visited, _is_root=False)
+                        for k, val in d.items()
+                    }
                 )
             elif isinstance(v, dict):
                 result_list.append(
-                    {k: _serialize_for_key(val, visited, _is_root=False) for k, val in v.items()}
+                    {
+                        k: _serialize_for_cache_key(val, visited, _is_root=False)
+                        for k, val in v.items()
+                    }
                 )
             elif isinstance(v, (list, tuple)):
                 result_list.append(_serialize_list_for_key(list(v), visited))
@@ -320,12 +333,12 @@ def _serialize_list_for_key(obj_list: list[Any], visited: Optional[Set[int]] = N
                 if custom_serializer is not None:
                     try:
                         result_list.append(
-                            _serialize_for_key(custom_serializer(v), visited, _is_root=False)
+                            _serialize_for_cache_key(custom_serializer(v), visited, _is_root=False)
                         )
                         continue
                     except Exception:
                         pass
-                result_list.append(_serialize_for_key(v, visited, _is_root=False))
+                result_list.append(_serialize_for_cache_key(v, visited, _is_root=False))
         finally:
             visited.discard(obj_id)
     return result_list
@@ -375,9 +388,9 @@ def _generate_cache_key(
 
     payload = {
         "step": step_fingerprint,
-        "data": _serialize_for_key(data),
-        "context": _serialize_for_key(context),
-        "resources": _serialize_for_key(resources),
+        "data": _serialize_for_cache_key(data),
+        "context": _serialize_for_cache_key(context),
+        "resources": _serialize_for_cache_key(resources),
     }
     try:
         serialized = json.dumps(payload, sort_keys=True).encode()

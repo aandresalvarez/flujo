@@ -203,3 +203,38 @@ async def test_sqlite_backend_concurrent(tmp_path: Path) -> None:
 
     backend = SQLiteBackend(tmp_path / "state.db")
     await asyncio.gather(*(worker(backend, f"run{i}") for i in range(5)))
+
+
+@pytest.mark.asyncio
+async def test_backends_deserialize_special_types(tmp_path: Path) -> None:
+    """Backends should restore special types using safe_deserialize."""
+    fb = FileBackend(tmp_path / "fb")
+    sb = SQLiteBackend(tmp_path / "s.db")
+
+    now = datetime.utcnow().replace(microsecond=0)
+    state = {
+        "run_id": "run1",
+        "pipeline_id": "p",
+        "pipeline_name": "p",
+        "pipeline_version": "0",
+        "current_step_index": 0,
+        "pipeline_context": {"dt": now, "val": float("inf")},
+        "last_step_output": {"nan": float("nan")},
+        "status": "running",
+        "created_at": now,
+        "updated_at": now,
+    }
+
+    await fb.save_state("run1", state)
+    await sb.save_state("run1", state)
+
+    loaded_f = await fb.load_state("run1")
+    loaded_s = await sb.load_state("run1")
+
+    assert loaded_f is not None and loaded_s is not None
+    assert loaded_f["pipeline_context"]["dt"] == now.isoformat()
+    assert loaded_s["pipeline_context"]["dt"] == now.isoformat()
+    assert loaded_f["pipeline_context"]["val"] == "inf"
+    assert loaded_s["pipeline_context"]["val"] == "inf"
+    assert loaded_f["last_step_output"]["nan"] == "nan"
+    assert loaded_s["last_step_output"]["nan"] == "nan"

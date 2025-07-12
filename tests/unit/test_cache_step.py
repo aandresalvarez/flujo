@@ -4,7 +4,7 @@ from typing import Any
 
 from flujo import Step, Flujo
 from flujo.caching import InMemoryCache
-from flujo.steps.cache_step import _generate_cache_key, _serialize_for_key
+from flujo.steps.cache_step import _generate_cache_key, _serialize_for_cache_key
 from flujo.domain.models import PipelineContext, BaseModel as FlujoBaseModel
 from flujo.utils.serialization import safe_serialize
 from pydantic import BaseModel
@@ -58,17 +58,17 @@ def recursive_data(draw, max_depth=3):
 
 @given(data=recursive_data())
 @settings(max_examples=50, deadline=2000)
-def test_property_based_serialize_for_key_does_not_crash(data):
-    """Property-based: _serialize_for_key should not crash or infinitely recurse on any nested structure."""
-    from flujo.steps.cache_step import _serialize_for_key
+def test_property_based_serialize_for_cache_key_does_not_crash(data):
+    """Property-based: _serialize_for_cache_key should not crash or infinitely recurse on any nested structure."""
+    from flujo.steps.cache_step import _serialize_for_cache_key
 
     try:
-        result1 = _serialize_for_key(data)
-        result2 = _serialize_for_key(data)
+        result1 = _serialize_for_cache_key(data)
+        result2 = _serialize_for_cache_key(data)
         # Should be deterministic
         assert result1 == result2
     except Exception as e:
-        pytest.fail(f"_serialize_for_key failed on {data!r}: {e}")
+        pytest.fail(f"_serialize_for_cache_key failed on {data!r}: {e}")
 
 
 class Model(BaseModel):
@@ -164,7 +164,7 @@ def test_cache_key_with_nested_basemodel():
     step = Step(name="nested_test", agent=agent)
     nested = NestedModel(step=step, metadata={"key": "value"})
 
-    serialized = _serialize_for_key(nested)
+    serialized = _serialize_for_cache_key(nested)
     # The cache serialization returns dictionaries for BaseModel instances
     assert isinstance(serialized, dict)
     assert "metadata" in serialized
@@ -177,7 +177,7 @@ def test_cache_key_with_pipeline_context_runid_exclusion():
     key = _generate_cache_key(step, "data", context=context)
     assert isinstance(key, str)
     # Check run_id is excluded from serialization
-    serialized = _serialize_for_key(context)
+    serialized = _serialize_for_cache_key(context)
     assert "run_id" not in serialized
     # Should be JSON serializable
     json.dumps(serialized)
@@ -193,7 +193,7 @@ def test_cache_key_with_step_and_nested_agent():
     key = _generate_cache_key(step, "input")
     assert isinstance(key, str)
     # Should include agent class name or fallback to type name
-    serialized = _serialize_for_key(step)
+    serialized = _serialize_for_cache_key(step)
     # The cache serialization returns dictionaries for Step instances
     assert isinstance(serialized, dict)
     assert "agent" in serialized
@@ -219,8 +219,8 @@ def test_agent_serialization_fix_verification():
     step2 = Step(name="test_step", agent=agent2)
 
     # Serialize both steps
-    serialized1 = _serialize_for_key(step1)
-    serialized2 = _serialize_for_key(step2)
+    serialized1 = _serialize_for_cache_key(step1)
+    serialized2 = _serialize_for_cache_key(step2)
 
     # Verify both return dictionaries with agent class names
     assert isinstance(serialized1, dict)
@@ -247,7 +247,7 @@ def test_agent_serialization_with_complex_agents():
     # Test with complex agent
     complex_agent = ComplexAgent("test", {"timeout": 30})
     step1 = Step(name="complex_step", agent=complex_agent)
-    serialized1 = _serialize_for_key(step1)
+    serialized1 = _serialize_for_cache_key(step1)
     # The cache serialization returns dictionaries for Step instances
     assert isinstance(serialized1, dict)
     assert serialized1["agent"] == "ComplexAgent"
@@ -265,7 +265,7 @@ def test_agent_serialization_edge_cases():
     agent = AnonymousAgent()
     # We can't set __name__ to None, but we can test with a class that has a problematic name
     step = Step(name="anonymous_step", agent=agent)
-    serialized = _serialize_for_key(step)
+    serialized = _serialize_for_cache_key(step)
 
     # Should return dictionary with agent class name
     assert isinstance(serialized, dict)
@@ -289,7 +289,7 @@ def test_agent_serialization_with_nested_structures():
     model = ModelWithStep(step=step, metadata={"key": "value"})
 
     # Serialize the model
-    serialized = _serialize_for_key(model)
+    serialized = _serialize_for_cache_key(model)
 
     # Verify the nested step's agent is correctly serialized
     assert isinstance(serialized, dict)
@@ -327,7 +327,7 @@ def test_serialization_consistency_between_utilities():
     step = Step(name="consistency_test", agent=agent)
 
     # Test both serialization functions
-    cache_result = _serialize_for_key(step)
+    cache_result = _serialize_for_cache_key(step)
     util_result = util_serialize(step)
 
     # Cache serialization returns dict, util serialization returns string
@@ -348,7 +348,7 @@ def test_cache_key_with_nested_pipelinecontext_field():
 
     ctx = MyContext(initial_prompt="hi", run_id="should_be_excluded", extra=42)
     wrapper = WrapperModel(context=ctx, label="wrapped")
-    serialized = _serialize_for_key(wrapper)
+    serialized = _serialize_for_cache_key(wrapper)
     # The cache serialization returns dictionaries for BaseModel instances
     assert isinstance(serialized, dict)
     assert "context" in serialized
@@ -365,7 +365,7 @@ def test_cache_key_with_list_of_pipelinecontexts():
 
     ctxs = [MyContext(initial_prompt=f"p{i}", run_id=f"r{i}", extra=i) for i in range(3)]
     wrapper = ListWrapper(contexts=ctxs)
-    serialized = _serialize_for_key(wrapper)
+    serialized = _serialize_for_cache_key(wrapper)
     # The cache serialization returns dictionaries for BaseModel instances
     assert isinstance(serialized, dict)
     assert "contexts" in serialized
@@ -387,7 +387,7 @@ def test_cache_key_with_list_of_basemodels_and_pipelinecontext():
         MyContext(initial_prompt="x", run_id="should_be_excluded", extra=99),
     ]
     wrapper = ListWrapper(items=items)
-    serialized = _serialize_for_key(wrapper)
+    serialized = _serialize_for_cache_key(wrapper)
     # The cache serialization returns dictionaries for BaseModel instances
     assert isinstance(serialized, dict)
     assert "items" in serialized
@@ -402,7 +402,7 @@ def test_cache_key_deeply_nested_structures():
         model_config = {"arbitrary_types_allowed": True}
 
     obj = OuterModel(nested={"a": [InnerModel(value=1), InnerModel(value=2)], "b": []})
-    serialized = _serialize_for_key(obj)
+    serialized = _serialize_for_cache_key(obj)
     # The cache serialization returns dictionaries for BaseModel instances
     assert isinstance(serialized, dict)
     assert "nested" in serialized
@@ -422,7 +422,7 @@ def test_cache_key_circular_reference():
     node1.next = node2
 
     # Should handle circular reference gracefully
-    serialized = _serialize_for_key(node1)
+    serialized = _serialize_for_cache_key(node1)
     assert serialized is not None
     # The circular reference should be serialized as a dict with placeholders
     assert isinstance(serialized, dict)
@@ -467,7 +467,7 @@ def test_cache_key_non_string_dict_keys():
         model_config = {"arbitrary_types_allowed": True}
 
     obj = ModelWithDict(data={1: "a", 2: "b"})
-    serialized = _serialize_for_key(obj)
+    serialized = _serialize_for_cache_key(obj)
     # The cache serialization returns dictionaries for BaseModel instances
     assert isinstance(serialized, dict)
     assert "data" in serialized
@@ -480,7 +480,7 @@ def test_cache_key_sets_and_frozensets():
         model_config = {"arbitrary_types_allowed": True}
 
     obj = ModelWithSets(s={1, 2, 3}, fs=frozenset({"a", "b"}))
-    serialized = _serialize_for_key(obj)
+    serialized = _serialize_for_cache_key(obj)
     # The cache serialization returns dictionaries for BaseModel instances
     assert isinstance(serialized, dict)
     assert "s" in serialized
@@ -494,7 +494,7 @@ def test_cache_key_bytes_and_memoryview():
         model_config = {"arbitrary_types_allowed": True}
 
     obj = ModelWithBytes(b=b"abc", mv=memoryview(b"xyz"))
-    serialized = _serialize_for_key(obj)
+    serialized = _serialize_for_cache_key(obj)
     # The cache serialization returns dictionaries for BaseModel instances
     assert isinstance(serialized, dict)
     assert "b" in serialized
@@ -510,7 +510,7 @@ def test_cache_key_callable_fields():
         model_config = {"arbitrary_types_allowed": True}
 
     obj = ModelWithCallable(cb=foo)
-    serialized = _serialize_for_key(obj)
+    serialized = _serialize_for_cache_key(obj)
     # The cache serialization returns dictionaries for BaseModel instances
     assert isinstance(serialized, dict)
     assert "cb" in serialized
@@ -529,7 +529,7 @@ def test_cache_key_enum_values():
         model_config = {"arbitrary_types_allowed": True}
 
     obj = ModelWithEnum(e=MyEnum.A, d={MyEnum.B: 2})
-    serialized = _serialize_for_key(obj)
+    serialized = _serialize_for_cache_key(obj)
     # The cache serialization returns dictionaries for BaseModel instances
     assert isinstance(serialized, dict)
     assert "e" in serialized
@@ -542,7 +542,7 @@ def test_cache_key_complex_numbers():
         model_config = {"arbitrary_types_allowed": True}
 
     obj = ModelWithComplex(c=3 + 4j)
-    serialized = _serialize_for_key(obj)
+    serialized = _serialize_for_cache_key(obj)
     # The cache serialization returns dictionaries for BaseModel instances
     assert isinstance(serialized, dict)
     assert "c" in serialized
@@ -554,7 +554,7 @@ def test_cache_key_very_large_structure():
         model_config = {"arbitrary_types_allowed": True}
 
     obj = LargeModel(items=list(range(10000)))
-    serialized = _serialize_for_key(obj)
+    serialized = _serialize_for_cache_key(obj)
     # The cache serialization returns dictionaries for BaseModel instances
     assert isinstance(serialized, dict)
     assert "items" in serialized
@@ -562,40 +562,40 @@ def test_cache_key_very_large_structure():
 
 def test_cache_key_deterministic_set_ordering():
     """Test that sets and frozensets are serialized with deterministic ordering."""
-    from flujo.steps.cache_step import _serialize_for_key
+    from flujo.steps.cache_step import _serialize_for_cache_key
 
     # Test with sets containing different types
     test_set = {3, 1, 2, "b", "a", "c"}
     test_frozenset = frozenset([3, 1, 2, "b", "a", "c"])
 
     # Serialize multiple times to ensure consistent ordering
-    result1 = _serialize_for_key(test_set)
-    result2 = _serialize_for_key(test_set)
-    result3 = _serialize_for_key(test_set)
+    result1 = _serialize_for_cache_key(test_set)
+    result2 = _serialize_for_cache_key(test_set)
+    result3 = _serialize_for_cache_key(test_set)
 
     # All results should be identical
     assert result1 == result2 == result3
 
     # Test frozenset
-    result4 = _serialize_for_key(test_frozenset)
-    result5 = _serialize_for_key(test_frozenset)
-    result6 = _serialize_for_key(test_frozenset)
+    result4 = _serialize_for_cache_key(test_frozenset)
+    result5 = _serialize_for_cache_key(test_frozenset)
+    result6 = _serialize_for_cache_key(test_frozenset)
 
     # All results should be identical
     assert result4 == result5 == result6
 
     # Test with nested sets
     nested_set = {1, 2, frozenset([3, 1, 2])}
-    result7 = _serialize_for_key(nested_set)
-    result8 = _serialize_for_key(nested_set)
+    result7 = _serialize_for_cache_key(nested_set)
+    result8 = _serialize_for_cache_key(nested_set)
 
     # Results should be identical
     assert result7 == result8
 
     # Test with complex nested structures (using frozensets since sets can't contain sets)
     complex_set = {frozenset([3, 1, 2]), frozenset([2, 1, 3]), frozenset(["c", "a", "b"])}
-    result9 = _serialize_for_key(complex_set)
-    result10 = _serialize_for_key(complex_set)
+    result9 = _serialize_for_cache_key(complex_set)
+    result10 = _serialize_for_cache_key(complex_set)
 
     # Results should be identical
     assert result9 == result10
@@ -603,7 +603,7 @@ def test_cache_key_deterministic_set_ordering():
 
 def test_cache_key_stability_comprehensive():
     """Comprehensive test for cache key stability across various data types and structures."""
-    from flujo.steps.cache_step import _serialize_for_key
+    from flujo.steps.cache_step import _serialize_for_cache_key
     import json
 
     # Test data with potential stability issues
@@ -682,7 +682,7 @@ def test_cache_key_stability_comprehensive():
         # Serialize multiple times to check for consistency
         results = []
         for i in range(5):
-            result = _serialize_for_key(data)
+            result = _serialize_for_cache_key(data)
             # Convert result to a JSON-serializable format for comparison
             try:
                 json_result = json.dumps(result, sort_keys=True)
@@ -741,7 +741,7 @@ def test_cache_key_stability_with_step():
 
 def test_cache_key_stability_edge_cases():
     """Test cache key stability for edge cases and boundary conditions."""
-    from flujo.steps.cache_step import _serialize_for_key
+    from flujo.steps.cache_step import _serialize_for_cache_key
     import json
 
     edge_cases = [
@@ -796,7 +796,7 @@ def test_cache_key_stability_edge_cases():
             # Serialize multiple times
             results = []
             for i in range(3):  # Fewer iterations for edge cases
-                result = _serialize_for_key(data)
+                result = _serialize_for_cache_key(data)
                 results.append(json.dumps(result, sort_keys=True))
 
             # All results should be identical
@@ -812,7 +812,7 @@ def test_cache_key_stability_edge_cases():
 
 def test_cache_key_stability_performance():
     """Test that cache key stability doesn't significantly impact performance."""
-    from flujo.steps.cache_step import _serialize_for_key
+    from flujo.steps.cache_step import _serialize_for_cache_key
     import time
 
     # Create a moderately complex data structure
@@ -830,7 +830,7 @@ def test_cache_key_stability_performance():
     # Measure serialization time
     start_time = time.time()
     for i in range(1000):
-        _serialize_for_key(test_data)
+        _serialize_for_cache_key(test_data)
     end_time = time.time()
 
     total_time = end_time - start_time
@@ -844,7 +844,7 @@ def test_cache_key_stability_performance():
 
 def test_cache_key_stability_regression():
     """Test to prevent regression of cache key stability issues."""
-    from flujo.steps.cache_step import _serialize_for_key
+    from flujo.steps.cache_step import _serialize_for_cache_key
     import json
 
     # Test cases that previously had stability issues
@@ -874,7 +874,7 @@ def test_cache_key_stability_regression():
         # Serialize multiple times
         results = []
         for i in range(10):  # More iterations for regression testing
-            result = _serialize_for_key(data)
+            result = _serialize_for_cache_key(data)
             # Convert result to a JSON-serializable format for comparison
             try:
                 json_result = json.dumps(result, sort_keys=True)
@@ -893,7 +893,7 @@ def test_cache_key_stability_regression():
         if isinstance(data, (set, frozenset)) or any(
             isinstance(v, (set, frozenset)) for v in data.values() if isinstance(data, dict)
         ):
-            serialized = _serialize_for_key(data)
+            serialized = _serialize_for_cache_key(data)
             if isinstance(serialized, list):
                 # Check that the list is sorted
                 assert serialized == sorted(serialized, key=lambda x: str(x)), (
@@ -903,14 +903,14 @@ def test_cache_key_stability_regression():
 
 def test_circular_reference_detection():
     """Test that circular references are properly detected and handled."""
-    from flujo.steps.cache_step import _serialize_for_key
+    from flujo.steps.cache_step import _serialize_for_cache_key
 
     # Create a circular reference
     obj1 = {"name": "obj1"}
     obj2 = {"name": "obj2", "ref": obj1}
     obj1["ref"] = obj2  # Create circular reference
 
-    result = _serialize_for_key(obj1)
+    result = _serialize_for_cache_key(obj1)
 
     # Should detect circular reference and return a stable representation
     assert "<dict circular>" in str(result)
@@ -918,7 +918,7 @@ def test_circular_reference_detection():
 
 def test_deterministic_set_ordering():
     """Test that sets are ordered deterministically for cache key generation."""
-    from flujo.steps.cache_step import _serialize_for_key, _sort_set_deterministically
+    from flujo.steps.cache_step import _serialize_for_cache_key, _sort_set_deterministically
 
     # Test with different types of objects in sets
     test_set = {3, 1, 2, "b", "a", "c"}
@@ -931,24 +931,24 @@ def test_deterministic_set_ordering():
     complex_set = {(1, 2, 3), (3, 2, 1), (2, 1, 3), frozenset([1, 2, 3]), frozenset([3, 2, 1])}
 
     # Should handle complex objects deterministically
-    result = _serialize_for_key(complex_set)
+    result = _serialize_for_cache_key(complex_set)
     assert isinstance(result, list)
 
     # Test that multiple runs produce the same result
-    result2 = _serialize_for_key(complex_set)
+    result2 = _serialize_for_cache_key(complex_set)
     assert result == result2
 
 
 def test_circular_reference_in_nested_structures():
     """Test circular reference detection in nested structures."""
-    from flujo.steps.cache_step import _serialize_for_key
+    from flujo.steps.cache_step import _serialize_for_cache_key
 
     # Create nested structure with circular reference
     outer = {"level": "outer"}
     inner = {"level": "inner", "parent": outer}
     outer["child"] = inner
 
-    result = _serialize_for_key(outer)
+    result = _serialize_for_cache_key(outer)
 
     # Should handle nested circular references
     assert isinstance(result, dict)
@@ -958,13 +958,13 @@ def test_circular_reference_in_nested_structures():
 
 def test_set_with_unhashable_objects():
     """Test set serialization with unhashable objects."""
-    from flujo.steps.cache_step import _serialize_for_key
+    from flujo.steps.cache_step import _serialize_for_cache_key
 
     # This should not raise an exception
     try:
         # Create a set with mixed types
         mixed_set = {1, "string", (1, 2), frozenset([1, 2])}
-        result = _serialize_for_key(mixed_set)
+        result = _serialize_for_cache_key(mixed_set)
         assert isinstance(result, list)
     except Exception as e:
         pytest.fail(f"Set serialization failed: {e}")
