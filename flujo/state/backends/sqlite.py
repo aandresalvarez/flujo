@@ -355,15 +355,16 @@ class SQLiteBackend(StateBackend):
         async with self._lock:
             async with aiosqlite.connect(self.db_path) as db:
                 cursor = await db.execute(
-                    f"""
+                    """
                     SELECT run_id, pipeline_id, pipeline_name, pipeline_version,
                            current_step_index, status, created_at, updated_at,
                            total_steps, error_message, execution_time_ms, memory_usage_mb
                     FROM workflow_state
                     WHERE status = 'failed'
-                    AND updated_at >= datetime('now', '-{hours_back} hours')
+                    AND updated_at >= datetime('now', '-' || ? || ' hours')
                     ORDER BY updated_at DESC
-                """
+                """,
+                    (hours_back,),
                 )
 
                 rows = await cursor.fetchall()
@@ -398,11 +399,12 @@ class SQLiteBackend(StateBackend):
             async with aiosqlite.connect(self.db_path) as db:
                 # First, count how many will be deleted
                 cursor = await db.execute(
-                    f"""
+                    """
                     SELECT COUNT(*)
                     FROM workflow_state
-                    WHERE created_at < datetime('now', '-{days_old} days')
-                """
+                    WHERE created_at < datetime('now', '-' || ? || ' days')
+                """,
+                    (days_old,),
                 )
                 count_row = await cursor.fetchone()
                 count = count_row[0] if count_row else 0
@@ -410,10 +412,11 @@ class SQLiteBackend(StateBackend):
 
                 # Delete old workflows
                 await db.execute(
-                    f"""
+                    """
                     DELETE FROM workflow_state
-                    WHERE created_at < datetime('now', '-{days_old} days')
-                """
+                    WHERE created_at < datetime('now', '-' || ? || ' days')
+                """,
+                    (days_old,),
                 )
                 await db.commit()
 
