@@ -43,6 +43,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from .conditional import ConditionalStep
     from .parallel import ParallelStep
     from .pipeline import Pipeline
+    from .dynamic_router import DynamicParallelRouterStep
 
 # Type variables
 StepInT = TypeVar("StepInT")
@@ -586,6 +587,33 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         return ParallelStep[ContextModelT].model_validate(
             {
                 "name": name,
+                "branches": branches,
+                "context_include_keys": context_include_keys,
+                "merge_strategy": merge_strategy,
+                "on_branch_failure": on_branch_failure,
+                **config_kwargs,
+            }
+        )
+
+    @classmethod
+    def dynamic_parallel_branch(
+        cls,
+        name: str,
+        router_agent: Any,
+        branches: Dict[str, "Step[Any, Any]" | "Pipeline[Any, Any]"],
+        context_include_keys: Optional[List[str]] = None,
+        merge_strategy: Union[
+            MergeStrategy, Callable[[ContextModelT, ContextModelT], None]
+        ] = MergeStrategy.NO_MERGE,
+        on_branch_failure: BranchFailureStrategy = BranchFailureStrategy.PROPAGATE,
+        **config_kwargs: Any,
+    ) -> "DynamicParallelRouterStep[ContextModelT]":
+        from .dynamic_router import DynamicParallelRouterStep  # local import
+
+        return DynamicParallelRouterStep[ContextModelT].model_validate(
+            {
+                "name": name,
+                "router_agent": router_agent,
                 "branches": branches,
                 "context_include_keys": context_include_keys,
                 "merge_strategy": merge_strategy,

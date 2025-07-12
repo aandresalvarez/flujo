@@ -722,6 +722,20 @@ This feature is particularly beneficial when:
 - You want to minimize wasted resources when limits are exceeded
 - You need predictable execution times under resource constraints
 
+### Dynamic Parallel Router
+
+Use `Step.dynamic_parallel_branch()` when an agent selects which parallel branches to run at runtime. The router agent returns a list of branch names.
+
+```python
+router = Step.dynamic_parallel_branch(
+    name="router",
+    router_agent=my_router_agent,
+    branches={"billing": billing_pipe, "support": support_pipe},
+)
+```
+
+The step behaves like `Step.parallel` and records executed branches in `StepResult.metadata_["executed_branches"]`.
+
 ## Loop Steps
 
 Loop steps execute a pipeline repeatedly until a condition is met.

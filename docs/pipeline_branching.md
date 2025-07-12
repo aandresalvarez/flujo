@@ -55,3 +55,17 @@ Running the pipeline will execute either the `process_numbers` or `process_text`
 
 See [pipeline_dsl.md](pipeline_dsl.md) for an overview of the DSL. A runnable example can be found in [this script on GitHub](https://github.com/aandresalvarez/flujo/blob/main/examples/08_branch_step.py).
 
+
+## Dynamic Parallel Router
+
+`DynamicParallelRouterStep` extends branching by letting an agent decide which branches to execute in parallel at runtime. The router agent returns a list of branch names, and only those branches run.
+
+```python
+router = Step.dynamic_parallel_branch(
+    name="router",
+    router_agent=my_router_agent,
+    branches={"billing": billing_pipe, "support": support_pipe},
+)
+```
+
+The executed branch names are stored in `StepResult.metadata_["executed_branches"]`.
