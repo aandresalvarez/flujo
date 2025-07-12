@@ -134,7 +134,6 @@ async def test_backends_serialize_pydantic(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 def test_sqlite_backend_admin_queries(tmp_path: Path) -> None:
     """Test list_workflows, get_workflow_stats, get_failed_workflows, cleanup_old_workflows."""
-    import asyncio
 
     async def inner():
         backend = SQLiteBackend(tmp_path / "state.db")

@@ -914,7 +914,7 @@ def test_deterministic_set_ordering():
 
     # Test with different types of objects in sets
     test_set = {3, 1, 2, "b", "a", "c"}
-    sorted_list = _sort_set_deterministically(test_set)
+    sorted_list = _sort_set_deterministically(test_set, set())
 
     # Should be sorted deterministically
     assert sorted_list == [1, 2, 3, "a", "b", "c"]

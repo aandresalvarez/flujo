@@ -89,7 +89,7 @@ def _serialize_for_key(obj: Any, visited: Optional[Set[int]] = None) -> Any:
                     elif isinstance(v, (set, frozenset)):
                         # Sort sets for deterministic ordering to ensure stable cache keys
                         result_dict[k] = _serialize_list_for_key(
-                            _sort_set_deterministically(v), visited
+                            _sort_set_deterministically(v, visited), visited
                         )
                     else:
                         result_dict[k] = _serialize_for_key(v, visited)
@@ -117,7 +117,9 @@ def _serialize_for_key(obj: Any, visited: Optional[Set[int]] = None) -> Any:
                     result[k] = _serialize_list_for_key(list(v), visited)
                 elif isinstance(v, (set, frozenset)):
                     # Sort sets for deterministic ordering to ensure stable cache keys
-                    result[k] = _serialize_list_for_key(_sort_set_deterministically(v), visited)
+                    result[k] = _serialize_list_for_key(
+                        _sort_set_deterministically(v, visited), visited
+                    )
                 elif isinstance(v, dict):
                     result[k] = {kk: _serialize_for_key(vv, visited) for kk, vv in v.items()}
                 else:
@@ -127,7 +129,7 @@ def _serialize_for_key(obj: Any, visited: Optional[Set[int]] = None) -> Any:
             return _serialize_list_for_key(list(obj), visited)
         if isinstance(obj, (set, frozenset)):
             # Sort sets for deterministic ordering to ensure stable cache keys
-            return _serialize_list_for_key(_sort_set_deterministically(obj), visited)
+            return _serialize_list_for_key(_sort_set_deterministically(obj, visited), visited)
         if callable(obj):
             return f"{getattr(obj, '__module__', '<unknown>')}.{getattr(obj, '__qualname__', repr(obj))}"
 
@@ -154,31 +156,87 @@ def _serialize_for_key(obj: Any, visited: Optional[Set[int]] = None) -> Any:
         visited.discard(obj_id)
 
 
-def _sort_set_deterministically(obj_set: set[Any] | frozenset[Any]) -> list[Any]:
+def _sort_set_deterministically(
+    obj_set: set[Any] | frozenset[Any], visited: Optional[Set[int]] = None
+) -> list[Any]:
     """Sort a set or frozenset deterministically for cache key generation."""
+    if visited is None:
+        visited = set()
+
     try:
         # Try to sort by a stable representation
-        return sorted(obj_set, key=lambda x: _get_stable_repr(x))
+        return sorted(obj_set, key=lambda x: _get_stable_repr(x, visited))
     except (TypeError, ValueError):
         # Fallback: convert to string representation and sort
         return sorted(obj_set, key=lambda x: str(x))
 
 
-def _get_stable_repr(obj: Any) -> str:
-    """Get a stable string representation for sorting objects."""
+def _get_stable_repr(obj: Any, visited: Optional[Set[int]] = None) -> str:
+    """Get a stable string representation for sorting objects.
+
+    This function includes circular reference detection to prevent infinite recursion
+    and uses deterministic representations for complex objects.
+    """
     if obj is None:
         return "None"
-    if isinstance(obj, (int, float, str, bool)):
-        return str(obj)
-    if isinstance(obj, (list, tuple)):
-        return f"[{','.join(_get_stable_repr(x) for x in obj)}]"
-    if isinstance(obj, dict):
-        items = sorted((str(k), _get_stable_repr(v)) for k, v in obj.items())
-        return f"{{{','.join(f'{k}:{v}' for k, v in items)}}}"
-    if isinstance(obj, (set, frozenset)):
-        return f"{{{','.join(sorted(_get_stable_repr(x) for x in obj))}}}"
-    # For other objects, use type name and id for consistency
-    return f"{type(obj).__name__}:{id(obj)}"
+
+    # Initialize visited set for circular reference detection
+    if visited is None:
+        visited = set()
+
+    # Get object id for circular reference detection
+    obj_id = id(obj)
+    if obj_id in visited:
+        return f"<{type(obj).__name__} circular>"
+
+    # Add current object to visited set
+    visited.add(obj_id)
+
+    try:
+        if isinstance(obj, (int, float, str, bool)):
+            return str(obj)
+        if isinstance(obj, (list, tuple)):
+            return f"[{','.join(_get_stable_repr(x, visited) for x in obj)}]"
+        if isinstance(obj, dict):
+            items = sorted((str(k), _get_stable_repr(v, visited)) for k, v in obj.items())
+            return f"{{{','.join(f'{k}:{v}' for k, v in items)}}}"
+        if isinstance(obj, (set, frozenset)):
+            return f"{{{','.join(sorted(_get_stable_repr(x, visited) for x in obj))}}}"
+
+        # For BaseModel objects, use a deterministic representation
+        if hasattr(obj, "model_dump"):
+            try:
+                d = obj.model_dump(mode="json")
+                # Remove run_id for consistency with other serialization functions
+                if "run_id" in d:
+                    d.pop("run_id", None)
+                items = sorted((str(k), _get_stable_repr(v, visited)) for k, v in d.items())
+                return f"{{{','.join(f'{k}:{v}' for k, v in items)}}}"
+            except (ValueError, RecursionError):
+                return f"<{type(obj).__name__} circular>"
+
+        # For callable objects, use module and qualname for determinism
+        if callable(obj):
+            module = getattr(obj, "__module__", "<unknown>")
+            qualname = getattr(obj, "__qualname__", repr(obj))
+            return f"{module}.{qualname}"
+
+        # For other objects, use type name and a hash of the object's content
+        # This is more deterministic than id(obj) but still handles complex objects
+        try:
+            # Try to get a hash of the object's content
+            if hasattr(obj, "__hash__") and obj.__hash__ is not None:
+                return f"{type(obj).__name__}:{hash(obj)}"
+            else:
+                # For unhashable objects, use a hash of their string representation
+                obj_repr = repr(obj)
+                return f"{type(obj).__name__}:{hash(obj_repr)}"
+        except Exception:
+            # Final fallback: use type name only
+            return f"{type(obj).__name__}"
+    finally:
+        # Remove current object from visited set when done
+        visited.discard(obj_id)
 
 
 def _serialize_list_for_key(obj_list: List[Any], visited: Optional[Set[int]] = None) -> List[Any]:
@@ -199,7 +257,9 @@ def _serialize_list_for_key(obj_list: List[Any], visited: Optional[Set[int]] = N
             result_list.append(_serialize_list_for_key(list(v), visited))
         elif isinstance(v, (set, frozenset)):
             # Sort sets for deterministic ordering to ensure stable cache keys
-            result_list.append(_serialize_list_for_key(_sort_set_deterministically(v), visited))
+            result_list.append(
+                _serialize_list_for_key(_sort_set_deterministically(v, visited), visited)
+            )
         else:
             result_list.append(_serialize_for_key(v, visited))
     return result_list
