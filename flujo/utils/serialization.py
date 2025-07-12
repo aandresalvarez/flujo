@@ -1,322 +1,254 @@
-"""Serialization utilities for flujo."""
+"""Serialization utilities for Flujo."""
 
-import warnings
-from typing import Any, Callable, TypeVar, Type
+import dataclasses
+import json
+import math
+from datetime import datetime, date, time
+from enum import Enum
+from typing import Any, Callable, Optional, Set
 
-T = TypeVar("T")
 
-# Global registry for custom serializers
-default_serializer_registry: dict[type, Callable[[Any], Any]] = {}
-
-
-def register_custom_serializer(obj_type: type, serializer_func: Callable[[Any], Any]) -> None:
-    """Register a custom serializer for a specific type globally.
-
-    This function registers a serializer that will be used by the BaseModel's
-    fallback serialization mechanism.
+def safe_serialize(
+    obj: Any,
+    default_serializer: Optional[Callable[[Any], Any]] = None,
+    _seen: Optional[Set[int]] = None,
+) -> Any:
     """
-    default_serializer_registry[obj_type] = serializer_func
+    Safely serialize an object with intelligent fallback handling.
 
-
-def lookup_custom_serializer(value: Any) -> Callable[[Any], Any] | None:
-    """Return a registered serializer for the value's type, or None if not found."""
-    for typ, func in default_serializer_registry.items():
-        if isinstance(value, typ):
-            return func
-    return None
-
-
-def create_field_serializer(
-    field_name: str, serializer_func: Callable[[Any], Any]
-) -> Callable[[Any], Any]:
-    """Create a field_serializer method for a specific field.
-
-    This is a helper function that creates a field_serializer method that can be used
-    within a Pydantic model class.
-
-    Example:
-        class MyModel(BaseModel):
-            complex_object: ComplexType
-
-            @field_serializer('complex_object', when_used='json')
-            def serialize_complex_object(self, value: ComplexType) -> dict:
-                return create_field_serializer('complex_object', lambda x: x.to_dict())(value)
-    """
-
-    def serialize_field(value: Any) -> Any:
-        return serializer_func(value)
-
-    return serialize_field
-
-
-def serializable_field(serializer_func: Callable[[Any], Any]) -> Callable[[T], T]:
-    """Decorator to mark a field as serializable with a custom serializer.
-
-    DEPRECATED: This function has fundamental design issues with Pydantic v2.
-    Use register_custom_serializer() for global serialization or create field_serializer
-    methods manually for field-specific serialization.
-
-    This function was intended to work as a field decorator but doesn't integrate
-    properly with Pydantic's field_serializer system.
-
-    Recommended alternatives:
-    1. Global registry: register_custom_serializer(MyType, lambda x: x.to_dict())
-    2. Manual field_serializer: @field_serializer('field_name', when_used='json')
-    3. Use the global registry with model_dump(mode="json")
-
-    Example of proper usage:
-        # Instead of @serializable_field(lambda x: x.to_dict())
-        # Use the global registry:
-        register_custom_serializer(ComplexType, lambda x: x.to_dict())
-
-        class MyModel(BaseModel):
-            complex_object: ComplexType  # Will use global serializer
-    """
-    warnings.warn(
-        "serializable_field is deprecated due to fundamental design issues with Pydantic v2. "
-        "Use register_custom_serializer() for global serialization or create field_serializer "
-        "methods manually for field-specific serialization.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-
-    def decorator(field: T) -> T:
-        # This doesn't actually work with Pydantic v2, but we'll try to provide
-        # some basic functionality for backward compatibility
-        field_name = getattr(field, "__name__", None)
-        if field_name is None:
-            raise ValueError(
-                "serializable_field must be used as a field decorator, not a class decorator. "
-                "However, this approach is deprecated. Use register_custom_serializer() instead."
-            )
-
-        # Store the serializer function for potential later use
-        setattr(field, "_serializer_func", serializer_func)
-
-        return field
-
-    return decorator
-
-
-def create_serializer_for_type(
-    obj_type: Type[Any], serializer_func: Callable[[Any], Any]
-) -> Callable[[Any], Any]:
-    """Create a serializer function that handles a specific type.
-
-    This is useful for creating custom serializers that can be used with
-    the BaseModel's fallback serialization.
-
-    Example:
-        def serialize_my_type(obj):
-            return {"data": obj.data, "metadata": obj.metadata}
-
-        # Register the serializer
-        MyTypeSerializer = create_serializer_for_type(MyType, serialize_my_type)
-    """
-
-    def serializer(value: Any) -> Any:
-        if isinstance(value, obj_type):
-            return serializer_func(value)
-        return value
-
-    return serializer
-
-
-def safe_serialize(obj: Any, default_serializer: Callable[[Any], Any] = str) -> Any:
-    """Safely serialize an object with intelligent fallback handling.
-
-    This function attempts to serialize an object using Pydantic's native
-    serialization, and falls back to a custom serializer if that fails.
+    This function provides robust serialization for:
+    - Pydantic models (v1 and v2)
+    - Dataclasses
+    - Lists, tuples, sets, frozensets, dicts
+    - Enums
+    - Special float values (inf, -inf, nan)
+    - Circular references
+    - Primitives (str, int, bool, None)
+    - Datetime objects (datetime, date, time)
+    - Bytes and memoryview objects
+    - Complex numbers
+    - Functions and callables
 
     Args:
         obj: The object to serialize
-        default_serializer: Function to use as fallback (default: str)
+        default_serializer: Optional custom serializer for unknown types
+        _seen: Internal set for circular reference detection (do not use directly)
 
     Returns:
-        Serialized representation of the object
+        JSON-serializable representation of the object
+
+    Raises:
+        TypeError: If object cannot be serialized and no default_serializer is provided
+
+    Note:
+        - Circular references are serialized as None
+        - Roundtrip is not guaranteed for objects with circular/self-referential structures
+        - Special float values (inf, -inf, nan) are converted to strings
+        - Datetime objects are converted to ISO format strings
+        - Bytes are converted to base64 strings
+        - Complex numbers are converted to dict with 'real' and 'imag' keys
+        - Functions are converted to their name or repr
     """
-    if obj is None:
+    if _seen is None:
+        _seen = set()
+
+    obj_id = id(obj)
+    if obj_id in _seen:
+        # Circular reference detected - serialize as None
         return None
+    _seen.add(obj_id)
 
-    # Try Pydantic serialization first
-    if hasattr(obj, "model_dump"):
-        try:
-            return obj.model_dump(mode="json")
-        except Exception:
-            pass
-
-    # Try global registry for custom types
-    func = lookup_custom_serializer(obj)
-    if func:
-        try:
-            return func(obj)
-        except Exception:
-            pass
-
-    # Handle nested structures recursively
-    if isinstance(obj, dict):
-        try:
-            return {k: safe_serialize(v, default_serializer) for k, v in obj.items()}
-        except Exception:
-            pass
-    elif isinstance(obj, (list, tuple, set, frozenset)):
-        try:
-            return [safe_serialize(v, default_serializer) for v in obj]
-        except Exception:
-            pass
-
-    # Try JSON serialization
     try:
-        import json
+        # Handle None
+        if obj is None:
+            return None
 
-        json.dumps(obj)
-        return obj
-    except (TypeError, ValueError):
-        pass
+        # Handle primitives
+        if isinstance(obj, (str, int, bool)):
+            return obj
 
-    # Fallback to default serializer with circular reference protection
-    try:
-        return default_serializer(obj)
-    except (RecursionError, Exception):
-        # Handle circular references and other serialization failures
-        return f"<{type(obj).__name__} circular>"
+        # Handle special float values
+        if isinstance(obj, float):
+            if math.isnan(obj):
+                return "nan"
+            if math.isinf(obj):
+                return "inf" if obj > 0 else "-inf"
+            return obj
 
+        # Handle datetime objects
+        if isinstance(obj, (datetime, date, time)):
+            return obj.isoformat()
 
-def _serialize_for_key(obj: Any) -> Any:
-    """Best-effort conversion of arbitrary objects to cacheable structures for cache keys and robust serialization."""
-    if obj is None:
-        return None
-    from flujo.domain.models import PipelineContext
+        # Handle bytes and memoryview
+        if isinstance(obj, (bytes, memoryview)):
+            if isinstance(obj, memoryview):
+                obj = obj.tobytes()
+            import base64
 
-    # Special handling for PipelineContext: exclude run_id
-    if isinstance(obj, PipelineContext):
-        try:
-            d = obj.model_dump(mode="json")
-            d.pop("run_id", None)
-            return {k: _serialize_for_key(v) for k, v in d.items()}
-        except (ValueError, RecursionError):
-            return f"<{type(obj).__name__} circular>"
-    # Special handling for Step: serialize agent by class name
-    if "Step" in str(type(obj)):
-        try:
-            d = obj.model_dump(mode="json")
-            if "agent" in d and d["agent"] is not None:
-                # Get the original agent object, not the serialized value
-                original_agent = getattr(obj, "agent", None)
-                if original_agent is not None:
-                    d["agent"] = type(original_agent).__name__
-            return {k: _serialize_for_key(v) for k, v in d.items()}
-        except (ValueError, RecursionError):
-            return f"<{type(obj).__name__} circular>"
-    # Always check BaseModel before list/tuple/set
-    if hasattr(obj, "model_dump"):
-        try:
-            d = obj.model_dump(mode="json")
-            if "run_id" in d:
-                d.pop("run_id", None)
-            result = {}
-            for k, v in d.items():
-                orig_v = getattr(obj, k, None)
-                if isinstance(v, str) and isinstance(orig_v, dict):
-                    # Serialize the original dict value directly (not wrapped)
-                    result[k] = {kk: _serialize_for_key(vv) for kk, vv in orig_v.items()}
-                else:
-                    result[k] = _serialize_for_key(v)
-            return result
-        except (ValueError, RecursionError):
-            # If model_dump fails, try to serialize manually by checking for custom serializers
-            try:
-                result_dict_fallback = {}
-                for field_name, field_value in obj.__dict__.items():
-                    if field_name.startswith("_"):
-                        continue
-                    func = lookup_custom_serializer(field_value)
-                    if func:
-                        try:
-                            serialized_value = func(field_value)
-                            result_dict_fallback[field_name] = serialized_value
-                        except Exception:
-                            result_dict_fallback[field_name] = _serialize_for_key(field_value)
-                    else:
-                        result_dict_fallback[field_name] = _serialize_for_key(field_value)
-                return result_dict_fallback
-            except Exception:
-                return f"<{type(obj).__name__} circular>"
-    if isinstance(obj, dict):
-        d = dict(obj)
-        if "run_id" in d and "initial_prompt" in d:
-            d.pop("run_id", None)
-        result_dict: dict[Any, Any] = {}
-        for k, v in d.items():
-            if isinstance(v, dict) or isinstance(v, (list, tuple, set, frozenset)):
-                result_dict[k] = _serialize_for_key(v)
+            return base64.b64encode(obj).decode("ascii")
+
+        # Handle complex numbers
+        if isinstance(obj, complex):
+            return {"real": obj.real, "imag": obj.imag}
+
+        # Handle functions and callables
+        if callable(obj):
+            if hasattr(obj, "__name__"):
+                return obj.__name__
             else:
-                func = lookup_custom_serializer(v)
-                if func:
-                    try:
-                        serialized_value = func(v)
-                        result_dict[k] = serialized_value
-                        continue
-                    except Exception:
-                        pass
-                result_dict[k] = _serialize_for_key(v)
-        return result_dict
-    if isinstance(obj, (list, tuple, set, frozenset)):
-        result_list = []
-        for v in obj:
-            if isinstance(v, dict) or isinstance(v, (list, tuple, set, frozenset)):
-                result_list.append(_serialize_for_key(v))
-            else:
-                func = lookup_custom_serializer(v)
-                if func:
-                    try:
-                        serialized_value = func(v)
-                        result_list.append(serialized_value)
-                        continue
-                    except Exception:
-                        pass
-                result_list.append(_serialize_for_key(v))
-        return result_list
-    if callable(obj):
-        return (
-            f"{getattr(obj, '__module__', '<unknown>')}.{getattr(obj, '__qualname__', repr(obj))}"
+                return repr(obj)
+
+        # Handle dataclasses
+        if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
+            return {
+                k: safe_serialize(v, default_serializer, _seen)
+                for k, v in dataclasses.asdict(obj).items()
+            }
+
+        # Handle enums
+        if isinstance(obj, Enum):
+            return obj.value
+
+        # Handle Pydantic v2 models
+        if hasattr(obj, "model_dump"):
+            return safe_serialize(obj.model_dump(), default_serializer, _seen)
+
+        # Handle Pydantic v1 models
+        if hasattr(obj, "dict"):
+            return safe_serialize(obj.dict(), default_serializer, _seen)
+
+        # Handle dictionaries
+        if isinstance(obj, dict):
+            return {
+                safe_serialize(k, default_serializer, _seen): safe_serialize(
+                    v, default_serializer, _seen
+                )
+                for k, v in obj.items()
+            }
+
+        # Handle sequences (list, tuple, set, frozenset)
+        if isinstance(obj, (list, tuple, set, frozenset)):
+            return [safe_serialize(item, default_serializer, _seen) for item in obj]
+
+        # Handle custom serializer if provided
+        if default_serializer:
+            return default_serializer(obj)
+
+        # If we get here, the type is not supported
+        raise TypeError(
+            f"Object of type {type(obj).__name__} is not serializable. "
+            f"Consider providing a custom default_serializer."
         )
-    # Handle strings that look like lists of model instances
-    if isinstance(obj, str) and ("Model(" in obj or "Context(" in obj) and "run_id=" in obj:
-        import re
 
-        result_str = re.sub(r"run_id='[^']*',?\s*", "", obj)
-        result_str = re.sub(r",\s*\)", ")", result_str)
-        return result_str
-    # --- Check global custom serializer registry for any other type ---
-    func = lookup_custom_serializer(obj)
-    if func:
-        try:
-            return _serialize_for_key(func(obj))
-        except Exception:
-            pass
-    try:
-        import json
-
-        json.dumps(obj)
-        return obj
-    except Exception:
-        return repr(obj)
+    finally:
+        # Always remove from seen set to allow reuse
+        _seen.discard(obj_id)
 
 
-def _serialize_list_for_key(obj_list: list[Any]) -> list[Any]:
-    """Helper function to serialize lists, ensuring BaseModel instances are converted to dicts."""
-    result_list: list[Any] = []
-    for v in obj_list:
-        if hasattr(v, "model_dump"):
-            d = v.model_dump(mode="json")
-            if "run_id" in d:
-                d.pop("run_id", None)
-            result_list.append({k: _serialize_for_key(val) for k, val in d.items()})
-        elif isinstance(v, dict):
-            result_list.append({k: _serialize_for_key(val) for k, val in v.items()})
-        elif isinstance(v, (list, tuple, set, frozenset)):
-            result_list.append(_serialize_list_for_key(list(v)))
-        else:
-            result_list.append(_serialize_for_key(v))
-    return result_list
+def robust_serialize(obj: Any) -> Any:
+    """
+    Robust serialization that handles all common Python types.
+
+    This is a convenience wrapper around safe_serialize that provides
+    a more permissive fallback for unknown types.
+
+    Args:
+        obj: The object to serialize
+
+    Returns:
+        JSON-serializable representation of the object
+    """
+
+    def fallback_serializer(obj: Any) -> Any:
+        """Fallback serializer that converts unknown types to dict if Pydantic, else string representation."""
+        # Extra robust: if this is a Pydantic model, use model_dump or dict
+        if hasattr(obj, "model_dump"):
+            return obj.model_dump()
+        if hasattr(obj, "dict"):
+            return obj.dict()
+        return f"<unserializable: {type(obj).__name__}>"
+
+    return safe_serialize(obj, default_serializer=fallback_serializer)
+
+
+def serialize_to_json(obj: Any, **kwargs: Any) -> str:
+    """
+    Serialize an object to a JSON string.
+
+    Args:
+        obj: The object to serialize
+        **kwargs: Additional arguments to pass to json.dumps
+
+    Returns:
+        JSON string representation of the object
+
+    Raises:
+        TypeError: If the object cannot be serialized to JSON
+    """
+    serialized = safe_serialize(obj)
+    return json.dumps(serialized, **kwargs)
+
+
+def serialize_to_json_robust(obj: Any, **kwargs: Any) -> str:
+    """
+    Serialize an object to a JSON string with robust fallback handling.
+
+    This version will never fail, but may serialize unknown types as strings.
+
+    Args:
+        obj: The object to serialize
+        **kwargs: Additional arguments to pass to json.dumps
+
+    Returns:
+        JSON string representation of the object
+    """
+    serialized = robust_serialize(obj)
+    return json.dumps(serialized, **kwargs)
+
+
+def serializable_field(*args: Any, **kwargs: Any) -> None:
+    """DEPRECATED: This function is no longer supported. Use robust serialization instead."""
+    raise NotImplementedError(
+        "serializable_field is deprecated and no longer supported. "
+        "Use robust serialization (safe_serialize) instead."
+    )
+
+
+def create_serializer_for_type(*args: Any, **kwargs: Any) -> None:
+    """DEPRECATED: This function is no longer supported. Use robust serialization instead."""
+    raise NotImplementedError(
+        "create_serializer_for_type is deprecated and no longer supported. "
+        "Use robust serialization (safe_serialize) instead."
+    )
+
+
+def register_custom_serializer(*args: Any, **kwargs: Any) -> None:
+    """DEPRECATED: This function is no longer supported. Use robust serialization instead."""
+    raise NotImplementedError(
+        "register_custom_serializer is deprecated and no longer supported. "
+        "Use robust serialization (safe_serialize) instead."
+    )
+
+
+def lookup_custom_serializer(*args: Any, **kwargs: Any) -> None:
+    """DEPRECATED: This function is no longer supported. Use robust serialization instead."""
+    raise NotImplementedError(
+        "lookup_custom_serializer is deprecated and no longer supported. "
+        "Use robust serialization (safe_serialize) instead."
+    )
+
+
+def create_field_serializer(*args: Any, **kwargs: Any) -> None:
+    """DEPRECATED: This function is no longer supported. Use robust serialization instead."""
+    raise NotImplementedError(
+        "create_field_serializer is deprecated and no longer supported. "
+        "Use robust serialization (safe_serialize) instead."
+    )
+
+
+def _serialize_for_key(*args: Any, **kwargs: Any) -> None:
+    """DEPRECATED: This function is no longer supported. Use robust serialization instead."""
+    raise NotImplementedError(
+        "_serialize_for_key is deprecated and no longer supported. "
+        "Use robust serialization (safe_serialize) instead."
+    )

@@ -9,7 +9,7 @@ import asyncio
 
 from flujo import make_agent_async, init_telemetry
 from flujo.recipes.factories import make_agentic_loop_pipeline, run_agentic_loop_pipeline
-from flujo.domain.commands import AgentCommand, FinishCommand, RunAgentCommand
+from flujo.domain.commands import AgentCommand
 from pydantic import TypeAdapter
 
 

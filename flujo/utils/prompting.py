@@ -42,7 +42,9 @@ class AdvancedPromptFormatter:
         if value is None:
             return ""
         if isinstance(value, BaseModel):
-            return value.model_dump_json()
+            # Use robust serialization instead of model_dump_json to avoid deprecated custom serializers
+            serialized = safe_serialize(value)
+            return json.dumps(serialized)
         if isinstance(value, (dict, list)):
             # Use enhanced serialization instead of orjson
             serialized = safe_serialize(value)

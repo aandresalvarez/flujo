@@ -5,7 +5,7 @@ from typing import Any, List, Dict
 
 from flujo import Flujo, Step
 from flujo.domain.models import BaseModel as FlujoBaseModel
-from flujo.testing.utils import DummyRemoteBackend, gather_result
+from flujo.testing.utils import SimpleDummyRemoteBackend as DummyRemoteBackend, gather_result
 
 
 class UserContext(FlujoBaseModel):

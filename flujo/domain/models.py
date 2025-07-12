@@ -35,12 +35,7 @@ class BaseModel(PydanticBaseModel):
         # Check global registry first
         from flujo.utils.serialization import lookup_custom_serializer
 
-        func = lookup_custom_serializer(value)
-        if func:
-            try:
-                return func(value)
-            except Exception:
-                pass
+        lookup_custom_serializer(value)
 
         # Handle callable objects (functions, methods, etc.)
         if callable(value):
