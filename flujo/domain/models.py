@@ -1,7 +1,7 @@
 """Domain models for flujo."""
 
 from typing import Any, List, Optional, Literal, Dict, TYPE_CHECKING, Generic
-from pydantic import BaseModel as PydanticBaseModel, Field, ConfigDict, field_serializer
+from pydantic import BaseModel as PydanticBaseModel, Field, ConfigDict
 from typing import ClassVar
 from datetime import datetime, timezone
 import uuid
@@ -19,6 +19,7 @@ class BaseModel(PydanticBaseModel):
 
     model_config: ClassVar[ConfigDict] = {
         # Removed deprecated json_dumps and json_loads config keys
+        "arbitrary_types_allowed": True,
     }
 
     def _is_unknown_type(self, value: Any) -> bool:
@@ -27,22 +28,64 @@ class BaseModel(PydanticBaseModel):
             return False
 
         # Check for types that Pydantic handles natively
-        if isinstance(value, (str, int, float, bool, list, dict)):
+        if isinstance(value, (str, int, float, bool, list, dict, datetime, Enum)):
             return False
 
         # Check for types that need special handling
         return (
             callable(value)
-            or isinstance(value, (datetime, Enum, complex, set, frozenset, bytes, memoryview))
+            or isinstance(value, (complex, set, frozenset, bytes, memoryview))
             or (hasattr(value, "__dict__") and not hasattr(value, "model_dump"))
         )
 
-    @field_serializer("*", when_used="json")
+    def model_dump(self, **kwargs: Any) -> Any:
+        """Override model_dump to use robust serialization with custom type handling."""
+        # Get the standard serialized data
+        data = super().model_dump(**kwargs)
+
+        # Process the data to handle unknown types using the existing utilities
+        return self._process_serialized_data(data)
+
+    def model_dump_json(self, **kwargs: Any) -> str:
+        """Override model_dump_json to use robust serialization with custom type handling."""
+        # Get the standard serialized data
+        data = super().model_dump(**kwargs)
+
+        # Process the data to handle unknown types using the existing utilities
+        processed_data = self._process_serialized_data(data)
+
+        # Import json here to avoid circular imports
+        import json
+
+        return json.dumps(processed_data, **kwargs)
+
+    def _process_serialized_data(self, data: Any) -> Any:
+        """Recursively process serialized data to handle unknown types."""
+        if data is None:
+            return None
+
+        if isinstance(data, (str, int, float, bool)):
+            return data
+
+        if isinstance(data, list):
+            return [self._process_serialized_data(item) for item in data]
+
+        if isinstance(data, dict):
+            return {
+                self._process_serialized_data(k): self._process_serialized_data(v)
+                for k, v in data.items()
+            }
+
+        # If we encounter an unknown type, use our own serialization logic
+        if self._is_unknown_type(data):
+            return self._serialize_single_unknown_type(data)
+
+        return data
+
     def _serialize_unknown_types(self, value: Any) -> Any:
         """Intelligent fallback serialization for unknown types.
 
-        This method is called by Pydantic v2 when it encounters types it cannot
-        serialize natively. It provides backward compatibility for common types
+        This method provides backward compatibility for common types
         that users might include in their models.
         """
         # Only process unknown types, let Pydantic handle standard types
@@ -64,14 +107,6 @@ class BaseModel(PydanticBaseModel):
             else:
                 # For other callables, use repr
                 return repr(value)
-
-        # Handle datetime objects
-        if isinstance(value, datetime):
-            return value.isoformat()
-
-        # Handle Enum values
-        if isinstance(value, Enum):
-            return value.value
 
         # Handle complex numbers
         if isinstance(value, complex):

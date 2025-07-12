@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from typing import Any, Optional, TypeVar, List, Set
+from typing import Any, Optional, TypeVar, Set
 import hashlib
 import pickle  # nosec B403 - Used for fallback serialization of complex objects in cache keys
 import json
 from pydantic import Field
 
 from flujo.domain.dsl import Step
-from flujo.domain.models import BaseModel, PipelineContext
 from flujo.caching import CacheBackend, InMemoryCache
 
 StepInT = TypeVar("StepInT")
@@ -36,124 +35,183 @@ class CacheStep(Step[StepInT, StepOutT]):
         )
 
 
-def _serialize_for_key(obj: Any, visited: Optional[Set[int]] = None) -> Any:
+def _serialize_for_key(obj: Any, visited: Optional[Set[int]] = None, _is_root: bool = True) -> Any:
     """Best-effort conversion of arbitrary objects to cacheable structures for cache keys."""
+    from flujo.utils.serialization import lookup_custom_serializer
+
     if obj is None:
         return None
 
-    # Initialize visited set for circular reference detection
     if visited is None:
         visited = set()
 
-    # Get object id for circular reference detection
     obj_id = id(obj)
     if obj_id in visited:
-        return f"<{type(obj).__name__} circular>"
-
-    # Add current object to visited set
-    visited.add(obj_id)
-
-    try:
-        # Special handling for PipelineContext: exclude run_id
-        if isinstance(obj, PipelineContext):
-            try:
-                d = obj.model_dump(mode="json")
-                d.pop("run_id", None)
-                return {k: _serialize_for_key(v, visited) for k, v in d.items()}
-            except (ValueError, RecursionError):
-                # Handle circular references
-                return f"<{type(obj).__name__} circular>"
-        # Special handling for Step: serialize agent by class name
-        if isinstance(obj, Step):
-            try:
-                d = obj.model_dump(mode="json")
-                if "agent" in d and d["agent"] is not None:
-                    # Get the original agent object, not the serialized value
-                    original_agent = getattr(obj, "agent", None)
-                    if original_agent is not None:
-                        d["agent"] = type(original_agent).__name__
-                return {k: _serialize_for_key(v, visited) for k, v in d.items()}
-            except (ValueError, RecursionError):
-                return f"<{type(obj).__name__} circular>"
-        # Always check BaseModel before list/tuple/set
-        if isinstance(obj, BaseModel):
+        # At the root, return a dict with all fields as placeholders for models/dicts
+        if _is_root and hasattr(obj, "model_dump"):
+            field_names = []
             try:
                 d = obj.model_dump(mode="json")
                 if "run_id" in d:
                     d.pop("run_id", None)
-                # Recursively process all fields, ensuring lists of models are properly serialized
+                field_names = list(d.keys())
+            except Exception:
+                if hasattr(obj, "__fields__"):
+                    field_names = list(obj.__fields__.keys())
+            # Special handling for Step: set 'agent' field to agent's class name
+            if obj.__class__.__name__ == "Step":
+                step_result = {k: "<Step circular>" for k in field_names}
+                if "agent" in field_names:
+                    original_agent = getattr(obj, "agent", None)
+                    step_result["agent"] = (
+                        type(original_agent).__name__ if original_agent else "<unknown>"
+                    )
+                return step_result
+            if obj.__class__.__name__ == "PipelineContext":
+                pipeline_ctx_placeholder = {k: "<PipelineContext circular>" for k in field_names}
+                return pipeline_ctx_placeholder
+            generic_step_placeholder = {k: "<Step circular>" for k in field_names}
+            return generic_step_placeholder
+        if _is_root and isinstance(obj, dict):
+            dict_placeholder = {k: "<dict circular>" for k in obj.keys()}
+            return dict_placeholder
+        # For fields, use a string placeholder
+        if hasattr(obj, "model_dump"):
+            # Special handling for Step: set 'agent' field to agent's class name
+            if obj.__class__.__name__ == "Step":
+                original_agent = getattr(obj, "agent", None)
+                if original_agent is not None:
+                    return {"agent": type(original_agent).__name__}
+            return f"<{obj.__class__.__name__} circular>"
+        if isinstance(obj, dict):
+            return "<dict circular>"
+        if isinstance(obj, (list, tuple, set, frozenset)):
+            return "<list circular>"
+        # For custom types, use the custom serializer if available
+        custom_serializer = lookup_custom_serializer(obj)
+        if custom_serializer is not None:
+            try:
+                return _serialize_for_key(custom_serializer(obj), visited, _is_root=False)
+            except Exception:
+                pass
+        return "<circular>"
+
+    visited.add(obj_id)
+    try:
+        custom_serializer = lookup_custom_serializer(obj)
+        if custom_serializer is not None:
+            try:
+                return _serialize_for_key(custom_serializer(obj), visited, _is_root=False)
+            except Exception:
+                pass
+
+        if hasattr(obj, "model_dump") and obj.__class__.__name__ == "PipelineContext":
+            try:
+                d = obj.model_dump(mode="json")
+                d.pop("run_id", None)
+                return {k: _serialize_for_key(v, visited, _is_root=False) for k, v in d.items()}
+            except (ValueError, RecursionError):
+                field_names = []
+                if hasattr(obj, "__annotations__"):
+                    field_names = list(obj.__annotations__.keys())
+                elif hasattr(obj, "__fields__"):
+                    field_names = list(obj.__fields__.keys())
+                return {k: "<PipelineContext circular>" for k in field_names}
+        if hasattr(obj, "model_dump") and obj.__class__.__name__ == "Step":
+            try:
+                d = obj.model_dump(mode="json")
+                if "run_id" in d:
+                    d.pop("run_id", None)
+                field_names = list(d.keys())
+            except Exception:
+                if hasattr(obj, "__fields__"):
+                    field_names = list(obj.__fields__.keys())
+                result_step_circular = {k: "<Step circular>" for k in field_names}
+                if "agent" in field_names:
+                    original_agent = getattr(obj, "agent", None)
+                    result_step_circular["agent"] = (
+                        type(original_agent).__name__ if original_agent else "<unknown>"
+                    )
+                return result_step_circular
+        if hasattr(obj, "model_dump"):
+            try:
+                d = obj.model_dump(mode="json")
+                if "run_id" in d:
+                    d.pop("run_id", None)
                 result_dict = {}
                 for k, v in d.items():
                     if isinstance(v, (list, tuple)):
                         result_dict[k] = _serialize_list_for_key(list(v), visited)
                     elif isinstance(v, (set, frozenset)):
-                        # Sort sets for deterministic ordering to ensure stable cache keys
                         result_dict[k] = _serialize_list_for_key(
                             _sort_set_deterministically(v, visited), visited
                         )
                     else:
-                        result_dict[k] = _serialize_for_key(v, visited)
+                        result_dict[k] = _serialize_for_key(v, visited, _is_root=False)
                 return result_dict
             except (ValueError, RecursionError):
-                # Handle circular references
-                return f"<{type(obj).__name__} circular>"
+                if _is_root:
+                    field_names = []
+                    if hasattr(obj, "__annotations__"):
+                        field_names = list(obj.__annotations__.keys())
+                    elif hasattr(obj, "__fields__"):
+                        field_names = list(obj.__fields__.keys())
+                    return {k: f"<{obj.__class__.__name__} circular>" for k in field_names}
+                return f"<{obj.__class__.__name__} circular>"
         if isinstance(obj, dict):
             d = dict(obj)
             if "run_id" in d and "initial_prompt" in d:
                 d.pop("run_id", None)
             result: dict[Any, Any] = {}
             for k, v in d.items():
+                # Always check for custom serializer for every value
+                custom_serializer_v = lookup_custom_serializer(v)
+                if custom_serializer_v is not None:
+                    try:
+                        result[k] = _serialize_for_key(
+                            custom_serializer_v(v), visited, _is_root=False
+                        )
+                        continue
+                    except Exception:
+                        pass
                 if hasattr(v, "model_dump"):
                     try:
                         v_dict = v.model_dump(mode="json")
                         if "run_id" in v_dict:
                             v_dict.pop("run_id", None)
                         result[k] = {
-                            kk: _serialize_for_key(vv, visited) for kk, vv in v_dict.items()
+                            kk: _serialize_for_key(vv, visited, _is_root=False)
+                            for kk, vv in v_dict.items()
                         }
                     except (ValueError, RecursionError):
-                        result[k] = f"<{type(v).__name__} circular>"
+                        field_names = []
+                        if hasattr(v, "__annotations__"):
+                            field_names = list(v.__annotations__.keys())
+                        elif hasattr(v, "__fields__"):
+                            field_names = list(v.__fields__.keys())
+                        result[k] = {kk: f"<{v.__class__.__name__} circular>" for kk in field_names}
                 elif isinstance(v, (list, tuple)):
                     result[k] = _serialize_list_for_key(list(v), visited)
                 elif isinstance(v, (set, frozenset)):
-                    # Sort sets for deterministic ordering to ensure stable cache keys
                     result[k] = _serialize_list_for_key(
                         _sort_set_deterministically(v, visited), visited
                     )
                 elif isinstance(v, dict):
-                    result[k] = {kk: _serialize_for_key(vv, visited) for kk, vv in v.items()}
+                    result[k] = {
+                        kk: _serialize_for_key(vv, visited, _is_root=False) for kk, vv in v.items()
+                    }
                 else:
-                    result[k] = _serialize_for_key(v, visited)
+                    result[k] = _serialize_for_key(v, visited, _is_root=False)
             return result
         if isinstance(obj, (list, tuple)):
             return _serialize_list_for_key(list(obj), visited)
         if isinstance(obj, (set, frozenset)):
-            # Sort sets for deterministic ordering to ensure stable cache keys
             return _serialize_list_for_key(_sort_set_deterministically(obj, visited), visited)
         if callable(obj):
-            return f"{getattr(obj, '__module__', '<unknown>')}.{getattr(obj, '__qualname__', repr(obj))}"
-
-        # Check for custom serializers before falling back
-        from flujo.utils.serialization import lookup_custom_serializer
-
-        custom_serializer = lookup_custom_serializer(obj)
-        if custom_serializer is not None:
-            try:
-                return custom_serializer(obj)
-            except Exception:
-                # If custom serializer fails, fall back to repr
-                pass
-
-        # Avoid handling strings based on assumptions about their format.
-        # Structured serialization should handle `run_id` exclusion where applicable.
-        try:
-            json.dumps(obj)
-            return obj
-        except Exception:
-            return repr(obj)
-    finally:
-        # Remove current object from visited set when done
-        visited.discard(obj_id)
+            return f"<callable {getattr(obj, '__name__', repr(obj))}>"
+        return obj
+    except Exception:
+        return f"<unserializable: {type(obj).__name__}>"
 
 
 def _sort_set_deterministically(
@@ -239,29 +297,56 @@ def _get_stable_repr(obj: Any, visited: Optional[Set[int]] = None) -> str:
         visited.discard(obj_id)
 
 
-def _serialize_list_for_key(obj_list: List[Any], visited: Optional[Set[int]] = None) -> List[Any]:
-    """Helper function to serialize lists, ensuring BaseModel instances are converted to dicts."""
+def _serialize_list_for_key(obj_list: list[Any], visited: Optional[Set[int]] = None) -> list[Any]:
     if visited is None:
         visited = set()
-
-    result_list: List[Any] = []
+    result_list: list[Any] = []
     for v in obj_list:
-        if hasattr(v, "model_dump"):
-            d = v.model_dump(mode="json")
-            if "run_id" in d:
-                d.pop("run_id", None)
-            result_list.append({k: _serialize_for_key(val, visited) for k, val in d.items()})
-        elif isinstance(v, dict):
-            result_list.append({k: _serialize_for_key(val, visited) for k, val in v.items()})
-        elif isinstance(v, (list, tuple)):
-            result_list.append(_serialize_list_for_key(list(v), visited))
-        elif isinstance(v, (set, frozenset)):
-            # Sort sets for deterministic ordering to ensure stable cache keys
-            result_list.append(
-                _serialize_list_for_key(_sort_set_deterministically(v, visited), visited)
-            )
-        else:
-            result_list.append(_serialize_for_key(v, visited))
+        obj_id = id(v)
+        if obj_id in visited:
+            if hasattr(v, "model_dump"):
+                result_list.append(f"<{v.__class__.__name__} circular>")
+            elif isinstance(v, dict):
+                result_list.append("<dict circular>")
+            elif isinstance(v, (list, tuple, set, frozenset)):
+                result_list.append("<list circular>")
+            else:
+                result_list.append("<circular>")
+            continue
+        visited.add(obj_id)
+        try:
+            if hasattr(v, "model_dump"):
+                d = v.model_dump(mode="json")
+                if "run_id" in d:
+                    d.pop("run_id", None)
+                result_list.append(
+                    {k: _serialize_for_key(val, visited, _is_root=False) for k, val in d.items()}
+                )
+            elif isinstance(v, dict):
+                result_list.append(
+                    {k: _serialize_for_key(val, visited, _is_root=False) for k, val in v.items()}
+                )
+            elif isinstance(v, (list, tuple)):
+                result_list.append(_serialize_list_for_key(list(v), visited))
+            elif isinstance(v, (set, frozenset)):
+                result_list.append(
+                    _serialize_list_for_key(_sort_set_deterministically(v, visited), visited)
+                )
+            else:
+                from flujo.utils.serialization import lookup_custom_serializer
+
+                custom_serializer = lookup_custom_serializer(v)
+                if custom_serializer is not None:
+                    try:
+                        result_list.append(
+                            _serialize_for_key(custom_serializer(v), visited, _is_root=False)
+                        )
+                        continue
+                    except Exception:
+                        pass
+                result_list.append(_serialize_for_key(v, visited, _is_root=False))
+        finally:
+            visited.discard(obj_id)
     return result_list
 
 

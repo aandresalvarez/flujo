@@ -56,7 +56,7 @@ def test_improvement_models_config_and_new_case() -> None:
 
 def test_global_custom_serializer_registry():
     """Test that custom serializers work with the new robust serialization approach."""
-    from flujo.utils.serialization import safe_serialize
+    from flujo.utils.serialization import register_custom_serializer
     from flujo.domain.models import BaseModel
 
     class Custom:
@@ -75,11 +75,12 @@ def test_global_custom_serializer_registry():
             return f"{obj.real}+{obj.imag}j"
         raise TypeError(f"Cannot serialize {type(obj)}")
 
+    # Register the custom serializer globally
+    register_custom_serializer(Custom, custom_serializer)
+    register_custom_serializer(complex, custom_serializer)
+
     m = MyModel(foo=Custom(42), bar=3 + 4j)
-    # Use the new robust serialization with custom serializer
-    serialized = safe_serialize(m, default_serializer=custom_serializer)
+    # Use model_dump(mode="json", fallback=custom_serializer) to trigger the global registry and fallback
+    serialized = m.model_dump(mode="json", fallback=custom_serializer)
     assert serialized["foo"] == "custom:42"
-    # The robust serializer handles complex numbers differently
-    assert isinstance(serialized["bar"], dict)
-    assert serialized["bar"]["real"] == 3.0
-    assert serialized["bar"]["imag"] == 4.0
+    assert serialized["bar"] == "3+4j"

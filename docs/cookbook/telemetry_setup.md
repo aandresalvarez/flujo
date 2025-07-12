@@ -21,4 +21,3 @@ runner.run("hello")
 ```
 
 When telemetry export is disabled or `logfire` is not installed, `flujo` falls back to Python's standard logging module.
-

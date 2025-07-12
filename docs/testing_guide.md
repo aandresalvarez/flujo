@@ -123,7 +123,7 @@ from flujo.testing import override_agent, StubAgent
 
 class ProductionAgent:
     """A production agent that might be expensive or slow to run."""
-    
+
     async def run(self, data: str, **kwargs) -> str:
         # Simulate expensive operation
         await asyncio.sleep(0.1)
@@ -131,14 +131,14 @@ class ProductionAgent:
 
 class ApplicationService:
     """Example application service that uses flujo pipelines internally."""
-    
+
     def __init__(self):
         self.pipeline = (
             Step("Process", ProductionAgent()) >>
             Step("Validate", ProductionAgent())
         )
         self.runner = Flujo(self.pipeline)
-    
+
     async def process_data(self, data: str) -> str:
         """Process data using the internal pipeline."""
         result = None
@@ -150,7 +150,7 @@ class ApplicationService:
 async def test_application_service():
     service = ApplicationService()
     fast_test_agent = StubAgent(["test_processed", "test_validated"])
-    
+
     # Override both steps in the pipeline
     with override_agent(service.pipeline.steps[0], fast_test_agent):
         with override_agent(service.pipeline.steps[1], fast_test_agent):
@@ -165,13 +165,13 @@ You can use `override_agent` to test different scenarios without modifying your 
 ```python
 async def test_different_scenarios():
     service = ApplicationService()
-    
+
     # Test success scenario
     success_agent = StubAgent(["success_output"])
     with override_agent(service.pipeline.steps[0], success_agent):
         result = await service.process_data("test")
         assert result == "success_output"
-    
+
     # Test failure scenario
     failure_agent = StubAgent([RuntimeError("Test failure")])
     with override_agent(service.pipeline.steps[0], failure_agent):
@@ -190,10 +190,10 @@ The context manager automatically restores the original agent when the `with` bl
 async def test_agent_restoration():
     original_agent = ProductionAgent()
     step = Step("test", original_agent)
-    
+
     # Verify original agent is set
     assert step.agent is original_agent
-    
+
     # Use context manager and raise an exception
     try:
         with override_agent(step, StubAgent(["test"])):
@@ -201,7 +201,7 @@ async def test_agent_restoration():
             raise RuntimeError("Test exception")
     except RuntimeError:
         pass
-    
+
     # Verify original agent is still restored
     assert step.agent is original_agent
 ```
@@ -240,7 +240,7 @@ pipeline = (
 async def test_validator_failure():
     runner = Flujo(pipeline)
     result = await runner.arun("input")
-    
+
     # Assert that the 'always_fail_validator' failed
     assert_validator_failed(result, "always_fail_validator", "This validator always fails!")
 ```
@@ -270,7 +270,7 @@ pipeline = (
 async def test_context_update():
     runner = Flujo(pipeline, context_model=MyContext, initial_context_data={"my_value": 0})
     result = await runner.arun("test")
-    
+
     # Assert that 'my_value' in the context was updated to 1
     assert_context_updated(result, my_value=1)
 ```

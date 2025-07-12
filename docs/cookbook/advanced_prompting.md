@@ -52,4 +52,3 @@ template = r"The syntax is \{{ variable_name }}."
 print(format_prompt(template))
 # The syntax is {{ variable_name }}.
 ```
-

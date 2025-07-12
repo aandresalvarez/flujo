@@ -42,4 +42,4 @@ services:
       - .:/app
     environment:
       - PYTHONPATH=/app
-    command: make uv-dev 
+    command: make uv-dev
