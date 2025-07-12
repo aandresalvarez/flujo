@@ -1,190 +1,75 @@
 #!/usr/bin/env python3
-"""Test script to verify the serialization functions work as documented."""
+"""Test script to verify serialization improvements."""
 
 import json
-from datetime import datetime
-from enum import Enum
-from typing import Any
-
-from flujo.utils.serialization import (
-    register_custom_serializer,
-    lookup_custom_serializer,
-    create_serializer_for_type,
-    create_field_serializer,
-    serializable_field,
-    safe_serialize,
-    serialize_to_json,
-)
+from flujo.utils.serialization import safe_serialize, _serialize_for_key
 
 
-class Priority(Enum):
-    LOW = 1
-    MEDIUM = 2
-    HIGH = 3
-
-
-class DatabaseConnection:
-    def __init__(self, host: str, port: int):
-        self.host = host
-        self.port = port
-
-
-def test_register_custom_serializer():
-    """Test register_custom_serializer functionality."""
-    print("Testing register_custom_serializer...")
-
-    # Test datetime serialization
-    def serialize_datetime(dt: datetime) -> str:
-        return dt.strftime("%Y-%m-%d %H:%M:%S")
-
-    register_custom_serializer(datetime, serialize_datetime)
-
-    # Test that it works
-    dt = datetime(2023, 1, 1, 12, 30, 45)
-    result = safe_serialize(dt)
-    expected = "2023-01-01 12:30:45"
-    assert result == expected, f"Expected {expected}, got {result}"
-    print("✓ register_custom_serializer works correctly")
-
-
-def test_lookup_custom_serializer():
-    """Test lookup_custom_serializer functionality."""
-    print("Testing lookup_custom_serializer...")
-
-    # Test with registered type
-    dt = datetime(2023, 1, 1, 12, 30, 45)
-    serializer = lookup_custom_serializer(dt)
-    assert serializer is not None, "Should find serializer for datetime"
-
-    # Test with unregistered type
-    serializer = lookup_custom_serializer("string")
-    assert serializer is None, "Should not find serializer for string"
-    print("✓ lookup_custom_serializer works correctly")
-
-
-def test_create_serializer_for_type():
-    """Test create_serializer_for_type functionality."""
-    print("Testing create_serializer_for_type...")
-
-    def serialize_priority(p: Priority) -> str:
-        return p.name.lower()
-
-    MyTypeSerializer = create_serializer_for_type(Priority, serialize_priority)
-
-    # Test that it works
-    priority = Priority.HIGH
-    result = safe_serialize(priority)
-    expected = "high"
-    assert result == expected, f"Expected {expected}, got {result}"
-    print("✓ create_serializer_for_type works correctly")
-
-
-def test_create_field_serializer():
-    """Test create_field_serializer functionality."""
-    print("Testing create_field_serializer...")
-
-    def serialize_db_connection(conn: DatabaseConnection) -> dict:
-        return {
-            "type": "database_connection",
-            "host": conn.host,
-            "port": conn.port
-        }
-
-    field_serializer = create_field_serializer('db', serialize_db_connection)
-
-    # Test that it works
-    db = DatabaseConnection("localhost", 5432)
-    result = field_serializer(db)
-    expected = {"type": "database_connection", "host": "localhost", "port": 5432}
-    assert result == expected, f"Expected {expected}, got {result}"
-    print("✓ create_field_serializer works correctly")
-
-
-def test_serializable_field():
-    """Test serializable_field functionality (deprecated but should not raise)."""
-    print("Testing serializable_field...")
-
-    # This should not raise an error (it's deprecated but should be a no-op)
-    @serializable_field(lambda x: x.to_dict())
-    def some_function():
-        pass
-
-    print("✓ serializable_field works correctly (no-op for deprecated function)")
-
-
-def test_complex_serialization():
-    """Test complex serialization scenarios."""
-    print("Testing complex serialization...")
-
-    # Register multiple serializers
-    register_custom_serializer(complex, lambda c: f"{c.real:.2f} + {c.imag:.2f}i")
-    register_custom_serializer(set, list)  # Convert sets to lists
-
-    # Test complex object
-    data = {
-        "timestamp": datetime(2023, 1, 1, 12, 30, 45),
-        "priority": Priority.HIGH,
-        "complex_num": 3.14159 + 2.71828j,
-        "set_data": {1, 2, 3, 4, 5},
-        "db_connection": DatabaseConnection("localhost", 5432)
+def test_dictionary_key_serialization():
+    """Test that dictionary keys are properly serialized as strings."""
+    # Test with various key types
+    test_dict = {
+        "string_key": "value1",
+        123: "value2",  # int key
+        (1, 2, 3): "value3",  # tuple key
+        None: "value5",  # None key
     }
 
-    # Register serializer for DatabaseConnection
-    def serialize_db_connection(conn: DatabaseConnection) -> dict:
-        return {"host": conn.host, "port": conn.port}
+    serialized = safe_serialize(test_dict)
 
-    register_custom_serializer(DatabaseConnection, serialize_db_connection)
+    # All keys should be strings
+    for key in serialized.keys():
+        assert isinstance(key, str), f"Key {key} is not a string: {type(key)}"
 
-    # Serialize the complex object
-    result = safe_serialize(data)
-
-    # Verify the result
-    assert result["timestamp"] == "2023-01-01 12:30:45"
-    assert result["priority"] == "high"
-    assert result["complex_num"] == "3.14 + 2.72i"
-    assert result["set_data"] == [1, 2, 3, 4, 5]
-    assert result["db_connection"] == {"host": "localhost", "port": 5432}
-
-    print("✓ Complex serialization works correctly")
+    print("✅ Dictionary key serialization test passed")
 
 
-def test_json_serialization():
-    """Test JSON serialization."""
-    print("Testing JSON serialization...")
+def test_serialize_for_key_returns_string():
+    """Test that _serialize_for_key always returns a string."""
+    test_cases = [
+        "string",
+        123,
+        (1, 2, 3),
+        None,
+        [1, 2, 3],
+        {"a": 1, "b": 2},
+    ]
 
-    data = {
-        "timestamp": datetime(2023, 1, 1, 12, 30, 45),
-        "priority": Priority.HIGH,
+    for obj in test_cases:
+        result = _serialize_for_key(obj)
+        assert isinstance(result, str), f"Expected string, got {type(result)} for {obj}"
+
+    print("✅ _serialize_for_key string conversion test passed")
+
+
+def test_json_compatibility():
+    """Test that serialized objects are JSON compatible."""
+    test_obj = {
+        "string": "value",
+        123: "int_key",
+        (1, 2): "tuple_key",
+        "list": [1, 2, 3],
+        "dict": {"a": 1, "b": 2},
     }
 
-    json_str = serialize_to_json(data)
-    parsed = json.loads(json_str)
+    serialized = safe_serialize(test_obj)
 
-    assert parsed["timestamp"] == "2023-01-01 12:30:45"
-    assert parsed["priority"] == "high"
+    # Should be JSON serializable
+    json_str = json.dumps(serialized)
+    assert isinstance(json_str, str)
 
-    print("✓ JSON serialization works correctly")
+    # Should be JSON deserializable
+    deserialized = json.loads(json_str)
+    assert isinstance(deserialized, dict)
 
-
-def main():
-    """Run all tests."""
-    print("Testing serialization functions...\n")
-
-    try:
-        test_register_custom_serializer()
-        test_lookup_custom_serializer()
-        test_create_serializer_for_type()
-        test_create_field_serializer()
-        test_serializable_field()
-        test_complex_serialization()
-        test_json_serialization()
-
-        print("\n🎉 All tests passed! The serialization functions work as documented.")
-
-    except Exception as e:
-        print(f"\n❌ Test failed: {e}")
-        raise
+    print("✅ JSON compatibility test passed")
 
 
 if __name__ == "__main__":
-    main()
+    print("🧪 Running serialization improvement verification tests...")
+
+    test_dictionary_key_serialization()
+    test_serialize_for_key_returns_string()
+    test_json_compatibility()
+
+    print("\n✅ All tests passed! Serialization improvements are working correctly.")

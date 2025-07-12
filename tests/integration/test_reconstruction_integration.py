@@ -6,6 +6,7 @@ from typing import Any, List, Dict
 from flujo import Flujo, Step
 from flujo.domain.models import BaseModel as FlujoBaseModel
 from flujo.testing.utils import SimpleDummyRemoteBackend as DummyRemoteBackend, gather_result
+from flujo.utils.serialization import safe_serialize, register_custom_serializer
 
 
 class UserContext(FlujoBaseModel):
@@ -423,3 +424,30 @@ class TestReconstructionIntegration:
         assert final_context.preferences == ["pref1", "pref2"]
         assert final_context.scores == [85.5, 92.3]
         assert final_context.metadata == {"key": "value"}
+
+
+@pytest.mark.asyncio
+async def test_circular_reference_in_dict_keys_in_pipeline():
+    """Integration test: circular/self-referential objects as dict keys in pipeline context/output."""
+
+    class Node:
+        def __init__(self, name):
+            self.name = name
+            self.ref = None
+
+    # Register a custom serializer for Node
+    register_custom_serializer(Node, lambda obj: {"name": obj.name, "has_ref": obj.ref is not None})
+
+    node1 = Node("node1")
+    node2 = Node("node2")
+    node1.ref = node2
+    node2.ref = node1
+
+    test_dict = {node1: "a", node2: "b", "plain": "c"}
+
+    # Simulate pipeline context/output serialization
+    result = safe_serialize({"context": test_dict})
+    assert isinstance(result, dict)
+    assert "context" in result
+    # Should not raise RecursionError or stack overflow
+    assert any("node1" in str(k) or "node2" in str(k) for k in result["context"].keys())

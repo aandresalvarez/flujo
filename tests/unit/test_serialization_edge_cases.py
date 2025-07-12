@@ -559,6 +559,30 @@ class TestSerializationEdgeCases:
         assert isinstance(reconstructed_input.enum_field, TestEnum)
 
 
+def test_circular_reference_in_dict_keys():
+    """Test that circular/self-referential objects as dict keys do not cause infinite recursion."""
+    from flujo.utils.serialization import safe_serialize, register_custom_serializer
+
+    class Node:
+        def __init__(self, name):
+            self.name = name
+            self.ref = None
+
+    # Register a custom serializer for Node
+    register_custom_serializer(Node, lambda obj: {"name": obj.name, "has_ref": obj.ref is not None})
+
+    node1 = Node("node1")
+    node2 = Node("node2")
+    node1.ref = node2
+    node2.ref = node1
+
+    test_dict = {node1: "a", node2: "b", "plain": "c"}
+    result = safe_serialize(test_dict)
+    assert isinstance(result, dict)
+    # Should not raise RecursionError or stack overflow
+    assert any("node1" in str(k) or "node2" in str(k) for k in result.keys())
+
+
 # Add the reconstruction method to DummyRemoteBackend for testing
 def _reconstruct_payload(self, original_payload: dict, data: dict) -> dict:
     """Extract the reconstruction logic for testing."""

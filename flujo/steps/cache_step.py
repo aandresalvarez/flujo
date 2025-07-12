@@ -105,15 +105,8 @@ def _serialize_for_key(obj: Any) -> Any:
         return (
             f"{getattr(obj, '__module__', '<unknown>')}.{getattr(obj, '__qualname__', repr(obj))}"
         )
-    # Handle strings that look like lists of model instances
-    if isinstance(obj, str) and ("Model(" in obj or "Context(" in obj) and "run_id=" in obj:
-        import re
-
-        # Remove run_id from the string representation
-        result_str = re.sub(r"run_id='[^']*',?\s*", "", obj)
-        # Also remove trailing comma if it's the last field
-        result_str = re.sub(r",\s*\)", ")", result_str)
-        return result_str
+    # Avoid handling strings based on assumptions about their format.
+    # Structured serialization should handle `run_id` exclusion where applicable.
     try:
         json.dumps(obj)
         return obj

@@ -147,28 +147,25 @@ def serializable_field(serializer_func: Callable[[Any], Any]) -> Callable[[T], T
     return decorator
 
 
-def _serialize_for_key(obj: Any) -> Any:
+def _serialize_for_key(obj: Any, _seen: Optional[Set[int]] = None) -> str:
     """
     Serialize an object for use as a dictionary key.
 
     This function is used internally by safe_serialize when serializing
-    dictionary keys, which must be hashable.
+    dictionary keys, ensuring they are always strings for JSON compatibility.
 
     Args:
         obj: The object to serialize for use as a key
+        _seen: Internal set for circular reference detection (do not use directly)
 
     Returns:
-        A hashable representation of the object
+        A string representation of the object suitable for JSON object keys
     """
-    # For keys, we need to ensure the result is hashable
-    serialized = safe_serialize(obj)
+    # For keys, we need to ensure the result is a string for JSON compatibility
+    serialized = safe_serialize(obj, _seen=_seen)
 
-    # If the serialized result is not hashable, convert to string
-    try:
-        hash(serialized)
-        return serialized
-    except TypeError:
-        return str(serialized)
+    # Convert to string to guarantee JSON-compatible keys
+    return str(serialized)
 
 
 def safe_serialize(
@@ -290,7 +287,7 @@ def safe_serialize(
         # Handle dictionaries
         if isinstance(obj, dict):
             return {
-                _serialize_for_key(k): safe_serialize(v, default_serializer, _seen)
+                str(_serialize_for_key(k, _seen)): safe_serialize(v, default_serializer, _seen)
                 for k, v in obj.items()
             }
 
