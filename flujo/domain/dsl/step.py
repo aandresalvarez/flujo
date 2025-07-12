@@ -640,6 +640,49 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             **config_kwargs,
         )
 
+    # ------------------------------------------------------------------
+    # Convenience helpers
+    # ------------------------------------------------------------------
+
+    def use_input(self, key: str) -> "Pipeline[Any, StepOutT]":
+        """Create a small adapter pipeline that selects a key from a dict input.
+
+        This is a common pattern when working with :meth:`parallel` branches
+        where each branch only needs a portion of the upstream output.
+        """
+
+        async def _select(data: Any, *, context: BaseModel | None = None) -> Any:
+            if isinstance(data, dict):
+                return data.get(key)
+            raise TypeError("use_input expects a dict-like input")
+
+        adapter = Step.from_callable(_select, name=f"select_{key}", is_adapter=True)
+        return Pipeline.from_step(adapter) >> self
+
+    @classmethod
+    def gather(
+        cls,
+        name: str,
+        *,
+        wait_for: List[str],
+        **config_kwargs: Any,
+    ) -> "Step[Any, Dict[str, Any]]":
+        """Collect outputs from multiple parallel branches.
+
+        The step expects a dictionary input (e.g. from :meth:`parallel`) and
+        returns a dictionary containing only the specified keys.
+        """
+
+        async def _gather(data: Any, *, context: BaseModel | None = None) -> Dict[str, Any]:
+            if not isinstance(data, dict):
+                raise TypeError("Gather step expects dict input")
+            return {k: data.get(k) for k in wait_for}
+
+        return cast(
+            "Step[Any, Dict[str, Any]]",
+            cls.from_callable(_gather, name=name, is_adapter=True, **config_kwargs),  # type: ignore[arg-type]
+        )
+
     @classmethod
     def cached(
         cls,
