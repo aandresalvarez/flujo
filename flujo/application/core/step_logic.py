@@ -38,6 +38,7 @@ from ...exceptions import (
 from ...infra import telemetry
 from ...domain.resources import AppResources
 from flujo.steps.cache_step import CacheStep, _generate_cache_key
+from ...signature_tools import SignatureAnalysis
 from ..context_manager import (
     _accepts_param,
     _get_validation_flags,
@@ -68,6 +69,23 @@ def _default_set_final_context(result: PipelineResult[TContext], ctx: Optional[T
 
     if ctx is not None:
         result.final_pipeline_context = ctx
+
+
+def _should_pass_context(
+    spec: "SignatureAnalysis", context: Optional[TContext], func: Callable[..., Any]
+) -> bool:
+    """Determine if context should be passed to a function based on signature analysis.
+
+    Args:
+        spec: Signature analysis result from analyze_signature()
+        context: The context object to potentially pass
+        func: The function to analyze
+
+    Returns:
+        True if context should be passed to the function, False otherwise
+    """
+    accepts_context = _accepts_param(func, "context")
+    return spec.needs_context or (context is not None and accepts_context is True)
 
 
 # Track fallback chain per execution context to detect loops
@@ -682,7 +700,7 @@ async def _execute_dynamic_router_step_logic(
                 raise TypeError(
                     "Router agent requires a context but none was provided to the runner."
                 )
-        if spec.needs_context or (context is not None and _accepts_param(func, "context")):
+        if _should_pass_context(spec, context, func):
             router_kwargs["context"] = context
 
         if resources is not None:
