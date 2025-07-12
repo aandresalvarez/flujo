@@ -17,6 +17,7 @@ DEPRECATED: The class-based recipes are deprecated:
 # New factory functions (recommended)
 from .factories import (
     make_default_pipeline,
+    make_state_machine_pipeline,
     make_agentic_loop_pipeline,
     run_default_pipeline,
     run_agentic_loop_pipeline,
@@ -29,6 +30,7 @@ from .agentic_loop import AgenticLoop
 __all__ = [
     # Factory functions (recommended)
     "make_default_pipeline",
+    "make_state_machine_pipeline",
     "make_agentic_loop_pipeline",
     "run_default_pipeline",
     "run_agentic_loop_pipeline",
