@@ -422,6 +422,11 @@ def safe_serialize(
     _seen.add(obj_id)
 
     try:
+        # Give priority to custom serializers over built-in handling
+        custom_serializer = lookup_custom_serializer(obj)
+        if custom_serializer:
+            return safe_serialize(custom_serializer(obj), default_serializer, _seen)
+
         # Handle None
         if obj is None:
             return None
