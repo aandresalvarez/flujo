@@ -24,16 +24,16 @@ jobs:
           # Get the tag name from the trigger
           TAG_NAME=${GITHUB_REF#refs/tags/}
           echo "Handling tag: $TAG_NAME"
-          
+
           # Fetch all tags from remote with force to ensure we have the latest
           git fetch --tags --force
-          
+
           # Delete local tag if it exists (to prevent conflicts)
           git tag -d $TAG_NAME || true
-          
+
           # Fetch the specific tag from remote
           git fetch origin tag $TAG_NAME
-          
+
           # Verify we have the correct tag
           git show $TAG_NAME --stat
 
@@ -64,20 +64,20 @@ jobs:
             dist/flujo-*.tar.gz
           body: |
             ## What's New in v0.3.1
-            
+
             ### License Changes
             - Switched to dual licensing model (AGPL-3.0 + Commercial)
             - Added commercial license terms
             - Updated all license references
-            
+
             ### Documentation
             - Updated README with dual licensing information
             - Added commercial license file
             - Updated license classifiers in pyproject.toml
-            
+
             For commercial licensing, please contact: alvaro@example.com
           draft: false
           prerelease: false
           generate_release_notes: true
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

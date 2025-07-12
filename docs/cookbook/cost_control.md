@@ -50,5 +50,3 @@ except UsageLimitExceededError as e:
 7.  The exception contains the `result` object with the history up to the point of failure, which is useful for debugging.
 
 This mechanism is a critical safety feature for running `Flujo` in production.
-
-

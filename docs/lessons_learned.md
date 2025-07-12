@@ -25,4 +25,3 @@ The proposed `SubPipelineStep` relied on implicit behaviors controlled by config
 
 ## 8. **A Good Architectural Debate Refines the Problem Definition.**
 The discussion began with "how do we run a pipeline inside another?" and ended with "what is the best way to enable modularity and hierarchical control?" By challenging the initial proposed solution, we were forced to dig deeper and uncover the more fundamental principles of the framework, leading to a much stronger final design that builds on existing strengths rather than adding redundant complexity.
-

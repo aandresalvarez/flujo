@@ -48,4 +48,3 @@ jobs:
         with:
           name: new-e2e-cassette
           path: tests/e2e/cassettes/golden.yaml
-

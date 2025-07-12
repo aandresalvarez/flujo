@@ -273,4 +273,4 @@ init_telemetry(export_prometheus=True)
 
 - Read the [Configuration Guide](configuration.md)
 - Explore [Advanced Topics](extending.md)
-- Check out [Use Cases](use_cases.md) 
+- Check out [Use Cases](use_cases.md)

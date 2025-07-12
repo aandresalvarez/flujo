@@ -30,8 +30,33 @@ def _inject_context(
     Returns an error message if validation fails, otherwise ``None``.
     """
     original = context.model_dump()
+    from flujo.utils.serialization import lookup_custom_deserializer
+
     for key, value in update_data.items():
+        if key in context_model.model_fields:
+            field_info = context_model.model_fields[key]
+            field_type = field_info.annotation
+            if field_type is not None and isinstance(value, dict):
+                custom_deserializer = lookup_custom_deserializer(field_type)
+                if custom_deserializer:
+                    try:
+                        value = custom_deserializer(value)
+                    except Exception:
+                        pass
         setattr(context, key, value)
+    # Final pass: forcibly re-apply deserializer to context attribute if needed
+    for key in context_model.model_fields:
+        field_info = context_model.model_fields[key]
+        field_type = field_info.annotation
+        current_value = getattr(context, key, None)
+        if field_type is not None and isinstance(current_value, dict):
+            custom_deserializer = lookup_custom_deserializer(field_type)
+            if custom_deserializer:
+                try:
+                    deserialized_value = custom_deserializer(current_value)
+                    setattr(context, key, deserialized_value)
+                except Exception:
+                    pass
     try:
         validated = context_model.model_validate(context.model_dump())
         context.__dict__.update(validated.__dict__)

@@ -67,4 +67,3 @@ This prints `{'count': 1}` because the processor parsed the JSON string.
 `SerializePydantic` turns any object with a `model_dump()` method into a plain dictionary. Use it when a downstream agent doesn't understand Pydantic models.
 
 See [Serialize Pydantic Models](serialize_pydantic.md) for a complete example.
-

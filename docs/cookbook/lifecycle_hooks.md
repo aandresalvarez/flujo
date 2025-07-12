@@ -52,5 +52,3 @@ print(f"\nPipeline finished. It ran {len(result.step_history)} steps before bein
 6.  The engine catches this special signal and gracefully terminates the entire run, returning the partial `PipelineResult`.
 
 This provides a powerful and clean way to add cross-cutting concerns like logging, metrics, and custom control flow to your pipelines.
-
-

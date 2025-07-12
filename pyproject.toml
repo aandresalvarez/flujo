@@ -35,7 +35,7 @@ classifiers = [
 # Runtime dependencies
 dependencies = [
   "pydantic>=2.7",
-  "pydantic-ai>=0.4.1",
+  "pydantic-ai>=0.4.2",
   "pydantic-settings",
   "python-dotenv>=1.0",
   "pyyaml>=6.0",
@@ -43,7 +43,6 @@ dependencies = [
   "typer>=0.12",
   "rich>=13.7",
   "pydantic-evals>=0.0.47", # Added for Intelligent Evals
-  "orjson>=3.9.0",
   "aiosqlite>=0.21.0",
 ]
 
@@ -66,6 +65,7 @@ dev = [
   "cyclonedx-py",  # Added for CycloneDX CLI support
   "logfire>=0.3",
   "sqlvalidator>=0.0.8",
+  "psutil>=5.9.0",  # Added for performance and memory tests
 ]
 docs = [
     "mkdocs",
@@ -114,7 +114,6 @@ module = [
     "yaml",
     "sqlvalidator",
     "vcr",
-    "orjson",
     "logfire",
     "numpy"
 ]
