@@ -682,8 +682,7 @@ async def _execute_dynamic_router_step_logic(
                 raise TypeError(
                     "Router agent requires a context but none was provided to the runner."
                 )
-            router_kwargs["context"] = context
-        elif context is not None and _accepts_param(func, "context"):
+        if spec.needs_context or (context is not None and _accepts_param(func, "context")):
             router_kwargs["context"] = context
 
         if resources is not None:
