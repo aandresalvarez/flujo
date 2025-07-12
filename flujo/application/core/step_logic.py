@@ -72,20 +72,22 @@ def _default_set_final_context(result: PipelineResult[TContext], ctx: Optional[T
 
 
 def _should_pass_context(
-    spec: SignatureAnalysis, context: Optional[TContext], func: Callable[..., Any]
+    sig_analysis: SignatureAnalysis, context: Optional[TContext], func: Callable[..., Any]
 ) -> bool:
     """Determine if context should be passed to a function based on signature analysis.
 
     Args:
-        spec: Signature analysis result from analyze_signature()
+        sig_analysis: Signature analysis result from analyze_signature()
         context: The context object to potentially pass
         func: The function to analyze
 
     Returns:
         True if context should be passed to the function, False otherwise
     """
+    # Check if function accepts context parameter (either explicitly or via **kwargs)
+    # This is different from sig_analysis.needs_context which only checks if context is required
     accepts_context = _accepts_param(func, "context")
-    return spec.needs_context or (context is not None and accepts_context is True)
+    return sig_analysis.needs_context or (context is not None and accepts_context is True)
 
 
 # Track fallback chain per execution context to detect loops
