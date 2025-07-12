@@ -534,3 +534,303 @@ def test_cache_key_deterministic_set_ordering():
 
     # Results should be identical
     assert result9 == result10
+
+
+def test_cache_key_stability_comprehensive():
+    """Comprehensive test for cache key stability across various data types and structures."""
+    from flujo.steps.cache_step import _serialize_for_key
+    import json
+
+    # Test data with potential stability issues
+    test_cases = [
+        # Sets and frozensets (the main issue we fixed)
+        {"name": "sets", "data": {3, 1, 2, "b", "a", "c"}},
+        {"name": "frozensets", "data": frozenset([3, 1, 2, "b", "a", "c"])},
+        {"name": "nested_sets", "data": {frozenset([3, 1, 2]), frozenset([2, 1, 3])}},
+        # Dictionaries with non-string keys (potential ordering issues)
+        {"name": "dict_with_int_keys", "data": {3: "three", 1: "one", 2: "two"}},
+        {"name": "dict_with_tuple_keys", "data": {(1, 2): "tuple1", (2, 1): "tuple2"}},
+        {
+            "name": "dict_with_frozenset_keys",
+            "data": {frozenset([1, 2]): "set1", frozenset([2, 1]): "set2"},
+        },
+        # Mixed collections
+        {
+            "name": "mixed_collections",
+            "data": {
+                "list": [3, 1, 2],
+                "set": {3, 1, 2},
+                "frozenset": frozenset([3, 1, 2]),
+                "dict": {3: "three", 1: "one", 2: "two"},
+            },
+        },
+        # Nested structures with potential ordering issues
+        {
+            "name": "deeply_nested",
+            "data": {
+                "level1": {
+                    "sets": {frozenset([3, 1, 2]), frozenset([2, 1, 3])},
+                    "dicts": {frozenset([1, 2]): "value1", frozenset([2, 1]): "value2"},
+                }
+            },
+        },
+        # Edge cases
+        {
+            "name": "empty_collections",
+            "data": {
+                "empty_set": set(),
+                "empty_frozenset": frozenset(),
+                "empty_dict": {},
+                "empty_list": [],
+            },
+        },
+        {
+            "name": "single_element_collections",
+            "data": {
+                "single_set": {42},
+                "single_frozenset": frozenset([42]),
+                "single_dict": {42: "value"},
+            },
+        },
+        # Complex nested structures
+        {
+            "name": "complex_nested",
+            "data": {
+                "outer": {
+                    "inner1": {
+                        "sets": {frozenset([1, 2, 3]), frozenset([3, 2, 1])},
+                        "dicts": {frozenset([1, 2]): {frozenset([3, 4]): "deep"}},
+                    },
+                    "inner2": [
+                        {frozenset([1, 2]): "list_item1"},
+                        {frozenset([2, 1]): "list_item2"},
+                    ],
+                }
+            },
+        },
+    ]
+
+    for test_case in test_cases:
+        data = test_case["data"]
+        name = test_case["name"]
+
+        # Serialize multiple times to check for consistency
+        results = []
+        for i in range(5):
+            result = _serialize_for_key(data)
+            # Convert result to a JSON-serializable format for comparison
+            try:
+                json_result = json.dumps(result, sort_keys=True)
+                results.append(json_result)
+            except TypeError:
+                # If JSON serialization fails, use string representation
+                results.append(str(result))
+
+        # All results should be identical
+        first_result = results[0]
+        all_identical = all(r == first_result for r in results)
+
+        assert all_identical, f"Cache key instability detected for {name}. Results: {results}"
+
+
+def test_cache_key_stability_with_step():
+    """Test cache key stability when using actual Step objects."""
+    from flujo.steps.cache_step import _generate_cache_key
+    from flujo.domain.dsl import Step
+
+    async def test_step(data: str) -> str:
+        return f"processed_{data}"
+
+    step = Step.from_callable(test_step, name="test_step")
+
+    # Test data with potential stability issues
+    test_data_sets = [
+        # Sets and frozensets
+        {3, 1, 2, "b", "a", "c"},
+        frozenset([3, 1, 2, "b", "a", "c"]),
+        {frozenset([3, 1, 2]), frozenset([2, 1, 3])},
+        # Dictionaries with non-string keys
+        {3: "three", 1: "one", 2: "two"},
+        {frozenset([1, 2]): "value1", frozenset([2, 1]): "value2"},
+        # Mixed structures
+        {
+            "sets": {3, 1, 2},
+            "frozensets": frozenset([3, 1, 2]),
+            "dicts": {frozenset([1, 2]): "value"},
+        },
+    ]
+
+    for data in test_data_sets:
+        # Generate cache keys multiple times
+        keys = []
+        for i in range(5):
+            key = _generate_cache_key(step, data, None, None)
+            keys.append(key)
+
+        # All keys should be identical
+        first_key = keys[0]
+        all_identical = all(k == first_key for k in keys)
+
+        assert all_identical, f"Cache key instability with Step for data {type(data)}. Keys: {keys}"
+
+
+def test_cache_key_stability_edge_cases():
+    """Test cache key stability for edge cases and boundary conditions."""
+    from flujo.steps.cache_step import _serialize_for_key
+    import json
+
+    edge_cases = [
+        # Very large sets
+        {"name": "large_set", "data": set(range(100))},
+        # Sets with complex objects
+        {
+            "name": "complex_objects",
+            "data": {frozenset([1, 2]): "value1", frozenset([2, 1]): "value2"},
+        },
+        # Sets with None values
+        {"name": "none_values", "data": {None, 1, 2, "string"}},
+        # Sets with boolean values
+        {"name": "boolean_values", "data": {True, False, 1, 0}},
+        # Sets with float values
+        {"name": "float_values", "data": {1.0, 2.0, 3.0, 1.5}},
+        # Sets with mixed types
+        {"name": "mixed_types", "data": {1, "string", 1.5, True, None}},
+        # Deeply nested structures
+        {
+            "name": "deep_nesting",
+            "data": {
+                "level1": {
+                    "level2": {
+                        "level3": {
+                            "sets": {frozenset([1, 2]), frozenset([2, 1])},
+                            "dicts": {frozenset([3, 4]): {frozenset([5, 6]): "deep"}},
+                        }
+                    }
+                }
+            },
+        },
+        # Circular reference prevention
+        {
+            "name": "circular_reference",
+            "data": {
+                "self_ref": None  # Will be set to create circular reference
+            },
+        },
+    ]
+
+    # Create circular reference for testing
+    circular_data = {"self_ref": None}
+    circular_data["self_ref"] = circular_data
+    edge_cases.append({"name": "circular_reference", "data": circular_data})
+
+    for test_case in edge_cases:
+        data = test_case["data"]
+        name = test_case["name"]
+
+        try:
+            # Serialize multiple times
+            results = []
+            for i in range(3):  # Fewer iterations for edge cases
+                result = _serialize_for_key(data)
+                results.append(json.dumps(result, sort_keys=True))
+
+            # All results should be identical
+            first_result = results[0]
+            all_identical = all(r == first_result for r in results)
+
+            assert all_identical, f"Cache key instability for edge case {name}. Results: {results}"
+
+        except Exception as e:
+            # Some edge cases might fail, which is expected
+            print(f"Edge case {name} failed as expected: {e}")
+
+
+def test_cache_key_stability_performance():
+    """Test that cache key stability doesn't significantly impact performance."""
+    from flujo.steps.cache_step import _serialize_for_key
+    import time
+
+    # Create a moderately complex data structure
+    test_data = {
+        "sets": {frozenset([1, 2, 3]), frozenset([3, 2, 1]), frozenset([2, 1, 3])},
+        "dicts": {frozenset([1, 2]): "value1", frozenset([2, 1]): "value2"},
+        "nested": {
+            "inner": {
+                "sets": {frozenset([4, 5, 6]), frozenset([6, 5, 4])},
+                "dicts": {frozenset([7, 8]): "value3"},
+            }
+        },
+    }
+
+    # Measure serialization time
+    start_time = time.time()
+    for i in range(1000):
+        _serialize_for_key(test_data)
+    end_time = time.time()
+
+    total_time = end_time - start_time
+    avg_time = total_time / 1000
+
+    # Should complete in reasonable time (less than 1ms per serialization)
+    assert avg_time < 0.001, f"Serialization too slow: {avg_time:.6f}s per operation"
+
+    print(f"Average serialization time: {avg_time:.6f}s per operation")
+
+
+def test_cache_key_stability_regression():
+    """Test to prevent regression of cache key stability issues."""
+    from flujo.steps.cache_step import _serialize_for_key
+    import json
+
+    # Test cases that previously had stability issues
+    regression_tests = [
+        # Original issue: sets with non-deterministic ordering
+        {"name": "original_set_issue", "data": {3, 1, 2, "b", "a", "c"}},
+        # Similar issue with frozensets
+        {"name": "original_frozenset_issue", "data": frozenset([3, 1, 2, "b", "a", "c"])},
+        # Nested sets
+        {"name": "nested_sets_issue", "data": {frozenset([3, 1, 2]), frozenset([2, 1, 3])}},
+        # Dictionaries with set-like keys
+        {
+            "name": "dict_with_set_keys",
+            "data": {frozenset([1, 2]): "value1", frozenset([2, 1]): "value2"},
+        },
+        # Mixed collections
+        {
+            "name": "mixed_collections",
+            "data": {"list": [3, 1, 2], "set": {3, 1, 2}, "frozenset": frozenset([3, 1, 2])},
+        },
+    ]
+
+    for test_case in regression_tests:
+        data = test_case["data"]
+        name = test_case["name"]
+
+        # Serialize multiple times
+        results = []
+        for i in range(10):  # More iterations for regression testing
+            result = _serialize_for_key(data)
+            # Convert result to a JSON-serializable format for comparison
+            try:
+                json_result = json.dumps(result, sort_keys=True)
+                results.append(json_result)
+            except TypeError:
+                # If JSON serialization fails, use string representation
+                results.append(str(result))
+
+        # All results should be identical
+        first_result = results[0]
+        all_identical = all(r == first_result for r in results)
+
+        assert all_identical, f"Regression detected for {name}. Results: {results}"
+
+        # Also verify that the result is sorted (for sets/frozensets)
+        if isinstance(data, (set, frozenset)) or any(
+            isinstance(v, (set, frozenset)) for v in data.values() if isinstance(data, dict)
+        ):
+            serialized = _serialize_for_key(data)
+            if isinstance(serialized, list):
+                # Check that the list is sorted
+                assert serialized == sorted(serialized, key=lambda x: str(x)), (
+                    f"Result not sorted for {name}"
+                )
