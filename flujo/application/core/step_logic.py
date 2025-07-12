@@ -692,7 +692,7 @@ async def _execute_dynamic_router_step_logic(
             elif _accepts_param(func, "resources"):
                 router_kwargs["resources"] = resources
 
-        raw = await router_step.router_agent.run(router_input, **router_kwargs)
+        raw = await func(router_input, **router_kwargs)
         branch_keys = getattr(raw, "output", raw)
     except Exception as e:  # pragma: no cover - defensive
         telemetry.logfire.error(f"Router agent error in '{router_step.name}': {e}")
@@ -703,7 +703,9 @@ async def _execute_dynamic_router_step_logic(
     if not isinstance(branch_keys, list):
         branch_keys = [branch_keys]
 
-    selected = {k: v for k, v in router_step.branches.items() if k in branch_keys}
+    selected: Dict[str, Step[Any, Any] | Pipeline[Any, Any]] = {
+        k: v for k, v in router_step.branches.items() if k in branch_keys
+    }
     if not selected:
         result.success = True
         result.output = {}
