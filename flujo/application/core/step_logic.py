@@ -72,7 +72,7 @@ def _default_set_final_context(result: PipelineResult[TContext], ctx: Optional[T
 
 
 def _should_pass_context(
-    spec: "SignatureAnalysis", context: Optional[TContext], func: Callable[..., Any]
+    spec: SignatureAnalysis, context: Optional[TContext], func: Callable[..., Any]
 ) -> bool:
     """Determine if context should be passed to a function based on signature analysis.
 
