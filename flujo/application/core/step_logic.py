@@ -87,7 +87,7 @@ def _should_pass_context(
     # Check if function accepts context parameter (either explicitly or via **kwargs)
     # This is different from sig_analysis.needs_context which only checks if context is required
     accepts_context = _accepts_param(func, "context")
-    return sig_analysis.needs_context or (context is not None and accepts_context is True)
+    return sig_analysis.needs_context or (context is not None and bool(accepts_context))
 
 
 # Track fallback chain per execution context to detect loops
