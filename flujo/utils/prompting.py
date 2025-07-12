@@ -2,7 +2,7 @@ import re
 import json
 from typing import Any, Dict
 from pydantic import BaseModel
-from .serialization import safe_serialize
+from .serialization import robust_serialize
 
 IF_BLOCK_REGEX = re.compile(r"\{\{#if\s*([^\}]+?)\s*\}\}(.*?)\{\{\/if\}\}", re.DOTALL)
 EACH_BLOCK_REGEX = re.compile(r"\{\{#each\s*([^\}]+?)\s*\}\}(.*?)\{\{\/each\}\}", re.DOTALL)
@@ -37,8 +37,8 @@ class AdvancedPromptFormatter:
         return value
 
     def _serialize_value(self, value: Any) -> str:
-        """Helper to serialize BaseModel, dict, or list using safe_serialize and json.dumps."""
-        serialized = safe_serialize(value)
+        """Serialize ``value`` to JSON using :func:`robust_serialize`."""
+        serialized = robust_serialize(value)
         return json.dumps(serialized)
 
     def _serialize(self, value: Any) -> str:
@@ -47,7 +47,7 @@ class AdvancedPromptFormatter:
         if value is None:
             return ""
         if isinstance(value, BaseModel):
-            # Use robust serialization instead of model_dump_json to avoid deprecated custom serializers
+            # Use robust serialization instead of model_dump_json to avoid failures on unknown types
             return self._serialize_value(value)
         if isinstance(value, (dict, list)):
             # Use enhanced serialization instead of orjson

@@ -35,7 +35,7 @@ from rich.console import Console
 from flujo.domain.dsl import Pipeline, Step
 import runpy
 from flujo.domain.agent_protocol import AsyncAgentProtocol
-from ..utils.serialization import safe_serialize
+from ..utils.serialization import safe_serialize, safe_deserialize
 
 # Type definitions for CLI
 WeightsType = List[Dict[str, Union[str, float]]]
@@ -125,7 +125,7 @@ def solve(
                     if weights_path.endswith((".yaml", ".yml")):
                         weights: WeightsType = yaml.safe_load(f)
                     else:
-                        weights = json.load(f)
+                        weights = safe_deserialize(json.load(f))
                 if not isinstance(weights, list) or not all(
                     isinstance(w, dict) and "item" in w and "weight" in w for w in weights
                 ):
@@ -317,7 +317,7 @@ def add_eval_case_cmd(
         case_parts.append(f'expected_output="""{expected_output}"""')
     if metadata_json:
         try:
-            parsed = json.loads(metadata_json)
+            parsed = safe_deserialize(json.loads(metadata_json))
             case_parts.append(f"metadata={parsed}")
         except json.JSONDecodeError:
             typer.secho(
@@ -601,7 +601,7 @@ def run(
         initial_context_data = None
         if context_data:
             try:
-                initial_context_data = json.loads(context_data)
+                initial_context_data = safe_deserialize(json.loads(context_data))
             except json.JSONDecodeError as e:
                 typer.echo(f"[red]Invalid JSON in --context-data: {e}", err=True)
                 raise typer.Exit(1)
@@ -611,7 +611,7 @@ def run(
                     if context_file.endswith((".yaml", ".yml")):
                         initial_context_data = yaml.safe_load(f)
                     else:
-                        initial_context_data = json.load(f)
+                        initial_context_data = safe_deserialize(json.load(f))
             except Exception as e:
                 typer.echo(f"[red]Error loading context file '{context_file}': {e}", err=True)
                 raise typer.Exit(1)

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, cast
 
 from .base import StateBackend
-from ...utils.serialization import serialize_to_json
+from ...utils.serialization import serialize_to_json, safe_deserialize
 
 
 class FileBackend(StateBackend):
@@ -43,7 +43,8 @@ class FileBackend(StateBackend):
     def _read_json(self, file_path: Path) -> Dict[str, Any]:
         with open(file_path, "rb") as f:
             data = json.loads(f.read().decode())
-        return cast(Dict[str, Any], data)
+        # Apply safe_deserialize to restore custom types
+        return cast(Dict[str, Any], safe_deserialize(data))
 
     async def delete_state(self, run_id: str) -> None:
         file_path = self.path / f"{run_id}.json"

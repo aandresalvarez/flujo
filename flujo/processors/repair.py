@@ -5,7 +5,7 @@ import json
 import re
 from typing import Any, Final
 
-from ..utils.serialization import safe_serialize
+from ..utils.serialization import safe_serialize, safe_deserialize
 
 MAX_LITERAL_EVAL_SIZE = 1_000_000
 
@@ -92,7 +92,7 @@ class DeterministicRepairProcessor:
     @staticmethod
     def _canonical(data: Any) -> str:
         """Serialize ``data`` to canonical JSON string form."""
-        obj = data if not isinstance(data, str) else json.loads(data)
+        obj = data if not isinstance(data, str) else safe_deserialize(json.loads(data))
         # Use enhanced serialization for better handling of complex objects
         serialized = safe_serialize(obj)
         return json.dumps(serialized, ensure_ascii=False, separators=(",", ":"))

@@ -21,7 +21,7 @@ class StateBackend(ABC):
 import json
 import redis.asyncio as redis
 from flujo.state.backends.base import StateBackend
-from flujo.utils.serialization import safe_serialize
+from flujo.utils.serialization import safe_serialize, safe_deserialize
 
 class RedisBackend(StateBackend):
     def __init__(self, url: str) -> None:
@@ -42,7 +42,7 @@ class RedisBackend(StateBackend):
     async def load_state(self, run_id: str) -> dict | None:
         r = await self._conn()
         data = await r.get(run_id)
-        return json.loads(data) if data else None
+        return safe_deserialize(json.loads(data)) if data else None
 
     async def delete_state(self, run_id: str) -> None:
         r = await self._conn()
@@ -54,13 +54,14 @@ class RedisBackend(StateBackend):
 The enhanced serialization approach automatically handles custom types through the global registry:
 
 ```python
-from flujo.utils import register_custom_serializer
+from flujo.utils import register_custom_serializer, register_custom_deserializer
 
 # Register custom serializers for your types
 def serialize_my_type(obj: MyCustomType) -> dict:
     return {"id": obj.id, "name": obj.name}
 
 register_custom_serializer(MyCustomType, serialize_my_type)
+register_custom_deserializer(MyCustomType, lambda d: MyCustomType(**d))
 
 # Now your custom types are automatically serialized in state backends
 ```
@@ -81,8 +82,8 @@ class CustomBackend(StateBackend):
 
 ## Best Practices
 
-1. **Use `safe_serialize`**: This provides robust handling of custom types and nested structures
-2. **Register global serializers**: For application-wide custom types, use the global registry
+1. **Use `safe_serialize` and `safe_deserialize`**: Together they handle custom types round-trip
+2. **Register global serializers/deserializers**: Keep your type conversions centralized
 3. **Handle errors gracefully**: The enhanced serialization includes error handling and fallbacks
 4. **Test with complex objects**: Ensure your backend works with nested Pydantic models and custom types
 
