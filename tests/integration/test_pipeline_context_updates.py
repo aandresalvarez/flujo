@@ -5,6 +5,7 @@ from pydantic import model_validator
 from flujo.application.runner import Flujo
 from flujo.domain import Step
 from flujo.testing.utils import gather_result, StubAgent
+from flujo.utils.serialization import register_custom_serializer
 
 
 class NestedModel(BaseModel):
@@ -22,6 +23,19 @@ class ContextWithNesting(BaseModel):
         if self.counter > 10 and self.nested_item is None:
             raise ValueError("Nested item must be present when counter > 10")
         return self
+
+
+class CustomContextType:
+    def __init__(self, value):
+        self.value = value
+
+    def to_dict(self):
+        return {"value": self.value}
+
+
+class ContextWithCustom(BaseModel):
+    custom: CustomContextType
+    model_config = {"arbitrary_types_allowed": True}
 
 
 @pytest.mark.asyncio
@@ -129,3 +143,37 @@ async def test_incompatible_output_type_skips_update() -> None:
 
     assert result.step_history[-1].success is True
     assert result.final_pipeline_context.counter == 0
+
+
+@pytest.mark.asyncio
+async def test_context_update_with_custom_type() -> None:
+    register_custom_serializer(CustomContextType, lambda x: x.to_dict())
+    update_step = Step.model_validate(
+        {
+            "name": "update_custom",
+            "agent": StubAgent([{"custom": CustomContextType(42)}]),
+            "updates_context": True,
+        }
+    )
+
+    class ReaderAgent:
+        async def run(
+            self, data: object | None = None, *, context: ContextWithCustom | None = None
+        ) -> int:
+            assert context is not None
+            assert isinstance(context.custom, CustomContextType)
+            return context.custom.value
+
+    read_step = Step.model_validate({"name": "read_custom", "agent": ReaderAgent()})
+    runner = Flujo(
+        update_step >> read_step,
+        context_model=ContextWithCustom,
+        initial_context_data={"custom": CustomContextType(0), "initial_prompt": "x"},
+    )
+    result = await gather_result(
+        runner, None, initial_context_data={"custom": CustomContextType(0), "initial_prompt": "x"}
+    )
+    ctx = result.final_pipeline_context
+    assert isinstance(ctx.custom, CustomContextType)
+    assert ctx.custom.value == 42
+    assert result.step_history[-1].output == 42

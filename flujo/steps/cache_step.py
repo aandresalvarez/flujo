@@ -130,6 +130,18 @@ def _serialize_for_key(obj: Any, visited: Optional[Set[int]] = None) -> Any:
             return _serialize_list_for_key(_sort_set_deterministically(obj), visited)
         if callable(obj):
             return f"{getattr(obj, '__module__', '<unknown>')}.{getattr(obj, '__qualname__', repr(obj))}"
+
+        # Check for custom serializers before falling back
+        from flujo.utils.serialization import lookup_custom_serializer
+
+        custom_serializer = lookup_custom_serializer(obj)
+        if custom_serializer is not None:
+            try:
+                return custom_serializer(obj)
+            except Exception:
+                # If custom serializer fails, fall back to repr
+                pass
+
         # Avoid handling strings based on assumptions about their format.
         # Structured serialization should handle `run_id` exclusion where applicable.
         try:
@@ -193,6 +205,38 @@ def _serialize_list_for_key(obj_list: List[Any], visited: Optional[Set[int]] = N
     return result_list
 
 
+def _create_step_fingerprint(step: Step[Any, Any]) -> dict[str, Any]:
+    """Create a stable fingerprint for a step based on essential properties only.
+
+    This function extracts only the deterministic, essential properties of a step
+    that should affect cache key generation, avoiding object identity and
+    internal state that may change between runs.
+    """
+    fingerprint = {
+        "name": step.name,
+        "agent_type": type(step.agent).__name__ if step.agent is not None else None,
+        "config": {
+            "max_retries": step.config.max_retries,
+            "timeout_s": step.config.timeout_s,
+            "temperature": step.config.temperature,
+        },
+        "plugins": [(type(plugin).__name__, priority) for plugin, priority in step.plugins],
+        "validators": [type(validator).__name__ for validator in step.validators],
+        "processors": {
+            "prompt_processors": [
+                type(proc).__name__ for proc in step.processors.prompt_processors
+            ],
+            "output_processors": [
+                type(proc).__name__ for proc in step.processors.output_processors
+            ],
+        },
+        "updates_context": step.updates_context,
+        "persist_feedback_to_context": step.persist_feedback_to_context,
+        "persist_validation_results_to": step.persist_validation_results_to,
+    }
+    return fingerprint
+
+
 def _generate_cache_key(
     step: Step[Any, Any],
     data: Any,
@@ -200,8 +244,11 @@ def _generate_cache_key(
     resources: Any | None = None,
 ) -> Optional[str]:
     """Return a stable cache key for the step definition and input."""
+    # Use stable step fingerprint instead of full step serialization
+    step_fingerprint = _create_step_fingerprint(step)
+
     payload = {
-        "step": _serialize_for_key(step),
+        "step": step_fingerprint,
         "data": _serialize_for_key(data),
         "context": _serialize_for_key(context),
         "resources": _serialize_for_key(resources),

@@ -13,6 +13,7 @@ from flujo.state.backends.file import FileBackend
 from flujo.state.backends.sqlite import SQLiteBackend
 from flujo.testing.utils import gather_result
 from flujo.state import WorkflowState
+from flujo.utils.serialization import register_custom_serializer
 
 
 class Ctx(PipelineContext):
@@ -223,3 +224,42 @@ async def test_sqlite_backend_concurrent_integration(tmp_path: Path) -> None:
 
     backend = SQLiteBackend(tmp_path / "state.db")
     await asyncio.gather(*(worker(backend, f"run{i}") for i in range(5)))
+
+
+class CustomType:
+    def __init__(self, value):
+        self.value = value
+
+    def to_dict(self):
+        return {"value": self.value}
+
+
+class CustomCtx(PipelineContext):
+    custom: CustomType
+    model_config = {"arbitrary_types_allowed": True}
+
+
+@pytest.mark.asyncio
+async def test_file_backend_custom_type_serialization(tmp_path: Path) -> None:
+    state_dir = tmp_path / "state_custom"
+    state_dir.mkdir()
+    run_id = "run_custom"
+    register_custom_serializer(CustomType, lambda x: x.to_dict())
+    backend = FileBackend(state_dir)
+    pipeline = Step.from_callable(step_one, name="s1")
+    runner = Flujo(
+        pipeline,
+        context_model=CustomCtx,
+        state_backend=backend,
+        delete_on_completion=False,
+        initial_context_data={"run_id": run_id, "custom": CustomType(123), "initial_prompt": "x"},
+    )
+    await gather_result(
+        runner,
+        "x",
+        initial_context_data={"run_id": run_id, "custom": CustomType(123), "initial_prompt": "x"},
+    )
+    saved = await backend.load_state(run_id)
+    assert saved is not None
+    assert "custom" in saved["pipeline_context"]
+    assert saved["pipeline_context"]["custom"] == {"value": 123}
