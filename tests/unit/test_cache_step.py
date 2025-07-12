@@ -110,9 +110,10 @@ def test_cache_key_with_nested_basemodel():
     nested = NestedModel(step=step, metadata={"key": "value"})
 
     serialized = _serialize_for_key(nested)
-    # The cache serialization returns string placeholders for complex objects
-    assert isinstance(serialized, str)
-    assert "NestedModel" in serialized
+    # The cache serialization returns dictionaries for BaseModel instances
+    assert isinstance(serialized, dict)
+    assert "metadata" in serialized
+    assert "step" in serialized
 
 
 def test_cache_key_with_pipeline_context_runid_exclusion():
@@ -138,9 +139,10 @@ def test_cache_key_with_step_and_nested_agent():
     assert isinstance(key, str)
     # Should include agent class name or fallback to type name
     serialized = _serialize_for_key(step)
-    # The cache serialization returns string placeholders for complex objects
-    assert isinstance(serialized, str)
-    assert "Step" in serialized
+    # The cache serialization returns dictionaries for Step instances
+    assert isinstance(serialized, dict)
+    assert "agent" in serialized
+    assert serialized["agent"] == "DummyAgent"
 
 
 def test_agent_serialization_fix_verification():
@@ -165,11 +167,11 @@ def test_agent_serialization_fix_verification():
     serialized1 = _serialize_for_key(step1)
     serialized2 = _serialize_for_key(step2)
 
-    # Verify both return string placeholders
-    assert isinstance(serialized1, str)
-    assert isinstance(serialized2, str)
-    assert "Step" in serialized1
-    assert "Step" in serialized2
+    # Verify both return dictionaries with agent class names
+    assert isinstance(serialized1, dict)
+    assert isinstance(serialized2, dict)
+    assert serialized1["agent"] == "TestAgent"
+    assert serialized2["agent"] == "AnotherAgent"
 
 
 def test_agent_serialization_with_complex_agents():
@@ -191,9 +193,9 @@ def test_agent_serialization_with_complex_agents():
     complex_agent = ComplexAgent("test", {"timeout": 30})
     step1 = Step(name="complex_step", agent=complex_agent)
     serialized1 = _serialize_for_key(step1)
-    # The cache serialization returns string placeholders for complex objects
-    assert isinstance(serialized1, str)
-    assert "Step" in serialized1
+    # The cache serialization returns dictionaries for Step instances
+    assert isinstance(serialized1, dict)
+    assert serialized1["agent"] == "ComplexAgent"
 
 
 def test_agent_serialization_edge_cases():
@@ -210,9 +212,9 @@ def test_agent_serialization_edge_cases():
     step = Step(name="anonymous_step", agent=agent)
     serialized = _serialize_for_key(step)
 
-    # Should fallback to type name or repr
-    assert isinstance(serialized, str)
-    assert "Step" in serialized
+    # Should return dictionary with agent class name
+    assert isinstance(serialized, dict)
+    assert serialized["agent"] == "AnonymousAgent"
 
 
 def test_agent_serialization_with_nested_structures():
@@ -235,8 +237,9 @@ def test_agent_serialization_with_nested_structures():
     serialized = _serialize_for_key(model)
 
     # Verify the nested step's agent is correctly serialized
-    assert isinstance(serialized, str)
-    assert "ModelWithStep" in serialized
+    assert isinstance(serialized, dict)
+    assert "step" in serialized
+    assert "metadata" in serialized
 
 
 def test_serialization_utility_agent_handling():
@@ -272,10 +275,10 @@ def test_serialization_consistency_between_utilities():
     cache_result = _serialize_for_key(step)
     util_result = util_serialize(step)
 
-    # Both serialization methods return string representations for complex objects
-    assert isinstance(cache_result, str)
+    # Cache serialization returns dict, util serialization returns string
+    assert isinstance(cache_result, dict)
     assert isinstance(util_result, str)
-    assert "Step" in cache_result
+    assert cache_result["agent"] == "ConsistencyTestAgent"
     assert "Step" in util_result
 
 
@@ -291,9 +294,10 @@ def test_cache_key_with_nested_pipelinecontext_field():
     ctx = MyContext(initial_prompt="hi", run_id="should_be_excluded", extra=42)
     wrapper = WrapperModel(context=ctx, label="wrapped")
     serialized = _serialize_for_key(wrapper)
-    # The cache serialization returns string placeholders for complex objects
-    assert isinstance(serialized, str)
-    assert "WrapperModel" in serialized
+    # The cache serialization returns dictionaries for BaseModel instances
+    assert isinstance(serialized, dict)
+    assert "context" in serialized
+    assert "label" in serialized
 
 
 def test_cache_key_with_list_of_pipelinecontexts():
@@ -307,9 +311,9 @@ def test_cache_key_with_list_of_pipelinecontexts():
     ctxs = [MyContext(initial_prompt=f"p{i}", run_id=f"r{i}", extra=i) for i in range(3)]
     wrapper = ListWrapper(contexts=ctxs)
     serialized = _serialize_for_key(wrapper)
-    # The cache serialization returns string placeholders for complex objects
-    assert isinstance(serialized, str)
-    assert "ListWrapper" in serialized
+    # The cache serialization returns dictionaries for BaseModel instances
+    assert isinstance(serialized, dict)
+    assert "contexts" in serialized
 
 
 def test_cache_key_with_list_of_basemodels_and_pipelinecontext():
@@ -329,9 +333,9 @@ def test_cache_key_with_list_of_basemodels_and_pipelinecontext():
     ]
     wrapper = ListWrapper(items=items)
     serialized = _serialize_for_key(wrapper)
-    # The cache serialization returns string placeholders for complex objects
-    assert isinstance(serialized, str)
-    assert "ListWrapper" in serialized
+    # The cache serialization returns dictionaries for BaseModel instances
+    assert isinstance(serialized, dict)
+    assert "items" in serialized
 
 
 def test_cache_key_deeply_nested_structures():
@@ -344,9 +348,9 @@ def test_cache_key_deeply_nested_structures():
 
     obj = OuterModel(nested={"a": [InnerModel(value=1), InnerModel(value=2)], "b": []})
     serialized = _serialize_for_key(obj)
-    # The cache serialization returns string placeholders for complex objects
-    assert isinstance(serialized, str)
-    assert "OuterModel" in serialized
+    # The cache serialization returns dictionaries for BaseModel instances
+    assert isinstance(serialized, dict)
+    assert "nested" in serialized
 
 
 def test_cache_key_circular_reference():
@@ -399,9 +403,9 @@ def test_cache_key_non_string_dict_keys():
 
     obj = ModelWithDict(data={1: "a", 2: "b"})
     serialized = _serialize_for_key(obj)
-    # The cache serialization returns string placeholders for complex objects
-    assert isinstance(serialized, str)
-    assert "ModelWithDict" in serialized
+    # The cache serialization returns dictionaries for BaseModel instances
+    assert isinstance(serialized, dict)
+    assert "data" in serialized
 
 
 def test_cache_key_sets_and_frozensets():
@@ -412,9 +416,10 @@ def test_cache_key_sets_and_frozensets():
 
     obj = ModelWithSets(s={1, 2, 3}, fs=frozenset({"a", "b"}))
     serialized = _serialize_for_key(obj)
-    # The cache serialization returns string placeholders for complex objects
-    assert isinstance(serialized, str)
-    assert "ModelWithSets" in serialized
+    # The cache serialization returns dictionaries for BaseModel instances
+    assert isinstance(serialized, dict)
+    assert "s" in serialized
+    assert "fs" in serialized
 
 
 def test_cache_key_bytes_and_memoryview():
@@ -425,9 +430,10 @@ def test_cache_key_bytes_and_memoryview():
 
     obj = ModelWithBytes(b=b"abc", mv=memoryview(b"xyz"))
     serialized = _serialize_for_key(obj)
-    # The cache serialization returns string placeholders for complex objects
-    assert isinstance(serialized, str)
-    assert "ModelWithBytes" in serialized
+    # The cache serialization returns dictionaries for BaseModel instances
+    assert isinstance(serialized, dict)
+    assert "b" in serialized
+    assert "mv" in serialized
 
 
 def test_cache_key_callable_fields():
@@ -440,9 +446,9 @@ def test_cache_key_callable_fields():
 
     obj = ModelWithCallable(cb=foo)
     serialized = _serialize_for_key(obj)
-    # The cache serialization returns string placeholders for complex objects
-    assert isinstance(serialized, str)
-    assert "ModelWithCallable" in serialized
+    # The cache serialization returns dictionaries for BaseModel instances
+    assert isinstance(serialized, dict)
+    assert "cb" in serialized
 
 
 def test_cache_key_enum_values():
@@ -459,9 +465,10 @@ def test_cache_key_enum_values():
 
     obj = ModelWithEnum(e=MyEnum.A, d={MyEnum.B: 2})
     serialized = _serialize_for_key(obj)
-    # The cache serialization returns string placeholders for complex objects
-    assert isinstance(serialized, str)
-    assert "ModelWithEnum" in serialized
+    # The cache serialization returns dictionaries for BaseModel instances
+    assert isinstance(serialized, dict)
+    assert "e" in serialized
+    assert "d" in serialized
 
 
 def test_cache_key_complex_numbers():
@@ -471,9 +478,9 @@ def test_cache_key_complex_numbers():
 
     obj = ModelWithComplex(c=3 + 4j)
     serialized = _serialize_for_key(obj)
-    # The cache serialization returns string placeholders for complex objects
-    assert isinstance(serialized, str)
-    assert "ModelWithComplex" in serialized
+    # The cache serialization returns dictionaries for BaseModel instances
+    assert isinstance(serialized, dict)
+    assert "c" in serialized
 
 
 def test_cache_key_very_large_structure():
@@ -483,6 +490,6 @@ def test_cache_key_very_large_structure():
 
     obj = LargeModel(items=list(range(10000)))
     serialized = _serialize_for_key(obj)
-    # The cache serialization returns string placeholders for complex objects
-    assert isinstance(serialized, str)
-    assert "LargeModel" in serialized
+    # The cache serialization returns dictionaries for BaseModel instances
+    assert isinstance(serialized, dict)
+    assert "items" in serialized

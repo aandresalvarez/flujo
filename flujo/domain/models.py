@@ -32,11 +32,6 @@ class BaseModel(PydanticBaseModel):
         if value is None:
             return None
 
-        # Check global registry first
-        from flujo.utils.serialization import lookup_custom_serializer
-
-        lookup_custom_serializer(value)
-
         # Handle callable objects (functions, methods, etc.)
         if callable(value):
             if isinstance(
