@@ -64,31 +64,6 @@ def lookup_custom_serializer(value: Any) -> Optional[Callable[[Any], Any]]:
         return None
 
 
-def create_serializer_for_type(
-    obj_type: Type[Any], serializer_func: Callable[[Any], Any]
-) -> Callable[[Any], Any]:
-    """
-    Create a serializer function that handles a specific type.
-
-    This is a convenience function that creates a serializer and registers it
-    in the global registry.
-
-    Args:
-        obj_type: The type to create a serializer for
-        serializer_func: Function that serializes the type
-
-    Returns:
-        A serializer function that handles the specific type
-
-    Example:
-        >>> def serialize_my_type(obj: MyType) -> dict:
-        ...     return {"id": obj.id, "name": obj.name}
-        >>> MyTypeSerializer = create_serializer_for_type(MyType, serialize_my_type)
-    """
-    register_custom_serializer(obj_type, serializer_func)
-    return serializer_func
-
-
 def create_field_serializer(
     field_name: str, serializer_func: Callable[[Any], Any]
 ) -> Callable[[Any], Any]:

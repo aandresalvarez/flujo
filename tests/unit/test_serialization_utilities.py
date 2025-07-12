@@ -2,7 +2,6 @@
 
 import dataclasses
 import json
-import threading
 from datetime import datetime, date, time
 from enum import Enum
 from typing import Any, Dict
@@ -68,9 +67,9 @@ class UnregisteredObject:
 @pytest.fixture(autouse=True)
 def clear_global_registry():
     """Clear the global registry before each test to ensure isolation."""
-    from flujo.utils.serialization import _custom_serializers
+    from flujo.utils.serialization import _custom_serializers, _registry_lock
 
-    with threading.Lock():
+    with _registry_lock:
         _custom_serializers.clear()
     yield
 
@@ -580,3 +579,35 @@ class TestIntegration:
         assert parsed["complex"]["imag"] == 4.0
         assert isinstance(parsed["set"], list)
         assert set(parsed["set"]) == {1, 2, 3}
+
+
+def test_fallback_serializer_not_called_for_standard_types(monkeypatch):
+    """Test that the fallback serializer is NOT called for standard types."""
+    from flujo.domain.models import BaseModel as FlujoBaseModel
+
+    called = []
+
+    class DummyModel(FlujoBaseModel):
+        s: str
+        i: int
+        f: float
+        b: bool
+        lst: list
+        d: dict
+
+    # Patch the fallback method to record calls
+    orig = FlujoBaseModel._serialize_single_unknown_type
+
+    def fake_fallback(self, value):
+        called.append(type(value))
+        return orig(self, value)
+
+    monkeypatch.setattr(FlujoBaseModel, "_serialize_single_unknown_type", fake_fallback)
+
+    m = DummyModel(s="hello", i=1, f=2.0, b=True, lst=[1, 2, 3], d={"a": 1})
+    # Trigger serialization
+    result = m.model_dump(mode="json")
+    # The fallback should NOT be called for any of the standard types
+    assert called == []
+    # The result should be as expected
+    assert result == {"s": "hello", "i": 1, "f": 2.0, "b": True, "lst": [1, 2, 3], "d": {"a": 1}}

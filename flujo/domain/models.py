@@ -21,6 +21,22 @@ class BaseModel(PydanticBaseModel):
         # Removed deprecated json_dumps and json_loads config keys
     }
 
+    def _is_unknown_type(self, value: Any) -> bool:
+        """Check if a value is an unknown type that needs special serialization."""
+        if value is None:
+            return False
+
+        # Check for types that Pydantic handles natively
+        if isinstance(value, (str, int, float, bool, list, dict)):
+            return False
+
+        # Check for types that need special handling
+        return (
+            callable(value)
+            or isinstance(value, (datetime, Enum, complex, set, frozenset, bytes, memoryview))
+            or (hasattr(value, "__dict__") and not hasattr(value, "model_dump"))
+        )
+
     @field_serializer("*", when_used="json")
     def _serialize_unknown_types(self, value: Any) -> Any:
         """Intelligent fallback serialization for unknown types.
@@ -29,6 +45,10 @@ class BaseModel(PydanticBaseModel):
         serialize natively. It provides backward compatibility for common types
         that users might include in their models.
         """
+        # Only process unknown types, let Pydantic handle standard types
+        if not self._is_unknown_type(value):
+            return value
+
         if value is None:
             return None
 
@@ -73,7 +93,98 @@ class BaseModel(PydanticBaseModel):
         try:
             # Try to get a dict representation if available
             if hasattr(value, "__dict__"):
-                return {k: v for k, v in value.__dict__.items() if not k.startswith("_")}
+                # Only serialize public attributes to avoid circular references
+                dict_repr = {k: v for k, v in value.__dict__.items() if not k.startswith("_")}
+                # Recursively serialize the dict to handle nested unknown types
+                return self._recursively_serialize_dict(dict_repr)
+
+            # Try to get a string representation
+            return str(value)
+        except Exception:
+            # Last resort: use repr
+            return repr(value)
+
+    def _recursively_serialize_dict(self, obj: Any) -> Any:
+        """Recursively serialize unknown types in dictionary values.
+
+        This ensures that even nested objects with unknown types are properly
+        serialized, preventing downstream serialization failures.
+        """
+        if obj is None:
+            return None
+
+        # Handle basic JSON-serializable types (let them pass through)
+        if isinstance(obj, (str, int, float, bool)):
+            return obj
+
+        # Handle lists and tuples
+        if isinstance(obj, (list, tuple)):
+            return [self._recursively_serialize_dict(item) for item in obj]
+
+        # Handle dictionaries
+        if isinstance(obj, dict):
+            return {
+                self._recursively_serialize_dict(k): self._recursively_serialize_dict(v)
+                for k, v in obj.items()
+            }
+
+        # For other types, use the same unknown type serialization logic
+        if self._is_unknown_type(obj):
+            return self._serialize_single_unknown_type(obj)
+
+        # Let Pydantic handle standard types
+        return obj
+
+    def _serialize_single_unknown_type(self, value: Any) -> Any:
+        """Serialize a single unknown type value."""
+        if value is None:
+            return None
+
+        # Handle callable objects (functions, methods, etc.)
+        if callable(value):
+            if isinstance(
+                value, (FunctionType, MethodType, BuiltinFunctionType, BuiltinMethodType)
+            ):
+                # For functions and methods, serialize as module.qualname
+                module = getattr(value, "__module__", "<unknown>")
+                qualname = getattr(value, "__qualname__", repr(value))
+                return f"{module}.{qualname}"
+            else:
+                # For other callables, use repr
+                return repr(value)
+
+        # Handle datetime objects
+        if isinstance(value, datetime):
+            return value.isoformat()
+
+        # Handle Enum values
+        if isinstance(value, Enum):
+            return value.value
+
+        # Handle complex numbers
+        if isinstance(value, complex):
+            return {"real": value.real, "imag": value.imag}
+
+        # Handle sets and frozensets
+        if isinstance(value, (set, frozenset)):
+            return list(value)
+
+        # Handle bytes
+        if isinstance(value, bytes):
+            return value.decode("utf-8", errors="replace")
+
+        # Handle memoryview
+        if isinstance(value, memoryview):
+            return bytes(value).decode("utf-8", errors="replace")
+
+        # For other types, try to get a meaningful representation
+        try:
+            # Try to get a dict representation if available
+            if hasattr(value, "__dict__"):
+                # Only serialize public attributes to avoid circular references
+                dict_repr = {k: v for k, v in value.__dict__.items() if not k.startswith("_")}
+                # Recursively serialize the dict to handle nested unknown types
+                return self._recursively_serialize_dict(dict_repr)
 
             # Try to get a string representation
             return str(value)

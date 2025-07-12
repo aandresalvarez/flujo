@@ -35,7 +35,7 @@ classifiers = [
 # Runtime dependencies
 dependencies = [
   "pydantic>=2.7",
-  "pydantic-ai>=0.4.1",
+  "pydantic-ai>=0.4.2",
   "pydantic-settings",
   "python-dotenv>=1.0",
   "pyyaml>=6.0",

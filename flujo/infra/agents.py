@@ -159,7 +159,19 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
     def _call_agent_with_dynamic_args(self, *args: Any, **kwargs: Any) -> Any:
         """Invoke the underlying agent with arbitrary arguments."""
 
-        return self._agent.run(*args, **kwargs)
+        # Check if the underlying agent accepts context parameters
+        from flujo.application.context_manager import _accepts_param
+
+        filtered_kwargs = {}
+        for k, v in kwargs.items():
+            if k in ["context", "pipeline_context"]:
+                # Only pass context if the underlying agent accepts it
+                if _accepts_param(self._agent.run, "context"):
+                    filtered_kwargs["context"] = v
+            else:
+                filtered_kwargs[k] = v
+
+        return self._agent.run(*args, **filtered_kwargs)
 
     async def _run_with_retry(self, *args: Any, **kwargs: Any) -> Any:
         """Run the agent with retry, timeout and processor support."""
