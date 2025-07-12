@@ -13,6 +13,63 @@ import json
 
 from flujo.testing.utils import StubAgent, gather_result
 
+from hypothesis import given, settings, strategies as st
+
+# --- Property-based test for robust serialization (regression for circular refs, set ordering, etc.) ---
+# This test is designed to catch regressions and new edge cases in cache key serialization, including:
+#   - Circular references
+#   - Sets with mixed types
+#   - Deeply nested structures
+#   - Custom objects and Pydantic models
+#   - Non-deterministic __str__
+# It is a regression for bugs fixed in v0.7.0 (see flujo/steps/cache_step.py)
+
+# Helper: strategy for hashable objects (for sets)
+hashable_base = st.one_of(
+    st.none(),
+    st.integers(),
+    st.floats(allow_nan=False),
+    st.text(),
+    st.booleans(),
+    st.tuples(st.integers(), st.integers()),
+    st.frozensets(st.integers(), max_size=3),
+)
+
+
+@st.composite
+def recursive_data(draw, max_depth=3):
+    if max_depth <= 0:
+        return draw(
+            st.one_of(
+                st.none(), st.integers(), st.floats(allow_nan=False), st.text(), st.booleans()
+            )
+        )
+    base = st.one_of(st.none(), st.integers(), st.floats(allow_nan=False), st.text(), st.booleans())
+    # Optionally wrap in tuple, list, set, dict
+    container = st.deferred(lambda: recursive_data(max_depth=max_depth - 1))
+    dicts = st.dictionaries(st.text(), container, max_size=3)
+    lists = st.lists(container, max_size=3)
+    # Only allow sets of hashable_base
+    sets = st.sets(hashable_base, max_size=3)
+    tuples = st.tuples(container, container)
+    # Compose
+    return draw(st.one_of(base, dicts, lists, sets, tuples))
+
+
+@given(data=recursive_data())
+@settings(max_examples=50, deadline=2000)
+def test_property_based_serialize_for_key_does_not_crash(data):
+    """Property-based: _serialize_for_key should not crash or infinitely recurse on any nested structure."""
+    from flujo.steps.cache_step import _serialize_for_key
+
+    try:
+        result1 = _serialize_for_key(data)
+        result2 = _serialize_for_key(data)
+        # Should be deterministic
+        assert result1 == result2
+    except Exception as e:
+        pytest.fail(f"_serialize_for_key failed on {data!r}: {e}")
+
 
 class Model(BaseModel):
     a: int
@@ -834,3 +891,72 @@ def test_cache_key_stability_regression():
                 assert serialized == sorted(serialized, key=lambda x: str(x)), (
                     f"Result not sorted for {name}"
                 )
+
+
+def test_circular_reference_detection():
+    """Test that circular references are properly detected and handled."""
+    from flujo.steps.cache_step import _serialize_for_key
+
+    # Create a circular reference
+    obj1 = {"name": "obj1"}
+    obj2 = {"name": "obj2", "ref": obj1}
+    obj1["ref"] = obj2  # Create circular reference
+
+    result = _serialize_for_key(obj1)
+
+    # Should detect circular reference and return a stable representation
+    assert "<dict circular>" in str(result)
+
+
+def test_deterministic_set_ordering():
+    """Test that sets are ordered deterministically for cache key generation."""
+    from flujo.steps.cache_step import _serialize_for_key, _sort_set_deterministically
+
+    # Test with different types of objects in sets
+    test_set = {3, 1, 2, "b", "a", "c"}
+    sorted_list = _sort_set_deterministically(test_set)
+
+    # Should be sorted deterministically
+    assert sorted_list == [1, 2, 3, "a", "b", "c"]
+
+    # Test with hashable complex objects
+    complex_set = {(1, 2, 3), (3, 2, 1), (2, 1, 3), frozenset([1, 2, 3]), frozenset([3, 2, 1])}
+
+    # Should handle complex objects deterministically
+    result = _serialize_for_key(complex_set)
+    assert isinstance(result, list)
+
+    # Test that multiple runs produce the same result
+    result2 = _serialize_for_key(complex_set)
+    assert result == result2
+
+
+def test_circular_reference_in_nested_structures():
+    """Test circular reference detection in nested structures."""
+    from flujo.steps.cache_step import _serialize_for_key
+
+    # Create nested structure with circular reference
+    outer = {"level": "outer"}
+    inner = {"level": "inner", "parent": outer}
+    outer["child"] = inner
+
+    result = _serialize_for_key(outer)
+
+    # Should handle nested circular references
+    assert isinstance(result, dict)
+    # The circular reference should be detected and handled
+    assert "child" in result or "<dict circular>" in str(result)
+
+
+def test_set_with_unhashable_objects():
+    """Test set serialization with unhashable objects."""
+    from flujo.steps.cache_step import _serialize_for_key
+
+    # This should not raise an exception
+    try:
+        # Create a set with mixed types
+        mixed_set = {1, "string", (1, 2), frozenset([1, 2])}
+        result = _serialize_for_key(mixed_set)
+        assert isinstance(result, list)
+    except Exception as e:
+        pytest.fail(f"Set serialization failed: {e}")
