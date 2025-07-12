@@ -650,12 +650,8 @@ async def _execute_conditional_step_logic(
 
     conditional_overall_result.attempts = 1
     if executed_branch_key is not None:
-        conditional_overall_result.metadata_ = (
-            conditional_overall_result.metadata_ or {}
-        )
-        conditional_overall_result.metadata_["executed_branch_key"] = str(
-            executed_branch_key
-        )
+        conditional_overall_result.metadata_ = conditional_overall_result.metadata_ or {}
+        conditional_overall_result.metadata_["executed_branch_key"] = str(executed_branch_key)
 
     return conditional_overall_result
 
@@ -675,7 +671,28 @@ async def _execute_dynamic_router_step_logic(
 
     result = StepResult(name=router_step.name)
     try:
-        raw = await router_step.router_agent.run(router_input, context=context, resources=resources)
+        from ...signature_tools import analyze_signature
+
+        func = getattr(router_step.router_agent, "run", router_step.router_agent)
+        spec = analyze_signature(func)
+
+        router_kwargs: Dict[str, Any] = {}
+        if spec.needs_context:
+            if context is None:
+                raise TypeError(
+                    "Router agent requires a context but none was provided to the runner."
+                )
+            router_kwargs["context"] = context
+        elif _accepts_param(func, "context"):
+            router_kwargs["context"] = context
+
+        if resources is not None:
+            if spec.needs_resources:
+                router_kwargs["resources"] = resources
+            elif _accepts_param(func, "resources"):
+                router_kwargs["resources"] = resources
+
+        raw = await router_step.router_agent.run(router_input, **router_kwargs)
         branch_keys = getattr(raw, "output", raw)
     except Exception as e:  # pragma: no cover - defensive
         telemetry.logfire.error(f"Router agent error in '{router_step.name}': {e}")
@@ -694,13 +711,15 @@ async def _execute_dynamic_router_step_logic(
         result.metadata_ = {"executed_branches": []}
         return result
 
+    config_kwargs = router_step.config.model_dump()
+
     parallel_step = Step.parallel(
         name=f"{router_step.name}_parallel",
         branches=selected,
         context_include_keys=router_step.context_include_keys,
         merge_strategy=router_step.merge_strategy,
         on_branch_failure=router_step.on_branch_failure,
-        **router_step.config.model_dump(),
+        **config_kwargs,
     )
 
     parallel_result = await _execute_parallel_step_logic(
@@ -716,7 +735,7 @@ async def _execute_dynamic_router_step_logic(
 
     parallel_result.name = router_step.name
     parallel_result.metadata_ = parallel_result.metadata_ or {}
-    parallel_result.metadata_["executed_branches"] = list(branch_keys)
+    parallel_result.metadata_["executed_branches"] = list(selected.keys())
     return parallel_result
 
 

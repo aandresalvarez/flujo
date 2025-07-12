@@ -43,6 +43,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from .conditional import ConditionalStep
     from .parallel import ParallelStep
     from .pipeline import Pipeline
+    from .dynamic_router import DynamicParallelRouterStep
 
 # Type variables
 StepInT = TypeVar("StepInT")

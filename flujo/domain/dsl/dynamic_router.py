@@ -71,4 +71,6 @@ class DynamicParallelRouterStep(Step[Any, Any], Generic[TContext]):
         return super().model_validate(*args, **kwargs)
 
     def __repr__(self) -> str:  # pragma: no cover - simple repr
-        return f"DynamicParallelRouterStep(name={self.name!r}, branches={list(self.branches.keys())})"
+        return (
+            f"DynamicParallelRouterStep(name={self.name!r}, branches={list(self.branches.keys())})"
+        )
