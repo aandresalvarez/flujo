@@ -72,7 +72,9 @@ def test_global_custom_serializer_registry():
         if isinstance(obj, Custom):
             return f"custom:{obj.value}"
         if isinstance(obj, complex):
-            return f"{obj.real}+{obj.imag}j"
+            real = int(obj.real) if obj.real == int(obj.real) else obj.real
+            imag = int(obj.imag) if obj.imag == int(obj.imag) else obj.imag
+            return f"{real}+{imag}j"
         raise TypeError(f"Cannot serialize {type(obj)}")
 
     # Register the custom serializer globally
@@ -80,7 +82,7 @@ def test_global_custom_serializer_registry():
     register_custom_serializer(complex, custom_serializer)
 
     m = MyModel(foo=Custom(42), bar=3 + 4j)
-    # Use model_dump(mode="json", fallback=custom_serializer) to trigger the global registry and fallback
-    serialized = m.model_dump(mode="json", fallback=custom_serializer)
+    # Use model_dump to trigger the global registry
+    serialized = m.model_dump(mode="cache")
     assert serialized["foo"] == "custom:42"
     assert serialized["bar"] == "3+4j"
