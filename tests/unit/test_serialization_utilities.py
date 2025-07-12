@@ -18,6 +18,7 @@ from flujo.utils.serialization import (
     safe_serialize,
     serialize_to_json,
     serialize_to_json_robust,
+    reset_custom_serializer_registry,
 )
 
 
@@ -67,11 +68,7 @@ class UnregisteredObject:
 @pytest.fixture(autouse=True)
 def clear_global_registry():
     """Clear the global registry before each test to ensure isolation."""
-    from flujo.utils.serialization import _custom_serializers, _registry_lock
-
-    with _registry_lock:
-        _custom_serializers.clear()
-    yield
+    reset_custom_serializer_registry()
 
 
 class TestGlobalRegistry:

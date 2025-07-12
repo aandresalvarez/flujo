@@ -578,3 +578,10 @@ def serialize_to_json_robust(obj: Any, **kwargs: Any) -> str:
     """
     serialized = robust_serialize(obj)
     return json.dumps(serialized, **kwargs)
+
+
+def reset_custom_serializer_registry() -> None:
+    """Reset the global custom serializer and deserializer registries (for testing only)."""
+    with _registry_lock:
+        _custom_serializers.clear()
+        _custom_deserializers.clear()
