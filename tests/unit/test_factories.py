@@ -193,7 +193,10 @@ class TestMakeStateMachinePipeline:
     """Test the make_state_machine_pipeline factory."""
 
     def test_creates_pipeline_object(self):
-        step_a = Step.from_mapper(lambda x: x)
+        async def _identity(x: str) -> str:
+            return x
+
+        step_a = Step.from_mapper(_identity)
         pipeline = make_state_machine_pipeline(nodes={"A": step_a}, context_model=PipelineContext)
         assert isinstance(pipeline, Pipeline)
 
