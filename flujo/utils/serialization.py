@@ -3,9 +3,172 @@
 import dataclasses
 import json
 import math
+import threading
 from datetime import datetime, date, time
 from enum import Enum
-from typing import Any, Callable, Optional, Set
+from typing import Any, Callable, Dict, Optional, Set, Type, TypeVar
+
+# Global registry for custom serializers
+_custom_serializers: Dict[Type[Any], Callable[[Any], Any]] = {}
+_registry_lock = threading.Lock()
+
+T = TypeVar("T")
+
+
+def register_custom_serializer(obj_type: Type[Any], serializer_func: Callable[[Any], Any]) -> None:
+    """
+    Register a custom serializer for a specific type globally.
+
+    This function registers a serializer that will be used by `safe_serialize` and
+    other serialization functions when encountering objects of the specified type.
+
+    Args:
+        obj_type: The type to register a serializer for
+        serializer_func: Function that converts the type to a serializable format
+
+    Example:
+        >>> from datetime import datetime
+        >>> def serialize_datetime(dt: datetime) -> str:
+        ...     return dt.strftime("%Y-%m-%d %H:%M:%S")
+        >>> register_custom_serializer(datetime, serialize_datetime)
+    """
+    with _registry_lock:
+        _custom_serializers[obj_type] = serializer_func
+
+
+def lookup_custom_serializer(value: Any) -> Optional[Callable[[Any], Any]]:
+    """
+    Look up a registered serializer for a value's type.
+
+    Args:
+        value: The value to find a serializer for
+
+    Returns:
+        The registered serializer function, or None if not found
+
+    Example:
+        >>> serializer = lookup_custom_serializer(some_value)
+        >>> if serializer:
+        ...     result = serializer(some_value)
+    """
+    with _registry_lock:
+        # Check exact type first
+        if type(value) in _custom_serializers:
+            return _custom_serializers[type(value)]
+
+        # Check for base classes
+        for base_type, serializer in _custom_serializers.items():
+            if isinstance(value, base_type):
+                return serializer
+
+        return None
+
+
+def create_serializer_for_type(
+    obj_type: Type[Any], serializer_func: Callable[[Any], Any]
+) -> Callable[[Any], Any]:
+    """
+    Create a serializer function that handles a specific type.
+
+    This is a convenience function that creates a serializer and registers it
+    in the global registry.
+
+    Args:
+        obj_type: The type to create a serializer for
+        serializer_func: Function that serializes the type
+
+    Returns:
+        A serializer function that handles the specific type
+
+    Example:
+        >>> def serialize_my_type(obj: MyType) -> dict:
+        ...     return {"id": obj.id, "name": obj.name}
+        >>> MyTypeSerializer = create_serializer_for_type(MyType, serialize_my_type)
+    """
+    register_custom_serializer(obj_type, serializer_func)
+    return serializer_func
+
+
+def create_field_serializer(
+    field_name: str, serializer_func: Callable[[Any], Any]
+) -> Callable[[Any], Any]:
+    """
+    Create a field_serializer method for a specific field.
+
+    This is a convenience function for creating field serializers that can be
+    used with Pydantic's @field_serializer decorator.
+
+    Args:
+        field_name: Name of the field to serialize
+        serializer_func: Function that serializes the field value
+
+    Returns:
+        A serializer function that can be used within field_serializer methods
+
+    Example:
+        >>> class MyModel(BaseModel):
+        ...     complex_field: ComplexType
+        ...
+        ...     @field_serializer('complex_field', when_used='json')
+        ...     def serialize_complex_field(self, value: ComplexType) -> dict:
+        ...         return create_field_serializer('complex_field', lambda x: x.to_dict())(value)
+    """
+
+    def field_serializer(value: Any) -> Any:
+        return serializer_func(value)
+
+    return field_serializer
+
+
+def serializable_field(serializer_func: Callable[[Any], Any]) -> Callable[[T], T]:
+    """
+    Decorator to mark a field as serializable with a custom serializer.
+
+    DEPRECATED: This function is deprecated due to fundamental design issues
+    with Pydantic v2. Use register_custom_serializer or manual field_serializer instead.
+
+    Args:
+        serializer_func: Function to serialize the field
+
+    Returns:
+        Decorator function (deprecated)
+
+    Example:
+        # DEPRECATED - Use register_custom_serializer instead
+        >>> class MyModel(BaseModel):
+        ...     @serializable_field(lambda x: x.to_dict())
+        ...     complex_object: ComplexType
+    """
+
+    def decorator(field: T) -> T:
+        # This is a no-op in the new system, but we keep it for backward compatibility
+        return field
+
+    return decorator
+
+
+def _serialize_for_key(obj: Any) -> Any:
+    """
+    Serialize an object for use as a dictionary key.
+
+    This function is used internally by safe_serialize when serializing
+    dictionary keys, which must be hashable.
+
+    Args:
+        obj: The object to serialize for use as a key
+
+    Returns:
+        A hashable representation of the object
+    """
+    # For keys, we need to ensure the result is hashable
+    serialized = safe_serialize(obj)
+
+    # If the serialized result is not hashable, convert to string
+    try:
+        hash(serialized)
+        return serialized
+    except TypeError:
+        return str(serialized)
 
 
 def safe_serialize(
@@ -28,6 +191,7 @@ def safe_serialize(
     - Bytes and memoryview objects
     - Complex numbers
     - Functions and callables
+    - Custom types registered via register_custom_serializer
 
     Args:
         obj: The object to serialize
@@ -48,6 +212,7 @@ def safe_serialize(
         - Bytes are converted to base64 strings
         - Complex numbers are converted to dict with 'real' and 'imag' keys
         - Functions are converted to their name or repr
+        - Custom types registered via register_custom_serializer are automatically handled
     """
     if _seen is None:
         _seen = set()
@@ -74,6 +239,11 @@ def safe_serialize(
             if math.isinf(obj):
                 return "inf" if obj > 0 else "-inf"
             return obj
+
+        # Check for custom serializers in the global registry FIRST
+        custom_serializer = lookup_custom_serializer(obj)
+        if custom_serializer:
+            return safe_serialize(custom_serializer(obj), default_serializer, _seen)
 
         # Handle datetime objects
         if isinstance(obj, (datetime, date, time)):
@@ -120,9 +290,7 @@ def safe_serialize(
         # Handle dictionaries
         if isinstance(obj, dict):
             return {
-                safe_serialize(k, default_serializer, _seen): safe_serialize(
-                    v, default_serializer, _seen
-                )
+                _serialize_for_key(k): safe_serialize(v, default_serializer, _seen)
                 for k, v in obj.items()
             }
 
@@ -137,7 +305,8 @@ def safe_serialize(
         # If we get here, the type is not supported
         raise TypeError(
             f"Object of type {type(obj).__name__} is not serializable. "
-            f"Consider providing a custom default_serializer."
+            f"Consider providing a custom default_serializer or registering a custom serializer "
+            f"using register_custom_serializer."
         )
 
     finally:
@@ -204,51 +373,3 @@ def serialize_to_json_robust(obj: Any, **kwargs: Any) -> str:
     """
     serialized = robust_serialize(obj)
     return json.dumps(serialized, **kwargs)
-
-
-def serializable_field(*args: Any, **kwargs: Any) -> None:
-    """DEPRECATED: This function is no longer supported. Use robust serialization instead."""
-    raise NotImplementedError(
-        "serializable_field is deprecated and no longer supported. "
-        "Use robust serialization (safe_serialize) instead."
-    )
-
-
-def create_serializer_for_type(*args: Any, **kwargs: Any) -> None:
-    """DEPRECATED: This function is no longer supported. Use robust serialization instead."""
-    raise NotImplementedError(
-        "create_serializer_for_type is deprecated and no longer supported. "
-        "Use robust serialization (safe_serialize) instead."
-    )
-
-
-def register_custom_serializer(*args: Any, **kwargs: Any) -> None:
-    """DEPRECATED: This function is no longer supported. Use robust serialization instead."""
-    raise NotImplementedError(
-        "register_custom_serializer is deprecated and no longer supported. "
-        "Use robust serialization (safe_serialize) instead."
-    )
-
-
-def lookup_custom_serializer(*args: Any, **kwargs: Any) -> None:
-    """DEPRECATED: This function is no longer supported. Use robust serialization instead."""
-    raise NotImplementedError(
-        "lookup_custom_serializer is deprecated and no longer supported. "
-        "Use robust serialization (safe_serialize) instead."
-    )
-
-
-def create_field_serializer(*args: Any, **kwargs: Any) -> None:
-    """DEPRECATED: This function is no longer supported. Use robust serialization instead."""
-    raise NotImplementedError(
-        "create_field_serializer is deprecated and no longer supported. "
-        "Use robust serialization (safe_serialize) instead."
-    )
-
-
-def _serialize_for_key(*args: Any, **kwargs: Any) -> None:
-    """DEPRECATED: This function is no longer supported. Use robust serialization instead."""
-    raise NotImplementedError(
-        "_serialize_for_key is deprecated and no longer supported. "
-        "Use robust serialization (safe_serialize) instead."
-    )
