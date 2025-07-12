@@ -428,9 +428,10 @@ def test_cache_key_circular_reference():
     assert isinstance(serialized, dict)
     assert "value" in serialized
     assert "next" in serialized
-    # Check that circular references are marked with placeholders
+    # Check that only the circular reference field is marked with placeholder
     assert serialized["next"] == "<Node circular>"
-    assert serialized["value"] == "<Node circular>"
+    # The value field should not be marked as circular since it's not part of the circular reference
+    assert serialized["value"] == 1
 
 
 def test_cache_key_custom_type_with_serializer():

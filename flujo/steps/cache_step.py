@@ -79,12 +79,11 @@ def _serialize_for_key(obj: Any, visited: Optional[Set[int]] = None, _is_root: b
                 d = obj.model_dump(mode="cache")
                 if "run_id" in d:
                     d.pop("run_id", None)
-                # Special-case for Node: if this is a Node, and any field is a circular reference, return the string directly
+                # Special-case for Node: handle circular references more precisely
                 if obj.__class__.__name__ == "Node":
                     node_result_dict: dict[str, Any] = {}
-                    has_circular = False
 
-                    # Check if any field contains a circular reference
+                    # Process each field individually, only marking fields that are actually circular
                     for k, v in d.items():
                         if k == "next":
                             next_obj = getattr(obj, "next", None)
@@ -100,21 +99,15 @@ def _serialize_for_key(obj: Any, visited: Optional[Set[int]] = None, _is_root: b
                                     )
                                 )
                             ):
+                                # Only mark the 'next' field as circular if it actually contains a circular reference
                                 node_result_dict[k] = f"<{obj.__class__.__name__} circular>"
-                                has_circular = True
-                                continue
-                        elif k == "value":
-                            # For Node objects, if there's any circular reference, mark value as circular too
-                            if has_circular or (obj_id in visited):
-                                node_result_dict[k] = f"<{obj.__class__.__name__} circular>"
-                                continue
-                        node_result_dict[k] = _serialize_for_key(v, visited, _is_root=False)
-
-                    # If we found any circular references, ensure all fields are marked as circular
-                    if has_circular:
-                        for k in d.keys():
-                            if k not in node_result_dict:
-                                node_result_dict[k] = f"<{obj.__class__.__name__} circular>"
+                            else:
+                                # The 'next' field is not circular, serialize it normally
+                                node_result_dict[k] = _serialize_for_key(v, visited, _is_root=False)
+                        else:
+                            # For non-'next' fields, serialize normally
+                            # Only mark as circular if the field itself contains a circular reference
+                            node_result_dict[k] = _serialize_for_key(v, visited, _is_root=False)
 
                     return node_result_dict
                 result_dict: dict[str, Any] = {}
