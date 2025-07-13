@@ -64,6 +64,8 @@ async def test_sqlite_backend_logs_error_conditions(tmp_path: Path) -> None:
         # Try to load a non-existent state (should not be an error, but should be logged)
         result = await backend.load_state("non_existent_run")
         assert result is None
+        # Note: Backend may not log non-existent state lookups, which is acceptable behavior
+        # We only check that the operation completes without error
 
         # Create a corrupted database to trigger error logging
         db_path = tmp_path / "corrupted_error.db"

@@ -1,4 +1,4 @@
-"""Tests for the Default recipe to ensure it handles AgentRunResult objects correctly."""
+"""Tests for the default pipeline to ensure it handles AgentRunResult objects correctly."""
 
 import pytest
 from unittest.mock import AsyncMock
@@ -15,8 +15,8 @@ class MockAgentRunResult:
 
 
 @pytest.mark.asyncio
-async def test_default_recipe_handles_agent_run_result():
-    """Test that the Default recipe correctly unpacks AgentRunResult objects."""
+async def test_default_pipeline_handles_agent_run_result():
+    """Test that the default pipeline correctly unpacks AgentRunResult objects."""
 
     # Create mock agents that return AgentRunResult objects
     review_agent = AsyncMock()
@@ -54,8 +54,8 @@ async def test_default_recipe_handles_agent_run_result():
 
 
 @pytest.mark.asyncio
-async def test_default_recipe_handles_direct_results():
-    """Test that the Default recipe still works with direct results (not AgentRunResult)."""
+async def test_default_pipeline_handles_direct_results():
+    """Test that the default pipeline still works with direct results (not AgentRunResult)."""
 
     # Create mock agents that return direct results
     review_agent = AsyncMock()

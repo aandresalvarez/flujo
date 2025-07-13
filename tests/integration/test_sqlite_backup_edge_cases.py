@@ -8,6 +8,47 @@ import pytest
 
 from flujo.state.backends.sqlite import SQLiteBackend
 
+pytestmark = pytest.mark.serial
+
+
+def create_corrupted_db(db_path: Path):
+    db_path.write_bytes(b"corrupted sqlite data")
+    return SQLiteBackend(db_path)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "db_name,existing_backups,expected_new_backups",
+    [
+        ("test.db", [], 1),
+        (
+            "test.db",
+            [
+                "test.db.corrupt.1234567890",
+                "test.db.corrupt.1234567890.1",
+                "test.db.corrupt.1234567890.2",
+            ],
+            4,
+        ),
+        ("test'with\"quotes.db", [], 1),
+        ("{}".format("a" * 200 + ".db"), [], 1),
+    ],
+)
+async def test_backup_filename_variations(
+    tmp_path: Path, db_name, existing_backups, expected_new_backups
+):
+    """Test backup logic for various filename/path scenarios."""
+    db_path = tmp_path / db_name
+    for backup_name in existing_backups:
+        (tmp_path / backup_name).write_bytes(b"existing backup")
+    backend = create_corrupted_db(db_path)
+    with patch("time.time", return_value=1234567890):
+        await backend._init_db()
+    backup_files = list(tmp_path.glob(f"{db_name}.corrupt.*"))
+    assert len(backup_files) == expected_new_backups
+    assert db_path.exists()
+    assert db_path.stat().st_size > 0
+
 
 class TestSQLiteBackupEdgeCases:
     """Comprehensive tests for SQLiteBackend backup functionality."""

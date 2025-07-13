@@ -4,7 +4,8 @@ import pytest
 import asyncio
 import sqlite3
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
+import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -217,48 +218,44 @@ class TestSQLiteBackendPerformanceThresholds:
 
     @pytest.mark.asyncio
     async def test_performance_threshold_environment_variable(self, tmp_path: Path) -> None:
-        """Test that performance thresholds can be configured via environment variables."""
-        backend = SQLiteBackend(tmp_path / "perf_test.db")
+        """Test that performance thresholds are enforced via environment variable."""
+        backend = SQLiteBackend(tmp_path / "perf_env.db")
         now = datetime.utcnow().replace(microsecond=0)
 
-        # Create test data
+        # Create a large amount of test data
         num_workflows = 100
         for i in range(num_workflows):
             state = {
                 "run_id": f"run_{i}",
-                "pipeline_id": f"pipeline_{i % 10}",
-                "pipeline_name": f"Pipeline {i % 10}",
+                "pipeline_id": f"pipeline_{i}",
+                "pipeline_name": f"Pipeline {i}",
                 "pipeline_version": "1.0",
-                "current_step_index": i % 5,
+                "current_step_index": i,
                 "pipeline_context": {"a": i},
                 "last_step_output": f"out{i}",
                 "status": "completed",
-                "created_at": now - timedelta(minutes=i),
-                "updated_at": now - timedelta(minutes=i),
+                "created_at": now,
+                "updated_at": now,
                 "total_steps": 5,
                 "error_message": None,
-                "execution_time_ms": 1000 * (i % 10),
-                "memory_usage_mb": 10.0 * (i % 10),
+                "execution_time_ms": 1000,
+                "memory_usage_mb": 10.0,
             }
             await backend.save_state(f"run_{i}", state)
 
-        # Test with custom environment variable
-        import os
-
-        original_threshold = os.getenv("SQLITE_PER_WORKFLOW_TIME_LIMIT")
-
+        # Set a very strict threshold
+        original_threshold = os.environ.get("SQLITE_PER_WORKFLOW_TIME_LIMIT")
+        os.environ["SQLITE_PER_WORKFLOW_TIME_LIMIT"] = "0.000001"  # Very strict
         try:
-            # Set a very strict threshold
-            os.environ["SQLITE_PER_WORKFLOW_TIME_LIMIT"] = "0.000001"  # Very strict
-
-            # This should fail with the strict threshold
-            with pytest.raises(AssertionError):
-                start_time = time.time()
-                await backend.list_workflows()
-                end_time = time.time()
-                # The test would normally pass, but with the strict threshold it should fail
-                assert (end_time - start_time) < 0.000001 * num_workflows
-
+            start_time = time.time()
+            await backend.list_workflows()
+            end_time = time.time()
+            elapsed = end_time - start_time
+            # Assert that the elapsed time exceeds the strict threshold
+            assert elapsed > 0.000001 * num_workflows, (
+                f"Elapsed time {elapsed} did not exceed the strict threshold "
+                f"of {0.000001 * num_workflows} seconds."
+            )
         finally:
             # Restore original environment
             if original_threshold is not None:

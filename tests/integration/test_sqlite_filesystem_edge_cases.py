@@ -8,6 +8,8 @@ import pytest
 
 from flujo.state.backends.sqlite import SQLiteBackend
 
+pytestmark = pytest.mark.serial
+
 
 class TestSQLiteFilesystemEdgeCases:
     """Tests for SQLiteBackend filesystem edge cases."""

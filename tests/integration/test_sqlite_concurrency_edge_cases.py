@@ -9,6 +9,8 @@ import pytest
 
 from flujo.state.backends.sqlite import SQLiteBackend
 
+pytestmark = pytest.mark.serial
+
 
 class TestSQLiteConcurrencyEdgeCases:
     """Tests for SQLiteBackend concurrency edge cases."""

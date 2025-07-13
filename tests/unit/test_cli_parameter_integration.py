@@ -14,10 +14,10 @@ class TestCLIParameterIntegration:
     def test_cli_solve_command_parameters(self):
         """Test that the solve command properly passes parameters to make_default_pipeline."""
         # Mock all agent creation functions to avoid API key requirements
-        with patch("flujo.infra.agents.make_review_agent") as mock_make_review:
-            with patch("flujo.infra.agents.make_solution_agent") as mock_make_solution:
-                with patch("flujo.infra.agents.make_validator_agent") as mock_make_validator:
-                    with patch("flujo.infra.agents.get_reflection_agent") as mock_get_reflection:
+        with patch("flujo.cli.main.make_review_agent") as mock_make_review:
+            with patch("flujo.cli.main.make_solution_agent") as mock_make_solution:
+                with patch("flujo.cli.main.make_validator_agent") as mock_make_validator:
+                    with patch("flujo.cli.main.get_reflection_agent") as mock_get_reflection:
                         # Create mock agents
                         mock_review = AsyncMock()
                         mock_solution = AsyncMock()
@@ -56,10 +56,10 @@ class TestCLIParameterIntegration:
     def test_cli_bench_command_parameters(self):
         """Test that the bench command properly passes parameters to make_default_pipeline."""
         # Mock all agent creation functions to avoid API key requirements
-        with patch("flujo.infra.agents.make_review_agent") as mock_make_review:
-            with patch("flujo.infra.agents.make_solution_agent") as mock_make_solution:
-                with patch("flujo.infra.agents.make_validator_agent") as mock_make_validator:
-                    with patch("flujo.infra.agents.get_reflection_agent") as mock_get_reflection:
+        with patch("flujo.cli.main.make_review_agent") as mock_make_review:
+            with patch("flujo.cli.main.make_solution_agent") as mock_make_solution:
+                with patch("flujo.cli.main.make_validator_agent") as mock_make_validator:
+                    with patch("flujo.cli.main.get_reflection_agent") as mock_get_reflection:
                         # Create mock agents
                         mock_review = AsyncMock()
                         mock_solution = AsyncMock()
