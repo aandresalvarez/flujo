@@ -1,5 +1,6 @@
 import re
 import json
+import uuid
 from typing import Any, Dict
 from pydantic import BaseModel
 from .serialization import robust_serialize
@@ -22,6 +23,9 @@ class AdvancedPromptFormatter:
             ``#if`` and ``#each`` blocks.
         """
         self.template = template
+        # Generate a unique escape marker for this formatter instance
+        # to prevent collisions with user content
+        self._escape_marker = f"__ESCAPED_TEMPLATE_{uuid.uuid4().hex[:8]}__"
 
     def _get_nested_value(self, data: Dict[str, Any], key: str) -> Any:
         """Retrieve ``key`` from ``data`` using dotted attribute syntax."""
@@ -54,11 +58,27 @@ class AdvancedPromptFormatter:
             return self._serialize_value(value)
         return str(value)
 
+    def _escape_template_syntax(self, text: str) -> str:
+        """Escape template syntax in user-provided content.
+
+        This method safely escapes {{ in user content without affecting
+        literal occurrences of the escape marker in user data.
+        """
+        # Replace {{ with our unique escape marker
+        return text.replace("{{", self._escape_marker)
+
+    def _unescape_template_syntax(self, text: str) -> str:
+        """Restore escaped template syntax.
+
+        This method converts our unique escape marker back to {{.
+        """
+        return text.replace(self._escape_marker, "{{")
+
     def format(self, **kwargs: Any) -> str:
         """Render the template with the provided keyword arguments."""
 
-        ESC_MARKER = "__ESCAPED_OPEN__"
-        processed = self.template.replace(r"\{{", ESC_MARKER)
+        # First, escape literal \{{ in the template
+        processed = self.template.replace(r"\{{", self._escape_marker)
 
         def if_replacer(match: re.Match[str]) -> str:
             key, content = match.groups()
@@ -74,10 +94,16 @@ class AdvancedPromptFormatter:
                 return ""
             parts = []
             for item in items:
-                inner = block.replace("{{ this }}", self._serialize(item))
-                # allow nested placeholders referring to outer scope as well
-                inner_formatter = AdvancedPromptFormatter(inner)
-                parts.append(inner_formatter.format(**kwargs, this=item))
+                # Render the block with access to the current item via ``this``
+                # without pre-inserting the serialized value. This prevents any
+                # template syntax contained within ``item`` from being
+                # interpreted a second time when the inner formatter runs.
+                inner_formatter = AdvancedPromptFormatter(block)
+                rendered = inner_formatter.format(**kwargs, this=item)
+                # Escape any ``{{`` that appear in the rendered result so they
+                # survive the outer placeholder pass unchanged.
+                rendered = self._escape_template_syntax(rendered)
+                parts.append(rendered)
             return "".join(parts)
 
         processed = EACH_BLOCK_REGEX.sub(each_replacer, processed)
@@ -85,10 +111,15 @@ class AdvancedPromptFormatter:
         def placeholder_replacer(match: re.Match[str]) -> str:
             key = match.group(1).strip()
             value = self._get_nested_value({**kwargs, **{"this": kwargs.get("this")}}, key)
-            return self._serialize(value)
+            # Escape any template syntax that may appear inside user-provided
+            # values so that it is rendered literally and not interpreted in a
+            # subsequent regex pass.
+            serialized_value = self._serialize(value)
+            return self._escape_template_syntax(serialized_value)
 
         processed = PLACEHOLDER_REGEX.sub(placeholder_replacer, processed)
-        processed = processed.replace(ESC_MARKER, "{{")
+        # Restore escaped template syntax
+        processed = self._unescape_template_syntax(processed)
         return processed
 
 
