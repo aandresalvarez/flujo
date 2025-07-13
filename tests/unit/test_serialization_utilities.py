@@ -4,7 +4,7 @@ import dataclasses
 import json
 from datetime import datetime, date, time
 from enum import Enum
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 import pytest
 from hypothesis import given, settings, strategies as st
@@ -22,29 +22,30 @@ from flujo.utils.serialization import (
 )
 
 
-class TestEnum(Enum):
-    """Test enum for serialization testing."""
+class MockEnum(Enum):
+    """Mock enum for testing serialization utilities."""
 
-    PENDING = "pending"
-    COMPLETED = "completed"
-    FAILED = "failed"
+    A = "a"
+    B = "b"
+    C = "c"
 
 
 @dataclasses.dataclass
-class TestDataclass:
-    """Test dataclass for serialization testing."""
+class MockDataclass:
+    """Mock dataclass for testing serialization utilities."""
 
     name: str
     value: int
-    metadata: Dict[str, Any]
+    items: List[str]
 
 
-class TestPydanticModel(BaseModel):
-    """Test Pydantic model for serialization testing."""
+class MockPydanticModel(BaseModel):
+    """Mock Pydantic model for testing serialization utilities."""
 
     name: str
     value: int
-    metadata: Dict[str, Any]
+    items: List[str]
+    optional_field: Optional[str] = None
 
 
 class CustomObject:
@@ -221,20 +222,27 @@ class TestSafeSerialize:
 
     def test_dataclasses(self):
         """Test serialization of dataclasses."""
-        obj = TestDataclass("test", 42, {"key": "value"})
+        obj = MockDataclass("test", 42, ["item1", "item2"])
         result = safe_serialize(obj)
-        assert result == {"name": "test", "value": 42, "metadata": {"key": "value"}}
+        assert result == {"name": "test", "value": 42, "items": ["item1", "item2"]}
 
     def test_enums(self):
         """Test serialization of enums."""
-        result = safe_serialize(TestEnum.PENDING)
-        assert result == "pending"
+        result = safe_serialize(MockEnum.A)
+        assert result == "a"
 
     def test_pydantic_models(self):
         """Test serialization of Pydantic models."""
-        obj = TestPydanticModel(name="test", value=42, metadata={"key": "value"})
+        obj = MockPydanticModel(
+            name="test", value=42, items=["item1", "item2"], optional_field="optional"
+        )
         result = safe_serialize(obj)
-        assert result == {"name": "test", "value": 42, "metadata": {"key": "value"}}
+        assert result == {
+            "name": "test",
+            "value": 42,
+            "items": ["item1", "item2"],
+            "optional_field": "optional",
+        }
 
     def test_collections(self):
         """Test serialization of collections."""
@@ -320,9 +328,16 @@ class TestRobustSerialize:
 
     def test_robust_serialize_with_pydantic_models(self):
         """Test robust_serialize with Pydantic models."""
-        obj = TestPydanticModel(name="test", value=42, metadata={"key": "value"})
+        obj = MockPydanticModel(
+            name="test", value=42, items=["item1", "item2"], optional_field="optional"
+        )
         result = robust_serialize(obj)
-        assert result == {"name": "test", "value": 42, "metadata": {"key": "value"}}
+        assert result == {
+            "name": "test",
+            "value": 42,
+            "items": ["item1", "item2"],
+            "optional_field": "optional",
+        }
 
     def test_robust_serialize_with_unknown_types(self):
         """Test robust_serialize with unknown types."""

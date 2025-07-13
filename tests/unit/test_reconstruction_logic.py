@@ -13,14 +13,14 @@ class SimpleNested(BaseModel):
     number: int
 
 
-class TestContainer(BaseModel):
+class MockContainer(BaseModel):
     nested: SimpleNested
     items: list[int]
     metadata: dict[str, str]
 
 
 class TestAgent:
-    async def run(self, data: TestContainer) -> TestContainer:
+    async def run(self, data: MockContainer) -> MockContainer:
         return data
 
 
@@ -30,7 +30,7 @@ class TestReconstructionLogic:
     def setup_method(self):
         """Set up test fixtures."""
         self.backend = DummyRemoteBackend()
-        self.original_payload = TestContainer(
+        self.original_payload = MockContainer(
             nested=SimpleNested(value="test", number=42),
             items=[1, 2, 3],
             metadata={"key1": "value1", "key2": "value2"},
@@ -59,14 +59,14 @@ class TestReconstructionLogic:
         assert "input_data" in reconstructed
         reconstructed_input = reconstructed["input_data"]
 
-        assert isinstance(reconstructed_input, TestContainer)
+        assert isinstance(reconstructed_input, MockContainer)
         assert isinstance(reconstructed_input.nested, SimpleNested)
         assert reconstructed_input.model_dump() == self.original_payload.model_dump()
 
     def test_reconstruction_handles_string_encoded_lists(self):
         """Test that string-encoded lists are properly parsed."""
         # Create a payload where lists might be serialized as strings
-        payload = TestContainer(
+        payload = MockContainer(
             nested=SimpleNested(value="test", number=100),
             items=[10, 20, 30],
             metadata={"list_key": "value"},
@@ -89,14 +89,14 @@ class TestReconstructionLogic:
         reconstructed = self.backend._reconstruct_payload(request_data, data)
         reconstructed_input = reconstructed["input_data"]
 
-        assert isinstance(reconstructed_input, TestContainer)
+        assert isinstance(reconstructed_input, MockContainer)
         assert isinstance(reconstructed_input.items, list)
         assert all(isinstance(item, int) for item in reconstructed_input.items)
         assert reconstructed_input.model_dump() == payload.model_dump()
 
     def test_reconstruction_handles_empty_structures(self):
         """Test reconstruction with empty lists and dictionaries."""
-        payload = TestContainer(nested=SimpleNested(value="", number=0), items=[], metadata={})
+        payload = MockContainer(nested=SimpleNested(value="", number=0), items=[], metadata={})
 
         request_data = {
             "input_data": payload,
@@ -113,7 +113,7 @@ class TestReconstructionLogic:
         reconstructed = self.backend._reconstruct_payload(request_data, data)
         reconstructed_input = reconstructed["input_data"]
 
-        assert isinstance(reconstructed_input, TestContainer)
+        assert isinstance(reconstructed_input, MockContainer)
         assert reconstructed_input.items == []
         assert reconstructed_input.metadata == {}
         assert reconstructed_input.model_dump() == payload.model_dump()
@@ -257,7 +257,7 @@ class TestReconstructionLogic:
 
     def test_reconstruction_preserves_exact_types(self):
         """Test that reconstruction preserves exact types without conversion."""
-        payload = TestContainer(
+        payload = MockContainer(
             nested=SimpleNested(value="type_test", number=999),
             items=[10, 20, 30],
             metadata={"test": "value"},
@@ -279,7 +279,7 @@ class TestReconstructionLogic:
         reconstructed_input = reconstructed["input_data"]
 
         # Check exact type preservation
-        assert isinstance(reconstructed_input, TestContainer)
+        assert isinstance(reconstructed_input, MockContainer)
         assert isinstance(reconstructed_input.nested, SimpleNested)
         assert isinstance(reconstructed_input.items, list)
         assert isinstance(reconstructed_input.metadata, dict)

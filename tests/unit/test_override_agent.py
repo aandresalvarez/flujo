@@ -4,8 +4,8 @@ from flujo.domain import Step
 from flujo.testing import override_agent, StubAgent
 
 
-class TestAgent:
-    """Test agent for override tests."""
+class MockAgent:
+    """Mock agent for override tests."""
 
     def __init__(self, name: str):
         self.name = name
@@ -18,8 +18,8 @@ class TestAgent:
 
 def test_override_agent_basic_functionality():
     """Test basic agent override functionality."""
-    original_agent = TestAgent("original")
-    replacement_agent = TestAgent("replacement")
+    original_agent = MockAgent("original")
+    replacement_agent = MockAgent("replacement")
 
     step = Step.model_validate({"name": "test_step", "agent": original_agent})
 
@@ -36,8 +36,8 @@ def test_override_agent_basic_functionality():
 
 def test_override_agent_with_exception():
     """Test that agent is restored even when an exception occurs."""
-    original_agent = TestAgent("original")
-    replacement_agent = TestAgent("replacement")
+    original_agent = MockAgent("original")
+    replacement_agent = MockAgent("replacement")
 
     step = Step.model_validate({"name": "test_step", "agent": original_agent})
 
@@ -58,7 +58,7 @@ def test_override_agent_with_exception():
 
 def test_override_agent_none_agent():
     """Test overriding with None agent."""
-    original_agent = TestAgent("original")
+    original_agent = MockAgent("original")
 
     step = Step.model_validate({"name": "test_step", "agent": original_agent})
 
@@ -72,10 +72,10 @@ def test_override_agent_none_agent():
 
 def test_override_agent_multiple_steps():
     """Test overriding agents in multiple steps."""
-    agent1 = TestAgent("agent1")
-    agent2 = TestAgent("agent2")
-    replacement1 = TestAgent("replacement1")
-    replacement2 = TestAgent("replacement2")
+    agent1 = MockAgent("agent1")
+    agent2 = MockAgent("agent2")
+    replacement1 = MockAgent("replacement1")
+    replacement2 = MockAgent("replacement2")
 
     step1 = Step.model_validate({"name": "step1", "agent": agent1})
     step2 = Step.model_validate({"name": "step2", "agent": agent2})
@@ -93,8 +93,8 @@ def test_override_agent_multiple_steps():
 
 def test_override_agent_integration_with_arun():
     """Test that the overridden agent is actually used when calling arun."""
-    original_agent = TestAgent("original")
-    replacement_agent = TestAgent("replacement")
+    original_agent = MockAgent("original")
+    replacement_agent = MockAgent("replacement")
 
     step = Step.model_validate({"name": "test_step", "agent": original_agent})
 
@@ -122,7 +122,7 @@ def test_override_agent_integration_with_arun():
 
 def test_override_agent_with_stub_agent():
     """Test overriding with StubAgent for testing scenarios."""
-    original_agent = TestAgent("original")
+    original_agent = MockAgent("original")
     stub_agent = StubAgent(["stub_output_1", "stub_output_2"])
 
     step = Step.model_validate({"name": "test_step", "agent": original_agent})

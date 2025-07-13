@@ -14,8 +14,8 @@ from flujo.testing.utils import SimpleDummyRemoteBackend as DummyRemoteBackend
 from flujo.utils.serialization import safe_serialize
 
 
-class TestEnum(Enum):
-    """Test enum for serialization."""
+class MockEnum(Enum):
+    """Mock enum for testing serialization properties."""
 
     A = "a"
     B = "b"
@@ -48,7 +48,7 @@ class ComplexModel(BaseModel):
     list_field: List[str]
     dict_field: Dict[str, Any]
     optional_field: Optional[str] = None
-    enum_field: TestEnum = TestEnum.A
+    enum_field: MockEnum = MockEnum.A
     nested_field: Optional[NestedModel] = None
     union_field: Union[str, int] = "default"
     literal_field: Literal["a", "b", "c"] = "a"
@@ -108,7 +108,7 @@ def complex_model_strategy(draw):
         )
     )
     optional_field = draw(st.one_of(st.none(), st.text(min_size=1, max_size=50)))
-    enum_field = draw(st.sampled_from(list(TestEnum)))
+    enum_field = draw(st.sampled_from(list(MockEnum)))
     nested_field = draw(st.one_of(st.none(), nested_model_strategy()))
     union_field = draw(st.one_of(st.text(min_size=1, max_size=20), st.integers()))
     literal_field = draw(st.sampled_from(["a", "b", "c"]))
@@ -358,7 +358,7 @@ class TestSerializationProperties:
             max_size=5,
         ),
         optional_field=st.one_of(st.none(), st.text(min_size=1, max_size=50)),
-        enum_field=st.sampled_from(list(TestEnum)),
+        enum_field=st.sampled_from(list(MockEnum)),
         union_field=st.one_of(st.text(min_size=1, max_size=20), st.integers()),
         literal_field=st.sampled_from(["a", "b", "c"]),
     )
@@ -434,7 +434,7 @@ class TestSerializationProperties:
             list_field=empty_list,
             dict_field=empty_dict,
             optional_field=none_value,
-            enum_field=TestEnum.A,
+            enum_field=MockEnum.A,
             union_field="default",
             literal_field="a",
         )
@@ -485,7 +485,7 @@ class TestSerializationProperties:
             list_field=large_list,
             dict_field=large_dict,
             optional_field=None,
-            enum_field=TestEnum.A,
+            enum_field=MockEnum.A,
             union_field="default",
             literal_field="a",
         )
@@ -528,7 +528,7 @@ class TestSerializationProperties:
             list_field=numbers_as_strings,
             dict_field={"special": special_chars, "unicode": unicode_text},
             optional_field=unicode_text,
-            enum_field=TestEnum.A,
+            enum_field=MockEnum.A,
             union_field="default",
             literal_field="a",
         )

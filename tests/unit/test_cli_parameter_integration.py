@@ -1,7 +1,7 @@
 """Tests to ensure CLI parameters are properly integrated with pipeline functions."""
 
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch, MagicMock, Mock
 
 from flujo.recipes.factories import make_default_pipeline, run_default_pipeline
 from flujo.domain.models import Task
@@ -60,11 +60,11 @@ class TestCLIParameterIntegration:
             with patch("flujo.cli.main.make_solution_agent") as mock_make_solution:
                 with patch("flujo.cli.main.make_validator_agent") as mock_make_validator:
                     with patch("flujo.cli.main.get_reflection_agent") as mock_get_reflection:
-                        # Create mock agents
-                        mock_review = AsyncMock()
-                        mock_solution = AsyncMock()
-                        mock_validator = AsyncMock()
-                        mock_reflection = AsyncMock()
+                        # Create mock agents using regular Mock since they're not actually called
+                        mock_review = Mock()
+                        mock_solution = Mock()
+                        mock_validator = Mock()
+                        mock_reflection = Mock()
 
                         # Configure mocks to return our mock agents
                         mock_make_review.return_value = mock_review
