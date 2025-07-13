@@ -14,6 +14,10 @@ from .base import StateBackend
 from ...utils.serialization import safe_serialize, safe_deserialize
 from ...infra import telemetry
 
+# Global lock registry for database files to prevent concurrent initialization
+_db_locks: Dict[str, asyncio.Lock] = {}
+_db_ref_counts: Dict[str, int] = {}
+
 
 class SQLiteBackend(StateBackend):
     """SQLite-backed persistent storage for workflow state with optimized schema."""
@@ -24,6 +28,15 @@ class SQLiteBackend(StateBackend):
         self._lock = asyncio.Lock()
         self._initialized = False
         self._connection_pool: Optional[aiosqlite.Connection] = None
+
+        # Get or create file-level lock for this database
+        db_key = str(self.db_path.absolute())
+        if db_key not in _db_locks:
+            _db_locks[db_key] = asyncio.Lock()
+            _db_ref_counts[db_key] = 0
+        _db_ref_counts[db_key] += 1
+        self._file_lock = _db_locks[db_key]
+        self._db_key = db_key
 
     async def _init_db(self, retry_count: int = 0, max_retries: int = 1) -> None:
         """Initialize the database with schema and indexes.
@@ -215,7 +228,8 @@ class SQLiteBackend(StateBackend):
 
     async def _ensure_init(self) -> None:
         if not self._initialized:
-            async with self._lock:
+            # Use file-level lock to prevent concurrent initialization across instances
+            async with self._file_lock:
                 if not self._initialized:
                     try:
                         await self._init_db()
@@ -230,6 +244,14 @@ class SQLiteBackend(StateBackend):
             await self._connection_pool.close()
             self._connection_pool = None
         self._initialized = False
+
+        # Clean up file lock reference
+        if hasattr(self, "_db_key"):
+            _db_ref_counts[self._db_key] -= 1
+            if _db_ref_counts[self._db_key] <= 0:
+                # Remove from global registry when no more references
+                _db_locks.pop(self._db_key, None)
+                _db_ref_counts.pop(self._db_key, None)
 
     async def __aenter__(self) -> "SQLiteBackend":
         """Async context manager entry."""
