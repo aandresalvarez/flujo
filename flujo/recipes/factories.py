@@ -200,8 +200,7 @@ def make_agentic_loop_pipeline(
                     generated_command=data,
                     execution_result=validation_error_result,
                 )
-                if context is not None:
-                    context.command_log.append(log_entry)
+                _log_if_new(log_entry, context)
                 return log_entry
 
             exec_result: Any = "Command type not recognized."
@@ -231,8 +230,7 @@ def make_agentic_loop_pipeline(
                 generated_command=cmd,
                 execution_result=exec_result,
             )
-            if context is not None:
-                context.command_log.append(log_entry)
+            _log_if_new(log_entry, context)
             return log_entry
 
     async def planner_step(data: str, *, context: PipelineContext) -> AgentCommand:
@@ -259,25 +257,26 @@ def make_agentic_loop_pipeline(
             getattr(output, "generated_command", None), FinishCommand
         )
 
+    def _log_if_new(log: ExecutedCommandLog, ctx: PipelineContext | None) -> None:
+        if ctx is not None:
+            # Use equality, not identity, to avoid duplicates
+            if not ctx.command_log or ctx.command_log[-1] != log:
+                ctx.command_log.append(log)
+
     def _iter_mapper(
         log: ExecutedCommandLog, ctx: PipelineContext | None, _i: int
     ) -> dict[str, Any]:
-        if ctx is not None:
-            # Only log if not already present (prevent double logging)
-            if not ctx.command_log or ctx.command_log[-1] is not log:
-                ctx.command_log.append(log)
-            goal = ctx.initial_prompt
-        else:
-            goal = ""
+        """Transformation function that logs commands if not already present."""
+        _log_if_new(log, ctx)
+        goal = ctx.initial_prompt if ctx is not None else ""
         return {"last_command_result": log.execution_result, "goal": goal}
 
     def _output_mapper(log: ExecutedCommandLog, ctx: PipelineContext | None) -> Any:
-        if ctx is not None:
-            # Only log if not already present (prevent double logging)
-            if not ctx.command_log or ctx.command_log[-1] is not log:
-                ctx.command_log.append(log)
-            return log  # Return the full log instead of just the execution result
-        return log
+        """Transformation function that logs commands if not already present.
+        Ensures the final output is always logged, even if the loop ends due to max_loops or error.
+        """
+        _log_if_new(log, ctx)
+        return log  # Return the full log instead of just the execution result
 
     loop_step: Any = Step.loop_until(
         name="AgenticExplorationLoop",
