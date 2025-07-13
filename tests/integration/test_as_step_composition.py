@@ -1,7 +1,7 @@
 import pytest
 
 from flujo import Flujo, Step
-from flujo.recipes.agentic_loop import AgenticLoop
+from flujo.recipes.factories import make_agentic_loop_pipeline
 from flujo.testing.utils import StubAgent, gather_result
 from flujo.domain.commands import FinishCommand, RunAgentCommand
 from flujo.domain.models import PipelineContext, PipelineResult
@@ -18,10 +18,12 @@ async def test_agentic_loop_as_composable_step() -> None:
         ]
     )
     tool = StubAgent(["tool-output"])
-    loop = AgenticLoop(planner, {"tool": tool})
+    pipeline = make_agentic_loop_pipeline(planner_agent=planner, agent_registry={"tool": tool})
 
-    pipeline = loop.as_step(name="loop")
-    runner = Flujo(pipeline, context_model=PipelineContext)
+    # Create a Flujo runner first, then get the as_step
+    flujo_runner = Flujo(pipeline, context_model=PipelineContext)
+    pipeline_step = flujo_runner.as_step(name="loop")
+    runner = Flujo(pipeline_step, context_model=PipelineContext)
 
     result = await gather_result(
         runner,
@@ -126,10 +128,12 @@ async def test_as_step_initial_prompt_sync() -> None:
         ]
     )
     tool = StubAgent(["tool-output"])
-    loop = AgenticLoop(planner, {"tool": tool})
+    pipeline = make_agentic_loop_pipeline(planner_agent=planner, agent_registry={"tool": tool})
 
-    pipeline = loop.as_step(name="inner")
-    runner = Flujo(pipeline, context_model=PipelineContext)
+    # Create a Flujo runner first, then get the as_step
+    flujo_runner = Flujo(pipeline, context_model=PipelineContext)
+    pipeline_step = flujo_runner.as_step(name="inner")
+    runner = Flujo(pipeline_step, context_model=PipelineContext)
 
     result = await gather_result(
         runner,

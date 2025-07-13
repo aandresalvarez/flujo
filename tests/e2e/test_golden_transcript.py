@@ -12,7 +12,7 @@ try:
     import vcr
 except ImportError:  # pragma: no cover - skip if dependency missing
     pytest.skip("vcrpy not installed", allow_module_level=True)
-from flujo.recipes import Default
+from flujo.recipes.factories import make_default_pipeline, run_default_pipeline
 from flujo.domain.models import Task, Candidate
 from flujo.infra.agents import (
     make_review_agent,
@@ -39,15 +39,21 @@ def test_golden_transcript():
     Runs a simple end-to-end test against the real OpenAI API (or a recording)
     to ensure the entire orchestration flow produces a valid, scored candidate.
     """
-    orch = Default(
-        make_review_agent(),
-        make_solution_agent(),
-        make_validator_agent(),
-        get_reflection_agent(),
+    pipeline = make_default_pipeline(
+        review_agent=make_review_agent(),
+        solution_agent=make_solution_agent(),
+        validator_agent=make_validator_agent(),
+        reflection_agent=get_reflection_agent(),
         k_variants=1,
         max_iters=1,
     )
-    result = orch.run_sync(Task(prompt="Write a short haiku about a robot learning to paint."))
+    import asyncio
+
+    result = asyncio.run(
+        run_default_pipeline(
+            pipeline, Task(prompt="Write a short haiku about a robot learning to paint.")
+        )
+    )
 
     assert isinstance(result, Candidate)
     assert isinstance(result.solution, str)

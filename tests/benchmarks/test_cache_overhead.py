@@ -10,10 +10,10 @@ pytest.importorskip("pytest_benchmark")
 
 @pytest.mark.asyncio
 async def test_cache_overhead_vs_plain_step() -> None:
-    agent_plain = StubAgent(["ok"])
+    agent_plain = StubAgent(["ok"] * 5)
     plain = Step.solution(agent_plain)
 
-    agent_cached = StubAgent(["ok"])
+    agent_cached = StubAgent(["ok"] * 5)
     cached_step = Step.cached(Step.solution(agent_cached), cache_backend=InMemoryCache())
 
     runner_plain = Flujo(plain)

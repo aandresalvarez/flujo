@@ -5,7 +5,7 @@ from flujo import Step, Flujo
 from flujo.caching import InMemoryCache
 from flujo.testing.utils import StubAgent, gather_result, DummyPlugin
 from flujo.domain import Pipeline
-from flujo.domain.pipeline_dsl import StepConfig
+from flujo.domain.dsl import StepConfig
 from flujo.domain.plugins import PluginOutcome
 from typing import Any
 from flujo.utils.serialization import register_custom_serializer
@@ -24,7 +24,7 @@ class CustomKey:
 
 @pytest.mark.asyncio
 async def test_caching_pipeline_speed_and_hits() -> None:
-    agent: StubAgent = StubAgent(["ok"])
+    agent: StubAgent = StubAgent(["ok", "ok"])
     slow_step: Step[Any, Any] = Step.solution(agent)
     cache: InMemoryCache = InMemoryCache()
     cached: Step[Any, Any] = Step.cached(slow_step, cache_backend=cache)
@@ -187,7 +187,7 @@ async def test_cache_with_custom_type_in_input() -> None:
 @pytest.mark.asyncio
 async def test_cache_custom_key_serialization_and_hit() -> None:
     register_custom_serializer(CustomKey, lambda x: f"key_{x.value}")
-    agent: StubAgent = StubAgent(["ok"])
+    agent: StubAgent = StubAgent(["ok", "ok"])
     slow_step: Step[Any, Any] = Step.solution(agent)
     cache: InMemoryCache = InMemoryCache()
     cached: Step[Any, Any] = Step.cached(slow_step, cache_backend=cache)

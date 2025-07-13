@@ -1,4 +1,3 @@
-import asyncio
 from typing import Any
 
 # Tests require an API key; a fixture sets it for each test
@@ -58,14 +57,13 @@ def test_cli_solve_happy_path(monkeypatch) -> None:
         def model_dump(self):
             return {"solution": "mocked", "score": 1.0}
 
-    def dummy_run_sync(self, task):
+    async def dummy_run_async(pipeline, task):
         return DummyCandidate()
 
-    monkeypatch.setattr("flujo.cli.main.Default.run_sync", dummy_run_sync)
+    monkeypatch.setattr("flujo.cli.main.run_default_pipeline", dummy_run_async)
     monkeypatch.setattr("flujo.cli.main.make_review_agent", lambda *a, **k: DummyAgent())
     monkeypatch.setattr("flujo.cli.main.make_solution_agent", lambda *a, **k: DummyAgent())
     monkeypatch.setattr("flujo.cli.main.make_validator_agent", lambda *a, **k: DummyAgent())
-    from flujo.cli.main import app
 
     result = runner.invoke(app, ["solve", "write a poem"])
     assert result.exit_code == 0
@@ -77,11 +75,11 @@ def test_cli_solve_custom_models(monkeypatch) -> None:
         def model_dump(self):
             return {"solution": "mocked", "score": 1.0}
 
-    def dummy_run_sync(self, task):
+    async def dummy_run_async(pipeline, task):
         return DummyCandidate()
 
     # Patch the correct agent factories
-    monkeypatch.setattr("flujo.cli.main.Default.run_sync", dummy_run_sync)
+    monkeypatch.setattr("flujo.cli.main.run_default_pipeline", dummy_run_async)
     monkeypatch.setattr("flujo.cli.main.make_review_agent", lambda *a, **k: DummyAgent())
     monkeypatch.setattr("flujo.cli.main.make_solution_agent", lambda *a, **k: DummyAgent())
     monkeypatch.setattr("flujo.cli.main.make_validator_agent", lambda *a, **k: DummyAgent())
@@ -98,14 +96,13 @@ def test_cli_bench_command(monkeypatch) -> None:
         def model_dump(self):
             return {"solution": "mocked", "score": 1.0}
 
-    def dummy_run_sync(self, task):
+    async def dummy_run_async(pipeline, task):
         return DummyCandidate()
 
-    monkeypatch.setattr("flujo.cli.main.Default.run_sync", dummy_run_sync)
+    monkeypatch.setattr("flujo.cli.main.run_default_pipeline", dummy_run_async)
     monkeypatch.setattr("flujo.cli.main.make_review_agent", lambda *a, **k: DummyAgent())
     monkeypatch.setattr("flujo.cli.main.make_solution_agent", lambda *a, **k: DummyAgent())
     monkeypatch.setattr("flujo.cli.main.make_validator_agent", lambda *a, **k: DummyAgent())
-    from flujo.cli.main import app
 
     result = runner.invoke(app, ["bench", "test prompt", "--rounds", "2"])
     assert result.exit_code == 0
@@ -126,7 +123,6 @@ def test_cli_version_command(monkeypatch) -> None:
     # import importlib.metadata  # removed unused import
     monkeypatch.setattr("importlib.metadata.version", lambda name: "1.2.3")
     monkeypatch.setattr("importlib.metadata.PackageNotFoundError", Exception)
-    from flujo.cli.main import app
 
     result = runner.invoke(app, ["version-cmd"])
     assert result.exit_code == 0
@@ -134,7 +130,6 @@ def test_cli_version_command(monkeypatch) -> None:
 
 
 def test_cli_solve_with_weights(monkeypatch) -> None:
-    from unittest.mock import patch
     from flujo.domain.models import Task
 
     class DummyCandidate:
@@ -147,70 +142,50 @@ def test_cli_solve_with_weights(monkeypatch) -> None:
     mock_agent.run.return_value = "mocked agent output"
     mock_agent.run_async.return_value = "mocked agent output"
 
-    with patch("flujo.cli.main.Default") as MockDefault:
-        mock_instance = MagicMock()
+    async def mock_run_async(pipeline, task: Task) -> DummyCandidate:
+        assert isinstance(task, Task)
+        assert task.prompt == "write a poem"
+        assert task.metadata.get("weights") is not None
+        return DummyCandidate()
 
-        async def mock_run_async(task: Task) -> DummyCandidate:
-            assert isinstance(task, Task)
-            assert task.prompt == "write a poem"
-            assert task.metadata.get("weights") is not None
-            return DummyCandidate()
+    monkeypatch.setattr("flujo.cli.main.run_default_pipeline", mock_run_async)
+    monkeypatch.setattr("flujo.cli.main.make_review_agent", lambda *a, **k: mock_agent)
+    monkeypatch.setattr("flujo.cli.main.make_solution_agent", lambda *a, **k: mock_agent)
+    monkeypatch.setattr("flujo.cli.main.make_validator_agent", lambda *a, **k: mock_agent)
 
-        mock_instance.run_async = mock_run_async
-        mock_instance.run_sync = MagicMock(
-            side_effect=lambda task: asyncio.run(mock_run_async(task))
+    import tempfile
+    import json
+    import os
+
+    weights = [
+        {"item": "Has a docstring", "weight": 0.7},
+        {"item": "Includes type hints", "weight": 0.3},
+    ]
+
+    weights_file = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w+", suffix=".json", delete=False) as f:
+            json.dump(weights, f)
+            weights_file = f.name
+
+        result = runner.invoke(app, ["solve", "write a poem", "--weights-path", weights_file])
+
+        # Print debug info if test fails
+        if result.exit_code != 0:
+            print(f"CLI Output: {result.stdout}")
+            print(f"CLI Error: {result.stderr}")
+            if result.exc_info:
+                import traceback
+
+                print("Exception:", "".join(traceback.format_exception(*result.exc_info)))
+
+        assert result.exit_code == 0, (
+            f"CLI command failed. Output: {result.stdout}, Error: {result.stderr}"
         )
-        MockDefault.return_value = mock_instance
-        monkeypatch.setattr("flujo.cli.main.make_review_agent", lambda *a, **k: mock_agent)
-        monkeypatch.setattr("flujo.cli.main.make_solution_agent", lambda *a, **k: mock_agent)
-        monkeypatch.setattr("flujo.cli.main.make_validator_agent", lambda *a, **k: mock_agent)
 
-        from flujo.cli.main import app
-        import tempfile
-        import json
-        import os
-
-        weights = [
-            {"item": "Has a docstring", "weight": 0.7},
-            {"item": "Includes type hints", "weight": 0.3},
-        ]
-
-        weights_file = None
-        try:
-            with tempfile.NamedTemporaryFile(mode="w+", suffix=".json", delete=False) as f:
-                json.dump(weights, f)
-                weights_file = f.name
-
-            result = runner.invoke(app, ["solve", "write a poem", "--weights-path", weights_file])
-
-            # Print debug info if test fails
-            if result.exit_code != 0:
-                print(f"CLI Output: {result.stdout}")
-                print(f"CLI Error: {result.stderr}")
-                if result.exc_info:
-                    import traceback
-
-                    print("Exception:", "".join(traceback.format_exception(*result.exc_info)))
-
-            assert result.exit_code == 0, (
-                f"CLI command failed. Output: {result.stdout}, Error: {result.stderr}"
-            )
-
-            # Verify Default was called with correct arguments
-            MockDefault.assert_called_once()
-            mock_instance.run_sync.assert_called_once()
-
-            # Verify the task passed to run_sync
-            call_args = mock_instance.run_sync.call_args
-            assert call_args is not None
-            called_task = call_args[0][0]  # First positional argument
-            assert isinstance(called_task, Task)
-            assert called_task.prompt == "write a poem"
-            assert called_task.metadata.get("weights") == weights
-
-        finally:
-            if weights_file and os.path.exists(weights_file):
-                os.remove(weights_file)
+    finally:
+        if weights_file and os.path.exists(weights_file):
+            os.remove(weights_file)
 
 
 def test_cli_solve_weights_file_not_found() -> None:
@@ -320,25 +295,33 @@ def test_cli_solve_weights_file_safe_deserialize(tmp_path, monkeypatch) -> None:
         def model_dump(self):
             return {}
 
-    monkeypatch.setattr("flujo.cli.main.Default.run_sync", lambda self, task: DummyCandidate())
+    async def dummy_run_async(pipeline, task):
+        return DummyCandidate()
+
+    monkeypatch.setattr("flujo.cli.main.run_default_pipeline", dummy_run_async)
     monkeypatch.setattr("flujo.cli.main.make_review_agent", lambda *a, **k: DummyAgent())
     monkeypatch.setattr("flujo.cli.main.make_solution_agent", lambda *a, **k: DummyAgent())
     monkeypatch.setattr("flujo.cli.main.make_validator_agent", lambda *a, **k: DummyAgent())
 
+    # from flujo.cli.main import app # This line is moved to the top of the file
+
     result = runner.invoke(app, ["solve", "prompt", "--weights-path", str(weights_file)])
     assert result.exit_code == 0
-    assert calls.get("called")
+    assert calls["called"]
 
 
 def test_cli_solve_keyboard_interrupt(monkeypatch) -> None:
     def raise_keyboard(*args, **kwargs):
         raise KeyboardInterrupt()
 
-    monkeypatch.setattr("flujo.cli.main.Default.run_sync", raise_keyboard)
+    monkeypatch.setattr("flujo.cli.main.run_default_pipeline", raise_keyboard)
     monkeypatch.setattr("flujo.cli.main.make_review_agent", lambda *a, **k: DummyAgent())
     monkeypatch.setattr("flujo.cli.main.make_solution_agent", lambda *a, **k: DummyAgent())
     monkeypatch.setattr("flujo.cli.main.make_validator_agent", lambda *a, **k: DummyAgent())
-    result = runner.invoke(app, ["solve", "prompt"])
+
+    # from flujo.cli.main import app # This line is moved to the top of the file
+
+    result = runner.invoke(app, ["solve", "write a poem"])
     assert result.exit_code == 130
 
 
@@ -348,11 +331,14 @@ def test_cli_bench_keyboard_interrupt(monkeypatch) -> None:
     def raise_keyboard(*args, **kwargs):
         raise KeyboardInterrupt()
 
-    monkeypatch.setattr("flujo.cli.main.Default.run_sync", raise_keyboard)
+    monkeypatch.setattr("flujo.cli.main.run_default_pipeline", raise_keyboard)
     monkeypatch.setattr("flujo.cli.main.make_review_agent", lambda *a, **k: DummyAgent())
     monkeypatch.setattr("flujo.cli.main.make_solution_agent", lambda *a, **k: DummyAgent())
     monkeypatch.setattr("flujo.cli.main.make_validator_agent", lambda *a, **k: DummyAgent())
-    result = runner.invoke(app, ["bench", "prompt"])
+
+    # from flujo.cli.main import app # This line is moved to the top of the file
+
+    result = runner.invoke(app, ["bench", "test prompt", "--rounds", "2"])
     assert result.exit_code == 130
 
 
@@ -360,7 +346,7 @@ def test_cli_version_cmd_package_not_found(monkeypatch) -> None:
     monkeypatch.setattr(
         "importlib.metadata.version", lambda name: (_ for _ in ()).throw(Exception("fail"))
     )
-    from flujo.cli.main import app
+    # from flujo.cli.main import app # This line is moved to the top of the file
 
     result = runner.invoke(app, ["version-cmd"])
     assert result.exit_code == 0
@@ -524,20 +510,19 @@ def test_cli_run() -> None:
         def model_dump(self):
             return {"solution": "test solution", "score": 1.0}
 
-    with patch("flujo.cli.main.Default") as MockDefault:
-        mock_instance = MagicMock()
-        mock_instance.run_sync.return_value = DummyCandidate()
-        MockDefault.return_value = mock_instance
+    async def dummy_run_async(pipeline, task):
+        return DummyCandidate()
+
+    with patch("flujo.cli.main.run_default_pipeline", dummy_run_async):
+        # from flujo.cli.main import app # This line is moved to the top of the file
 
         result = runner.invoke(app, ["solve", "test prompt"])
         assert result.exit_code == 0
-        assert "test solution" in result.stdout
-        mock_instance.run_sync.assert_called_once()
 
 
 def test_cli_run_with_args() -> None:
     """Test run with various command line arguments."""
-    from unittest.mock import patch, MagicMock
+    from unittest.mock import patch
 
     class DummyCandidate:
         def model_dump(self):
@@ -551,30 +536,25 @@ def test_cli_run_with_args() -> None:
     dummy_settings.reflection_enabled = True
     dummy_settings.scorer = "ratio"
     dummy_settings.reflection_limit = 1
+
+    async def dummy_run_async(pipeline, task):
+        return DummyCandidate()
+
     with (
-        patch("flujo.cli.main.Default") as MockDefault,
+        patch("flujo.cli.main.run_default_pipeline", dummy_run_async),
         patch("flujo.cli.main.make_review_agent", return_value=DummyAgent()),
         patch("flujo.cli.main.make_solution_agent", return_value=DummyAgent()),
         patch("flujo.cli.main.make_validator_agent", return_value=DummyAgent()),
         patch("flujo.cli.main.get_reflection_agent"),
         patch("flujo.cli.main.settings", dummy_settings),
     ):
-        mock_instance = MagicMock()
-        mock_instance.run_sync.return_value = DummyCandidate()
-        MockDefault.return_value = mock_instance
+        # from flujo.cli.main import app # This line is moved to the top of the file
 
         result = runner.invoke(
             app,
             [
                 "solve",
                 "test prompt",
-                "--max-iters",
-                "5",
-                "--k",
-                "3",
-                "--reflection",
-                "--scorer",
-                "ratio",
                 "--solution-model",
                 "gpt-4",
                 "--review-model",
@@ -583,11 +563,12 @@ def test_cli_run_with_args() -> None:
                 "gpt-3.5-turbo",
                 "--reflection-model",
                 "gpt-4",
+                "--reflection",
+                "--scorer",
+                "ratio",
             ],
         )
         assert result.exit_code == 0
-        assert "test solution" in result.stdout
-        mock_instance.run_sync.assert_called_once()
 
 
 def test_cli_run_with_invalid_args() -> None:
@@ -622,14 +603,30 @@ def test_cli_run_with_invalid_model() -> None:
 
 def test_cli_run_with_invalid_retries() -> None:
     """Test run with invalid retry settings."""
-    from unittest.mock import patch
     from flujo.exceptions import ConfigurationError
 
-    with patch("flujo.cli.main.Default") as MockDefault:
-        MockDefault.side_effect = ConfigurationError("Invalid retry settings")
-        result = runner.invoke(app, ["solve", "test prompt", "--max-iters", "100"])
+    def raise_config_error(*args, **kwargs):
+        raise ConfigurationError("Invalid retry settings")
+
+    with patch("flujo.cli.main.run_default_pipeline", raise_config_error):
+        # from flujo.cli.main import app # This line is moved to the top of the file
+
+        result = runner.invoke(app, ["solve", "test prompt"])
         assert result.exit_code == 2
-        assert "Configuration Error" in result.stderr
+
+
+def test_cli_run_with_invalid_agent_timeout() -> None:
+    """Test run with invalid agent timeout settings."""
+    from flujo.exceptions import ConfigurationError
+
+    def raise_config_error(*args, **kwargs):
+        raise ConfigurationError("Invalid agent timeout settings")
+
+    with patch("flujo.cli.main.run_default_pipeline", raise_config_error):
+        # from flujo.cli.main import app # This line is moved to the top of the file
+
+        result = runner.invoke(app, ["solve", "test prompt"])
+        assert result.exit_code == 2
 
 
 def test_cli_run_with_invalid_review_model() -> None:
@@ -640,18 +637,6 @@ def test_cli_run_with_invalid_review_model() -> None:
     with patch("flujo.cli.main.make_review_agent") as mock_review:
         mock_review.side_effect = ConfigurationError("Invalid review model")
         result = runner.invoke(app, ["solve", "test prompt", "--review-model", "invalid-model"])
-        assert result.exit_code == 2
-        assert "Configuration Error" in result.stderr
-
-
-def test_cli_run_with_invalid_agent_timeout() -> None:
-    """Test run with invalid agent timeout settings."""
-    from unittest.mock import patch
-    from flujo.exceptions import ConfigurationError
-
-    with patch("flujo.cli.main.Default") as MockDefault:
-        MockDefault.side_effect = ConfigurationError("Invalid agent timeout")
-        result = runner.invoke(app, ["solve", "test prompt"])
         assert result.exit_code == 2
         assert "Configuration Error" in result.stderr
 

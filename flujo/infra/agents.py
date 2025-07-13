@@ -100,7 +100,7 @@ def make_agent(
             "ANTHROPIC_API_KEY", current_settings.anthropic_api_key.get_secret_value()
         )
 
-    final_processors = processors.copy(deep=True) if processors else AgentProcessors()
+    final_processors = processors.model_copy(deep=True) if processors else AgentProcessors()
 
     actual_type = _unwrap_type_adapter(output_type)
 

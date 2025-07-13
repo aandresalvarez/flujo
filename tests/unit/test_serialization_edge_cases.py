@@ -15,8 +15,8 @@ from flujo.testing.utils import SimpleDummyRemoteBackend as DummyRemoteBackend
 from flujo.utils.serialization import safe_serialize
 
 
-class TestEnum(Enum):
-    """Test enum for edge case testing."""
+class MockEnum(Enum):
+    """Mock enum for edge case testing."""
 
     A = "a"
     B = "b"
@@ -63,7 +63,7 @@ class EdgeCaseModel(BaseModel):
     none_dict: Optional[Dict[str, Any]] = None
 
     # Enum fields
-    enum_field: TestEnum = TestEnum.A
+    enum_field: MockEnum = MockEnum.A
 
     # Union fields
     union_string: Union[str, int] = "string"
@@ -271,7 +271,7 @@ class TestSerializationEdgeCases:
         reconstructed = self.backend._reconstruct_payload(request_data, data)
         reconstructed_input = reconstructed["input_data"]
 
-        assert reconstructed_input.enum_field == TestEnum.A
+        assert reconstructed_input.enum_field == MockEnum.A
         assert reconstructed_input.union_string == "string"
         assert reconstructed_input.union_int == 42
         assert reconstructed_input.literal_field == "a"
@@ -556,7 +556,7 @@ class TestSerializationEdgeCases:
         assert isinstance(reconstructed_input.empty_string, str)
         assert isinstance(reconstructed_input.empty_list, list)
         assert isinstance(reconstructed_input.empty_dict, dict)
-        assert isinstance(reconstructed_input.enum_field, TestEnum)
+        assert isinstance(reconstructed_input.enum_field, MockEnum)
 
 
 def test_circular_reference_in_dict_keys():

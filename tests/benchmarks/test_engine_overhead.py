@@ -10,7 +10,7 @@ pytest.importorskip("pytest_benchmark")
 def test_pipeline_runner_overhead(benchmark):
     """Measures the execution time of the Flujo engine's orchestration logic,
     minimizing agent execution time by using a fast stub."""
-    agent = StubAgent(["output"])
+    agent = StubAgent(["output"] * 10000)
     pipeline = (
         Step.model_validate({"name": "s1", "agent": agent})
         >> Step.model_validate({"name": "s2", "agent": agent})

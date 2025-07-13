@@ -293,6 +293,10 @@ def _serialize_list_for_key(obj_list: list[Any], visited: Optional[Set[int]] = N
         visited = set()
     result_list: list[Any] = []
     for v in obj_list:
+        # Only check for circular references for container/object types
+        if isinstance(v, (int, float, str, bool, type(None))):
+            result_list.append(v)
+            continue
         obj_id = id(v)
         if obj_id in visited:
             if hasattr(v, "model_dump"):

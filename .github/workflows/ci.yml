@@ -69,7 +69,12 @@ jobs:
         run: uv sync --all-extras
 
       - name: Run tests with coverage
-        run: uv run coverage run --source=flujo --parallel-mode -m pytest tests/
+        run: |
+          # Run non-SQLite tests with parallel mode for better performance
+          uv run coverage run --source=flujo --parallel-mode -m pytest tests/ -k "not sqlite and not test_sqlite"
+
+          # Run SQLite tests separately without parallel mode to avoid bus errors
+          uv run coverage run --source=flujo --append -m pytest tests/ -k "sqlite or test_sqlite"
 
       - name: Store coverage file
         uses: actions/upload-artifact@v4

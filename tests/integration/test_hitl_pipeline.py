@@ -3,7 +3,7 @@ import pytest
 from pydantic import BaseModel, ValidationError
 
 from flujo.application.runner import Flujo
-from flujo.domain.pipeline_dsl import Step
+from flujo.domain.dsl import Step
 from flujo.domain.models import PipelineContext
 from flujo.exceptions import OrchestratorError
 from flujo.testing.utils import StubAgent, gather_result

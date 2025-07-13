@@ -1,6 +1,6 @@
 import pytest
 
-from flujo.domain.pipeline_dsl import Step
+from flujo.domain.dsl import Step
 from flujo.domain.models import StepResult
 from flujo.testing.utils import StubAgent
 from flujo.tracing import ConsoleTracer

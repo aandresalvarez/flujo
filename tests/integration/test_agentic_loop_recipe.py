@@ -1,7 +1,7 @@
 from unittest.mock import AsyncMock
 import pytest
 
-from flujo.recipes.agentic_loop import AgenticLoop
+from flujo.recipes.factories import make_agentic_loop_pipeline, run_agentic_loop_pipeline
 from flujo.domain.commands import (
     RunAgentCommand,
     AskHumanCommand,
@@ -13,6 +13,8 @@ from flujo.domain.models import PipelineContext
 
 def test_agentic_loop_emits_deprecation_warning() -> None:
     with pytest.warns(DeprecationWarning):
+        from flujo.recipes.agentic_loop import AgenticLoop
+
         AgenticLoop(StubAgent([]), {})
 
 
@@ -26,8 +28,10 @@ async def test_agent_delegation_and_finish() -> None:
     )
     summarizer = AsyncMock()
     summarizer.run = AsyncMock(return_value="summary")
-    loop = AgenticLoop(planner, {"summarizer": summarizer})
-    result = await loop.run_async("goal")
+    pipeline = make_agentic_loop_pipeline(
+        planner_agent=planner, agent_registry={"summarizer": summarizer}
+    )
+    result = await run_agentic_loop_pipeline(pipeline, "goal")
     summarizer.run.assert_called_once()
     args, kwargs = summarizer.run.call_args
     assert args[0] == "hi"
@@ -45,11 +49,11 @@ async def test_pause_and_resume_in_loop() -> None:
             FinishCommand(final_answer="ok"),
         ]
     )
-    loop = AgenticLoop(planner, {})
-    paused = await loop.run_async("goal")
+    pipeline = make_agentic_loop_pipeline(planner_agent=planner, agent_registry={})
+    paused = await run_agentic_loop_pipeline(pipeline, "goal")
     ctx = paused.final_pipeline_context
     assert ctx.scratchpad["status"] == "paused"
-    resumed = await loop.resume_async(paused, "human")
+    resumed = await run_agentic_loop_pipeline(pipeline, "goal", resume_from=paused)
     assert len(resumed.final_pipeline_context.command_log) == 1
     assert resumed.final_pipeline_context.command_log[-1].execution_result == "human"
     assert resumed.final_pipeline_context.scratchpad["status"] == "completed"
@@ -58,32 +62,34 @@ async def test_pause_and_resume_in_loop() -> None:
 @pytest.mark.asyncio
 async def test_pause_preserves_command_log() -> None:
     planner = StubAgent([AskHumanCommand(question="Need input")])
-    loop = AgenticLoop(planner, {})
-    paused = await loop.run_async("goal")
+    pipeline = make_agentic_loop_pipeline(planner_agent=planner, agent_registry={})
+    paused = await run_agentic_loop_pipeline(pipeline, "goal")
     ctx = paused.final_pipeline_context
     assert isinstance(ctx, PipelineContext)
     assert len(ctx.command_log) == 0
 
 
 def test_sync_resume() -> None:
+    import asyncio
+
     planner = StubAgent(
         [
             AskHumanCommand(question="Need input"),
             FinishCommand(final_answer="ok"),
         ]
     )
-    loop = AgenticLoop(planner, {})
-    paused = loop.run("goal")
-    resumed = loop.resume(paused, "human")
+    pipeline = make_agentic_loop_pipeline(planner_agent=planner, agent_registry={})
+    paused = asyncio.run(run_agentic_loop_pipeline(pipeline, "goal"))
+    resumed = asyncio.run(run_agentic_loop_pipeline(pipeline, "goal", resume_from=paused))
     assert len(resumed.final_pipeline_context.command_log) == 1
     assert resumed.final_pipeline_context.command_log[-1].execution_result == "human"
 
 
 @pytest.mark.asyncio
 async def test_max_loops_failure() -> None:
-    planner = StubAgent([RunAgentCommand(agent_name="x", input_data=1)])
-    loop = AgenticLoop(planner, {}, max_loops=3)
-    result = await loop.run_async("goal")
+    planner = StubAgent([RunAgentCommand(agent_name="x", input_data=1)] * 3)
+    pipeline = make_agentic_loop_pipeline(planner_agent=planner, agent_registry={}, max_loops=3)
+    result = await run_agentic_loop_pipeline(pipeline, "goal")
     ctx = result.final_pipeline_context
     assert len(ctx.command_log) == 3
     last_step = result.step_history[-1]

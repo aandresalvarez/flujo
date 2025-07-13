@@ -4,7 +4,7 @@ from flujo import Step, Flujo
 from flujo.caching import InMemoryCache
 from flujo.testing.utils import StubAgent, DummyPlugin, gather_result
 from flujo.domain.plugins import PluginOutcome
-from flujo.domain.pipeline_dsl import StepConfig
+from flujo.domain.dsl import StepConfig
 from typing import Any
 
 

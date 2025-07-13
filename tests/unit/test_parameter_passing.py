@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import AsyncMock
 from flujo.application.runner import Flujo
-from flujo.domain.pipeline_dsl import Pipeline, Step, StepConfig
+from flujo.domain.dsl import Pipeline, Step, StepConfig
 from flujo.domain.models import PipelineContext
 from flujo.domain.plugins import PluginOutcome
 

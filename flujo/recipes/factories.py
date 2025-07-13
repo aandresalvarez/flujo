@@ -18,6 +18,7 @@ from ..domain.scoring import ratio_score
 from ..domain.commands import AgentCommand, FinishCommand, ExecutedCommandLog
 from ..application.runner import Flujo
 from ..testing.utils import gather_result
+from flujo.domain.models import PipelineResult
 
 if TYPE_CHECKING:  # pragma: no cover - used for typing only
     from ..infra.agents import AsyncAgentProtocol
@@ -32,6 +33,9 @@ def make_default_pipeline(
     validator_agent: "AsyncAgentProtocol[Any, Any]",
     reflection_agent: Optional["AsyncAgentProtocol[Any, Any]"] = None,
     max_retries: int = 3,
+    k_variants: int = 1,
+    max_iters: int = 3,
+    reflection_limit: Optional[int] = None,
 ) -> Pipeline[str, Checklist]:
     """Create a default Review → Solution → Validate pipeline.
 
@@ -41,10 +45,26 @@ def make_default_pipeline(
         validator_agent: Agent that validates the solution against requirements
         reflection_agent: Optional agent for reflection/improvement
         max_retries: Maximum retries for each step
+        k_variants: Number of solution variants to generate per iteration
+        max_iters: Maximum number of iterations for improvement
+        reflection_limit: Optional limit on reflection iterations
 
     Returns:
         A Pipeline object that can be inspected, composed, and executed
     """
+
+    # --- Robust type validation for critical parameters ---
+    if not isinstance(max_retries, int):
+        raise TypeError(f"max_retries must be int, got {type(max_retries).__name__}")
+    if not isinstance(k_variants, int):
+        raise TypeError(f"k_variants must be int, got {type(k_variants).__name__}")
+    if not isinstance(max_iters, int):
+        raise TypeError(f"max_iters must be int, got {type(max_iters).__name__}")
+    if reflection_limit is not None and not isinstance(reflection_limit, int):
+        raise TypeError(
+            f"reflection_limit must be int or None, got {type(reflection_limit).__name__}"
+        )
+    # -----------------------------------------------------
 
     async def review_step(data: str, *, context: PipelineContext) -> str:
         """Review the task and create a checklist."""
@@ -175,11 +195,13 @@ def make_agentic_loop_pipeline(
                 cmd = _command_adapter.validate_python(data)
             except ValidationError as e:  # pragma: no cover - planner bug
                 validation_error_result = f"Invalid command: {e}"
-                return ExecutedCommandLog(
+                log_entry = ExecutedCommandLog(
                     turn=turn,
                     generated_command=data,
                     execution_result=validation_error_result,
                 )
+                _log_if_new(log_entry, context)
+                return log_entry
 
             exec_result: Any = "Command type not recognized."
             try:
@@ -208,7 +230,7 @@ def make_agentic_loop_pipeline(
                 generated_command=cmd,
                 execution_result=exec_result,
             )
-            context.command_log.append(log_entry)
+            _log_if_new(log_entry, context)
             return log_entry
 
     async def planner_step(data: str, *, context: PipelineContext) -> AgentCommand:
@@ -235,11 +257,34 @@ def make_agentic_loop_pipeline(
             getattr(output, "generated_command", None), FinishCommand
         )
 
+    def _log_if_new(log: ExecutedCommandLog, ctx: PipelineContext | None) -> None:
+        if ctx is not None:
+            # Use equality, not identity, to avoid duplicates
+            if not ctx.command_log or ctx.command_log[-1] != log:
+                ctx.command_log.append(log)
+
+    def _iter_mapper(
+        log: ExecutedCommandLog, ctx: PipelineContext | None, _i: int
+    ) -> dict[str, Any]:
+        """Transformation function that logs commands if not already present."""
+        _log_if_new(log, ctx)
+        goal = ctx.initial_prompt if ctx is not None else ""
+        return {"last_command_result": log.execution_result, "goal": goal}
+
+    def _output_mapper(log: ExecutedCommandLog, ctx: PipelineContext | None) -> Any:
+        """Transformation function that logs commands if not already present.
+        Ensures the final output is always logged, even if the loop ends due to max_loops or error.
+        """
+        _log_if_new(log, ctx)
+        return log  # Return the full log instead of just the execution result
+
     loop_step: Any = Step.loop_until(
         name="AgenticExplorationLoop",
         loop_body_pipeline=loop_body,
         exit_condition_callable=exit_condition,
         max_loops=max_loops,
+        iteration_input_mapper=_iter_mapper,
+        loop_output_mapper=_output_mapper,
     )
     loop_step.config.max_retries = max_retries
 
@@ -262,10 +307,18 @@ async def run_default_pipeline(
     runner: Flujo[str, Checklist, PipelineContext] = Flujo(pipeline)
     result = await gather_result(runner, task.prompt)
 
-    # Extract solution and checklist from context
+    # Extract solution from context and checklist from the validator step output
     context = result.final_pipeline_context
     solution = context.scratchpad.get("solution")
-    checklist = context.scratchpad.get("checklist")
+
+    # Find the last Checklist output in the step history (validator output)
+    checklist = None
+    for step in reversed(result.step_history):
+        if isinstance(step.output, Checklist):
+            checklist = step.output
+            break
+    if checklist is None:
+        checklist = context.scratchpad.get("checklist")
 
     if solution is None or checklist is None:
         return None
@@ -283,22 +336,30 @@ async def run_default_pipeline(
 async def run_agentic_loop_pipeline(
     pipeline: Pipeline[str, Any],
     initial_goal: str,
-) -> Any:
+    resume_from: Optional[PipelineResult[PipelineContext]] = None,
+    human_input: Optional[str] = "human",
+) -> PipelineResult[PipelineContext]:
     """Run an agentic loop pipeline and return the result.
 
     Args:
         pipeline: Pipeline created by make_agentic_loop_pipeline
         initial_goal: Initial goal for the agentic loop
+        resume_from: Optional paused result to resume from
+        human_input: Human input to provide when resuming (default: "human")
 
     Returns:
-        Final result from the agentic loop
+        PipelineResult with the execution context and results
     """
     runner: Flujo[str, Any, PipelineContext] = Flujo(pipeline)
-    result = await gather_result(runner, initial_goal)
-    output = result.step_history[-1].output
-    if hasattr(output, "execution_result"):
-        return output.execution_result
-    return output
+
+    if resume_from is not None:
+        # Resume from a paused state
+        result = await runner.resume_async(resume_from, human_input)
+    else:
+        # Start fresh execution
+        result = await gather_result(runner, initial_goal)
+
+    return result
 
 
 async def _invoke(
@@ -309,8 +370,13 @@ async def _invoke(
 ) -> Any:
     """Helper function to invoke an agent with proper error handling."""
     from flujo.application.runner import _accepts_param
+    from flujo.infra.agents import AsyncAgentWrapper
 
     try:
+        # If this is a pydantic-ai agent wrapper, never pass context (it will error)
+        if isinstance(agent, AsyncAgentWrapper):
+            return await agent.run(data)
+        # Otherwise, only pass context if supported
         if context is not None and _accepts_param(agent.run, "context"):
             return await agent.run(data, context=context)
         else:

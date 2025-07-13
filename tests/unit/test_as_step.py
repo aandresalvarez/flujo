@@ -1,22 +1,24 @@
 import pytest
 
-from flujo.recipes.agentic_loop import AgenticLoop
+from flujo.recipes.factories import make_agentic_loop_pipeline
 from flujo.domain.commands import FinishCommand
 from flujo.testing.utils import StubAgent
-from flujo.domain.pipeline_dsl import Step
+from flujo.domain.dsl import Step
 from flujo.application.runner import Flujo
 
 
 @pytest.mark.asyncio
 async def test_agentic_loop_as_step_basic() -> None:
     planner = StubAgent([FinishCommand(final_answer="done")])
-    loop = AgenticLoop(planner, {})
-    step = loop.as_step(name="loop")
+    pipeline = make_agentic_loop_pipeline(planner_agent=planner, agent_registry={})
+    runner = Flujo(pipeline)
+    step = runner.as_step(name="loop")
 
     assert isinstance(step, Step)
 
     result = await step.arun("goal")
-    assert result.final_pipeline_context.command_log[-1].execution_result == "done"
+    # Check the execution result from the step history instead of command log
+    assert result.step_history[-1].output.execution_result == "done"
 
 
 @pytest.mark.asyncio
