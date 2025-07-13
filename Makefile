@@ -58,7 +58,7 @@ typecheck: .uv ## Run static type checking with mypy
 .PHONY: test
 test: .uv ## Run all tests
 	@echo "🧪 Running tests..."
-	@uv run pytest tests/
+	CI=1 uv run pytest tests/
 
 .PHONY: testcov
 testcov: .uv ## Run tests and generate an HTML coverage report
