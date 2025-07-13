@@ -142,7 +142,9 @@ async def test_hitl_as_final_step(tmp_path: Path) -> None:
     backend = SQLiteBackend(db_path)
     run_id = "final_run"
 
-    pipeline = Step.from_callable(setup_agent, name="setup") >> Step.human_in_the_loop("done")
+    pipeline = Step.from_callable(setup_agent, name="setup") >> Step.human_in_the_loop(
+        "done"
+    )
 
     runner = Flujo(
         pipeline,
