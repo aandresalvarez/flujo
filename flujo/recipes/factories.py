@@ -195,11 +195,14 @@ def make_agentic_loop_pipeline(
                 cmd = _command_adapter.validate_python(data)
             except ValidationError as e:  # pragma: no cover - planner bug
                 validation_error_result = f"Invalid command: {e}"
-                return ExecutedCommandLog(
+                log_entry = ExecutedCommandLog(
                     turn=turn,
                     generated_command=data,
                     execution_result=validation_error_result,
                 )
+                if context is not None:
+                    context.command_log.append(log_entry)
+                return log_entry
 
             exec_result: Any = "Command type not recognized."
             try:
@@ -228,7 +231,8 @@ def make_agentic_loop_pipeline(
                 generated_command=cmd,
                 execution_result=exec_result,
             )
-            context.command_log.append(log_entry)
+            if context is not None:
+                context.command_log.append(log_entry)
             return log_entry
 
     async def planner_step(data: str, *, context: PipelineContext) -> AgentCommand:
@@ -259,7 +263,9 @@ def make_agentic_loop_pipeline(
         log: ExecutedCommandLog, ctx: PipelineContext | None, _i: int
     ) -> dict[str, Any]:
         if ctx is not None:
-            ctx.command_log.append(log)
+            # Only log if not already present (prevent double logging)
+            if not ctx.command_log or ctx.command_log[-1] is not log:
+                ctx.command_log.append(log)
             goal = ctx.initial_prompt
         else:
             goal = ""
@@ -267,7 +273,9 @@ def make_agentic_loop_pipeline(
 
     def _output_mapper(log: ExecutedCommandLog, ctx: PipelineContext | None) -> Any:
         if ctx is not None:
-            ctx.command_log.append(log)
+            # Only log if not already present (prevent double logging)
+            if not ctx.command_log or ctx.command_log[-1] is not log:
+                ctx.command_log.append(log)
             return log  # Return the full log instead of just the execution result
         return log
 

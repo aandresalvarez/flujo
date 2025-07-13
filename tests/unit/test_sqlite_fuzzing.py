@@ -12,6 +12,11 @@ import time
 from flujo.state.backends.sqlite import SQLiteBackend
 
 
+def sanitize_filename(filename: str) -> str:
+    safe = "".join(c for c in filename if c.isalnum() or c in "._-")
+    return safe or "test.db"
+
+
 class TestSQLiteBackendFuzzing:
     """Fuzzing tests to catch edge cases and potential issues."""
 
@@ -40,9 +45,7 @@ class TestSQLiteBackendFuzzing:
         for filename in edge_case_filenames:
             try:
                 # Clean the filename to make it filesystem-safe
-                safe_filename = "".join(c for c in filename if c.isalnum() or c in "._-")
-                if not safe_filename:
-                    safe_filename = "test.db"
+                safe_filename = sanitize_filename(filename)
 
                 db_path = tmp_path / f"{safe_filename}.db"
                 backend = SQLiteBackend(db_path)

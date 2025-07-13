@@ -64,7 +64,7 @@ def test_cli_solve_happy_path(monkeypatch) -> None:
     monkeypatch.setattr("flujo.cli.main.make_review_agent", lambda *a, **k: DummyAgent())
     monkeypatch.setattr("flujo.cli.main.make_solution_agent", lambda *a, **k: DummyAgent())
     monkeypatch.setattr("flujo.cli.main.make_validator_agent", lambda *a, **k: DummyAgent())
-    from flujo.cli.main import app
+    # from flujo.cli.main import app # This line is moved to the top of the file
 
     result = runner.invoke(app, ["solve", "write a poem"])
     assert result.exit_code == 0
@@ -104,7 +104,7 @@ def test_cli_bench_command(monkeypatch) -> None:
     monkeypatch.setattr("flujo.cli.main.make_review_agent", lambda *a, **k: DummyAgent())
     monkeypatch.setattr("flujo.cli.main.make_solution_agent", lambda *a, **k: DummyAgent())
     monkeypatch.setattr("flujo.cli.main.make_validator_agent", lambda *a, **k: DummyAgent())
-    from flujo.cli.main import app
+    # from flujo.cli.main import app # This line is moved to the top of the file
 
     result = runner.invoke(app, ["bench", "test prompt", "--rounds", "2"])
     assert result.exit_code == 0
@@ -125,7 +125,7 @@ def test_cli_version_command(monkeypatch) -> None:
     # import importlib.metadata  # removed unused import
     monkeypatch.setattr("importlib.metadata.version", lambda name: "1.2.3")
     monkeypatch.setattr("importlib.metadata.PackageNotFoundError", Exception)
-    from flujo.cli.main import app
+    # from flujo.cli.main import app # This line is moved to the top of the file
 
     result = runner.invoke(app, ["version-cmd"])
     assert result.exit_code == 0
@@ -156,7 +156,7 @@ def test_cli_solve_with_weights(monkeypatch) -> None:
     monkeypatch.setattr("flujo.cli.main.make_solution_agent", lambda *a, **k: mock_agent)
     monkeypatch.setattr("flujo.cli.main.make_validator_agent", lambda *a, **k: mock_agent)
 
-    from flujo.cli.main import app
+    # from flujo.cli.main import app # This line is moved to the top of the file
     import tempfile
     import json
     import os
@@ -307,7 +307,7 @@ def test_cli_solve_weights_file_safe_deserialize(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr("flujo.cli.main.make_solution_agent", lambda *a, **k: DummyAgent())
     monkeypatch.setattr("flujo.cli.main.make_validator_agent", lambda *a, **k: DummyAgent())
 
-    from flujo.cli.main import app
+    # from flujo.cli.main import app # This line is moved to the top of the file
 
     result = runner.invoke(app, ["solve", "prompt", "--weights-path", str(weights_file)])
     assert result.exit_code == 0
@@ -323,7 +323,7 @@ def test_cli_solve_keyboard_interrupt(monkeypatch) -> None:
     monkeypatch.setattr("flujo.cli.main.make_solution_agent", lambda *a, **k: DummyAgent())
     monkeypatch.setattr("flujo.cli.main.make_validator_agent", lambda *a, **k: DummyAgent())
 
-    from flujo.cli.main import app
+    # from flujo.cli.main import app # This line is moved to the top of the file
 
     result = runner.invoke(app, ["solve", "write a poem"])
     assert result.exit_code == 130
@@ -340,7 +340,7 @@ def test_cli_bench_keyboard_interrupt(monkeypatch) -> None:
     monkeypatch.setattr("flujo.cli.main.make_solution_agent", lambda *a, **k: DummyAgent())
     monkeypatch.setattr("flujo.cli.main.make_validator_agent", lambda *a, **k: DummyAgent())
 
-    from flujo.cli.main import app
+    # from flujo.cli.main import app # This line is moved to the top of the file
 
     result = runner.invoke(app, ["bench", "test prompt", "--rounds", "2"])
     assert result.exit_code == 130
@@ -350,7 +350,7 @@ def test_cli_version_cmd_package_not_found(monkeypatch) -> None:
     monkeypatch.setattr(
         "importlib.metadata.version", lambda name: (_ for _ in ()).throw(Exception("fail"))
     )
-    from flujo.cli.main import app
+    # from flujo.cli.main import app # This line is moved to the top of the file
 
     result = runner.invoke(app, ["version-cmd"])
     assert result.exit_code == 0
@@ -518,7 +518,7 @@ def test_cli_run() -> None:
         return DummyCandidate()
 
     with patch("flujo.cli.main.run_default_pipeline", dummy_run_async):
-        from flujo.cli.main import app
+        # from flujo.cli.main import app # This line is moved to the top of the file
 
         result = runner.invoke(app, ["solve", "test prompt"])
         assert result.exit_code == 0
@@ -552,7 +552,7 @@ def test_cli_run_with_args() -> None:
         patch("flujo.cli.main.get_reflection_agent"),
         patch("flujo.cli.main.settings", dummy_settings),
     ):
-        from flujo.cli.main import app
+        # from flujo.cli.main import app # This line is moved to the top of the file
 
         result = runner.invoke(
             app,
@@ -613,7 +613,7 @@ def test_cli_run_with_invalid_retries() -> None:
         raise ConfigurationError("Invalid retry settings")
 
     with patch("flujo.cli.main.run_default_pipeline", raise_config_error):
-        from flujo.cli.main import app
+        # from flujo.cli.main import app # This line is moved to the top of the file
 
         result = runner.invoke(app, ["solve", "test prompt"])
         assert result.exit_code == 2
@@ -627,7 +627,7 @@ def test_cli_run_with_invalid_agent_timeout() -> None:
         raise ConfigurationError("Invalid agent timeout settings")
 
     with patch("flujo.cli.main.run_default_pipeline", raise_config_error):
-        from flujo.cli.main import app
+        # from flujo.cli.main import app # This line is moved to the top of the file
 
         result = runner.invoke(app, ["solve", "test prompt"])
         assert result.exit_code == 2

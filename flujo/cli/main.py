@@ -164,8 +164,8 @@ def solve(
             solution_agent=solution,
             validator_agent=validator,
             reflection_agent=reflection_agent,
-            k_variants=k or 1,
-            max_iters=max_iters or 3,
+            k_variants=1 if k is None else k,
+            max_iters=3 if max_iters is None else max_iters,
         )
         import asyncio
 

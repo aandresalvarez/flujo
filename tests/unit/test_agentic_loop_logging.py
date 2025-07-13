@@ -222,8 +222,9 @@ class TestAgenticLoopLogging:
         result = await run_agentic_loop_pipeline(pipeline, "goal")
         ctx = result.final_pipeline_context
 
-        # Should have no log entry for validation error (current behavior)
-        assert len(ctx.command_log) == 0
+        # Should have logged the validation error
+        assert len(ctx.command_log) == 1
+        assert "Invalid command" in ctx.command_log[0].execution_result
 
 
 class TestAgenticLoopLoggingRegressionPrevention:
@@ -292,3 +293,61 @@ class TestAgenticLoopLoggingRegressionPrevention:
         assert ctx.command_log[0].turn == 1
         assert ctx.command_log[1].turn == 2
         assert ctx.command_log[2].turn == 3
+
+
+class TestAgenticLoopLoggingRegressionGuard:
+    """Regression guard: ensures no double logging, missing logs, or out-of-order logs."""
+
+    @pytest.mark.asyncio
+    async def test_no_duplicate_or_missing_logs(self):
+        from flujo.domain.commands import RunAgentCommand, FinishCommand
+        from unittest.mock import AsyncMock
+
+        # Valid, invalid, and error-producing commands
+        planner_commands = [
+            RunAgentCommand(agent_name="a", input_data="ok1"),  # valid
+            {"invalid": "command"},  # validation error
+            RunAgentCommand(agent_name="b", input_data="ok2"),  # agent not found (error)
+            FinishCommand(final_answer="done"),  # valid finish
+        ]
+        agent_a = AsyncMock()
+        agent_a.run = AsyncMock(return_value="result1")
+        agent_registry = {"a": agent_a}  # 'b' is missing on purpose
+
+        from flujo.recipes.factories import make_agentic_loop_pipeline, run_agentic_loop_pipeline
+
+        pipeline = make_agentic_loop_pipeline(
+            planner_agent=StubAgent(planner_commands),
+            agent_registry=agent_registry,
+            max_loops=10,
+        )
+        result = await run_agentic_loop_pipeline(pipeline, "goal")
+        ctx = result.final_pipeline_context
+        logs = ctx.command_log
+
+        # 4 commands, so 4 logs expected
+        assert len(logs) == 4, f"Expected 4 logs, got {len(logs)}: {logs}"
+
+        # All logs should be unique (no double logging)
+        seen = set()
+        for log in logs:
+            key = (log.turn, str(log.generated_command), log.execution_result)
+            assert key not in seen, f"Duplicate log detected: {key}"
+            seen.add(key)
+
+        # Log order should be by turn
+        turns = [log.turn for log in logs]
+        assert turns == sorted(turns), f"Log turns out of order: {turns}"
+
+        # Validation error should be present
+        assert any("Invalid command" in log.execution_result for log in logs), (
+            "Validation error not logged"
+        )
+        # Agent not found error should be present
+        assert any("not found" in log.execution_result for log in logs), (
+            "Agent not found error not logged"
+        )
+        # Finish command should be present
+        assert any(getattr(log.generated_command, "type", None) == "finish" for log in logs), (
+            "Finish command not logged"
+        )
