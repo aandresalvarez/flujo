@@ -74,10 +74,18 @@ class AdvancedPromptFormatter:
                 return ""
             parts = []
             for item in items:
-                inner = block.replace("{{ this }}", self._serialize(item))
-                # allow nested placeholders referring to outer scope as well
+                item_str = self._serialize(item)
+                # Escape any template syntax in the item itself so it is treated
+                # as literal text when formatting the block.
+                escaped_item = item_str.replace("{{", ESC_MARKER)
+
+                inner = re.sub(r"\{\{\s*this\s*\}\}", escaped_item, block)
+                # Only allow placeholders from the outer scope to be evaluated.
                 inner_formatter = AdvancedPromptFormatter(inner)
-                parts.append(inner_formatter.format(**kwargs, this=item))
+                rendered = inner_formatter.format(**kwargs)
+                # Preserve braces from the item until the final unescape step.
+                rendered = rendered.replace("{{", ESC_MARKER)
+                parts.append(rendered)
             return "".join(parts)
 
         processed = EACH_BLOCK_REGEX.sub(each_replacer, processed)
