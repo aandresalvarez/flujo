@@ -145,7 +145,7 @@ async def test_infinite_fallback_loop_detected() -> None:
     a = Step.model_validate(
         {
             "name": "a",
-            "agent": StubAgent(["bad"]),
+            "agent": StubAgent(["bad"] * 100),
             "plugins": [(plugin, 0)],
             "config": StepConfig(max_retries=1),
         }
@@ -153,7 +153,7 @@ async def test_infinite_fallback_loop_detected() -> None:
     b = Step.model_validate(
         {
             "name": "b",
-            "agent": StubAgent(["bad"]),
+            "agent": StubAgent(["bad"] * 100),
             "plugins": [(plugin, 0)],
             "config": StepConfig(max_retries=1),
         }

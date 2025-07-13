@@ -56,7 +56,7 @@ class TestAgenticLoopLogging:
     @pytest.mark.asyncio
     async def test_max_loops_logging(self):
         """Test that logging works correctly when max loops is reached."""
-        planner = StubAgent([RunAgentCommand(agent_name="x", input_data=1)])
+        planner = StubAgent([RunAgentCommand(agent_name="x", input_data=1)] * 3)
         pipeline = make_agentic_loop_pipeline(planner_agent=planner, agent_registry={}, max_loops=3)
 
         result = await run_agentic_loop_pipeline(pipeline, "goal")

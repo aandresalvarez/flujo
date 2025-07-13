@@ -5,7 +5,7 @@ from flujo.application.runner import Flujo
 from flujo.domain import Step
 from flujo.testing.utils import StubAgent, gather_result
 
-pipeline = Step.model_validate({"name": "test_step", "agent": StubAgent(["OK"])})
+pipeline = Step.model_validate({"name": "test_step", "agent": StubAgent(["OK"] * 5)})
 
 
 def test_run_succeeds_in_synchronous_context():

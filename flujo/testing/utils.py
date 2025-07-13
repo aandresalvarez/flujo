@@ -2,7 +2,7 @@
 
 import asyncio
 import json
-from typing import Any, Dict, List, AsyncIterator, Iterator
+from typing import Any, Dict, List, AsyncIterator, Iterator, Optional
 from contextlib import contextmanager
 import ast
 
@@ -15,19 +15,46 @@ from flujo.domain.models import StepResult, UsageLimits, BaseModel as FlujoBaseM
 from flujo.utils.serialization import safe_serialize
 
 
+def assert_pipeline_result(result: Any, expected_output: Optional[Any] = None) -> None:
+    """Assert that a pipeline result was successful and optionally check output.
+
+    Args:
+        result: The pipeline result to check
+        expected_output: Optional expected output value to verify
+
+    Raises:
+        AssertionError: If the pipeline failed or output doesn't match
+    """
+    # Check if all steps were successful
+    if not hasattr(result, "step_history") or not result.step_history:
+        raise AssertionError("Pipeline result has no step history")
+    for step in result.step_history:
+        if not getattr(step, "success", True):
+            raise AssertionError(f"Step {getattr(step, 'name', '?')} failed")
+    # Check output if provided
+    if expected_output is not None:
+        # Use the output of the last step as the final output
+        final_output = result.step_history[-1].output
+        if final_output != expected_output:
+            raise AssertionError(f"Expected output {expected_output}, got {final_output}")
+
+
 class StubAgent:
     """Simple agent for testing that returns preset outputs."""
 
     def __init__(self, outputs: List[Any]):
+        if not isinstance(outputs, list):
+            raise TypeError("outputs must be a list")
         self.outputs = outputs
         self.call_count = 0
         self.inputs: List[Any] = []
 
     async def run(self, data: Any = None, **_: Any) -> Any:
         self.inputs.append(data)
-        idx = min(self.call_count, len(self.outputs) - 1)
-        self.call_count += 1
-        return self.outputs[idx]
+        self.call_count += 1  # Always increment call_count
+        if self.call_count > len(self.outputs):
+            raise IndexError("No more outputs available")
+        return self.outputs[self.call_count - 1]
 
     async def run_async(self, data: Any = None, **kwargs: Any) -> Any:
         return await self.run(data, **kwargs)
@@ -48,10 +75,17 @@ class DummyPlugin:
 
 async def gather_result(runner: Any, data: Any, **kwargs: Any) -> Any:
     """Gather all results from a runner into a single result."""
-    results = []
-    async for item in runner.run_async(data, **kwargs):
-        results.append(item)
-    return results[-1] if results else None
+    # Always use run_async for pipeline runners
+    if hasattr(runner, "run_async"):
+        results = []
+        async for result in runner.run_async(data, **kwargs):
+            results.append(result)
+        return results[-1] if results else None
+    else:
+        results = []
+        async for item in runner.run_async(data, **kwargs):
+            results.append(item)
+        return results[-1] if results else None
 
 
 class FailingStreamAgent:
@@ -274,6 +308,42 @@ def override_agent(step: Any, new_agent: Any) -> Iterator[None]:
         yield
     finally:
         step.agent = original_agent
+
+
+@contextmanager
+def override_agent_direct(original_agent: Any, replacement_agent: Any) -> Iterator[None]:
+    """Temporarily delegate all calls from original_agent to replacement_agent, without mutating original_agent's state."""
+    if original_agent is None or replacement_agent is None or original_agent is replacement_agent:
+        yield
+        return
+
+    # Store original methods
+    original_run = getattr(original_agent, "run", None)
+    original_run_async = getattr(original_agent, "run_async", None)
+
+    # Create wrappers that delegate to the replacement agent
+    async def run_wrapper(data: Any = None, **kwargs: Any) -> Any:
+        return await replacement_agent.run(data, **kwargs)
+
+    async def run_async_wrapper(data: Any = None, **kwargs: Any) -> Any:
+        return await replacement_agent.run_async(data, **kwargs)
+
+    # Replace methods
+    original_agent.run = run_wrapper
+    original_agent.run_async = run_async_wrapper
+
+    try:
+        yield
+    finally:
+        # Restore original methods
+        if original_run is not None:
+            original_agent.run = original_run
+        if original_run_async is not None:
+            original_agent.run_async = original_run_async
+
+
+# Remove the test_validator_failed function entirely from this file
+# It should be moved to a separate utility module or made private
 
 
 class SimpleDummyRemoteBackend:

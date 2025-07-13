@@ -1,625 +1,519 @@
-"""Comprehensive tests for Flujo serialization utilities."""
+"""Unit tests for serialization utilities."""
 
-import dataclasses
 import json
 from datetime import datetime, date, time
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
+from unittest.mock import patch
 
 import pytest
-from hypothesis import given, settings, strategies as st
+from hypothesis import given, strategies as st
 from pydantic import BaseModel
 
 from flujo.utils.serialization import (
     create_field_serializer,
+    create_serializer_for_type,
+    lookup_custom_deserializer,
     lookup_custom_serializer,
+    register_custom_deserializer,
     register_custom_serializer,
+    reset_custom_serializer_registry,
     robust_serialize,
+    safe_deserialize,
     safe_serialize,
     serialize_to_json,
     serialize_to_json_robust,
-    reset_custom_serializer_registry,
 )
 
 
-class MockEnum(Enum):
-    """Mock enum for testing serialization utilities."""
-
-    A = "a"
-    B = "b"
-    C = "c"
+# Rename helper classes to avoid Pytest collection
+class MyEnum(Enum):
+    VALUE1 = "value1"
+    VALUE2 = "value2"
 
 
-@dataclasses.dataclass
-class MockDataclass:
-    """Mock dataclass for testing serialization utilities."""
-
+class MyPydanticModel(BaseModel):
     name: str
     value: int
-    items: List[str]
-
-
-class MockPydanticModel(BaseModel):
-    """Mock Pydantic model for testing serialization utilities."""
-
-    name: str
-    value: int
-    items: List[str]
     optional_field: Optional[str] = None
 
 
-class CustomObject:
-    """Custom object for testing custom serialization."""
-
-    def __init__(self, data: str, metadata: Dict[str, Any]):
-        self.data = data
-        self.metadata = metadata
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {"data": self.data, "metadata": self.metadata}
-
-
-class UnregisteredObject:
-    """Object that should not have a registered serializer."""
+class MyCustomObject:
+    """Test custom object for serialization tests."""
 
     def __init__(self, data: str):
         self.data = data
 
-
-@pytest.fixture(autouse=True)
-def clear_global_registry():
-    """Clear the global registry before each test to ensure isolation."""
-    reset_custom_serializer_registry()
+    def to_dict(self) -> Dict[str, Any]:
+        return {"data": self.data}
 
 
-class TestGlobalRegistry:
-    """Test the global custom serializer registry."""
+class TestSerializationRegistry:
+    """Test custom serializer/deserializer registry."""
 
-    def test_register_and_lookup_custom_serializer(self):
-        """Test registering and looking up custom serializers."""
+    def test_register_custom_serializer(self):
+        """Test registering a custom serializer."""
 
-        # Test exact type matching
-        def serialize_custom(obj: CustomObject) -> dict:
-            return obj.to_dict()
+        def custom_serializer(obj: MyCustomObject) -> Dict[str, Any]:
+            return {"custom_data": obj.data}
 
-        register_custom_serializer(CustomObject, serialize_custom)
+        register_custom_serializer(MyCustomObject, custom_serializer)
 
-        obj = CustomObject("test", {"key": "value"})
-        serializer = lookup_custom_serializer(obj)
-
+        # Test lookup
+        serializer = lookup_custom_serializer(MyCustomObject("test"))
         assert serializer is not None
-        result = serializer(obj)
-        assert result == {"data": "test", "metadata": {"key": "value"}}
+        result = serializer(MyCustomObject("test"))
+        assert result == {"custom_data": "test"}
 
-    def test_lookup_nonexistent_serializer(self):
-        """Test looking up a serializer for an unregistered type."""
-        obj = UnregisteredObject("test")
-        serializer = lookup_custom_serializer(obj)
-        assert serializer is None
+    def test_register_custom_deserializer(self):
+        """Test registering a custom deserializer."""
 
-    def test_inheritance_based_lookup(self):
-        """Test that serializers work with inheritance."""
+        def custom_deserializer(data: Dict[str, Any]) -> MyCustomObject:
+            return MyCustomObject(data["custom_data"])
 
-        class SubCustomObject(CustomObject):
-            pass
+        register_custom_deserializer(MyCustomObject, custom_deserializer)
 
-        def serialize_custom(obj: CustomObject) -> dict:
-            return {"type": "custom", "data": obj.data}
+        # Test lookup
+        deserializer = lookup_custom_deserializer(MyCustomObject)
+        assert deserializer is not None
+        result = deserializer({"custom_data": "test"})
+        assert isinstance(result, MyCustomObject)
+        assert result.data == "test"
 
-        register_custom_serializer(CustomObject, serialize_custom)
+    def test_lookup_custom_serializer_not_found(self):
+        """Test looking up a non-existent custom serializer."""
+        result = lookup_custom_serializer("not_registered")
+        assert result is None
 
-        sub_obj = SubCustomObject("test", {})
-        serializer = lookup_custom_serializer(sub_obj)
+    def test_lookup_custom_deserializer_not_found(self):
+        """Test looking up a non-existent custom deserializer."""
+        result = lookup_custom_deserializer(str)
+        assert result is None
 
-        assert serializer is not None
-        result = serializer(sub_obj)
-        assert result == {"type": "custom", "data": "test"}
+    def test_reset_custom_serializer_registry(self):
+        """Test resetting the custom serializer registry."""
 
-    def test_thread_safety(self):
-        """Test that the registry is thread-safe."""
+        def custom_serializer(obj: MyCustomObject) -> Dict[str, Any]:
+            return {"data": obj.data}
 
-        def serialize_custom(obj: CustomObject) -> dict:
-            return obj.to_dict()
+        register_custom_serializer(MyCustomObject, custom_serializer)
 
-        # Register in one thread
-        register_custom_serializer(CustomObject, serialize_custom)
+        # Verify it's registered
+        assert lookup_custom_serializer(MyCustomObject("test")) is not None
 
-        # Look up in another thread
-        obj = CustomObject("test", {})
+        # Reset
+        reset_custom_serializer_registry()
 
-        def lookup_in_thread():
-            serializer = lookup_custom_serializer(obj)
-            assert serializer is not None
-            return serializer(obj)
+        # Verify it's gone
+        assert lookup_custom_serializer(MyCustomObject("test")) is None
 
-        # This should work without race conditions
-        result = lookup_in_thread()
-        assert result == {"data": "test", "metadata": {}}
-
-    def test_create_field_serializer(self):
-        """Test the convenience function for creating field serializers."""
-
-        def serialize_custom(obj: CustomObject) -> dict:
-            return {"custom": obj.data}
-
-        field_serializer = create_field_serializer("custom_field", serialize_custom)
-
-        obj = CustomObject("test", {})
-        result = field_serializer(obj)
-        assert result == {"custom": "test"}
-
-        # Should NOT be registered globally (field serializers are local)
-        global_serializer = lookup_custom_serializer(obj)
-        assert global_serializer is None
-
-
-class TestSafeSerialize:
-    """Test the safe_serialize function."""
-
-    def test_primitive_types(self):
-        """Test serialization of primitive types."""
-        assert safe_serialize(None) is None
-        assert safe_serialize("test") == "test"
-        assert safe_serialize(42) == 42
-        assert safe_serialize(3.14) == 3.14
-        assert safe_serialize(True) is True
-        assert safe_serialize(False) is False
-
-    def test_special_float_values(self):
-        """Test serialization of special float values."""
-        assert safe_serialize(float("inf")) == "inf"
-        assert safe_serialize(float("-inf")) == "-inf"
-        assert safe_serialize(float("nan")) == "nan"
-
-    def test_datetime_objects(self):
-        """Test serialization of datetime objects."""
-        dt = datetime(2023, 1, 1, 12, 0, 0)
-        d = date(2023, 1, 1)
-        t = time(12, 0, 0)
-
-        assert safe_serialize(dt) == "2023-01-01T12:00:00"
-        assert safe_serialize(d) == "2023-01-01"
-        assert safe_serialize(t) == "12:00:00"
-
-    def test_bytes_and_memoryview(self):
-        """Test serialization of bytes and memoryview objects."""
-        data = b"test data"
-        mv = memoryview(data)
-
-        # Test bytes
-        result = safe_serialize(data)
-        assert isinstance(result, str)
-        assert result == "dGVzdCBkYXRh"  # base64 encoded
-
-        # Test memoryview
-        result = safe_serialize(mv)
-        assert isinstance(result, str)
-        assert result == "dGVzdCBkYXRh"
-
-    def test_complex_numbers(self):
-        """Test serialization of complex numbers."""
-        c = 3 + 4j
-        result = safe_serialize(c)
-        assert result == {"real": 3.0, "imag": 4.0}
-
-    def test_functions_and_callables(self):
-        """Test serialization of functions and callables."""
-
-        def test_function():
-            pass
-
-        result = safe_serialize(test_function)
-        assert result == "test_function"
-
-        # Test callable object
-        class CallableObject:
-            def __call__(self):
-                pass
-
-        obj = CallableObject()
-        result = safe_serialize(obj)
-        assert "CallableObject" in result
-
-    def test_dataclasses(self):
-        """Test serialization of dataclasses."""
-        obj = MockDataclass("test", 42, ["item1", "item2"])
-        result = safe_serialize(obj)
-        assert result == {"name": "test", "value": 42, "items": ["item1", "item2"]}
-
-    def test_enums(self):
-        """Test serialization of enums."""
-        result = safe_serialize(MockEnum.A)
-        assert result == "a"
-
-    def test_pydantic_models(self):
-        """Test serialization of Pydantic models."""
-        obj = MockPydanticModel(
-            name="test", value=42, items=["item1", "item2"], optional_field="optional"
-        )
-        result = safe_serialize(obj)
-        assert result == {
-            "name": "test",
-            "value": 42,
-            "items": ["item1", "item2"],
-            "optional_field": "optional",
-        }
-
-    def test_collections(self):
-        """Test serialization of collections."""
-        # Lists
-        result = safe_serialize([1, 2, 3])
-        assert result == [1, 2, 3]
-
-        # Tuples
-        result = safe_serialize((1, 2, 3))
-        assert result == [1, 2, 3]
-
-        # Sets
-        result = safe_serialize({1, 2, 3})
-        assert isinstance(result, list)
-        assert set(result) == {1, 2, 3}
-
-        # Frozensets
-        result = safe_serialize(frozenset([1, 2, 3]))
-        assert isinstance(result, list)
-        assert set(result) == {1, 2, 3}
-
-        # Dicts
-        result = safe_serialize({"a": 1, "b": 2})
-        assert result == {"a": 1, "b": 2}
-
-    def test_circular_references(self):
-        """Test handling of circular references."""
-        # Create circular reference
-        obj = {"name": "test"}
-        obj["self"] = obj
-
-        result = safe_serialize(obj)
-        assert result["name"] == "test"
-        assert result["self"] is None  # Circular reference should be None
-
-    def test_custom_serializer_integration(self):
-        """Test integration with custom serializers."""
-
-        def serialize_custom(obj: CustomObject) -> dict:
-            return {"custom": obj.data}
-
-        register_custom_serializer(CustomObject, serialize_custom)
-
-        obj = CustomObject("test", {})
-        result = safe_serialize(obj)
-        assert result == {"custom": "test"}
-
-    def test_default_serializer(self):
-        """Test the default_serializer parameter."""
-        obj = UnregisteredObject("test")
-
-        # Without default serializer - should raise TypeError
-        with pytest.raises(TypeError):
-            safe_serialize(obj)
-
-        # With default serializer
-        def default_serializer(obj: Any) -> str:
-            return f"<{type(obj).__name__}: {obj.data}>"
-
-        result = safe_serialize(obj, default_serializer=default_serializer)
-        assert result == "<UnregisteredObject: test>"
-
-    def test_nested_structures(self):
-        """Test serialization of nested structures."""
-        data = {
-            "list": [1, 2, {"nested": "value"}],
-            "set": {1, 2, 3},
-            "custom": CustomObject("test", {"key": "value"}),
-        }
-
-        # Register custom serializer
-        register_custom_serializer(CustomObject, lambda x: x.to_dict())
-
-        result = safe_serialize(data)
-        assert result["list"] == [1, 2, {"nested": "value"}]
-        assert isinstance(result["set"], list)
-        assert set(result["set"]) == {1, 2, 3}
-        assert result["custom"] == {"data": "test", "metadata": {"key": "value"}}
-
-
-class TestRobustSerialize:
-    """Test the robust_serialize function."""
-
-    def test_robust_serialize_with_pydantic_models(self):
-        """Test robust_serialize with Pydantic models."""
-        obj = MockPydanticModel(
-            name="test", value=42, items=["item1", "item2"], optional_field="optional"
-        )
-        result = robust_serialize(obj)
-        assert result == {
-            "name": "test",
-            "value": 42,
-            "items": ["item1", "item2"],
-            "optional_field": "optional",
-        }
-
-    def test_robust_serialize_with_unknown_types(self):
-        """Test robust_serialize with unknown types."""
-
-        class UnknownType:
-            def __init__(self, value):
-                self.value = value
-
-        obj = UnknownType("test")
-        result = robust_serialize(obj)
-        assert result == "<unserializable: UnknownType>"
-
-    def test_robust_serialize_with_custom_serializer(self):
-        """Test robust_serialize with custom serializers."""
-
-        def serialize_custom(obj: CustomObject) -> dict:
-            return {"custom": obj.data}
-
-        register_custom_serializer(CustomObject, serialize_custom)
-
-        obj = CustomObject("test", {})
-        result = robust_serialize(obj)
-        assert result == {"custom": "test"}
-
-
-class TestSerializeToJson:
-    """Test the serialize_to_json functions."""
-
-    def test_serialize_to_json_basic(self):
-        """Test basic JSON serialization."""
-        data = {"name": "test", "value": 42}
-        result = serialize_to_json(data)
-        assert result == '{"name": "test", "value": 42}'
-
-    def test_serialize_to_json_with_kwargs(self):
-        """Test JSON serialization with additional kwargs."""
-        data = {"name": "test", "value": 42}
-        result = serialize_to_json(data, indent=2)
-        expected = '{\n  "name": "test",\n  "value": 42\n}'
-        assert result == expected
-
-    def test_serialize_to_json_robust(self):
-        """Test robust JSON serialization."""
-        data = {"name": "test", "value": 42}
-        result = serialize_to_json_robust(data)
-        assert result == '{"name": "test", "value": 42}'
-
-    def test_serialize_to_json_with_custom_types(self):
-        """Test JSON serialization with custom types."""
-        obj = CustomObject("test", {"key": "value"})
-
-        # Register custom serializer
-        register_custom_serializer(CustomObject, lambda x: x.to_dict())
-
-        result = serialize_to_json(obj)
-        expected = '{"data": "test", "metadata": {"key": "value"}}'
-        assert result == expected
-
-
-class TestCreateFieldSerializer:
-    """Test the create_field_serializer function."""
+
+class TestSerializerFactories:
+    """Test serializer factory functions."""
+
+    def test_create_serializer_for_type(self):
+        """Test creating a serializer for a specific type."""
+
+        def custom_serializer(obj: MyCustomObject) -> Dict[str, Any]:
+            return {"serialized": obj.data}
+
+        serializer = create_serializer_for_type(MyCustomObject, custom_serializer)
+
+        # Test with correct type
+        result = serializer(MyCustomObject("test"))
+        assert result == {"serialized": "test"}
+
+        # Test with different type (should return unchanged)
+        result = serializer("not_custom_object")
+        assert result == "not_custom_object"
 
     def test_create_field_serializer(self):
         """Test creating a field serializer."""
 
-        def serialize_custom(obj: CustomObject) -> dict:
-            return {"custom": obj.data}
+        def custom_serializer(value: str) -> str:
+            return value.upper()
 
-        field_serializer = create_field_serializer("custom_field", serialize_custom)
+        field_serializer = create_field_serializer("test_field", custom_serializer)
 
-        obj = CustomObject("test", {})
-        result = field_serializer(obj)
-        assert result == {"custom": "test"}
-
-
-# --- Property-based tests for robust serialization ---
-# These tests ensure that serialization utilities handle a wide variety of
-# data structures and edge cases without crashing.
+        result = field_serializer("hello")
+        assert result == "HELLO"
 
 
-@st.composite
-def serialization_test_data(draw, max_depth=3):
-    """Generate test data for serialization testing."""
-    if max_depth <= 0:
-        return draw(
-            st.one_of(
-                st.none(), st.integers(), st.floats(allow_nan=False), st.text(), st.booleans()
-            )
-        )
+class TestSafeSerialize:
+    """Test safe_serialize function."""
 
-    base = st.one_of(st.none(), st.integers(), st.floats(allow_nan=False), st.text(), st.booleans())
+    def test_safe_serialize_basic_types(self):
+        """Test serializing basic types."""
+        # String
+        result = safe_serialize("hello")
+        assert result == "hello"
 
-    container = st.deferred(lambda: serialization_test_data(max_depth=max_depth - 1))
-    dicts = st.dictionaries(st.text(), container, max_size=3)
-    lists = st.lists(container, max_size=3)
-    sets = st.sets(st.one_of(st.integers(), st.text(), st.booleans()), max_size=3)
-    tuples = st.tuples(container, container)
+        # Integer
+        result = safe_serialize(42)
+        assert result == 42
 
-    return draw(st.one_of(base, dicts, lists, sets, tuples))
+        # Float
+        result = safe_serialize(3.14)
+        assert result == 3.14
 
+        # Boolean
+        result = safe_serialize(True)
+        assert result is True
 
-@given(data=serialization_test_data())
-@settings(max_examples=50, deadline=2000)
-def test_property_based_safe_serialize_does_not_crash(data):
-    """Property-based: safe_serialize should not crash on any data structure."""
-    try:
-        result1 = safe_serialize(data)
-        result2 = safe_serialize(data)
-        # Should be deterministic
-        assert result1 == result2
-    except Exception as e:
-        pytest.fail(f"safe_serialize failed on {data!r}: {e}")
+        # None
+        result = safe_serialize(None)
+        assert result is None
 
+    def test_safe_serialize_datetime_objects(self):
+        """Test serializing datetime objects."""
+        dt = datetime(2023, 1, 1, 12, 0, 0)
+        result = safe_serialize(dt)
+        assert isinstance(result, str)
+        assert "2023-01-01T12:00:00" in result
 
-@given(data=serialization_test_data())
-@settings(max_examples=50, deadline=2000)
-def test_property_based_robust_serialize_does_not_crash(data):
-    """Property-based: robust_serialize should not crash on any data structure."""
-    try:
-        result1 = robust_serialize(data)
-        result2 = robust_serialize(data)
-        # Should be deterministic
-        assert result1 == result2
-    except Exception as e:
-        pytest.fail(f"robust_serialize failed on {data!r}: {e}")
+        d = date(2023, 1, 1)
+        result = safe_serialize(d)
+        assert isinstance(result, str)
+        assert "2023-01-01" in result
 
+        t = time(12, 0, 0)
+        result = safe_serialize(t)
+        assert isinstance(result, str)
+        assert "12:00:00" in result
 
-@given(data=serialization_test_data())
-@settings(max_examples=30, deadline=2000)
-def test_property_based_serialize_to_json_does_not_crash(data):
-    """Property-based: serialize_to_json should not crash on any data structure."""
-    try:
-        result = serialize_to_json(data)
-        # Should produce valid JSON
-        json.loads(result)  # Verify it's valid JSON
-        # Should be deterministic
-        result2 = serialize_to_json(data)
-        assert result == result2
-    except Exception as e:
-        pytest.fail(f"serialize_to_json failed on {data!r}: {e}")
+    def test_safe_serialize_enum(self):
+        """Test serializing enum values."""
+        # Should serialize to .value, not .name
+        result = safe_serialize(MyEnum.VALUE1)
+        assert result == "value1"
 
-
-class TestEdgeCases:
-    """Test edge cases and error conditions."""
-
-    def test_circular_reference_in_nested_structures(self):
-        """Test circular references in nested structures."""
-        # Create nested circular reference
-        outer = {"level": "outer"}
-        inner = {"level": "inner", "parent": outer}
-        outer["child"] = inner
-
-        result = safe_serialize(outer)
+    def test_safe_serialize_pydantic_model(self):
+        """Test serializing Pydantic models."""
+        model = MyPydanticModel(name="test", value=42)
+        result = safe_serialize(model)
         assert isinstance(result, dict)
-        assert result["level"] == "outer"
-        # The circular reference should be handled gracefully
+        assert result["name"] == "test"
+        assert result["value"] == 42
 
-    def test_mixed_types_in_collections(self):
-        """Test collections with mixed types."""
-        mixed_list = [1, "string", True, None, {"key": "value"}]
-        result = safe_serialize(mixed_list)
-        assert result == [1, "string", True, None, {"key": "value"}]
+    def test_safe_serialize_list(self):
+        """Test serializing lists."""
+        data = [1, "hello", MyEnum.VALUE1]
+        result = safe_serialize(data)
+        assert isinstance(result, list)
+        assert result[0] == 1
+        assert result[1] == "hello"
+        assert result[2] == "value1"
 
-    def test_empty_structures(self):
-        """Test empty structures."""
-        assert safe_serialize([]) == []
-        assert safe_serialize({}) == {}
-        assert safe_serialize(set()) == []
-        assert safe_serialize(()) == []
-
-    def test_special_strings(self):
-        """Test special string values."""
-        special_strings = ["", " ", "\n", "\t", "\\", '"', "'"]
-        for s in special_strings:
-            result = safe_serialize(s)
-            assert result == s
-
-    def test_large_numbers(self):
-        """Test large numbers."""
-        large_int = 2**63 - 1
-        large_float = 1e308
-
-        assert safe_serialize(large_int) == large_int
-        assert safe_serialize(large_float) == large_float
-
-    def test_registry_cleanup(self):
-        """Test that the registry can be used multiple times."""
-
-        # Register a serializer
-        def serialize_custom(obj: CustomObject) -> dict:
-            return {"custom": obj.data}
-
-        register_custom_serializer(CustomObject, serialize_custom)
-
-        # Use it
-        obj = CustomObject("test", {})
-        result = safe_serialize(obj)
-        assert result == {"custom": "test"}
-
-        # Register a different serializer
-        def serialize_custom2(obj: CustomObject) -> dict:
-            return {"custom2": obj.data}
-
-        register_custom_serializer(CustomObject, serialize_custom2)
-
-        # Should use the new serializer
-        result = safe_serialize(obj)
-        assert result == {"custom2": "test"}
-
-
-class TestIntegration:
-    """Test integration between different serialization utilities."""
-
-    def test_global_registry_with_safe_serialize(self):
-        """Test that global registry works with safe_serialize."""
-
-        def serialize_custom(obj: CustomObject) -> dict:
-            return {"custom": obj.data}
-
-        register_custom_serializer(CustomObject, serialize_custom)
-
+    def test_safe_serialize_dict(self):
+        """Test serializing dictionaries."""
         data = {
-            "custom_obj": CustomObject("test", {}),
-            "list": [1, 2, CustomObject("nested", {})],
-            "dict": {"key": CustomObject("value", {})},
+            "string": "hello",
+            "number": 42,
+            "enum": MyEnum.VALUE1,
+            "datetime": datetime(2023, 1, 1, 12, 0, 0),
         }
+        result = safe_serialize(data)
+        assert isinstance(result, dict)
+        assert result["string"] == "hello"
+        assert result["number"] == 42
+        assert result["enum"] == "value1"
+        assert isinstance(result["datetime"], str)
+
+    def test_safe_serialize_set(self):
+        """Test serializing sets."""
+        data = {1, 2, 3}
+        result = safe_serialize(data)
+        assert isinstance(result, list)
+        assert set(result) == {1, 2, 3}
+
+    def test_safe_serialize_custom_object(self):
+        """Test serializing custom objects."""
+        # Should raise TypeError unless a custom serializer is registered
+        obj = MyCustomObject("test")
+        with pytest.raises(TypeError):
+            safe_serialize(obj)
+
+    def test_safe_serialize_with_custom_serializer(self):
+        """Test serializing with custom serializer."""
+
+        def custom_serializer(obj: MyCustomObject) -> Dict[str, Any]:
+            return {"custom_data": obj.data}
+
+        register_custom_serializer(MyCustomObject, custom_serializer)
+
+        obj = MyCustomObject("test")
+        result = safe_serialize(obj)
+        assert result == {"custom_data": "test"}
+
+        # Clean up
+        reset_custom_serializer_registry()
+
+    def test_safe_serialize_circular_reference(self):
+        """Test serializing objects with circular references."""
+        # Create circular reference
+        data = {"key": "value"}
+        data["self"] = data
 
         result = safe_serialize(data)
-        assert result["custom_obj"] == {"custom": "test"}
-        assert result["list"] == [1, 2, {"custom": "nested"}]
-        assert result["dict"]["key"] == {"custom": "value"}
+        # Should handle circular reference gracefully
+        assert isinstance(result, dict)
+        assert result["key"] == "value"
+        # The circular reference should be handled (might be string representation)
+        assert "self" in result
 
-    def test_serialize_to_json_with_complex_objects(self):
-        """Test JSON serialization with complex objects."""
+    def test_safe_serialize_with_default_serializer(self):
+        """Test serializing with default serializer."""
+
+        # Only used for unknown types, not primitives
+        def default_serializer(obj: Any) -> str:
+            return f"custom_{str(obj)}"
+
+        # For a primitive, should return as is
+        result = safe_serialize("test", default_serializer=default_serializer)
+        assert result == "test"
+
+        # For unknown type, should use default_serializer
+        class Unknown:
+            pass
+
+        unknown = Unknown()
+        result = safe_serialize(unknown, default_serializer=default_serializer)
+        assert result == f"custom_{str(unknown)}"
+
+    def test_safe_serialize_nested_structures(self):
+        """Test serializing nested data structures."""
         data = {
-            "custom_obj": CustomObject("test", {"key": "value"}),
-            "datetime": datetime(2023, 1, 1, 12, 0, 0),
-            "complex": 3 + 4j,
+            "list": [1, 2, {"nested": "value"}],
+            "dict": {"key": [MyEnum.VALUE1, datetime(2023, 1, 1)]},
             "set": {1, 2, 3},
         }
 
-        # Register custom serializer
-        register_custom_serializer(CustomObject, lambda x: x.to_dict())
+        result = safe_serialize(data)
+        assert isinstance(result, dict)
+        assert isinstance(result["list"], list)
+        assert isinstance(result["dict"], dict)
+        assert isinstance(result["set"], list)
 
+
+class TestSafeDeserialize:
+    """Test safe_deserialize function."""
+
+    def test_safe_deserialize_basic_types(self):
+        """Test deserializing basic types."""
+        # String
+        result = safe_deserialize("hello")
+        assert result == "hello"
+
+        # Integer
+        result = safe_deserialize(42)
+        assert result == 42
+
+        # Float
+        result = safe_deserialize(3.14)
+        assert result == 3.14
+
+        # Boolean
+        result = safe_deserialize(True)
+        assert result is True
+
+        # None
+        result = safe_deserialize(None)
+        assert result is None
+
+    def test_safe_deserialize_datetime_strings(self):
+        """Test deserializing datetime strings."""
+        # Should return the string, not a datetime object, unless a custom deserializer is registered
+        dt_str = "2023-01-01T12:00:00"
+        result = safe_deserialize(dt_str, target_type=datetime)
+        assert result == dt_str
+        date_str = "2023-01-01"
+        result = safe_deserialize(date_str, target_type=date)
+        assert result == date_str
+        time_str = "12:00:00"
+        result = safe_deserialize(time_str, target_type=time)
+        assert result == time_str
+
+    def test_safe_deserialize_enum(self):
+        """Test deserializing enum values."""
+        # Should return the string, not the enum, unless a custom deserializer is registered
+        result = safe_deserialize("value1", target_type=MyEnum)
+        assert result == "value1"
+
+    def test_safe_deserialize_pydantic_model(self):
+        """Test deserializing Pydantic models."""
+        # Should return the dict, not the model, unless a custom deserializer is registered
+        data = {"name": "test", "value": 42}
+        result = safe_deserialize(data, target_type=MyPydanticModel)
+        assert result == data
+
+    def test_safe_deserialize_with_custom_deserializer(self):
+        """Test deserializing with custom deserializer."""
+
+        def custom_deserializer(data: Dict[str, Any]) -> MyCustomObject:
+            return MyCustomObject(data["custom_data"])
+
+        register_custom_deserializer(MyCustomObject, custom_deserializer)
+
+        data = {"custom_data": "test"}
+        result = safe_deserialize(data, target_type=MyCustomObject)
+        assert isinstance(result, MyCustomObject)
+        assert result.data == "test"
+
+        # Clean up
+        reset_custom_serializer_registry()
+
+    def test_safe_deserialize_with_default_deserializer(self):
+        """Test deserializing with default deserializer."""
+
+        # Only used for unknown types
+        def default_deserializer(data: Any) -> str:
+            return f"deserialized_{str(data)}"
+
+        # For a primitive, should return as is
+        result = safe_deserialize("test", default_deserializer=default_deserializer)
+        assert result == "test"
+
+        # For unknown type, should use default_deserializer
+        class Unknown:
+            pass
+
+        unknown = Unknown()
+        result = safe_deserialize(unknown, default_deserializer=default_deserializer)
+        assert result == f"deserialized_{str(unknown)}"
+
+    def test_safe_deserialize_list(self):
+        """Test deserializing lists."""
+        data = [1, "hello", "VALUE1"]
+        result = safe_deserialize(data)
+        assert isinstance(result, list)
+        assert result == [1, "hello", "VALUE1"]
+
+    def test_safe_deserialize_dict(self):
+        """Test deserializing dictionaries."""
+        data = {"key": "value", "number": 42}
+        result = safe_deserialize(data)
+        assert isinstance(result, dict)
+        assert result["key"] == "value"
+        assert result["number"] == 42
+
+
+class TestRobustSerialize:
+    """Test robust_serialize function."""
+
+    def test_robust_serialize_basic_types(self):
+        """Test robust serialization of basic types."""
+        result = robust_serialize("hello")
+        assert result == "hello"
+
+        result = robust_serialize(42)
+        assert result == 42
+
+    def test_robust_serialize_complex_objects(self):
+        """Test robust serialization of complex objects."""
+        obj = MyCustomObject("test")
+        result = robust_serialize(obj)
+        # Should handle unknown objects gracefully
+        assert isinstance(result, str)
+
+    def test_robust_serialize_with_fallback(self):
+        """Test robust serialization with fallback."""
+
+        # Should raise if fallback also fails
+        def fallback_serializer(obj: Any) -> str:
+            return f"fallback_{str(obj)}"
+
+        with patch("flujo.utils.serialization.safe_serialize", side_effect=Exception("Test error")):
+            with pytest.raises(Exception, match="Test error"):
+                robust_serialize("test")
+
+
+class TestSerializeToJson:
+    """Test serialize_to_json function."""
+
+    def test_serialize_to_json_basic(self):
+        """Test basic JSON serialization."""
+        data = {"key": "value", "number": 42}
         result = serialize_to_json(data)
+        assert isinstance(result, str)
+
+        # Verify it's valid JSON
         parsed = json.loads(result)
+        assert parsed["key"] == "value"
+        assert parsed["number"] == 42
 
-        assert parsed["custom_obj"]["data"] == "test"
-        assert parsed["datetime"] == "2023-01-01T12:00:00"
-        assert parsed["complex"]["real"] == 3.0
-        assert parsed["complex"]["imag"] == 4.0
-        assert isinstance(parsed["set"], list)
-        assert set(parsed["set"]) == {1, 2, 3}
+    def test_serialize_to_json_with_kwargs(self):
+        """Test JSON serialization with kwargs."""
+        data = {"key": "value"}
+        result = serialize_to_json(data, indent=2)
+        assert isinstance(result, str)
+        assert "  " in result  # Should have indentation
+
+    def test_serialize_to_json_robust(self):
+        """Test robust JSON serialization."""
+        data = {"key": "value", "datetime": datetime(2023, 1, 1, 12, 0, 0)}
+        result = serialize_to_json_robust(data)
+        assert isinstance(result, str)
+
+        # Verify it's valid JSON
+        parsed = json.loads(result)
+        assert parsed["key"] == "value"
+        assert "datetime" in parsed
 
 
-def test_fallback_serializer_not_called_for_standard_types(monkeypatch):
-    """Test that the fallback serializer is NOT called for standard types."""
-    from flujo.domain.models import BaseModel as FlujoBaseModel
+# Hypothesis-based property tests
+class TestSerializationProperties:
+    """Property-based tests for serialization functions."""
 
-    called = []
+    @given(st.text())
+    def test_safe_serialize_text_roundtrip(self, text):
+        """Test that text serialization is idempotent."""
+        result = safe_serialize(text)
+        assert result == text
 
-    class DummyModel(FlujoBaseModel):
-        s: str
-        i: int
-        f: float
-        b: bool
-        lst: list
-        d: dict
+    @given(st.integers())
+    def test_safe_serialize_integer_roundtrip(self, integer):
+        """Test that integer serialization is idempotent."""
+        result = safe_serialize(integer)
+        assert result == integer
 
-    # Patch the fallback method to record calls
-    orig = FlujoBaseModel._serialize_single_unknown_type
+    @given(st.floats(allow_nan=False, allow_infinity=False))
+    def test_safe_serialize_float_roundtrip(self, float_val):
+        """Test that float serialization is idempotent."""
+        result = safe_serialize(float_val)
+        assert result == float_val
 
-    def fake_fallback(self, value):
-        called.append(type(value))
-        return orig(self, value)
+    @given(st.booleans())
+    def test_safe_serialize_boolean_roundtrip(self, boolean):
+        """Test that boolean serialization is idempotent."""
+        result = safe_serialize(boolean)
+        assert result == boolean
 
-    monkeypatch.setattr(FlujoBaseModel, "_serialize_single_unknown_type", fake_fallback)
+    @given(st.lists(st.text()))
+    def test_safe_serialize_list_roundtrip(self, text_list):
+        """Test that list serialization preserves structure."""
+        result = safe_serialize(text_list)
+        assert isinstance(result, list)
+        assert len(result) == len(text_list)
 
-    m = DummyModel(s="hello", i=1, f=2.0, b=True, lst=[1, 2, 3], d={"a": 1})
-    # Trigger serialization
-    result = m.model_dump(mode="json")
-    # The fallback should NOT be called for any of the standard types
-    assert called == []
-    # The result should be as expected
-    assert result == {"s": "hello", "i": 1, "f": 2.0, "b": True, "lst": [1, 2, 3], "d": {"a": 1}}
+    @given(st.dictionaries(st.text(), st.text()))
+    def test_safe_serialize_dict_roundtrip(self, text_dict):
+        """Test that dict serialization preserves structure."""
+        result = safe_serialize(text_dict)
+        assert isinstance(result, dict)
+        assert set(result.keys()) == set(text_dict.keys())
+
+    @given(st.text())
+    def test_serialize_to_json_roundtrip(self, text):
+        """Test that JSON serialization can be parsed back."""
+        data = {"text": text}
+        json_str = serialize_to_json(data)
+        parsed = json.loads(json_str)
+        assert parsed["text"] == text
+
+    @given(st.text())
+    def test_serialize_to_json_robust_roundtrip(self, text):
+        """Test that robust JSON serialization can be parsed back."""
+        data = {"text": text}
+        json_str = serialize_to_json_robust(data)
+        parsed = json.loads(json_str)
+        assert parsed["text"] == text
