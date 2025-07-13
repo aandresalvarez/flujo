@@ -100,6 +100,9 @@ class SQLiteBackend(StateBackend):
                             f"Too many backup files exist, removing oldest: {oldest_backup}"
                         )
                         oldest_backup.unlink(missing_ok=True)
+                    # Reset backup path and counter after cleanup to avoid infinite loop
+                    backup_path = self.db_path.parent / f"{base_name}{suffix}.corrupt.{timestamp}"
+                    counter = 1
                     continue
 
             try:
