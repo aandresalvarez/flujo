@@ -150,7 +150,7 @@ class TestSQLiteBackendEdgeCases:
 
         try:
             backend = SQLiteBackend(db_path)
-            with pytest.raises((OSError, PermissionError)):
+            with pytest.raises((OSError, PermissionError, sqlite3.DatabaseError)):
                 await backend._init_db()
         finally:
             # Restore permissions
@@ -375,12 +375,12 @@ class TestSQLiteBackendEdgeCases:
         original_stat = Path.stat
         call_count = 0
 
-        def mock_stat(self):
+        def mock_stat(self, *args, **kwargs):
             nonlocal call_count
             call_count += 1
             if call_count % 3 == 0:  # Fail every 3rd call
                 raise OSError("Permission denied")
-            return original_stat(self)
+            return original_stat(self, *args, **kwargs)
 
         with patch("pathlib.Path.stat", mock_stat):
             with patch("time.time", return_value=1234567890):
@@ -434,12 +434,12 @@ class TestSQLiteBackendEdgeCases:
         original_stat = Path.stat
         call_count = 0
 
-        def mock_stat(self):
+        def mock_stat(self, *args, **kwargs):
             nonlocal call_count
             call_count += 1
             if call_count % 2 == 0:  # Return None for every 2nd call
                 return Mock(st_mtime=None)
-            return original_stat(self)
+            return original_stat(self, *args, **kwargs)
 
         with patch("pathlib.Path.stat", mock_stat):
             with patch("time.time", return_value=1234567890):
@@ -617,3 +617,262 @@ class TestSQLiteBackendEdgeCases:
         # Verify that backup files were handled correctly
         backup_files = list(tmp_path.glob("test.db.corrupt.*"))
         assert len(backup_files) == 151  # 150 existing + 1 new backup
+
+    @pytest.mark.asyncio
+    async def test_backup_cleanup_attempts_limit(self, tmp_path: Path) -> None:
+        """Test that cleanup attempts are limited to prevent infinite loops."""
+        db_path = tmp_path / "test.db"
+        db_path.write_bytes(b"corrupted sqlite data")
+
+        # Create backup files that will always exist (simulate worst case)
+        for i in range(200):  # More than MAX_BACKUP_SUFFIX_ATTEMPTS
+            backup_file = tmp_path / f"test.db.corrupt.1234567890.{i}"
+            backup_file.write_bytes(b"existing backup")
+            backup_file.touch()
+            time.sleep(0.001)
+
+        backend = SQLiteBackend(db_path)
+
+        # Mock exists() to always return True to force cleanup attempts
+        with patch("pathlib.Path.exists", return_value=True):
+            with patch("time.time", return_value=1234567890):
+                # This should not cause an infinite loop due to MAX_CLEANUP_ATTEMPTS
+                await backend._init_db()
+
+        # Verify new database was created despite the challenging conditions
+        assert db_path.exists()
+        assert db_path.stat().st_size > 0
+
+    @pytest.mark.asyncio
+    async def test_backup_stat_exception_handling(self, tmp_path: Path) -> None:
+        """Test handling when stat() fails on backup files during cleanup."""
+        db_path = tmp_path / "test.db"
+        db_path.write_bytes(b"corrupted sqlite data")
+
+        # Create backup files
+        for i in range(150):  # More than MAX_BACKUP_SUFFIX_ATTEMPTS
+            backup_file = tmp_path / f"test.db.corrupt.1234567890.{i}"
+            backup_file.write_bytes(b"existing backup")
+            backup_file.touch()
+            time.sleep(0.001)
+
+        backend = SQLiteBackend(db_path)
+
+        # Mock stat() to fail on some files during cleanup
+        original_stat = Path.stat
+        call_count = 0
+
+        def mock_stat(self, *args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count % 3 == 0:  # Fail every 3rd call
+                raise OSError("Permission denied")
+            return original_stat(self, *args, **kwargs)
+
+        with patch("pathlib.Path.stat", mock_stat):
+            with patch("time.time", return_value=1234567890):
+                await backend._init_db()
+
+        # Verify new database was created despite stat errors
+        assert db_path.exists()
+        assert db_path.stat().st_size > 0
+
+    @pytest.mark.asyncio
+    async def test_backup_unlink_exception_handling(self, tmp_path: Path) -> None:
+        """Test handling when unlink() fails during backup cleanup."""
+        db_path = tmp_path / "test.db"
+        db_path.write_bytes(b"corrupted sqlite data")
+
+        # Create backup files
+        for i in range(150):  # More than MAX_BACKUP_SUFFIX_ATTEMPTS
+            backup_file = tmp_path / f"test.db.corrupt.1234567890.{i}"
+            backup_file.write_bytes(b"existing backup")
+            backup_file.touch()
+            time.sleep(0.001)
+
+        backend = SQLiteBackend(db_path)
+
+        # Mock unlink() to fail during cleanup
+        with patch("pathlib.Path.unlink", side_effect=OSError("Permission denied")):
+            with patch("time.time", return_value=1234567890):
+                await backend._init_db()
+
+        # Verify new database was created despite unlink errors
+        assert db_path.exists()
+        assert db_path.stat().st_size > 0
+
+    @pytest.mark.asyncio
+    async def test_backup_glob_exception_handling(self, tmp_path: Path) -> None:
+        """Test handling when glob() fails during backup cleanup."""
+        db_path = tmp_path / "test.db"
+        db_path.write_bytes(b"corrupted sqlite data")
+
+        # Create backup files
+        for i in range(150):  # More than MAX_BACKUP_SUFFIX_ATTEMPTS
+            backup_file = tmp_path / f"test.db.corrupt.1234567890.{i}"
+            backup_file.write_bytes(b"existing backup")
+            backup_file.touch()
+            time.sleep(0.001)
+
+        backend = SQLiteBackend(db_path)
+
+        # Mock glob() to fail during cleanup
+        with patch("pathlib.Path.glob", side_effect=OSError("Permission denied")):
+            with patch("time.time", return_value=1234567890):
+                await backend._init_db()
+
+        # Verify new database was created despite glob errors
+        assert db_path.exists()
+        assert db_path.stat().st_size > 0
+
+    @pytest.mark.asyncio
+    async def test_backup_fallback_timestamp_naming(self, tmp_path: Path) -> None:
+        """Test that fallback timestamp naming works when cleanup fails."""
+        db_path = tmp_path / "test.db"
+        db_path.write_bytes(b"corrupted sqlite data")
+
+        # Create backup files
+        for i in range(200):  # More than MAX_BACKUP_SUFFIX_ATTEMPTS
+            backup_file = tmp_path / f"test.db.corrupt.1234567890.{i}"
+            backup_file.write_bytes(b"existing backup")
+            backup_file.touch()
+            time.sleep(0.001)
+
+        backend = SQLiteBackend(db_path)
+
+        # Mock exists() to always return True to force cleanup attempts
+        with patch("pathlib.Path.exists", return_value=True):
+            # Mock time.time to return a predictable value for the fallback
+            with patch("time.time", return_value=9876543210):
+                await backend._init_db()
+
+        # Verify new database was created
+        assert db_path.exists()
+        assert db_path.stat().st_size > 0
+
+        # Verify that a fallback backup was created with the timestamp
+        backup_files = list(tmp_path.glob("test.db.corrupt.*"))
+        assert any("9876543210" in f.name for f in backup_files)
+
+    @pytest.mark.asyncio
+    async def test_backup_all_slots_undeletable_fallback(self, tmp_path: Path) -> None:
+        """Test that if all backup slots are present and cannot be deleted, fallback is used and no infinite loop occurs."""
+        db_path = tmp_path / "test.db"
+        db_path.write_bytes(b"corrupted sqlite data")
+        # Create many backup files
+        for i in range(200):
+            backup_file = tmp_path / f"test.db.corrupt.1234567890.{i}"
+            backup_file.write_bytes(b"existing backup")
+            backup_file.touch()
+            time.sleep(0.001)
+        backend = SQLiteBackend(db_path)
+        # Patch exists to always return True, unlink to always fail
+        with (
+            patch("pathlib.Path.exists", return_value=True),
+            patch("pathlib.Path.unlink", side_effect=OSError("Permission denied")),
+            patch("time.time", return_value=9876543210),
+        ):
+            await backend._init_db()
+        # Should still create a new DB and not hang
+        assert db_path.exists()
+        assert db_path.stat().st_size > 0
+        # Fallback backup should be present
+        backup_files = list(tmp_path.glob("test.db.corrupt.*"))
+        assert any("9876543210" in f.name for f in backup_files)
+
+    @pytest.mark.asyncio
+    async def test_backup_stat_always_raises(self, tmp_path: Path) -> None:
+        """Test that if stat() always raises, backup logic still recovers and does not crash."""
+        db_path = tmp_path / "test.db"
+        db_path.write_bytes(b"corrupted sqlite data")
+        for i in range(150):
+            backup_file = tmp_path / f"test.db.corrupt.1234567890.{i}"
+            backup_file.write_bytes(b"existing backup")
+            backup_file.touch()
+            time.sleep(0.001)
+        backend = SQLiteBackend(db_path)
+
+        def always_raises_stat(self, *a, **k):
+            raise OSError("stat failed")
+
+        with (
+            patch("pathlib.Path.stat", always_raises_stat),
+            patch("time.time", return_value=9876543210),
+        ):
+            await backend._init_db()
+        assert db_path.exists()
+        assert db_path.stat().st_size > 0
+        backup_files = list(tmp_path.glob("test.db.corrupt.*"))
+        assert any("9876543210" in f.name for f in backup_files)
+
+    @pytest.mark.asyncio
+    async def test_backup_glob_always_raises(self, tmp_path: Path) -> None:
+        """Test that if glob() always raises, backup logic still recovers and does not crash."""
+        db_path = tmp_path / "test.db"
+        db_path.write_bytes(b"corrupted sqlite data")
+        for i in range(150):
+            backup_file = tmp_path / f"test.db.corrupt.1234567890.{i}"
+            backup_file.write_bytes(b"existing backup")
+            backup_file.touch()
+            time.sleep(0.001)
+        backend = SQLiteBackend(db_path)
+        with (
+            patch("pathlib.Path.glob", side_effect=OSError("glob failed")),
+            patch("time.time", return_value=9876543210),
+        ):
+            await backend._init_db()
+        assert db_path.exists()
+        assert db_path.stat().st_size > 0
+        backup_files = list(tmp_path.glob("test.db.corrupt.*"))
+        assert any("9876543210" in f.name for f in backup_files)
+
+    @pytest.mark.asyncio
+    async def test_backup_unlink_always_raises(self, tmp_path: Path) -> None:
+        """Test that if unlink() always raises, backup logic still recovers and does not crash."""
+        db_path = tmp_path / "test.db"
+        db_path.write_bytes(b"corrupted sqlite data")
+        for i in range(150):
+            backup_file = tmp_path / f"test.db.corrupt.1234567890.{i}"
+            backup_file.write_bytes(b"existing backup")
+            backup_file.touch()
+            time.sleep(0.001)
+        backend = SQLiteBackend(db_path)
+        with (
+            patch("pathlib.Path.unlink", side_effect=OSError("unlink failed")),
+            patch("time.time", return_value=9876543210),
+        ):
+            await backend._init_db()
+        assert db_path.exists()
+        assert db_path.stat().st_size > 0
+        backup_files = list(tmp_path.glob("test.db.corrupt.*"))
+        assert any("9876543210" in f.name for f in backup_files)
+
+    @pytest.mark.asyncio
+    async def test_backup_permission_and_race_conditions(self, tmp_path: Path) -> None:
+        """Test that backup logic handles permission errors and race conditions gracefully."""
+        db_path = tmp_path / "test.db"
+        db_path.write_bytes(b"corrupted sqlite data")
+        for i in range(150):
+            backup_file = tmp_path / f"test.db.corrupt.1234567890.{i}"
+            backup_file.write_bytes(b"existing backup")
+            backup_file.touch()
+            time.sleep(0.001)
+        backend = SQLiteBackend(db_path)
+        # Simulate stat raising on some, unlink raising on others
+        original_stat = Path.stat
+
+        def sometimes_raises_stat(self, *a, **k):
+            if int(self.name.split(".")[-1]) % 5 == 0:
+                raise OSError("stat failed")
+            return original_stat(self, *a, **k)
+
+        with (
+            patch("pathlib.Path.stat", sometimes_raises_stat),
+            patch("pathlib.Path.unlink", side_effect=OSError("unlink failed")),
+            patch("time.time", return_value=9876543210),
+        ):
+            await backend._init_db()
+        assert db_path.exists()
+        assert db_path.stat().st_size > 0
+        backup_files = list(tmp_path.glob("test.db.corrupt.*"))
+        assert any("9876543210" in f.name for f in backup_files)

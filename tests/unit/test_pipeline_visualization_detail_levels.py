@@ -3,7 +3,7 @@
 import pytest
 
 from flujo.domain import Step, StepConfig
-from flujo.domain.pipeline_dsl import Pipeline
+from flujo.domain.dsl import Pipeline
 from typing import Any
 
 

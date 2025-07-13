@@ -85,21 +85,73 @@ class SQLiteBackend(StateBackend):
             # Handle existing backup files gracefully
             counter = 1
             MAX_BACKUP_SUFFIX_ATTEMPTS = 100
-            while backup_path.exists():
+            MAX_CLEANUP_ATTEMPTS = 10  # Prevent infinite cleanup loops
+            cleanup_attempts = 0
+
+            while True:
+                try:
+                    path_exists = backup_path.exists()
+                except OSError as stat_error:
+                    telemetry.logfire.warn(
+                        f"Could not stat backup path {backup_path}: {stat_error}"
+                    )
+                    path_exists = True  # treat as exists, so we keep searching
+                if not path_exists:
+                    break
                 backup_path = (
                     self.db_path.parent / f"{base_name}{suffix}.corrupt.{timestamp}.{counter}"
                 )
                 counter += 1
                 if counter > MAX_BACKUP_SUFFIX_ATTEMPTS:  # Prevent infinite loop
+                    cleanup_attempts += 1
+                    if cleanup_attempts > MAX_CLEANUP_ATTEMPTS:
+                        telemetry.logfire.error(
+                            f"Failed to find available backup path after {MAX_CLEANUP_ATTEMPTS} cleanup attempts"
+                        )
+                        # Fallback: use a unique timestamp-based name
+                        backup_path = (
+                            self.db_path.parent
+                            / f"{base_name}{suffix}.corrupt.{timestamp}.{int(time.time())}"
+                        )
+                        break
+
                     # Find and remove the oldest backup file instead of the current one
                     backup_pattern = f"{base_name}{suffix}.corrupt.*"
-                    existing_backups = list(self.db_path.parent.glob(backup_pattern))
-                    if existing_backups:
-                        oldest_backup = min(existing_backups, key=lambda p: p.stat().st_mtime)
-                        telemetry.logfire.error(
-                            f"Too many backup files exist, removing oldest: {oldest_backup}"
-                        )
-                        oldest_backup.unlink(missing_ok=True)
+                    try:
+                        existing_backups = list(self.db_path.parent.glob(backup_pattern))
+                        if existing_backups:
+                            # Find oldest backup with proper exception handling
+                            oldest_backup = None
+                            oldest_time = float("inf")
+
+                            for backup in existing_backups:
+                                try:
+                                    backup_time = backup.stat().st_mtime
+                                    if backup_time < oldest_time:
+                                        oldest_time = backup_time
+                                        oldest_backup = backup
+                                except OSError as stat_error:
+                                    telemetry.logfire.warn(
+                                        f"Could not stat backup file {backup}: {stat_error}"
+                                    )
+                                    continue
+
+                            if oldest_backup:
+                                telemetry.logfire.error(
+                                    f"Too many backup files exist, removing oldest: {oldest_backup}"
+                                )
+                                try:
+                                    oldest_backup.unlink(missing_ok=True)
+                                except OSError as unlink_error:
+                                    telemetry.logfire.error(
+                                        f"Failed to remove oldest backup {oldest_backup}: {unlink_error}"
+                                    )
+                                    # Continue anyway, try with a different approach
+                            else:
+                                telemetry.logfire.warn("No valid backup files found to remove")
+                    except OSError as glob_error:
+                        telemetry.logfire.error(f"Failed to glob backup files: {glob_error}")
+
                     # Reset backup path and counter after cleanup to avoid infinite loop
                     backup_path = self.db_path.parent / f"{base_name}{suffix}.corrupt.{timestamp}"
                     counter = 1

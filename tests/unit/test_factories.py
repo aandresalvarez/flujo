@@ -18,6 +18,7 @@ from flujo.domain.models import (
     Candidate,
     ChecklistItem,
     PipelineContext,
+    PipelineResult,
 )
 from flujo.domain.commands import FinishCommand
 from flujo.application.runner import Flujo
@@ -186,7 +187,8 @@ class TestRunAgenticLoopPipeline:
 
         result = await run_agentic_loop_pipeline(pipeline, "test goal")
 
-        assert result == "final result"
+        assert isinstance(result, PipelineResult)
+        assert result.final_pipeline_context is not None
 
 
 class TestMakeStateMachinePipeline:

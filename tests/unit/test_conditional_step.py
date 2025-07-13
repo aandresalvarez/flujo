@@ -1,6 +1,6 @@
 import pytest
 from flujo.domain import Step, Pipeline
-from flujo.domain.pipeline_dsl import ConditionalStep
+from flujo.domain.dsl import ConditionalStep
 
 
 def test_conditional_step_init_validation() -> None:

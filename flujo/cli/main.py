@@ -17,7 +17,7 @@ from flujo.infra.agents import (
     make_validator_agent,
     get_reflection_agent,
 )
-from flujo.recipes import Default
+from flujo.recipes.factories import make_default_pipeline, run_default_pipeline
 from flujo.application.eval_adapter import run_pipeline_async
 from flujo.application.self_improvement import (
     evaluate_and_improve,
@@ -159,16 +159,15 @@ def solve(
             AsyncAgentProtocol[Any, str], get_reflection_agent(ref_model)
         )
 
-        orch: Default = Default(
-            review,
-            solution,
-            validator,
-            reflection_agent,
-            max_iters=max_iters,
-            k_variants=k,
-            reflection_limit=settings.reflection_limit,
+        pipeline = make_default_pipeline(
+            review_agent=review,
+            solution_agent=solution,
+            validator_agent=validator,
+            reflection_agent=reflection_agent,
         )
-        best = orch.run_sync(Task(prompt=prompt, metadata=metadata))
+        import asyncio
+
+        best = asyncio.run(run_default_pipeline(pipeline, Task(prompt=prompt, metadata=metadata)))
         if best is not None:
             typer.echo(json.dumps(safe_serialize(best.model_dump()), indent=2))
         else:
@@ -232,20 +231,24 @@ def bench(prompt: str, rounds: int = 10) -> None:
     """
     import time
     import numpy as np
+    import asyncio
 
     try:
         review_agent = make_review_agent()
         solution_agent = make_solution_agent()
         validator_agent = make_validator_agent()
-        orch: Default = Default(
-            review_agent, solution_agent, validator_agent, get_reflection_agent()
+        pipeline = make_default_pipeline(
+            review_agent=review_agent,
+            solution_agent=solution_agent,
+            validator_agent=validator_agent,
+            reflection_agent=get_reflection_agent(),
         )
         times: List[float] = []
         scores: List[float] = []
         for i in range(rounds):
             with logfire.span("bench_round", idx=i):
                 start: float = time.time()
-                result = orch.run_sync(Task(prompt=prompt))
+                result = asyncio.run(run_default_pipeline(pipeline, Task(prompt=prompt)))
                 if result is not None:
                     times.append(time.time() - start)
                     scores.append(result.score)

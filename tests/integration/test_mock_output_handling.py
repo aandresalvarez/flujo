@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import AsyncMock, Mock
 
 from flujo.application.runner import Flujo
-from flujo.domain.pipeline_dsl import Step
+from flujo.domain.dsl import Step
 from flujo.testing.utils import StubAgent, gather_result
 
 

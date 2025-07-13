@@ -18,6 +18,7 @@ from ..domain.scoring import ratio_score
 from ..domain.commands import AgentCommand, FinishCommand, ExecutedCommandLog
 from ..application.runner import Flujo
 from ..testing.utils import gather_result
+from flujo.domain.models import PipelineResult
 
 if TYPE_CHECKING:  # pragma: no cover - used for typing only
     from ..infra.agents import AsyncAgentProtocol
@@ -235,11 +236,29 @@ def make_agentic_loop_pipeline(
             getattr(output, "generated_command", None), FinishCommand
         )
 
+    def _iter_mapper(
+        log: ExecutedCommandLog, ctx: PipelineContext | None, _i: int
+    ) -> dict[str, Any]:
+        if ctx is not None:
+            ctx.command_log.append(log)
+            goal = ctx.initial_prompt
+        else:
+            goal = ""
+        return {"last_command_result": log.execution_result, "goal": goal}
+
+    def _output_mapper(log: ExecutedCommandLog, ctx: PipelineContext | None) -> Any:
+        if ctx is not None:
+            ctx.command_log.append(log)
+            return log  # Return the full log instead of just the execution result
+        return log
+
     loop_step: Any = Step.loop_until(
         name="AgenticExplorationLoop",
         loop_body_pipeline=loop_body,
         exit_condition_callable=exit_condition,
         max_loops=max_loops,
+        iteration_input_mapper=_iter_mapper,
+        loop_output_mapper=_output_mapper,
     )
     loop_step.config.max_retries = max_retries
 
@@ -262,10 +281,18 @@ async def run_default_pipeline(
     runner: Flujo[str, Checklist, PipelineContext] = Flujo(pipeline)
     result = await gather_result(runner, task.prompt)
 
-    # Extract solution and checklist from context
+    # Extract solution from context and checklist from the validator step output
     context = result.final_pipeline_context
     solution = context.scratchpad.get("solution")
-    checklist = context.scratchpad.get("checklist")
+
+    # Find the last Checklist output in the step history (validator output)
+    checklist = None
+    for step in reversed(result.step_history):
+        if isinstance(step.output, Checklist):
+            checklist = step.output
+            break
+    if checklist is None:
+        checklist = context.scratchpad.get("checklist")
 
     if solution is None or checklist is None:
         return None
@@ -283,22 +310,30 @@ async def run_default_pipeline(
 async def run_agentic_loop_pipeline(
     pipeline: Pipeline[str, Any],
     initial_goal: str,
-) -> Any:
+    resume_from: Optional[PipelineResult[PipelineContext]] = None,
+    human_input: Optional[str] = "human",
+) -> PipelineResult[PipelineContext]:
     """Run an agentic loop pipeline and return the result.
 
     Args:
         pipeline: Pipeline created by make_agentic_loop_pipeline
         initial_goal: Initial goal for the agentic loop
+        resume_from: Optional paused result to resume from
+        human_input: Human input to provide when resuming (default: "human")
 
     Returns:
-        Final result from the agentic loop
+        PipelineResult with the execution context and results
     """
     runner: Flujo[str, Any, PipelineContext] = Flujo(pipeline)
-    result = await gather_result(runner, initial_goal)
-    output = result.step_history[-1].output
-    if hasattr(output, "execution_result"):
-        return output.execution_result
-    return output
+
+    if resume_from is not None:
+        # Resume from a paused state
+        result = await runner.resume_async(resume_from, human_input)
+    else:
+        # Start fresh execution
+        result = await gather_result(runner, initial_goal)
+
+    return result
 
 
 async def _invoke(

@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import AsyncMock
 
-from flujo.recipes import Default
+from flujo.recipes.factories import make_default_pipeline, run_default_pipeline
 from flujo.domain.models import Task, Checklist, ChecklistItem
 
 
@@ -32,8 +32,8 @@ async def test_default_recipe_handles_agent_run_result():
         Checklist(items=[ChecklistItem(description="Test criterion", passed=True)])
     )
 
-    # Create the Default recipe
-    orch = Default(
+    # Create the default pipeline
+    pipeline = make_default_pipeline(
         review_agent=review_agent,
         solution_agent=solution_agent,
         validator_agent=validator_agent,
@@ -41,11 +41,12 @@ async def test_default_recipe_handles_agent_run_result():
 
     # Run the workflow
     task = Task(prompt="Write a Python function that returns 'Hello, World!'")
-    result = await orch.run_async(task)
+    result = await run_default_pipeline(pipeline, task)
 
     # Verify the result
     assert result is not None
     assert result.solution == "def hello(): return 'Hello, World!'"
+    # The score should be 1.0 since all items in the checklist are passed=True
     assert result.score == 1.0
     assert result.checklist is not None
     assert len(result.checklist.items) == 1
@@ -70,8 +71,8 @@ async def test_default_recipe_handles_direct_results():
         items=[ChecklistItem(description="Test criterion", passed=True)]
     )
 
-    # Create the Default recipe
-    orch = Default(
+    # Create the default pipeline
+    pipeline = make_default_pipeline(
         review_agent=review_agent,
         solution_agent=solution_agent,
         validator_agent=validator_agent,
@@ -79,11 +80,12 @@ async def test_default_recipe_handles_direct_results():
 
     # Run the workflow
     task = Task(prompt="Write a Python function that returns 'Hello, World!'")
-    result = await orch.run_async(task)
+    result = await run_default_pipeline(pipeline, task)
 
     # Verify the result
     assert result is not None
     assert result.solution == "def hello(): return 'Hello, World!'"
+    # The score should be 1.0 since all items in the checklist are passed=True
     assert result.score == 1.0
     assert result.checklist is not None
     assert len(result.checklist.items) == 1

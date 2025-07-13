@@ -5,7 +5,7 @@ from flujo import Step, Flujo
 from flujo.caching import InMemoryCache
 from flujo.testing.utils import StubAgent, gather_result, DummyPlugin
 from flujo.domain import Pipeline
-from flujo.domain.pipeline_dsl import StepConfig
+from flujo.domain.dsl import StepConfig
 from flujo.domain.plugins import PluginOutcome
 from typing import Any
 from flujo.utils.serialization import register_custom_serializer
