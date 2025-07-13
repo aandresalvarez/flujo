@@ -10,6 +10,9 @@ import aiosqlite
 
 from flujo.state.backends.sqlite import SQLiteBackend
 
+# Mark all tests in this module for serial execution to prevent SQLite concurrency issues
+pytestmark = pytest.mark.serial
+
 
 @pytest.mark.asyncio
 async def test_sqlite_backend_handles_corrupted_database(tmp_path: Path) -> None:
@@ -22,18 +25,20 @@ async def test_sqlite_backend_handles_corrupted_database(tmp_path: Path) -> None
 
     backend = SQLiteBackend(db_path)
 
-    # Should handle corruption gracefully and create a new database
-    state = {
-        "pipeline_id": "test_pipeline",
-        "pipeline_name": "Test Pipeline",
-        "pipeline_version": "1.0",
-        "current_step_index": 0,
-        "pipeline_context": {"test": "data"},
-        "last_step_output": None,
-        "status": "running",
-        "created_at": datetime.utcnow(),
-        "updated_at": datetime.utcnow(),
-    }
+    # Use context manager for proper cleanup
+    async with backend:
+        # Should handle corruption gracefully and create a new database
+        state = {
+            "pipeline_id": "test_pipeline",
+            "pipeline_name": "Test Pipeline",
+            "pipeline_version": "1.0",
+            "current_step_index": 0,
+            "pipeline_context": {"test": "data"},
+            "last_step_output": None,
+            "status": "running",
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow(),
+        }
 
     # Should not raise an exception
     await backend.save_state("test_run", state)

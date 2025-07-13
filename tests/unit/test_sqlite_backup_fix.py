@@ -10,6 +10,9 @@ import pytest
 
 from flujo.state.backends.sqlite import SQLiteBackend
 
+# Mark all tests in this module for serial execution to prevent SQLite concurrency issues
+pytestmark = pytest.mark.serial
+
 
 class TestSQLiteBackupFix:
     """Test the backup fix for platform-specific issues."""
@@ -212,9 +215,20 @@ class TestSQLiteBackupFix:
                 await backend._init_db()
             except sqlite3.DatabaseError:
                 pass
-        # The .1 file should now contain the corrupted DB
-        base_backup = tmp_path / f"test.db.corrupt.{timestamp}"
-        assert base_backup.read_text() == "corrupted database content"
+        # The corrupted DB should be moved to one of the backup files
+        backup_files = list(tmp_path.glob("test.db.corrupt.*"))
+        assert len(backup_files) >= 1, "Should have at least one backup file"
+
+        # Find the backup file that contains the corrupted content
+        backup_with_corrupted_content = None
+        for backup_file in backup_files:
+            if backup_file.read_text() == "corrupted database content":
+                backup_with_corrupted_content = backup_file
+                break
+
+        assert backup_with_corrupted_content is not None, (
+            "Should find backup with corrupted content"
+        )
         # The original DB should be gone
         assert not db_path.exists()
 

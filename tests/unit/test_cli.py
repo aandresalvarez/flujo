@@ -64,7 +64,6 @@ def test_cli_solve_happy_path(monkeypatch) -> None:
     monkeypatch.setattr("flujo.cli.main.make_review_agent", lambda *a, **k: DummyAgent())
     monkeypatch.setattr("flujo.cli.main.make_solution_agent", lambda *a, **k: DummyAgent())
     monkeypatch.setattr("flujo.cli.main.make_validator_agent", lambda *a, **k: DummyAgent())
-    # from flujo.cli.main import app # This line is moved to the top of the file
 
     result = runner.invoke(app, ["solve", "write a poem"])
     assert result.exit_code == 0
@@ -104,7 +103,6 @@ def test_cli_bench_command(monkeypatch) -> None:
     monkeypatch.setattr("flujo.cli.main.make_review_agent", lambda *a, **k: DummyAgent())
     monkeypatch.setattr("flujo.cli.main.make_solution_agent", lambda *a, **k: DummyAgent())
     monkeypatch.setattr("flujo.cli.main.make_validator_agent", lambda *a, **k: DummyAgent())
-    # from flujo.cli.main import app # This line is moved to the top of the file
 
     result = runner.invoke(app, ["bench", "test prompt", "--rounds", "2"])
     assert result.exit_code == 0
@@ -125,7 +123,6 @@ def test_cli_version_command(monkeypatch) -> None:
     # import importlib.metadata  # removed unused import
     monkeypatch.setattr("importlib.metadata.version", lambda name: "1.2.3")
     monkeypatch.setattr("importlib.metadata.PackageNotFoundError", Exception)
-    # from flujo.cli.main import app # This line is moved to the top of the file
 
     result = runner.invoke(app, ["version-cmd"])
     assert result.exit_code == 0
@@ -156,7 +153,6 @@ def test_cli_solve_with_weights(monkeypatch) -> None:
     monkeypatch.setattr("flujo.cli.main.make_solution_agent", lambda *a, **k: mock_agent)
     monkeypatch.setattr("flujo.cli.main.make_validator_agent", lambda *a, **k: mock_agent)
 
-    # from flujo.cli.main import app # This line is moved to the top of the file
     import tempfile
     import json
     import os

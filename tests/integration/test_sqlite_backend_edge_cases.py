@@ -198,8 +198,9 @@ class TestSQLiteBackendEdgeCases:
             backup_file = tmp_path / f"test.db.corrupt.1234567890.{i}"
             backup_file.write_bytes(b"existing backup")
             # Set different modification times to ensure oldest can be identified
-            backup_file.touch()
-            time.sleep(0.001)  # Ensure different timestamps
+            import os
+
+            os.utime(backup_file, (backup_file.stat().st_atime, backup_file.stat().st_mtime + i))
 
         backend = SQLiteBackend(db_path)
 

@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch, MagicMock
 
 from flujo.recipes.factories import make_default_pipeline, run_default_pipeline
 from flujo.domain.models import Task
+from flujo.cli.main import app
 
 
 class TestCLIParameterIntegration:
@@ -45,6 +46,14 @@ class TestCLIParameterIntegration:
                                         # This test ensures the CLI integration works correctly
                                         assert mock_make is not None
 
+                                        # Actually invoke the CLI to verify integration
+                                        from typer.testing import CliRunner
+
+                                        runner = CliRunner()
+                                        result = runner.invoke(app, ["solve", "test prompt"])
+                                        assert result.exit_code == 0
+                                        mock_make.assert_called_once()
+
     def test_cli_bench_command_parameters(self):
         """Test that the bench command properly passes parameters to make_default_pipeline."""
         with patch("flujo.recipes.factories.make_default_pipeline"):
@@ -53,6 +62,17 @@ class TestCLIParameterIntegration:
             mock_solution = AsyncMock()
             mock_validator = AsyncMock()
             mock_reflection = AsyncMock()
+
+            class DummyPipeline:
+                def __str__(self):
+                    return "dummy pipeline"
+
+            class DummyResult:
+                def __init__(self):
+                    self.score = 1.0
+
+                def __str__(self):
+                    return "dummy result"
 
             with patch("flujo.infra.agents.make_review_agent", return_value=mock_review):
                 with patch("flujo.infra.agents.make_solution_agent", return_value=mock_solution):
@@ -67,11 +87,21 @@ class TestCLIParameterIntegration:
                             # Test that bench calls make_default_pipeline with correct parameters
                             with patch("flujo.cli.main.make_default_pipeline") as mock_make:
                                 with patch("asyncio.run") as mock_run:
-                                    mock_make.return_value = MagicMock()
-                                    mock_run.return_value = MagicMock()
+                                    mock_make.return_value = DummyPipeline()
+                                    mock_run.return_value = DummyResult()
 
                                     # Verify that make_default_pipeline is called with expected parameters
                                     assert mock_make is not None
+
+                                    # Actually invoke the CLI to verify integration
+                                    from typer.testing import CliRunner
+
+                                    runner = CliRunner()
+                                    result = runner.invoke(
+                                        app, ["bench", "test prompt", "--rounds", "1"]
+                                    )
+                                    assert result.exit_code == 0
+                                    mock_make.assert_called_once()
 
     def test_parameter_mapping_consistency(self):
         """Test that CLI parameter names map consistently to function parameters."""

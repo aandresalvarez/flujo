@@ -23,6 +23,7 @@ class SQLiteBackend(StateBackend):
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = asyncio.Lock()
         self._initialized = False
+        self._connection_pool: Optional[aiosqlite.Connection] = None
 
     async def _init_db(self, retry_count: int = 0, max_retries: int = 1) -> None:
         """Initialize the database with schema and indexes.
@@ -222,6 +223,21 @@ class SQLiteBackend(StateBackend):
                     except sqlite3.DatabaseError as e:
                         telemetry.logfire.error(f"Failed to initialize DB: {e}")
                         raise
+
+    async def close(self) -> None:
+        """Close database connections and cleanup resources."""
+        if self._connection_pool:
+            await self._connection_pool.close()
+            self._connection_pool = None
+        self._initialized = False
+
+    async def __aenter__(self) -> "SQLiteBackend":
+        """Async context manager entry."""
+        return self
+
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        """Async context manager exit with cleanup."""
+        await self.close()
 
     async def _with_retries(
         self, coro_func: Callable[..., Awaitable[Any]], *args: Any, **kwargs: Any
