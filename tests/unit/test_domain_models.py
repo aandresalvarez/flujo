@@ -1,9 +1,25 @@
+from typing import List, Optional
+
+from pydantic import Field
+
 from flujo.domain.models import (
+    BaseModel,
     ImprovementSuggestion,
     ImprovementReport,
     SuggestionType,
     PromptModificationDetail,
 )
+
+
+class Node(BaseModel):
+    """Simple recursive model for circular reference testing."""
+
+    name: str
+    parent: Optional["Node"] = None
+    children: List["Node"] = Field(default_factory=list)
+
+
+Node.model_rebuild()
 
 
 def test_improvement_models_round_trip() -> None:
@@ -86,3 +102,56 @@ def test_global_custom_serializer_registry():
     serialized = m.model_dump(mode="cache")
     assert serialized["foo"] == "custom:42"
     assert serialized["bar"] == "3+4j"
+
+
+def test_base_model_circular_reference_serialization() -> None:
+    """Ensure BaseModel.model_dump handles circular references correctly."""
+
+    # Scenario A: direct parent-child loop
+    parent = Node(name="parent")
+    child = Node(name="child", parent=parent)
+    parent.children.append(child)
+
+    dumped_default = parent.model_dump(mode="default")
+    child_dump_default = dumped_default["children"][0]
+    assert child_dump_default["parent"] is None
+
+    dumped_cache = parent.model_dump(mode="cache")
+    child_dump_cache = dumped_cache["children"][0]
+    assert child_dump_cache["parent"] == "<Node circular>"
+
+    # Scenario B: self reference
+    node = Node(name="self")
+    node.parent = node
+
+    dumped_default = node.model_dump(mode="default")
+    assert dumped_default["parent"] is None
+
+    dumped_cache = node.model_dump(mode="cache")
+    assert dumped_cache["parent"] == "<Node circular>"
+
+    # Scenario C: deeply nested loop
+    root = Node(name="root")
+    child1 = Node(name="child1", parent=root)
+    grandchild = Node(name="grandchild", parent=child1)
+    grandchild.children.append(root)
+    root.children.append(child1)
+    child1.children.append(grandchild)
+
+    dumped_default = root.model_dump(mode="default")
+    grandchild_default = dumped_default["children"][0]["children"][0]
+    assert grandchild_default["children"][0] is None
+
+    dumped_cache = root.model_dump(mode="cache")
+    grandchild_cache = dumped_cache["children"][0]["children"][0]
+    assert grandchild_cache["children"][0] == "<Node circular>"
+
+    # Scenario D: no circular references
+    root_no_loop = Node(name="root")
+    child_no_loop = Node(name="child")
+    root_no_loop.children.append(child_no_loop)
+
+    default_out = root_no_loop.model_dump(mode="default")
+    cache_out = root_no_loop.model_dump(mode="cache")
+    assert default_out == cache_out
+    assert default_out["children"][0]["parent"] is None
