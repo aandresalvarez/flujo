@@ -31,6 +31,9 @@ class TestCacheStep:
 
         # Test with custom cache backend
         custom_cache = Mock()
+        # Mock the required CacheBackend methods
+        custom_cache.get = Mock()
+        custom_cache.set = Mock()
         cache_step = CacheStep.cached(step, cache_backend=custom_cache)
         assert cache_step.cache_backend == custom_cache
 
