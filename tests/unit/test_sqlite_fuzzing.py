@@ -14,7 +14,9 @@ from flujo.state.backends.sqlite import SQLiteBackend
 
 def sanitize_filename(filename: str) -> str:
     safe = "".join(c for c in filename if c.isalnum() or c in "._-")
-    return safe or "test.db"
+    if safe.endswith(".db"):
+        safe = safe[:-3]
+    return safe or "test"
 
 
 class TestSQLiteBackendFuzzing:

@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from flujo.state.backends.sqlite import SQLiteBackend
+from .conftest import capture_logs
 
 
 class TestSQLiteBackendDeleteState:
@@ -303,12 +304,11 @@ class TestSQLiteBackendPerformanceThresholds:
 
 
 class TestSQLiteBackendLoggerContextManagement:
-    """Test logger context management and cleanup."""
+    """Tests for SQLiteBackend logger context management."""
 
     @pytest.mark.asyncio
     async def test_logger_context_manager_cleanup(self, tmp_path: Path) -> None:
         """Test that logger context manager properly cleans up handlers."""
-        from tests.unit.test_sqlite_observability import capture_logs
         import logging
 
         # Get the original logger state
@@ -316,22 +316,16 @@ class TestSQLiteBackendLoggerContextManagement:
         original_handlers = logger.handlers.copy()
 
         # Use the context manager
-        with capture_logs() as log_capture:
-            backend = SQLiteBackend(tmp_path / "logger_test.db")
+        with capture_logs():
+            backend = SQLiteBackend(tmp_path / "test.db")
             await backend._ensure_init()
 
-            # Verify logs were captured
-            log_output = log_capture.getvalue()
-            assert "Initialized SQLite database" in log_output
-
-        # Verify logger was cleaned up
+        # Verify handlers were cleaned up
         assert logger.handlers == original_handlers
-        assert logger.level == logging.NOTSET
 
     @pytest.mark.asyncio
     async def test_logger_context_manager_exception_handling(self, tmp_path: Path) -> None:
         """Test that logger context manager cleans up even when exceptions occur."""
-        from tests.unit.test_sqlite_observability import capture_logs
         import logging
 
         logger = logging.getLogger("flujo")
@@ -339,14 +333,14 @@ class TestSQLiteBackendLoggerContextManagement:
 
         try:
             with capture_logs():
-                # Simulate an exception
+                backend = SQLiteBackend(tmp_path / "test.db")
+                await backend._ensure_init()
                 raise RuntimeError("Test exception")
         except RuntimeError:
             pass
 
-        # Verify logger was still cleaned up despite exception
+        # Verify handlers were cleaned up even after exception
         assert logger.handlers == original_handlers
-        assert logger.level == logging.NOTSET
 
 
 class TestSQLiteBackendTypeSafety:

@@ -13,85 +13,89 @@ class TestCLIParameterIntegration:
 
     def test_cli_solve_command_parameters(self):
         """Test that the solve command properly passes parameters to make_default_pipeline."""
-        with patch("flujo.recipes.factories.make_default_pipeline"):
-            with patch("flujo.recipes.factories.run_default_pipeline"):
-                # Mock the agents
-                mock_review = AsyncMock()
-                mock_solution = AsyncMock()
-                mock_validator = AsyncMock()
-                mock_reflection = AsyncMock()
+        # Mock all agent creation functions to avoid API key requirements
+        with patch("flujo.infra.agents.make_review_agent") as mock_make_review:
+            with patch("flujo.infra.agents.make_solution_agent") as mock_make_solution:
+                with patch("flujo.infra.agents.make_validator_agent") as mock_make_validator:
+                    with patch("flujo.infra.agents.get_reflection_agent") as mock_get_reflection:
+                        # Create mock agents
+                        mock_review = AsyncMock()
+                        mock_solution = AsyncMock()
+                        mock_validator = AsyncMock()
+                        mock_reflection = AsyncMock()
 
-                with patch("flujo.infra.agents.make_review_agent", return_value=mock_review):
-                    with patch(
-                        "flujo.infra.agents.make_solution_agent", return_value=mock_solution
-                    ):
-                        with patch(
-                            "flujo.infra.agents.make_validator_agent", return_value=mock_validator
-                        ):
-                            with patch(
-                                "flujo.infra.agents.get_reflection_agent",
-                                return_value=mock_reflection,
-                            ):
-                                # Import the CLI function
+                        # Configure mocks to return our mock agents
+                        mock_make_review.return_value = mock_review
+                        mock_make_solution.return_value = mock_solution
+                        mock_make_validator.return_value = mock_validator
+                        mock_get_reflection.return_value = mock_reflection
 
-                                # Test that solve calls make_default_pipeline with correct parameters
-                                # We need to mock the entire solve function since it's complex
-                                with patch("flujo.cli.main.make_default_pipeline") as mock_make:
-                                    with patch("asyncio.run") as mock_run:
-                                        # This is a simplified test - in practice, we'd test the actual CLI
-                                        mock_make.return_value = MagicMock()
-                                        mock_run.return_value = MagicMock()
+                        # Mock the pipeline creation and execution at the CLI module level
+                        with patch("flujo.cli.main.make_default_pipeline") as mock_make_pipeline:
+                            with patch("flujo.cli.main.run_default_pipeline") as mock_run_pipeline:
+                                # Create a mock pipeline and result
+                                mock_pipeline = MagicMock()
+                                mock_result = MagicMock()
+                                mock_result.model_dump.return_value = {"result": "test"}
 
-                                        # Verify that make_default_pipeline is called with expected parameters
-                                        # This test ensures the CLI integration works correctly
-                                        assert mock_make is not None
+                                mock_make_pipeline.return_value = mock_pipeline
+                                mock_run_pipeline.return_value = mock_result
 
-                                        # Actually invoke the CLI to verify integration
-                                        from typer.testing import CliRunner
+                                # Mock asyncio.run to avoid actual async execution
+                                with patch("asyncio.run") as mock_asyncio_run:
+                                    mock_asyncio_run.return_value = mock_result
 
-                                        runner = CliRunner()
-                                        result = runner.invoke(app, ["solve", "test prompt"])
-                                        assert result.exit_code == 0
-                                        mock_make.assert_called_once()
+                                    # Actually invoke the CLI to verify integration
+                                    from typer.testing import CliRunner
+
+                                    runner = CliRunner()
+                                    result = runner.invoke(app, ["solve", "test prompt"])
+                                    assert result.exit_code == 0
+                                    mock_make_pipeline.assert_called_once()
 
     def test_cli_bench_command_parameters(self):
         """Test that the bench command properly passes parameters to make_default_pipeline."""
-        with patch("flujo.recipes.factories.make_default_pipeline"):
-            # Mock the agents
-            mock_review = AsyncMock()
-            mock_solution = AsyncMock()
-            mock_validator = AsyncMock()
-            mock_reflection = AsyncMock()
+        # Mock all agent creation functions to avoid API key requirements
+        with patch("flujo.infra.agents.make_review_agent") as mock_make_review:
+            with patch("flujo.infra.agents.make_solution_agent") as mock_make_solution:
+                with patch("flujo.infra.agents.make_validator_agent") as mock_make_validator:
+                    with patch("flujo.infra.agents.get_reflection_agent") as mock_get_reflection:
+                        # Create mock agents
+                        mock_review = AsyncMock()
+                        mock_solution = AsyncMock()
+                        mock_validator = AsyncMock()
+                        mock_reflection = AsyncMock()
 
-            class DummyPipeline:
-                def __str__(self):
-                    return "dummy pipeline"
+                        # Configure mocks to return our mock agents
+                        mock_make_review.return_value = mock_review
+                        mock_make_solution.return_value = mock_solution
+                        mock_make_validator.return_value = mock_validator
+                        mock_get_reflection.return_value = mock_reflection
 
-            class DummyResult:
-                def __init__(self):
-                    self.score = 1.0
+                        # Mock the pipeline creation and execution at the CLI module level
+                        with patch("flujo.cli.main.make_default_pipeline") as mock_make_pipeline:
+                            with patch("flujo.cli.main.run_default_pipeline") as mock_run_pipeline:
+                                # Create a mock pipeline and result
+                                class DummyPipeline:
+                                    def __str__(self):
+                                        return "dummy pipeline"
 
-                def __str__(self):
-                    return "dummy result"
+                                class DummyResult:
+                                    def __init__(self):
+                                        self.score = 1.0
 
-            with patch("flujo.infra.agents.make_review_agent", return_value=mock_review):
-                with patch("flujo.infra.agents.make_solution_agent", return_value=mock_solution):
-                    with patch(
-                        "flujo.infra.agents.make_validator_agent", return_value=mock_validator
-                    ):
-                        with patch(
-                            "flujo.infra.agents.get_reflection_agent", return_value=mock_reflection
-                        ):
-                            # Import the CLI function
+                                    def __str__(self):
+                                        return "dummy result"
 
-                            # Test that bench calls make_default_pipeline with correct parameters
-                            with patch("flujo.cli.main.make_default_pipeline") as mock_make:
-                                with patch("asyncio.run") as mock_run:
-                                    mock_make.return_value = DummyPipeline()
-                                    mock_run.return_value = DummyResult()
+                                mock_pipeline = DummyPipeline()
+                                mock_result = DummyResult()
 
-                                    # Verify that make_default_pipeline is called with expected parameters
-                                    assert mock_make is not None
+                                mock_make_pipeline.return_value = mock_pipeline
+                                mock_run_pipeline.return_value = mock_result
+
+                                # Mock asyncio.run to avoid actual async execution
+                                with patch("asyncio.run") as mock_asyncio_run:
+                                    mock_asyncio_run.return_value = mock_result
 
                                     # Actually invoke the CLI to verify integration
                                     from typer.testing import CliRunner
@@ -101,7 +105,7 @@ class TestCLIParameterIntegration:
                                         app, ["bench", "test prompt", "--rounds", "1"]
                                     )
                                     assert result.exit_code == 0
-                                    mock_make.assert_called_once()
+                                    mock_make_pipeline.assert_called_once()
 
     def test_parameter_mapping_consistency(self):
         """Test that CLI parameter names map consistently to function parameters."""

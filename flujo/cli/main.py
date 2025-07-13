@@ -166,6 +166,7 @@ def solve(
             reflection_agent=reflection_agent,
             k_variants=1 if k is None else k,
             max_iters=3 if max_iters is None else max_iters,
+            reflection_limit=settings.reflection_limit,
         )
         import asyncio
 
