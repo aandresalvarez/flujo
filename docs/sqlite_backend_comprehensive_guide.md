@@ -18,7 +18,7 @@ The `SQLiteBackend` is a production-ready state backend for Flujo that provides 
 ### Initialization
 
 ```python
-from flujo.state import SQLiteBackend
+from flujo.state.backends.sqlite import SQLiteBackend
 from pathlib import Path
 
 # Initialize with a database file path

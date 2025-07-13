@@ -34,7 +34,12 @@ class TestSQLiteBackupFix:
         assert len(backup_files) == 1
         backup_file = backup_files[0]
         assert backup_file.name.startswith("test.db.corrupt.")
-        assert backup_file.name.endswith(str(int(time.time())))
+        # Use regex to match timestamp pattern instead of exact time
+        import re
+
+        assert re.match(r"test\.db\.corrupt\.\d+$", backup_file.name), (
+            f"Unexpected backup filename: {backup_file.name}"
+        )
 
     @pytest.mark.asyncio
     async def test_backup_handles_existing_files(self, tmp_path: Path) -> None:

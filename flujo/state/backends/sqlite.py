@@ -84,16 +84,22 @@ class SQLiteBackend(StateBackend):
 
             # Handle existing backup files gracefully
             counter = 1
+            MAX_BACKUP_SUFFIX_ATTEMPTS = 100
             while backup_path.exists():
                 backup_path = (
                     self.db_path.parent / f"{base_name}{suffix}.corrupt.{timestamp}.{counter}"
                 )
                 counter += 1
-                if counter > 100:  # Prevent infinite loop
-                    telemetry.logfire.error(
-                        f"Too many backup files exist, removing oldest: {backup_path}"
-                    )
-                    backup_path.unlink(missing_ok=True)
+                if counter > MAX_BACKUP_SUFFIX_ATTEMPTS:  # Prevent infinite loop
+                    # Find and remove the oldest backup file instead of the current one
+                    backup_pattern = f"{base_name}{suffix}.corrupt.*"
+                    existing_backups = list(self.db_path.parent.glob(backup_pattern))
+                    if existing_backups:
+                        oldest_backup = min(existing_backups, key=lambda p: p.stat().st_mtime)
+                        telemetry.logfire.error(
+                            f"Too many backup files exist, removing oldest: {oldest_backup}"
+                        )
+                        oldest_backup.unlink(missing_ok=True)
                     break
 
             try:
@@ -181,7 +187,7 @@ class SQLiteBackend(StateBackend):
         Raises:
             sqlite3.OperationalError: If database locked errors persist after retries
             sqlite3.DatabaseError: If schema migration fails after retries or other DB errors
-            RuntimeError: If all retry attempts are exhausted (should not occur)
+            AssertionError: If all retry attempts are exhausted (should not occur)
         """
         retries = 3
         delay = 0.1

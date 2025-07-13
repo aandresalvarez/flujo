@@ -46,9 +46,13 @@ async def test_sqlite_backend_large_dataset_performance(tmp_path: Path):
         filtered = await backend.list_workflows(pipeline_id=f"pipeline_{j}")
         assert all(wf["pipeline_id"] == f"pipeline_{j}" for wf in filtered)
     # Performance check: listing all should be reasonably fast
-    threshold = float(os.getenv("SQLITE_PERFORMANCE_THRESHOLD", 2.0))  # Default to 2.0 seconds
+    per_workflow_time_limit = float(
+        os.getenv("SQLITE_PER_WORKFLOW_TIME_LIMIT", 0.0004)
+    )  # Default to 0.0004s per workflow
+    threshold = num_workflows * per_workflow_time_limit
     assert (t1 - t0) < threshold, (
-        f"Performance test failed: took {t1 - t0:.2f}s, threshold is {threshold}s"
+        f"Performance test failed: took {t1 - t0:.2f}s, threshold is {threshold:.2f}s "
+        f"({per_workflow_time_limit:.6f}s per workflow)"
     )
 
 

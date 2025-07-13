@@ -24,6 +24,7 @@ def capture_logs(logger_name: str = "flujo", level: int = logging.DEBUG):
         yield log_capture
     finally:
         logger.removeHandler(handler)
+        logger.setLevel(logging.NOTSET)  # Reset to default level
 
 
 @pytest.mark.asyncio
@@ -35,7 +36,9 @@ async def test_sqlite_backend_logs_initialization_events(tmp_path: Path) -> None
 
         # Check that initialization was logged
         log_output = log_capture.getvalue()
-        assert "initialized" in log_output.lower() or "database" in log_output.lower()
+        assert "Initialized SQLite database" in log_output, (
+            "Expected log message not found in log output"
+        )
 
 
 @pytest.mark.asyncio
