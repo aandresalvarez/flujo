@@ -242,18 +242,18 @@ class SQLiteBackend(StateBackend):
         Raises:
             sqlite3.OperationalError: If database locked errors persist after retries
             sqlite3.DatabaseError: If schema migration fails after retries or other DB errors
-            AssertionError: If all retry attempts are exhausted (should not occur)
+            RuntimeError: If all retry attempts are exhausted
         """
-        retries = 3
+        max_retries = 3
         delay = 0.1
-        for attempt in range(retries):
+        for attempt in range(max_retries):
             try:
                 result = await coro_func(*args, **kwargs)
                 return result
             except sqlite3.OperationalError as e:
-                if "database is locked" in str(e).lower() and attempt < retries - 1:
+                if "database is locked" in str(e).lower() and attempt < max_retries - 1:
                     telemetry.logfire.warn(
-                        f"Database is locked, retrying ({attempt + 1}/{retries})..."
+                        f"Database is locked, retrying ({attempt + 1}/{max_retries})..."
                     )
                     await asyncio.sleep(delay)
                     delay *= 2
@@ -261,9 +261,9 @@ class SQLiteBackend(StateBackend):
                 raise
             except sqlite3.DatabaseError as e:
                 if "no such column" in str(e).lower():
-                    if attempt < retries - 1:
+                    if attempt < max_retries - 1:
                         telemetry.logfire.warn(
-                            f"Schema mismatch detected: {e}. Attempting migration (attempt {attempt + 1}/{retries})..."
+                            f"Schema mismatch detected: {e}. Attempting migration (attempt {attempt + 1}/{max_retries})..."
                         )
                         # Reset initialization state and re-initialize properly
                         self._initialized = False
@@ -271,15 +271,14 @@ class SQLiteBackend(StateBackend):
                         continue
                     else:
                         telemetry.logfire.error(
-                            f"Schema migration failed after {retries} attempts. Last error: {e}"
+                            f"Schema migration failed after {max_retries} attempts. Last error: {e}"
                         )
                         raise
                 raise
 
         # This should never be reached due to explicit raises above, but ensures type safety
-        assert False, "Unexpected code path: all retry attempts should raise an exception"
-        raise sqlite3.DatabaseError(
-            f"Operation failed after {retries} attempts due to unexpected conditions"
+        raise RuntimeError(
+            f"Operation failed after {max_retries} attempts due to unexpected conditions"
         )
 
     async def save_state(self, run_id: str, state: Dict[str, Any]) -> None:
@@ -294,9 +293,8 @@ class SQLiteBackend(StateBackend):
 
             async def _save() -> None:
                 async with aiosqlite.connect(self.db_path) as db:
-                    execution_time_ms = None
-                    if state.get("execution_time_ms") is not None:
-                        execution_time_ms = state["execution_time_ms"]
+                    # Get execution_time_ms directly from state
+                    execution_time_ms = state.get("execution_time_ms")
                     pipeline_context_json = json.dumps(safe_serialize(state["pipeline_context"]))
                     last_step_output_json = (
                         json.dumps(safe_serialize(state["last_step_output"]))

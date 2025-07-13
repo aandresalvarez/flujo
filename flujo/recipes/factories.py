@@ -33,6 +33,9 @@ def make_default_pipeline(
     validator_agent: "AsyncAgentProtocol[Any, Any]",
     reflection_agent: Optional["AsyncAgentProtocol[Any, Any]"] = None,
     max_retries: int = 3,
+    k_variants: int = 1,
+    max_iters: int = 3,
+    reflection_limit: Optional[int] = None,
 ) -> Pipeline[str, Checklist]:
     """Create a default Review → Solution → Validate pipeline.
 
@@ -42,10 +45,26 @@ def make_default_pipeline(
         validator_agent: Agent that validates the solution against requirements
         reflection_agent: Optional agent for reflection/improvement
         max_retries: Maximum retries for each step
+        k_variants: Number of solution variants to generate per iteration
+        max_iters: Maximum number of iterations for improvement
+        reflection_limit: Optional limit on reflection iterations
 
     Returns:
         A Pipeline object that can be inspected, composed, and executed
     """
+
+    # --- Robust type validation for critical parameters ---
+    if not isinstance(max_retries, int):
+        raise TypeError(f"max_retries must be int, got {type(max_retries).__name__}")
+    if not isinstance(k_variants, int):
+        raise TypeError(f"k_variants must be int, got {type(k_variants).__name__}")
+    if not isinstance(max_iters, int):
+        raise TypeError(f"max_iters must be int, got {type(max_iters).__name__}")
+    if reflection_limit is not None and not isinstance(reflection_limit, int):
+        raise TypeError(
+            f"reflection_limit must be int or None, got {type(reflection_limit).__name__}"
+        )
+    # -----------------------------------------------------
 
     async def review_step(data: str, *, context: PipelineContext) -> str:
         """Review the task and create a checklist."""
@@ -344,8 +363,13 @@ async def _invoke(
 ) -> Any:
     """Helper function to invoke an agent with proper error handling."""
     from flujo.application.runner import _accepts_param
+    from flujo.infra.agents import AsyncAgentWrapper
 
     try:
+        # If this is a pydantic-ai agent wrapper, never pass context (it will error)
+        if isinstance(agent, AsyncAgentWrapper):
+            return await agent.run(data)
+        # Otherwise, only pass context if supported
         if context is not None and _accepts_param(agent.run, "context"):
             return await agent.run(data, context=context)
         else:

@@ -47,8 +47,12 @@ def test_golden_transcript():
         k_variants=1,
         max_iters=1,
     )
-    result = run_default_pipeline(
-        pipeline, Task(prompt="Write a short haiku about a robot learning to paint.")
+    import asyncio
+
+    result = asyncio.run(
+        run_default_pipeline(
+            pipeline, Task(prompt="Write a short haiku about a robot learning to paint.")
+        )
     )
 
     assert isinstance(result, Candidate)

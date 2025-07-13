@@ -164,6 +164,8 @@ def solve(
             solution_agent=solution,
             validator_agent=validator,
             reflection_agent=reflection_agent,
+            k_variants=k or 1,
+            max_iters=max_iters or 3,
         )
         import asyncio
 
@@ -242,6 +244,8 @@ def bench(prompt: str, rounds: int = 10) -> None:
             solution_agent=solution_agent,
             validator_agent=validator_agent,
             reflection_agent=get_reflection_agent(),
+            k_variants=1,
+            max_iters=3,
         )
         times: List[float] = []
         scores: List[float] = []

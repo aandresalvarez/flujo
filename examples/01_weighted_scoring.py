@@ -26,7 +26,7 @@ async def main():
 
     validator_agent = make_agent_async(
         "openai:gpt-4o",
-        "You are a validator. Check if the solution meets the requirements and mark them as completed.",
+        "You are a validator. For each checklist item, explicitly set 'passed' to true if the solution meets the requirement, or false if it does not. Return a Checklist with the same items, each with a boolean 'passed' field.",
         Checklist,
     )
 
@@ -47,11 +47,11 @@ async def main():
         print(f"Solution:\n{result.solution}")
 
         # Use weighted scoring to prioritize docstrings
-        weights = {
-            "docstring": 2.0,  # Double weight for docstrings
-            "type hints": 1.5,  # Higher weight for type hints
-            "correctness": 1.0,
-        }
+        weights = [
+            {"item": "Includes a docstring", "weight": 2.0},  # Double weight for docstrings
+            {"item": "Uses type hints", "weight": 1.5},  # Higher weight for type hints
+            {"item": "Function works correctly", "weight": 1.0},
+        ]
 
         score = weighted_score(result.checklist, weights)
         print(f"\nWeighted Score: {score:.2f}")
@@ -59,7 +59,7 @@ async def main():
         if result.checklist:
             print("\nFinal Quality Checklist:")
             for item in result.checklist.items:
-                status = "✅ Passed" if item.completed else "❌ Failed"
+                status = "✅ Passed" if item.passed else "❌ Failed"
                 print(f"  - {item.description:<60} {status}")
     else:
         print("\n❌ The workflow did not produce a valid solution.")
