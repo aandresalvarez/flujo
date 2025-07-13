@@ -74,10 +74,16 @@ class AdvancedPromptFormatter:
                 return ""
             parts = []
             for item in items:
-                inner = block.replace("{{ this }}", self._serialize(item))
-                # allow nested placeholders referring to outer scope as well
-                inner_formatter = AdvancedPromptFormatter(inner)
-                parts.append(inner_formatter.format(**kwargs, this=item))
+                # Render the block with access to the current item via ``this``
+                # without pre-inserting the serialized value. This prevents any
+                # template syntax contained within ``item`` from being
+                # interpreted a second time when the inner formatter runs.
+                inner_formatter = AdvancedPromptFormatter(block)
+                rendered = inner_formatter.format(**kwargs, this=item)
+                # Escape any ``{{`` that appear in the rendered result so they
+                # survive the outer placeholder pass unchanged.
+                rendered = rendered.replace("{{", ESC_MARKER)
+                parts.append(rendered)
             return "".join(parts)
 
         processed = EACH_BLOCK_REGEX.sub(each_replacer, processed)
@@ -85,7 +91,10 @@ class AdvancedPromptFormatter:
         def placeholder_replacer(match: re.Match[str]) -> str:
             key = match.group(1).strip()
             value = self._get_nested_value({**kwargs, **{"this": kwargs.get("this")}}, key)
-            return self._serialize(value)
+            # Escape any template syntax that may appear inside user-provided
+            # values so that it is rendered literally and not interpreted in a
+            # subsequent regex pass.
+            return self._serialize(value).replace("{{", ESC_MARKER)
 
         processed = PLACEHOLDER_REGEX.sub(placeholder_replacer, processed)
         processed = processed.replace(ESC_MARKER, "{{")
