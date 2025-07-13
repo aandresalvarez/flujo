@@ -100,7 +100,7 @@ class SQLiteBackend(StateBackend):
                             f"Too many backup files exist, removing oldest: {oldest_backup}"
                         )
                         oldest_backup.unlink(missing_ok=True)
-                    break
+                    continue
 
             try:
                 self.db_path.rename(backup_path)
