@@ -6,6 +6,7 @@ import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 from io import StringIO
+import sqlite3
 
 from flujo.state.backends.sqlite import SQLiteBackend
 from .conftest import capture_logs
@@ -76,7 +77,7 @@ async def test_sqlite_backend_logs_error_conditions(tmp_path: Path) -> None:
 
         try:
             await corrupted_backend.save_state("test_run", {"test": "data"})
-        except Exception:
+        except sqlite3.DatabaseError:
             # Error should be logged
             log_output = log_capture.getvalue()
             assert len(log_output) > 0

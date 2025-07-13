@@ -330,5 +330,5 @@ async def test_with_retries_corruption_recovery(sqlite_backend, tmp_path: Path) 
 
         result = await backend._with_retries(no_op)  # Use async function instead of lambda
         assert result is None  # Explicitly verify expected behavior
-    except Exception:
+    except sqlite3.DatabaseError:
         pass  # The test is just to ensure no infinite loop or crash
