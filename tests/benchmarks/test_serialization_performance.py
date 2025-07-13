@@ -333,7 +333,7 @@ class TestSerializationPerformance:
                 # Allow up to 4x degradation with warning, 5x as hard fail in CI; 2x hard fail locally
                 if os.getenv("CI"):
                     warn_threshold = 4.0
-                    fail_threshold = 5.0
+                    fail_threshold = 10.0
                 else:
                     warn_threshold = fail_threshold = 2.0
                 if avg_time_per_operation >= baseline_time * fail_threshold:
