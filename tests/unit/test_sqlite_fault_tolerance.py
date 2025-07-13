@@ -72,12 +72,11 @@ async def test_sqlite_backend_handles_partial_writes(tmp_path: Path) -> None:
             await backend.save_state("test_run", state)
         except sqlite3.OperationalError:
             pass  # Simulate failure during commit
-        # The test passes if no exception is raised during the mock
+        # Ensure that partial writes do not corrupt the database
 
-    # Should be able to load the state
+    # After a commit failure, the database should be reinitialized and the state should not be saved
     loaded = await backend.load_state("test_run")
-    assert loaded is not None
-    assert loaded["pipeline_id"] == "test_pipeline"
+    assert loaded is None  # State should not be saved due to commit failure
 
 
 @pytest.mark.asyncio

@@ -1,3 +1,4 @@
+import os
 import pytest
 import asyncio
 from datetime import datetime, timedelta
@@ -45,7 +46,10 @@ async def test_sqlite_backend_large_dataset_performance(tmp_path: Path):
         filtered = await backend.list_workflows(pipeline_id=f"pipeline_{j}")
         assert all(wf["pipeline_id"] == f"pipeline_{j}" for wf in filtered)
     # Performance check: listing all should be reasonably fast
-    assert (t1 - t0) < 2.0  # 2 seconds for 5000 rows is reasonable for local SQLite
+    threshold = float(os.getenv("SQLITE_PERFORMANCE_THRESHOLD", 2.0))  # Default to 2.0 seconds
+    assert (t1 - t0) < threshold, (
+        f"Performance test failed: took {t1 - t0:.2f}s, threshold is {threshold}s"
+    )
 
 
 @pytest.mark.asyncio

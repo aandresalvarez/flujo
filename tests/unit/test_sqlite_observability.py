@@ -6,21 +6,30 @@ import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 from io import StringIO
+from contextlib import contextmanager
 
 from flujo.state.backends.sqlite import SQLiteBackend
+
+
+@contextmanager
+def capture_logs(logger_name: str = "flujo", level: int = logging.DEBUG):
+    """Context manager to capture log output for testing."""
+    log_capture = StringIO()
+    handler = logging.StreamHandler(log_capture)
+    logger = logging.getLogger(logger_name)
+    logger.addHandler(handler)
+    logger.setLevel(level)
+
+    try:
+        yield log_capture
+    finally:
+        logger.removeHandler(handler)
 
 
 @pytest.mark.asyncio
 async def test_sqlite_backend_logs_initialization_events(tmp_path: Path) -> None:
     """Test that SQLiteBackend logs initialization events properly."""
-    # Capture log output from the 'flujo' logger
-    log_capture = StringIO()
-    handler = logging.StreamHandler(log_capture)
-    logger = logging.getLogger("flujo")
-    logger.addHandler(handler)
-    logger.setLevel(logging.DEBUG)
-
-    try:
+    with capture_logs() as log_capture:
         backend = SQLiteBackend(tmp_path / "init_test.db")
         await backend._ensure_init()
 
@@ -28,20 +37,11 @@ async def test_sqlite_backend_logs_initialization_events(tmp_path: Path) -> None
         log_output = log_capture.getvalue()
         assert "initialized" in log_output.lower() or "database" in log_output.lower()
 
-    finally:
-        logger.removeHandler(handler)
-
 
 @pytest.mark.asyncio
 async def test_sqlite_backend_logs_save_operations(tmp_path: Path) -> None:
     """Test that SQLiteBackend logs save operations with appropriate detail."""
-    log_capture = StringIO()
-    handler = logging.StreamHandler(log_capture)
-    logger = logging.getLogger("flujo")
-    logger.addHandler(handler)
-    logger.setLevel(logging.DEBUG)
-
-    try:
+    with capture_logs() as log_capture:
         backend = SQLiteBackend(tmp_path / "save_test.db")
         now = datetime.utcnow().replace(microsecond=0)
         state = {
@@ -67,20 +67,11 @@ async def test_sqlite_backend_logs_save_operations(tmp_path: Path) -> None:
         # Should log save operations (though exact message depends on implementation)
         assert len(log_output) > 0
 
-    finally:
-        logger.removeHandler(handler)
-
 
 @pytest.mark.asyncio
 async def test_sqlite_backend_logs_error_conditions(tmp_path: Path) -> None:
     """Test that SQLiteBackend logs error conditions appropriately."""
-    log_capture = StringIO()
-    handler = logging.StreamHandler(log_capture)
-    logger = logging.getLogger("flujo")
-    logger.addHandler(handler)
-    logger.setLevel(logging.ERROR)
-
-    try:
+    with capture_logs(level=logging.ERROR) as log_capture:
         backend = SQLiteBackend(tmp_path / "error_test.db")
 
         # Try to load a non-existent state (should not be an error, but should be logged)
@@ -100,9 +91,6 @@ async def test_sqlite_backend_logs_error_conditions(tmp_path: Path) -> None:
             # Error should be logged
             log_output = log_capture.getvalue()
             assert len(log_output) > 0
-
-    finally:
-        logger.removeHandler(handler)
 
 
 @pytest.mark.asyncio

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Awaitable, Callable, Any, Dict, List, Optional, cast
@@ -75,9 +76,41 @@ class SQLiteBackend(StateBackend):
             telemetry.logfire.error(
                 f"Database corruption detected: {e}. Reinitializing {self.db_path} (attempt {retry_count + 1}/{max_retries})."
             )
-            backup_path = self.db_path.with_suffix(self.db_path.suffix + ".corrupt")
-            self.db_path.rename(backup_path)
-            telemetry.logfire.warn(f"Corrupted DB moved to {backup_path}")
+            # Create unique backup filename with timestamp to avoid conflicts
+            timestamp = int(time.time())
+            base_name = self.db_path.stem
+            suffix = self.db_path.suffix
+            backup_path = self.db_path.parent / f"{base_name}{suffix}.corrupt.{timestamp}"
+
+            # Handle existing backup files gracefully
+            counter = 1
+            while backup_path.exists():
+                backup_path = (
+                    self.db_path.parent / f"{base_name}{suffix}.corrupt.{timestamp}.{counter}"
+                )
+                counter += 1
+                if counter > 100:  # Prevent infinite loop
+                    telemetry.logfire.error(
+                        f"Too many backup files exist, removing oldest: {backup_path}"
+                    )
+                    backup_path.unlink(missing_ok=True)
+                    break
+
+            try:
+                self.db_path.rename(backup_path)
+                telemetry.logfire.warn(f"Corrupted DB moved to {backup_path}")
+            except (FileExistsError, OSError) as rename_error:
+                telemetry.logfire.error(
+                    f"Failed to rename corrupted DB to {backup_path}: {rename_error}"
+                )
+                # Fallback: try to remove the corrupted file
+                try:
+                    self.db_path.unlink(missing_ok=True)
+                    telemetry.logfire.warn(f"Removed corrupted DB file: {self.db_path}")
+                except OSError as unlink_error:
+                    telemetry.logfire.error(f"Failed to remove corrupted DB: {unlink_error}")
+                    raise sqlite3.DatabaseError(f"Database corruption recovery failed: {e}")
+
             await self._init_db(retry_count=retry_count + 1, max_retries=max_retries)
 
     async def _migrate_existing_schema(self, db: aiosqlite.Connection) -> None:
@@ -183,7 +216,10 @@ class SQLiteBackend(StateBackend):
                 raise
 
         # This should never be reached due to explicit raises above, but ensures type safety
-        raise RuntimeError(f"Operation failed after {retries} attempts")
+        assert False, "Unexpected code path: all retry attempts should raise an exception"
+        raise sqlite3.DatabaseError(
+            f"Operation failed after {retries} attempts due to unexpected conditions"
+        )
 
     async def save_state(self, run_id: str, state: Dict[str, Any]) -> None:
         """Save workflow state to the database.
