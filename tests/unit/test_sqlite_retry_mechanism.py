@@ -321,6 +321,10 @@ async def test_with_retries_corruption_recovery(sqlite_backend, tmp_path: Path) 
 
     # Now try to use the backend, expecting it to handle the corruption gracefully
     try:
-        await backend._with_retries(lambda: None)  # Replace with actual operation if needed
+
+        async def no_op(*args, **kwargs):
+            return None
+
+        await backend._with_retries(no_op)  # Use async function instead of lambda
     except Exception:
         pass  # The test is just to ensure no infinite loop or crash
