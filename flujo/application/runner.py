@@ -873,6 +873,8 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     usage_limits=self.usage_limits,
                     hooks=self.hooks,
                     backend=self.backend,
+                    state_backend=self.state_backend,
+                    delete_on_completion=self.delete_on_completion,
                     registry=self.registry,
                     pipeline_name=self.pipeline_name,
                     pipeline_version=self.pipeline_version,
