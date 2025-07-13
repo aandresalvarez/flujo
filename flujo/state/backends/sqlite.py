@@ -139,10 +139,23 @@ class SQLiteBackend(StateBackend):
                 raise
             except sqlite3.DatabaseError as e:
                 if "no such column" in str(e).lower():
-                    telemetry.logfire.warn(f"Schema mismatch detected: {e}. Attempting migration.")
-                    await self._init_db()
-                    continue
+                    if attempt < retries - 1:
+                        telemetry.logfire.warn(
+                            f"Schema mismatch detected: {e}. Attempting migration (attempt {attempt + 1}/{retries})..."
+                        )
+                        # Reset initialization state and re-initialize properly
+                        self._initialized = False
+                        await self._ensure_init()
+                        continue
+                    else:
+                        telemetry.logfire.error(
+                            f"Schema migration failed after {retries} attempts. Last error: {e}"
+                        )
+                        raise
                 raise
+
+        # This should never be reached due to explicit raises above, but ensures type safety
+        raise RuntimeError(f"Operation failed after {retries} attempts")
 
     async def save_state(self, run_id: str, state: Dict[str, Any]) -> None:
         await self._ensure_init()
