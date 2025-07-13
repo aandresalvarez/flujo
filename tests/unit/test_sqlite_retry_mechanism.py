@@ -36,12 +36,10 @@ async def test_with_retries_proper_initialization_reset(tmp_path: Path) -> None:
     async def schema_error_coro(*args, **kwargs):
         raise sqlite3.DatabaseError("no such column: missing_column")
 
-    # This should reset initialization and retry properly
+        # This should reset initialization and retry properly
+
     with pytest.raises(sqlite3.DatabaseError):
         await backend._with_retries(schema_error_coro)
-
-    # The initialization state should be reset during the retry process
-    # We can verify this by checking that _ensure_init is called with proper locking
 
 
 @pytest.mark.asyncio

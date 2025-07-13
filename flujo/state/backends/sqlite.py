@@ -22,9 +22,14 @@ class SQLiteBackend(StateBackend):
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = asyncio.Lock()
         self._initialized = False
-        # Remove self._logger
 
-    async def _init_db(self) -> None:
+    async def _init_db(self, retry_count: int = 0, max_retries: int = 1) -> None:
+        """Initialize the database with schema and indexes.
+
+        Args:
+            retry_count: Current retry attempt number
+            max_retries: Maximum number of retry attempts for corruption recovery
+        """
         try:
             async with aiosqlite.connect(self.db_path) as db:
                 await db.execute("PRAGMA foreign_keys = ON")
@@ -62,13 +67,18 @@ class SQLiteBackend(StateBackend):
                 await db.commit()
             telemetry.logfire.info(f"Initialized SQLite database at {self.db_path}")
         except sqlite3.DatabaseError as e:
+            if retry_count >= max_retries:
+                telemetry.logfire.error(
+                    f"Failed to initialize database after {max_retries} attempts: {e}"
+                )
+                raise
             telemetry.logfire.error(
-                f"Database corruption detected: {e}. Reinitializing {self.db_path}."
+                f"Database corruption detected: {e}. Reinitializing {self.db_path} (attempt {retry_count + 1}/{max_retries})."
             )
             backup_path = self.db_path.with_suffix(self.db_path.suffix + ".corrupt")
             self.db_path.rename(backup_path)
             telemetry.logfire.warn(f"Corrupted DB moved to {backup_path}")
-            await self._init_db()
+            await self._init_db(retry_count=retry_count + 1, max_retries=max_retries)
 
     async def _migrate_existing_schema(self, db: aiosqlite.Connection) -> None:
         """Migrate existing database schema to the new optimized structure."""
@@ -122,6 +132,24 @@ class SQLiteBackend(StateBackend):
     async def _with_retries(
         self, coro_func: Callable[..., Awaitable[Any]], *args: Any, **kwargs: Any
     ) -> Any:
+        """Execute a coroutine function with retry logic for database operations.
+
+        Implements exponential backoff for database locked errors and schema migration
+        retry for schema mismatch errors. Respects retry limits to prevent infinite loops.
+
+        Args:
+            coro_func: The coroutine function to execute
+            *args: Positional arguments to pass to coro_func
+            **kwargs: Keyword arguments to pass to coro_func
+
+        Returns:
+            The result of coro_func if successful
+
+        Raises:
+            sqlite3.OperationalError: If database locked errors persist after retries
+            sqlite3.DatabaseError: If schema migration fails after retries or other DB errors
+            RuntimeError: If all retry attempts are exhausted (should not occur)
+        """
         retries = 3
         delay = 0.1
         for attempt in range(retries):
@@ -158,6 +186,12 @@ class SQLiteBackend(StateBackend):
         raise RuntimeError(f"Operation failed after {retries} attempts")
 
     async def save_state(self, run_id: str, state: Dict[str, Any]) -> None:
+        """Save workflow state to the database.
+
+        Args:
+            run_id: Unique identifier for the workflow run
+            state: Dictionary containing workflow state data
+        """
         await self._ensure_init()
         async with self._lock:
 

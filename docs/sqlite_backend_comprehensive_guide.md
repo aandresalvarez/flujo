@@ -699,5 +699,5 @@ pytest tests/unit/test_sqlite_fault_tolerance.py -v
 pytest tests/unit/test_sqlite_observability.py -v
 
 # Run security tests
-pytest tests/unit/test_sql_injection_security.py -v
+pytest tests/security/test_sql_injection_security.py -v
 ```
