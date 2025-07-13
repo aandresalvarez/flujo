@@ -3,7 +3,7 @@
 import pytest
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from io import StringIO
 import sqlite3
@@ -31,7 +31,7 @@ async def test_sqlite_backend_logs_save_operations(tmp_path: Path) -> None:
     """Test that SQLiteBackend logs save operations with appropriate detail."""
     with capture_logs() as log_capture:
         backend = SQLiteBackend(tmp_path / "save_test.db")
-        now = datetime.utcnow().replace(microsecond=0)
+        now = datetime.now(timezone.utc).replace(microsecond=0)
         state = {
             "run_id": "test_run",
             "pipeline_id": "test_pipeline",
@@ -76,7 +76,25 @@ async def test_sqlite_backend_logs_error_conditions(tmp_path: Path) -> None:
         corrupted_backend = SQLiteBackend(db_path)
 
         try:
-            await corrupted_backend.save_state("test_run", {"test": "data"})
+            # Create a proper state object with all required fields
+            now = datetime.now(timezone.utc).replace(microsecond=0)
+            test_state = {
+                "run_id": "test_run",
+                "pipeline_id": "test_pipeline",
+                "pipeline_name": "Test Pipeline",
+                "pipeline_version": "1.0",
+                "current_step_index": 0,
+                "pipeline_context": {"test": "data"},
+                "last_step_output": "test_output",
+                "status": "running",
+                "created_at": now,
+                "updated_at": now,
+                "total_steps": 5,
+                "error_message": None,
+                "execution_time_ms": 1000,
+                "memory_usage_mb": 10.0,
+            }
+            await corrupted_backend.save_state("test_run", test_state)
         except sqlite3.DatabaseError:
             # Error should be logged
             log_output = log_capture.getvalue()
@@ -87,7 +105,7 @@ async def test_sqlite_backend_logs_error_conditions(tmp_path: Path) -> None:
 async def test_sqlite_backend_metrics_correctness(tmp_path: Path) -> None:
     """Test that SQLiteBackend provides correct metrics and statistics."""
     backend = SQLiteBackend(tmp_path / "metrics_test.db")
-    now = datetime.utcnow().replace(microsecond=0)
+    now = datetime.now(timezone.utc).replace(microsecond=0)
 
     # Create workflows with different statuses
     workflows = [
@@ -163,7 +181,7 @@ async def test_sqlite_backend_error_reporting_detail(tmp_path: Path) -> None:
     # Test error reporting for invalid operations
     try:
         # Try to save with invalid status
-        now = datetime.utcnow().replace(microsecond=0)
+        now = datetime.now(timezone.utc).replace(microsecond=0)
         invalid_state = {
             "run_id": "invalid_run",
             "pipeline_id": "test_pipeline",
@@ -194,7 +212,7 @@ async def test_sqlite_backend_error_reporting_detail(tmp_path: Path) -> None:
 async def test_sqlite_backend_performance_metrics(tmp_path: Path) -> None:
     """Test that SQLiteBackend provides performance-related metrics."""
     backend = SQLiteBackend(tmp_path / "perf_test.db")
-    now = datetime.utcnow().replace(microsecond=0)
+    now = datetime.now(timezone.utc).replace(microsecond=0)
 
     # Create workflows with different performance characteristics
     for i in range(10):
@@ -248,7 +266,7 @@ async def test_sqlite_backend_logs_cleanup_operations(tmp_path: Path) -> None:
         backend = SQLiteBackend(tmp_path / "cleanup_test.db")
 
         # Create some old workflows
-        past = datetime.utcnow().replace(microsecond=0) - timedelta(days=2)
+        past = datetime.now(timezone.utc).replace(microsecond=0) - timedelta(days=2)
         for i in range(5):
             state = {
                 "run_id": f"old_run_{i}",
@@ -310,7 +328,7 @@ async def test_sqlite_backend_logs_concurrent_access(tmp_path: Path) -> None:
 
         # Simulate concurrent access
         async def concurrent_operation(i):
-            now = datetime.utcnow().replace(microsecond=0)
+            now = datetime.now(timezone.utc).replace(microsecond=0)
             state = {
                 "run_id": f"concurrent_run_{i}",
                 "pipeline_id": f"pipeline_{i}",

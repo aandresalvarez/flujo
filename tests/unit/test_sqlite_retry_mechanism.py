@@ -2,7 +2,7 @@
 
 import asyncio
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 import pytest
 
@@ -298,8 +298,8 @@ async def test_with_retries_real_database_operations(sqlite_backend) -> None:
         "pipeline_context": {"test": "data"},
         "last_step_output": None,
         "status": "running",
-        "created_at": datetime.utcnow(),
-        "updated_at": datetime.utcnow(),
+        "created_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc),
     }
 
     # This should work normally
