@@ -17,7 +17,11 @@ def list_runs(
     """List stored runs."""
     backend = load_backend_from_config()
     try:
-        runs = asyncio.run(backend.list_workflows(status=status, pipeline_id=pipeline))
+        # Use the new structured API if available, fallback to legacy
+        if hasattr(backend, "list_runs"):
+            runs = asyncio.run(backend.list_runs(status=status, pipeline_name=pipeline))
+        else:
+            runs = asyncio.run(backend.list_workflows(status=status, pipeline_id=pipeline))
     except NotImplementedError:
         typer.echo("Backend does not support listing runs", err=True)
         raise typer.Exit(1)
@@ -28,7 +32,7 @@ def list_runs(
             r.get("run_id", "-"),
             r.get("pipeline_name", "-"),
             r.get("status", "-"),
-            str(r.get("created_at", "-")),
+            str(r.get("start_time", "-")),
         )
     Console().print(table)
 

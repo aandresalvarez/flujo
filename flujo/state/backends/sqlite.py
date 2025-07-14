@@ -5,18 +5,26 @@ import json
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Awaitable, Callable, Any, Dict, List, Optional, cast
+from typing import Awaitable, Callable, Any, Dict, List, Optional, cast, TYPE_CHECKING
 
 import aiosqlite
 import sqlite3
+import weakref
 
 from .base import StateBackend
-from ...utils.serialization import safe_serialize, safe_deserialize
+from ...utils.serialization import safe_deserialize, robust_serialize
 from ...infra import telemetry
+
+if TYPE_CHECKING:
+    from asyncio import AbstractEventLoop
 
 
 class SQLiteBackend(StateBackend):
     """SQLite-backed persistent storage for workflow state with optimized schema."""
+
+    _global_file_locks: "weakref.WeakKeyDictionary[AbstractEventLoop, Dict[str, asyncio.Lock]]" = (
+        weakref.WeakKeyDictionary()
+    )
 
     def __init__(self, db_path: Path) -> None:
         self.db_path = Path(db_path)
@@ -25,8 +33,30 @@ class SQLiteBackend(StateBackend):
         self._initialized = False
         self._connection_pool: Optional[aiosqlite.Connection] = None
 
-        # File-level lock to prevent concurrent initialization
-        self._file_lock = asyncio.Lock()
+        # Event-loop-local file-level lock - will be initialized lazily
+        self._file_lock: Optional[asyncio.Lock] = None
+        self._file_lock_key = str(self.db_path.absolute())
+
+    def _get_file_lock(self) -> asyncio.Lock:
+        """Get the file lock for the current event loop."""
+        if self._file_lock is None:
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                # No event loop in current thread, create a new one
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+
+            if loop not in SQLiteBackend._global_file_locks:
+                SQLiteBackend._global_file_locks[loop] = {}
+            lock_map = SQLiteBackend._global_file_locks[loop]
+            db_key = str(self.db_path.absolute())
+            if db_key not in lock_map:
+                lock_map[db_key] = asyncio.Lock()
+            self._file_lock = lock_map[db_key]
+        # Always return a Lock
+        assert self._file_lock is not None
+        return self._file_lock
 
     async def _init_db(self, retry_count: int = 0, max_retries: int = 1) -> None:
         """Initialize the database with schema and indexes.
@@ -259,7 +289,7 @@ class SQLiteBackend(StateBackend):
     async def _ensure_init(self) -> None:
         if not self._initialized:
             # Use file-level lock to prevent concurrent initialization across instances
-            async with self._file_lock:
+            async with self._get_file_lock():
                 if not self._initialized:
                     try:
                         await self._init_db()
@@ -357,9 +387,9 @@ class SQLiteBackend(StateBackend):
                 async with aiosqlite.connect(self.db_path) as db:
                     # Get execution_time_ms directly from state
                     execution_time_ms = state.get("execution_time_ms")
-                    pipeline_context_json = json.dumps(safe_serialize(state["pipeline_context"]))
+                    pipeline_context_json = json.dumps(robust_serialize(state["pipeline_context"]))
                     last_step_output_json = (
-                        json.dumps(safe_serialize(state["last_step_output"]))
+                        json.dumps(robust_serialize(state["last_step_output"]))
                         if state.get("last_step_output") is not None
                         else None
                     )
@@ -729,9 +759,9 @@ class SQLiteBackend(StateBackend):
                             step_data.get("duration_ms"),
                             step_data.get("cost"),
                             step_data.get("tokens"),
-                            json.dumps(safe_serialize(step_data.get("input"))),
-                            json.dumps(safe_serialize(step_data.get("output"))),
-                            json.dumps(safe_serialize(step_data.get("error")))
+                            json.dumps(robust_serialize(step_data.get("input"))),
+                            json.dumps(robust_serialize(step_data.get("output"))),
+                            json.dumps(robust_serialize(step_data.get("error")))
                             if step_data.get("error") is not None
                             else None,
                         ),
@@ -756,7 +786,7 @@ class SQLiteBackend(StateBackend):
                             end_data.get("status", "completed"),
                             end_data.get("end_time", datetime.utcnow()).isoformat(),
                             end_data.get("total_cost"),
-                            json.dumps(safe_serialize(end_data.get("final_context"))),
+                            json.dumps(robust_serialize(end_data.get("final_context"))),
                             run_id,
                         ),
                     )
@@ -819,3 +849,59 @@ class SQLiteBackend(StateBackend):
                         }
                     )
                 return results
+
+    async def list_runs(
+        self,
+        status: Optional[str] = None,
+        pipeline_name: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: int = 0,
+    ) -> List[Dict[str, Any]]:
+        """List runs from the new structured schema for lens CLI."""
+        await self._ensure_init()
+        async with self._lock:
+            async with aiosqlite.connect(self.db_path) as db:
+                # Build query with optional filters
+                query = """
+                    SELECT run_id, pipeline_name, pipeline_version, status, start_time, end_time, total_cost
+                    FROM runs
+                    WHERE 1=1
+                """
+                params: List[Any] = []
+
+                if status:
+                    query += " AND status = ?"
+                    params.append(status)
+
+                if pipeline_name:
+                    query += " AND pipeline_name = ?"
+                    params.append(pipeline_name)
+
+                query += " ORDER BY start_time DESC"
+
+                if limit is not None:
+                    query += " LIMIT ?"
+                    params.append(limit)
+                if offset:
+                    query += " OFFSET ?"
+                    params.append(offset)
+
+                async with db.execute(query, params) as cursor:
+                    rows = await cursor.fetchall()
+
+                result: List[Dict[str, Any]] = []
+                for row in rows:
+                    if row is None:
+                        continue
+                    result.append(
+                        {
+                            "run_id": row[0],
+                            "pipeline_name": row[1],
+                            "pipeline_version": row[2],
+                            "status": row[3],
+                            "start_time": row[4],
+                            "end_time": row[5],
+                            "total_cost": row[6],
+                        }
+                    )
+                return result
