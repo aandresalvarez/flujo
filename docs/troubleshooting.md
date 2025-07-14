@@ -249,7 +249,7 @@ This guide helps you resolve common issues when using `flujo`.
 **Solutions:**
 1. Check telemetry configuration:
    ```python
-   from flujo import init_telemetry
+   from flujo.infra import init_telemetry
 
    init_telemetry(
        enable_export=True,

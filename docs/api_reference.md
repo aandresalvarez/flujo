@@ -62,7 +62,7 @@ class MyResources(AppResources):
 
 my_resources = MyResources(db_pool=make_pool())
 
-from flujo.domain.models import PipelineContext
+from flujo.models import PipelineContext
 
 class MyContext(PipelineContext):
     counter: int = 0
@@ -201,7 +201,7 @@ This protocol is for agents that need to access or modify the pipeline's shared 
 
 ```python
 from flujo.domain.agent_protocol import ContextAwareAgentProtocol
-from flujo.domain.models import PipelineContext
+from flujo.models import PipelineContext
 from typing import Any
 
 class MyCustomContext(PipelineContext):
@@ -218,7 +218,7 @@ class MyContextAwareAgent(ContextAwareAgentProtocol[str, str, MyCustomContext]):
 `flujo` provides utilities for creating and configuring agents.
 
 ```python
-from flujo import make_agent_async
+from flujo.infra.agents import make_agent_async
 
 # Create a custom agent
 agent = make_agent_async(
@@ -1074,7 +1074,7 @@ Decorator to mark a field as serializable with a custom serializer. **This funct
 ```python
 # DEPRECATED - Use register_custom_serializer or manual field_serializer instead
 from flujo.utils import serializable_field
-from flujo.domain.models import BaseModel
+from flujo.models import BaseModel
 
 class MyModel(BaseModel):
     @serializable_field(lambda x: x.to_dict())
@@ -1170,7 +1170,7 @@ The following types are automatically handled by the enhanced `BaseModel`:
 #### Usage
 
 ```python
-from flujo.domain.models import BaseModel
+from flujo.models import BaseModel
 from datetime import datetime
 from enum import Enum
 
@@ -1200,7 +1200,7 @@ For model-specific serialization, use Pydantic's `@field_serializer`:
 
 ```python
 from pydantic import field_serializer
-from flujo.domain.models import BaseModel
+from flujo.models import BaseModel
 
 class MyModel(BaseModel):
     custom_field: MyCustomType
@@ -1272,7 +1272,7 @@ step = CacheStep.cached(some_step)
 Custom types in pipeline context are automatically handled:
 
 ```python
-from flujo.domain.models import PipelineContext
+from flujo.models import PipelineContext
 from flujo.utils import register_custom_serializer
 
 class CustomContext(PipelineContext):

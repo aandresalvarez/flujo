@@ -8,7 +8,7 @@ For complete details on implementing context aware components see the [Stateful 
 
 ## Best Practices for Custom Context Models
 
-To create your own context model, **inherit from `flujo.domain.models.PipelineContext`**.
+To create your own context model, **inherit from `flujo.models.PipelineContext`**.
 This base class provides important built-in fields managed by the engine:
 
 - `initial_prompt: str` – automatically populated with the first input of each `run()` call.
@@ -19,7 +19,7 @@ This base class provides important built-in fields managed by the engine:
 A minimal custom context looks like this:
 
 ```python
-from flujo.domain.models import PipelineContext
+from flujo.models import PipelineContext
 from pydantic import Field
 
 class MyDiscoveryContext(PipelineContext):

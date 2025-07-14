@@ -30,8 +30,10 @@ pip install flujo[bench]
 from flujo.recipes.factories import make_default_pipeline, run_default_pipeline
 from flujo.infra.agents import make_review_agent, make_solution_agent, make_validator_agent
 from flujo import (
-    Flujo, Task, init_telemetry,
+    Flujo,
+    Task,
 )
+from flujo.infra import init_telemetry
 
 # Initialize telemetry (optional)
 init_telemetry()
@@ -145,7 +147,7 @@ flujo run my_pipeline.py --input "Prompt" --context-model MyContext --json
 
 ```python
 from flujo import step, Pipeline
-from flujo.domain.models import PipelineContext
+from flujo.models import PipelineContext
 from pydantic import Field
 
 class MyContext(PipelineContext):
@@ -187,7 +189,7 @@ Below is a complete example pipeline file you can run directly with the CLI:
 
 ```python
 from flujo import step, Pipeline
-from flujo.domain.models import PipelineContext
+from flujo.models import PipelineContext
 from pydantic import Field
 
 class DemoContext(PipelineContext):

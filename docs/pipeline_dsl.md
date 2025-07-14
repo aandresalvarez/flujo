@@ -241,7 +241,7 @@ if result.step_history[-1].metadata_.get('validation_passed') == False:
 ```
 
 # With custom scoring
-from flujo import weighted_score
+from flujo.domain.scoring import weighted_score
 
 weights = {
     "correctness": 0.6,
@@ -304,7 +304,7 @@ pipeline = Step.review(review_agent) >> loop_step >> Step.validate_step(validato
 a `Flujo` runner can share a mutable Pydantic model instance across all steps in a single run. Pass a context model when creating the runner and declare a `context` parameter in your step functions or agents. See [Typed Pipeline Context](pipeline_context.md) for a full explanation.
 
 ```python
-from flujo.domain.models import PipelineContext
+from flujo.models import PipelineContext
 
 class MyContext(PipelineContext):
     counter: int = 0

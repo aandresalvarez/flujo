@@ -36,7 +36,7 @@ register_custom_serializer(datetime, lambda dt: dt.strftime("%Y-%m-%d %H:%M:%S")
 ### Enable Arbitrary Types
 
 ```python
-from flujo.domain.models import BaseModel
+from flujo.models import BaseModel
 
 class MyModel(BaseModel):
     custom_field: MyCustomType
@@ -212,7 +212,7 @@ class CustomContext(PipelineContext):
 
 ```python
 from flujo.utils import register_custom_serializer
-from flujo.domain.models import BaseModel
+from flujo.models import BaseModel
 from datetime import datetime
 
 # Register custom serializers

@@ -25,7 +25,7 @@ All narrative documentation (tutorials, guides, specifications) lives in the `/d
 
 ### Step 2: Update Python Docstrings for API Reference
 
-Our API reference is generated automatically. To improve it, you must edit the docstrings directly in the Python source code (e.g., in `flujo/domain/pipeline_dsl.py`).
+Our API reference is generated automatically. To improve it, you must edit the docstrings directly in the Python source code (e.g., in `flujo/domain/dsl/`).
 
 We follow the **Google Python Style Guide** for docstrings. A good docstring includes:
 * A one-line summary.
