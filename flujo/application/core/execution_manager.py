@@ -92,7 +92,7 @@ class ExecutionManager(Generic[ContextT]):
                             yield item
 
                     # Persist state if needed
-                    if step_result and step_result.success and run_id is not None:
+                    if step_result and run_id is not None:
                         await self.state_manager.persist_workflow_state(
                             run_id=run_id,
                             context=context,

@@ -745,15 +745,17 @@ class SQLiteBackend(StateBackend):
                             step_data["step_index"],
                             step_data.get("status", "completed"),
                             (
-                                (lambda v: v.isoformat() if isinstance(v, datetime) else str(v))(
-                                    step_data.get("start_time")
-                                )
+                                (
+                                    lambda v: v.isoformat()
+                                    if isinstance(v, datetime)
+                                    else (str(v) if v is not None else None)
+                                )(step_data.get("start_time"))
                             ),
                             (
                                 (
                                     lambda v: v.isoformat()
                                     if isinstance(v, datetime)
-                                    else (str(v) if v else None)
+                                    else (str(v) if v is not None else None)
                                 )(step_data.get("end_time"))
                             ),
                             step_data.get("duration_ms"),

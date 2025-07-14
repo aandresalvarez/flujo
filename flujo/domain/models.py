@@ -49,34 +49,31 @@ class BaseModel(PydanticBaseModel):
         if _seen is None:
             _seen = set()
 
-        # Check for circular references only when recursing into nested objects
-        # Don't add self to _seen at the start to avoid false positives
         obj_id = id(self)
         if obj_id in _seen:
             if mode == "cache":
                 return f"<{self.__class__.__name__} circular>"
-            # In default mode, circular reference: return None (for optional), error for required handled by caller
             return None
 
-        # Add to _seen only when we start recursing into fields
         _seen.add(obj_id)
         try:
             result = {}
-            # Use model_fields from the class (not instance) for Pydantic v2+ compatibility
             for name, field in getattr(self.__class__, "model_fields", {}).items():
                 value = getattr(self, name)
-                # Always check for custom serializer first
                 from flujo.utils.serialization import lookup_custom_serializer
 
                 custom_serializer = lookup_custom_serializer(value)
                 if custom_serializer:
                     serialized = custom_serializer(value)
-                    # Recursively serialize the result
                     result[name] = self._safe_serialize_with_seen(serialized, _seen, mode=mode)
                     continue
-                # If the value is a BaseModel, call its model_dump with the same _seen set and mode
+                # If the value is a BaseModel, call its model_dump with the same _seen set and mode if possible
                 if hasattr(value, "model_dump") and callable(getattr(value, "model_dump")):
-                    result[name] = value.model_dump(mode=mode)
+                    # Only pass _seen if the model is our custom BaseModel
+                    if hasattr(value, "_safe_serialize_with_seen"):
+                        result[name] = value.model_dump(mode=mode, _seen=_seen)
+                    else:
+                        result[name] = value.model_dump(mode=mode)
                 else:
                     result[name] = self._safe_serialize_with_seen(value, _seen, mode=mode)
             return result
@@ -118,7 +115,12 @@ class BaseModel(PydanticBaseModel):
             finally:
                 _seen.discard(obj_id)
         if hasattr(obj, "model_dump") and callable(getattr(obj, "model_dump")):
-            return obj.model_dump(mode=mode)
+            # For Pydantic models, let them handle their own circular reference detection
+            # at the field level rather than returning None for the entire object
+            if hasattr(obj, "_safe_serialize_with_seen"):
+                return obj.model_dump(mode=mode, _seen=_seen)
+            else:
+                return obj.model_dump(mode=mode)
 
         if self._is_unknown_type(obj):
             return self._serialize_single_unknown_type(obj, _seen, mode=mode)
