@@ -75,7 +75,7 @@ jobs:
             - Added commercial license file
             - Updated license classifiers in pyproject.toml
 
-            For commercial licensing, please contact: alvaro@example.com
+            For commercial licensing, please contact: aandresalvarez@gmail.com
           draft: false
           prerelease: false
           generate_release_notes: true
