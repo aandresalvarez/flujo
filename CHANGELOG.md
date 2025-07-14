@@ -5,6 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.32] - 2025-07-14
+
+### Fixed
+- **CI/CD Workflow Improvements**: Enhanced GitHub Actions release workflow for robust PyPI publishing
+  - Added `uv` installation step to fix missing dependency in CI environment
+  - Simplified release workflow to industry-standard approach without automatic version bumping
+  - Fixed permission issues by removing automatic tag creation and pushing
+  - Improved changelog generation with manual control over release process
+  - Added proper error handling and dependency management for reliable builds
+
+### Changed
+- **Release Process**: Streamlined release workflow for better reliability and control
+  - Manual version management in `pyproject.toml` for explicit control
+  - Tag-based triggers only (no automatic version bumping)
+  - Simplified changelog generation without external dependencies
+  - Enhanced build and test process with proper dependency installation
+
+## [0.4.31] - 2025-07-14
+
+### Fixed
+- **Makefile Enhancements**: Added missing targets for CI/CD pipeline
+  - Added `pip-dev` target for installing development dependencies
+  - Added `package` target for building distribution files
+  - Improved development workflow with comprehensive build system support
+  - Enhanced CI/CD compatibility with proper dependency management
+
+## [0.4.29] - 2025-07-14
+
+### Added
+- **Documentation Updates**: Enhanced project documentation and branding
+  - Updated main documentation page with new headline "The Framework for AI Systems That Learn"
+  - Improved documentation structure with comprehensive navigation
+  - Enhanced mkdocs configuration for better user experience
+  - Updated contact information and licensing details
+
+### Changed
+- **License Management**: Updated commercial licensing and contact information
+  - Enhanced commercial license agreement with comprehensive legal terms
+  - Updated contact email to aandresalvarez@gmail.com
+  - Improved dual licensing strategy (AGPL-3.0 + Commercial)
+  - Enhanced intellectual property protection and usage terms
+
 ## [0.6.2] - 2025-02-20
 
 ### Added
