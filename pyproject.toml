@@ -7,7 +7,7 @@ build-backend = "hatchling.build"
 # --------------------------------------------------------------------------- #
 [project]
 name            = "flujo"
-version         = "0.4.31" # Major API restructuring with curated layered imports and ContextAwareAgentProtocol
+version         = "0.4.32" # Major API restructuring with curated layered imports and ContextAwareAgentProtocol
 description     = "Production-ready orchestration for AI agents, built with Pydantic."
 readme          = "README.md"
 requires-python = ">=3.11,<4.0"
