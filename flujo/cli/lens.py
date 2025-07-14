@@ -12,16 +12,22 @@ lens_app = typer.Typer(help="Operational inspection commands")
 
 @lens_app.command("list")
 def list_runs(
-    status: str | None = typer.Option(None), pipeline: str | None = typer.Option(None)
+    status: str | None = typer.Option(None),
+    pipeline: str | None = typer.Option(None),
+    limit: int = typer.Option(50, help="Maximum number of runs to display"),
 ) -> None:
     """List stored runs."""
     backend = load_backend_from_config()
     try:
         # Use the new structured API if available, fallback to legacy
         if hasattr(backend, "list_runs"):
-            runs = asyncio.run(backend.list_runs(status=status, pipeline_name=pipeline))
+            runs = asyncio.run(
+                backend.list_runs(status=status, pipeline_name=pipeline, limit=limit)
+            )
         else:
-            runs = asyncio.run(backend.list_workflows(status=status, pipeline_id=pipeline))
+            runs = asyncio.run(
+                backend.list_workflows(status=status, pipeline_id=pipeline, limit=limit)
+            )
     except NotImplementedError:
         typer.echo("Backend does not support listing runs", err=True)
         raise typer.Exit(1)

@@ -118,6 +118,12 @@ class SQLiteBackend(StateBackend):
                     "CREATE INDEX IF NOT EXISTS idx_runs_pipeline_name ON runs(pipeline_name)"
                 )
                 await db.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_runs_start_time_desc ON runs(start_time DESC)"
+                )
+                await db.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_runs_status_start_time ON runs(status, start_time DESC)"
+                )
+                await db.execute(
                     """
                     CREATE TABLE IF NOT EXISTS steps (
                         step_run_id TEXT PRIMARY KEY,
@@ -863,30 +869,49 @@ class SQLiteBackend(StateBackend):
         await self._ensure_init()
         async with self._lock:
             async with aiosqlite.connect(self.db_path) as db:
-                # Build query with optional filters
-                query = """
-                    SELECT run_id, pipeline_name, pipeline_version, status, start_time, end_time, total_cost
-                    FROM runs
-                    WHERE 1=1
-                """
-                params: List[Any] = []
-
-                if status:
-                    query += " AND status = ?"
-                    params.append(status)
-
-                if pipeline_name:
-                    query += " AND pipeline_name = ?"
-                    params.append(pipeline_name)
-
-                query += " ORDER BY start_time DESC"
+                # Optimize query based on filters to use appropriate indexes
+                if status and not pipeline_name:
+                    # Use status index for better performance
+                    query = """
+                        SELECT run_id, pipeline_name, pipeline_version, status, start_time, end_time, total_cost
+                        FROM runs
+                        WHERE status = ?
+                        ORDER BY start_time DESC
+                    """
+                    params = [status]
+                elif pipeline_name and not status:
+                    # Use pipeline_name index
+                    query = """
+                        SELECT run_id, pipeline_name, pipeline_version, status, start_time, end_time, total_cost
+                        FROM runs
+                        WHERE pipeline_name = ?
+                        ORDER BY start_time DESC
+                    """
+                    params = [pipeline_name]
+                elif status and pipeline_name:
+                    # Use both filters
+                    query = """
+                        SELECT run_id, pipeline_name, pipeline_version, status, start_time, end_time, total_cost
+                        FROM runs
+                        WHERE status = ? AND pipeline_name = ?
+                        ORDER BY start_time DESC
+                    """
+                    params = [status, pipeline_name]
+                else:
+                    # No filters, use start_time index
+                    query = """
+                        SELECT run_id, pipeline_name, pipeline_version, status, start_time, end_time, total_cost
+                        FROM runs
+                        ORDER BY start_time DESC
+                    """
+                    params = []
 
                 if limit is not None:
                     query += " LIMIT ?"
-                    params.append(limit)
+                    params.append(str(limit))
                 if offset:
                     query += " OFFSET ?"
-                    params.append(offset)
+                    params.append(str(offset))
 
                 async with db.execute(query, params) as cursor:
                     rows = await cursor.fetchall()
