@@ -508,6 +508,14 @@ def safe_serialize(
                 safe_serialize(item, default_serializer, _seen) for item in sorted(obj, key=str)
             ]
 
+        # Handle objects with __dict__ by serializing their public attributes
+        if hasattr(obj, "__dict__") and not isinstance(obj, type):
+            return {
+                str(k): safe_serialize(v, default_serializer, _seen)
+                for k, v in obj.__dict__.items()
+                if not str(k).startswith("_")
+            }
+
         # Handle custom serializer if provided
         if default_serializer:
             return default_serializer(obj)

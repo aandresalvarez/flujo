@@ -394,6 +394,7 @@ class TestExecutionManager:
         # Mock the state manager
         execution_manager.state_manager = Mock()
         execution_manager.state_manager.persist_workflow_state = AsyncMock()
+        execution_manager.state_manager.record_run_end = AsyncMock()
         execution_manager.state_manager.get_run_id_from_context.return_value = "test-run"
 
         await execution_manager.persist_final_state(
@@ -406,3 +407,4 @@ class TestExecutionManager:
         )
 
         execution_manager.state_manager.persist_workflow_state.assert_called_once()
+        execution_manager.state_manager.record_run_end.assert_called_once()

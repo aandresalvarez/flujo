@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Optional, TypeVar, Generic
 
-from ...domain.models import BaseModel, PipelineContext
+from ...domain.models import BaseModel, PipelineContext, PipelineResult, StepResult
 from ...state import StateBackend, WorkflowState
 
 ContextT = TypeVar("ContextT", bound=BaseModel)
@@ -119,3 +119,69 @@ class StateManager(Generic[ContextT]):
             return
 
         await self.state_backend.delete_state(run_id)
+
+    # ----------------------- New persistence helpers -----------------------
+
+    async def record_run_start(
+        self, run_id: str, pipeline_name: str, pipeline_version: str
+    ) -> None:
+        if self.state_backend is None:
+            return
+        try:
+            await self.state_backend.save_run_start(
+                {
+                    "run_id": run_id,
+                    "pipeline_name": pipeline_name,
+                    "pipeline_version": pipeline_version,
+                    "status": "running",
+                    "start_time": datetime.utcnow(),
+                }
+            )
+        except NotImplementedError:
+            pass
+
+    async def record_step_result(
+        self, run_id: str, step_result: StepResult, step_index: int
+    ) -> None:
+        if self.state_backend is None:
+            return
+        try:
+            await self.state_backend.save_step_result(
+                {
+                    "step_run_id": f"{run_id}:{step_index}",
+                    "run_id": run_id,
+                    "step_name": step_result.name,
+                    "step_index": step_index,
+                    "status": "completed" if step_result.success else "failed",
+                    "start_time": datetime.utcnow(),
+                    "end_time": datetime.utcnow(),
+                    "duration_ms": int(step_result.latency_s * 1000),
+                    "cost": step_result.cost_usd,
+                    "tokens": step_result.token_counts,
+                    "input": None,
+                    "output": step_result.output,
+                    "error": step_result.feedback if not step_result.success else None,
+                }
+            )
+        except NotImplementedError:
+            pass
+
+    async def record_run_end(self, run_id: str, result: PipelineResult[ContextT]) -> None:
+        if self.state_backend is None:
+            return
+        try:
+            await self.state_backend.save_run_end(
+                run_id,
+                {
+                    "status": "completed"
+                    if all(s.success for s in result.step_history)
+                    else "failed",
+                    "end_time": datetime.utcnow(),
+                    "total_cost": result.total_cost_usd,
+                    "final_context": result.final_pipeline_context.model_dump()
+                    if result.final_pipeline_context
+                    else None,
+                },
+            )
+        except NotImplementedError:
+            pass

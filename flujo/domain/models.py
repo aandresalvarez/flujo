@@ -76,7 +76,7 @@ class BaseModel(PydanticBaseModel):
                     continue
                 # If the value is a BaseModel, call its model_dump with the same _seen set and mode
                 if hasattr(value, "model_dump") and callable(getattr(value, "model_dump")):
-                    result[name] = value.model_dump(mode=mode, _seen=_seen)
+                    result[name] = value.model_dump(mode=mode)
                 else:
                     result[name] = self._safe_serialize_with_seen(value, _seen, mode=mode)
             return result
@@ -118,7 +118,7 @@ class BaseModel(PydanticBaseModel):
             finally:
                 _seen.discard(obj_id)
         if hasattr(obj, "model_dump") and callable(getattr(obj, "model_dump")):
-            return obj.model_dump(mode=mode, _seen=_seen)
+            return obj.model_dump(mode=mode)
 
         if self._is_unknown_type(obj):
             return self._serialize_single_unknown_type(obj, _seen, mode=mode)

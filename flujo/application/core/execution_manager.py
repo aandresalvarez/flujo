@@ -101,6 +101,7 @@ class ExecutionManager(Generic[ContextT]):
                             status="running",
                             state_created_at=state_created_at,
                         )
+                        await self.state_manager.record_step_result(run_id, step_result, idx)
 
                     # Validate type compatibility with next step - this may raise TypeMismatchError
                     if step_result and idx < len(self.pipeline.steps) - 1:
@@ -233,3 +234,4 @@ class ExecutionManager(Generic[ContextT]):
             status=final_status,
             state_created_at=state_created_at,
         )
+        await self.state_manager.record_run_end(run_id, result)

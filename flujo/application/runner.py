@@ -222,7 +222,14 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
 
             backend = LocalBackend()
         self.backend = backend
-        self.state_backend = state_backend
+        self.state_backend: StateBackend | None
+        if state_backend is None:
+            from pathlib import Path
+            from ..state.backends.sqlite import SQLiteBackend
+
+            self.state_backend = SQLiteBackend(Path.cwd() / "flujo_ops.db")
+        else:
+            self.state_backend = state_backend
         self.delete_on_completion = delete_on_completion
 
     def _ensure_pipeline(self) -> Pipeline[RunnerInT, RunnerOutT]:
@@ -549,6 +556,14 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     raise OrchestratorError(
                         f"Invalid persisted step index {start_idx} for pipeline with {len(self.pipeline.steps)} steps"
                     )
+            else:
+                # New run, record start metadata
+                self._ensure_pipeline()
+                await state_manager.record_run_start(
+                    run_id_for_state,
+                    self.pipeline_name or "unknown",
+                    self.pipeline_version,
+                )
 
             # Persist initial state
             await state_manager.persist_workflow_state(
@@ -857,6 +872,9 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             initial_sub_context_data: Dict[str, Any] = {}
             if inherit_context and context is not None:
                 initial_sub_context_data = context.model_dump()
+                initial_sub_context_data.pop("run_id", None)
+                initial_sub_context_data.pop("pipeline_name", None)
+                initial_sub_context_data.pop("pipeline_version", None)
             else:
                 initial_sub_context_data = copy.deepcopy(self.initial_context_data)
 

@@ -14,10 +14,6 @@ from .base import StateBackend
 from ...utils.serialization import safe_serialize, safe_deserialize
 from ...infra import telemetry
 
-# Global lock registry for database files to prevent concurrent initialization
-_db_locks: Dict[str, asyncio.Lock] = {}
-_db_ref_counts: Dict[str, int] = {}
-
 
 class SQLiteBackend(StateBackend):
     """SQLite-backed persistent storage for workflow state with optimized schema."""
@@ -29,14 +25,8 @@ class SQLiteBackend(StateBackend):
         self._initialized = False
         self._connection_pool: Optional[aiosqlite.Connection] = None
 
-        # Get or create file-level lock for this database
-        db_key = str(self.db_path.absolute())
-        if db_key not in _db_locks:
-            _db_locks[db_key] = asyncio.Lock()
-            _db_ref_counts[db_key] = 0
-        _db_ref_counts[db_key] += 1
-        self._file_lock = _db_locks[db_key]
-        self._db_key = db_key
+        # File-level lock to prevent concurrent initialization
+        self._file_lock = asyncio.Lock()
 
     async def _init_db(self, retry_count: int = 0, max_retries: int = 1) -> None:
         """Initialize the database with schema and indexes.
@@ -78,6 +68,46 @@ class SQLiteBackend(StateBackend):
                 await db.execute(
                     "CREATE INDEX IF NOT EXISTS idx_workflow_state_pipeline_id ON workflow_state(pipeline_id)"
                 )
+                # New structured tables for persistent run history
+                await db.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS runs (
+                        run_id TEXT PRIMARY KEY,
+                        pipeline_name TEXT NOT NULL,
+                        pipeline_version TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        start_time TEXT NOT NULL,
+                        end_time TEXT,
+                        total_cost REAL,
+                        final_context_blob TEXT
+                    )
+                    """
+                )
+                await db.execute("CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status)")
+                await db.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_runs_pipeline_name ON runs(pipeline_name)"
+                )
+                await db.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS steps (
+                        step_run_id TEXT PRIMARY KEY,
+                        run_id TEXT NOT NULL,
+                        step_name TEXT NOT NULL,
+                        step_index INTEGER NOT NULL,
+                        status TEXT NOT NULL,
+                        start_time TEXT NOT NULL,
+                        end_time TEXT,
+                        duration_ms INTEGER,
+                        cost REAL,
+                        tokens INTEGER,
+                        input_blob TEXT,
+                        output_blob TEXT,
+                        error_blob TEXT,
+                        FOREIGN KEY(run_id) REFERENCES runs(run_id) ON DELETE CASCADE
+                    )
+                    """
+                )
+                await db.execute("CREATE INDEX IF NOT EXISTS idx_steps_run_id ON steps(run_id)")
                 await self._migrate_existing_schema(db)
                 await db.commit()
             telemetry.logfire.info(f"Initialized SQLite database at {self.db_path}")
@@ -245,13 +275,7 @@ class SQLiteBackend(StateBackend):
             self._connection_pool = None
         self._initialized = False
 
-        # Clean up file lock reference
-        if hasattr(self, "_db_key"):
-            _db_ref_counts[self._db_key] -= 1
-            if _db_ref_counts[self._db_key] <= 0:
-                # Remove from global registry when no more references
-                _db_locks.pop(self._db_key, None)
-                _db_ref_counts.pop(self._db_key, None)
+        # No global locks to clean up
 
     async def __aenter__(self) -> "SQLiteBackend":
         """Async context manager entry."""
@@ -641,3 +665,157 @@ class SQLiteBackend(StateBackend):
 
             result = await self._with_retries(_cleanup)
             return cast(int, result)
+
+    # ------------------------------------------------------------------
+    # New structured persistence API
+    # ------------------------------------------------------------------
+
+    async def save_run_start(self, run_data: Dict[str, Any]) -> None:
+        await self._ensure_init()
+        async with self._lock:
+
+            async def _save() -> None:
+                async with aiosqlite.connect(self.db_path) as db:
+                    await db.execute(
+                        """
+                        INSERT OR REPLACE INTO runs (
+                            run_id, pipeline_name, pipeline_version, status, start_time
+                        ) VALUES (?, ?, ?, ?, ?)
+                        """,
+                        (
+                            run_data["run_id"],
+                            run_data.get("pipeline_name", "unknown"),
+                            run_data.get("pipeline_version", "latest"),
+                            run_data.get("status", "running"),
+                            run_data.get("start_time", datetime.utcnow()).isoformat(),
+                        ),
+                    )
+                    await db.commit()
+
+            await self._with_retries(_save)
+
+    async def save_step_result(self, step_data: Dict[str, Any]) -> None:
+        await self._ensure_init()
+        async with self._lock:
+
+            async def _save() -> None:
+                async with aiosqlite.connect(self.db_path) as db:
+                    await db.execute(
+                        """
+                        INSERT OR REPLACE INTO steps (
+                            step_run_id, run_id, step_name, step_index, status,
+                            start_time, end_time, duration_ms, cost, tokens,
+                            input_blob, output_blob, error_blob
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            step_data["step_run_id"],
+                            step_data["run_id"],
+                            step_data["step_name"],
+                            step_data["step_index"],
+                            step_data.get("status", "completed"),
+                            (
+                                (lambda v: v.isoformat() if isinstance(v, datetime) else str(v))(
+                                    step_data.get("start_time")
+                                )
+                            ),
+                            (
+                                (
+                                    lambda v: v.isoformat()
+                                    if isinstance(v, datetime)
+                                    else (str(v) if v else None)
+                                )(step_data.get("end_time"))
+                            ),
+                            step_data.get("duration_ms"),
+                            step_data.get("cost"),
+                            step_data.get("tokens"),
+                            json.dumps(safe_serialize(step_data.get("input"))),
+                            json.dumps(safe_serialize(step_data.get("output"))),
+                            json.dumps(safe_serialize(step_data.get("error")))
+                            if step_data.get("error") is not None
+                            else None,
+                        ),
+                    )
+                    await db.commit()
+
+            await self._with_retries(_save)
+
+    async def save_run_end(self, run_id: str, end_data: Dict[str, Any]) -> None:
+        await self._ensure_init()
+        async with self._lock:
+
+            async def _save() -> None:
+                async with aiosqlite.connect(self.db_path) as db:
+                    await db.execute(
+                        """
+                        UPDATE runs
+                        SET status = ?, end_time = ?, total_cost = ?, final_context_blob = ?
+                        WHERE run_id = ?
+                        """,
+                        (
+                            end_data.get("status", "completed"),
+                            end_data.get("end_time", datetime.utcnow()).isoformat(),
+                            end_data.get("total_cost"),
+                            json.dumps(safe_serialize(end_data.get("final_context"))),
+                            run_id,
+                        ),
+                    )
+                    await db.commit()
+
+            await self._with_retries(_save)
+
+    async def get_run_details(self, run_id: str) -> Optional[Dict[str, Any]]:
+        await self._ensure_init()
+        async with self._lock:
+            async with aiosqlite.connect(self.db_path) as db:
+                cursor = await db.execute(
+                    "SELECT run_id, pipeline_name, pipeline_version, status, start_time, end_time, total_cost, final_context_blob FROM runs WHERE run_id = ?",
+                    (run_id,),
+                )
+                row = await cursor.fetchone()
+                await cursor.close()
+                if row is None:
+                    return None
+                return {
+                    "run_id": row[0],
+                    "pipeline_name": row[1],
+                    "pipeline_version": row[2],
+                    "status": row[3],
+                    "start_time": row[4],
+                    "end_time": row[5],
+                    "total_cost": row[6],
+                    "final_context": safe_deserialize(json.loads(row[7])) if row[7] else None,
+                }
+
+    async def list_run_steps(self, run_id: str) -> List[Dict[str, Any]]:
+        await self._ensure_init()
+        async with self._lock:
+            async with aiosqlite.connect(self.db_path) as db:
+                cursor = await db.execute(
+                    """
+                    SELECT step_name, step_index, status, start_time, end_time, duration_ms,
+                           cost, tokens, input_blob, output_blob, error_blob
+                    FROM steps WHERE run_id = ? ORDER BY step_index
+                    """,
+                    (run_id,),
+                )
+                rows = await cursor.fetchall()
+                await cursor.close()
+                results: List[Dict[str, Any]] = []
+                for r in rows:
+                    results.append(
+                        {
+                            "step_name": r[0],
+                            "step_index": r[1],
+                            "status": r[2],
+                            "start_time": r[3],
+                            "end_time": r[4],
+                            "duration_ms": r[5],
+                            "cost": r[6],
+                            "tokens": r[7],
+                            "input": safe_deserialize(json.loads(r[8])) if r[8] else None,
+                            "output": safe_deserialize(json.loads(r[9])) if r[9] else None,
+                            "error": safe_deserialize(json.loads(r[10])) if r[10] else None,
+                        }
+                    )
+                return results

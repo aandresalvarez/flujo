@@ -36,6 +36,7 @@ from flujo.domain.dsl import Pipeline, Step
 import runpy
 from flujo.domain.agent_protocol import AsyncAgentProtocol
 from ..utils.serialization import safe_serialize, safe_deserialize
+from .lens import lens_app
 
 # Type definitions for CLI
 WeightsType = List[Dict[str, Union[str, float]]]
@@ -47,6 +48,8 @@ app: typer.Typer = typer.Typer(rich_markup_mode="markdown")
 # Initialize telemetry at the start of CLI execution
 telemetry.init_telemetry()
 logfire = telemetry.logfire
+
+app.add_typer(lens_app, name="lens")
 
 
 @app.command()
@@ -787,6 +790,7 @@ __all__ = [
     "explain",
     "validate",
     "run",
+    "lens_app",
     "main",
 ]
 
