@@ -11,7 +11,7 @@ the `PipelineContext`.
 
 ```python
 from flujo.recipes.factories import make_agentic_loop_pipeline
-from flujo import make_agent_async
+from flujo.infra.agents import make_agent_async
 from flujo.domain.commands import AgentCommand
 planner = make_agent_async(
     "openai:gpt-4o",
@@ -81,7 +81,7 @@ The library provides four default agents:
 ### Creating Custom Agents
 
 ```python
-from flujo import make_agent_async
+from flujo.infra.agents import make_agent_async
 
 custom_agent = make_agent_async(
     "openai:gpt-4",  # Model

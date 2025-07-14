@@ -55,7 +55,7 @@ Implement the `ExecutionBackend` protocol and pass your implementation to
 
 ```python
 from flujo.domain.backends import ExecutionBackend, StepExecutionRequest
-from flujo.domain.models import StepResult
+from flujo.models import StepResult
 
 class LoggingBackend(ExecutionBackend):
     def __init__(self, registry: dict[str, Any]):
@@ -98,7 +98,7 @@ When you use a custom function as a `mapper` in a `Step`, `flujo` analyzes its s
 
 ```python
 from flujo import Step, Flujo
-from flujo.domain.models import PipelineContext
+from flujo.models import PipelineContext
 from flujo.domain.resources import AppResources
 
 class MyContext(PipelineContext):

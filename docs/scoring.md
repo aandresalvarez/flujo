@@ -18,7 +18,7 @@ The orchestrator includes several scoring mechanisms:
 The simplest scoring method counts passed checklist items:
 
 ```python
-from flujo import ratio_score
+from flujo.domain.scoring import ratio_score
 
 # Calculate a simple pass/fail ratio
 score = ratio_score(checklist)
@@ -30,7 +30,7 @@ score = ratio_score(checklist)
 Assign different weights to checklist items:
 
 ```python
-from flujo import weighted_score
+from flujo.domain.scoring import weighted_score
 
 # Define weights for different criteria
 weights = {
@@ -50,7 +50,8 @@ score = weighted_score(checklist, weights)
 Use an AI model to evaluate quality:
 
 ```python
-from flujo import make_agent_async, model_score
+from flujo.infra.agents import make_agent_async
+from flujo.domain.scoring import model_score
 
 # Create a scoring agent
 scorer_agent = make_agent_async(

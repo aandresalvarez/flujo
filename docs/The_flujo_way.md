@@ -23,7 +23,7 @@ Use `AsyncAgentProtocol` for simple agents that don't need typed context:
 ```python
 from flujo.domain.agent_protocol import AsyncAgentProtocol
 from flujo.domain.resources import AppResources
-from flujo.domain.models import PipelineContext
+from flujo.models import PipelineContext
 
 class TriageContext(PipelineContext):
     post_content: str
@@ -46,7 +46,7 @@ For agents that need typed pipeline context, use `ContextAwareAgentProtocol`:
 
 ```python
 from flujo.domain.agent_protocol import ContextAwareAgentProtocol
-from flujo.domain.models import PipelineContext
+from flujo.models import PipelineContext
 
 class ResearchContext(PipelineContext):
     research_topic: str = "Unknown"
@@ -88,7 +88,7 @@ research_step = Step("PlanResearch", PlanResearchAgent())
 
 ```python
 from flujo import Step, Pipeline
-from flujo.domain.models import BaseModel
+from flujo.models import BaseModel
 
 def route(ctx: TriageContext, _):
     if ctx.author_reputation < 0.2: return "high_risk"
@@ -148,7 +148,7 @@ refine_step = Step.refine_until(
 ### A. Basic Context
 
 ```python
-from flujo.domain.models import PipelineContext
+from flujo.models import PipelineContext
 
 class ModerationContext(PipelineContext):
     post_id: int
@@ -160,7 +160,7 @@ class ModerationContext(PipelineContext):
 ### B. Extended Context with Built-in Features
 
 ```python
-from flujo.domain.models import PipelineContext
+from flujo.models import PipelineContext
 from pydantic import Field
 
 class ResearchContext(PipelineContext):
@@ -224,7 +224,7 @@ quality_gate = Step.validate_step(
 
 ```python
 from flujo import Flujo
-from flujo.domain.models import UsageLimits
+from flujo.models import UsageLimits
 
 runner = Flujo(pipeline, usage_limits=UsageLimits(total_cost_usd_limit=0.50))
 ```
@@ -285,7 +285,7 @@ DEFAULT_REVIEW_MODEL=openai:gpt-4
 ### B. Per-agent model + settings
 
 ```python
-from flujo import make_agent_async
+from flujo.infra.agents import make_agent_async
 
 agent = make_agent_async(
     model="openai:gpt-4",
@@ -388,7 +388,7 @@ from flujo import (
 from flujo.domain.agent_protocol import AsyncAgentProtocol, ContextAwareAgentProtocol
 
 # Models and types
-from flujo.domain.models import BaseModel, UsageLimits, PipelineResult
+from flujo.models import BaseModel, UsageLimits, PipelineResult
 
 # Resources
 from flujo.domain.resources import AppResources

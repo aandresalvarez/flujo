@@ -4,7 +4,7 @@
 
 ```python
 from flujo import Flujo, Step, Pipeline
-from flujo.domain.models import PipelineContext
+from flujo.models import PipelineContext
 
 class Numbers(PipelineContext):
     values: list[int]

@@ -37,7 +37,8 @@ We'll begin with the `AgenticLoop` pattern. A planner agent decides which tool a
 ```python
 # 📂 step_1_agentic_loop.py
 from flujo.recipes.factories import make_agentic_loop_pipeline, run_agentic_loop_pipeline
-from flujo import make_agent_async, init_telemetry
+from flujo.infra.agents import make_agent_async
+from flujo.infra import init_telemetry
 from flujo.domain.commands import AgentCommand, FinishCommand, RunAgentCommand
 
 init_telemetry()
@@ -116,7 +117,8 @@ Professional AI workflows often involve a mix of models to balance cost, speed, 
 ```python
 # 📂 step_3_mixing_models.py
 from flujo.recipes.factories import make_default_pipeline, run_default_pipeline
-from flujo import make_agent_async, init_telemetry
+from flujo.infra.agents import make_agent_async
+from flujo.infra import init_telemetry
 from flujo.models import Task
 from flujo.infra.agents import make_review_agent, make_validator_agent
 init_telemetry()
@@ -146,7 +148,9 @@ Let's build a workflow that extracts information from a block of text into a str
 ```python
 # 📂 step_4_structured_output.py
 from pydantic import BaseModel, Field
-from flujo import Step, Flujo, make_agent_async, init_telemetry
+from flujo import Step, Flujo
+from flujo.infra.agents import make_agent_async
+from flujo.infra import init_telemetry
 from flujo.models import Checklist
 
 init_telemetry()
@@ -335,7 +339,7 @@ accumulate data or pass configuration during a run. See
 [Typed Pipeline Context](pipeline_context.md) for more details.
 
 ```python
-from flujo.domain.models import PipelineContext
+from flujo.models import PipelineContext
 
 class Stats(PipelineContext):
     calls: int = 0

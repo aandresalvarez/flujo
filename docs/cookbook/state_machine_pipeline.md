@@ -6,7 +6,7 @@ Use the **state machine pipeline factory** to orchestrate a workflow where the n
 from pydantic import BaseModel
 from flujo import Flujo, Step, step
 from flujo.recipes import make_state_machine_pipeline
-from flujo.domain.models import PipelineContext
+from flujo.models import PipelineContext
 
 class Ctx(PipelineContext):
     next_state: str = "start"

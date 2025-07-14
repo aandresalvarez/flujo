@@ -285,7 +285,7 @@ Leverage type hints for better IDE support:
 
 ```python
 from flujo.infra.agents import make_review_agent
-from flujo.domain.models import Checklist
+from flujo.models import Checklist
 
 # Type hints help with IDE support
 review_agent: AsyncAgentProtocol[Any, Checklist] = make_review_agent()

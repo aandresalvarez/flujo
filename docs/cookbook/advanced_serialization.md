@@ -20,7 +20,7 @@ The `BaseModel` in Flujo automatically handles serialization of common types:
 Most custom types will work automatically without any configuration:
 
 ```python
-from flujo.domain.models import BaseModel
+from flujo.models import BaseModel
 from datetime import datetime
 from enum import Enum
 
@@ -68,7 +68,7 @@ Now, **any** Flujo model containing a `datetime` will use your custom format whe
 
 ```python
 from flujo.utils import register_custom_serializer
-from flujo.domain.models import BaseModel
+from flujo.models import BaseModel
 
 class DatabaseConnection:
     def __init__(self, host: str, port: int):
@@ -169,7 +169,7 @@ For fields that need custom serialization, use the `@field_serializer` decorator
 
 ```python
 from pydantic import field_serializer
-from flujo.domain.models import BaseModel
+from flujo.models import BaseModel
 
 class MyModel(BaseModel):
     custom_field: MyCustomType
@@ -189,7 +189,7 @@ Flujo previously provided a convenience decorator for field serialization, but t
 ```python
 # DEPRECATED - Don't use this approach
 from flujo.utils import serializable_field
-from flujo.domain.models import BaseModel
+from flujo.models import BaseModel
 
 class MyModel(BaseModel):
     @serializable_field(lambda x: x.to_dict())
@@ -212,7 +212,7 @@ class MyModel(BaseModel):
 2. **Manual field_serializer:**
 ```python
 from pydantic import field_serializer
-from flujo.domain.models import BaseModel
+from flujo.models import BaseModel
 
 class MyModel(BaseModel):
     complex_object: ComplexType
@@ -258,7 +258,7 @@ register_custom_serializer(MyCustomType, serialize_my_type)
 
 ```python
 from pydantic import field_serializer
-from flujo.domain.models import BaseModel
+from flujo.models import BaseModel
 
 class MyModel(BaseModel):
     non_serializable_field: MyCustomType
@@ -271,7 +271,7 @@ class MyModel(BaseModel):
 ### Option 3: Convert to Serializable Types
 
 ```python
-from flujo.domain.models import BaseModel
+from flujo.models import BaseModel
 
 class MyModel(BaseModel):
     # Store as string instead of custom object
@@ -287,7 +287,7 @@ class MyModel(BaseModel):
 ### Option 4: Use `Any` Type with Automatic Fallback
 
 ```python
-from flujo.domain.models import BaseModel
+from flujo.models import BaseModel
 
 class MyModel(BaseModel):
     # The BaseModel will automatically handle serialization
@@ -312,7 +312,7 @@ class MyModel(BaseModel):
 ### After (New Approach)
 ```python
 from pydantic import field_serializer
-from flujo.domain.models import BaseModel
+from flujo.models import BaseModel
 
 class MyModel(BaseModel):
     custom_field: MyCustomType

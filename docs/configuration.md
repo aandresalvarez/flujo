@@ -121,7 +121,7 @@ print(f"Current solution model: {settings.default_solution_model}")
 ### Model Selection
 
 ```python
-from flujo import make_agent_async
+from flujo.infra.agents import make_agent_async
 
 # Use different models for different agents
 review_agent = make_agent_async(
@@ -187,7 +187,7 @@ runner = Flujo(
 ### Custom Scoring
 
 ```python
-from flujo import weighted_score
+from flujo.domain.scoring import weighted_score
 
 # Define custom weights
 weights = {
