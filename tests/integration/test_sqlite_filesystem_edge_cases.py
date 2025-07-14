@@ -1,5 +1,6 @@
 """Integration tests for SQLiteBackend filesystem edge cases."""
 
+import os
 import sqlite3
 from pathlib import Path
 from unittest.mock import patch
@@ -7,6 +8,12 @@ from unittest.mock import patch
 import pytest
 
 from flujo.state.backends.sqlite import SQLiteBackend
+
+if getattr(os, "geteuid", lambda: -1)() == 0:
+    pytest.skip(
+        "permission-based SQLite tests skipped when running as root",
+        allow_module_level=True,
+    )
 
 pytestmark = pytest.mark.serial
 
