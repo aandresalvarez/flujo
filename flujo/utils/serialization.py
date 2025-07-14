@@ -508,14 +508,6 @@ def safe_serialize(
                 safe_serialize(item, default_serializer, _seen) for item in sorted(obj, key=str)
             ]
 
-        # Handle objects with __dict__ by serializing their public attributes
-        if hasattr(obj, "__dict__") and not isinstance(obj, type):
-            return {
-                str(k): safe_serialize(v, default_serializer, _seen)
-                for k, v in obj.__dict__.items()
-                if not str(k).startswith("_")
-            }
-
         # Handle custom serializer if provided
         if default_serializer:
             return default_serializer(obj)
@@ -528,8 +520,7 @@ def safe_serialize(
         )
 
     finally:
-        # Always remove from seen set to allow reuse
-        _seen.discard(obj_id)
+        _seen.remove(obj_id)
 
 
 def robust_serialize(obj: Any) -> Any:
@@ -546,16 +537,13 @@ def robust_serialize(obj: Any) -> Any:
         JSON-serializable representation of the object
     """
 
-    def fallback_serializer(obj: Any) -> Any:
-        """Fallback serializer that converts unknown types to dict if Pydantic, else string representation."""
-        # Extra robust: if this is a Pydantic model, use model_dump or dict
-        if hasattr(obj, "model_dump"):
-            return obj.model_dump()
-        if HAS_PYDANTIC and isinstance(obj, BaseModel):
-            return obj.dict()
+    def fallback_serializer(obj: Any) -> str:
         return f"<unserializable: {type(obj).__name__}>"
 
-    return safe_serialize(obj, default_serializer=fallback_serializer)
+    try:
+        return safe_serialize(obj, default_serializer=fallback_serializer)
+    except Exception:
+        return f"<unserializable: {type(obj).__name__}>"
 
 
 def serialize_to_json(obj: Any, **kwargs: Any) -> str:
@@ -578,19 +566,12 @@ def serialize_to_json(obj: Any, **kwargs: Any) -> str:
 
 def serialize_to_json_robust(obj: Any, **kwargs: Any) -> str:
     """
-    Serialize an object to a JSON string with robust fallback handling.
-
-    This version will never fail, but may serialize unknown types as strings.
-
-    Args:
-        obj: The object to serialize
-        **kwargs: Additional arguments to pass to json.dumps
-
-    Returns:
-        JSON string representation of the object
+    Serialize an object to a JSON string using robust_serialize.
+    Ensures the output is always valid JSON for roundtrip.
     """
-    serialized = robust_serialize(obj)
-    return json.dumps(serialized, **kwargs)
+    import json
+
+    return json.dumps(robust_serialize(obj), **kwargs)
 
 
 def reset_custom_serializer_registry() -> None:

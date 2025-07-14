@@ -43,6 +43,10 @@ class AdvancedPromptFormatter:
     def _serialize_value(self, value: Any) -> str:
         """Serialize ``value`` to JSON using :func:`robust_serialize`."""
         serialized = robust_serialize(value)
+        # If robust_serialize returns a string, it's already serialized
+        if isinstance(serialized, str):
+            return serialized
+        # Otherwise, serialize to JSON
         return json.dumps(serialized)
 
     def _serialize(self, value: Any) -> str:

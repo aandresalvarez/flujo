@@ -254,9 +254,17 @@ class TestSQLiteBackupFix:
                 await backend._init_db()
             except sqlite3.DatabaseError:
                 pass
-        # The base backup file should now exist and contain the corrupted DB
-        base_backup = tmp_path / f"test.db.corrupt.{timestamp}"
-        assert base_backup.read_text() == "corrupted database content"
+
+        # Debug: check what backup files exist
+        backup_files = list(tmp_path.glob("test.db.corrupt.*"))
+        print(f"Found backup files: {backup_files}")
+        for bf in backup_files:
+            print(f"  {bf.name}: {bf.read_text()[:50]}...")
+
+        # The backup file should exist at the base path since .1 was missing
+        backup_file = tmp_path / f"test.db.corrupt.{timestamp}"
+        assert backup_file.exists(), f"Backup file {backup_file} should exist"
+        assert backup_file.read_text() == "corrupted database content"
 
     @pytest.mark.asyncio
     async def test_backup_race_condition_file_deleted_between_check_and_rename(
