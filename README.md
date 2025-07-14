@@ -44,6 +44,11 @@ Flujo's current features are the essential foundation for building intelligent, 
 
 ---
 
+> **💡 Flujo's Sweet Spot**
+> Write workflows as a simple left‑to‑right algebraic chain of steps (`step1 >> step2 >> step3`) and let the library build the full execution graph for you in the background. You get a full‑featured DAG engine—state, branching, loops, persistence—without extra ceremony.
+
+---
+
 ## Get Started in 60 Seconds
 
 ### 1. Installation
