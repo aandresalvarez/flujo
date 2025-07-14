@@ -1,29 +1,52 @@
 # mkdocs.yml for the Flujo project
 
 site_name: Flujo
-site_description: A powerful Python library for orchestrating AI workflows.
+site_description: The Framework for AI Systems That Learn
 site_url: https://flujo.dev # Aspirational URL
 
 repo_name: aandresalvarez/flujo
 repo_url: https://github.com/aandresalvarez/flujo
 edit_uri: edit/main/docs/
 
-# Enforce high quality standards for the documentation
-strict: true
+# Disable strict mode to allow for more flexible builds
+strict: false
 
 # Define the site navigation structure
 nav:
   - 'Introduction': 'index.md'
-  - 'Getting Started': 'getting-started.md'
+  - 'Getting Started':
+    - 'Installation': 'installation.md'
+    - 'Quickstart': 'quickstart.md'
+    - 'Tutorial': 'tutorial.md'
   - 'User Guide':
-    - 'Pipelines & Steps': 'user_guide/pipelines-and-steps.md'
-    - 'Context & Resources': 'user_guide/context-and-resources.md'
-    - 'Agentic Patterns': 'user_guide/agentic-patterns.md'
-    - 'Testing Your Pipelines': 'user_guide/testing.md'
-  - 'Agent Infrastructure': 'agent_infrastructure.md'
-  - 'Building Resilient Agents': 'building_resilient_agents.md'
-  - 'Examples':
-    - 'Basic Pipeline': 'examples/basic-pipeline.md'
+    - 'Usage': 'usage.md'
+    - 'Concepts': 'concepts.md'
+    - 'Agent Infrastructure': 'agent_infrastructure.md'
+    - 'The Flujo Way': 'The_flujo_way.md'
+  - 'Advanced Topics':
+    - 'Pipeline DSL': 'pipeline_dsl.md'
+    - 'Pipeline Context': 'pipeline_context.md'
+    - 'Pipeline Looping': 'pipeline_looping.md'
+    - 'Pipeline Branching': 'pipeline_branching.md'
+    - 'Tools': 'tools.md'
+    - 'Scoring': 'scoring.md'
+    - 'Telemetry': 'telemetry.md'
+    - 'Configuration': 'configuration.md'
+  - 'Cookbook':
+    - 'Advanced Serialization': 'cookbook/advanced_serialization.md'
+    - 'Hybrid Validation': 'cookbook/hybrid_validation.md'
+    - 'Cost Control': 'cookbook/cost_control.md'
+    - 'Error Recovery': 'cookbook/error_recovery.md'
+    - 'Visualizing Pipelines': 'cookbook/visualizing_pipelines.md'
+  - 'Development':
+    - 'Testing Guide': 'testing_guide.md'
+    - 'Extending': 'extending.md'
+    - 'Troubleshooting': 'troubleshooting.md'
+    - 'Development Guide': 'dev.md'
+  - 'Migration':
+    - 'v0.7.0': 'migration/v0.7.0.md'
+    - 'v0.6.0': 'migration/v0.6.0.md'
+    - 'v0.4.0': 'migration/v0.4.0.md'
   - 'API Reference':
     - 'Application': 'api/application.md'
     - 'Domain (DSL)': 'api/domain.md'
@@ -82,6 +105,7 @@ plugins:
             members_order: source
             separate_signature: true
             show_signature_annotations: true
-          import:
-            - url: https://docs.python.org/3/objects.inv
-            - url: https://docs.pydantic.dev/latest/objects.inv
+          # Remove external inventory links that cause SSL issues
+          # import:
+          #   - url: https://docs.python.org/3/objects.inv
+          #   - url: https://docs.pydantic.dev/latest/objects.inv

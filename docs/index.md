@@ -1,6 +1,6 @@
-# Welcome to Flujo
+# The Framework for AI Systems That Learn
 
-Flujo is a Python library for orchestrating AI workflows. It allows you to define pipelines composed of reusable steps, manage shared context, and integrate multiple models or agents.
+Go beyond static prompts. Flujo provides the structure, state, and observability to build AI agents that analyze their own performance, adapt over time, and improve with every run.
 
 ## Key Features
 
