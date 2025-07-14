@@ -4,8 +4,6 @@ on:
   push:
     tags:
       - 'v*'  # Triggers on version tags
-  release:
-    types: [published]  # Keeps existing release trigger
 
 jobs:
   build-and-publish:
@@ -23,37 +21,10 @@ jobs:
       with:
         fetch-depth: 0  # Needed for changelog generation
 
-    - name: Handle tag conflicts before changelog generation
-      run: |
-        # Get the tag name from the trigger (if this is a tag push)
-        if [[ "$GITHUB_REF" == refs/tags/* ]]; then
-          TAG_NAME=${GITHUB_REF#refs/tags/}
-          echo "Handling tag: $TAG_NAME"
-
-          # Fetch all tags from remote with force to ensure we have the latest
-          git fetch --tags --force
-
-          # Delete local tag if it exists (to prevent conflicts)
-          git tag -d $TAG_NAME || true
-
-          # Fetch the specific tag from remote
-          git fetch origin tag $TAG_NAME
-
-          # Configure git to handle tag conflicts gracefully
-          git config pull.rebase false
-          git config pull.ff only
-        fi
-
-    - name: Check out main branch
-      run: git checkout main
-
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: "3.11"
-
-    - name: Install Hatch
-      run: pip install hatch
 
     - name: Install dependencies
       run: |
@@ -67,30 +38,24 @@ jobs:
       run: make package
 
     - name: Generate changelog
-      id: changelog
       run: |
-        # Pre-handle the git pull that the conventional-changelog-action will try to do
-        if [[ "$GITHUB_REF" == refs/tags/* ]]; then
-          TAG_NAME=${GITHUB_REF#refs/tags/}
-          echo "Pre-handling git pull for tag: $TAG_NAME"
+        # Get the current tag
+        TAG_NAME=${GITHUB_REF#refs/tags/}
+        echo "Generating changelog for tag: $TAG_NAME"
 
-          # Do the git pull manually to handle conflicts
-          git fetch --tags --force
-          git tag -d $TAG_NAME || true
-          git fetch origin tag $TAG_NAME
-          git pull --ff-only || echo "Pull completed or no conflicts"
+        # Get the previous tag
+        PREVIOUS_TAG=$(git describe --tags --abbrev=0 $TAG_NAME^ 2>/dev/null || echo "")
+
+        if [ -n "$PREVIOUS_TAG" ]; then
+          echo "## Changes since $PREVIOUS_TAG" > CHANGELOG.md
+          git log --oneline --no-merges $PREVIOUS_TAG..$TAG_NAME >> CHANGELOG.md
+        else
+          echo "## Initial Release" > CHANGELOG.md
+          git log --oneline --no-merges >> CHANGELOG.md
         fi
 
-    - name: Generate changelog with action
-      uses: TriPSs/conventional-changelog-action@v3
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        version-file: './pyproject.toml'
-        output-file: 'CHANGELOG.md'
-        skip-version-file: true
-        skip-commit: true
-        release-count: 0
-        tag-prefix: 'v'
+        echo "Changelog generated:"
+        cat CHANGELOG.md
 
     - name: Publish package to PyPI
       uses: pypa/gh-action-pypi-publish@release/v1
