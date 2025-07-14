@@ -97,13 +97,21 @@ class TestCLIParameterIntegration:
                                 with patch("asyncio.run") as mock_asyncio_run:
                                     mock_asyncio_run.return_value = mock_result
 
-                                    # Actually invoke the CLI to verify integration
+                                    # Provide a dummy numpy module so the bench
+                                    # command works even when numpy isn't installed
                                     from typer.testing import CliRunner
+                                    import sys
+                                    from types import SimpleNamespace
 
-                                    runner = CliRunner()
-                                    result = runner.invoke(
-                                        app, ["bench", "test prompt", "--rounds", "1"]
+                                    dummy_numpy = SimpleNamespace(
+                                        percentile=lambda data, q: data[0]
                                     )
+                                    with patch.dict(sys.modules, {"numpy": dummy_numpy}):
+                                        runner = CliRunner()
+                                        result = runner.invoke(
+                                            app,
+                                            ["bench", "test prompt", "--rounds", "1"],
+                                        )
                                     assert result.exit_code == 0
                                     mock_make_pipeline.assert_called_once()
 

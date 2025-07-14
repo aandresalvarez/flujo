@@ -1,10 +1,17 @@
 import asyncio
+import os
 import sqlite3
 import time
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
+
+if getattr(os, "geteuid", lambda: -1)() == 0:
+    pytest.skip(
+        "permission-based SQLite tests skipped when running as root",
+        allow_module_level=True,
+    )
 
 from flujo.state.backends.sqlite import SQLiteBackend
 
