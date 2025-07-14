@@ -29,6 +29,10 @@ sync: .uv ## Update dependencies based on pyproject.toml
 	@echo "🔄 Syncing dependencies..."
 	@uv sync --all-extras
 
+.PHONY: pip-dev
+pip-dev: ## Install development dependencies (for CI/CD)
+	@echo "📦 Installing development dependencies..."
+	pip install -e ".[dev,bench,docs]"
 
 # ------------------------------------------------------------------------------
 # Code Quality & Formatting
@@ -66,6 +70,17 @@ testcov: .uv ## Run tests and generate an HTML coverage report
 	@uv run coverage run --source=flujo -m pytest tests/
 	@uv run coverage html
 	@echo "\n✅ Coverage report generated in 'htmlcov/'. Open htmlcov/index.html to view."
+
+
+# ------------------------------------------------------------------------------
+# Package Building
+# ------------------------------------------------------------------------------
+
+.PHONY: package
+package: ## Build package distribution files
+	@echo "📦 Building package distribution..."
+	python -m build
+	@echo "\n✅ Package built in dist/ directory."
 
 
 # ------------------------------------------------------------------------------
