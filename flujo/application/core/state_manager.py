@@ -88,13 +88,22 @@ class StateManager(Generic[ContextT]):
             except Exception:
                 pass
 
+        # Optimize serialization by only dumping context when necessary
+        pipeline_context = None
+        if context is not None:
+            try:
+                pipeline_context = context.model_dump()
+            except Exception:
+                # Fallback to basic serialization if model_dump fails
+                pipeline_context = {"error": "Failed to serialize context"}
+
         state_data = {
             "run_id": run_id,
             "pipeline_id": getattr(context, "pipeline_id", "unknown"),
             "pipeline_name": getattr(context, "pipeline_name", "unknown"),
             "pipeline_version": getattr(context, "pipeline_version", "latest"),
             "current_step_index": current_step_index,
-            "pipeline_context": context.model_dump() if context is not None else None,
+            "pipeline_context": pipeline_context,
             "last_step_output": last_step_output,
             "status": status,
             "created_at": state_created_at or datetime.now(),

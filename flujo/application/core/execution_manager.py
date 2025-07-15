@@ -149,14 +149,17 @@ class ExecutionManager(Generic[ContextT]):
 
                     # Persist state if needed (moved here to handle both success and failure)
                     if run_id is not None:
-                        await self.state_manager.persist_workflow_state(
-                            run_id=run_id,
-                            context=context,
-                            current_step_index=idx + 1,
-                            last_step_output=step_result.output,
-                            status="running",
-                            state_created_at=state_created_at,
-                        )
+                        # Only persist workflow state on step failure or completion to reduce overhead
+                        if not step_result.success or idx == len(self.pipeline.steps) - 1:
+                            await self.state_manager.persist_workflow_state(
+                                run_id=run_id,
+                                context=context,
+                                current_step_index=idx + 1,
+                                last_step_output=step_result.output,
+                                status="running",
+                                state_created_at=state_created_at,
+                            )
+                        # Always record step result for observability
                         await self.state_manager.record_step_result(run_id, step_result, idx)
 
                     # Check usage limits after step result is added to pipeline result
