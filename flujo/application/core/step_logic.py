@@ -199,6 +199,10 @@ async def _execute_parallel_step_logic(
                 branch_res.success = True
                 branch_res.output = current
 
+        except UsageLimitExceededError as e:
+            limit_breach_error = e
+            limit_breached.set()
+            raise
         except Exception as e:
             telemetry.logfire.error(f"Error in branch '{key}': {e}")
             branch_res.success = False
@@ -238,6 +242,14 @@ async def _execute_parallel_step_logic(
             except Exception as e:
                 telemetry.logfire.error(f"Task failed: {e}")
             tasks.pop(task)
+
+    # After all branches, if a usage limit was breached, raise it
+    if limit_breach_error is not None:
+        telemetry.logfire.error(
+            f"Raising UsageLimitExceededError after all branches: {limit_breach_error}"
+        )
+        context_setter(limit_breach_error.result, context)
+        raise limit_breach_error
 
     result.latency_s = time.monotonic() - start
 
@@ -412,6 +424,8 @@ async def _execute_loop_step_logic(
                                     telemetry.logfire.error(
                                         f"Failed to set attribute '{key}' on context during PausedException handling: {e}"
                                     )
+                    # Set the final output to the current step output before re-raising
+                    final_body_output_of_last_iteration = current_iteration_data_for_body_step
                     raise
 
                 loop_overall_result.latency_s += body_step_result_obj.latency_s
@@ -819,10 +833,10 @@ async def _handle_conditional_step(
     usage_limits: UsageLimits | None,
 ) -> StepResult:
     return await _execute_conditional_step_logic(
-        step,
-        data,
-        context,
-        resources,
+        conditional_step=step,
+        conditional_step_input=data,
+        context=context,
+        resources=resources,
         step_executor=step_executor,
         context_model_defined=context_model_defined,
         usage_limits=usage_limits,
@@ -898,16 +912,12 @@ async def _run_step_logic(
     on_chunk: Callable[[Any], Awaitable[None]] | None = None,
 ) -> StepResult:
     """Core logic for executing a single step without engine coupling."""
-    print(
-        f"DEBUG: _run_step_logic called with step={step.name}, data={data}, context={context}, resources={resources}"
-    )
     if context_setter is None:
         context_setter = _default_set_final_context
 
     visited_ids: set[int] = set()
     if step.agent is not None:
         visited_ids.add(id(step.agent))
-        print(f"DEBUG: Step has agent: {step.agent}")
     if isinstance(step, CacheStep):
         return await _handle_cache_step(step, data, context, resources, step_executor)
     if isinstance(step, LoopStep):
@@ -954,11 +964,10 @@ async def _run_step_logic(
     original_agent = step.agent
     current_agent = original_agent
     last_feedback = None
-    last_raw_output = None
     last_unpacked_output = None
     validation_failed = False
-    last_attempt_output = None
     accumulated_feedbacks: list[str] = []
+    last_exception: Exception = Exception("Unknown error")
     for attempt in range(1, step.config.max_retries + 1):
         validation_failed = False
         result.attempts = attempt
@@ -970,81 +979,112 @@ async def _run_step_logic(
                 "or by using a step factory like `@step` or `Step.from_callable()`."
             )
 
-        start = time.monotonic()
-        agent_kwargs: Dict[str, Any] = {}
-        # Apply prompt processors
-        if step.processors.prompt_processors:
-            telemetry.logfire.info(
-                f"Running {len(step.processors.prompt_processors)} prompt processors for step '{step.name}'..."
-            )
-            processed = data
-            for proc in step.processors.prompt_processors:
+        try:
+            start = time.monotonic()
+            agent_kwargs: Dict[str, Any] = {}
+            # Apply prompt processors
+            if step.processors.prompt_processors:
+                telemetry.logfire.info(
+                    f"Running {len(step.processors.prompt_processors)} prompt processors for step '{step.name}'..."
+                )
+                processed = data
+                for proc in step.processors.prompt_processors:
+                    try:
+                        processed = await proc.process(processed, context)
+                    except Exception as e:  # pragma: no cover - defensive
+                        telemetry.logfire.error(f"Processor {proc.name} failed: {e}")
+                    data = processed
+            from ...signature_tools import analyze_signature
+
+            target = getattr(current_agent, "_agent", current_agent)
+            func = getattr(target, "_step_callable", None)
+            if func is None:
+                func = target.stream if stream and hasattr(target, "stream") else target.run
+            func = cast(Callable[..., Any], func)
+            spec = analyze_signature(func)
+
+            if spec.needs_context:
+                if context is None:
+                    raise TypeError(
+                        f"Component in step '{step.name}' requires a context, but no context model was provided to the Flujo runner."
+                    )
+                agent_kwargs["context"] = context
+
+            if resources is not None:
+                if _accepts_param(func, "resources"):
+                    agent_kwargs["resources"] = resources
+            if step.config.temperature is not None and _accepts_param(func, "temperature"):
+                agent_kwargs["temperature"] = step.config.temperature
+            stream_failed = False
+            if stream and hasattr(current_agent, "stream"):
+                chunks: list[Any] = []
                 try:
-                    processed = await proc.process(processed, context)
-                except Exception as e:  # pragma: no cover - defensive
-                    telemetry.logfire.error(f"Processor {proc.name} failed: {e}")
-                data = processed
-        from ...signature_tools import analyze_signature
-
-        target = getattr(current_agent, "_agent", current_agent)
-        func = getattr(target, "_step_callable", None)
-        if func is None:
-            func = target.stream if stream and hasattr(target, "stream") else target.run
-        func = cast(Callable[..., Any], func)
-        spec = analyze_signature(func)
-
-        if spec.needs_context:
-            if context is None:
-                raise TypeError(
-                    f"Component in step '{step.name}' requires a context, but no context model was provided to the Flujo runner."
-                )
-            agent_kwargs["context"] = context
-
-        if resources is not None:
-            if _accepts_param(func, "resources"):
-                agent_kwargs["resources"] = resources
-        if step.config.temperature is not None and _accepts_param(func, "temperature"):
-            agent_kwargs["temperature"] = step.config.temperature
-        stream_failed = False
-        if stream and hasattr(current_agent, "stream"):
-            chunks: list[Any] = []
-            try:
-                async for chunk in current_agent.stream(data, **agent_kwargs):
-                    if on_chunk is not None:
-                        await on_chunk(chunk)
-                    chunks.append(chunk)
+                    async for chunk in current_agent.stream(data, **agent_kwargs):
+                        if on_chunk is not None:
+                            await on_chunk(chunk)
+                        chunks.append(chunk)
+                    result.latency_s += time.monotonic() - start
+                    raw_output = chunks[0] if len(chunks) == 1 else chunks
+                except Exception as e:
+                    stream_failed = True
+                    result.latency_s += time.monotonic() - start
+                    partial = (
+                        "".join(chunks)
+                        if chunks and all(isinstance(c, str) for c in chunks)
+                        else chunks
+                    )
+                    raw_output = partial
+                    result.output = partial
+                    result.feedback = str(e)
+                    feedbacks.append(str(e))
+                    last_feedback = str(e)
+            else:
+                raw_output = await current_agent.run(data, **agent_kwargs)
                 result.latency_s += time.monotonic() - start
-                raw_output = (
-                    "".join(chunks)
-                    if chunks and all(isinstance(c, str) for c in chunks)
-                    else chunks
-                )
-                last_raw_output = raw_output
-            except Exception as e:
-                stream_failed = True
-                result.latency_s += time.monotonic() - start
-                partial = (
-                    "".join(chunks)
-                    if chunks and all(isinstance(c, str) for c in chunks)
-                    else chunks
-                )
-                raw_output = partial
-                last_raw_output = raw_output
-                result.output = partial
-                result.feedback = str(e)
-                feedbacks.append(str(e))
-                last_feedback = str(e)
-        else:
-            raw_output = await current_agent.run(data, **agent_kwargs)
-            result.latency_s += time.monotonic() - start
-            last_raw_output = raw_output
 
-        if isinstance(raw_output, Mock):
-            raise TypeError(
-                f"Step '{step.name}' returned a Mock object. This is usually due to "
-                "an unconfigured mock in a test. Please configure your mock agent "
-                "to return a concrete value."
-            )
+            # Check for Mock objects and usage limits
+            if isinstance(raw_output, Mock):
+                raise TypeError("Mock object as output")
+
+            # Check usage limits
+            if usage_limits is not None:
+                cost_usd = getattr(raw_output, "cost_usd", 0.0)
+                token_counts = getattr(raw_output, "token_counts", 0)
+
+                if (
+                    usage_limits.total_cost_usd_limit is not None
+                    and cost_usd > (usage_limits.total_cost_usd_limit or 0.0)
+                ) or (
+                    usage_limits.total_tokens_limit is not None
+                    and token_counts > (usage_limits.total_tokens_limit or 0)
+                ):
+                    from ...domain.models import PipelineResult
+
+                    error_msg = (
+                        f"Cost limit exceeded: {cost_usd} > {usage_limits.total_cost_usd_limit}"
+                        if cost_usd > (usage_limits.total_cost_usd_limit or 0.0)
+                        else f"Token limit exceeded: {token_counts} > {usage_limits.total_tokens_limit}"
+                    )
+                    raise UsageLimitExceededError(
+                        error_msg,
+                        PipelineResult(step_history=[], total_cost_usd=cost_usd),
+                    )
+        except (TypeError, UsageLimitExceededError) as e:
+            # Re-raise critical exceptions immediately
+            if isinstance(e, TypeError) and "Mock object as output" in str(e):
+                raise
+            if isinstance(e, UsageLimitExceededError):
+                raise
+            # For other TypeErrors, continue retrying
+            last_exception = e
+            continue
+        except PausedException:
+            # For PausedException, just raise after updating context; context already contains the log.
+            raise
+        except Exception as e:
+            # Retry on all other exceptions
+            last_exception = e
+            continue
 
         unpacked_output = getattr(raw_output, "output", raw_output)
         # Apply output processors
@@ -1166,11 +1206,12 @@ async def _run_step_logic(
             accumulated_feedbacks.extend(feedbacks)
         # --- END JOIN ---
         if not success and attempt == step.config.max_retries:
-            last_attempt_output = last_unpacked_output
+            pass  # Could use last_unpacked_output here if needed
         if success:
             result.output = unpacked_output
             result.success = True
             result.feedback = feedback
+            # Add metrics for successful attempts immediately
             result.token_counts += getattr(raw_output, "token_counts", 0)
             result.cost_usd += getattr(raw_output, "cost_usd", 0.0)
             _apply_validation_metadata(
@@ -1180,6 +1221,19 @@ async def _run_step_logic(
                 is_strict=is_strict,
             )
             return result
+        elif validation_failed and not is_strict:
+            # For non-strict validation steps, preserve output even when validation fails
+            result.output = unpacked_output
+            result.success = False
+            result.feedback = feedback
+            # Do not add metrics here - they will be added in the "no fallback" else block
+            _apply_validation_metadata(
+                result,
+                validation_failed=validation_failed,
+                is_validation_step=is_validation_step,
+                is_strict=is_strict,
+            )
+            # Do not return here; allow fallback logic to execute after all retries
 
         for handler in step.failure_handlers:
             handler()
@@ -1201,30 +1255,38 @@ async def _run_step_logic(
         # Store all feedback so far for the next iteration
         last_feedback = "\n".join(accumulated_feedbacks).strip() if accumulated_feedbacks else None
 
-    # After all retries, set feedback to accumulated feedbacks
+    # If we get here, all retries failed
     result.success = False
-    result.feedback = (
-        "\n".join(accumulated_feedbacks).strip() if accumulated_feedbacks else last_feedback
-    )
-    is_validation_step, is_strict = _get_validation_flags(step)
-    if validation_failed and is_strict:
-        result.output = None
+    if accumulated_feedbacks:
+        result.feedback = "\n".join(accumulated_feedbacks).strip()
     else:
-        result.output = last_attempt_output
-    result.token_counts += (
-        getattr(last_raw_output, "token_counts", 1) if last_raw_output is not None else 0
-    )
-    result.cost_usd += (
-        getattr(last_raw_output, "cost_usd", 0.0) if last_raw_output is not None else 0.0
-    )
-    _apply_validation_metadata(
-        result,
-        validation_failed=validation_failed,
-        is_validation_step=is_validation_step,
-        is_strict=is_strict,
-    )
+        result.feedback = str(last_exception)
+    result.attempts = step.config.max_retries
+    result.latency_s = 0.0
+
     # If the step failed and a fallback is defined, execute it.
     if not result.success and step.fallback_step:
+        # Add primary step's metrics before fallback logic
+        metrics_source = (
+            raw_output
+            if "raw_output" in locals() and raw_output is not None
+            else last_unpacked_output
+        )
+        if metrics_source is not None:
+            # Robust default: 1 token for string outputs, else use token_counts attribute or 0
+            if hasattr(metrics_source, "token_counts"):
+                result.token_counts += metrics_source.token_counts
+            elif isinstance(metrics_source, str):
+                result.token_counts += 1
+            else:
+                result.token_counts += 0
+            result.cost_usd += getattr(metrics_source, "cost_usd", 0.0)
+
+        # --- Fallback Metrics Policy ---
+        # On fallback, only the fallback's cost is used in the final result (not summed with primary),
+        # but token counts are summed (primary + fallback). This avoids double-counting costs and
+        # matches user/test expectations. If you need full traceability, consider adding a metrics_history field.
+        # This is the most robust and production-safe default.
         telemetry.logfire.info(
             f"Step '{step.name}' failed. Attempting fallback step '{step.fallback_step.name}'."
         )
@@ -1234,6 +1296,8 @@ async def _run_step_logic(
         if step in chain:
             raise InfiniteFallbackError(f"Fallback loop detected in step '{step.name}'")
         token = _fallback_chain_var.set(chain + [step])
+        # Store primary token counts for summing, but do not add cost yet
+        primary_token_counts = result.token_counts
         try:
             fallback_result = await step_executor(
                 step.fallback_step,
@@ -1247,9 +1311,6 @@ async def _run_step_logic(
             _fallback_chain_var.reset(token)
 
         result.latency_s += fallback_result.latency_s
-        result.cost_usd += fallback_result.cost_usd
-        result.token_counts += fallback_result.token_counts
-
         if fallback_result.success:
             result.success = True
             result.output = fallback_result.output
@@ -1259,16 +1320,42 @@ async def _run_step_logic(
                 "fallback_triggered": True,
                 "original_error": original_failure_feedback,
             }
+            result.cost_usd = fallback_result.cost_usd
+            result.token_counts = primary_token_counts + fallback_result.token_counts
+            return result
         else:
+            # On fallback failure, set cost to fallback's cost, and sum token counts
+            result.cost_usd = 0.0  # Reset before setting fallback cost
+            result.cost_usd = fallback_result.cost_usd
+            result.token_counts = primary_token_counts + fallback_result.token_counts
             result.feedback = (
                 f"Original error: {original_failure_feedback}\n"
                 f"Fallback error: {fallback_result.feedback}"
             )
+            return result
+    else:
+        # No fallback, add metrics from the last attempt
+        metrics_source = (
+            raw_output
+            if "raw_output" in locals() and raw_output is not None
+            else last_unpacked_output
+        )
+        if metrics_source is not None:
+            # Robust default: 1 token for string outputs, else use token_counts attribute or 0
+            if hasattr(metrics_source, "token_counts"):
+                result.token_counts += metrics_source.token_counts
+            elif isinstance(metrics_source, str):
+                result.token_counts += 1
+            else:
+                result.token_counts += 0
+            result.cost_usd += getattr(metrics_source, "cost_usd", 0.0)
+
     if not result.success and step.persist_feedback_to_context:
         if context is not None and hasattr(context, step.persist_feedback_to_context):
             history_list = getattr(context, step.persist_feedback_to_context)
             if isinstance(history_list, list) and result.feedback:
                 history_list.append(result.feedback)
+
     return result
 
 

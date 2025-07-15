@@ -217,6 +217,7 @@ def make_agentic_loop_pipeline(
                 elif cmd.type == "ask_human":
                     if isinstance(context, PipelineContext):
                         context.scratchpad["paused_step_input"] = cmd
+                    # Do NOT create or append a log entry here; only log on resume
                     raise PausedException(message=cmd.question)
                 elif cmd.type == "finish":
                     exec_result = cmd.final_answer
