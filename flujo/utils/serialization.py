@@ -520,7 +520,7 @@ def safe_serialize(
         )
 
     finally:
-        _seen.remove(obj_id)
+        _seen.discard(obj_id)
 
 
 def robust_serialize(obj: Any) -> Any:

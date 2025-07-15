@@ -573,6 +573,81 @@ class SQLiteBackend(StateBackend):
                     )
                 return result
 
+    async def list_runs(
+        self,
+        status: Optional[str] = None,
+        pipeline_name: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: int = 0,
+    ) -> List[Dict[str, Any]]:
+        """List runs from the new structured schema for lens CLI."""
+        await self._ensure_init()
+        async with self._lock:
+            async with aiosqlite.connect(self.db_path) as db:
+                # Optimize query based on filters to use appropriate indexes
+                if status and not pipeline_name:
+                    # Use status index for better performance
+                    query = """
+                        SELECT run_id, pipeline_name, pipeline_version, status, start_time, end_time, total_cost
+                        FROM runs
+                        WHERE status = ?
+                        ORDER BY start_time DESC
+                    """
+                    params = [status]
+                elif pipeline_name and not status:
+                    # Use pipeline_name index
+                    query = """
+                        SELECT run_id, pipeline_name, pipeline_version, status, start_time, end_time, total_cost
+                        FROM runs
+                        WHERE pipeline_name = ?
+                        ORDER BY start_time DESC
+                    """
+                    params = [pipeline_name]
+                elif status and pipeline_name:
+                    # Use both filters
+                    query = """
+                        SELECT run_id, pipeline_name, pipeline_version, status, start_time, end_time, total_cost
+                        FROM runs
+                        WHERE status = ? AND pipeline_name = ?
+                        ORDER BY start_time DESC
+                    """
+                    params = [status, pipeline_name]
+                else:
+                    # No filters, use start_time index
+                    query = """
+                        SELECT run_id, pipeline_name, pipeline_version, status, start_time, end_time, total_cost
+                        FROM runs
+                        ORDER BY start_time DESC
+                    """
+                    params = []
+
+                if limit is not None:
+                    query += " LIMIT ?"
+                    params.append(str(limit))
+                if offset:
+                    query += " OFFSET ?"
+                    params.append(str(offset))
+
+                async with db.execute(query, params) as cursor:
+                    rows = await cursor.fetchall()
+
+                result: List[Dict[str, Any]] = []
+                for row in rows:
+                    if row is None:
+                        continue
+                    result.append(
+                        {
+                            "run_id": row[0],
+                            "pipeline_name": row[1],
+                            "pipeline_version": row[2],
+                            "status": row[3],
+                            "start_time": row[4],
+                            "end_time": row[5],
+                            "total_cost": row[6],
+                        }
+                    )
+                return result
+
     async def get_workflow_stats(self) -> Dict[str, Any]:
         """Get comprehensive workflow statistics."""
         await self._ensure_init()
@@ -857,78 +932,3 @@ class SQLiteBackend(StateBackend):
                         }
                     )
                 return results
-
-    async def list_runs(
-        self,
-        status: Optional[str] = None,
-        pipeline_name: Optional[str] = None,
-        limit: Optional[int] = None,
-        offset: int = 0,
-    ) -> List[Dict[str, Any]]:
-        """List runs from the new structured schema for lens CLI."""
-        await self._ensure_init()
-        async with self._lock:
-            async with aiosqlite.connect(self.db_path) as db:
-                # Optimize query based on filters to use appropriate indexes
-                if status and not pipeline_name:
-                    # Use status index for better performance
-                    query = """
-                        SELECT run_id, pipeline_name, pipeline_version, status, start_time, end_time, total_cost
-                        FROM runs
-                        WHERE status = ?
-                        ORDER BY start_time DESC
-                    """
-                    params = [status]
-                elif pipeline_name and not status:
-                    # Use pipeline_name index
-                    query = """
-                        SELECT run_id, pipeline_name, pipeline_version, status, start_time, end_time, total_cost
-                        FROM runs
-                        WHERE pipeline_name = ?
-                        ORDER BY start_time DESC
-                    """
-                    params = [pipeline_name]
-                elif status and pipeline_name:
-                    # Use both filters
-                    query = """
-                        SELECT run_id, pipeline_name, pipeline_version, status, start_time, end_time, total_cost
-                        FROM runs
-                        WHERE status = ? AND pipeline_name = ?
-                        ORDER BY start_time DESC
-                    """
-                    params = [status, pipeline_name]
-                else:
-                    # No filters, use start_time index
-                    query = """
-                        SELECT run_id, pipeline_name, pipeline_version, status, start_time, end_time, total_cost
-                        FROM runs
-                        ORDER BY start_time DESC
-                    """
-                    params = []
-
-                if limit is not None:
-                    query += " LIMIT ?"
-                    params.append(str(limit))
-                if offset:
-                    query += " OFFSET ?"
-                    params.append(str(offset))
-
-                async with db.execute(query, params) as cursor:
-                    rows = await cursor.fetchall()
-
-                result: List[Dict[str, Any]] = []
-                for row in rows:
-                    if row is None:
-                        continue
-                    result.append(
-                        {
-                            "run_id": row[0],
-                            "pipeline_name": row[1],
-                            "pipeline_version": row[2],
-                            "status": row[3],
-                            "start_time": row[4],
-                            "end_time": row[5],
-                            "total_cost": row[6],
-                        }
-                    )
-                return result
