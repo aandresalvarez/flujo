@@ -39,19 +39,19 @@ from typing import (
 # --------------------------------------------------------------------------- #
 
 try:  # ➊ 9× faster JSON
-    import orjson as _json
+    import orjson
 
     def _dumps(obj: Any) -> bytes:  # noqa: D401 – returns *bytes*
-        return _json.dumps(obj, option=_json.OPT_SORT_KEYS)
+        return orjson.dumps(obj, option=orjson.OPT_SORT_KEYS)
 except ModuleNotFoundError:
-    import json as _json  # type: ignore
+    import json
 
     def _dumps(obj: Any) -> bytes:
-        return _json.dumps(obj, sort_keys=True, separators=(",", ":")).encode()  # type: ignore
+        return json.dumps(obj, sort_keys=True, separators=(",", ":")).encode()
 
 
 try:  # ➋ 5× faster cryptographic hash
-    import blake3  # type: ignore
+    import blake3
 
     def _hash_bytes(b: bytes) -> str:
         return str(blake3.blake3(b).hexdigest())
