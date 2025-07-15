@@ -47,7 +47,9 @@ except ModuleNotFoundError:
     import json
 
     def _dumps(obj: Any) -> bytes:
-        return json.dumps(obj, sort_keys=True, separators=(",", ":")).encode()
+        s = json.dumps(obj, sort_keys=True, separators=(",", ":"))
+        b = s.encode("utf-8") if isinstance(s, str) else bytes(s)
+        return b
 
 
 try:  # ➋ 5× faster cryptographic hash
