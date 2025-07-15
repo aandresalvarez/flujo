@@ -21,18 +21,26 @@ class StateManager(Generic[ContextT]):
         self,
         run_id: str,
         context_model: Optional[type[ContextT]] = None,
-    ) -> tuple[Optional[ContextT], Any, int, Optional[datetime], Optional[str], Optional[str]]:
+    ) -> tuple[
+        Optional[ContextT],
+        Any,
+        int,
+        Optional[datetime],
+        Optional[str],
+        Optional[str],
+        list[StepResult],
+    ]:
         """Load workflow state from persistence backend.
 
         Returns:
-            Tuple of (context, last_step_output, current_step_index, created_at, pipeline_name, pipeline_version)
+            Tuple of (context, last_step_output, current_step_index, created_at, pipeline_name, pipeline_version, step_history)
         """
         if self.state_backend is None or not run_id:
-            return None, None, 0, None, None, None
+            return None, None, 0, None, None, None, []
 
         loaded = await self.state_backend.load_state(run_id)
         if loaded is None:
-            return None, None, 0, None, None, None
+            return None, None, 0, None, None, None, []
 
         wf_state = WorkflowState.model_validate(loaded)
 
@@ -50,6 +58,16 @@ class StateManager(Generic[ContextT]):
             if context is not None and hasattr(context, "pipeline_version"):
                 context.pipeline_version = wf_state.pipeline_version
 
+        # Reconstruct step history from persisted state
+        step_history: list[StepResult] = []
+        for step_data in wf_state.step_history:
+            try:
+                step_result = StepResult.model_validate(step_data)
+                step_history.append(step_result)
+            except Exception:
+                # Skip invalid step data to avoid breaking resumption
+                continue
+
         return (
             context,
             wf_state.last_step_output,
@@ -57,6 +75,7 @@ class StateManager(Generic[ContextT]):
             wf_state.created_at,
             wf_state.pipeline_name,
             wf_state.pipeline_version,
+            step_history,
         )
 
     async def persist_workflow_state(
@@ -68,6 +87,7 @@ class StateManager(Generic[ContextT]):
         last_step_output: Any | None,
         status: str,
         state_created_at: datetime | None = None,
+        step_history: Optional[list[StepResult]] = None,
     ) -> None:
         """Persist current workflow state to backend."""
         if self.state_backend is None or run_id is None:
@@ -97,6 +117,16 @@ class StateManager(Generic[ContextT]):
                 # Fallback to basic serialization if model_dump fails
                 pipeline_context = {"error": "Failed to serialize context"}
 
+        # Serialize step history
+        serialized_step_history = []
+        if step_history is not None:
+            for step_result in step_history:
+                try:
+                    serialized_step_history.append(step_result.model_dump())
+                except Exception:
+                    # Skip invalid step results to avoid breaking persistence
+                    continue
+
         state_data = {
             "run_id": run_id,
             "pipeline_id": getattr(context, "pipeline_id", "unknown"),
@@ -105,6 +135,7 @@ class StateManager(Generic[ContextT]):
             "current_step_index": current_step_index,
             "pipeline_context": pipeline_context,
             "last_step_output": last_step_output,
+            "step_history": serialized_step_history,
             "status": status,
             "created_at": state_created_at or datetime.now(),
             "updated_at": datetime.now(),

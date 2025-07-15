@@ -156,6 +156,7 @@ class ExecutionManager(Generic[ContextT]):
                             last_step_output=step_result.output,
                             status="running",
                             state_created_at=state_created_at,
+                            step_history=result.step_history,
                         )
                         # Always record step result for observability
                         await self.state_manager.record_step_result(run_id, step_result, idx)
@@ -234,5 +235,6 @@ class ExecutionManager(Generic[ContextT]):
             last_step_output=last_step_output,
             status=final_status,
             state_created_at=state_created_at,
+            step_history=result.step_history,
         )
         await self.state_manager.record_run_end(run_id, result)

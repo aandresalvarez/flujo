@@ -532,6 +532,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 created_at,
                 pipeline_name,
                 pipeline_version,
+                step_history,
             ) = await state_manager.load_workflow_state(run_id_for_state, self.context_model)
             if context is not None:
                 # Resume from persisted state
@@ -540,8 +541,8 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 state_created_at = created_at
                 if start_idx > 0:
                     data = last_output
-                    # Clear step history when resuming to ensure only remaining steps are executed
-                    pipeline_result_obj.step_history.clear()
+                    # Restore step history from persisted state
+                    pipeline_result_obj.step_history = step_history
 
                 # Restore pipeline version from state
                 if pipeline_version is not None:

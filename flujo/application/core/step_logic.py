@@ -424,8 +424,7 @@ async def _execute_loop_step_logic(
                                     telemetry.logfire.error(
                                         f"Failed to set attribute '{key}' on context during PausedException handling: {e}"
                                     )
-                    # Set the final output to the current step output before re-raising
-                    final_body_output_of_last_iteration = current_iteration_data_for_body_step
+                    # Re-raise PausedException to propagate it up the call stack
                     raise
 
                 loop_overall_result.latency_s += body_step_result_obj.latency_s

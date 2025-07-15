@@ -84,13 +84,15 @@ async def test_file_backend_resume_after_crash(tmp_path: Path) -> None:
     result = await gather_result(
         runner, "x", initial_context_data={"initial_prompt": "x", "run_id": run_id}
     )
-    assert len(result.step_history) == 1
-    assert result.step_history[0].name == "s2"
-    assert result.step_history[0].output == "mid done"
+    assert len(result.step_history) == 2
+    assert result.step_history[0].name == "s1"
+    assert result.step_history[1].name == "s2"
+    assert result.step_history[0].output == "mid"
+    assert result.step_history[1].output == "mid done"
     saved = await backend.load_state(run_id)
     assert saved is not None
     wf = WorkflowState.model_validate(saved)
-    assert wf.current_step_index == 2
+    assert wf.current_step_index == 3
 
 
 @pytest.mark.asyncio
@@ -111,13 +113,15 @@ async def test_sqlite_backend_resume_after_crash(tmp_path: Path) -> None:
     result = await gather_result(
         runner, "x", initial_context_data={"initial_prompt": "x", "run_id": run_id}
     )
-    assert len(result.step_history) == 1
-    assert result.step_history[0].name == "s2"
-    assert result.step_history[0].output == "mid done"
+    assert len(result.step_history) == 2
+    assert result.step_history[0].name == "s1"
+    assert result.step_history[1].name == "s2"
+    assert result.step_history[0].output == "mid"
+    assert result.step_history[1].output == "mid done"
     saved = await backend.load_state(run_id)
     assert saved is not None
     wf = WorkflowState.model_validate(saved)
-    assert wf.current_step_index == 2
+    assert wf.current_step_index == 3
 
 
 @pytest.mark.asyncio

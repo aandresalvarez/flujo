@@ -79,6 +79,7 @@ class SQLiteBackend(StateBackend):
                         current_step_index INTEGER NOT NULL DEFAULT 0,
                         pipeline_context TEXT NOT NULL,
                         last_step_output TEXT,
+                        step_history TEXT,
                         status TEXT NOT NULL CHECK (status IN ('running', 'paused', 'completed', 'failed', 'cancelled')),
                         created_at TEXT NOT NULL,
                         updated_at TEXT NOT NULL,
@@ -266,6 +267,7 @@ class SQLiteBackend(StateBackend):
             ("error_message", "TEXT"),
             ("execution_time_ms", "INTEGER"),
             ("memory_usage_mb", "REAL"),
+            ("step_history", "TEXT"),
         ]
 
         for column_name, column_def in new_columns:
@@ -399,14 +401,19 @@ class SQLiteBackend(StateBackend):
                         if state.get("last_step_output") is not None
                         else None
                     )
+                    step_history_json = (
+                        json.dumps(robust_serialize(state["step_history"]))
+                        if state.get("step_history") is not None
+                        else None
+                    )
                     await db.execute(
                         """
                         INSERT OR REPLACE INTO workflow_state (
                             run_id, pipeline_id, pipeline_name, pipeline_version,
-                            current_step_index, pipeline_context, last_step_output,
+                            current_step_index, pipeline_context, last_step_output, step_history,
                             status, created_at, updated_at, total_steps,
                             error_message, execution_time_ms, memory_usage_mb
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             run_id,
@@ -416,6 +423,7 @@ class SQLiteBackend(StateBackend):
                             state["current_step_index"],
                             pipeline_context_json,
                             last_step_output_json,
+                            step_history_json,
                             state["status"],
                             state["created_at"].isoformat(),
                             state["updated_at"].isoformat(),
@@ -439,7 +447,7 @@ class SQLiteBackend(StateBackend):
                     cursor = await db.execute(
                         """
                         SELECT run_id, pipeline_id, pipeline_name, pipeline_version, current_step_index,
-                               pipeline_context, last_step_output, status, created_at, updated_at,
+                               pipeline_context, last_step_output, step_history, status, created_at, updated_at,
                                total_steps, error_message, execution_time_ms, memory_usage_mb
                         FROM workflow_state WHERE run_id = ?
                         """,
@@ -455,6 +463,7 @@ class SQLiteBackend(StateBackend):
                 last_step_output = (
                     safe_deserialize(json.loads(row[6])) if row[6] is not None else None
                 )
+                step_history = safe_deserialize(json.loads(row[7])) if row[7] is not None else []
                 return {
                     "run_id": row[0],
                     "pipeline_id": row[1],
@@ -463,13 +472,14 @@ class SQLiteBackend(StateBackend):
                     "current_step_index": row[4],
                     "pipeline_context": pipeline_context,
                     "last_step_output": last_step_output,
-                    "status": row[7],
-                    "created_at": datetime.fromisoformat(row[8]),
-                    "updated_at": datetime.fromisoformat(row[9]),
-                    "total_steps": row[10] or 0,
-                    "error_message": row[11],
-                    "execution_time_ms": row[12],
-                    "memory_usage_mb": row[13],
+                    "step_history": step_history,
+                    "status": row[8],
+                    "created_at": datetime.fromisoformat(row[9]),
+                    "updated_at": datetime.fromisoformat(row[10]),
+                    "total_steps": row[11] or 0,
+                    "error_message": row[12],
+                    "execution_time_ms": row[13],
+                    "memory_usage_mb": row[14],
                 }
 
             result = await self._with_retries(_load)

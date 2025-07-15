@@ -588,9 +588,6 @@ class UltraStepExecutor(Generic[TContext]):
                 else:
                     raise last_exception
         else:
-            print(
-                f"DEBUG: Delegating to original step logic (plugins/validators/fallback) for {type(agent).__name__}"
-            )
             return await self._execute_complex_step(
                 step, data, context, resources, usage_limits, stream, on_chunk
             )

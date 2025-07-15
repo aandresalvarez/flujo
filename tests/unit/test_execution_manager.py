@@ -47,6 +47,7 @@ class TestStateManager:
             created,
             pipeline_name,
             pipeline_version,
+            step_history,
         ) = await state_manager.load_workflow_state("test-id")
         assert context is None
         assert output is None
@@ -54,6 +55,7 @@ class TestStateManager:
         assert created is None
         assert pipeline_name is None
         assert pipeline_version is None
+        assert step_history == []
 
     @pytest.mark.asyncio
     async def test_load_workflow_state_no_run_id(self, mock_state_backend):
@@ -66,6 +68,7 @@ class TestStateManager:
             created,
             pipeline_name,
             pipeline_version,
+            step_history,
         ) = await state_manager.load_workflow_state("")
         assert context is None
         assert output is None
@@ -73,6 +76,7 @@ class TestStateManager:
         assert created is None
         assert pipeline_name is None
         assert pipeline_version is None
+        assert step_history == []
 
     @pytest.mark.asyncio
     async def test_load_workflow_state_not_found(self, mock_state_backend):
@@ -87,6 +91,7 @@ class TestStateManager:
             created,
             pipeline_name,
             pipeline_version,
+            step_history,
         ) = await state_manager.load_workflow_state("test-id")
         assert context is None
         assert output is None
@@ -94,6 +99,7 @@ class TestStateManager:
         assert created is None
         assert pipeline_name is None
         assert pipeline_version is None
+        assert step_history == []
 
     @pytest.mark.asyncio
     async def test_persist_workflow_state_no_backend(self, state_manager):
