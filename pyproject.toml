@@ -126,6 +126,11 @@ ignore_missing_imports = true
 module = "flujo.application.core.step_logic"
 disable_error_code = ["no-any-return"]
 
+# Known mypy limitation with orjson and dynamic serialization in ultra_executor
+[[tool.mypy.overrides]]
+module = "flujo.application.core.ultra_executor"
+disable_error_code = ["no-any-return"]
+
 [tool.ruff]
 line-length = 100
 

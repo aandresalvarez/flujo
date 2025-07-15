@@ -78,7 +78,7 @@ try:
 
     def trace(name: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
-            return telemetry.logfire.instrument(name)(func)  # type: ignore[no-any-return]
+            return telemetry.logfire.instrument(name)(func)
 
         return decorator
 except Exception:  # pragma: no cover – swallow import errors silently
