@@ -1,16 +1,15 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, TYPE_CHECKING
+from typing import Any, Dict, TYPE_CHECKING, cast
 
-from ..domain.resources import AppResources
 
 from ..domain.backends import ExecutionBackend, StepExecutionRequest
 from ..domain.agent_protocol import AsyncAgentProtocol
-from ..domain.models import StepResult, BaseModel
-from ..application.core.step_logic import _run_step_logic
+from ..domain.models import StepResult
+from ..application.core.ultra_executor import UltraStepExecutor
 
 if TYPE_CHECKING:
-    from ..domain.dsl import Step
+    pass
 
 
 class LocalBackend(ExecutionBackend):
@@ -20,34 +19,22 @@ class LocalBackend(ExecutionBackend):
         self, agent_registry: Dict[str, AsyncAgentProtocol[Any, Any]] | None = None
     ) -> None:
         self.agent_registry = agent_registry or {}
+        # Create ultra executor for optimal performance
+        self._ultra_executor: UltraStepExecutor[Any] = UltraStepExecutor()
 
     async def execute_step(self, request: StepExecutionRequest) -> StepResult:
-        async def executor(
-            step: "Step[Any, Any]",
-            data: Any,
-            context: Optional[BaseModel],
-            resources: Optional[AppResources],
-        ) -> StepResult:
-            nested_request = StepExecutionRequest(
+        step = request.step
+
+        # Use ultra executor for all steps (replaces iterative executor)
+        return cast(
+            StepResult,
+            await self._ultra_executor.execute_step(
                 step=step,
-                input_data=data,
-                context=context,
-                resources=resources,
-                context_model_defined=request.context_model_defined,
+                data=request.input_data,
+                context=request.context,
+                resources=request.resources,
                 usage_limits=request.usage_limits,
                 stream=request.stream,
                 on_chunk=request.on_chunk,
-            )
-            return await self.execute_step(nested_request)
-
-        return await _run_step_logic(
-            request.step,
-            request.input_data,
-            request.context,
-            request.resources,
-            step_executor=executor,
-            context_model_defined=request.context_model_defined,
-            usage_limits=request.usage_limits,
-            stream=request.stream,
-            on_chunk=request.on_chunk,
+            ),
         )

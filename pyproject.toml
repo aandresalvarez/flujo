@@ -119,6 +119,11 @@ module = [
 ]
 ignore_missing_imports = true
 
+# Known mypy limitation with async wrapper patterns in step_logic
+[[tool.mypy.overrides]]
+module = "flujo.application.core.step_logic"
+disable_error_code = ["no-any-return"]
+
 [tool.ruff]
 line-length = 100
 

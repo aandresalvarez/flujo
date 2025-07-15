@@ -11,6 +11,7 @@ from pydantic import (
     field_validator,
     AliasChoices,
     model_validator,
+    BaseModel,
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -117,6 +118,44 @@ class Settings(BaseSettings):
         if not v:
             raise ValueError("t_schedule must not be empty")
         return v
+
+
+class ExecutionConfig(BaseModel):
+    """Configuration for step execution optimization."""
+
+    # Iterative executor settings
+    use_iterative_executor: bool = Field(
+        default=False, description="Use the new iterative step executor for better performance"
+    )
+
+    # Memoization settings
+    enable_memoization: bool = Field(default=True, description="Enable step result memoization")
+    cache_size: int = Field(default=1000, description="Maximum number of cached step results")
+    cache_ttl_seconds: int = Field(
+        default=3600, description="Time-to-live for cached results in seconds"
+    )
+
+    # Parallel processing settings
+    enable_parallel_validation: bool = Field(default=True, description="Run validators in parallel")
+    max_parallel_validators: int = Field(
+        default=10, description="Maximum number of validators to run in parallel"
+    )
+
+    # Context optimization settings
+    enable_context_optimization: bool = Field(
+        default=True, description="Enable context copying optimizations"
+    )
+    lazy_context_copying: bool = Field(
+        default=True, description="Only copy context when actually needed"
+    )
+
+    # Resource management settings
+    enable_resource_pooling: bool = Field(
+        default=False, description="Enable resource pooling for expensive operations"
+    )
+    max_concurrent_steps: int = Field(
+        default=50, description="Maximum number of concurrent step executions"
+    )
 
 
 # Singleton instance, fail fast if critical vars missing

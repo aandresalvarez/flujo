@@ -8,6 +8,10 @@ from flujo.testing.utils import gather_result
 from flujo.domain.plugins import ValidationPlugin, PluginOutcome
 from flujo.domain.agent_protocol import AsyncAgentProtocol
 
+import uuid
+import os
+from pathlib import Path
+
 
 class MyResources(AppResources):
     db_conn: MagicMock
@@ -16,6 +20,13 @@ class MyResources(AppResources):
 
 class MyContext(BaseModel):
     run_id: str
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def __setattr__(self, name, value):
+        if name == "run_id":
+            super().__setattr__(name, value)
 
 
 class ResourceUsingAgent(AsyncAgentProtocol):
@@ -101,13 +112,23 @@ async def test_pipeline_with_no_resources_succeeds():
 
 
 @pytest.mark.asyncio
-async def test_mixing_resources_and_context(mock_resources: MyResources):
-    pipeline = Step.model_validate({"name": "mixed_step", "agent": ContextAndResourceAgent()})
+async def test_mixing_resources_and_context(tmp_path: Path, mock_resources: MyResources):
+    # Use a unique run_id and a temporary SQLite backend for isolation
+    run_id = f"test_run_{uuid.uuid4()}"
+    db_path = tmp_path / f"state_{run_id}.db"
+    from flujo.state.backends.sqlite import SQLiteBackend
+
+    backend = SQLiteBackend(db_path)
+
+    agent = ContextAndResourceAgent()
+    step = Step.model_validate({"name": "mixed_step", "agent": agent})
+    pipeline = step
     runner = Flujo(
         pipeline,
         context_model=MyContext,
-        initial_context_data={"run_id": "initial"},
+        initial_context_data={"run_id": run_id},
         resources=mock_resources,
+        state_backend=backend,
     )
 
     result = await gather_result(runner, "data")
@@ -123,3 +144,7 @@ async def test_mixing_resources_and_context(mock_resources: MyResources):
     # If step history is populated, check the output
     if hasattr(result, "step_history") and result.step_history:
         assert result.step_history[0].output == "context_and_resource_used"
+
+    # Clean up the state file
+    if db_path.exists():
+        os.remove(db_path)

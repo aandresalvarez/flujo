@@ -131,4 +131,5 @@ class StepCoordinator(Generic[ContextT]):
     ) -> None:
         """Update pipeline result with step result."""
         result.step_history.append(step_result)
-        result.total_cost_usd += step_result.cost_usd
+        # Always recompute total_cost_usd for robustness
+        result.total_cost_usd = sum(s.cost_usd for s in result.step_history)

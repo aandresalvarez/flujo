@@ -706,9 +706,7 @@ async def _execute_dynamic_router_step_logic(
             router_kwargs["context"] = context
 
         if resources is not None:
-            if spec.needs_resources:
-                router_kwargs["resources"] = resources
-            elif _accepts_param(func, "resources"):
+            if _accepts_param(func, "resources"):
                 router_kwargs["resources"] = resources
 
         raw = await func(router_input, **router_kwargs)
@@ -760,6 +758,132 @@ async def _execute_dynamic_router_step_logic(
     return parallel_result
 
 
+async def _handle_cache_step(
+    step: CacheStep[Any, Any],
+    data: Any,
+    context: Optional[TContext],
+    resources: Optional[AppResources],
+    step_executor: StepExecutor[TContext],
+) -> StepResult:
+    key = _generate_cache_key(step.wrapped_step, data, context=context, resources=resources)
+    cached: StepResult | None = None
+    if key:
+        try:
+            cached = await step.cache_backend.get(key)
+        except Exception as e:  # pragma: no cover - defensive
+            telemetry.logfire.warn(f"Cache get failed for key {key}: {e}")
+    if isinstance(cached, StepResult):
+        cache_result = cached.model_copy(deep=True)
+        cache_result.metadata_ = cache_result.metadata_ or {}
+        cache_result.metadata_["cache_hit"] = True
+        return cache_result
+
+    cache_result = await step_executor(step.wrapped_step, data, context, resources)
+    if cache_result.success and key:
+        try:
+            await step.cache_backend.set(key, cache_result)
+        except Exception as e:  # pragma: no cover - defensive
+            telemetry.logfire.warn(f"Cache set failed for key {key}: {e}")
+    return cache_result
+
+
+async def _handle_loop_step(
+    step: LoopStep[TContext],
+    data: Any,
+    context: Optional[TContext],
+    resources: Optional[AppResources],
+    step_executor: StepExecutor[TContext],
+    context_model_defined: bool,
+    usage_limits: UsageLimits | None,
+    context_setter: Callable[[PipelineResult[TContext], Optional[TContext]], None],
+) -> StepResult:
+    return await _execute_loop_step_logic(
+        step,
+        data,
+        context,
+        resources,
+        step_executor=step_executor,
+        context_model_defined=context_model_defined,
+        usage_limits=usage_limits,
+        context_setter=context_setter,
+    )
+
+
+async def _handle_conditional_step(
+    step: ConditionalStep[TContext],
+    data: Any,
+    context: Optional[TContext],
+    resources: Optional[AppResources],
+    step_executor: StepExecutor[TContext],
+    context_model_defined: bool,
+    usage_limits: UsageLimits | None,
+) -> StepResult:
+    return await _execute_conditional_step_logic(
+        step,
+        data,
+        context,
+        resources,
+        step_executor=step_executor,
+        context_model_defined=context_model_defined,
+        usage_limits=usage_limits,
+    )
+
+
+async def _handle_dynamic_router_step(
+    step: DynamicParallelRouterStep[TContext],
+    data: Any,
+    context: Optional[TContext],
+    resources: Optional[AppResources],
+    step_executor: StepExecutor[TContext],
+    context_model_defined: bool,
+    usage_limits: UsageLimits | None,
+    context_setter: Callable[[PipelineResult[TContext], Optional[TContext]], None],
+) -> StepResult:
+    return await _execute_dynamic_router_step_logic(
+        step,
+        data,
+        context,
+        resources,
+        step_executor=step_executor,
+        context_model_defined=context_model_defined,
+        usage_limits=usage_limits,
+        context_setter=context_setter,
+    )
+
+
+async def _handle_parallel_step(
+    step: ParallelStep[TContext],
+    data: Any,
+    context: Optional[TContext],
+    resources: Optional[AppResources],
+    step_executor: StepExecutor[TContext],
+    context_model_defined: bool,
+    usage_limits: UsageLimits | None,
+    context_setter: Callable[[PipelineResult[TContext], Optional[TContext]], None],
+) -> StepResult:
+    return await _execute_parallel_step_logic(
+        step,
+        data,
+        context,
+        resources,
+        step_executor=step_executor,
+        context_model_defined=context_model_defined,
+        usage_limits=usage_limits,
+        context_setter=context_setter,
+    )
+
+
+async def _handle_hitl_step(
+    step: HumanInTheLoopStep,
+    data: Any,
+    context: Optional[TContext],
+) -> StepResult:
+    message = step.message_for_user if step.message_for_user is not None else str(data)
+    if isinstance(context, PipelineContext):
+        context.scratchpad["status"] = "paused"
+    raise PausedException(message)
+
+
 async def _run_step_logic(
     step: Step[Any, Any],
     data: Any,
@@ -774,83 +898,59 @@ async def _run_step_logic(
     on_chunk: Callable[[Any], Awaitable[None]] | None = None,
 ) -> StepResult:
     """Core logic for executing a single step without engine coupling."""
+    print(
+        f"DEBUG: _run_step_logic called with step={step.name}, data={data}, context={context}, resources={resources}"
+    )
     if context_setter is None:
         context_setter = _default_set_final_context
 
     visited_ids: set[int] = set()
     if step.agent is not None:
         visited_ids.add(id(step.agent))
+        print(f"DEBUG: Step has agent: {step.agent}")
     if isinstance(step, CacheStep):
-        key = _generate_cache_key(step.wrapped_step, data, context=context, resources=resources)
-        cached: StepResult | None = None
-        if key:
-            try:
-                cached = await step.cache_backend.get(key)
-            except Exception as e:  # pragma: no cover - defensive
-                telemetry.logfire.warn(f"Cache get failed for key {key}: {e}")
-        if isinstance(cached, StepResult):
-            result = cached.model_copy(deep=True)
-            result.metadata_ = result.metadata_ or {}
-            result.metadata_["cache_hit"] = True
-            return result
-
-        result = await step_executor(step.wrapped_step, data, context, resources)
-        if result.success and key:
-            try:
-                await step.cache_backend.set(key, result)
-            except Exception as e:  # pragma: no cover - defensive
-                telemetry.logfire.warn(f"Cache set failed for key {key}: {e}")
-        return result
+        return await _handle_cache_step(step, data, context, resources, step_executor)
     if isinstance(step, LoopStep):
-        return await _execute_loop_step_logic(
+        return await _handle_loop_step(
             step,
             data,
             context,
             resources,
-            step_executor=step_executor,
-            context_model_defined=context_model_defined,
-            usage_limits=usage_limits,
-            context_setter=context_setter,
+            step_executor,
+            context_model_defined,
+            usage_limits,
+            context_setter,
         )
     if isinstance(step, ConditionalStep):
-        return await _execute_conditional_step_logic(
-            step,
-            data,
-            context,
-            resources,
-            step_executor=step_executor,
-            context_model_defined=context_model_defined,
-            usage_limits=usage_limits,
+        return await _handle_conditional_step(
+            step, data, context, resources, step_executor, context_model_defined, usage_limits
         )
     if isinstance(step, DynamicParallelRouterStep):
-        return await _execute_dynamic_router_step_logic(
+        return await _handle_dynamic_router_step(
             step,
             data,
             context,
             resources,
-            step_executor=step_executor,
-            context_model_defined=context_model_defined,
-            usage_limits=usage_limits,
-            context_setter=context_setter,
+            step_executor,
+            context_model_defined,
+            usage_limits,
+            context_setter,
         )
     if isinstance(step, ParallelStep):
-        return await _execute_parallel_step_logic(
+        return await _handle_parallel_step(
             step,
             data,
             context,
             resources,
-            step_executor=step_executor,
-            context_model_defined=context_model_defined,
-            usage_limits=usage_limits,
-            context_setter=context_setter,
+            step_executor,
+            context_model_defined,
+            usage_limits,
+            context_setter,
         )
     if isinstance(step, HumanInTheLoopStep):
-        message = step.message_for_user if step.message_for_user is not None else str(data)
-        if isinstance(context, PipelineContext):
-            context.scratchpad["status"] = "paused"
-        raise PausedException(message)
+        return await _handle_hitl_step(step, data, context)
 
-    result = StepResult(name=step.name)
+    result: StepResult = StepResult(name=step.name)
     original_agent = step.agent
     current_agent = original_agent
     last_feedback = None
@@ -901,9 +1001,7 @@ async def _run_step_logic(
             agent_kwargs["context"] = context
 
         if resources is not None:
-            if spec.needs_resources:
-                agent_kwargs["resources"] = resources
-            elif _accepts_param(func, "resources"):
+            if _accepts_param(func, "resources"):
                 agent_kwargs["resources"] = resources
         if step.config.temperature is not None and _accepts_param(func, "temperature"):
             agent_kwargs["temperature"] = step.config.temperature
@@ -988,9 +1086,7 @@ async def _run_step_logic(
                     plugin_kwargs["context"] = context
 
                 if resources is not None:
-                    if spec.needs_resources:
-                        plugin_kwargs["resources"] = resources
-                    elif _accepts_param(func, "resources"):
+                    if _accepts_param(func, "resources"):
                         plugin_kwargs["resources"] = resources
                 validated = await asyncio.wait_for(
                     plugin.validate(
@@ -1145,6 +1241,8 @@ async def _run_step_logic(
                 context,
                 resources,
             )
+            if not isinstance(fallback_result, StepResult):
+                raise TypeError("step_executor did not return StepResult in fallback logic")
         finally:
             _fallback_chain_var.reset(token)
 
@@ -1172,3 +1270,50 @@ async def _run_step_logic(
             if isinstance(history_list, list) and result.feedback:
                 history_list.append(result.feedback)
     return result
+
+
+async def _run_step_logic_iterative(
+    step: Step[Any, Any],
+    data: Any,
+    context: Optional[TContext],
+    resources: Optional[AppResources],
+    *,
+    step_executor: StepExecutor[TContext],
+    context_model_defined: bool,
+    usage_limits: UsageLimits | None = None,
+    context_setter: (Callable[[PipelineResult[TContext], Optional[TContext]], None] | None) = None,
+    stream: bool = False,
+    on_chunk: Callable[[Any], Awaitable[None]] | None = None,
+    use_iterative_executor: bool = False,
+) -> StepResult:
+    """Core logic for executing a single step with optional iterative execution."""
+
+    # Use ultra executor for optimal performance (replaces iterative executor)
+    if use_iterative_executor:
+        # Lazy import to avoid circular dependency
+        from .ultra_executor import UltraStepExecutor
+
+        executor: UltraStepExecutor[Any] = UltraStepExecutor()
+        return await executor.execute_step(
+            step=step,
+            data=data,
+            context=context,
+            resources=resources,
+            usage_limits=usage_limits,
+            stream=stream,
+            on_chunk=on_chunk,
+        )
+
+    # Fall back to original implementation
+    return await _run_step_logic(
+        step=step,
+        data=data,
+        context=context,
+        resources=resources,
+        step_executor=step_executor,
+        context_model_defined=context_model_defined,
+        usage_limits=usage_limits,
+        context_setter=context_setter,
+        stream=stream,
+        on_chunk=on_chunk,
+    )

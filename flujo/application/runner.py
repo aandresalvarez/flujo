@@ -540,6 +540,8 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 state_created_at = created_at
                 if start_idx > 0:
                     data = last_output
+                    # Clear step history when resuming to ensure only remaining steps are executed
+                    pipeline_result_obj.step_history.clear()
 
                 # Restore pipeline version from state
                 if pipeline_version is not None:

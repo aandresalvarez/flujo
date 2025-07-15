@@ -147,18 +147,16 @@ class ExecutionManager(Generic[ContextT]):
                 ):
                     self.step_coordinator.update_pipeline_result(result, step_result)
 
-                    # Persist state if needed (moved here to handle both success and failure)
+                    # Persist state after every step for robust crash recovery
                     if run_id is not None:
-                        # Only persist workflow state on step failure or completion to reduce overhead
-                        if not step_result.success or idx == len(self.pipeline.steps) - 1:
-                            await self.state_manager.persist_workflow_state(
-                                run_id=run_id,
-                                context=context,
-                                current_step_index=idx + 1,
-                                last_step_output=step_result.output,
-                                status="running",
-                                state_created_at=state_created_at,
-                            )
+                        await self.state_manager.persist_workflow_state(
+                            run_id=run_id,
+                            context=context,
+                            current_step_index=idx + 1,
+                            last_step_output=step_result.output,
+                            status="running",
+                            state_created_at=state_created_at,
+                        )
                         # Always record step result for observability
                         await self.state_manager.record_step_result(run_id, step_result, idx)
 
