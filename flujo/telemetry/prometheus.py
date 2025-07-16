@@ -2,19 +2,21 @@ from __future__ import annotations
 
 import asyncio
 import threading
+from typing import Iterable
 
 from ..state.backends.base import StateBackend
 
 try:
-    from prometheus_client import REGISTRY, start_http_server
+    from prometheus_client import start_http_server
     from prometheus_client.core import GaugeMetricFamily
+    from prometheus_client.registry import Collector, REGISTRY
 
     PROM_AVAILABLE = True
 except Exception:  # pragma: no cover - optional dependency
     PROM_AVAILABLE = False
 
 
-class PrometheusCollector:
+class PrometheusCollector(Collector):
     """Prometheus collector that exposes aggregated run metrics."""
 
     def __init__(self, backend: StateBackend) -> None:
@@ -22,7 +24,7 @@ class PrometheusCollector:
             raise ImportError("prometheus_client is not installed")
         self.backend = backend
 
-    def collect(self):  # type: ignore[override]
+    def collect(self) -> Iterable[GaugeMetricFamily]:
         stats = asyncio.run(self.backend.get_workflow_stats())
         total = GaugeMetricFamily("flujo_runs_total", "Total pipeline runs")
         total.add_metric([], stats.get("total_workflows", 0))
@@ -52,7 +54,8 @@ def start_prometheus_server(port: int, backend: StateBackend) -> None:
         raise ImportError("prometheus_client is not installed")
 
     collector = PrometheusCollector(backend)
-    REGISTRY.register(collector)
+    if collector not in getattr(REGISTRY, "_collector_to_names", {}):
+        REGISTRY.register(collector)
 
     def _run() -> None:
         start_http_server(port)

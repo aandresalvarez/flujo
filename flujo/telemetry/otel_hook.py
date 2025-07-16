@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Dict, Literal, Optional
+from typing import Awaitable, Callable, Dict, Literal, Optional, cast
 
 from ..domain.events import (
     HookPayload,
@@ -18,6 +18,7 @@ try:
     from opentelemetry.sdk.trace.export import (
         BatchSpanProcessor,
         ConsoleSpanExporter,
+        SpanExporter,
     )
     from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
         OTLPSpanExporter,
@@ -41,7 +42,7 @@ class OpenTelemetryHook:
             raise ImportError("OpenTelemetry dependencies are not installed")
 
         if mode == "console":
-            exporter = ConsoleSpanExporter()
+            exporter: SpanExporter = ConsoleSpanExporter()
         else:
             exporter = OTLPSpanExporter(endpoint=endpoint) if endpoint else OTLPSpanExporter()
 
@@ -54,16 +55,16 @@ class OpenTelemetryHook:
         self._active_spans: Dict[str, Span] = {}
 
     async def hook(self, payload: HookPayload) -> None:
-        handler_map = {
-            "pre_run": self._handle_pre_run,
-            "post_run": self._handle_post_run,
-            "pre_step": self._handle_pre_step,
-            "post_step": self._handle_post_step,
-            "on_step_failure": self._handle_step_failure,
+        handler_map: Dict[str, Callable[[HookPayload], Awaitable[None]]] = {
+            "pre_run": cast(Callable[[HookPayload], Awaitable[None]], self._handle_pre_run),
+            "post_run": cast(Callable[[HookPayload], Awaitable[None]], self._handle_post_run),
+            "pre_step": cast(Callable[[HookPayload], Awaitable[None]], self._handle_pre_step),
+            "post_step": cast(Callable[[HookPayload], Awaitable[None]], self._handle_post_step),
+            "on_step_failure": cast(Callable[[HookPayload], Awaitable[None]], self._handle_step_failure),
         }
         handler = handler_map.get(payload.event_name)
         if handler is not None:
-            await handler(payload)  # type: ignore[arg-type]
+            await handler(payload)
 
     async def _handle_pre_run(self, payload: PreRunPayload) -> None:
         span = self.tracer.start_span("pipeline_run")
@@ -100,5 +101,6 @@ class OpenTelemetryHook:
         if span is not None:
             span.set_status(StatusCode.ERROR)
             span.set_attribute("success", False)
-            span.set_attribute("feedback", payload.step_result.feedback)
+            feedback = payload.step_result.feedback or ""
+            span.set_attribute("feedback", feedback)
             span.end()
