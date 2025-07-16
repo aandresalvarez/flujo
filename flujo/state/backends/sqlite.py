@@ -25,6 +25,7 @@ class SQLiteBackend(StateBackend):
     _global_file_locks: "weakref.WeakKeyDictionary[AbstractEventLoop, Dict[str, asyncio.Lock]]" = (
         weakref.WeakKeyDictionary()
     )
+    _thread_file_locks: Dict[int, Dict[str, asyncio.Lock]] = {}
 
     def __init__(self, db_path: Path) -> None:
         self.db_path = Path(db_path)
@@ -41,12 +42,28 @@ class SQLiteBackend(StateBackend):
         """Get the file lock for the current event loop."""
         if self._file_lock is None:
             try:
-                loop = asyncio.get_event_loop()
+                # Try to get the current event loop
+                loop = asyncio.get_running_loop()
             except RuntimeError:
-                # No event loop in current thread, create a new one
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
+                # No running event loop, try to get the current event loop
+                try:
+                    loop = asyncio.get_event_loop()
+                except RuntimeError:
+                    # No event loop in current thread, use a thread-local approach
+                    # instead of creating a new loop that could interfere with existing operations
+                    import threading
 
+                    thread_id = threading.get_ident()
+                    if thread_id not in SQLiteBackend._thread_file_locks:
+                        SQLiteBackend._thread_file_locks[thread_id] = {}
+                    lock_map = SQLiteBackend._thread_file_locks[thread_id]
+                    db_key = str(self.db_path.absolute())
+                    if db_key not in lock_map:
+                        lock_map[db_key] = asyncio.Lock()
+                    self._file_lock = lock_map[db_key]
+                    return self._file_lock
+
+            # We have a valid event loop
             if loop not in SQLiteBackend._global_file_locks:
                 SQLiteBackend._global_file_locks[loop] = {}
             lock_map = SQLiteBackend._global_file_locks[loop]
