@@ -53,6 +53,11 @@ class TraceManager:
             await self._handle_post_step(payload)
         elif payload.event_name == "on_step_failure":
             await self._handle_step_failure(payload)
+        else:
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Unrecognized event name: {payload.event_name}")
 
     async def _handle_pre_run(self, payload: PreRunPayload) -> None:
         """Handle pre-run event - create root span."""
