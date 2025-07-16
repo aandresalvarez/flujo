@@ -418,13 +418,13 @@ class TestRobustSerialize:
     def test_robust_serialize_with_fallback(self):
         """Test robust serialization with fallback."""
 
-        # Should raise if fallback also fails
+        # Should return fallback string if fallback also fails
         def fallback_serializer(obj: Any) -> str:
             return f"fallback_{str(obj)}"
 
         with patch("flujo.utils.serialization.safe_serialize", side_effect=Exception("Test error")):
-            with pytest.raises(Exception, match="Test error"):
-                robust_serialize("test")
+            result = robust_serialize(object())
+            assert result.startswith("<unserializable: ")
 
 
 class TestSerializeToJson:

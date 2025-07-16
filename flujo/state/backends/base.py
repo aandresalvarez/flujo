@@ -79,3 +79,24 @@ class StateBackend(ABC):
     async def get_failed_workflows(self, hours_back: int = 24) -> List[Dict[str, Any]]:
         """Get failed workflows from the last N hours with error details."""
         raise NotImplementedError
+
+    # --- New structured persistence API ---
+    async def save_run_start(self, run_data: Dict[str, Any]) -> None:
+        """Persist initial run metadata."""
+        raise NotImplementedError
+
+    async def save_step_result(self, step_data: Dict[str, Any]) -> None:
+        """Persist a single step execution record."""
+        raise NotImplementedError
+
+    async def save_run_end(self, run_id: str, end_data: Dict[str, Any]) -> None:
+        """Update run metadata when execution finishes."""
+        raise NotImplementedError
+
+    async def get_run_details(self, run_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieve stored metadata for a run."""
+        raise NotImplementedError
+
+    async def list_run_steps(self, run_id: str) -> List[Dict[str, Any]]:
+        """Return all step records for a run ordered by step index."""
+        raise NotImplementedError

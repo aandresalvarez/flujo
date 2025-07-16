@@ -107,15 +107,17 @@ async def test_resume_after_crash_file_backend(tmp_path: Path) -> None:
         "start",
         initial_context_data={"initial_prompt": "start", "run_id": run_id},
     )
-    assert len(result.step_history) == 1
-    assert result.step_history[0].name == "finalize"
-    assert result.step_history[0].output == "middle-done"
+    assert len(result.step_history) == 2
+    assert result.step_history[0].name == "transform"
+    assert result.step_history[1].name == "finalize"
+    assert result.step_history[0].output == "middle"
+    assert result.step_history[1].output == "middle-done"
 
     saved = await backend.load_state(run_id)
     assert saved is not None
     wf = WorkflowState.model_validate(saved)
     assert wf.status == "completed"
-    assert wf.current_step_index == 2
+    assert wf.current_step_index == 3
 
 
 @pytest.mark.asyncio
@@ -155,9 +157,11 @@ async def test_resume_after_crash_sqlite_backend(tmp_path: Path) -> None:
         "start",
         initial_context_data={"initial_prompt": "start", "run_id": run_id},
     )
-    assert len(result.step_history) == 1
-    assert result.step_history[0].name == "finalize"
-    assert result.step_history[0].output == "middle-done"
+    assert len(result.step_history) == 2
+    assert result.step_history[0].name == "transform"
+    assert result.step_history[1].name == "finalize"
+    assert result.step_history[0].output == "middle"
+    assert result.step_history[1].output == "middle-done"
 
     with sqlite3.connect(db_path) as conn:
         row = conn.execute(
@@ -166,5 +170,5 @@ async def test_resume_after_crash_sqlite_backend(tmp_path: Path) -> None:
         ).fetchone()
     assert row is not None
     idx, status = row
-    assert idx == 2
+    assert idx == 3
     assert status == "completed"

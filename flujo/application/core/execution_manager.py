@@ -91,17 +91,6 @@ class ExecutionManager(Generic[ContextT]):
                         else:
                             yield item
 
-                    # Persist state if needed
-                    if step_result and step_result.success and run_id is not None:
-                        await self.state_manager.persist_workflow_state(
-                            run_id=run_id,
-                            context=context,
-                            current_step_index=idx + 1,
-                            last_step_output=step_result.output,
-                            status="running",
-                            state_created_at=state_created_at,
-                        )
-
                     # Validate type compatibility with next step - this may raise TypeMismatchError
                     if step_result and idx < len(self.pipeline.steps) - 1:
                         next_step = self.pipeline.steps[idx + 1]
@@ -157,6 +146,20 @@ class ExecutionManager(Generic[ContextT]):
                     not result.step_history or result.step_history[-1] is not step_result
                 ):
                     self.step_coordinator.update_pipeline_result(result, step_result)
+
+                    # Persist state after every step for robust crash recovery
+                    if run_id is not None:
+                        await self.state_manager.persist_workflow_state(
+                            run_id=run_id,
+                            context=context,
+                            current_step_index=idx + 1,
+                            last_step_output=step_result.output,
+                            status="running",
+                            state_created_at=state_created_at,
+                            step_history=result.step_history,
+                        )
+                        # Always record step result for observability
+                        await self.state_manager.record_step_result(run_id, step_result, idx)
 
                     # Check usage limits after step result is added to pipeline result
                     with telemetry.logfire.span(step.name) as span:
@@ -232,4 +235,6 @@ class ExecutionManager(Generic[ContextT]):
             last_step_output=last_step_output,
             status=final_status,
             state_created_at=state_created_at,
+            step_history=result.step_history,
         )
+        await self.state_manager.record_run_end(run_id, result)

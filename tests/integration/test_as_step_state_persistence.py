@@ -98,9 +98,12 @@ async def test_as_step_state_persistence_and_resumption(tmp_path: Path) -> None:
     assert len(result.step_history) == 3
     inner_result = result.step_history[1].output
     assert isinstance(inner_result, PipelineResult)
-    assert len(inner_result.step_history) == 1
-    assert inner_result.step_history[0].name == "second"
-    assert inner_result.step_history[0].output == 2
+    # With step history preservation, both steps should be in the history
+    assert len(inner_result.step_history) == 2
+    assert inner_result.step_history[0].name == "first"
+    assert inner_result.step_history[0].output == 1
+    assert inner_result.step_history[1].name == "second"
+    assert inner_result.step_history[1].output == 2
     assert result.step_history[2].output == 3
 
     final = await backend.load_state(run_id)
