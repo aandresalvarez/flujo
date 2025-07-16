@@ -735,13 +735,6 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 initial_context_data=initial_context_data,
             ):
                 result = r
-            # Debug print for trace tree
-            import logging
-
-            logger = logging.getLogger(__name__)
-            logger.info(
-                f"[DEBUG] Attaching trace tree (sync): {getattr(self._trace_manager, '_root_span', None)}"
-            )
             # Attach trace tree to result before returning
             if (
                 result is not None

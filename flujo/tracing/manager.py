@@ -43,12 +43,6 @@ class TraceManager:
 
     async def hook(self, payload: HookPayload) -> None:
         """Hook implementation for trace management."""
-        # Debug logging to see if hook is being called
-        import logging
-
-        logger = logging.getLogger(__name__)
-        logger.info(f"TraceManager hook called with event: {payload.event_name}")
-
         if payload.event_name == "pre_run":
             await self._handle_pre_run(payload)
         elif payload.event_name == "post_run":
@@ -72,25 +66,17 @@ class TraceManager:
 
     async def _handle_post_run(self, payload: PostRunPayload) -> None:
         """Handle post-run event - finalize root span and attach to result."""
-        import logging
-
-        logger = logging.getLogger(__name__)
-        logger.info(f"Handling post_run event with root_span: {self._root_span}")
-
         if self._root_span and self._span_stack:
             # Finalize the root span
             self._root_span.end_time = time.time()
             self._root_span.status = "completed"
 
             # Attach the trace tree to the pipeline result
-            logger.info(f"Attaching trace tree to pipeline result: {self._root_span}")
-            logger.info(f"Before assignment - trace_tree: {payload.pipeline_result.trace_tree}")
             payload.pipeline_result.trace_tree = self._root_span
-            logger.info(f"After assignment - trace_tree: {payload.pipeline_result.trace_tree}")
-            logger.info(
-                f"Direct access - trace_tree: {getattr(payload.pipeline_result, 'trace_tree', 'NOT_FOUND')}"
-            )
         else:
+            import logging
+
+            logger = logging.getLogger(__name__)
             logger.warning("No root span or span stack in post_run event")
 
     async def _handle_pre_step(self, payload: PreStepPayload) -> None:

@@ -155,10 +155,23 @@ async def test_save_trace_complex_nested_structure(tmp_path: Path) -> None:
     retrieved_trace = await backend.get_trace(run_id)
     assert retrieved_trace["span_id"] == "root_complex"
     assert len(retrieved_trace["children"]) == 2
-    assert retrieved_trace["children"][0]["name"] == "loop_step"
-    assert len(retrieved_trace["children"][0]["children"]) == 2
-    assert retrieved_trace["children"][0]["children"][0]["name"] == "iteration_1"
-    assert retrieved_trace["children"][1]["name"] == "final_step"
+
+    # Find children by name instead of relying on array position
+    loop_step = next(
+        (child for child in retrieved_trace["children"] if child["name"] == "loop_step"), None
+    )
+    assert loop_step is not None, "Child with name 'loop_step' not found"
+    assert len(loop_step["children"]) == 2
+
+    iteration_1 = next(
+        (child for child in loop_step["children"] if child["name"] == "iteration_1"), None
+    )
+    assert iteration_1 is not None, "Child with name 'iteration_1' not found"
+
+    final_step = next(
+        (child for child in retrieved_trace["children"] if child["name"] == "final_step"), None
+    )
+    assert final_step is not None, "Child with name 'final_step' not found"
 
 
 @pytest.mark.asyncio

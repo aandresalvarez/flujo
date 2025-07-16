@@ -78,8 +78,16 @@ def show_trace(run_id: str) -> None:
     except NotImplementedError:
         typer.echo("Backend does not support trace inspection", err=True)
         raise typer.Exit(1)
+    except Exception as e:
+        typer.echo(f"Error accessing backend: {e}", err=True)
+        raise typer.Exit(1)
+
     if not trace:
         typer.echo(f"No trace found for run_id: {run_id}", err=True)
+        typer.echo("This could mean:", err=True)
+        typer.echo("  - The run_id doesn't exist", err=True)
+        typer.echo("  - The run completed without trace data", err=True)
+        typer.echo("  - The backend doesn't support trace storage", err=True)
         raise typer.Exit(1)
 
     def _render_trace_tree(node: Dict[str, Any], parent: Optional[Tree] = None) -> Tree:

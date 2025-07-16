@@ -236,7 +236,7 @@ class StateManager(Generic[ContextT]):
 
                     telemetry.logfire.error(f"Failed to save trace for run {run_id}: {e}")
 
-                    # Save error trace for auditability and debugging
+                    # Save sanitized error trace for auditability
                     error_trace = {
                         "span_id": f"error_{run_id}",
                         "name": "trace_save_error",
@@ -245,8 +245,7 @@ class StateManager(Generic[ContextT]):
                         "parent_span_id": None,
                         "attributes": {
                             "error_type": type(e).__name__,
-                            "error_message": str(e),
-                            "original_trace_type": type(result.trace_tree).__name__,
+                            "error_summary": f"Trace serialization failed: {type(e).__name__}",
                             "run_id": run_id,
                             "timestamp": datetime.now().isoformat(),
                         },

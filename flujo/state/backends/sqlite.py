@@ -996,23 +996,29 @@ class SQLiteBackend(StateBackend):
                 async with aiosqlite.connect(self.db_path) as db:
                     await db.execute("PRAGMA foreign_keys = ON")
 
-                    # Delete existing spans for this run_id to ensure clean replacement
-                    await db.execute("DELETE FROM spans WHERE run_id = ?", (run_id,))
-
                     # Extract all spans from the trace tree recursively
                     spans_to_insert = self._extract_spans_from_tree(trace, run_id)
 
                     if spans_to_insert:
-                        # Use executemany for efficient batch insertion
-                        await db.executemany(
-                            """
-                            INSERT INTO spans (
-                                span_id, run_id, parent_span_id, name, start_time,
-                                end_time, status, attributes, created_at
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-                            """,
-                            spans_to_insert,
-                        )
+                        # Use a transaction for atomic replacement
+                        # Note: We use DELETE + INSERT instead of UPSERT because:
+                        # 1. We need to replace ALL spans for a run_id, not individual spans
+                        # 2. Different trace saves may have different span_id values
+                        # 3. We must ensure no orphaned spans remain from previous saves
+                        async with db.execute("BEGIN TRANSACTION"):
+                            # Delete existing spans for this run_id to ensure clean replacement
+                            await db.execute("DELETE FROM spans WHERE run_id = ?", (run_id,))
+
+                            # Insert new spans
+                            await db.executemany(
+                                """
+                                INSERT INTO spans (
+                                    span_id, run_id, parent_span_id, name, start_time,
+                                    end_time, status, attributes, created_at
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                                """,
+                                spans_to_insert,
+                            )
                         await db.commit()
 
             await self._with_retries(_save)
@@ -1064,6 +1070,7 @@ class SQLiteBackend(StateBackend):
         spans_map: Dict[str, Dict[str, Any]] = {}
         root_spans: List[Dict[str, Any]] = []
 
+        # First pass: create a map of all spans by ID
         for row in spans_data:
             span_id, parent_span_id, name, start_time, end_time, status, attributes = row
             span_data: Dict[str, Any] = {
@@ -1077,11 +1084,15 @@ class SQLiteBackend(StateBackend):
                 "children": [],
             }
             spans_map[span_id] = span_data
-            if parent_span_id is None:
-                root_spans.append(span_data)
+
+        # Second pass: build the tree hierarchy
+        for span_id, span_data in spans_map.items():
+            parent_id = span_data.get("parent_span_id")
+            if parent_id and parent_id in spans_map:
+                spans_map[parent_id]["children"].append(span_data)
             else:
-                if parent_span_id in spans_map:
-                    spans_map[parent_span_id]["children"].append(span_data)
+                root_spans.append(span_data)
+
         return root_spans[0] if root_spans else None
 
     async def get_trace(self, run_id: str) -> Optional[Dict[str, Any]]:
