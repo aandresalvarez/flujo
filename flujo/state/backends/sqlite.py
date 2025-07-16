@@ -277,9 +277,17 @@ class SQLiteBackend(StateBackend):
                     except OSError as glob_error:
                         telemetry.logfire.error(f"Failed to glob backup files: {glob_error}")
 
-                    # Reset backup path and counter after cleanup to avoid infinite loop
+                    # After cleanup, try using the base path again first
                     backup_path = self.db_path.parent / f"{base_name}{suffix}.corrupt.{timestamp}"
                     counter = 1
+                    try:
+                        if not backup_path.exists():
+                            break
+                    except OSError as stat_error:
+                        telemetry.logfire.warn(
+                            f"Could not stat backup path {backup_path} after cleanup: {stat_error}"
+                        )
+                        # If stat fails, fall back to continuing with suffix search
                     continue
 
             try:
