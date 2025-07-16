@@ -130,6 +130,8 @@ class TraceManager:
                 "success": False,
                 "attempts": payload.step_result.attempts,
                 "latency_s": payload.step_result.latency_s,
+                "cost_usd": getattr(payload.step_result, "cost_usd", 0.0),
+                "token_counts": getattr(payload.step_result, "token_counts", {}),
                 "feedback": payload.step_result.feedback,
             }
         )
