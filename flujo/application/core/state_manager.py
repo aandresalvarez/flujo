@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Optional, TypeVar, Generic
+from typing import Dict, Any, Optional, TypeVar, Generic
 
 from ...domain.models import BaseModel, PipelineContext, PipelineResult, StepResult
 from ...state import StateBackend, WorkflowState
@@ -223,5 +223,49 @@ class StateManager(Generic[ContextT]):
                     else None,
                 },
             )
+
+            # Save trace tree if available
+            if result.trace_tree is not None:
+                try:
+                    # Convert trace tree to dict format for JSON serialization
+                    trace_dict = self._convert_trace_to_dict(result.trace_tree)
+                    await self.state_backend.save_trace(run_id, trace_dict)  # type: ignore
+                except Exception as e:
+                    # Log error but don't fail the run completion
+                    from ...infra import telemetry
+
+                    telemetry.logfire.error(f"Failed to save trace for run {run_id}: {e}")
         except NotImplementedError:
             pass
+
+    def _convert_trace_to_dict(self, trace_tree: Any) -> Dict[str, Any]:
+        """Convert trace tree to dictionary format for JSON serialization."""
+        if hasattr(trace_tree, "__dict__"):
+            # Handle Span objects
+            trace_dict: Dict[str, Any] = {
+                "span_id": getattr(trace_tree, "span_id", "unknown"),
+                "name": getattr(trace_tree, "name", "unknown"),
+                "start_time": getattr(trace_tree, "start_time", 0.0),
+                "end_time": getattr(trace_tree, "end_time", 0.0),
+                "parent_span_id": getattr(trace_tree, "parent_span_id", None),
+                "attributes": getattr(trace_tree, "attributes", {}),
+                "children": [],
+                "status": getattr(trace_tree, "status", "unknown"),
+            }
+            # Convert children recursively
+            children = getattr(trace_tree, "children", [])
+            for child in children:
+                if isinstance(trace_dict["children"], list):
+                    trace_dict["children"].append(self._convert_trace_to_dict(child))
+            return trace_dict
+        elif isinstance(trace_tree, dict):
+            # Already a dict, just ensure children are converted
+            if "children" in trace_tree:
+                converted_children = []
+                for child in trace_tree["children"]:
+                    converted_children.append(self._convert_trace_to_dict(child))
+                trace_tree["children"] = converted_children
+            return trace_tree
+        else:
+            # Fallback for unknown types
+            return {"error": f"Unknown trace tree type: {type(trace_tree)}"}

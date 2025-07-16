@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import typer
 import asyncio
+from typing import Dict, Any, Optional
 from rich.table import Table
 from rich.console import Console
+from rich.tree import Tree
 
 from .config import load_backend_from_config
 
@@ -65,3 +67,47 @@ def show_run(run_id: str) -> None:
 
     Console().print(f"Run {run_id} - {details['status']}")
     Console().print(table)
+
+
+@lens_app.command("trace")
+def show_trace(run_id: str) -> None:
+    """Show the hierarchical execution trace for a run as a tree."""
+    backend = load_backend_from_config()
+    try:
+        trace = asyncio.run(backend.get_trace(run_id))
+    except NotImplementedError:
+        typer.echo("Backend does not support trace inspection", err=True)
+        raise typer.Exit(1)
+    if not trace:
+        typer.echo(f"No trace found for run_id: {run_id}", err=True)
+        raise typer.Exit(1)
+
+    def _render_trace_tree(node: Dict[str, Any], parent: Optional[Tree] = None) -> Tree:
+        # Compose label: name, status, duration, attributes
+        name = node.get("name", "(unknown)")
+        status = node.get("status", "unknown")
+        start = node.get("start_time")
+        end = node.get("end_time")
+        duration = None
+        if start is not None and end is not None:
+            try:
+                duration = float(end) - float(start)
+            except Exception:
+                duration = None
+        status_icon = "✅" if status == "completed" else ("❌" if status == "failed" else "⏳")
+        label = f"{status_icon} [bold]{name}[/bold]"
+        if duration is not None:
+            label += f" [dim](duration: {duration:.2f}s)[/dim]"
+        # Show key attributes
+        attrs = node.get("attributes", {})
+        if attrs:
+            attr_str = ", ".join(f"{k}={v}" for k, v in attrs.items() if v is not None)
+            if attr_str:
+                label += f" [dim]{attr_str}[/dim]"
+        tree = Tree(label) if parent is None else parent.add(label)
+        for child in node.get("children", []):
+            _render_trace_tree(child, tree)
+        return tree
+
+    tree = _render_trace_tree(trace)
+    Console().print(tree)

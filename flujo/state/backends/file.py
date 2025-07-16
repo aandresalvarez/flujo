@@ -67,3 +67,9 @@ class FileBackend(StateBackend):
         async with self._lock:
             if file_path.exists():
                 await asyncio.to_thread(file_path.unlink)
+
+    async def get_trace(self, run_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieve trace data for a given run_id."""
+        # For FileBackend, traces are stored as part of the state
+        # We'll return None as FileBackend doesn't implement separate trace storage
+        return None

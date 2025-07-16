@@ -232,7 +232,7 @@ runner = Flujo(pipeline, usage_limits=UsageLimits(total_cost_usd_limit=0.50))
 ### 🪄 Real-time Logs
 
 ```python
-from flujo.tracing import ConsoleTracer
+from flujo.console_tracer import ConsoleTracer
 
 # Quick enablement with defaults
 runner = Flujo(pipeline, local_tracer="default")
@@ -397,7 +397,7 @@ from flujo.domain.resources import AppResources
 from flujo.validation import BaseValidator, ValidationResult
 
 # Tracing
-from flujo.tracing import ConsoleTracer
+from flujo.console_tracer import ConsoleTracer
 
 # Testing utilities
 from flujo.testing import StubAgent, gather_result

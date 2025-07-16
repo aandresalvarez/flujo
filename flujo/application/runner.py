@@ -51,7 +51,7 @@ from pydantic import TypeAdapter
 from ..domain.resources import AppResources
 from ..domain.types import HookCallable
 from ..domain.backends import ExecutionBackend, StepExecutionRequest
-from ..tracing import ConsoleTracer
+from ..console_tracer import ConsoleTracer
 from ..state import StateBackend, WorkflowState
 from ..registry import PipelineRegistry
 
@@ -209,7 +209,13 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         self.initial_context_data: Dict[str, Any] = initial_context_data or {}
         self.resources = resources
         self.usage_limits = usage_limits
-        self.hooks = hooks or []
+        from flujo.tracing.manager import TraceManager
+
+        self.hooks: list[Any] = []
+        self._trace_manager = TraceManager()
+        self.hooks.append(self._trace_manager.hook)
+        if hooks:
+            self.hooks.extend(hooks)
         tracer_instance = None
         if isinstance(local_tracer, ConsoleTracer):
             tracer_instance = local_tracer
@@ -617,6 +623,11 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 )
             raise
         finally:
+            if (
+                hasattr(self, "_trace_manager")
+                and getattr(self._trace_manager, "_root_span", None) is not None
+            ):
+                pipeline_result_obj.trace_tree = self._trace_manager._root_span
             if current_context_instance is not None:
                 assert self.pipeline is not None
                 execution_manager = ExecutionManager[ContextT](self.pipeline)
@@ -718,12 +729,26 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
 
         async def _consume() -> PipelineResult[ContextT]:
             result: PipelineResult[ContextT] | None = None
-            async for item in self.run_async(
+            async for r in self.run_async(
                 initial_input,
                 run_id=run_id,
                 initial_context_data=initial_context_data,
             ):
-                result = item  # last yield is the PipelineResult
+                result = r
+            # Debug print for trace tree
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.info(
+                f"[DEBUG] Attaching trace tree (sync): {getattr(self._trace_manager, '_root_span', None)}"
+            )
+            # Attach trace tree to result before returning
+            if (
+                result is not None
+                and hasattr(self, "_trace_manager")
+                and getattr(self._trace_manager, "_root_span", None) is not None
+            ):
+                result.trace_tree = self._trace_manager._root_span
             assert result is not None
             return result
 

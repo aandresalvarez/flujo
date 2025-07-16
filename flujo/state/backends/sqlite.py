@@ -162,6 +162,17 @@ class SQLiteBackend(StateBackend):
                     """
                 )
                 await db.execute("CREATE INDEX IF NOT EXISTS idx_steps_run_id ON steps(run_id)")
+                await db.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS traces (
+                        run_id TEXT PRIMARY KEY,
+                        trace_json TEXT NOT NULL,
+                        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                        FOREIGN KEY(run_id) REFERENCES runs(run_id) ON DELETE CASCADE
+                    )
+                    """
+                )
                 await self._migrate_existing_schema(db)
                 await db.commit()
             telemetry.logfire.info(f"Initialized SQLite database at {self.db_path}")
@@ -959,3 +970,45 @@ class SQLiteBackend(StateBackend):
                         }
                     )
                 return results
+
+    async def save_trace(self, run_id: str, trace: Dict[str, Any]) -> None:
+        """Persist a trace tree as JSON for a given run_id."""
+        await self._ensure_init()
+        trace_json = json.dumps(trace)
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("PRAGMA foreign_keys = ON")
+            await db.execute(
+                """
+                INSERT INTO traces (run_id, trace_json, created_at, updated_at)
+                VALUES (?, ?, datetime('now'), datetime('now'))
+                ON CONFLICT(run_id) DO UPDATE SET trace_json=excluded.trace_json, updated_at=datetime('now')
+                """,
+                (run_id, trace_json),
+            )
+            await db.commit()
+
+    async def get_trace(self, run_id: str) -> Any:
+        """Retrieve and deserialize the trace tree for a given run_id."""
+        await self._ensure_init()
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("PRAGMA foreign_keys = ON")
+            async with db.execute(
+                "SELECT trace_json FROM traces WHERE run_id = ?", (run_id,)
+            ) as cursor:
+                row = await cursor.fetchone()
+                if row:
+                    return json.loads(row[0])
+        return None
+
+    async def delete_run(self, run_id: str) -> None:
+        """Delete a run from the runs table (cascades to traces).
+
+        Note: This method is functionally redundant since the traces table has
+        ON DELETE CASCADE, but it's kept for explicit testing of cascade behavior.
+        In production, deletion should be handled by a more general cleanup method.
+        """
+        await self._ensure_init()
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("PRAGMA foreign_keys = ON")
+            await db.execute("DELETE FROM runs WHERE run_id = ?", (run_id,))
+            await db.commit()

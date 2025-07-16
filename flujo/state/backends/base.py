@@ -80,6 +80,11 @@ class StateBackend(ABC):
         """Get failed workflows from the last N hours with error details."""
         raise NotImplementedError
 
+    @abstractmethod
+    async def get_trace(self, run_id: str) -> Any:
+        """Retrieve and deserialize the trace tree for a given run_id."""
+        raise NotImplementedError
+
     # --- New structured persistence API ---
     async def save_run_start(self, run_data: Dict[str, Any]) -> None:
         """Persist initial run metadata."""

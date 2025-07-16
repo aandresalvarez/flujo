@@ -39,3 +39,8 @@ class InMemoryBackend(StateBackend):
     async def delete_state(self, run_id: str) -> None:
         async with self._lock:
             self._store.pop(run_id, None)
+
+    async def get_trace(self, run_id: str) -> Any:
+        """Retrieve trace data for a given run_id."""
+        # InMemoryBackend doesn't support separate trace storage
+        return None
