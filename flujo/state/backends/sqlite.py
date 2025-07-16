@@ -5,7 +5,7 @@ import json
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Awaitable, Callable, Any, Dict, List, Optional, cast, TYPE_CHECKING
+from typing import Awaitable, Callable, Any, Dict, List, Optional, cast, TYPE_CHECKING, Tuple
 
 import aiosqlite
 import sqlite3
@@ -162,6 +162,33 @@ class SQLiteBackend(StateBackend):
                     """
                 )
                 await db.execute("CREATE INDEX IF NOT EXISTS idx_steps_run_id ON steps(run_id)")
+                await db.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS spans (
+                        span_id TEXT PRIMARY KEY,
+                        run_id TEXT NOT NULL,
+                        parent_span_id TEXT,
+                        name TEXT NOT NULL,
+                        start_time REAL NOT NULL,
+                        end_time REAL,
+                        status TEXT DEFAULT 'running',
+                        attributes TEXT, -- JSON for flexible metadata
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE,
+                        FOREIGN KEY (parent_span_id) REFERENCES spans(span_id) ON DELETE CASCADE
+                    )
+                    """
+                )
+                # Indexes for efficient querying
+                await db.execute("CREATE INDEX IF NOT EXISTS idx_spans_run_id ON spans(run_id)")
+                await db.execute("CREATE INDEX IF NOT EXISTS idx_spans_status ON spans(status)")
+                await db.execute("CREATE INDEX IF NOT EXISTS idx_spans_name ON spans(name)")
+                await db.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_spans_start_time ON spans(start_time)"
+                )
+                await db.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_spans_parent_span_id ON spans(parent_span_id)"
+                )
                 await self._migrate_existing_schema(db)
                 await db.commit()
             telemetry.logfire.info(f"Initialized SQLite database at {self.db_path}")
@@ -250,9 +277,19 @@ class SQLiteBackend(StateBackend):
                     except OSError as glob_error:
                         telemetry.logfire.error(f"Failed to glob backup files: {glob_error}")
 
-                    # Reset backup path and counter after cleanup to avoid infinite loop
+                    # After cleanup, try using the base path again first
                     backup_path = self.db_path.parent / f"{base_name}{suffix}.corrupt.{timestamp}"
                     counter = 1
+                    try:
+                        if not backup_path.exists():
+                            # Found an available path after cleanup; exit the
+                            # search loop so the file can be moved there.
+                            break
+                    except OSError as stat_error:
+                        telemetry.logfire.warn(
+                            f"Could not stat backup path {backup_path} after cleanup: {stat_error}"
+                        )
+                        # If stat fails, fall back to continuing with suffix search
                     continue
 
             try:
@@ -959,3 +996,273 @@ class SQLiteBackend(StateBackend):
                         }
                     )
                 return results
+
+    async def save_trace(self, run_id: str, trace: Dict[str, Any]) -> None:
+        """Persist a trace tree as normalized spans for a given run_id."""
+        await self._ensure_init()
+        async with self._lock:
+
+            async def _save() -> None:
+                async with aiosqlite.connect(self.db_path) as db:
+                    await db.execute("PRAGMA foreign_keys = ON")
+
+                    # Extract all spans from the trace tree recursively
+                    spans_to_insert = self._extract_spans_from_tree(trace, run_id)
+
+                    if spans_to_insert:
+                        # Use a transaction for atomic replacement
+                        # Note: We use DELETE + INSERT instead of UPSERT because:
+                        # 1. We need to replace ALL spans for a run_id, not individual spans
+                        # 2. Different trace saves may have different span_id values
+                        # 3. We must ensure no orphaned spans remain from previous saves
+                        async with db.execute("BEGIN TRANSACTION"):
+                            # Delete existing spans for this run_id to ensure clean replacement
+                            await db.execute("DELETE FROM spans WHERE run_id = ?", (run_id,))
+
+                            # Insert new spans
+                            await db.executemany(
+                                """
+                                INSERT INTO spans (
+                                    span_id, run_id, parent_span_id, name, start_time,
+                                    end_time, status, attributes, created_at
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                                """,
+                                spans_to_insert,
+                            )
+                        await db.commit()
+
+            await self._with_retries(_save)
+
+    def _extract_spans_from_tree(
+        self, trace: Dict[str, Any], run_id: str, max_depth: int = 100
+    ) -> List[Tuple[str, str, Optional[str], str, float, Optional[float], str, str]]:
+        """Extract all spans from a trace tree for batch insertion."""
+        spans: List[Tuple[str, str, Optional[str], str, float, Optional[float], str, str]] = []
+
+        # Handle empty or invalid trace data
+        if not trace or not isinstance(trace, dict):
+            return spans
+
+        def extract_span_recursive(
+            span_data: Dict[str, Any], parent_span_id: Optional[str] = None, depth: int = 0
+        ) -> None:
+            # Check depth limit to prevent stack overflow
+            if depth > max_depth:
+                from flujo.infra import telemetry
+
+                telemetry.logfire.warn(
+                    f"Trace tree depth limit ({max_depth}) exceeded for run_id {run_id}"
+                )
+                return
+
+            # Validate required fields
+            if (
+                not isinstance(span_data, dict)
+                or "span_id" not in span_data
+                or "name" not in span_data
+            ):
+                return
+
+            from flujo.utils.serialization import robust_serialize
+
+            span_tuple: Tuple[str, str, Optional[str], str, float, Optional[float], str, str] = (
+                str(span_data.get("span_id", "")),
+                run_id,
+                parent_span_id,
+                str(span_data.get("name", "")),
+                float(span_data.get("start_time", 0.0)),
+                float(span_data["end_time"]) if span_data.get("end_time") is not None else None,
+                str(span_data.get("status", "running")),
+                json.dumps(robust_serialize(span_data.get("attributes", {}))),
+            )
+            spans.append(span_tuple)
+
+            # Process children recursively
+            for child in span_data.get("children", []):
+                extract_span_recursive(child, span_data.get("span_id"), depth + 1)
+
+        extract_span_recursive(trace)
+        return spans
+
+    def _reconstruct_trace_tree(
+        self, spans_data: List[Tuple[str, Optional[str], str, float, Optional[float], str, str]]
+    ) -> Optional[Dict[str, Any]]:
+        """Reconstruct a hierarchical trace tree from flat spans data."""
+        spans_map: Dict[str, Dict[str, Any]] = {}
+        root_spans: List[Dict[str, Any]] = []
+
+        # First pass: create a map of all spans by ID
+        for row in spans_data:
+            span_id, parent_span_id, name, start_time, end_time, status, attributes = row
+            span_data: Dict[str, Any] = {
+                "span_id": span_id,
+                "parent_span_id": parent_span_id,
+                "name": name,
+                "start_time": start_time,
+                "end_time": end_time,
+                "status": status,
+                "attributes": json.loads(attributes) if attributes else {},
+                "children": [],
+            }
+            spans_map[span_id] = span_data
+
+        # Second pass: build the tree hierarchy
+        for span_id, span_data in spans_map.items():
+            parent_id = span_data.get("parent_span_id")
+            if parent_id and parent_id in spans_map:
+                spans_map[parent_id]["children"].append(span_data)
+            else:
+                root_spans.append(span_data)
+
+        if len(root_spans) > 1:
+            from flujo.infra import telemetry
+
+            telemetry.logfire.warn(
+                f"Trace for run_id has multiple root spans ({len(root_spans)}). Using the first one."
+            )
+
+        return root_spans[0] if root_spans else None
+
+    async def get_trace(self, run_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieve and reconstruct the trace tree for a given run_id. Audit log access."""
+        await self._ensure_init()
+        async with self._lock:
+            telemetry.logfire.info(f"AUDIT: Trace accessed for run_id={run_id}")
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute("PRAGMA foreign_keys = ON")
+                async with db.execute(
+                    """
+                    SELECT span_id, parent_span_id, name, start_time, end_time,
+                           status, attributes
+                    FROM spans WHERE run_id = ? ORDER BY start_time
+                    """,
+                    (run_id,),
+                ) as cursor:
+                    rows = await cursor.fetchall()
+                    rows_typed: List[
+                        Tuple[str, Optional[str], str, float, Optional[float], str, str]
+                    ] = [
+                        (
+                            str(r[0]),
+                            str(r[1]) if r[1] is not None else None,
+                            str(r[2]),
+                            float(r[3]),
+                            float(r[4]) if r[4] is not None else None,
+                            str(r[5]),
+                            str(r[6]),
+                        )
+                        for r in rows
+                    ]
+                    if not rows_typed:
+                        return None
+                    return self._reconstruct_trace_tree(rows_typed)
+
+    async def get_spans(
+        self, run_id: str, status: Optional[str] = None, name: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Get individual spans with optional filtering. Audit log export."""
+        await self._ensure_init()
+        async with self._lock:
+            telemetry.logfire.info(
+                f"AUDIT: Spans exported for run_id={run_id}, status={status}, name={name}"
+            )
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute("PRAGMA foreign_keys = ON")
+                query = """
+                    SELECT span_id, parent_span_id, name, start_time, end_time,
+                           status, attributes
+                    FROM spans WHERE run_id = ?
+                """
+                params: List[Any] = [run_id]
+                if status:
+                    query += " AND status = ?"
+                    params.append(status)
+                if name:
+                    query += " AND name = ?"
+                    params.append(name)
+                query += " ORDER BY start_time"
+                async with db.execute(query, params) as cursor:
+                    rows = await cursor.fetchall()
+                    results: List[Dict[str, Any]] = []
+                    for r in rows:
+                        span_id, parent_span_id, name, start_time, end_time, status, attributes = r
+                        results.append(
+                            {
+                                "span_id": str(span_id),
+                                "parent_span_id": str(parent_span_id)
+                                if parent_span_id is not None
+                                else None,
+                                "name": str(name),
+                                "start_time": float(start_time),
+                                "end_time": float(end_time) if end_time is not None else None,
+                                "status": str(status),
+                                "attributes": json.loads(attributes) if attributes else {},
+                            }
+                        )
+                    return results
+
+    async def get_span_statistics(
+        self, pipeline_name: Optional[str] = None, time_range: Optional[Tuple[float, float]] = None
+    ) -> Dict[str, Any]:
+        """Get aggregated span statistics."""
+        await self._ensure_init()
+        async with self._lock:
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute("PRAGMA foreign_keys = ON")
+                query = """
+                    SELECT s.name, s.status, s.start_time, s.end_time,
+                           r.pipeline_name
+                    FROM spans s
+                    JOIN runs r ON s.run_id = r.run_id
+                    WHERE s.end_time IS NOT NULL
+                """
+                params: List[Any] = []
+                if pipeline_name:
+                    query += " AND r.pipeline_name = ?"
+                    params.append(pipeline_name)
+                if time_range:
+                    start_time, end_time = time_range
+                    query += " AND s.start_time >= ? AND s.start_time <= ?"
+                    params.extend([start_time, end_time])
+                async with db.execute(query, params) as cursor:
+                    rows = list(await cursor.fetchall())
+                    stats: Dict[str, Any] = {
+                        "total_spans": len(rows),
+                        "by_name": {},
+                        "by_status": {},
+                        "avg_duration_by_name": {},
+                    }
+                    for r in rows:
+                        name, status, start_time, end_time, pipeline_name = r
+                        duration = (
+                            float(end_time) - float(start_time) if end_time is not None else 0.0
+                        )
+                        # Count by name
+                        if name not in stats["by_name"]:
+                            stats["by_name"][name] = 0
+                        stats["by_name"][name] += 1
+                        # Count by status
+                        if status not in stats["by_status"]:
+                            stats["by_status"][status] = 0
+                        stats["by_status"][status] += 1
+                        # Average duration by name
+                        if name not in stats["avg_duration_by_name"]:
+                            stats["avg_duration_by_name"][name] = {"total": 0.0, "count": 0}
+                        stats["avg_duration_by_name"][name]["total"] += duration
+                        stats["avg_duration_by_name"][name]["count"] += 1
+                    for name, data in stats["avg_duration_by_name"].items():
+                        if data["count"] > 0:
+                            data["average"] = data["total"] / data["count"]
+                        else:
+                            data["average"] = 0.0
+                    return stats
+
+    async def delete_run(self, run_id: str) -> None:
+        """Delete a run from the runs table (cascades to traces). Audit log deletion."""
+        await self._ensure_init()
+        async with self._lock:
+            telemetry.logfire.info(f"AUDIT: Run and associated traces deleted for run_id={run_id}")
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute("PRAGMA foreign_keys = ON")
+                await db.execute("DELETE FROM runs WHERE run_id = ?", (run_id,))
+                await db.commit()

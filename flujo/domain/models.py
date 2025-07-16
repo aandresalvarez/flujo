@@ -286,6 +286,10 @@ class PipelineResult(BaseModel, Generic[ContextT]):
         default=None,
         description="The final state of the context object after pipeline execution.",
     )
+    trace_tree: Optional[Any] = Field(
+        default=None,
+        description="Hierarchical trace tree (root span) for this run, if tracing is enabled.",
+    )
 
     model_config: ClassVar[ConfigDict] = {"arbitrary_types_allowed": True}
 

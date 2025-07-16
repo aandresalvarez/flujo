@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from copy import deepcopy
-from typing import Any, Dict, Optional, cast
+from typing import Any, Dict, Optional, cast, List, Tuple
 
 from ...utils.serialization import safe_serialize, safe_deserialize
 
@@ -39,3 +39,28 @@ class InMemoryBackend(StateBackend):
     async def delete_state(self, run_id: str) -> None:
         async with self._lock:
             self._store.pop(run_id, None)
+
+    async def get_trace(self, run_id: str) -> Any:
+        """Retrieve trace data for a given run_id."""
+        # InMemoryBackend doesn't support separate trace storage
+        return None
+
+    async def save_trace(self, run_id: str, trace: Dict[str, Any]) -> None:
+        """Save trace data for a given run_id."""
+        # InMemoryBackend doesn't support separate trace storage
+        # Traces would need to be integrated into the main state if needed
+        raise NotImplementedError("InMemoryBackend doesn't support separate trace storage")
+
+    async def get_spans(
+        self, run_id: str, status: Optional[str] = None, name: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Get individual spans with optional filtering."""
+        # InMemoryBackend doesn't support normalized span storage
+        return []
+
+    async def get_span_statistics(
+        self, pipeline_name: Optional[str] = None, time_range: Optional[Tuple[float, float]] = None
+    ) -> Dict[str, Any]:
+        """Get aggregated span statistics."""
+        # InMemoryBackend doesn't support span statistics
+        return {"total_spans": 0, "by_name": {}, "by_status": {}, "avg_duration_by_name": {}}

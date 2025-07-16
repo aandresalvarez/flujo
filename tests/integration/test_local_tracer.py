@@ -1,7 +1,7 @@
 import pytest
 from typing import Any, cast
 from flujo import Flujo, Step
-from flujo.tracing import ConsoleTracer
+from flujo.console_tracer import ConsoleTracer
 from flujo.testing.utils import StubAgent, gather_result
 from flujo.domain.agent_protocol import AsyncAgentProtocol
 
@@ -12,8 +12,9 @@ async def test_default_local_tracer_added() -> None:
         {"name": "s", "agent": cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok"]))}
     )
     runner = Flujo(step, local_tracer="default")
-    assert len(runner.hooks) == 1
+    assert len(runner.hooks) == 2  # TraceManager + ConsoleTracer
     assert callable(runner.hooks[0])
+    assert callable(runner.hooks[1])
 
 
 @pytest.mark.asyncio
