@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from typing import Dict, Literal, Optional
 
 from ..domain.events import (

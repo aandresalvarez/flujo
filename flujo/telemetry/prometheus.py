@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import threading
-from typing import Any
 
 from ..state.backends.base import StateBackend
 

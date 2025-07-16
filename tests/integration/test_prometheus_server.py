@@ -2,7 +2,6 @@ import time
 import asyncio
 
 import httpx
-import pytest
 
 from flujo import Flujo, Step
 from flujo.testing.utils import StubAgent, gather_result

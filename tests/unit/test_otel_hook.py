@@ -1,4 +1,3 @@
-import pytest
 from flujo.telemetry.otel_hook import OpenTelemetryHook
 
 

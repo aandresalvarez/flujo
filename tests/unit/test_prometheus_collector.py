@@ -1,6 +1,3 @@
-import asyncio
-from unittest.mock import AsyncMock
-
 from flujo.telemetry.prometheus import PrometheusCollector
 
 
