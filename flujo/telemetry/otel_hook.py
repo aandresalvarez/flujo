@@ -60,7 +60,9 @@ class OpenTelemetryHook:
             "post_run": cast(Callable[[HookPayload], Awaitable[None]], self._handle_post_run),
             "pre_step": cast(Callable[[HookPayload], Awaitable[None]], self._handle_pre_step),
             "post_step": cast(Callable[[HookPayload], Awaitable[None]], self._handle_post_step),
-            "on_step_failure": cast(Callable[[HookPayload], Awaitable[None]], self._handle_step_failure),
+            "on_step_failure": cast(
+                Callable[[HookPayload], Awaitable[None]], self._handle_step_failure
+            ),
         }
         handler = handler_map.get(payload.event_name)
         if handler is not None:

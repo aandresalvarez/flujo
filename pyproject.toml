@@ -126,6 +126,17 @@ module = [
 ]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = [
+    "opentelemetry",
+    "opentelemetry.sdk",
+    "opentelemetry.exporter.otlp.proto.http.trace_exporter",
+    "prometheus_client",
+    "prometheus_client.core",
+    "prometheus_client.registry",
+]
+ignore_missing_imports = true
+
 # Known mypy limitation with async wrapper patterns in step_logic
 [[tool.mypy.overrides]]
 module = "flujo.application.core.step_logic"

@@ -16,7 +16,7 @@ except Exception:  # pragma: no cover - optional dependency
     PROM_AVAILABLE = False
 
 
-class PrometheusCollector(Collector):
+class PrometheusCollector(Collector):  # type: ignore[misc]
     """Prometheus collector that exposes aggregated run metrics."""
 
     def __init__(self, backend: StateBackend) -> None:
