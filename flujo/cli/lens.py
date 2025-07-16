@@ -9,6 +9,47 @@ from rich.tree import Tree
 
 from .config import load_backend_from_config
 
+
+def _format_node_label(node: Dict[str, Any]) -> str:
+    """Format the label for a tree node.
+
+    Args:
+        node: Dictionary containing span data with name, status, start_time, end_time, and attributes.
+
+    Returns:
+        Formatted string for display in the tree.
+    """
+    name = node.get("name", "(unknown)")
+    status = node.get("status", "unknown")
+    start = node.get("start_time")
+    end = node.get("end_time")
+
+    # Calculate duration
+    duration = None
+    if start is not None and end is not None:
+        try:
+            duration = float(end) - float(start)
+        except Exception:
+            duration = None
+
+    # Create status icon
+    status_icon = "✅" if status == "completed" else ("❌" if status == "failed" else "⏳")
+    label = f"{status_icon} [bold]{name}[/bold]"
+
+    # Add duration if available
+    if duration is not None:
+        label += f" [dim](duration: {duration:.2f}s)[/dim]"
+
+    # Add attributes
+    attrs = node.get("attributes", {})
+    if attrs:
+        attr_str = ", ".join(f"{k}={v}" for k, v in attrs.items() if v is not None)
+        if attr_str:
+            label += f" [dim]{attr_str}[/dim]"
+
+    return label
+
+
 lens_app = typer.Typer(help="Operational inspection commands")
 
 
@@ -92,38 +133,6 @@ def show_trace(run_id: str) -> None:
         typer.echo("  - The run completed without trace data", err=True)
         typer.echo("  - The backend doesn't support trace storage", err=True)
         raise typer.Exit(1)
-
-    def _format_node_label(node: Dict[str, Any]) -> str:
-        """Format the label for a tree node."""
-        name = node.get("name", "(unknown)")
-        status = node.get("status", "unknown")
-        start = node.get("start_time")
-        end = node.get("end_time")
-
-        # Calculate duration
-        duration = None
-        if start is not None and end is not None:
-            try:
-                duration = float(end) - float(start)
-            except Exception:
-                duration = None
-
-        # Create status icon
-        status_icon = "✅" if status == "completed" else ("❌" if status == "failed" else "⏳")
-        label = f"{status_icon} [bold]{name}[/bold]"
-
-        # Add duration if available
-        if duration is not None:
-            label += f" [dim](duration: {duration:.2f}s)[/dim]"
-
-        # Add attributes
-        attrs = node.get("attributes", {})
-        if attrs:
-            attr_str = ", ".join(f"{k}={v}" for k, v in attrs.items() if v is not None)
-            if attr_str:
-                label += f" [dim]{attr_str}[/dim]"
-
-        return label
 
     def _render_trace_tree(node: Dict[str, Any], parent: Optional[Tree] = None) -> Tree:
         """Render a trace tree node and its children."""

@@ -1024,7 +1024,7 @@ class SQLiteBackend(StateBackend):
             await self._with_retries(_save)
 
     def _extract_spans_from_tree(
-        self, trace: Dict[str, Any], run_id: str
+        self, trace: Dict[str, Any], run_id: str, max_depth: int = 100
     ) -> List[Tuple[str, str, Optional[str], str, float, Optional[float], str, str]]:
         """Extract all spans from a trace tree for batch insertion."""
         spans: List[Tuple[str, str, Optional[str], str, float, Optional[float], str, str]] = []
@@ -1034,8 +1034,17 @@ class SQLiteBackend(StateBackend):
             return spans
 
         def extract_span_recursive(
-            span_data: Dict[str, Any], parent_span_id: Optional[str] = None
+            span_data: Dict[str, Any], parent_span_id: Optional[str] = None, depth: int = 0
         ) -> None:
+            # Check depth limit to prevent stack overflow
+            if depth > max_depth:
+                from flujo.infra import telemetry
+
+                telemetry.logfire.warn(
+                    f"Trace tree depth limit ({max_depth}) exceeded for run_id {run_id}"
+                )
+                return
+
             # Validate required fields
             if (
                 not isinstance(span_data, dict)
@@ -1043,6 +1052,8 @@ class SQLiteBackend(StateBackend):
                 or "name" not in span_data
             ):
                 return
+
+            from flujo.utils.serialization import robust_serialize
 
             span_tuple: Tuple[str, str, Optional[str], str, float, Optional[float], str, str] = (
                 str(span_data.get("span_id", "")),
@@ -1052,13 +1063,13 @@ class SQLiteBackend(StateBackend):
                 float(span_data.get("start_time", 0.0)),
                 float(span_data["end_time"]) if span_data.get("end_time") is not None else None,
                 str(span_data.get("status", "running")),
-                json.dumps(span_data.get("attributes", {})),
+                json.dumps(robust_serialize(span_data.get("attributes", {}))),
             )
             spans.append(span_tuple)
 
             # Process children recursively
             for child in span_data.get("children", []):
-                extract_span_recursive(child, span_data.get("span_id"))
+                extract_span_recursive(child, span_data.get("span_id"), depth + 1)
 
         extract_span_recursive(trace)
         return spans

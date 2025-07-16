@@ -212,10 +212,11 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         self.initial_context_data: Dict[str, Any] = initial_context_data or {}
         self.resources = resources
         self.usage_limits = usage_limits
-        from flujo.tracing.manager import TraceManager
 
         self.hooks: list[Any] = []
         if enable_tracing:
+            from flujo.tracing.manager import TraceManager
+
             self._trace_manager = TraceManager()
             self.hooks.append(self._trace_manager.hook)
         else:
@@ -243,6 +244,13 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         else:
             self.state_backend = state_backend
         self.delete_on_completion = delete_on_completion
+
+    def disable_tracing(self) -> None:
+        """Disable tracing by removing the TraceManager hook."""
+        if self._trace_manager is not None:
+            # Remove the TraceManager hook from the hooks list
+            self.hooks = [hook for hook in self.hooks if hook != self._trace_manager.hook]
+            self._trace_manager = None
 
     def _ensure_pipeline(self) -> Pipeline[RunnerInT, RunnerOutT]:
         """Load the configured pipeline from the registry if needed."""
