@@ -282,6 +282,8 @@ class SQLiteBackend(StateBackend):
                     counter = 1
                     try:
                         if not backup_path.exists():
+                            # Found an available path after cleanup; exit the
+                            # search loop so the file can be moved there.
                             break
                     except OSError as stat_error:
                         telemetry.logfire.warn(
