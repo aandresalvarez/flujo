@@ -74,6 +74,12 @@ class FileBackend(StateBackend):
         # We'll return None as FileBackend doesn't implement separate trace storage
         return None
 
+    async def save_trace(self, run_id: str, trace: Dict[str, Any]) -> None:
+        """Save trace data for a given run_id."""
+        # FileBackend doesn't support separate trace storage
+        # Traces would need to be integrated into the main state if needed
+        raise NotImplementedError("FileBackend doesn't support separate trace storage")
+
     async def get_spans(
         self, run_id: str, status: Optional[str] = None, name: Optional[str] = None
     ) -> List[Dict[str, Any]]:

@@ -85,6 +85,16 @@ class StateBackend(ABC):
         """Retrieve and deserialize the trace tree for a given run_id."""
         raise NotImplementedError
 
+    @abstractmethod
+    async def save_trace(self, run_id: str, trace: Dict[str, Any]) -> None:
+        """Save trace data for a given run_id.
+
+        Args:
+            run_id: Unique identifier for the workflow run
+            trace: Dictionary containing trace tree data
+        """
+        raise NotImplementedError
+
     async def get_spans(
         self, run_id: str, status: Optional[str] = None, name: Optional[str] = None
     ) -> List[Dict[str, Any]]:

@@ -1093,6 +1093,13 @@ class SQLiteBackend(StateBackend):
             else:
                 root_spans.append(span_data)
 
+        if len(root_spans) > 1:
+            from flujo.infra import telemetry
+
+            telemetry.logfire.warn(
+                f"Trace for run_id has multiple root spans ({len(root_spans)}). Using the first one."
+            )
+
         return root_spans[0] if root_spans else None
 
     async def get_trace(self, run_id: str) -> Optional[Dict[str, Any]]:

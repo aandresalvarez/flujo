@@ -229,7 +229,7 @@ class StateManager(Generic[ContextT]):
                 try:
                     # Convert trace tree to dict format for JSON serialization
                     trace_dict = self._convert_trace_to_dict(result.trace_tree)
-                    await self.state_backend.save_trace(run_id, trace_dict)  # type: ignore
+                    await self.state_backend.save_trace(run_id, trace_dict)
                 except Exception as e:
                     # Log error and save error trace for auditability
                     from ...infra import telemetry
@@ -254,7 +254,7 @@ class StateManager(Generic[ContextT]):
                     }
 
                     try:
-                        await self.state_backend.save_trace(run_id, error_trace)  # type: ignore
+                        await self.state_backend.save_trace(run_id, error_trace)
                         telemetry.logfire.info(
                             f"Saved error trace for run {run_id} after trace save failure"
                         )

@@ -182,6 +182,8 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         If ``True`` remove persisted state once the run finishes.
     """
 
+    _trace_manager: Optional[Any]  # Will be TraceManager when tracing is enabled
+
     def __init__(
         self,
         pipeline: Pipeline[RunnerInT, RunnerOutT] | Step[RunnerInT, RunnerOutT] | None = None,
@@ -198,6 +200,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         local_tracer: Union[str, "ConsoleTracer", None] = None,
         registry: Optional[PipelineRegistry] = None,
         pipeline_name: Optional[str] = None,
+        enable_tracing: bool = True,
     ) -> None:
         if isinstance(pipeline, Step):
             pipeline = Pipeline.from_step(pipeline)
@@ -212,8 +215,11 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         from flujo.tracing.manager import TraceManager
 
         self.hooks: list[Any] = []
-        self._trace_manager = TraceManager()
-        self.hooks.append(self._trace_manager.hook)
+        if enable_tracing:
+            self._trace_manager = TraceManager()
+            self.hooks.append(self._trace_manager.hook)
+        else:
+            self._trace_manager = None
         if hooks:
             self.hooks.extend(hooks)
         tracer_instance = None
@@ -624,7 +630,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             raise
         finally:
             if (
-                hasattr(self, "_trace_manager")
+                self._trace_manager is not None
                 and getattr(self._trace_manager, "_root_span", None) is not None
             ):
                 pipeline_result_obj.trace_tree = self._trace_manager._root_span
@@ -738,7 +744,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             # Attach trace tree to result before returning
             if (
                 result is not None
-                and hasattr(self, "_trace_manager")
+                and self._trace_manager is not None
                 and getattr(self._trace_manager, "_root_span", None) is not None
             ):
                 result.trace_tree = self._trace_manager._root_span

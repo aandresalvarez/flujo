@@ -76,7 +76,10 @@ def show_trace(run_id: str) -> None:
     try:
         trace = asyncio.run(backend.get_trace(run_id))
     except NotImplementedError:
-        typer.echo("Backend does not support trace inspection", err=True)
+        typer.echo(
+            f"The configured '{type(backend).__name__}' backend does not support trace inspection.",
+            err=True,
+        )
         raise typer.Exit(1)
     except Exception as e:
         typer.echo(f"Error accessing backend: {e}", err=True)
@@ -90,31 +93,46 @@ def show_trace(run_id: str) -> None:
         typer.echo("  - The backend doesn't support trace storage", err=True)
         raise typer.Exit(1)
 
-    def _render_trace_tree(node: Dict[str, Any], parent: Optional[Tree] = None) -> Tree:
-        # Compose label: name, status, duration, attributes
+    def _format_node_label(node: Dict[str, Any]) -> str:
+        """Format the label for a tree node."""
         name = node.get("name", "(unknown)")
         status = node.get("status", "unknown")
         start = node.get("start_time")
         end = node.get("end_time")
+
+        # Calculate duration
         duration = None
         if start is not None and end is not None:
             try:
                 duration = float(end) - float(start)
             except Exception:
                 duration = None
+
+        # Create status icon
         status_icon = "✅" if status == "completed" else ("❌" if status == "failed" else "⏳")
         label = f"{status_icon} [bold]{name}[/bold]"
+
+        # Add duration if available
         if duration is not None:
             label += f" [dim](duration: {duration:.2f}s)[/dim]"
-        # Show key attributes
+
+        # Add attributes
         attrs = node.get("attributes", {})
         if attrs:
             attr_str = ", ".join(f"{k}={v}" for k, v in attrs.items() if v is not None)
             if attr_str:
                 label += f" [dim]{attr_str}[/dim]"
+
+        return label
+
+    def _render_trace_tree(node: Dict[str, Any], parent: Optional[Tree] = None) -> Tree:
+        """Render a trace tree node and its children."""
+        label = _format_node_label(node)
         tree = Tree(label) if parent is None else parent.add(label)
+
         for child in node.get("children", []):
             _render_trace_tree(child, tree)
+
         return tree
 
     tree = _render_trace_tree(trace)

@@ -53,11 +53,7 @@ class TraceManager:
             await self._handle_post_step(payload)
         elif payload.event_name == "on_step_failure":
             await self._handle_step_failure(payload)
-        else:
-            import logging
-
-            logger = logging.getLogger(__name__)
-            logger.warning(f"Unrecognized event name: {payload.event_name}")
+        # else: silently ignore unknown event names
 
     async def _handle_pre_run(self, payload: PreRunPayload) -> None:
         """Handle pre-run event - create root span."""
@@ -78,11 +74,7 @@ class TraceManager:
 
             # Attach the trace tree to the pipeline result
             payload.pipeline_result.trace_tree = self._root_span
-        else:
-            import logging
-
-            logger = logging.getLogger(__name__)
-            logger.warning("No root span or span stack in post_run event")
+        # else: silently ignore missing root span or stack
 
     async def _handle_pre_step(self, payload: PreStepPayload) -> None:
         """Handle pre-step event - create child span."""

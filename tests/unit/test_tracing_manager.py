@@ -1,4 +1,18 @@
-"""Tests for the TraceManager hook."""
+"""
+Unit tests for the TraceManager hook.
+
+This module contains tests for the TraceManager class, which is responsible for
+managing trace spans during the execution of pipelines. The tests cover various
+aspects of the TraceManager's functionality, including:
+- Initialization and internal state management
+- Building and maintaining a nested trace tree structure
+- Integration with pipeline execution and step processing
+- Handling of step failures and marking spans as failed
+- Validation of the Span dataclass attributes
+
+The tests use mock objects and a stub agent to simulate pipeline execution
+scenarios and verify the correctness of the TraceManager's behavior.
+"""
 
 import pytest
 from unittest.mock import Mock
