@@ -215,6 +215,25 @@ start_http_server(8000)
 init_telemetry(export_prometheus=True)
 ```
 
+## Production Monitoring
+
+Integrate Flujo's telemetry with your existing observability stack:
+
+* **OpenTelemetry Export** – Add `OpenTelemetryHook` to your `Flujo` runner to
+  stream spans to any OTLP endpoint.
+
+  ```python
+  from flujo.telemetry import OpenTelemetryHook
+  runner = Flujo(pipeline, hooks=[OpenTelemetryHook(mode="otlp", endpoint="http://collector:4318")])
+  ```
+
+* **Prometheus Metrics** – Expose aggregated run metrics for scraping.
+
+  ```python
+  from flujo.telemetry import start_prometheus_server
+  start_prometheus_server(8000, backend)
+  ```
+
 ## Best Practices
 
 1. **Production Setup**

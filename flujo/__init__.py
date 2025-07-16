@@ -32,6 +32,11 @@ from .domain.models import Task, Candidate
 from .infra.agents import make_agent_async
 from .infra.settings import settings
 from .infra.telemetry import init_telemetry
+from .telemetry import (
+    OpenTelemetryHook,
+    PrometheusCollector,
+    start_prometheus_server,
+)
 from .agents import validated_agent, monitored_agent
 from .monitor import global_monitor, FlujoMonitor, FailureType
 
@@ -65,4 +70,7 @@ __all__ = [
     "application",
     "infra",
     "caching",
+    "OpenTelemetryHook",
+    "PrometheusCollector",
+    "start_prometheus_server",
 ]
