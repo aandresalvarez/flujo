@@ -231,10 +231,38 @@ class StateManager(Generic[ContextT]):
                     trace_dict = self._convert_trace_to_dict(result.trace_tree)
                     await self.state_backend.save_trace(run_id, trace_dict)  # type: ignore
                 except Exception as e:
-                    # Log error but don't fail the run completion
+                    # Log error and save error trace for auditability
                     from ...infra import telemetry
 
                     telemetry.logfire.error(f"Failed to save trace for run {run_id}: {e}")
+
+                    # Save error trace for auditability and debugging
+                    error_trace = {
+                        "span_id": f"error_{run_id}",
+                        "name": "trace_save_error",
+                        "start_time": datetime.now().timestamp(),
+                        "end_time": datetime.now().timestamp(),
+                        "parent_span_id": None,
+                        "attributes": {
+                            "error_type": type(e).__name__,
+                            "error_message": str(e),
+                            "original_trace_type": type(result.trace_tree).__name__,
+                            "run_id": run_id,
+                            "timestamp": datetime.now().isoformat(),
+                        },
+                        "children": [],
+                        "status": "error",
+                    }
+
+                    try:
+                        await self.state_backend.save_trace(run_id, error_trace)  # type: ignore
+                        telemetry.logfire.info(
+                            f"Saved error trace for run {run_id} after trace save failure"
+                        )
+                    except Exception as save_error:
+                        telemetry.logfire.error(
+                            f"Failed to save error trace for run {run_id}: {save_error}"
+                        )
         except NotImplementedError:
             pass
 
@@ -267,5 +295,5 @@ class StateManager(Generic[ContextT]):
                 trace_tree["children"] = converted_children
             return trace_tree
         else:
-            # Fallback for unknown types
-            return {"error": f"Unknown trace tree type: {type(trace_tree)}"}
+            # Raise exception for truly invalid trace trees to trigger error handling
+            raise ValueError(f"Unknown trace tree type: {type(trace_tree)}")

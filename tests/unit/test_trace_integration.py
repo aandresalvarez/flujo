@@ -187,8 +187,9 @@ async def test_trace_saving_error_handling(tmp_path: Path) -> None:
     await state_manager.record_run_end(run_id, result)
 
     # Verify that the run was still recorded (trace saving failure didn't break it)
-    # The trace should contain an error message
+    # The trace should contain an error message in the attributes
     saved_trace = await backend.get_trace(run_id)
     assert saved_trace is not None
-    assert "error" in saved_trace
-    assert "Unknown trace tree type" in saved_trace["error"]
+    assert saved_trace["name"] == "trace_save_error"
+    assert "error_message" in saved_trace["attributes"]
+    assert "Unknown trace tree type" in saved_trace["attributes"]["error_message"]

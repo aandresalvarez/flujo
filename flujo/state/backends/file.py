@@ -4,7 +4,7 @@ import asyncio
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional, cast
+from typing import Any, Dict, Optional, cast, List, Tuple
 
 from .base import StateBackend
 from ...utils.serialization import serialize_to_json, safe_deserialize
@@ -73,3 +73,17 @@ class FileBackend(StateBackend):
         # For FileBackend, traces are stored as part of the state
         # We'll return None as FileBackend doesn't implement separate trace storage
         return None
+
+    async def get_spans(
+        self, run_id: str, status: Optional[str] = None, name: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Get individual spans with optional filtering."""
+        # FileBackend doesn't support normalized span storage
+        return []
+
+    async def get_span_statistics(
+        self, pipeline_name: Optional[str] = None, time_range: Optional[Tuple[float, float]] = None
+    ) -> Dict[str, Any]:
+        """Get aggregated span statistics."""
+        # FileBackend doesn't support span statistics
+        return {"total_spans": 0, "by_name": {}, "by_status": {}, "avg_duration_by_name": {}}

@@ -18,6 +18,7 @@ FSD-09 has been successfully implemented with all functional and non-functional 
 - ✅ **Durable persistence** in SQLite backend
 - ✅ **Comprehensive test coverage** (100% of new code)
 - ✅ **Production-ready** with error handling and graceful degradation
+- ⚠️ **Known Limitation**: Trace storage uses JSON blob format rather than normalized schema, limiting server-side querying capabilities. See [Trace Storage Architecture](./TRACE_STORAGE_ARCHITECTURE.md) for details and future enhancement plans.
 
 ---
 
@@ -66,25 +67,22 @@ FSD-09 has been successfully implemented with all functional and non-functional 
 **File:** `flujo/state/backends/sqlite.py`
 ```sql
 CREATE TABLE IF NOT EXISTS traces (
-    span_id TEXT PRIMARY KEY,
-    run_id TEXT NOT NULL,
-    parent_span_id TEXT,
-    name TEXT NOT NULL,
-    start_time TEXT NOT NULL,
-    end_time TEXT NOT NULL,
-    attributes_json TEXT,
-    status TEXT NOT NULL,
-    FOREIGN KEY(run_id) REFERENCES runs(run_id) ON DELETE CASCADE
+    run_id TEXT PRIMARY KEY,
+    trace_json TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
 );
-CREATE INDEX IF NOT EXISTS idx_traces_run_id ON traces(run_id);
 ```
+
+**Note:** This simplified schema stores the entire trace tree as a JSON blob per run, rather than individual spans. While this approach is simpler and faster for basic trace visualization, it limits server-side querying capabilities. See [Trace Storage Architecture](./TRACE_STORAGE_ARCHITECTURE.md) for detailed analysis and future enhancement plans.
 
 ### Backend Methods
 
 **New Methods Added:**
-- `save_trace(run_id: str, trace_data: List[Dict])` - Batch insertion of spans
-- `get_trace(run_id: str) -> List[Dict]` - Retrieval of trace data
-- `delete_run(run_id: str)` - Enhanced to cascade delete traces
+- `save_trace(run_id: str, trace: Dict[str, Any])` - Store complete trace tree as JSON
+- `get_trace(run_id: str) -> Optional[Dict[str, Any]]` - Retrieve and deserialize trace tree
+- `delete_run(run_id: str)` - Enhanced to cascade delete traces (redundant due to CASCADE)
 
 ### StateManager Integration
 

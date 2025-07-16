@@ -1,7 +1,7 @@
 """Base classes for state backends."""
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional, List, Tuple
 
 from ...utils.serialization import safe_serialize
 
@@ -83,6 +83,18 @@ class StateBackend(ABC):
     @abstractmethod
     async def get_trace(self, run_id: str) -> Any:
         """Retrieve and deserialize the trace tree for a given run_id."""
+        raise NotImplementedError
+
+    async def get_spans(
+        self, run_id: str, status: Optional[str] = None, name: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Get individual spans with optional filtering."""
+        raise NotImplementedError
+
+    async def get_span_statistics(
+        self, pipeline_name: Optional[str] = None, time_range: Optional[Tuple[float, float]] = None
+    ) -> Dict[str, Any]:
+        """Get aggregated span statistics."""
         raise NotImplementedError
 
     # --- New structured persistence API ---
