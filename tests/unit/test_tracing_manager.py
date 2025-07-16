@@ -209,6 +209,7 @@ class TestTraceManager:
         assert child_span.attributes["attempts"] == 3
         assert child_span.attributes["latency_s"] == 0.5
         assert child_span.attributes["feedback"] == "Test error"
+        assert child_span.attributes["token_counts"] == 0
 
     @pytest.mark.asyncio
     async def test_nested_spans_are_correctly_structured(self):
