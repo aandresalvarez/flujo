@@ -13,7 +13,7 @@ def test_prometheus_metrics_endpoint(tmp_path):
     wait_for_ready, assigned_port = start_prometheus_server(0, backend)
     step = Step.model_validate({"name": "s", "agent": StubAgent(["o"])})
     runner = Flujo(step, state_backend=backend)
-    asyncio.run(gather_result(runner, "in"))  # Wait for server to be ready
+    asyncio.run(gather_result(runner, "in"))  # Run the workflow
     assert wait_for_ready(), "Server failed to start within timeout"
     resp = httpx.get(f"http://localhost:{assigned_port}")
     assert resp.status_code == 200

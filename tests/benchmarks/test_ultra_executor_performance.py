@@ -284,8 +284,13 @@ class TestUltraExecutorPerformance:
 
         # Test 3: Concurrency management
         num_concurrent = 10
+
+        async def slow_run(data, **kwargs):
+            await asyncio.sleep(0.01)
+            return "slow_result"
+
         slow_agent = AsyncMock()
-        slow_agent.run.side_effect = lambda data, **kwargs: asyncio.sleep(0.01) or "slow_result"
+        slow_agent.run.side_effect = slow_run
 
         slow_step = Mock(spec=Step)
         slow_step.name = "slow_step"

@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Any, Literal, Union
 
-from flujo.domain.models import BaseModel, PipelineContext
-from pydantic import Field, ConfigDict
-from typing import ClassVar
+from flujo.domain.base_model import BaseModel
+from pydantic import Field
 
 
 class RunAgentCommand(BaseModel):
@@ -31,18 +29,3 @@ class FinishCommand(BaseModel):
 
 
 AgentCommand = Union[RunAgentCommand, AskHumanCommand, FinishCommand]
-
-
-class ExecutedCommandLog(BaseModel):
-    """Structured log entry for a command executed in the loop."""
-
-    turn: int
-    generated_command: Any
-    execution_result: Any
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-    model_config: ClassVar[ConfigDict] = {"arbitrary_types_allowed": True}
-
-
-# Resolve forward references in PipelineContext now that ExecutedCommandLog is defined
-PipelineContext.model_rebuild()

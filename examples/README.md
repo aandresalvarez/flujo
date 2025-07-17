@@ -1,20 +1,18 @@
-# Examples – flujo
+# Examples
 
-| File | What it shows |
-|------|---------------|
-| **00_quickstart.py** | Hello World with the AgenticLoop factory. |
-| **01_weighted_scoring.py** | Weighted scoring to prioritize docstrings. |
-| **02_custom_agents.py** | Building creative agents with custom prompts. |
-| **03_reward_scorer.py** | Using an LLM judge via RewardScorer. |
-| **04_batch_processing.py** | Running multiple workflows concurrently. |
-| **05_pipeline_sql.py** | Pipeline factory with SQL validation plugin. |
-| **06_typed_context.py** | Sharing state with Typed Pipeline Context. |
-| **07_loop_step.py** | Iterative refinement using LoopStep. |
-| **08_branch_step.py** | Dynamic routing with ConditionalStep. |
-| **09_pipeline_factories.py** | Using pipeline factories for transparency and composability. |
+This directory contains examples demonstrating different Flujo patterns and capabilities.
 
-Each script is standalone – activate your virtualenv, set `OPENAI_API_KEY`, then:
-
-```bash
-python examples/00_quickstart.py
-```
+| Example | Description |
+|---------|-------------|
+| **00_quickstart.py** | Hello World with the agentic loop pipeline factory. |
+| **01_weighted_scoring.py** | Custom scoring and validation logic. |
+| **02_custom_agents.py** | Building specialized agents with custom prompts. |
+| **03_reward_scorer.py** | Reward-based evaluation and improvement. |
+| **04_batch_processing.py** | Processing multiple items in parallel. |
+| **05_pipeline_sql.py** | Using SQLite backend for state persistence. |
+| **06_typed_context.py** | Type-safe context management. |
+| **07_loop_step.py** | Custom loop steps with conditional logic. |
+| **08_branch_step.py** | Dynamic branching based on conditions. |
+| **09_pipeline_factories.py** | Using factory functions for transparent workflows. |
+| **10_cli_run_demo.py** | Command-line interface examples. |
+| **11_state_machine_pipeline.py** | State machine pattern for complex workflows. |

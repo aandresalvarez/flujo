@@ -44,7 +44,6 @@ dependencies = [
   "rich>=13.7",
   "pydantic-evals>=0.0.47", # Added for Intelligent Evals
   "aiosqlite>=0.21.0",
-  "prometheus-client (>=0.22.1,<0.23.0)",
 ]
 
 # Optional dependency groups (install with: `pip install .[dev]`, etc.)
@@ -77,7 +76,7 @@ opentelemetry = ["opentelemetry-sdk>=1.26"]
 lens = [
   "opentelemetry-sdk>=1.20,<2.0",
   "opentelemetry-exporter-otlp-proto-http>=1.20,<2.0",
-  "prometheus-client>=0.20",
+  "prometheus-client>=0.22.1,<0.23.0",
 ]
 bench = [
     "numpy",
@@ -86,7 +85,7 @@ bench = [
 logfire = ["logfire>=0.3"]
 sql = ["sqlvalidator>=0.0.8"]
 
-# Optional dependency groups (install with: `pip install .[dev]`, etc.)
+# Prometheus-related dependencies (install with: `pip install .[prometheus]`)
 prometheus = [
     "prometheus-client>=0.22.1,<0.23.0"
 ]

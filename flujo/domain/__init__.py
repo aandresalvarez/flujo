@@ -21,6 +21,7 @@ from .models import (
     PipelineResult,
     StepResult,
     UsageLimits,
+    ExecutedCommandLog,
 )
 from .types import HookCallable
 from .events import HookPayload
@@ -54,6 +55,7 @@ __all__ = [
     "PipelineResult",
     "StepResult",
     "UsageLimits",
+    "ExecutedCommandLog",
     # Types and Events
     "HookCallable",
     "HookPayload",

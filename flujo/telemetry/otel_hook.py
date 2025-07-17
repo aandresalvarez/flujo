@@ -79,6 +79,16 @@ class OpenTelemetryHook:
             span.set_status(StatusCode.OK)
             span.end()
 
+    def _get_step_span_key(self, step_name: str, step_id: Optional[int] = None) -> str:
+        """Generate a consistent span key for a step.
+
+        Uses step name and optional step ID to ensure uniqueness and consistency
+        between pre_step and post_step/failure events.
+        """
+        if step_id is not None:
+            return f"step:{step_name}:{step_id}"
+        return f"step:{step_name}"
+
     async def _handle_pre_step(self, payload: PreStepPayload) -> None:
         run_span = self._active_spans.get("pre_run")
         if run_span is None:
@@ -86,12 +96,24 @@ class OpenTelemetryHook:
         ctx = trace.set_span_in_context(run_span)
         span = self.tracer.start_span(payload.step.name, context=ctx)
         span.set_attribute("step_input", str(payload.step_input))
-        key = f"step:{payload.step.name}"
+
+        # Use step ID if available, otherwise just the name
+        step_id = getattr(payload.step, "id", None)
+        key = self._get_step_span_key(payload.step.name, step_id)
         self._active_spans[key] = span
 
     async def _handle_post_step(self, payload: PostStepPayload) -> None:
-        key = f"step:{payload.step_result.name}"
+        # Try to find the span using the step result name first
+        key = self._get_step_span_key(payload.step_result.name)
         span = self._active_spans.pop(key, None)
+
+        # If not found, try to find any span that matches the step name pattern
+        if span is None:
+            for k in list(self._active_spans.keys()):
+                if k.startswith(f"step:{payload.step_result.name}"):
+                    span = self._active_spans.pop(k)
+                    break
+
         if span is not None:
             span.set_status(StatusCode.OK)
             span.set_attribute("success", payload.step_result.success)
@@ -99,8 +121,17 @@ class OpenTelemetryHook:
             span.end()
 
     async def _handle_step_failure(self, payload: OnStepFailurePayload) -> None:
-        key = f"step:{payload.step_result.name}"
+        # Try to find the span using the step result name first
+        key = self._get_step_span_key(payload.step_result.name)
         span = self._active_spans.pop(key, None)
+
+        # If not found, try to find any span that matches the step name pattern
+        if span is None:
+            for k in list(self._active_spans.keys()):
+                if k.startswith(f"step:{payload.step_result.name}"):
+                    span = self._active_spans.pop(k)
+                    break
+
         if span is not None:
             span.set_status(StatusCode.ERROR)
             span.set_attribute("success", False)

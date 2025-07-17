@@ -14,29 +14,6 @@ class MockContext(BaseModel):
     value: str = "test"
 
 
-class TestBaseValidator(BaseValidator):
-    """Test implementation of BaseValidator."""
-
-    async def validate(
-        self,
-        output_to_check: Any,
-        *,
-        context: Optional[BaseModel] = None,
-    ) -> ValidationResult:
-        if isinstance(output_to_check, str) and output_to_check == "valid":
-            return ValidationResult(
-                is_valid=True,
-                feedback="Valid output",
-                validator_name=self.name,
-            )
-        else:
-            return ValidationResult(
-                is_valid=False,
-                feedback="Invalid output",
-                validator_name=self.name,
-            )
-
-
 # Validator functions for testing (not test functions)
 def validator_function_valid(value: Any) -> Tuple[bool, Optional[str]]:
     """Validator function that returns valid."""
@@ -56,45 +33,133 @@ def validator_function_exception(value: Any) -> Tuple[bool, Optional[str]]:
 @pytest.mark.asyncio
 async def test_base_validator_initialization():
     """Test BaseValidator initialization."""
-    validator = TestBaseValidator()
-    assert validator.name == "TestBaseValidator"
 
-    validator_with_name = TestBaseValidator("CustomName")
+    # Create a simple validator class for testing
+    class SimpleValidator(BaseValidator):
+        async def validate(
+            self,
+            output_to_check: Any,
+            *,
+            context: Optional[BaseModel] = None,
+        ) -> ValidationResult:
+            if isinstance(output_to_check, str) and output_to_check == "valid":
+                return ValidationResult(
+                    is_valid=True,
+                    feedback="Valid output",
+                    validator_name=self.name,
+                )
+            else:
+                return ValidationResult(
+                    is_valid=False,
+                    feedback="Invalid output",
+                    validator_name=self.name,
+                )
+
+    validator = SimpleValidator()
+    assert validator.name == "SimpleValidator"
+
+    validator_with_name = SimpleValidator("CustomName")
     assert validator_with_name.name == "CustomName"
 
 
 @pytest.mark.asyncio
 async def test_base_validator_validate_valid():
     """Test BaseValidator validate method with valid input."""
-    validator = TestBaseValidator()
+
+    # Create a simple validator class for testing
+    class SimpleValidator(BaseValidator):
+        async def validate(
+            self,
+            output_to_check: Any,
+            *,
+            context: Optional[BaseModel] = None,
+        ) -> ValidationResult:
+            if isinstance(output_to_check, str) and output_to_check == "valid":
+                return ValidationResult(
+                    is_valid=True,
+                    feedback="Valid output",
+                    validator_name=self.name,
+                )
+            else:
+                return ValidationResult(
+                    is_valid=False,
+                    feedback="Invalid output",
+                    validator_name=self.name,
+                )
+
+    validator = SimpleValidator()
     result = await validator.validate("valid")
 
     assert result.is_valid is True
     assert result.feedback == "Valid output"
-    assert result.validator_name == "TestBaseValidator"
+    assert result.validator_name == "SimpleValidator"
 
 
 @pytest.mark.asyncio
 async def test_base_validator_validate_invalid():
     """Test BaseValidator validate method with invalid input."""
-    validator = TestBaseValidator()
+
+    # Create a simple validator class for testing
+    class SimpleValidator(BaseValidator):
+        async def validate(
+            self,
+            output_to_check: Any,
+            *,
+            context: Optional[BaseModel] = None,
+        ) -> ValidationResult:
+            if isinstance(output_to_check, str) and output_to_check == "valid":
+                return ValidationResult(
+                    is_valid=True,
+                    feedback="Valid output",
+                    validator_name=self.name,
+                )
+            else:
+                return ValidationResult(
+                    is_valid=False,
+                    feedback="Invalid output",
+                    validator_name=self.name,
+                )
+
+    validator = SimpleValidator()
     result = await validator.validate("invalid")
 
     assert result.is_valid is False
     assert result.feedback == "Invalid output"
-    assert result.validator_name == "TestBaseValidator"
+    assert result.validator_name == "SimpleValidator"
 
 
 @pytest.mark.asyncio
 async def test_base_validator_validate_with_context():
     """Test BaseValidator validate method with context."""
-    validator = TestBaseValidator()
+
+    # Create a simple validator class for testing
+    class SimpleValidator(BaseValidator):
+        async def validate(
+            self,
+            output_to_check: Any,
+            *,
+            context: Optional[BaseModel] = None,
+        ) -> ValidationResult:
+            if isinstance(output_to_check, str) and output_to_check == "valid":
+                return ValidationResult(
+                    is_valid=True,
+                    feedback="Valid output",
+                    validator_name=self.name,
+                )
+            else:
+                return ValidationResult(
+                    is_valid=False,
+                    feedback="Invalid output",
+                    validator_name=self.name,
+                )
+
+    validator = SimpleValidator()
     context = MockContext(value="test")
     result = await validator.validate("valid", context=context)
 
     assert result.is_valid is True
     assert result.feedback == "Valid output"
-    assert result.validator_name == "TestBaseValidator"
+    assert result.validator_name == "SimpleValidator"
 
 
 @pytest.mark.asyncio

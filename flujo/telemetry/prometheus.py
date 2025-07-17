@@ -109,7 +109,7 @@ def start_prometheus_server(port: int, backend: StateBackend) -> tuple[Callable[
         # Already registered, ignore
         pass
 
-    # For port 0we need to find an available port first
+    # For port 0 we need to find an available port first
     if port == 0:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.bind(("", 0))
