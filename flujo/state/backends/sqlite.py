@@ -38,7 +38,7 @@ def _validate_sql_identifier(identifier: str) -> bool:
         ValueError: If the identifier contains unsafe characters
     """
     if not identifier or not isinstance(identifier, str):
-        return False
+        raise ValueError(f"Invalid identifier type or empty: {identifier}")
 
     # SQLite identifiers can contain: letters, digits, underscore
     # Must start with a letter or underscore
@@ -60,11 +60,11 @@ def _validate_sql_identifier(identifier: str) -> bool:
 
     for char in problematic_chars:
         if char in identifier:
-            return False
+            raise ValueError(f"Identifier contains problematic Unicode character: {identifier}")
 
     # Check for very long identifiers (SQLite has limits)
     if len(identifier) >= 1000:
-        return False
+        raise ValueError(f"Identifier too long (max 999 characters): {identifier}")
 
     if not re.match(safe_pattern, identifier):
         raise ValueError(f"Unsafe SQL identifier: {identifier}")
@@ -107,7 +107,7 @@ def _validate_column_definition(column_def: str) -> bool:
         ValueError: If the definition contains unsafe content
     """
     if not column_def or not isinstance(column_def, str):
-        return False
+        raise ValueError(f"Invalid column definition type or empty: {column_def}")
 
     # Only allow safe SQLite column types and constraints
     safe_types = {"INTEGER", "REAL", "TEXT", "BLOB", "NUMERIC", "BOOLEAN"}
@@ -148,7 +148,7 @@ def _validate_column_definition(column_def: str) -> bool:
     # Check if the definition starts with any of the safe types
     starts_with_safe_type = any(definition_upper.startswith(sql_type) for sql_type in safe_types)
     if not starts_with_safe_type:
-        return False
+        raise ValueError(f"Column definition does not start with a safe SQLite type: {column_def}")
 
     return True
 

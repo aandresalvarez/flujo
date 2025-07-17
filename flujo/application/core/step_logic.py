@@ -1348,8 +1348,12 @@ async def _run_step_logic(
         )
 
         # Detect fallback loop after tracking the relationship globally
-        if _detect_fallback_loop(step, chain):
+        # Use step.fallback_step for detection since we're checking if the fallback would create a loop
+        if _detect_fallback_loop(step.fallback_step, chain):
+            # Reset relationships before raising to prevent global state pollution
+            _fallback_relationships_var.reset(relationships_token)
             raise InfiniteFallbackError(f"Fallback loop detected in step '{step.name}'")
+
         token = _fallback_chain_var.set(chain + [step])
         # Store primary token counts for summing, but do not add cost yet
         primary_token_counts = result.token_counts
