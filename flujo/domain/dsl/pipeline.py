@@ -16,6 +16,7 @@ from pydantic import ConfigDict
 
 from ..pipeline_validation import ValidationFinding, ValidationReport
 from ..models import BaseModel
+from flujo.domain.models import PipelineResult
 from ...exceptions import ConfigurationError
 from .step import Step, HumanInTheLoopStep
 from typing import TYPE_CHECKING
@@ -504,7 +505,7 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
 
     def as_step(
         self, name: str, *, inherit_context: bool = True, **kwargs: Any
-    ) -> "Step[Any, Any]":
+    ) -> "Step[PipeInT, PipelineResult[Any]]":
         """Wrap this pipeline as a composable Step, delegating to Flujo runner's as_step."""
         from flujo.application.runner import Flujo
 

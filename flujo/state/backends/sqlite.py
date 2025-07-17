@@ -27,15 +27,14 @@ MAX_SQL_IDENTIFIER_LENGTH = 1000
 
 # Problematic Unicode characters that should not be in SQL identifiers
 PROBLEMATIC_UNICODE_CHARS = [
-    "\u0000",
-    "\u2028",
-    "\u2029",  # Unicode control characters
-    "\u200b",
-    "\u200c",
-    "\u200d",  # Zero-width characters
-    "\x00",
-    "\x01",
-    "\x1f",  # Control characters
+    "\u0000",  # Null character
+    "\u2028",  # Line separator
+    "\u2029",  # Paragraph separator
+    "\u200b",  # Zero-width space
+    "\u200c",  # Zero-width non-joiner
+    "\u200d",  # Zero-width joiner
+    "\x01",  # Start of heading
+    "\x1f",  # Unit separator
 ]
 
 

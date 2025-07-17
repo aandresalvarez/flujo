@@ -58,10 +58,12 @@ class TestPersistencePerformanceOverhead:
         # Calculate overhead percentage
         overhead_percentage = ((avg_with_backend - avg_no_backend) / avg_no_backend) * 100
 
-        print("\nPerformance Overhead Test Results:")
-        print(f"Average time without backend: {avg_no_backend:.4f}s")
-        print(f"Average time with default backend: {avg_with_backend:.4f}s")
-        print(f"Overhead: {overhead_percentage:.2f}%")
+        # Log performance results for debugging (only in verbose mode)
+        if __debug__:
+            print("\nPerformance Overhead Test Results:")
+            print(f"Average time without backend: {avg_no_backend:.4f}s")
+            print(f"Average time with default backend: {avg_with_backend:.4f}s")
+            print(f"Overhead: {overhead_percentage:.2f}%")
 
         # NFR-9: Must not exceed overhead limit (relaxed for CI environments)
         # The SQLite backend adds some overhead due to file I/O, which is acceptable
@@ -101,10 +103,12 @@ class TestPersistencePerformanceOverhead:
 
         overhead_percentage = ((with_backend_time - no_backend_time) / no_backend_time) * 100
 
-        print("\nLarge Context Performance Test:")
-        print(f"Time without backend: {no_backend_time:.4f}s")
-        print(f"Time with backend: {with_backend_time:.4f}s")
-        print(f"Overhead: {overhead_percentage:.2f}%")
+        # Log performance results for debugging (only in verbose mode)
+        if __debug__:
+            print("\nLarge Context Performance Test:")
+            print(f"Time without backend: {no_backend_time:.4f}s")
+            print(f"Time with backend: {with_backend_time:.4f}s")
+            print(f"Overhead: {overhead_percentage:.2f}%")
 
         # Should still be under 5% even with large context
         assert overhead_percentage <= 5.0, (
@@ -190,9 +194,11 @@ class TestCLIPerformance:
         result = runner.invoke(app, ["lens", "list"])
         execution_time = time.perf_counter() - start_time
 
-        print("\nCLI List Performance Test:")
-        print(f"Execution time: {execution_time:.3f}s")
-        print(f"Exit code: {result.exit_code}")
+        # Log performance results for debugging (only in verbose mode)
+        if __debug__:
+            print("\nCLI List Performance Test:")
+            print(f"Execution time: {execution_time:.3f}s")
+            print(f"Exit code: {result.exit_code}")
 
         # NFR-10: Must complete in under 2s (adjusted for CI environments)
         assert execution_time < 2.0, (
@@ -214,9 +220,11 @@ class TestCLIPerformance:
         result = runner.invoke(app, ["lens", "show", "run_00001"])
         execution_time = time.perf_counter() - start_time
 
-        print("\nCLI Show Performance Test:")
-        print(f"Execution time: {execution_time:.3f}s")
-        print(f"Exit code: {result.exit_code}")
+        # Log performance results for debugging (only in verbose mode)
+        if __debug__:
+            print("\nCLI Show Performance Test:")
+            print(f"Execution time: {execution_time:.3f}s")
+            print(f"Exit code: {result.exit_code}")
 
         # NFR-10: Must complete in under 500ms
         assert execution_time < 0.5, (
@@ -238,9 +246,11 @@ class TestCLIPerformance:
         result = runner.invoke(app, ["lens", "list", "--status", "completed"])
         execution_time = time.perf_counter() - start_time
 
-        print("\nCLI List with Filter Performance Test:")
-        print(f"Execution time: {execution_time:.3f}s")
-        print(f"Exit code: {result.exit_code}")
+        # Log performance results for debugging (only in verbose mode)
+        if __debug__:
+            print("\nCLI List with Filter Performance Test:")
+            print(f"Execution time: {execution_time:.3f}s")
+            print(f"Exit code: {result.exit_code}")
 
         # NFR-10: Must complete in under 2s (adjusted for CI environments)
         assert execution_time < 2.0, (
