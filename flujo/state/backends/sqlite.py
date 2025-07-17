@@ -37,6 +37,15 @@ PROBLEMATIC_UNICODE_CHARS = [
     "\x1f",  # Unit separator
 ]
 
+# Whitelist of allowed column names and definitions for enhanced security
+ALLOWED_COLUMNS = {
+    "total_steps": "INTEGER DEFAULT 0",
+    "error_message": "TEXT",
+    "execution_time_ms": "INTEGER",
+    "memory_usage_mb": "REAL",
+    "step_history": "TEXT",
+}
+
 
 def _validate_sql_identifier(identifier: str) -> bool:
     """Validate that a string is a safe SQL identifier.
@@ -465,19 +474,10 @@ class SQLiteBackend(StateBackend):
             ("step_history", "TEXT"),
         ]
 
-        # Define a whitelist of allowed column names and definitions for enhanced security
-        allowed_columns = {
-            "total_steps": "INTEGER DEFAULT 0",
-            "error_message": "TEXT",
-            "execution_time_ms": "INTEGER",
-            "memory_usage_mb": "REAL",
-            "step_history": "TEXT",
-        }
-
         for column_name, column_def in new_columns:
             if column_name not in existing_columns:
                 # Validate column name and definition against the whitelist
-                if column_name not in allowed_columns or allowed_columns[column_name] != column_def:
+                if column_name not in ALLOWED_COLUMNS or ALLOWED_COLUMNS[column_name] != column_def:
                     telemetry.logfire.error(
                         f"Invalid column definition: {column_name} {column_def}"
                     )

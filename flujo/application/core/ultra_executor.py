@@ -706,18 +706,15 @@ class UltraStepExecutor(Generic[TContext]):
             except PausedException:
                 # Re-raise PausedException for agentic loops
                 raise
+            except (InfiniteFallbackError, InfiniteRedirectError):
+                # Allow critical exceptions to propagate
+                raise
             except Exception as e:
-                # Handle other exceptions
+                # Log and re-raise other exceptions
                 import logging
 
                 logger = logging.getLogger(__name__)
                 logger.error(f"Error in complex step execution: {e}")
-
-                # Allow critical exceptions to propagate
-                if isinstance(e, (InfiniteFallbackError, InfiniteRedirectError)):
-                    raise
-
-                # For other exceptions, re-raise
                 raise
 
     async def _run_validators_parallel(

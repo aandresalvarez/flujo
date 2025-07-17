@@ -90,18 +90,34 @@ def _should_pass_context(
     return spec.needs_context or (context is not None and bool(accepts_context))
 
 
-# Track fallback chain per execution context to detect loops
+# Context variables for tracking fallback relationships and chains
+_fallback_relationships_var: contextvars.ContextVar[Dict[str, str]] = contextvars.ContextVar(
+    "fallback_relationships", default={}
+)
 _fallback_chain_var: contextvars.ContextVar[list[Step[Any, Any]]] = contextvars.ContextVar(
-    "_fallback_chain", default=[]
+    "fallback_chain", default=[]
 )
 
-# Track fallback relationships globally to detect loops across the entire pipeline
-_fallback_relationships_var: contextvars.ContextVar[dict[str, str]] = contextvars.ContextVar(
-    "_fallback_relationships", default={}
-)
-
-# Maximum fallback chain length to prevent infinite loops
+# Maximum length for fallback chains to prevent infinite loops
 _MAX_FALLBACK_CHAIN_LENGTH = 10
+
+
+def _manage_fallback_relationships(step: Step[Any, Any]) -> contextvars.Token[Dict[str, str]]:
+    """Helper function to manage fallback relationship tracking.
+
+    Args:
+        step: The step with a fallback to track
+
+    Returns:
+        Token for resetting the context variable
+    """
+    if not hasattr(step, "fallback_step") or step.fallback_step is None:
+        raise ValueError("step.fallback_step must not be None when managing fallback relationships")
+    relationships = _fallback_relationships_var.get()
+    relationships_token = _fallback_relationships_var.set(
+        {**relationships, step.name: step.fallback_step.name}
+    )
+    return relationships_token
 
 
 def _detect_fallback_loop(step: Step[Any, Any], chain: list[Step[Any, Any]]) -> bool:
@@ -1349,11 +1365,8 @@ async def _run_step_logic(
 
         chain = _fallback_chain_var.get()
 
-        # Track the fallback relationship globally first
-        relationships = _fallback_relationships_var.get()
-        relationships_token = _fallback_relationships_var.set(
-            {**relationships, step.name: step.fallback_step.name}
-        )
+        # Use helper function to manage fallback relationships
+        relationships_token = _manage_fallback_relationships(step)
 
         # Detect fallback loop after tracking the relationship globally
         # Use step.fallback_step for detection since we're checking if the fallback would create a loop
