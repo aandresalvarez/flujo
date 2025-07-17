@@ -11,6 +11,9 @@ from ..state.backends.base import StateBackend
 
 T = TypeVar("T")
 
+# Default timeout for server readiness checks
+DEFAULT_SERVER_TIMEOUT = 10.0
+
 
 def run_coroutine(coro: Coroutine[Any, Any, T]) -> T:
     """Run ``coro`` even if there's already a running event loop."""
@@ -37,7 +40,7 @@ def run_coroutine(coro: Coroutine[Any, Any, T]) -> T:
     return cast(T, result)
 
 
-def _wait_for_server(host: str, port: int, timeout: float = 10) -> bool:
+def _wait_for_server(host: str, port: int, timeout: float = DEFAULT_SERVER_TIMEOUT) -> bool:
     """Wait for a server to be ready to accept connections."""
     start_time = time.time()
     while time.time() - start_time < timeout:
@@ -57,7 +60,11 @@ try:
     PROM_AVAILABLE = True
 except ImportError:  # pragma: no cover - optional dependency
     PROM_AVAILABLE = False
-    Collector = object  # type: ignore
+
+    class Collector:
+        """Stub class for Collector when prometheus_client is unavailable."""
+
+        pass
 
 
 class PrometheusCollector:
