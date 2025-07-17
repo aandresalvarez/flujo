@@ -21,7 +21,13 @@ class TestPersistencePerformanceOverhead:
     """Test NFR-9: Default persistence must not introduce >15% overhead (relaxed for CI environments)."""
 
     # Performance threshold for CI environments - configurable via environment variable
-    DEFAULT_OVERHEAD_LIMIT = float(os.getenv("FLUJO_OVERHEAD_LIMIT", "15.0"))
+    try:
+        DEFAULT_OVERHEAD_LIMIT = float(os.getenv("FLUJO_OVERHEAD_LIMIT", "15.0"))
+    except ValueError:
+        logging.warning(
+            "Invalid value for FLUJO_OVERHEAD_LIMIT environment variable. Falling back to default value: 15.0"
+        )
+        DEFAULT_OVERHEAD_LIMIT = 15.0
 
     @pytest.mark.asyncio
     async def test_default_backend_performance_overhead(self) -> None:

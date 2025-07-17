@@ -98,6 +98,11 @@ _fallback_chain_var: contextvars.ContextVar[list[Step[Any, Any]]] = contextvars.
     "fallback_chain", default=[]
 )
 
+# Cache for fallback relationship loop detection (True if loop detected, False otherwise)
+_fallback_graph_cache: contextvars.ContextVar[Dict[str, bool]] = contextvars.ContextVar(
+    "fallback_graph_cache", default={}
+)
+
 # Maximum length for fallback chains to prevent infinite loops
 # This limit is chosen based on typical pipeline complexity in enterprise applications
 # where fallback chains rarely exceed 10 steps. For healthcare/legal/finance applications,
@@ -110,17 +115,20 @@ _MAX_FALLBACK_CHAIN_LENGTH = 10
 _DEFAULT_MAX_FALLBACK_ITERATIONS = 100
 
 
-def _manage_fallback_relationships(step: Step[Any, Any]) -> contextvars.Token[Dict[str, str]]:
+def _manage_fallback_relationships(
+    step: Step[Any, Any],
+) -> Optional[contextvars.Token[Dict[str, str]]]:
     """Helper function to manage fallback relationship tracking.
 
     Args:
         step: The step with a fallback to track
 
     Returns:
-        Token for resetting the context variable
+        Token for resetting the context variable, or None if no fallback relationship
     """
     if not hasattr(step, "fallback_step") or step.fallback_step is None:
-        raise ValueError("step.fallback_step must not be None when managing fallback relationships")
+        # If fallback_step is None, no fallback relationship needs to be managed
+        return None
     relationships = _fallback_relationships_var.get()
     relationships_token = _fallback_relationships_var.set(
         {**relationships, step.name: step.fallback_step.name}
@@ -132,12 +140,13 @@ def _detect_fallback_loop(step: Step[Any, Any], chain: list[Step[Any, Any]]) -> 
     """Detect fallback loops using robust strategies for healthcare/legal/finance applications.
 
     Uses both local chain analysis and global relationship tracking to detect loops
-    that could occur across the entire pipeline execution.
+    that could occur across the entire pipeline execution. Implements caching for
+    improved performance in large pipelines.
 
     1. Object identity check (current implementation)
     2. Immediate name match (current step name matches last step in chain)
     3. Chain length limit (prevents extremely long chains)
-    4. Global relationship loop detection
+    4. Global relationship loop detection with caching
     """
     # Strategy 1: Object identity check
     if step in chain:
@@ -151,29 +160,38 @@ def _detect_fallback_loop(step: Step[Any, Any], chain: list[Step[Any, Any]]) -> 
     if len(chain) >= _MAX_FALLBACK_CHAIN_LENGTH:
         return True
 
-    # Strategy 4: Global relationship loop detection
+    # Strategy 4: Global relationship loop detection with caching
     relationships = _fallback_relationships_var.get()
     if step.name in relationships:
-        # Check if adding this step would create a loop
-        # Use visited set to detect any cycle, not just cycles back to starting step
-        visited = set()
-        current_step = step.name
-        next_step = relationships.get(current_step)
+        # Use cached graph for improved performance
+        graph_cache = _fallback_graph_cache.get()
+        cache_key = f"{step.name}_{len(relationships)}"
 
-        # Add maximum iteration limit to prevent infinite loops
-        max_iterations = (
-            _DEFAULT_MAX_FALLBACK_ITERATIONS  # Reasonable limit for fallback chain detection
-        )
-        iteration_count = 0
+        if cache_key not in graph_cache:
+            # Build the graph for this step and cache it
+            visited: set[str] = set()
+            current_step = step.name
+            next_step = relationships.get(current_step)
 
-        while next_step and iteration_count < max_iterations:
-            # If next_step is in visited, we've found a cycle
-            if next_step in visited:
-                return True  # Loop detected
-            visited.add(next_step)
-            next_step = relationships.get(next_step)
-            iteration_count += 1
-            # If next_step is None, we've reached the end of the chain
+            # Add maximum iteration limit to prevent infinite loops
+            max_iterations = _DEFAULT_MAX_FALLBACK_ITERATIONS
+            iteration_count = 0
+
+            while next_step and iteration_count < max_iterations:
+                # If next_step is in visited, we've found a cycle
+                if next_step in visited:
+                    graph_cache[cache_key] = True
+                    return True  # Loop detected
+                visited.add(next_step)
+                next_step = relationships.get(next_step)
+                iteration_count += 1
+
+            # Cache the result (no loop found)
+            graph_cache[cache_key] = False
+        else:
+            # Use cached result
+            cached_result = graph_cache[cache_key]
+            return bool(cached_result)
 
     return False  # No loop detected or iteration limit reached
 
@@ -1382,7 +1400,8 @@ async def _run_step_logic(
         # Use step.fallback_step for detection since we're checking if the fallback would create a loop
         if _detect_fallback_loop(step.fallback_step, chain):
             # Reset relationships before raising to prevent global state pollution
-            _fallback_relationships_var.reset(relationships_token)
+            if relationships_token is not None:
+                _fallback_relationships_var.reset(relationships_token)
             raise InfiniteFallbackError(f"Fallback loop detected in step '{step.name}'")
 
         token = _fallback_chain_var.set(chain + [step])
@@ -1400,7 +1419,8 @@ async def _run_step_logic(
         finally:
             _fallback_chain_var.reset(token)
             # Reset relationships to prevent global state pollution across multiple pipeline runs
-            _fallback_relationships_var.reset(relationships_token)
+            if relationships_token is not None:
+                _fallback_relationships_var.reset(relationships_token)
 
         result.latency_s += fallback_result.latency_s
         if fallback_result.success:

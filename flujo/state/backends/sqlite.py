@@ -170,9 +170,17 @@ def _validate_column_definition(column_def: str) -> bool:
             raise ValueError(f"Unsafe column definition contains '{pattern}': {column_def}")
 
     # Validate the entire column definition structure using a regular expression
+    # Use more restrictive patterns for DEFAULT and CHECK constraints to prevent SQL injection
     column_def_pattern = re.compile(
-        r"^(INTEGER|REAL|TEXT|BLOB|NUMERIC|BOOLEAN)(\([0-9, ]+\))?(\s+(PRIMARY\s+KEY|UNIQUE|NOT\s+NULL|DEFAULT\s+\S+|CHECK\s+\(.+\)|COLLATE\s+\S+))*$",
-        re.IGNORECASE,
+        r"""^(INTEGER|REAL|TEXT|BLOB|NUMERIC|BOOLEAN)(\([0-9, ]+\))?(
+            (\s+PRIMARY\s+KEY)?
+            (\s+UNIQUE)?
+            (\s+NOT\s+NULL)?
+            (\s+DEFAULT\s+(NULL|[0-9]+|[0-9]*\.[0-9]+|'.*?'|\".*?\"|TRUE|FALSE))?
+            (\s+CHECK\s+\([a-zA-Z0-9_<>=!&|()\s]+\))?
+            (\s+COLLATE\s+(BINARY|NOCASE|RTRIM))?
+        )*$""",
+        re.IGNORECASE | re.VERBOSE,
     )
     match = column_def_pattern.match(column_def)
     if not match:
@@ -190,6 +198,20 @@ def _validate_column_definition(column_def: str) -> bool:
         raise ValueError(
             f"Unsafe column definition: unknown or unsafe trailing content: {column_def}"
         )
+    # Additional checks for COLLATE and DEFAULT
+    collate_match = re.search(r"COLLATE\s+(\w+)", column_def, re.IGNORECASE)
+    if collate_match:
+        if collate_match.group(1).upper() not in {"BINARY", "NOCASE", "RTRIM"}:
+            raise ValueError(
+                f"Unsafe column definition: invalid COLLATE value: {collate_match.group(1)}"
+            )
+    default_match = re.search(r"DEFAULT\s+([^ ]+)", column_def, re.IGNORECASE)
+    if default_match:
+        val = default_match.group(1)
+        if not re.match(
+            r"^(NULL|[0-9]+|[0-9]*\.[0-9]+|'.*?'|\".*?\"|TRUE|FALSE)$", val, re.IGNORECASE
+        ):
+            raise ValueError(f"Unsafe column definition: invalid DEFAULT value: {val}")
 
     return True
 
@@ -513,9 +535,10 @@ class SQLiteBackend(StateBackend):
                 # Use proper SQLite quoting to prevent SQL injection
                 # Note: SQLite doesn't support parameterized DDL, so we use validation + proper quoting
                 # The validation functions ensure safety before this point
-                quoted_column_name = (
-                    f'"{column_name}"'  # Simple quoting is sufficient after validation
-                )
+                # Use proper SQLite identifier quoting for maximum security
+                # SQLite doesn't have a built-in quote_identifier, so we use our own implementation
+                escaped_name = column_name.replace('"', '""')
+                quoted_column_name = f'"{escaped_name}"'
                 await db.execute(
                     f"ALTER TABLE workflow_state ADD COLUMN {quoted_column_name} {column_def}"
                 )
