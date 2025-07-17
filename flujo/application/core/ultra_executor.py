@@ -71,7 +71,12 @@ except ModuleNotFoundError:
 from ...domain.dsl.step import Step
 from ...domain.models import BaseModel, StepResult, UsageLimits
 from ...domain.resources import AppResources
-from ...exceptions import UsageLimitExceededError, PausedException
+from ...exceptions import (
+    UsageLimitExceededError,
+    PausedException,
+    InfiniteFallbackError,
+    InfiniteRedirectError,
+)
 
 # Optional telemetry (no-op if absent)
 try:
@@ -704,7 +709,6 @@ class UltraStepExecutor(Generic[TContext]):
             except Exception as e:
                 # Handle other exceptions
                 import logging
-                from flujo.exceptions import InfiniteFallbackError, InfiniteRedirectError
 
                 logger = logging.getLogger(__name__)
                 logger.error(f"Error in complex step execution: {e}")

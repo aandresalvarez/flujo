@@ -470,8 +470,11 @@ class SQLiteBackend(StateBackend):
                         f"Schema migration failed due to invalid column definition: {e}"
                     )
 
+                # Safely quote column_name and column_def
+                quoted_column_name = f'"{column_name}"'
+                quoted_column_def = column_def  # Assuming column_def is already validated
                 await db.execute(
-                    f"ALTER TABLE workflow_state ADD COLUMN {column_name} {column_def}"
+                    f"ALTER TABLE workflow_state ADD COLUMN {quoted_column_name} {quoted_column_def}"
                 )
 
         # Ensure required columns exist with proper constraints

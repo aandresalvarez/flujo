@@ -1341,12 +1341,13 @@ async def _run_step_logic(
 
         chain = _fallback_chain_var.get()
 
-        # Track the fallback relationship globally
+        # Track the fallback relationship globally first
         relationships = _fallback_relationships_var.get()
         relationships_token = _fallback_relationships_var.set(
             {**relationships, step.name: step.fallback_step.name}
         )
 
+        # Detect fallback loop after tracking the relationship globally
         if _detect_fallback_loop(step, chain):
             raise InfiniteFallbackError(f"Fallback loop detected in step '{step.name}'")
         token = _fallback_chain_var.set(chain + [step])
@@ -1363,7 +1364,7 @@ async def _run_step_logic(
                 raise TypeError("step_executor did not return StepResult in fallback logic")
         finally:
             _fallback_chain_var.reset(token)
-            _fallback_relationships_var.reset(relationships_token)
+            # Don't reset relationships - they should persist across the entire pipeline execution
 
         result.latency_s += fallback_result.latency_s
         if fallback_result.success:

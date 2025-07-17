@@ -335,9 +335,9 @@ class TestSQLInjectionPrevention:
             try:
                 identifier_valid = _validate_sql_identifier(column_name)
                 definition_valid = _validate_column_definition(column_def)
-                if identifier_valid is True and definition_valid is True:
-                    print(f"FAILED: {repr(column_name)} and {repr(column_def)} were both accepted!")
-                assert identifier_valid is False or definition_valid is False
+                assert not (identifier_valid is True and definition_valid is True), (
+                    f"Validation failed: {repr(column_name)} and {repr(column_def)} were both accepted!"
+                )
             except ValueError:
                 # Expected for unsafe inputs
                 pass
