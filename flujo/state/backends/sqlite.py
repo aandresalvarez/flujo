@@ -25,6 +25,19 @@ if TYPE_CHECKING:
 # Maximum length for SQL identifiers
 MAX_SQL_IDENTIFIER_LENGTH = 1000
 
+# Problematic Unicode characters that should not be in SQL identifiers
+PROBLEMATIC_UNICODE_CHARS = [
+    "\u0000",
+    "\u2028",
+    "\u2029",  # Unicode control characters
+    "\u200b",
+    "\u200c",
+    "\u200d",  # Zero-width characters
+    "\x00",
+    "\x01",
+    "\x1f",  # Control characters
+]
+
 
 def _validate_sql_identifier(identifier: str) -> bool:
     """Validate that a string is a safe SQL identifier.
@@ -50,19 +63,7 @@ def _validate_sql_identifier(identifier: str) -> bool:
     safe_pattern = r"^[a-zA-Z_][a-zA-Z0-9_]*$"
 
     # Check for problematic Unicode characters
-    problematic_chars = [
-        "\u0000",
-        "\u2028",
-        "\u2029",  # Unicode control characters
-        "\u200b",
-        "\u200c",
-        "\u200d",  # Zero-width characters
-        "\x00",
-        "\x01",
-        "\x1f",  # Control characters
-    ]
-
-    for char in problematic_chars:
+    for char in PROBLEMATIC_UNICODE_CHARS:
         if char in identifier:
             raise ValueError(f"Identifier contains problematic Unicode character: {identifier}")
 

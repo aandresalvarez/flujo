@@ -131,15 +131,18 @@ def _detect_fallback_loop(step: Step[Any, Any], chain: list[Step[Any, Any]]) -> 
     relationships = _fallback_relationships_var.get()
     if step.name in relationships:
         # Check if adding this step would create a loop
-        current_step = step.name
+        # Use visited set to detect any cycle, not just cycles back to starting step
         visited = set()
+        current_step = step.name
         next_step = relationships.get(current_step)
 
         while next_step and next_step not in visited:
             visited.add(next_step)
-            if next_step == current_step:
-                return True  # Loop detected
             next_step = relationships.get(next_step)
+            # If next_step is None, we've reached the end of the chain
+            # If next_step is in visited, we've found a cycle
+            if next_step in visited:
+                return True  # Loop detected
 
     return False
 

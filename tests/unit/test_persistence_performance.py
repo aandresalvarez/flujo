@@ -16,7 +16,10 @@ from flujo.cli.main import app
 
 
 class TestPersistencePerformanceOverhead:
-    """Test NFR-9: Default persistence must not introduce >5% overhead."""
+    """Test NFR-9: Default persistence must not introduce >15% overhead."""
+
+    # Performance threshold for CI environments
+    DEFAULT_OVERHEAD_LIMIT = 15.0
 
     @pytest.mark.asyncio
     async def test_default_backend_performance_overhead(self) -> None:
@@ -60,11 +63,11 @@ class TestPersistencePerformanceOverhead:
         print(f"Average time with default backend: {avg_with_backend:.4f}s")
         print(f"Overhead: {overhead_percentage:.2f}%")
 
-        # NFR-9: Must not exceed 15% overhead (relaxed for CI environments)
+        # NFR-9: Must not exceed overhead limit (relaxed for CI environments)
         # The SQLite backend adds some overhead due to file I/O, which is acceptable
         # for the durability benefits it provides
-        assert overhead_percentage <= 15.0, (
-            f"Default persistence overhead ({overhead_percentage:.2f}%) exceeds 15% limit"
+        assert overhead_percentage <= self.DEFAULT_OVERHEAD_LIMIT, (
+            f"Default persistence overhead ({overhead_percentage:.2f}%) exceeds {self.DEFAULT_OVERHEAD_LIMIT}% limit"
         )
 
     @pytest.mark.asyncio
