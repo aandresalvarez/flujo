@@ -6,6 +6,7 @@ import asyncio
 from datetime import datetime, timedelta
 from pathlib import Path
 from typer.testing import CliRunner
+import logging
 
 from flujo.application.runner import Flujo
 from flujo.domain import Step
@@ -58,12 +59,12 @@ class TestPersistencePerformanceOverhead:
         # Calculate overhead percentage
         overhead_percentage = ((avg_with_backend - avg_no_backend) / avg_no_backend) * 100
 
-        # Log performance results for debugging (only in verbose mode)
-        if __debug__:
-            print("\nPerformance Overhead Test Results:")
-            print(f"Average time without backend: {avg_no_backend:.4f}s")
-            print(f"Average time with default backend: {avg_with_backend:.4f}s")
-            print(f"Overhead: {overhead_percentage:.2f}%")
+        # Log performance results for debugging
+        logger = logging.getLogger(__name__)
+        logger.debug("Performance Overhead Test Results:")
+        logger.debug(f"Average time without backend: {avg_no_backend:.4f}s")
+        logger.debug(f"Average time with default backend: {avg_with_backend:.4f}s")
+        logger.debug(f"Overhead: {overhead_percentage:.2f}%")
 
         # NFR-9: Must not exceed overhead limit (relaxed for CI environments)
         # The SQLite backend adds some overhead due to file I/O, which is acceptable

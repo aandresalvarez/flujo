@@ -323,9 +323,9 @@ class TestSQLInjectionPrevention:
             ("column\x00", "TEXT"),
             ("column\x01", "TEXT"),
             ("column\x1f", "TEXT"),
-            # Very long identifiers
-            ("a" * 1000, "TEXT"),
-            ("column_" + "a" * 1000, "TEXT"),
+            # Very long identifiers (should only reject >1000)
+            ("a" * 1001, "TEXT"),
+            ("column_" + "a" * 1001, "TEXT"),
         ]
 
         for column_name, column_def in edge_cases:

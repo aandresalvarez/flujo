@@ -76,9 +76,9 @@ def _validate_sql_identifier(identifier: str) -> bool:
             raise ValueError(f"Identifier contains problematic Unicode character: {identifier}")
 
     # Check for very long identifiers (SQLite has limits)
-    if len(identifier) >= MAX_SQL_IDENTIFIER_LENGTH:
+    if len(identifier) > MAX_SQL_IDENTIFIER_LENGTH:
         raise ValueError(
-            f"Identifier too long (max {MAX_SQL_IDENTIFIER_LENGTH - 1} characters): {identifier}"
+            f"Identifier too long (max {MAX_SQL_IDENTIFIER_LENGTH} characters): {identifier}"
         )
 
     if not re.match(safe_pattern, identifier):

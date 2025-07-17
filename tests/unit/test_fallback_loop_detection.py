@@ -117,6 +117,29 @@ class TestFallbackLoopDetection:
         chain = [step1]
         assert _detect_fallback_loop(step2, chain) is True
 
+    def test_detect_fallback_loop_global_relationships(self):
+        """Test that global fallback relationship mapping detects indirect cycles (A->B->C->A)."""
+        from flujo.application.core.step_logic import (
+            _fallback_relationships_var,
+            _detect_fallback_loop,
+        )
+
+        # Clear the contextvar for isolation
+        _fallback_relationships_var.set({})
+
+        step_a = Step.model_validate({"name": "A", "agent": StubAgent(["ok"])})
+        step_b = Step.model_validate({"name": "B", "agent": StubAgent(["ok"])})
+        step_c = Step.model_validate({"name": "C", "agent": StubAgent(["ok"])})
+
+        # Simulate global fallback relationships: A->B, B->C, C->A
+        relationships = {"A": "B", "B": "C", "C": "A"}
+        _fallback_relationships_var.set(relationships)
+
+        # Should detect a cycle starting from any node
+        assert _detect_fallback_loop(step_a, []) is True
+        assert _detect_fallback_loop(step_b, []) is True
+        assert _detect_fallback_loop(step_c, []) is True
+
     @pytest.mark.asyncio
     async def test_fallback_loop_integration_object_identity(self):
         """Test fallback loop detection in actual pipeline execution."""
