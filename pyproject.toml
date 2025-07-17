@@ -108,6 +108,7 @@ strict         = true
 # meant to be educational and may not follow strict typing.
 exclude = [
     "examples/.*",
+    "flujo/telemetry/prometheus.py",
 ]
 
 # Allow third-party libraries that do not ship type information.

@@ -51,15 +51,16 @@ def _wait_for_server(host: str, port: int, timeout: float = 10) -> bool:
 
 try:
     from prometheus_client import start_http_server
-    from prometheus_client.core import GaugeMetricFamily
+    from prometheus_client.core import GaugeMetricFamily, Collector
     from prometheus_client.registry import REGISTRY
 
     PROM_AVAILABLE = True
 except Exception:  # pragma: no cover - optional dependency
     PROM_AVAILABLE = False
+    Collector = object  # type: ignore
 
 
-class PrometheusCollector:
+class PrometheusCollector(Collector):  # type: ignore
     """Prometheus collector that exposes aggregated run metrics."""
 
     def __init__(self, backend: StateBackend) -> None:
@@ -102,7 +103,7 @@ def start_prometheus_server(port: int, backend: StateBackend) -> Callable[[], bo
 
     collector = PrometheusCollector(backend)
     if collector not in getattr(REGISTRY, "_collector_to_names", {}):
-        REGISTRY.register(collector)
+        REGISTRY.register(collector)  # type: ignore
 
     def _run() -> None:
         start_http_server(port)
