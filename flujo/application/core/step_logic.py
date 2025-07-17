@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import copy
+import hashlib
 import time
 from typing import Any, Dict, Optional, TypeVar, Callable, Awaitable, cast
 from unittest.mock import Mock
@@ -129,6 +130,10 @@ def _manage_fallback_relationships(
     if not hasattr(step, "fallback_step") or step.fallback_step is None:
         # If fallback_step is None, no fallback relationship needs to be managed
         return None
+
+    # Clear the graph cache when relationships change to prevent stale cache entries
+    _fallback_graph_cache.set({})
+
     relationships = _fallback_relationships_var.get()
     relationships_token = _fallback_relationships_var.set(
         {**relationships, step.name: step.fallback_step.name}
@@ -165,7 +170,14 @@ def _detect_fallback_loop(step: Step[Any, Any], chain: list[Step[Any, Any]]) -> 
     if step.name in relationships:
         # Use cached graph for improved performance
         graph_cache = _fallback_graph_cache.get()
-        cache_key = f"{step.name}_{len(relationships)}"
+
+        # Create a robust cache key that includes the actual relationship content
+        # This prevents cache collisions when different relationship sets have the same length
+        # but different content (e.g., {'A': 'B', 'C': 'D'} vs {'A': 'C', 'C': 'A'})
+        relationships_hash = hashlib.md5(
+            str(sorted(relationships.items())).encode("utf-8")
+        ).hexdigest()[:8]  # Use first 8 chars for reasonable key length
+        cache_key = f"{step.name}_{len(relationships)}_{relationships_hash}"
 
         if cache_key not in graph_cache:
             # Build the graph for this step and cache it

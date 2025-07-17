@@ -457,5 +457,57 @@ class TestFallbackLoopDetection:
             await gather_result(runner, "data")
 
 
+def test_fallback_loop_detection_cache_key_collision_fix():
+    """Test that cache key includes relationship content to prevent collisions."""
+    from flujo.application.core.step_logic import (
+        _detect_fallback_loop,
+        _fallback_relationships_var,
+        _fallback_graph_cache,
+    )
+    from flujo.domain.dsl.step import Step
+    from unittest.mock import Mock
+
+    # Reset context variables
+    _fallback_relationships_var.set({})
+    _fallback_graph_cache.set({})
+
+    # Create mock steps with proper name attributes
+    step_a = Mock(spec=Step)
+    step_a.name = "A"
+    step_b = Mock(spec=Step)
+    step_b.name = "B"
+    step_c = Mock(spec=Step)
+    step_c.name = "C"
+    step_d = Mock(spec=Step)
+    step_d.name = "D"
+
+    # Test case 1: No loop - {'A': 'B', 'C': 'D'}
+    relationships_1 = {"A": "B", "C": "D"}
+    _fallback_relationships_var.set(relationships_1)
+
+    # Should not detect a loop for step A
+    result_1 = _detect_fallback_loop(step_a, [])
+    assert result_1 is False
+
+    # Test case 2: Loop exists - {'A': 'C', 'C': 'A'}
+    relationships_2 = {"A": "C", "C": "A"}
+    _fallback_relationships_var.set(relationships_2)
+
+    # Should detect a loop for step A
+    result_2 = _detect_fallback_loop(step_a, [])
+    assert result_2 is True
+
+    # Verify that both results were cached separately
+    # The cache should have different keys for different relationship sets
+    cache = _fallback_graph_cache.get()
+    assert len(cache) == 2  # Should have 2 different cache entries
+
+    # Verify cache keys are different
+    cache_keys = list(cache.keys())
+    assert len(set(cache_keys)) == 2  # All keys should be unique
+    assert all("A_" in key for key in cache_keys)  # All keys should contain step A
+    assert any("2_" in key for key in cache_keys)  # Should have length 2 in key
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
