@@ -186,45 +186,6 @@ class TestFallbackLoopDetection:
         with pytest.raises(InfiniteFallbackError, match="Fallback loop detected"):
             await gather_result(runner, "data")
 
-    # The chain length integration test is now obsolete due to the global fallback relationship tracker.
-    # Infinite fallback chains are now impossible, so this test is no longer relevant for robust production use.
-    # @pytest.mark.asyncio
-    # async def test_fallback_loop_integration_chain_length(self):
-    #     """Test fallback loop detection with long chains."""
-    #     plugin = DummyPlugin([PluginOutcome(success=False, feedback="err")])
-    #
-    #     # Create a chain of 10 steps (at the limit)
-    #     steps = []
-    #     for i in range(10):  # _MAX_FALLBACK_CHAIN_LENGTH
-    #         step = Step.model_validate(
-    #             {
-    #                 "name": f"step_{i}",
-    #                 "agent": StubAgent(["bad"] * 100),
-    #                 "plugins": [(plugin, 0)],
-    #                 "config": StepConfig(max_retries=1),
-    #             }
-    #         )
-    #         steps.append(step)
-    #
-    #     # Add an 11th step that should trigger the chain length limit
-    #     step_11 = Step.model_validate(
-    #         {
-    #             "name": "step_11",
-    #             "agent": StubAgent(["bad"] * 100),
-    #             "plugins": [(plugin, 0)],
-    #             "config": StepConfig(max_retries=1),
-    #         }
-    #     )
-    #
-    #     # Chain them together: step_0 -> step_1 -> ... -> step_9 -> step_11
-    #     for i in range(9):
-    #         steps[i].fallback(steps[i + 1])
-    #     steps[9].fallback(step_11)  # This should trigger chain length limit
-    #
-    #     runner = Flujo(steps[0])
-    #     with pytest.raises(InfiniteFallbackError, match="Fallback loop detected"):
-    #         await gather_result(runner, "data")
-
     @pytest.mark.asyncio
     async def test_fallback_loop_healthcare_scenario(self):
         """Test fallback loop detection in a healthcare scenario."""
@@ -363,10 +324,6 @@ class TestFallbackLoopDetection:
         runner = Flujo(step_a)
         with pytest.raises(InfiniteFallbackError, match="Fallback loop detected"):
             await gather_result(runner, "data")
-
-    # Debug test removed - was testing actual loop detection which is expected to fail
-
-    # Detailed debug test removed - was testing actual loop detection which is expected to fail
 
     @pytest.mark.asyncio
     async def test_infinite_fallback_error_raises_correctly(self):

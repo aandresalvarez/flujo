@@ -1368,7 +1368,8 @@ async def _run_step_logic(
                 raise TypeError("step_executor did not return StepResult in fallback logic")
         finally:
             _fallback_chain_var.reset(token)
-            # Don't reset relationships - they should persist across the entire pipeline execution
+            # Reset relationships to prevent global state pollution across multiple pipeline runs
+            _fallback_relationships_var.reset(relationships_token)
 
         result.latency_s += fallback_result.latency_s
         if fallback_result.success:

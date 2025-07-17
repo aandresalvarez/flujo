@@ -94,13 +94,9 @@ class TestSQLInjectionPrevention:
         invalid_inputs = [None, "", "123column", "column-name", "column.name", "column name"]
 
         for invalid_input in invalid_inputs:
-            # These should either return False or raise ValueError
-            try:
-                result = _validate_sql_identifier(invalid_input)
-                assert result is False
-            except ValueError:
-                # Expected for some invalid inputs
-                pass
+            # All invalid inputs should raise ValueError
+            with pytest.raises(ValueError):
+                _validate_sql_identifier(invalid_input)
 
     def test_validate_column_definition_safe_definitions(self):
         """Test that safe column definitions are accepted."""
@@ -145,13 +141,9 @@ class TestSQLInjectionPrevention:
         invalid_inputs = [None, "", "INVALID_TYPE", "RANDOM_TEXT", "123INTEGER"]
 
         for invalid_input in invalid_inputs:
-            # These should either return False or raise ValueError
-            try:
-                result = _validate_column_definition(invalid_input)
-                assert result is False
-            except ValueError:
-                # Expected for some invalid inputs
-                pass
+            # All invalid inputs should raise ValueError
+            with pytest.raises(ValueError):
+                _validate_column_definition(invalid_input)
 
     @pytest.mark.asyncio
     async def test_schema_migration_sql_injection_prevention(self, backend: SQLiteBackend):
@@ -353,20 +345,13 @@ class TestSecurityLogging:
         # Create backend instance to test the validation
         _ = SQLiteBackend(temp_db_path)
 
-        with patch("flujo.infra.telemetry.logfire.error") as _:
-            try:
-                # Try to trigger a security violation by using a dangerous identifier
-                # This should trigger validation and potentially logging
-                _validate_sql_identifier("DROP TABLE users")
-            except ValueError:
-                # Expected - this should raise ValueError
-                pass
+        # Test that validation properly rejects dangerous identifiers
+        with pytest.raises(ValueError, match="Unsafe SQL identifier"):
+            _validate_sql_identifier("DROP TABLE users")
 
-            # Verify that security violations are logged
-            # Note: The current implementation may not log all violations,
-            # so we'll check if any error logging occurred during the test
-            # This is a more realistic test of the logging system
-            assert True  # If we get here, the validation worked correctly
+        # Test that validation properly rejects dangerous column definitions
+        with pytest.raises(ValueError, match="Unsafe column definition"):
+            _validate_column_definition("INTEGER; DROP TABLE users")
 
 
 if __name__ == "__main__":

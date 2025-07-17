@@ -22,6 +22,10 @@ if TYPE_CHECKING:
     from asyncio import AbstractEventLoop
 
 
+# Maximum length for SQL identifiers
+MAX_SQL_IDENTIFIER_LENGTH = 1000
+
+
 def _validate_sql_identifier(identifier: str) -> bool:
     """Validate that a string is a safe SQL identifier.
 
@@ -63,8 +67,10 @@ def _validate_sql_identifier(identifier: str) -> bool:
             raise ValueError(f"Identifier contains problematic Unicode character: {identifier}")
 
     # Check for very long identifiers (SQLite has limits)
-    if len(identifier) >= 1000:
-        raise ValueError(f"Identifier too long (max 999 characters): {identifier}")
+    if len(identifier) >= MAX_SQL_IDENTIFIER_LENGTH:
+        raise ValueError(
+            f"Identifier too long (max {MAX_SQL_IDENTIFIER_LENGTH - 1} characters): {identifier}"
+        )
 
     if not re.match(safe_pattern, identifier):
         raise ValueError(f"Unsafe SQL identifier: {identifier}")
@@ -470,11 +476,12 @@ class SQLiteBackend(StateBackend):
                         f"Schema migration failed due to invalid column definition: {e}"
                     )
 
-                # Safely quote column_name and column_def
+                # Use parameterized query to prevent SQL injection
+                # Note: SQLite doesn't support parameterized DDL, so we use validation + quoting
+                # The validation functions ensure safety before this point
                 quoted_column_name = f'"{column_name}"'
-                quoted_column_def = column_def  # Assuming column_def is already validated
                 await db.execute(
-                    f"ALTER TABLE workflow_state ADD COLUMN {quoted_column_name} {quoted_column_def}"
+                    f"ALTER TABLE workflow_state ADD COLUMN {quoted_column_name} {column_def}"
                 )
 
         # Ensure required columns exist with proper constraints
