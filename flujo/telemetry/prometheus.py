@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import socket
 import threading
+import time
 from collections.abc import Coroutine
-from typing import Any, Iterable, TypeVar, cast
+from typing import Any, Callable, Iterable, TypeVar, cast
 
 from ..state.backends.base import StateBackend
 
@@ -33,6 +35,18 @@ def run_coroutine(coro: Coroutine[Any, Any, T]) -> T:
     if exc:
         raise exc
     return cast(T, result)
+
+
+def _wait_for_server(host: str, port: int, timeout: float = 10) -> bool:
+    """Wait for a server to be ready to accept connections."""
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        try:
+            with socket.create_connection((host, port), timeout=1.0):
+                return True
+        except (socket.timeout, ConnectionRefusedError, OSError):
+            time.sleep(0.1)
+    return False
 
 
 try:
@@ -77,8 +91,12 @@ class PrometheusCollector:
         yield avg
 
 
-def start_prometheus_server(port: int, backend: StateBackend) -> None:
-    """Start a Prometheus metrics HTTP server in a daemon thread."""
+def start_prometheus_server(port: int, backend: StateBackend) -> Callable[[], bool]:
+    """Start a Prometheus metrics HTTP server in a daemon thread.
+
+    Returns:
+        A function that waits for the server to be ready and returns True if successful.
+    """
     if not PROM_AVAILABLE:
         raise ImportError("prometheus_client is not installed")
 
@@ -91,3 +109,9 @@ def start_prometheus_server(port: int, backend: StateBackend) -> None:
 
     thread = threading.Thread(target=_run, daemon=True)
     thread.start()
+
+    def wait_for_ready() -> bool:
+        """Wait for the server to be ready to accept connections."""
+        return _wait_for_server("localhost", port)
+
+    return wait_for_ready
