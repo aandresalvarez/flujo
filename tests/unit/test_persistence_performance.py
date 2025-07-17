@@ -16,6 +16,11 @@ from flujo.state.backends.sqlite import SQLiteBackend
 from flujo.testing.utils import StubAgent, gather_result
 from flujo.cli.main import app
 
+# Default overhead limit for performance tests
+DEFAULT_OVERHEAD_LIMIT = 15.0
+
+logger = logging.getLogger(__name__)
+
 
 class TestPersistencePerformanceOverhead:
     """Test NFR-9: Default persistence must not introduce >15% overhead (relaxed for CI environments)."""
@@ -24,12 +29,12 @@ class TestPersistencePerformanceOverhead:
     def get_default_overhead_limit() -> float:
         """Get the default overhead limit from environment variable or fallback to 15.0."""
         try:
-            return float(os.getenv("FLUJO_OVERHEAD_LIMIT", "15.0"))
+            return float(os.getenv("FLUJO_OVERHEAD_LIMIT", str(DEFAULT_OVERHEAD_LIMIT)))
         except ValueError:
             logging.warning(
                 "Invalid value for FLUJO_OVERHEAD_LIMIT environment variable. Falling back to default value: 15.0"
             )
-            return 15.0
+            return DEFAULT_OVERHEAD_LIMIT
 
     @pytest.mark.asyncio
     async def test_default_backend_performance_overhead(self) -> None:

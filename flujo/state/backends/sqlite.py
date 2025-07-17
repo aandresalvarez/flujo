@@ -46,6 +46,19 @@ ALLOWED_COLUMNS = {
     "step_history": "TEXT",
 }
 
+# Compiled regex pattern for column definition validation
+COLUMN_DEF_PATTERN = re.compile(
+    r"""^(INTEGER|REAL|TEXT|BLOB|NUMERIC|BOOLEAN)(\([0-9, ]+\))?(
+        (\s+PRIMARY\s+KEY)?
+        (\s+UNIQUE)?
+        (\s+NOT\s+NULL)?
+        (\s+DEFAULT\s+(NULL|[0-9]+|[0-9]*\.[0-9]+|'.*?'|\".*?\"|TRUE|FALSE))?
+        (\s+CHECK\s+\([a-zA-Z0-9_<>=!&|()\s]+\))?
+        (\s+COLLATE\s+(BINARY|NOCASE|RTRIM))?
+    )*$""",
+    re.IGNORECASE | re.VERBOSE,
+)
+
 
 def _validate_sql_identifier(identifier: str) -> bool:
     """Validate that a string is a safe SQL identifier.
@@ -171,18 +184,7 @@ def _validate_column_definition(column_def: str) -> bool:
 
     # Validate the entire column definition structure using a regular expression
     # Use more restrictive patterns for DEFAULT and CHECK constraints to prevent SQL injection
-    column_def_pattern = re.compile(
-        r"""^(INTEGER|REAL|TEXT|BLOB|NUMERIC|BOOLEAN)(\([0-9, ]+\))?(
-            (\s+PRIMARY\s+KEY)?
-            (\s+UNIQUE)?
-            (\s+NOT\s+NULL)?
-            (\s+DEFAULT\s+(NULL|[0-9]+|[0-9]*\.[0-9]+|'.*?'|\".*?\"|TRUE|FALSE))?
-            (\s+CHECK\s+\([a-zA-Z0-9_<>=!&|()\s]+\))?
-            (\s+COLLATE\s+(BINARY|NOCASE|RTRIM))?
-        )*$""",
-        re.IGNORECASE | re.VERBOSE,
-    )
-    match = column_def_pattern.match(column_def)
+    match = COLUMN_DEF_PATTERN.match(column_def)
     if not match:
         raise ValueError(f"Column definition does not match a safe SQLite structure: {column_def}")
     # Ensure no unknown trailing content after allowed constraints

@@ -176,7 +176,7 @@ def _detect_fallback_loop(step: Step[Any, Any], chain: list[Step[Any, Any]]) -> 
         # but different content (e.g., {'A': 'B', 'C': 'D'} vs {'A': 'C', 'C': 'A'})
         relationships_hash = hashlib.md5(
             str(sorted(relationships.items())).encode("utf-8")
-        ).hexdigest()[:8]  # Use first 8 chars for reasonable key length
+        ).hexdigest()  # Use full MD5 hash for improved collision resistance
         cache_key = f"{step.name}_{len(relationships)}_{relationships_hash}"
 
         if cache_key not in graph_cache:
