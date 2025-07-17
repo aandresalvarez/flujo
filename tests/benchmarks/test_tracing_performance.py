@@ -399,8 +399,11 @@ class TestTracingPerformance:
         cv = std_dev / mean_time  # Coefficient of variation
 
         # Performance should be consistent (low coefficient of variation)
-        # Increased threshold slightly to account for CI environment noise
-        assert cv < 0.6, f"Performance too inconsistent: CV={cv:.3f}"
+        # Use configurable threshold for CI environments due to timing noise
+        import os
+
+        cv_threshold = float(os.environ.get("FLUJO_CV_THRESHOLD", "0.6"))
+        assert cv < cv_threshold, f"Performance too inconsistent: CV={cv:.3f}"
 
         # All runs should complete in reasonable time (< 1 second each)
         assert all(t < 1.0 for t in execution_times), f"Some runs too slow: {execution_times}"
