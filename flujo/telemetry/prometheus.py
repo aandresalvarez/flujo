@@ -2,21 +2,50 @@ from __future__ import annotations
 
 import asyncio
 import threading
-from typing import Iterable
+from collections.abc import Coroutine
+from typing import Any, Iterable, TypeVar, cast
 
 from ..state.backends.base import StateBackend
+
+T = TypeVar("T")
+
+
+def run_coroutine(coro: Coroutine[Any, Any, T]) -> T:
+    """Run ``coro`` even if there's already a running event loop."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+    result: Any = None
+    exc: BaseException | None = None
+
+    def _target() -> None:
+        nonlocal result, exc
+        try:
+            result = asyncio.run(coro)
+        except BaseException as e:  # pragma: no cover - unlikely
+            exc = e
+
+    thread = threading.Thread(target=_target)
+    thread.start()
+    thread.join()
+    if exc:
+        raise exc
+    return cast(T, result)
+
 
 try:
     from prometheus_client import start_http_server
     from prometheus_client.core import GaugeMetricFamily
-    from prometheus_client.registry import Collector, REGISTRY
+    from prometheus_client.registry import REGISTRY
 
     PROM_AVAILABLE = True
 except Exception:  # pragma: no cover - optional dependency
     PROM_AVAILABLE = False
 
 
-class PrometheusCollector(Collector):  # type: ignore[misc]
+class PrometheusCollector:
     """Prometheus collector that exposes aggregated run metrics."""
 
     def __init__(self, backend: StateBackend) -> None:
@@ -25,7 +54,7 @@ class PrometheusCollector(Collector):  # type: ignore[misc]
         self.backend = backend
 
     def collect(self) -> Iterable[GaugeMetricFamily]:
-        stats = asyncio.run(self.backend.get_workflow_stats())
+        stats: dict[str, Any] = run_coroutine(self.backend.get_workflow_stats())
         total = GaugeMetricFamily("flujo_runs_total", "Total pipeline runs")
         total.add_metric([], stats.get("total_workflows", 0))
         yield total
