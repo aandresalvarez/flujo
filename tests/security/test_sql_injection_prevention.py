@@ -138,7 +138,39 @@ class TestSQLInjectionPrevention:
 
     def test_validate_column_definition_invalid_types(self):
         """Test that invalid column definition types are rejected."""
-        invalid_inputs = [None, "", "INVALID_TYPE", "RANDOM_TEXT", "123INTEGER"]
+        invalid_inputs = [
+            None,
+            "",
+            "INVALID_TYPE",
+            "RANDOM_TEXT",
+            "123INTEGER",
+            # Very long strings
+            "A" * 10000,
+            "INTEGER" + "A" * 10000,
+            # Unicode characters
+            "INTEGER\u0000",
+            "INTEGER\u2028",
+            "INTEGER\u2029",
+            "INTEGER\u200b",
+            "INTEGER\u200c",
+            "INTEGER\u200d",
+            # Binary data simulation
+            "INTEGER\x00\x01\x02",
+            "INTEGER\xff\xfe\xfd",
+            # SQL injection attempts
+            "INTEGER; DROP TABLE users;",
+            "INTEGER' OR '1'='1",
+            "INTEGER/* */",
+            "INTEGER-- comment",
+            # Malicious patterns
+            "INTEGER UNION SELECT * FROM users",
+            "INTEGER EXEC xp_cmdshell",
+            "INTEGER OR 1=1",
+            # Invalid SQLite syntax
+            "INTEGER INVALID_CONSTRAINT",
+            "INTEGER DEFAULT 'value' CHECK (invalid)",
+            "INTEGER COLLATE INVALID_COLLATION",
+        ]
 
         for invalid_input in invalid_inputs:
             # All invalid inputs should raise ValueError

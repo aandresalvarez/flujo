@@ -99,7 +99,15 @@ _fallback_chain_var: contextvars.ContextVar[list[Step[Any, Any]]] = contextvars.
 )
 
 # Maximum length for fallback chains to prevent infinite loops
+# This limit is chosen based on typical pipeline complexity in enterprise applications
+# where fallback chains rarely exceed 10 steps. For healthcare/legal/finance applications,
+# this provides a good balance between safety and flexibility.
 _MAX_FALLBACK_CHAIN_LENGTH = 10
+
+# Maximum iterations for fallback loop detection to prevent infinite loops
+# This limit is chosen to handle complex fallback relationships while preventing
+# performance issues in large pipelines.
+_DEFAULT_MAX_FALLBACK_ITERATIONS = 100
 
 
 def _manage_fallback_relationships(step: Step[Any, Any]) -> contextvars.Token[Dict[str, str]]:
@@ -153,7 +161,9 @@ def _detect_fallback_loop(step: Step[Any, Any], chain: list[Step[Any, Any]]) -> 
         next_step = relationships.get(current_step)
 
         # Add maximum iteration limit to prevent infinite loops
-        max_iterations = 100  # Reasonable limit for fallback chain detection
+        max_iterations = (
+            _DEFAULT_MAX_FALLBACK_ITERATIONS  # Reasonable limit for fallback chain detection
+        )
         iteration_count = 0
 
         while next_step and iteration_count < max_iterations:

@@ -125,8 +125,18 @@ def _validate_column_definition(column_def: str) -> bool:
     if not column_def or not isinstance(column_def, str):
         raise ValueError(f"Invalid column definition type or empty: {column_def}")
 
-    # Only allow safe SQLite column types and constraints
-    safe_types = {"INTEGER", "REAL", "TEXT", "BLOB", "NUMERIC", "BOOLEAN"}
+    # Reject non-printable, non-ASCII, or control characters
+    if any(ord(c) < 32 or ord(c) > 126 for c in column_def):
+        raise ValueError(
+            f"Unsafe column definition: contains non-printable or non-ASCII characters: {column_def}"
+        )
+    # Reject SQL injection patterns and malformed definitions
+    if any(x in column_def for x in [";", "--", "/*", "*/", "'", '"']):
+        raise ValueError(
+            f"Unsafe column definition: contains forbidden SQL characters: {column_def}"
+        )
+    if column_def.count("(") != column_def.count(")"):
+        raise ValueError(f"Unsafe column definition: unmatched parentheses: {column_def}")
 
     # Parse the definition to check for unsafe content
     definition_upper = column_def.upper()
@@ -143,7 +153,6 @@ def _validate_column_definition(column_def: str) -> bool:
         "EXEC",
         "EXECUTE",
         "UNION",
-        "SELECT",
         "FROM",
         "WHERE",
         "OR",
@@ -160,11 +169,27 @@ def _validate_column_definition(column_def: str) -> bool:
         if pattern in definition_upper:
             raise ValueError(f"Unsafe column definition contains '{pattern}': {column_def}")
 
-    # Basic validation - should start with a safe type
-    # Check if the definition starts with any of the safe types
-    starts_with_safe_type = any(definition_upper.startswith(sql_type) for sql_type in safe_types)
-    if not starts_with_safe_type:
-        raise ValueError(f"Column definition does not start with a safe SQLite type: {column_def}")
+    # Validate the entire column definition structure using a regular expression
+    column_def_pattern = re.compile(
+        r"^(INTEGER|REAL|TEXT|BLOB|NUMERIC|BOOLEAN)(\([0-9, ]+\))?(\s+(PRIMARY\s+KEY|UNIQUE|NOT\s+NULL|DEFAULT\s+\S+|CHECK\s+\(.+\)|COLLATE\s+\S+))*$",
+        re.IGNORECASE,
+    )
+    match = column_def_pattern.match(column_def)
+    if not match:
+        raise ValueError(f"Column definition does not match a safe SQLite structure: {column_def}")
+    # Ensure no unknown trailing content after allowed constraints
+    allowed_constraints = ["PRIMARY KEY", "UNIQUE", "NOT NULL", "DEFAULT", "CHECK", "COLLATE"]
+    # Remove type and type parameters
+    rest = column_def[len(match.group(1) or "") :]
+    if match.group(2):
+        rest = rest[len(match.group(2)) :]  # Remove type parameters
+    # Remove all allowed constraints
+    for constraint in allowed_constraints:
+        rest = re.sub(rf"\b{constraint}\b(\s+\S+|\s*\(.+?\))?", "", rest, flags=re.IGNORECASE)
+    if rest.strip():
+        raise ValueError(
+            f"Unsafe column definition: unknown or unsafe trailing content: {column_def}"
+        )
 
     return True
 
@@ -485,9 +510,12 @@ class SQLiteBackend(StateBackend):
                         f"Schema migration failed due to invalid column definition: {column_name} {column_def}"
                     )
 
-                # Use parameterized query to prevent SQL injection
-                # Note: SQLite doesn't support parameterized DDL, so we use whitelist + validation
-                quoted_column_name = f'"{column_name}"'
+                # Use proper SQLite quoting to prevent SQL injection
+                # Note: SQLite doesn't support parameterized DDL, so we use validation + proper quoting
+                # The validation functions ensure safety before this point
+                quoted_column_name = (
+                    f'"{column_name}"'  # Simple quoting is sufficient after validation
+                )
                 await db.execute(
                     f"ALTER TABLE workflow_state ADD COLUMN {quoted_column_name} {column_def}"
                 )

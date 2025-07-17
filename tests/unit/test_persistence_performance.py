@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typer.testing import CliRunner
 import logging
+import os
 
 from flujo.application.runner import Flujo
 from flujo.domain import Step
@@ -19,8 +20,8 @@ from flujo.cli.main import app
 class TestPersistencePerformanceOverhead:
     """Test NFR-9: Default persistence must not introduce >15% overhead (relaxed for CI environments)."""
 
-    # Performance threshold for CI environments
-    DEFAULT_OVERHEAD_LIMIT = 15.0
+    # Performance threshold for CI environments - configurable via environment variable
+    DEFAULT_OVERHEAD_LIMIT = float(os.getenv("FLUJO_OVERHEAD_LIMIT", "15.0"))
 
     @pytest.mark.asyncio
     async def test_default_backend_performance_overhead(self) -> None:
@@ -183,8 +184,6 @@ class TestCLIPerformance:
 
     def test_lens_list_performance(self, large_database: Path) -> None:
         """Test that `flujo lens list` completes in <2s with 10,000 runs."""
-        import os
-
         # Set environment variable to point to our test database
         os.environ["FLUJO_STATE_URI"] = f"sqlite:///{large_database}"
 
@@ -209,8 +208,6 @@ class TestCLIPerformance:
 
     def test_lens_show_performance(self, large_database: Path) -> None:
         """Test that `flujo lens show` completes in <500ms."""
-        import os
-
         # Set environment variable to point to our test database
         os.environ["FLUJO_STATE_URI"] = f"sqlite:///{large_database}"
 
@@ -235,8 +232,6 @@ class TestCLIPerformance:
 
     def test_lens_list_with_filters_performance(self, large_database: Path) -> None:
         """Test that `flujo lens list` with filters completes in <2s."""
-        import os
-
         # Set environment variable to point to our test database
         os.environ["FLUJO_STATE_URI"] = f"sqlite:///{large_database}"
 
@@ -263,8 +258,6 @@ class TestCLIPerformance:
         """Test that `flujo lens show` with nonexistent run completes quickly.
         The threshold is relaxed in CI via FLUJO_CLI_PERF_THRESHOLD due to CI variability.
         """
-        import os
-
         # Set environment variable to point to our test database
         os.environ["FLUJO_STATE_URI"] = f"sqlite:///{large_database}"
 
