@@ -23,8 +23,6 @@ OPENAI_API_KEY=your_key_here
 
 ## 3. Your First AgenticLoop
 
-> **Note:** The class-based `AgenticLoop` is deprecated. Use the new `make_agentic_loop_pipeline` factory function for full transparency, composability, and future YAML/AI support.
-
 Create a new file `hello_agentic.py`:
 
 ```python

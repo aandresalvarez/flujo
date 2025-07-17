@@ -1,21 +1,59 @@
-from unittest.mock import AsyncMock
+"""Integration tests for agentic loop recipe functionality."""
+
 import pytest
+from typing import Any
 
-from flujo.recipes.factories import make_agentic_loop_pipeline, run_agentic_loop_pipeline
-from flujo.domain.commands import (
-    RunAgentCommand,
-    AskHumanCommand,
-    FinishCommand,
-)
-from flujo.testing.utils import StubAgent
+from flujo.domain.commands import AgentCommand, FinishCommand, RunAgentCommand, AskHumanCommand
 from flujo.domain.models import PipelineContext
+from flujo.recipes.factories import make_agentic_loop_pipeline, run_agentic_loop_pipeline
+from flujo.testing.utils import StubAgent
+from unittest.mock import AsyncMock
 
 
-def test_agentic_loop_emits_deprecation_warning() -> None:
-    with pytest.warns(DeprecationWarning):
-        from flujo.recipes.agentic_loop import AgenticLoop
+class MockPlannerAgent:
+    """Mock planner agent that returns commands."""
 
-        AgenticLoop(StubAgent([]), {})
+    def __init__(self, commands: list[AgentCommand]):
+        self.commands = commands
+        self.call_count = 0
+
+    async def run(self, data: Any, **kwargs: Any) -> AgentCommand:
+        """Return the next command in the sequence."""
+        if self.call_count < len(self.commands):
+            command = self.commands[self.call_count]
+            self.call_count += 1
+            return command
+        return FinishCommand(final_answer="done")
+
+
+class MockExecutorAgent:
+    """Mock executor agent that simulates command execution."""
+
+    def __init__(self, results: list[str]):
+        self.results = results
+        self.call_count = 0
+
+    async def run(self, data: Any, **kwargs: Any) -> str:
+        """Return the next result in the sequence."""
+        if self.call_count < len(self.results):
+            result = self.results[self.call_count]
+            self.call_count += 1
+            return result
+        return "default_result"
+
+
+@pytest.mark.asyncio
+async def test_agentic_loop_pipeline_integration():
+    """Test agentic loop pipeline integration."""
+    planner = MockPlannerAgent([FinishCommand(final_answer="done")])
+    registry = {"test": MockExecutorAgent(["result"])}
+
+    pipeline = make_agentic_loop_pipeline(planner, registry)
+    result = await run_agentic_loop_pipeline(pipeline, "test goal")
+
+    assert result is not None
+    assert result.final_pipeline_context is not None
+    assert result.final_pipeline_context.initial_prompt == "test goal"
 
 
 @pytest.mark.asyncio

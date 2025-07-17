@@ -428,7 +428,8 @@ command = FinishCommand(
 A structured log entry representing a command that was executed in the loop, including the generated command and its execution result.
 
 ```python
-from flujo.domain.commands import ExecutedCommandLog, RunAgentCommand
+from flujo.domain.models import ExecutedCommandLog
+from flujo.domain.commands import RunAgentCommand
 from datetime import datetime, timezone
 
 log_entry = ExecutedCommandLog(

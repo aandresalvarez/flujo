@@ -21,7 +21,7 @@ repos:
         # Example:
         # flujo
         # llm
-        args: ["-L", "flujo,llm"]
+        args: ["-L", "flujo,llm,crate"]
 
   # Local hooks that leverage our Makefile for a single source of truth.
   - repo: local

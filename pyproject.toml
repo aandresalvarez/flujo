@@ -73,12 +73,22 @@ docs = [
     "mkdocstrings[python]",
 ]
 opentelemetry = ["opentelemetry-sdk>=1.26"]
+lens = [
+  "opentelemetry-sdk>=1.20,<2.0",
+  "opentelemetry-exporter-otlp-proto-http>=1.20,<2.0",
+  "prometheus-client>=0.22.1,<0.23.0",
+]
 bench = [
     "numpy",
     "pytest-benchmark>=4.0.0",
 ]
 logfire = ["logfire>=0.3"]
 sql = ["sqlvalidator>=0.0.8"]
+
+# Prometheus-related dependencies (install with: `pip install .[prometheus]`)
+prometheus = [
+    "prometheus-client>=0.22.1,<0.23.0"
+]
 
 # CLI entry point (install adds `flujo` command to PATH)
 [project.scripts]
@@ -103,6 +113,7 @@ strict         = true
 # meant to be educational and may not follow strict typing.
 exclude = [
     "examples/.*",
+    "flujo/telemetry/prometheus.py",
 ]
 
 # Allow third-party libraries that do not ship type information.
@@ -118,6 +129,17 @@ module = [
     "numpy",
     "orjson",
     "blake3"
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "opentelemetry",
+    "opentelemetry.sdk",
+    "opentelemetry.exporter.otlp.proto.http.trace_exporter",
+    "prometheus_client",
+    "prometheus_client.core",
+    "prometheus_client.registry",
 ]
 ignore_missing_imports = true
 

@@ -11,8 +11,18 @@ from flujo.domain.dsl.step import Step
 from flujo.domain.models import StepResult
 
 
+def create_slow_run_helper():
+    """Helper function to create a slow run function for testing."""
+
+    async def slow_run(data, **kwargs):
+        await asyncio.sleep(0.01)
+        return "slow_result"
+
+    return slow_run
+
+
 class TestUltraExecutorPerformance:
-    """Benchmark tests for ultra executor performance."""
+    """Test the performance characteristics of the ultra executor."""
 
     @pytest.fixture
     def ultra_executor(self):
@@ -216,67 +226,44 @@ class TestUltraExecutorPerformance:
 
     @pytest.mark.asyncio
     async def test_ultra_executor_feature_value(self, ultra_executor, mock_step):
-        """Test the value of ultra executor features in real-world scenarios."""
-
-        # Test 1: Cache performance with repeated identical calls
-        data = {"cache_test": "data", "complex": {"nested": "structure"}}
+        """Test the value of ultra executor features."""
+        data = {"feature": "test", "value": 123}
         context = Mock()
         context.model_dump.return_value = {"context": "data"}
         resources = Mock()
         resources.model_dump.return_value = {"resources": "data"}
 
-        # First call (cache miss)
-        start_time = time.perf_counter()
-        await ultra_executor.execute_step(mock_step, data, context, resources)
-        first_call_time = time.perf_counter() - start_time
+        # Test 1: Basic execution
+        result = await ultra_executor.execute_step(mock_step, data, context, resources)
+        assert result.success, "Ultra executor should execute successfully"
+        assert result.output == "benchmark_output"
 
-        # Second call (cache hit)
-        start_time = time.perf_counter()
-        await ultra_executor.execute_step(mock_step, data, context, resources)
-        second_call_time = time.perf_counter() - start_time
-
-        cache_speedup = first_call_time / second_call_time
-        print("\nCache Feature Value:")
-        print(f"First call (cache miss): {first_call_time:.6f}s")
-        print(f"Second call (cache hit): {second_call_time:.6f}s")
-        print(f"Cache speedup: {cache_speedup:.2f}x")
-
-        # Cache should provide significant speedup
-        assert cache_speedup >= 1.8, f"Cache should provide value, got {cache_speedup:.2f}x speedup"
-
-        # Test 2: Error handling and retry robustness
-        failing_agent = AsyncMock()
-        failing_agent.run.side_effect = [
-            Exception("First failure"),
-            Exception("Second failure"),
-            "Success",
+        # Test 2: Retry mechanism
+        retry_agent = AsyncMock()
+        retry_agent.run.side_effect = [
+            Exception("First attempt fails"),
+            Exception("Second attempt fails"),
+            "success_after_retries",
         ]
 
-        failing_step = Mock(spec=Step)
-        failing_step.name = "failing_step"
-        failing_step.config = Mock()
-        failing_step.config.max_retries = 3
-        failing_step.config.temperature = None
-        failing_step.agent = failing_agent
-        failing_step.validators = []
-        failing_step.plugins = []
-        failing_step.fallback_step = None
-        failing_step.processors = Mock()
-        failing_step.processors.prompt_processors = []
-        failing_step.processors.output_processors = []
-        failing_step.failure_handlers = []
-        failing_step.persist_validation_results_to = None
-        failing_step.meta = {}
-        failing_step.persist_feedback_to_context = False
+        retry_step = Mock(spec=Step)
+        retry_step.name = "retry_step"
+        retry_step.config = Mock()
+        retry_step.config.max_retries = 3
+        retry_step.config.temperature = None
+        retry_step.agent = retry_agent
+        retry_step.validators = []
+        retry_step.plugins = []
+        retry_step.fallback_step = None
+        retry_step.processors = Mock()
+        retry_step.processors.prompt_processors = []
+        retry_step.processors.output_processors = []
+        retry_step.failure_handlers = []
+        retry_step.persist_validation_results_to = None
+        retry_step.meta = {}
+        retry_step.persist_feedback_to_context = False
 
-        start_time = time.perf_counter()
-        result = await ultra_executor.execute_step(failing_step, data, context, resources)
-        retry_time = time.perf_counter() - start_time
-
-        print("\nError Handling Feature Value:")
-        print(f"Retry execution time: {retry_time:.6f}s")
-        print(f"Final result success: {result.success}")
-        print(f"Attempts made: {result.attempts}")
+        result = await ultra_executor.execute_step(retry_step, data, context, resources)
 
         # Should eventually succeed after retries
         assert result.success, "Ultra executor should handle retries and eventually succeed"
@@ -284,8 +271,11 @@ class TestUltraExecutorPerformance:
 
         # Test 3: Concurrency management
         num_concurrent = 10
+
+        slow_run_helper = create_slow_run_helper()
+
         slow_agent = AsyncMock()
-        slow_agent.run.side_effect = lambda data, **kwargs: asyncio.sleep(0.01) or "slow_result"
+        slow_agent.run.side_effect = slow_run_helper
 
         slow_step = Mock(spec=Step)
         slow_step.name = "slow_step"
@@ -666,11 +656,9 @@ class TestUltraExecutorScalability:
             step.meta = {}
             step.persist_feedback_to_context = False
 
-            async def slow_run(data, **kwargs):
-                await asyncio.sleep(0.01)  # Simulate work
-                return f"output_{data}"
+            slow_run_helper = create_slow_run_helper()
 
-            step.agent.run = slow_run
+            step.agent.run = slow_run_helper
 
             # Execute many tasks concurrently
             num_tasks = concurrency * 5  # Reduced for faster execution

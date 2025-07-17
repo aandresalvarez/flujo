@@ -45,8 +45,9 @@ from ..domain.models import (
     UsageLimits,
     PipelineContext,
     HumanInteraction,
+    ExecutedCommandLog,
 )
-from ..domain.commands import AgentCommand, ExecutedCommandLog
+from ..domain.commands import AgentCommand
 from pydantic import TypeAdapter
 from ..domain.resources import AppResources
 from ..domain.types import HookCallable

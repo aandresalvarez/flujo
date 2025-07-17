@@ -12,15 +12,7 @@ Welcome! This tutorial will guide you through using the `flujo` library, from yo
 
 Before we write any code, let's understand the main components you'll be working with. Think of it like a chef learning about their ingredients before cooking.
 
-*   **AgenticLoop (Recipe):** A dynamic planner-loop pattern. A planner agent decides which `AgentCommand` to execute next (run a tool agent, ask a human, run Python, or finish). This is the recommended starting point for building flexible agent workflows.
-*   **The Default Recipe (Class):** A simplified helper for running a fixed Review → Solution → Validate workflow. Useful for quick prototypes when you don't need full agentic control.
-
-*   **An Agent:** An **Agent** is a specialized AI model given a specific role and instructions (a "system prompt"). In the default pipeline we use three agents:
-    1.  **Review Agent (The Planner):** Looks at your request and creates a detailed checklist of what a "good" solution should look like.
-2.  **Solution Agent (The Doer):** The main worker. It takes your request and tries to produce a solution (e.g., write code, a poem, or an email).
-3.  **Validator Agent (The Quality Analyst):** Takes the solution agent's work and grades it against the review agent's checklist.
-
-*   **A Task:** This is a simple object that holds your request. It's how you tell the **Default** recipe what you want to achieve.
+*   **AgenticLoop (Recipe):** A dynamic planner-loop pattern. A planner agent decides which `AgentCommand` to execute next (run a tool agent, ask a human, run Python, or finish). This is the recommended starting point for explorative workflows.
 
 *   **Flujo, Pipeline, Step:** When you need more control than the standard `Default` workflow, you'll use the **Pipeline DSL**. A `Pipeline` is a sequence of `Step` objects executed by `Flujo` to build fully custom multi-agent workflows.
 
@@ -32,7 +24,7 @@ Now that we know the players, let's see them in action!
 
 ## 1. Your First AI Task: AgenticLoop
 
-We'll begin with the `AgenticLoop` pattern. A planner agent decides which tool agent to run and when to finish.
+We'll begin with the `make_agentic_loop_pipeline` pattern. A planner agent decides which tool agent to run and when to finish.
 
 ```python
 # 📂 step_1_agentic_loop.py

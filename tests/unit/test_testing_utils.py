@@ -473,13 +473,16 @@ def test_assert_validator_failed_with_stub_agent_sync():
     """Test assert_validator_failed with StubAgent in sync context."""
     agent = StubAgent(["valid_output"])
 
-    def agent_based_validator(data):
-        result = asyncio.run(agent.run(data))
+    async def agent_based_validator(data):
+        result = await agent.run(data)
         if result != "valid_output":
             raise ValueError("Invalid output")
         return result
 
-    assert not _test_validator_failed_sync(agent_based_validator, "test_data")
+    async def run_test():
+        return await _test_validator_failed_async(agent_based_validator, "test_data")
+
+    assert not asyncio.run(run_test())
 
 
 @pytest.mark.asyncio
@@ -487,9 +490,9 @@ async def test_assert_validator_failed_with_stub_agent_async():
     """Test assert_validator_failed with StubAgent in async context (failing case)."""
     failing_agent = StubAgent([])
 
-    def failing_agent_validator(data):
+    async def failing_agent_validator(data):
         try:
-            result = asyncio.run(failing_agent.run(data))
+            result = await failing_agent.run(data)
             return result
         except IndexError:
             raise ValueError("Agent failed")

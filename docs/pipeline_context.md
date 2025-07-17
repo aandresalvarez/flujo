@@ -14,7 +14,7 @@ This base class provides important built-in fields managed by the engine:
 - `initial_prompt: str` – automatically populated with the first input of each `run()` call.
 - `scratchpad: Dict[str, Any]` – a general-purpose dictionary for transient state.
 - `hitl_history: List[HumanInteraction]` – records all human-in-the-loop interactions.
-- `command_log: List[ExecutedCommandLog]` – tracks commands issued by an `AgenticLoop`.
+- `command_log: List[ExecutedCommandLog]` – tracks commands issued by an agentic loop pipeline.
 
 A minimal custom context looks like this:
 

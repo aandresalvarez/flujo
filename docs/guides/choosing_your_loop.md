@@ -3,7 +3,7 @@
 Flujo offers two looping patterns for different kinds of tasks:
 
 - **`Step.loop_until`** for deterministic iteration of a fixed pipeline body.
-- **`AgenticLoop`** for explorative workflows where a planner decides what to do next.
+- **`make_agentic_loop_pipeline`** for explorative workflows where a planner decides what to do next.
 
 This guide explains when to use each and shows how to migrate from one to the other.
 
@@ -28,9 +28,9 @@ loop_step = Step.loop_until(
 You have full control over how iteration inputs are mapped and can inspect or
 update the shared context on each turn.
 
-## When to Use `AgenticLoop` (The Explorer)
+## When to Use `make_agentic_loop_pipeline` (The Explorer)
 
-`AgenticLoop` shines when your workflow requires dynamic decision making or tool
+`make_agentic_loop_pipeline` shines when your workflow requires dynamic decision making or tool
 use. A planner agent determines which command to run next, such as calling a
 helper agent, running Python code, asking a human, or finishing the loop.
 
@@ -72,21 +72,20 @@ loop_step = Step.loop_until(
 )
 ```
 
-### After: `AgenticLoop.as_step()`
+### After: `make_agentic_loop_pipeline`
 
 ```python
 from flujo.recipes.factories import make_agentic_loop_pipeline
 
-loop = make_agentic_loop_pipeline(
+pipeline = make_agentic_loop_pipeline(
     planner_agent=planner_agent,
     agent_registry={"execute": execute_command},
-).as_step(name="ExplorationLoop")
+)
 
-pipeline = loop
 runner = Flujo(pipeline)
 result = runner.run("Explore this topic")
 ```
 
-`AgenticLoop` removes boilerplate and automatically handles the planner/executor
+`make_agentic_loop_pipeline` removes boilerplate and automatically handles the planner/executor
 interaction. The context keeps a command log so you can inspect the agent's
 decisions.
