@@ -704,9 +704,16 @@ class UltraStepExecutor(Generic[TContext]):
             except Exception as e:
                 # Handle other exceptions
                 import logging
+                from flujo.exceptions import InfiniteFallbackError, InfiniteRedirectError
 
                 logger = logging.getLogger(__name__)
                 logger.error(f"Error in complex step execution: {e}")
+
+                # Allow critical exceptions to propagate
+                if isinstance(e, (InfiniteFallbackError, InfiniteRedirectError)):
+                    raise
+
+                # For other exceptions, re-raise
                 raise
 
     async def _run_validators_parallel(

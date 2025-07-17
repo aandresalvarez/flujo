@@ -501,3 +501,12 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                 prev_node = f"s{node_counter}"
                 i += 1
         return "\n".join(lines)
+
+    def as_step(
+        self, name: str, *, inherit_context: bool = True, **kwargs: Any
+    ) -> "Step[Any, Any]":
+        """Wrap this pipeline as a composable Step, delegating to Flujo runner's as_step."""
+        from flujo.application.runner import Flujo
+
+        runner: Flujo[PipeInT, PipeOutT, BaseModel] = Flujo(self)
+        return runner.as_step(name, inherit_context=inherit_context, **kwargs)

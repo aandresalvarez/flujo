@@ -95,6 +95,54 @@ _fallback_chain_var: contextvars.ContextVar[list[Step[Any, Any]]] = contextvars.
     "_fallback_chain", default=[]
 )
 
+# Track fallback relationships globally to detect loops across the entire pipeline
+_fallback_relationships_var: contextvars.ContextVar[dict[str, str]] = contextvars.ContextVar(
+    "_fallback_relationships", default={}
+)
+
+# Maximum fallback chain length to prevent infinite loops
+_MAX_FALLBACK_CHAIN_LENGTH = 10
+
+
+def _detect_fallback_loop(step: Step[Any, Any], chain: list[Step[Any, Any]]) -> bool:
+    """Detect fallback loops using robust strategies for healthcare/legal/finance applications.
+
+    Uses both local chain analysis and global relationship tracking to detect loops
+    that could occur across the entire pipeline execution.
+
+    1. Object identity check (current implementation)
+    2. Immediate name match (current step name matches last step in chain)
+    3. Chain length limit (prevents extremely long chains)
+    4. Global relationship loop detection
+    """
+    # Strategy 1: Object identity check
+    if step in chain:
+        return True
+
+    # Strategy 2: Immediate name match (current step name matches last step in chain)
+    if chain and chain[-1].name == step.name:
+        return True
+
+    # Strategy 3: Chain length limit
+    if len(chain) >= _MAX_FALLBACK_CHAIN_LENGTH:
+        return True
+
+    # Strategy 4: Global relationship loop detection
+    relationships = _fallback_relationships_var.get()
+    if step.name in relationships:
+        # Check if adding this step would create a loop
+        current_step = step.name
+        visited = set()
+        next_step = relationships.get(current_step)
+
+        while next_step and next_step not in visited:
+            visited.add(next_step)
+            if next_step == current_step:
+                return True  # Loop detected
+            next_step = relationships.get(next_step)
+
+    return False
+
 
 async def _execute_parallel_step_logic(
     parallel_step: ParallelStep[TContext],
@@ -1292,7 +1340,14 @@ async def _run_step_logic(
         original_failure_feedback = result.feedback
 
         chain = _fallback_chain_var.get()
-        if step in chain:
+
+        # Track the fallback relationship globally
+        relationships = _fallback_relationships_var.get()
+        relationships_token = _fallback_relationships_var.set(
+            {**relationships, step.name: step.fallback_step.name}
+        )
+
+        if _detect_fallback_loop(step, chain):
             raise InfiniteFallbackError(f"Fallback loop detected in step '{step.name}'")
         token = _fallback_chain_var.set(chain + [step])
         # Store primary token counts for summing, but do not add cost yet
@@ -1308,6 +1363,7 @@ async def _run_step_logic(
                 raise TypeError("step_executor did not return StepResult in fallback logic")
         finally:
             _fallback_chain_var.reset(token)
+            _fallback_relationships_var.reset(relationships_token)
 
         result.latency_s += fallback_result.latency_s
         if fallback_result.success:

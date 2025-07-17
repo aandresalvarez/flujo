@@ -15,8 +15,142 @@ from .base import StateBackend
 from ...utils.serialization import safe_deserialize, robust_serialize
 from ...infra import telemetry
 
+import re
+
+
 if TYPE_CHECKING:
     from asyncio import AbstractEventLoop
+
+
+def _validate_sql_identifier(identifier: str) -> bool:
+    """Validate that a string is a safe SQL identifier.
+
+    This function ensures that column names and table names are safe to use
+    in SQL statements by checking against a whitelist of allowed characters.
+
+    Args:
+        identifier: The identifier to validate
+
+    Returns:
+        True if the identifier is safe, False otherwise
+
+    Raises:
+        ValueError: If the identifier contains unsafe characters
+    """
+    if not identifier or not isinstance(identifier, str):
+        return False
+
+    # SQLite identifiers can contain: letters, digits, underscore
+    # Must start with a letter or underscore
+    # Also check for problematic Unicode characters
+    safe_pattern = r"^[a-zA-Z_][a-zA-Z0-9_]*$"
+
+    # Check for problematic Unicode characters
+    problematic_chars = [
+        "\u0000",
+        "\u2028",
+        "\u2029",  # Unicode control characters
+        "\u200b",
+        "\u200c",
+        "\u200d",  # Zero-width characters
+        "\x00",
+        "\x01",
+        "\x1f",  # Control characters
+    ]
+
+    for char in problematic_chars:
+        if char in identifier:
+            return False
+
+    # Check for very long identifiers (SQLite has limits)
+    if len(identifier) >= 1000:
+        return False
+
+    if not re.match(safe_pattern, identifier):
+        raise ValueError(f"Unsafe SQL identifier: {identifier}")
+
+    # Additional safety: check for SQL keywords that could be dangerous
+    dangerous_keywords = {
+        "DROP",
+        "DELETE",
+        "INSERT",
+        "UPDATE",
+        "CREATE",
+        "ALTER",
+        "TRUNCATE",
+        "EXEC",
+        "EXECUTE",
+        "UNION",
+        "SELECT",
+        "FROM",
+        "WHERE",
+        "OR",
+        "AND",
+    }
+
+    if identifier.upper() in dangerous_keywords:
+        raise ValueError(f"Identifier matches dangerous SQL keyword: {identifier}")
+
+    return True
+
+
+def _validate_column_definition(column_def: str) -> bool:
+    """Validate that a column definition is safe.
+
+    Args:
+        column_def: The column definition to validate
+
+    Returns:
+        True if the definition is safe, False otherwise
+
+    Raises:
+        ValueError: If the definition contains unsafe content
+    """
+    if not column_def or not isinstance(column_def, str):
+        return False
+
+    # Only allow safe SQLite column types and constraints
+    safe_types = {"INTEGER", "REAL", "TEXT", "BLOB", "NUMERIC", "BOOLEAN"}
+
+    # Parse the definition to check for unsafe content
+    definition_upper = column_def.upper()
+
+    # Check for dangerous SQL constructs
+    dangerous_patterns = [
+        "DROP",
+        "DELETE",
+        "INSERT",
+        "UPDATE",
+        "CREATE",
+        "ALTER",
+        "TRUNCATE",
+        "EXEC",
+        "EXECUTE",
+        "UNION",
+        "SELECT",
+        "FROM",
+        "WHERE",
+        "OR",
+        "AND",
+        ";",
+        "--",
+        "/*",
+        "*/",
+        "xp_",
+        "sp_",
+    ]
+
+    for pattern in dangerous_patterns:
+        if pattern in definition_upper:
+            raise ValueError(f"Unsafe column definition contains '{pattern}': {column_def}")
+
+    # Basic validation - should start with a safe type
+    # Check if the definition starts with any of the safe types
+    starts_with_safe_type = any(definition_upper.startswith(sql_type) for sql_type in safe_types)
+    if not starts_with_safe_type:
+        return False
+
+    return True
 
 
 class SQLiteBackend(StateBackend):
@@ -326,6 +460,16 @@ class SQLiteBackend(StateBackend):
 
         for column_name, column_def in new_columns:
             if column_name not in existing_columns:
+                # Validate column name and definition for security
+                try:
+                    _validate_sql_identifier(column_name)
+                    _validate_column_definition(column_def)
+                except ValueError as e:
+                    telemetry.logfire.error(f"Invalid column definition: {e}")
+                    raise ValueError(
+                        f"Schema migration failed due to invalid column definition: {e}"
+                    )
+
                 await db.execute(
                     f"ALTER TABLE workflow_state ADD COLUMN {column_name} {column_def}"
                 )
