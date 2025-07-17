@@ -5,7 +5,7 @@
 **Status:** Proposed
 **Priority:** P1 - High
 **Date:** 2025-07-14
-**Version:** 1.0
+**Version:** 1.0.
 
 ---
 
