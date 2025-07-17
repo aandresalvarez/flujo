@@ -136,15 +136,20 @@ def _detect_fallback_loop(step: Step[Any, Any], chain: list[Step[Any, Any]]) -> 
         current_step = step.name
         next_step = relationships.get(current_step)
 
-        while next_step and next_step not in visited:
-            visited.add(next_step)
-            next_step = relationships.get(next_step)
-            # If next_step is None, we've reached the end of the chain
+        # Add maximum iteration limit to prevent infinite loops
+        max_iterations = 100  # Reasonable limit for fallback chain detection
+        iteration_count = 0
+
+        while next_step and iteration_count < max_iterations:
             # If next_step is in visited, we've found a cycle
             if next_step in visited:
                 return True  # Loop detected
+            visited.add(next_step)
+            next_step = relationships.get(next_step)
+            iteration_count += 1
+            # If next_step is None, we've reached the end of the chain
 
-    return False
+    return False  # No loop detected or iteration limit reached
 
 
 async def _execute_parallel_step_logic(

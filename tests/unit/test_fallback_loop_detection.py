@@ -58,8 +58,10 @@ class TestFallbackLoopDetection:
     def test_detect_fallback_loop_chain_length_limit(self):
         """Test that chain length limit prevents extremely long chains."""
         # Create a chain at the maximum length
+        from flujo.application.core.step_logic import _MAX_FALLBACK_CHAIN_LENGTH
+
         chain = []
-        for i in range(10):  # _MAX_FALLBACK_CHAIN_LENGTH
+        for i in range(_MAX_FALLBACK_CHAIN_LENGTH):
             step = Step.model_validate({"name": f"step{i}", "agent": StubAgent(["ok"])})
             chain.append(step)
 

@@ -94,7 +94,8 @@ def _validate_sql_identifier(identifier: str) -> bool:
         "AND",
     }
 
-    if identifier.upper() in dangerous_keywords:
+    identifier_upper = identifier.upper()
+    if identifier_upper in dangerous_keywords:
         raise ValueError(f"Identifier matches dangerous SQL keyword: {identifier}")
 
     return True
@@ -121,7 +122,7 @@ def _validate_column_definition(column_def: str) -> bool:
     # Parse the definition to check for unsafe content
     definition_upper = column_def.upper()
 
-    # Check for dangerous SQL constructs
+    # Check for dangerous SQL constructs (pre-computed as uppercase for efficiency)
     dangerous_patterns = [
         "DROP",
         "DELETE",
@@ -142,8 +143,8 @@ def _validate_column_definition(column_def: str) -> bool:
         "--",
         "/*",
         "*/",
-        "xp_",
-        "sp_",
+        "XP_",
+        "SP_",
     ]
 
     for pattern in dangerous_patterns:
@@ -464,21 +465,28 @@ class SQLiteBackend(StateBackend):
             ("step_history", "TEXT"),
         ]
 
+        # Define a whitelist of allowed column names and definitions for enhanced security
+        allowed_columns = {
+            "total_steps": "INTEGER DEFAULT 0",
+            "error_message": "TEXT",
+            "execution_time_ms": "INTEGER",
+            "memory_usage_mb": "REAL",
+            "step_history": "TEXT",
+        }
+
         for column_name, column_def in new_columns:
             if column_name not in existing_columns:
-                # Validate column name and definition for security
-                try:
-                    _validate_sql_identifier(column_name)
-                    _validate_column_definition(column_def)
-                except ValueError as e:
-                    telemetry.logfire.error(f"Invalid column definition: {e}")
+                # Validate column name and definition against the whitelist
+                if column_name not in allowed_columns or allowed_columns[column_name] != column_def:
+                    telemetry.logfire.error(
+                        f"Invalid column definition: {column_name} {column_def}"
+                    )
                     raise ValueError(
-                        f"Schema migration failed due to invalid column definition: {e}"
+                        f"Schema migration failed due to invalid column definition: {column_name} {column_def}"
                     )
 
                 # Use parameterized query to prevent SQL injection
-                # Note: SQLite doesn't support parameterized DDL, so we use validation + quoting
-                # The validation functions ensure safety before this point
+                # Note: SQLite doesn't support parameterized DDL, so we use whitelist + validation
                 quoted_column_name = f'"{column_name}"'
                 await db.execute(
                     f"ALTER TABLE workflow_state ADD COLUMN {quoted_column_name} {column_def}"

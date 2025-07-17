@@ -16,7 +16,7 @@ from flujo.cli.main import app
 
 
 class TestPersistencePerformanceOverhead:
-    """Test NFR-9: Default persistence must not introduce >15% overhead."""
+    """Test NFR-9: Default persistence must not introduce >15% overhead (relaxed for CI environments)."""
 
     # Performance threshold for CI environments
     DEFAULT_OVERHEAD_LIMIT = 15.0
