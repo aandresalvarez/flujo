@@ -51,16 +51,16 @@ def _wait_for_server(host: str, port: int, timeout: float = 10) -> bool:
 
 try:
     from prometheus_client import start_http_server
-    from prometheus_client.core import GaugeMetricFamily, Collector
+    from prometheus_client.core import GaugeMetricFamily
     from prometheus_client.registry import REGISTRY
 
     PROM_AVAILABLE = True
-except Exception:  # pragma: no cover - optional dependency
+except ImportError:  # pragma: no cover - optional dependency
     PROM_AVAILABLE = False
     Collector = object  # type: ignore
 
 
-class PrometheusCollector(Collector):  # type: ignore
+class PrometheusCollector:
     """Prometheus collector that exposes aggregated run metrics."""
 
     def __init__(self, backend: StateBackend) -> None:
@@ -92,27 +92,40 @@ class PrometheusCollector(Collector):  # type: ignore
         yield avg
 
 
-def start_prometheus_server(port: int, backend: StateBackend) -> Callable[[], bool]:
+def start_prometheus_server(port: int, backend: StateBackend) -> tuple[Callable[[], bool], int]:
     """Start a Prometheus metrics HTTP server in a daemon thread.
 
     Returns:
-        A function that waits for the server to be ready and returns True if successful.
+        A tuple of (wait_for_ready_function, assigned_port) where the function waits for the server to be ready and returns True if successful.
     """
     if not PROM_AVAILABLE:
         raise ImportError("prometheus_client is not installed")
 
     collector = PrometheusCollector(backend)
-    if collector not in getattr(REGISTRY, "_collector_to_names", {}):
-        REGISTRY.register(collector)  # type: ignore
+    # Register collector, ignore if already registered
+    try:
+        REGISTRY.register(collector)
+    except ValueError:
+        # Already registered, ignore
+        pass
+
+    # For port 0we need to find an available port first
+    if port == 0:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.bind(("", 0))
+        assigned_port = sock.getsockname()[1]
+        sock.close()
+    else:
+        assigned_port = port
 
     def _run() -> None:
-        start_http_server(port)
+        start_http_server(assigned_port)
 
     thread = threading.Thread(target=_run, daemon=True)
     thread.start()
 
     def wait_for_ready() -> bool:
         """Wait for the server to be ready to accept connections."""
-        return _wait_for_server("localhost", port)
+        return _wait_for_server("localhost", assigned_port)
 
-    return wait_for_ready
+    return wait_for_ready, assigned_port

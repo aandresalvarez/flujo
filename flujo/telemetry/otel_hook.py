@@ -76,6 +76,7 @@ class OpenTelemetryHook:
     async def _handle_post_run(self, payload: PostRunPayload) -> None:
         span = self._active_spans.pop("pre_run", None)
         if span is not None:
+            span.set_status(StatusCode.OK)
             span.end()
 
     async def _handle_pre_step(self, payload: PreStepPayload) -> None:

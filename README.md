@@ -202,3 +202,45 @@ if __name__ == "__main__":
 ## License
 
 This project is dual-licensed under AGPL-3.0 and a Commercial License. See [LICENSE](LICENSE) for more information.
+
+# Flujo
+
+## Setup
+
+1. Install [uv](https://github.com/astral-sh/uv):
+   ```sh
+   pip install uv
+   ```
+2. Install all dependencies (including optional extras):
+   ```sh
+   uv sync --all-extras
+   ```
+3. Create and activate the virtual environment:
+   ```sh
+   uv venv
+   source .venv/bin/activate
+   ```
+
+## Running Tests
+
+```sh
+make test
+```
+
+## Formatting, Linting, Type Checking
+
+```sh
+make format
+make lint
+make typecheck
+```
+
+## Running All Quality Checks
+
+```sh
+make all
+```
+
+## Notes
+- All development and CI tasks use uv for dependency management and execution.
+- Do not use Poetry for this project.

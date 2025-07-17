@@ -44,6 +44,7 @@ dependencies = [
   "rich>=13.7",
   "pydantic-evals>=0.0.47", # Added for Intelligent Evals
   "aiosqlite>=0.21.0",
+  "prometheus-client (>=0.22.1,<0.23.0)",
 ]
 
 # Optional dependency groups (install with: `pip install .[dev]`, etc.)
@@ -84,6 +85,11 @@ bench = [
 ]
 logfire = ["logfire>=0.3"]
 sql = ["sqlvalidator>=0.0.8"]
+
+# Optional dependency groups (install with: `pip install .[dev]`, etc.)
+prometheus = [
+    "prometheus-client>=0.22.1,<0.23.0"
+]
 
 # CLI entry point (install adds `flujo` command to PATH)
 [project.scripts]
