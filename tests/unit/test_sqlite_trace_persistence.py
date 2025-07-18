@@ -265,6 +265,7 @@ async def test_concurrent_trace_operations(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.performance
 async def test_trace_persistence_large_trace(tmp_path: Path) -> None:
     backend = SQLiteBackend(tmp_path / "test.db")
     run_id = "large_run"
