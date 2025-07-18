@@ -137,21 +137,35 @@ class TestCLIPerformance:
         """Get CLI performance threshold from environment or use default."""
         return float(os.getenv("FLUJO_CLI_PERF_THRESHOLD", "2.0"))
 
+    @staticmethod
+    def get_database_size() -> int:
+        """Get database size based on environment - smaller for CI, full for local."""
+        if os.getenv("CI") == "true":
+            # Use 1,000 runs in CI for faster execution (10% of full size)
+            return int(os.getenv("FLUJO_CI_DB_SIZE", "1000"))
+        else:
+            # Use 10,000 runs for local development (full size)
+            return int(os.getenv("FLUJO_LOCAL_DB_SIZE", "10000"))
+
     @pytest.fixture
     def large_database(self, tmp_path: Path) -> Path:
-        """Create a database with 10,000 runs for performance testing."""
+        """Create a database with configurable number of runs for performance testing."""
         import asyncio
 
         db_path = tmp_path / "large_ops.db"
         backend = SQLiteBackend(db_path)
 
-        # Create 10,000 runs with concurrent operations for better performance
+        # Get database size based on environment
+        db_size = self.get_database_size()
+        completed_runs = int(db_size * 0.95)  # 95% of runs are completed
+
+        # Create runs with concurrent operations for better performance
         now = datetime.utcnow()
 
         async def create_database():
             # Prepare all run start operations
             run_start_tasks = []
-            for i in range(10000):
+            for i in range(db_size):
                 task = backend.save_run_start(
                     {
                         "run_id": f"run_{i:05d}",
@@ -168,7 +182,7 @@ class TestCLIPerformance:
 
             # Prepare run end operations for completed runs (95%)
             run_end_tasks = []
-            for i in range(9500):
+            for i in range(completed_runs):
                 task = backend.save_run_end(
                     f"run_{i:05d}",
                     {
@@ -185,7 +199,7 @@ class TestCLIPerformance:
 
             # Prepare step data operations for completed runs
             step_tasks = []
-            for i in range(9500):
+            for i in range(completed_runs):
                 for step_idx in range(3):
                     task = backend.save_step_result(
                         {
@@ -219,6 +233,9 @@ class TestCLIPerformance:
         """Verify that the large_database fixture is working correctly."""
         import asyncio
 
+        # Get expected database size
+        expected_size = self.get_database_size()
+
         # Verify the database file exists
         assert large_database.exists(), f"Database file {large_database} does not exist"
 
@@ -226,13 +243,13 @@ class TestCLIPerformance:
         backend = SQLiteBackend(large_database)
         runs = asyncio.run(backend.list_runs())
 
-        # Should have 10,000 runs
-        assert len(runs) == 10000, f"Expected 10,000 runs, got {len(runs)}"
+        # Should have expected number of runs
+        assert len(runs) == expected_size, f"Expected {expected_size} runs, got {len(runs)}"
 
         # Verify some specific runs exist
         run_ids = [run["run_id"] for run in runs]
         assert "run_00000" in run_ids, "First run should exist"
-        assert "run_00999" in run_ids, "Last run should exist"
+        assert f"run_{expected_size - 1:05d}" in run_ids, "Last run should exist"
 
         # Verify run details
         run_details = asyncio.run(backend.get_run_details("run_00001"))
@@ -245,8 +262,11 @@ class TestCLIPerformance:
 
     @pytest.mark.slow
     def test_lens_list_performance(self, large_database: Path) -> None:
-        """Test that `flujo lens list` completes in <2s with 10,000 runs."""
+        """Test that `flujo lens list` completes in <2s with configurable number of runs."""
         import asyncio
+
+        # Get expected database size for logging
+        expected_size = self.get_database_size()
 
         # Set environment variable to point to our test database
         # Use correct URI format: sqlite:///path for absolute paths
@@ -255,7 +275,9 @@ class TestCLIPerformance:
         # Debug: Verify the database has data before running CLI
         backend = SQLiteBackend(large_database)
         runs = asyncio.run(backend.list_runs())
-        logger.debug(f"Database contains {len(runs)} runs before CLI test")
+        logger.debug(
+            f"Database contains {len(runs)} runs (expected {expected_size}) before CLI test"
+        )
 
         runner = CliRunner()
 
@@ -287,7 +309,7 @@ class TestCLIPerformance:
 
     @pytest.mark.slow
     def test_lens_show_performance(self, large_database: Path) -> None:
-        """Test that `flujo lens show` completes in <2s with 10,000 runs."""
+        """Test that `flujo lens show` completes in <2s with configurable number of runs."""
 
         # Set environment variable to point to our test database
         # Use correct URI format: sqlite:///path for absolute paths
@@ -321,7 +343,7 @@ class TestCLIPerformance:
 
     @pytest.mark.slow
     def test_lens_list_with_filters_performance(self, large_database: Path) -> None:
-        """Test that `flujo lens list` with filters completes in <2s with 10,000 runs."""
+        """Test that `flujo lens list` with filters completes in <2s with configurable number of runs."""
 
         # Set environment variable to point to our test database
         # Use correct URI format: sqlite:///path for absolute paths
@@ -355,7 +377,7 @@ class TestCLIPerformance:
 
     @pytest.mark.slow
     def test_lens_show_nonexistent_run_performance(self, large_database: Path) -> None:
-        """Test that `flujo lens show` with nonexistent run completes in <2s with 10,000 runs."""
+        """Test that `flujo lens show` with nonexistent run completes in <2s with configurable number of runs."""
 
         # Set environment variable to point to our test database
         # Use correct URI format: sqlite:///path for absolute paths

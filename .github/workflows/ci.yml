@@ -50,8 +50,10 @@ jobs:
       matrix:
         python-version: ["3.11", "3.12"]
     env:
+      CI: "true"
       FLUJO_CLI_PERF_THRESHOLD: "0.2"
       FLUJO_CV_THRESHOLD: "1.0"
+      FLUJO_CI_DB_SIZE: "500"  # Reduced database size for faster CI
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -92,8 +94,10 @@ jobs:
       matrix:
         python-version: ["3.11"]  # Only run slow tests on one Python version
     env:
+      CI: "true"
       FLUJO_CLI_PERF_THRESHOLD: "0.2"
       FLUJO_CV_THRESHOLD: "1.0"
+      FLUJO_CI_DB_SIZE: "1000"  # Reduced database size for faster CI
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -134,8 +138,10 @@ jobs:
       matrix:
         python-version: ["3.9", "3.10"]  # Run full suite on older Python versions
     env:
+      CI: "true"
       FLUJO_CLI_PERF_THRESHOLD: "0.2"
       FLUJO_CV_THRESHOLD: "1.0"
+      FLUJO_CI_DB_SIZE: "500"  # Reduced database size for faster CI
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

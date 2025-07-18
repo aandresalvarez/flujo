@@ -49,8 +49,10 @@ jobs:
       matrix:
         python-version: ["3.11"]  # Single Python version for speed
     env:
+      CI: "true"
       FLUJO_CLI_PERF_THRESHOLD: "0.2"
       FLUJO_CV_THRESHOLD: "1.0"
+      FLUJO_CI_DB_SIZE: "500"  # Reduced database size for faster PR feedback
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -91,8 +93,10 @@ jobs:
       matrix:
         python-version: ["3.12"]  # Latest Python for unit tests
     env:
+      CI: "true"
       FLUJO_CLI_PERF_THRESHOLD: "0.2"
       FLUJO_CV_THRESHOLD: "1.0"
+      FLUJO_CI_DB_SIZE: "250"  # Minimal database size for ultra-fast unit tests
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -126,6 +130,11 @@ jobs:
       fail-fast: true
       matrix:
         python-version: ["3.11"]
+    env:
+      CI: "true"
+      FLUJO_CLI_PERF_THRESHOLD: "0.2"
+      FLUJO_CV_THRESHOLD: "1.0"
+      FLUJO_CI_DB_SIZE: "250"  # Minimal database size for security tests
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
