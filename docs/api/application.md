@@ -1,3 +1,0 @@
-# Application API
-
-::: flujo.application

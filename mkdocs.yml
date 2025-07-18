@@ -47,12 +47,8 @@ nav:
     - 'v0.7.0': 'migration/v0.7.0.md'
     - 'v0.6.0': 'migration/v0.6.0.md'
     - 'v0.4.0': 'migration/v0.4.0.md'
-  # Use mkdocstrings to automatically generate the navigation for all
-  # modules under docs/api. This keeps the API reference up to date as
-  # files are added or removed without needing manual edits here.
-  - 'API Reference':
-      - 'Overview': 'api/index.md'
-      - 'api/'
+  # API Reference - automatically generated from source code
+  - 'API Reference': 'api/index.md'
 
 # Configure the theme (Material for MkDocs is the best choice)
 theme:
