@@ -6,7 +6,19 @@ import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional, cast, TYPE_CHECKING, Tuple, TypeVar, ParamSpec
+from typing import (
+    Any,
+    Dict,
+    List,
+    Optional,
+    cast,
+    TYPE_CHECKING,
+    Tuple,
+    TypeVar,
+    ParamSpec,
+    Callable,
+    Coroutine,
+)
 from typing_extensions import override
 
 import aiosqlite
@@ -82,11 +94,13 @@ def _epoch_microseconds_to_datetime(epoch_us: int) -> datetime:
     return datetime.fromtimestamp(epoch_us / 1_000_000)
 
 
-def db_retry(max_retries: int = 3, base_delay: float = 0.1, max_delay: float = 2.0) -> Any:
+def db_retry(
+    max_retries: int = 3, base_delay: float = 0.1, max_delay: float = 2.0
+) -> Callable[[Callable[P, Coroutine[Any, Any, T]]], Callable[P, Coroutine[Any, Any, T]]]:
     """Decorator for database operations with exponential backoff retry logic."""
 
-    def decorator(func: Any) -> Any:
-        async def wrapper(*args: Any, **kwargs: Any) -> Any:
+    def decorator(func: Callable[P, Coroutine[Any, Any, T]]) -> Callable[P, Coroutine[Any, Any, T]]:
+        async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
             delay = base_delay
             for attempt in range(max_retries):
                 try:
@@ -110,7 +124,8 @@ def db_retry(max_retries: int = 3, base_delay: float = 0.1, max_delay: float = 2
                             # Reset initialization state and re-initialize properly
                             if hasattr(args[0], "_initialized"):
                                 args[0]._initialized = False
-                                await args[0]._ensure_init()
+                                # Type checker doesn't know args[0] is SQLiteBackend, but we know it is
+                                await args[0]._ensure_init()  # type: ignore[attr-defined]
                             continue
                         else:
                             telemetry.logfire.error(
@@ -329,14 +344,15 @@ class SQLiteBackend(StateBackend):
     async def _transaction(self) -> Any:
         """Transaction context manager with automatic commit/rollback."""
         conn = await self._get_conn()
-        async with conn.execute("BEGIN IMMEDIATE"):
-            try:
-                yield conn
-            except Exception:
-                await conn.rollback()  # Roll back on any exception
-                raise
-            else:
-                await conn.commit()  # Commit only if no exception occurred
+        # Start the transaction
+        await conn.execute("BEGIN IMMEDIATE")
+        try:
+            yield conn
+        except Exception:
+            await conn.rollback()  # Roll back on any exception
+            raise
+        else:
+            await conn.commit()  # Commit only if no exception occurred
 
     def _get_file_lock(self) -> asyncio.Lock:
         """Get the file lock for the current event loop."""
@@ -758,7 +774,7 @@ class SQLiteBackend(StateBackend):
         await self.close()
 
     @override
-    @db_retry()  # type: ignore[misc]
+    @db_retry()
     async def save_state(self, run_id: str, state: Dict[str, Any]) -> None:
         """Save workflow state to the database.
 
@@ -830,7 +846,7 @@ class SQLiteBackend(StateBackend):
             await _save()
 
     @override
-    @db_retry()  # type: ignore[misc]
+    @db_retry()
     async def load_state(self, run_id: str) -> Optional[Dict[str, Any]]:
         await self._ensure_init()
         async with self._lock:
@@ -878,7 +894,7 @@ class SQLiteBackend(StateBackend):
             result = await _load()
             return result
 
-    @db_retry()  # type: ignore[misc]
+    @db_retry()
     async def delete_state(self, run_id: str) -> None:
         """Delete workflow state."""
         await self._ensure_init()
@@ -887,7 +903,7 @@ class SQLiteBackend(StateBackend):
                 await db.execute("DELETE FROM workflow_state WHERE run_id = ?", (run_id,))
                 await db.commit()
 
-    @db_retry()  # type: ignore[misc]
+    @db_retry()
     async def list_states(self, status: Optional[str] = None) -> List[Dict[str, Any]]:
         """List workflow states with optional status filter."""
         await self._ensure_init()
@@ -915,7 +931,7 @@ class SQLiteBackend(StateBackend):
                     for row in rows
                 ]
 
-    @db_retry()  # type: ignore[misc]
+    @db_retry()
     async def list_workflows(
         self,
         status: Optional[str] = None,
@@ -979,7 +995,7 @@ class SQLiteBackend(StateBackend):
                     )
                 return result
 
-    @db_retry()  # type: ignore[misc]
+    @db_retry()
     async def list_runs(
         self,
         status: Optional[str] = None,
@@ -1055,7 +1071,7 @@ class SQLiteBackend(StateBackend):
                     )
                 return result
 
-    @db_retry()  # type: ignore[misc]
+    @db_retry()
     async def get_workflow_stats(self) -> Dict[str, Any]:
         """Get comprehensive workflow statistics."""
         await self._ensure_init()
@@ -1114,7 +1130,7 @@ class SQLiteBackend(StateBackend):
                     "average_execution_time_ms": avg_exec_time or 0,
                 }
 
-    @db_retry()  # type: ignore[misc]
+    @db_retry()
     async def get_failed_workflows(self, hours_back: int = 24) -> List[Dict[str, Any]]:
         """Get failed workflows from the last N hours."""
         await self._ensure_init()
@@ -1176,7 +1192,7 @@ class SQLiteBackend(StateBackend):
                     )
                 return result
 
-    @db_retry()  # type: ignore[misc]
+    @db_retry()
     async def cleanup_old_workflows(self, days_old: float = 30) -> int:
         """Delete workflows older than specified days. Returns number of deleted workflows."""
         await self._ensure_init()
@@ -1221,7 +1237,7 @@ class SQLiteBackend(StateBackend):
     # ------------------------------------------------------------------
 
     @override
-    @db_retry()  # type: ignore[misc]
+    @db_retry()
     async def save_run_start(self, run_data: Dict[str, Any]) -> None:
         await self._ensure_init()
         async with self._lock:
@@ -1253,7 +1269,7 @@ class SQLiteBackend(StateBackend):
             await _save()
 
     @override
-    @db_retry()  # type: ignore[misc]
+    @db_retry()
     async def save_step_result(self, step_data: Dict[str, Any]) -> None:
         await self._ensure_init()
         async with self._lock:
@@ -1331,7 +1347,7 @@ class SQLiteBackend(StateBackend):
             await _save()
 
     @override
-    @db_retry()  # type: ignore[misc]
+    @db_retry()
     async def save_run_end(self, run_id: str, end_data: Dict[str, Any]) -> None:
         await self._ensure_init()
         async with self._lock:
@@ -1358,7 +1374,7 @@ class SQLiteBackend(StateBackend):
             await _save()
 
     @override
-    @db_retry()  # type: ignore[misc]
+    @db_retry()
     async def get_run_details(self, run_id: str) -> Optional[Dict[str, Any]]:
         await self._ensure_init()
         async with self._lock:
@@ -1383,7 +1399,7 @@ class SQLiteBackend(StateBackend):
                 }
 
     @override
-    @db_retry()  # type: ignore[misc]
+    @db_retry()
     async def list_run_steps(self, run_id: str) -> List[Dict[str, Any]]:
         await self._ensure_init()
         async with self._lock:
@@ -1417,7 +1433,7 @@ class SQLiteBackend(StateBackend):
                     )
                 return results
 
-    @db_retry()  # type: ignore[misc]
+    @db_retry()
     async def save_trace(self, run_id: str, trace: Dict[str, Any]) -> None:
         """Persist a trace tree as normalized spans for a given run_id."""
         await self._ensure_init()
@@ -1544,7 +1560,7 @@ class SQLiteBackend(StateBackend):
 
         return root_spans[0] if root_spans else None
 
-    @db_retry()  # type: ignore[misc]
+    @db_retry()
     async def get_trace(self, run_id: str) -> Optional[Dict[str, Any]]:
         """Retrieve and reconstruct the trace tree for a given run_id. Audit log access."""
         await self._ensure_init()
@@ -1579,7 +1595,7 @@ class SQLiteBackend(StateBackend):
                         return None
                     return self._reconstruct_trace_tree(rows_typed)
 
-    @db_retry()  # type: ignore[misc]
+    @db_retry()
     async def get_spans(
         self, run_id: str, status: Optional[str] = None, name: Optional[str] = None
     ) -> List[Dict[str, Any]]:
@@ -1624,7 +1640,7 @@ class SQLiteBackend(StateBackend):
                         )
                     return results
 
-    @db_retry()  # type: ignore[misc]
+    @db_retry()
     async def get_span_statistics(
         self, pipeline_name: Optional[str] = None, time_range: Optional[Tuple[float, float]] = None
     ) -> Dict[str, Any]:
@@ -1681,7 +1697,7 @@ class SQLiteBackend(StateBackend):
                             data["average"] = 0.0
                     return stats
 
-    @db_retry()  # type: ignore[misc]
+    @db_retry()
     async def delete_run(self, run_id: str) -> None:
         """Delete a run from the runs table (cascades to traces). Audit log deletion."""
         await self._ensure_init()
