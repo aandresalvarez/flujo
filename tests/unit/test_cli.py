@@ -750,3 +750,38 @@ def test_cli_improve_uses_custom_improvement_model(monkeypatch, tmp_path) -> Non
     )
     assert result.exit_code == 0
     assert called["model"] == "custom"
+
+
+def test_apply_cli_defaults_helper():
+    """Test the apply_cli_defaults helper function."""
+    from flujo.cli.main import apply_cli_defaults
+
+    # Test with no defaults (should return original values)
+    result = apply_cli_defaults("solve", max_iters=None, k=5)
+    assert result["max_iters"] is None
+    assert result["k"] == 5
+
+    # Test with defaults applied
+    # Mock the get_cli_defaults to return some defaults
+    import flujo.cli.main
+
+    original_get_defaults = flujo.cli.main.get_cli_defaults
+
+    def mock_get_defaults(command):
+        if command == "solve":
+            return {"max_iters": 10, "k": 3}
+        return {}
+
+    flujo.cli.main.get_cli_defaults = mock_get_defaults
+
+    try:
+        result = apply_cli_defaults("solve", max_iters=None, k=None)
+        assert result["max_iters"] == 10
+        assert result["k"] == 3
+
+        # Test that provided values are not overridden
+        result = apply_cli_defaults("solve", max_iters=5, k=None)
+        assert result["max_iters"] == 5  # Should not be overridden
+        assert result["k"] == 3  # Should be overridden
+    finally:
+        flujo.cli.main.get_cli_defaults = original_get_defaults

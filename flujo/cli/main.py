@@ -52,6 +52,26 @@ logfire = telemetry.logfire
 app.add_typer(lens_app, name="lens")
 
 
+def apply_cli_defaults(command: str, **kwargs: Any) -> Dict[str, Any]:
+    """Apply CLI defaults from configuration file to command arguments.
+
+    Args:
+        command: The command name (e.g., "solve", "bench")
+        **kwargs: The command arguments to apply defaults to
+
+    Returns:
+        Dict containing the arguments with defaults applied
+    """
+    cli_defaults = get_cli_defaults(command)
+    result = kwargs.copy()
+
+    for key, value in kwargs.items():
+        if value is None and key in cli_defaults:
+            result[key] = cli_defaults[key]
+
+    return result
+
+
 @app.command()
 def solve(
     prompt: str,
@@ -108,28 +128,29 @@ def solve(
         # Load settings with configuration file overrides
         settings = load_settings()
 
-        # Load CLI defaults from configuration file
-        cli_defaults = get_cli_defaults("solve")
+        # Apply CLI defaults
+        defaults = apply_cli_defaults(
+            "solve",
+            max_iters=max_iters,
+            k=k,
+            reflection=reflection,
+            scorer=scorer,
+            weights_path=weights_path,
+            solution_model=solution_model,
+            review_model=review_model,
+            validator_model=validator_model,
+            reflection_model=reflection_model,
+        )
 
-        # Apply CLI defaults if not provided as arguments
-        if max_iters is None and "max_iters" in cli_defaults:
-            max_iters = cli_defaults["max_iters"]
-        if k is None and "k" in cli_defaults:
-            k = cli_defaults["k"]
-        if reflection is None and "reflection" in cli_defaults:
-            reflection = cli_defaults["reflection"]
-        if scorer is None and "scorer" in cli_defaults:
-            scorer = cli_defaults["scorer"]
-        if weights_path is None and "weights_path" in cli_defaults:
-            weights_path = cli_defaults["weights_path"]
-        if solution_model is None and "solution_model" in cli_defaults:
-            solution_model = cli_defaults["solution_model"]
-        if review_model is None and "review_model" in cli_defaults:
-            review_model = cli_defaults["review_model"]
-        if validator_model is None and "validator_model" in cli_defaults:
-            validator_model = cli_defaults["validator_model"]
-        if reflection_model is None and "reflection_model" in cli_defaults:
-            reflection_model = cli_defaults["reflection_model"]
+        max_iters = defaults["max_iters"]
+        k = defaults["k"]
+        reflection = defaults["reflection"]
+        scorer = defaults["scorer"]
+        weights_path = defaults["weights_path"]
+        solution_model = defaults["solution_model"]
+        review_model = defaults["review_model"]
+        validator_model = defaults["validator_model"]
+        reflection_model = defaults["reflection_model"]
 
         # Argument validation
         if max_iters is not None and max_iters <= 0:
@@ -225,9 +246,9 @@ def version_cmd() -> None:
 
     try:
         version = importlib_metadata.version("flujo")
-        typer.echo(version)
+        typer.echo(f"flujo version: {version}")
     except importlib_metadata.PackageNotFoundError:
-        typer.echo("unknown")
+        typer.echo("flujo version: unknown")
 
 
 @app.command(name="show-config")
@@ -262,12 +283,9 @@ def bench(prompt: str, rounds: int = 10) -> None:
     import asyncio
 
     try:
-        # Load CLI defaults from configuration file
-        cli_defaults = get_cli_defaults("bench")
-
-        # Apply CLI defaults if not provided as arguments
-        if "rounds" in cli_defaults:
-            rounds = cli_defaults["rounds"]
+        # Apply CLI defaults
+        defaults = apply_cli_defaults("bench", rounds=rounds)
+        rounds = defaults["rounds"]
 
         review_agent = make_review_agent()
         solution_agent = make_solution_agent()

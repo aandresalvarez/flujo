@@ -12,6 +12,11 @@ from .agents import (
     get_reflection_agent,
     make_agent_async,
 )
+from .config_manager import (
+    load_settings,
+    get_cli_defaults,
+    get_state_uri,
+)
 
 __all__ = [
     "settings",
@@ -22,4 +27,8 @@ __all__ = [
     "make_validator_agent",
     "get_reflection_agent",
     "make_agent_async",
+    # Configuration management functions
+    "load_settings",
+    "get_cli_defaults",
+    "get_state_uri",
 ]

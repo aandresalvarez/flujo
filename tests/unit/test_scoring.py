@@ -76,6 +76,11 @@ def test_reward_scorer_init_success(monkeypatch) -> None:
     )
     settings_module = sys.modules["flujo.infra.settings"]
     monkeypatch.setattr(settings_module, "settings", enabled_settings)
+    # Also monkeypatch get_settings to return our test settings
+    monkeypatch.setattr(settings_module, "get_settings", lambda: enabled_settings)
+    # Monkeypatch the import in the scoring module
+    scoring_module = sys.modules["flujo.domain.scoring"]
+    monkeypatch.setattr(scoring_module, "get_settings", lambda: enabled_settings)
     mock_agent = Mock()
     monkeypatch.setattr("flujo.domain.scoring.Agent", mock_agent)
     RewardScorer()  # Should not raise
@@ -113,6 +118,11 @@ def test_reward_scorer_init_failure(monkeypatch) -> None:
     )
     settings_module = sys.modules["flujo.infra.settings"]
     monkeypatch.setattr(settings_module, "settings", disabled_settings)
+    # Also monkeypatch get_settings to return our test settings
+    monkeypatch.setattr(settings_module, "get_settings", lambda: disabled_settings)
+    # Monkeypatch the import in the scoring module
+    scoring_module = sys.modules["flujo.domain.scoring"]
+    monkeypatch.setattr(scoring_module, "get_settings", lambda: disabled_settings)
 
     # Mock Agent to raise RewardModelUnavailable
     def agent_side_effect(*args, **kwargs):
@@ -154,6 +164,11 @@ async def test_reward_scorer_returns_float(monkeypatch) -> None:
     )
     settings_module = sys.modules["flujo.infra.settings"]
     monkeypatch.setattr(settings_module, "settings", test_settings)
+    # Also monkeypatch get_settings to return our test settings
+    monkeypatch.setattr(settings_module, "get_settings", lambda: test_settings)
+    # Monkeypatch the import in the scoring module
+    scoring_module = sys.modules["flujo.domain.scoring"]
+    monkeypatch.setattr(scoring_module, "get_settings", lambda: test_settings)
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
 
     scorer = RewardScorer()
@@ -257,6 +272,11 @@ async def test_reward_scorer_score_no_output(monkeypatch) -> None:
     )
     settings_module = sys.modules["flujo.infra.settings"]
     monkeypatch.setattr(settings_module, "settings", test_settings)
+    # Also monkeypatch get_settings to return our test settings
+    monkeypatch.setattr(settings_module, "get_settings", lambda: test_settings)
+    # Monkeypatch the import in the scoring module
+    scoring_module = sys.modules["flujo.domain.scoring"]
+    monkeypatch.setattr(scoring_module, "get_settings", lambda: test_settings)
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
 
     scorer = RewardScorer()
