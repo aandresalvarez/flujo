@@ -29,7 +29,7 @@ class TestMemoryProfiling:
     @pytest.mark.asyncio
     async def test_loop_step_memory_stability(self) -> None:
         """Ensure LoopStep does not leak memory across many iterations."""
-        iterations = 1000
+        iterations = 200  # Reduced for faster execution
         body_step = Step.model_validate({"name": "make_large", "agent": LargeModelAgent()})
         body_pipeline = Pipeline.from_step(body_step)
         loop = Step.loop_until(

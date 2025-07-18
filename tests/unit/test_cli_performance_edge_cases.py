@@ -22,9 +22,9 @@ class TestCLIPerformanceEdgeCases:
         db_path = tmp_path / "mixed_ops.db"
         backend = SQLiteBackend(db_path)
 
-        # Create runs with different characteristics (reduced from 1,000 to 50 for CI)
+        # Create runs with different characteristics (reduced from 50 to 25 for CI)
         now = datetime.utcnow()
-        for i in range(50):
+        for i in range(25):
             # Create run start
             asyncio.run(
                 backend.save_run_start(

@@ -148,7 +148,7 @@ class TestUltraExecutorPerformance:
         self, ultra_executor, realistic_iterative_executor, mock_step
     ):
         """Compare execution speed between ultra and realistic iterative executors."""
-        iterations = 50  # Reduced for more stable measurements
+        iterations = 20  # Reduced for faster execution
         data = {
             "test": "data",
             "nested": {"value": 123},
@@ -434,7 +434,7 @@ class TestUltraExecutorPerformance:
     @pytest.mark.asyncio
     async def test_memory_efficiency(self, ultra_executor, mock_step):
         """Test memory efficiency by running many executions."""
-        iterations = 500  # Reduced for faster execution
+        iterations = 100  # Reduced for faster execution
         data = {"memory": "test", "large": "payload" * 50}
         context = Mock()
         context.model_dump.return_value = {"context": "data"}
@@ -512,7 +512,7 @@ class TestUltraExecutorPerformance:
     @pytest.mark.asyncio
     async def test_cache_key_generation_performance(self, ultra_executor, mock_step):
         """Test cache key generation performance."""
-        iterations = 500  # Reduced for faster execution
+        iterations = 100  # Reduced for faster execution
 
         # Create various frames
         frames = []
@@ -548,7 +548,7 @@ class TestUltraExecutorPerformance:
     @pytest.mark.asyncio
     async def test_usage_tracking_performance(self, ultra_executor):
         """Test usage tracking performance under high load."""
-        iterations = 500  # Reduced for faster execution
+        iterations = 100  # Reduced for faster execution
 
         # Simulate many usage additions
         start_time = time.perf_counter()

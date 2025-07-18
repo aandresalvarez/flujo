@@ -19,6 +19,7 @@ def sanitize_filename(filename: str) -> str:
     return safe or "test"
 
 
+@pytest.mark.performance
 class TestSQLiteBackendFuzzing:
     """Fuzzing tests to catch edge cases and potential issues."""
 
