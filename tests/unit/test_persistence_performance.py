@@ -1,20 +1,20 @@
 """Performance tests for Core Operational Persistence feature (NFR-9, NFR-10)."""
 
-import time
-import pytest
-import asyncio
-from datetime import datetime, timedelta
-from pathlib import Path
-from typer.testing import CliRunner
 import logging
 import os
+import time
+import pytest
+from datetime import datetime, timedelta
+from pathlib import Path
 
-from flujo.application.runner import Flujo
-from flujo.domain import Step
-from flujo.domain.models import PipelineContext
-from flujo.state.backends.sqlite import SQLiteBackend
-from flujo.testing.utils import StubAgent, gather_result
+from typer.testing import CliRunner
+
+from flujo import Flujo, Step
+from flujo.application.context_manager import PipelineContext
 from flujo.cli.main import app
+from flujo.domain.models import StubAgent
+from flujo.state.backends.sqlite import SQLiteBackend
+from flujo.testing.utils import gather_result
 
 # Default overhead limit for performance tests
 DEFAULT_OVERHEAD_LIMIT = 15.0
@@ -118,12 +118,11 @@ class TestPersistencePerformanceOverhead:
 
         overhead_percentage = ((with_backend_time - no_backend_time) / no_backend_time) * 100
 
-        # Log performance results for debugging (only in verbose mode)
-        if __debug__:
-            print("\nLarge Context Performance Test:")
-            print(f"Time without backend: {no_backend_time:.4f}s")
-            print(f"Time with backend: {with_backend_time:.4f}s")
-            print(f"Overhead: {overhead_percentage:.2f}%")
+        # Log performance results for debugging (consistent logging approach)
+        logger.debug("Large Context Performance Test:")
+        logger.debug(f"Time without backend: {no_backend_time:.4f}s")
+        logger.debug(f"Time with backend: {with_backend_time:.4f}s")
+        logger.debug(f"Overhead: {overhead_percentage:.2f}%")
 
         # Should still be under 5% even with large context
         assert overhead_percentage <= 5.0, (
@@ -134,18 +133,27 @@ class TestPersistencePerformanceOverhead:
 class TestCLIPerformance:
     """Test NFR-10: CLI commands must complete in <2s with 10,000 runs."""
 
+    @staticmethod
+    def get_cli_performance_threshold() -> float:
+        """Get CLI performance threshold from environment or use default."""
+        return float(os.getenv("FLUJO_CLI_PERF_THRESHOLD", "2.0"))
+
     @pytest.fixture
     def large_database(self, tmp_path: Path) -> Path:
         """Create a database with 10,000 runs for performance testing."""
+        import asyncio
+
         db_path = tmp_path / "large_ops.db"
         backend = SQLiteBackend(db_path)
 
-        # Create 10,000 runs
+        # Create 10,000 runs with concurrent operations for better performance
         now = datetime.utcnow()
-        for i in range(10000):
-            # Create run start
-            asyncio.run(
-                backend.save_run_start(
+
+        async def create_database():
+            # Prepare all run start operations
+            run_start_tasks = []
+            for i in range(10000):
+                task = backend.save_run_start(
                     {
                         "run_id": f"run_{i:05d}",
                         "pipeline_name": f"pipeline_{i % 10}",
@@ -154,52 +162,101 @@ class TestCLIPerformance:
                         "start_time": now - timedelta(minutes=i),
                     }
                 )
-            )
+                run_start_tasks.append(task)
 
-            # Create run end for most runs
-            if i < 9500:  # 95% completed
-                asyncio.run(
-                    backend.save_run_end(
-                        f"run_{i:05d}",
-                        {
-                            "status": "completed" if i % 2 == 0 else "failed",
-                            "end_time": now - timedelta(minutes=i) + timedelta(seconds=30),
-                            "total_cost": 0.1,
-                            "final_context": {"result": f"output_{i}"},
-                        },
-                    )
+            # Execute all run start operations concurrently
+            await asyncio.gather(*run_start_tasks)
+
+            # Prepare run end operations for completed runs (95%)
+            run_end_tasks = []
+            for i in range(9500):
+                task = backend.save_run_end(
+                    f"run_{i:05d}",
+                    {
+                        "status": "completed" if i % 2 == 0 else "failed",
+                        "end_time": now - timedelta(minutes=i) + timedelta(seconds=30),
+                        "total_cost": 0.1,
+                        "final_context": {"result": f"output_{i}"},
+                    },
                 )
+                run_end_tasks.append(task)
 
-            # Add some step data for completed runs
-            if i < 9500:
+            # Execute all run end operations concurrently
+            await asyncio.gather(*run_end_tasks)
+
+            # Prepare step data operations for completed runs
+            step_tasks = []
+            for i in range(9500):
                 for step_idx in range(3):
-                    asyncio.run(
-                        backend.save_step_result(
-                            {
-                                "step_run_id": f"run_{i:05d}:{step_idx}",
-                                "run_id": f"run_{i:05d}",
-                                "step_name": f"step_{step_idx}",
-                                "step_index": step_idx,
-                                "status": "completed",
-                                "start_time": now - timedelta(minutes=i),
-                                "end_time": now - timedelta(minutes=i) + timedelta(seconds=10),
-                                "duration_ms": 10000,
-                                "cost": 0.03,
-                                "tokens": 100,
-                                "input": f"input_{i}_{step_idx}",
-                                "output": f"output_{i}_{step_idx}",
-                                "error": None,
-                            }
-                        )
+                    task = backend.save_step_result(
+                        {
+                            "step_run_id": f"run_{i:05d}:{step_idx}",
+                            "run_id": f"run_{i:05d}",
+                            "step_name": f"step_{step_idx}",
+                            "step_index": step_idx,
+                            "status": "completed",
+                            "start_time": now - timedelta(minutes=i),
+                            "end_time": now - timedelta(minutes=i) + timedelta(seconds=10),
+                            "duration_ms": 10000,
+                            "cost": 0.03,
+                            "tokens": 100,
+                            "input": f"input_{i}_{step_idx}",
+                            "output": f"output_{i}_{step_idx}",
+                            "error": None,
+                        }
                     )
+                    step_tasks.append(task)
+
+            # Execute all step data operations concurrently
+            await asyncio.gather(*step_tasks)
+
+        # Run the async function
+        asyncio.run(create_database())
 
         return db_path
 
     @pytest.mark.slow
+    def test_large_database_fixture_verification(self, large_database: Path) -> None:
+        """Verify that the large_database fixture is working correctly."""
+        import asyncio
+
+        # Verify the database file exists
+        assert large_database.exists(), f"Database file {large_database} does not exist"
+
+        # Verify the database has data by checking with the backend directly
+        backend = SQLiteBackend(large_database)
+        runs = asyncio.run(backend.list_runs())
+
+        # Should have 10,000 runs
+        assert len(runs) == 10000, f"Expected 10,000 runs, got {len(runs)}"
+
+        # Verify some specific runs exist
+        run_ids = [run["run_id"] for run in runs]
+        assert "run_00000" in run_ids, "First run should exist"
+        assert "run_00999" in run_ids, "Last run should exist"
+
+        # Verify run details
+        run_details = asyncio.run(backend.get_run_details("run_00001"))
+        assert run_details is not None, "Run details should be retrievable"
+        assert run_details["run_id"] == "run_00001"
+
+        # Verify step data exists
+        steps = asyncio.run(backend.list_run_steps("run_00001"))
+        assert len(steps) == 3, f"Expected 3 steps, got {len(steps)}"
+
+    @pytest.mark.slow
     def test_lens_list_performance(self, large_database: Path) -> None:
         """Test that `flujo lens list` completes in <2s with 10,000 runs."""
+        import asyncio
+
         # Set environment variable to point to our test database
+        # Use correct URI format: sqlite:///path for absolute paths
         os.environ["FLUJO_STATE_URI"] = f"sqlite:///{large_database}"
+
+        # Debug: Verify the database has data before running CLI
+        backend = SQLiteBackend(large_database)
+        runs = asyncio.run(backend.list_runs())
+        logger.debug(f"Database contains {len(runs)} runs before CLI test")
 
         runner = CliRunner()
 
@@ -208,22 +265,33 @@ class TestCLIPerformance:
         result = runner.invoke(app, ["lens", "list"])
         execution_time = time.perf_counter() - start_time
 
-        # Log performance results for debugging (only in verbose mode)
-        if __debug__:
-            print("\nCLI List Performance Test:")
-            print(f"Execution time: {execution_time:.3f}s")
-            print(f"Exit code: {result.exit_code}")
+        # Enhanced error handling with detailed debugging
+        if result.exit_code != 0:
+            logger.error("CLI command failed with detailed information:")
+            logger.error(f"Exit code: {result.exit_code}")
+            logger.error(f"stdout: {result.stdout}")
+            logger.error(f"stderr: {result.stderr}")
+            logger.error(f"Database path: {large_database}")
+            logger.error(f"Environment FLUJO_STATE_URI: {os.environ.get('FLUJO_STATE_URI')}")
+            raise AssertionError(f"CLI command failed: {result.stdout}")
 
-        # NFR-10: Must complete in under 2s (adjusted for CI environments)
-        assert execution_time < 2.0, (
-            f"`flujo lens list` took {execution_time:.3f}s, exceeds 2s limit"
+        # Log performance results for debugging
+        logger.debug("CLI List Performance Test:")
+        logger.debug(f"Execution time: {execution_time:.3f}s")
+        logger.debug(f"Exit code: {result.exit_code}")
+
+        # Use standardized threshold configuration
+        threshold = self.get_cli_performance_threshold()
+        assert execution_time < threshold, (
+            f"`flujo lens list` took {execution_time:.3f}s, exceeds {threshold}s limit"
         )
-        assert result.exit_code == 0, f"CLI command failed: {result.stdout}"
 
     @pytest.mark.slow
     def test_lens_show_performance(self, large_database: Path) -> None:
         """Test that `flujo lens show` completes in <2s with 10,000 runs."""
+
         # Set environment variable to point to our test database
+        # Use correct URI format: sqlite:///path for absolute paths
         os.environ["FLUJO_STATE_URI"] = f"sqlite:///{large_database}"
 
         runner = CliRunner()
@@ -233,22 +301,31 @@ class TestCLIPerformance:
         result = runner.invoke(app, ["lens", "show", "run_00001"])
         execution_time = time.perf_counter() - start_time
 
-        # Log performance results for debugging (only in verbose mode)
-        if __debug__:
-            print("\nCLI Show Performance Test:")
-            print(f"Execution time: {execution_time:.3f}s")
-            print(f"Exit code: {result.exit_code}")
+        # Enhanced error handling with detailed debugging
+        if result.exit_code != 0:
+            logger.error("CLI command failed with detailed information:")
+            logger.error(f"Exit code: {result.exit_code}")
+            logger.error(f"stdout: {result.stdout}")
+            logger.error(f"stderr: {result.stderr}")
+            raise AssertionError(f"CLI command failed: {result.stdout}")
 
-        # NFR-10: Must complete in under 2s (adjusted for CI environments)
-        assert execution_time < 2.0, (
-            f"`flujo lens show` took {execution_time:.3f}s, exceeds 2s limit"
+        # Log performance results for debugging
+        logger.debug("CLI Show Performance Test:")
+        logger.debug(f"Execution time: {execution_time:.3f}s")
+        logger.debug(f"Exit code: {result.exit_code}")
+
+        # Use standardized threshold configuration
+        threshold = self.get_cli_performance_threshold()
+        assert execution_time < threshold, (
+            f"`flujo lens show` took {execution_time:.3f}s, exceeds {threshold}s limit"
         )
-        assert result.exit_code == 0, f"CLI command failed: {result.stdout}"
 
     @pytest.mark.slow
     def test_lens_list_with_filters_performance(self, large_database: Path) -> None:
         """Test that `flujo lens list` with filters completes in <2s with 10,000 runs."""
+
         # Set environment variable to point to our test database
+        # Use correct URI format: sqlite:///path for absolute paths
         os.environ["FLUJO_STATE_URI"] = f"sqlite:///{large_database}"
 
         runner = CliRunner()
@@ -258,22 +335,31 @@ class TestCLIPerformance:
         result = runner.invoke(app, ["lens", "list", "--status", "completed"])
         execution_time = time.perf_counter() - start_time
 
-        # Log performance results for debugging (only in verbose mode)
-        if __debug__:
-            print("\nCLI List with Filter Performance Test:")
-            print(f"Execution time: {execution_time:.3f}s")
-            print(f"Exit code: {result.exit_code}")
+        # Enhanced error handling with detailed debugging
+        if result.exit_code != 0:
+            logger.error("CLI command failed with detailed information:")
+            logger.error(f"Exit code: {result.exit_code}")
+            logger.error(f"stdout: {result.stdout}")
+            logger.error(f"stderr: {result.stderr}")
+            raise AssertionError(f"CLI command failed: {result.stdout}")
 
-        # NFR-10: Must complete in under 2s (adjusted for CI environments)
-        assert execution_time < 2.0, (
-            f"`flujo lens list --status completed` took {execution_time:.3f}s, exceeds 2s limit"
+        # Log performance results for debugging
+        logger.debug("CLI List with Filter Performance Test:")
+        logger.debug(f"Execution time: {execution_time:.3f}s")
+        logger.debug(f"Exit code: {result.exit_code}")
+
+        # Use standardized threshold configuration
+        threshold = self.get_cli_performance_threshold()
+        assert execution_time < threshold, (
+            f"`flujo lens list --status completed` took {execution_time:.3f}s, exceeds {threshold}s limit"
         )
-        assert result.exit_code == 0, f"CLI command failed: {result.stdout}"
 
     @pytest.mark.slow
     def test_lens_show_nonexistent_run_performance(self, large_database: Path) -> None:
         """Test that `flujo lens show` with nonexistent run completes in <2s with 10,000 runs."""
+
         # Set environment variable to point to our test database
+        # Use correct URI format: sqlite:///path for absolute paths
         os.environ["FLUJO_STATE_URI"] = f"sqlite:///{large_database}"
 
         runner = CliRunner()
@@ -283,11 +369,12 @@ class TestCLIPerformance:
         result = runner.invoke(app, ["lens", "show", "nonexistent_run"])
         execution_time = time.perf_counter() - start_time
 
-        print("\nCLI Show Nonexistent Run Performance Test:")
-        print(f"Execution time: {execution_time:.3f}s")
-        print(f"Exit code: {result.exit_code}")
+        # Log performance results for debugging
+        logger.debug("CLI Show Nonexistent Run Performance Test:")
+        logger.debug(f"Execution time: {execution_time:.3f}s")
+        logger.debug(f"Exit code: {result.exit_code}")
 
-        # Use a configurable threshold for CI environments
+        # Use a configurable threshold for CI environments (faster for nonexistent runs)
         PERFORMANCE_THRESHOLD = float(os.environ.get("FLUJO_CLI_PERF_THRESHOLD", "0.2"))
         assert execution_time < PERFORMANCE_THRESHOLD, (
             f"`flujo lens show` for nonexistent run took {execution_time:.3f}s, should be very fast"
