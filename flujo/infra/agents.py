@@ -77,7 +77,9 @@ def make_agent(
 ) -> tuple[Agent[Any, Any], AgentProcessors]:
     """Creates a pydantic_ai.Agent, injecting the correct API key and returns it with processors."""
     provider_name = model.split(":")[0].lower()
-    from flujo.infra.settings import settings as current_settings
+    from flujo.infra.settings import get_settings
+
+    current_settings = get_settings()
 
     if provider_name == "openai":
         if not current_settings.openai_api_key:

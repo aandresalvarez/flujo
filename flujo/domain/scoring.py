@@ -1,12 +1,12 @@
-"""Scoring logic for flujo."""
+"""Scoring utilities for flujo."""
 
-from typing import List, Dict, Any, Callable, Awaitable, cast
+from typing import Callable, cast, Awaitable, List, Dict, Any
 from .models import Checklist
 from pydantic_ai import Agent
-import sys
 import os
 from flujo.infra.telemetry import logfire
-from ..exceptions import RewardModelUnavailable, FeatureDisabled
+from flujo.infra.settings import get_settings
+from ..exceptions import FeatureDisabled, RewardModelUnavailable
 
 
 def ratio_score(check: Checklist) -> float:
@@ -55,8 +55,7 @@ class RewardScorer:
 
     def __init__(self) -> None:
         # Always fetch the current settings from the module to support monkeypatching in tests
-        settings_module = sys.modules["flujo.infra.settings"]
-        settings = getattr(settings_module, "settings")
+        settings = get_settings()
         if not settings.reward_enabled:
             raise FeatureDisabled("RewardScorer is disabled by settings.")
         if not settings.openai_api_key:

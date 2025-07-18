@@ -126,7 +126,7 @@ def test_cli_version_command(monkeypatch) -> None:
 
     result = runner.invoke(app, ["version-cmd"])
     assert result.exit_code == 0
-    assert "flujo version" in result.stdout
+    assert "1.2.3" in result.stdout
 
 
 def test_cli_solve_with_weights(monkeypatch) -> None:
@@ -343,8 +343,12 @@ def test_cli_bench_keyboard_interrupt(monkeypatch) -> None:
 
 
 def test_cli_version_cmd_package_not_found(monkeypatch) -> None:
+    import importlib.metadata
+
     monkeypatch.setattr(
-        "importlib.metadata.version", lambda name: (_ for _ in ()).throw(Exception("fail"))
+        importlib.metadata,
+        "version",
+        lambda name: (_ for _ in ()).throw(importlib.metadata.PackageNotFoundError("fail")),
     )
     # from flujo.cli.main import app # This line is moved to the top of the file
 
@@ -546,7 +550,7 @@ def test_cli_run_with_args() -> None:
         patch("flujo.cli.main.make_solution_agent", return_value=DummyAgent()),
         patch("flujo.cli.main.make_validator_agent", return_value=DummyAgent()),
         patch("flujo.cli.main.get_reflection_agent"),
-        patch("flujo.cli.main.settings", dummy_settings),
+        patch("flujo.infra.config_manager.load_settings", return_value=dummy_settings),
     ):
         # from flujo.cli.main import app # This line is moved to the top of the file
 

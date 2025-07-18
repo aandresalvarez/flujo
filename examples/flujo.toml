@@ -1,0 +1,50 @@
+# flujo.toml - Configuration file for flujo
+# This file provides defaults for CLI commands and global settings
+
+# State backend configuration
+state_uri = "sqlite:///flujo_ops.db"
+
+# Global settings overrides
+[settings]
+# Feature toggles
+reflection_enabled = true
+reward_enabled = true
+telemetry_export_enabled = false
+otlp_export_enabled = false
+
+# Default models for each agent
+default_solution_model = "openai:gpt-4o"
+default_review_model = "openai:gpt-4o"
+default_validator_model = "openai:gpt-4o"
+default_reflection_model = "openai:gpt-4o"
+default_self_improvement_model = "openai:gpt-4o"
+default_repair_model = "openai:gpt-4o"
+
+# Orchestrator tuning
+max_iters = 5
+k_variants = 3
+reflection_limit = 3
+scorer = "ratio"
+t_schedule = [1.0, 0.8, 0.5, 0.2]
+agent_timeout = 60
+
+# CLI command defaults
+[solve]
+# Default parameters for the solve command
+max_iters = 3
+k = 1
+reflection = true
+scorer = "ratio"
+solution_model = "openai:gpt-4o"
+review_model = "openai:gpt-4o"
+validator_model = "openai:gpt-4o"
+reflection_model = "openai:gpt-4o"
+
+[bench]
+# Default parameters for the bench command
+rounds = 10
+
+[run]
+# Default parameters for the run command
+pipeline_name = "pipeline"
+json_output = false

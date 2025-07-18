@@ -159,7 +159,7 @@ class ExecutionConfig(BaseModel):
 
 
 # Singleton instance, fail fast if critical vars missing
-
+# Note: This will be overridden by the configuration manager when available
 try:
     settings = cast(Callable[[], Settings], Settings)()
 except ValidationError as e:
@@ -169,3 +169,19 @@ except ValidationError as e:
 # Ensure OpenAI library can find the API key if provided
 if settings.openai_api_key:
     os.environ.setdefault("OPENAI_API_KEY", settings.openai_api_key.get_secret_value())
+
+
+def get_settings() -> Settings:
+    """Get the current settings instance.
+
+    This function provides a way to get settings that may be overridden
+    by configuration files. It will use the configuration manager if available,
+    otherwise fall back to the default settings.
+    """
+    try:
+        from .config_manager import load_settings
+
+        return load_settings()
+    except ImportError:
+        # Fall back to default settings if config manager is not available
+        return settings
