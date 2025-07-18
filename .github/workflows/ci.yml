@@ -6,8 +6,7 @@ name: Flujo CI
 on:
   push:
     branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+  # Note: Pull requests are handled by pr-checks.yml for faster feedback
 
 # Cancel any in-progress jobs for the same PR/branch when new commits are pushed.
 concurrency:
@@ -40,16 +39,16 @@ jobs:
         run: make typecheck
 
   # ----------------------------------------------------------------------------
-  # Job 2: Run Tests on a Matrix of Python Versions
+  # Job 2: Run Fast Tests (Parallel) - Quick Feedback
   # ----------------------------------------------------------------------------
-  test:
-    name: Test on Python ${{ matrix.python-version }}
+  test-fast:
+    name: Fast Tests (Parallel)
     runs-on: ubuntu-latest
     needs: lint-and-typecheck
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
-        python-version: ["3.9", "3.10", "3.11", "3.12"]
+        python-version: ["3.11", "3.12"]
     env:
       FLUJO_CLI_PERF_THRESHOLD: "0.2"
       FLUJO_CV_THRESHOLD: "1.0"
@@ -70,7 +69,91 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras
 
-      - name: Run tests with coverage
+      - name: Run fast tests with coverage
+        run: |
+          # Run fast tests in parallel with coverage
+          uv run coverage run --source=flujo --parallel-mode -m pytest tests/ -m "not slow and not serial and not benchmark" -n auto
+
+      - name: Store fast tests coverage file
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-fast-${{ matrix.python-version }}
+          path: .coverage.*
+
+  # ----------------------------------------------------------------------------
+  # Job 3: Run Slow Tests (Serial) - Comprehensive Testing
+  # ----------------------------------------------------------------------------
+  test-slow:
+    name: Slow Tests (Serial)
+    runs-on: ubuntu-latest
+    needs: lint-and-typecheck
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11"]  # Only run slow tests on one Python version
+    env:
+      FLUJO_CLI_PERF_THRESHOLD: "0.2"
+      FLUJO_CV_THRESHOLD: "1.0"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v1
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Run slow tests with coverage
+        run: |
+          # Run slow tests serially with coverage
+          uv run coverage run --source=flujo --parallel-mode -m pytest tests/ -m "slow or serial or benchmark"
+
+      - name: Store slow tests coverage file
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-slow-${{ matrix.python-version }}
+          path: .coverage.*
+
+  # ----------------------------------------------------------------------------
+  # Job 4: Run Full Test Suite (Legacy) - For Comprehensive Coverage
+  # ----------------------------------------------------------------------------
+  test-full:
+    name: Full Test Suite
+    runs-on: ubuntu-latest
+    needs: lint-and-typecheck
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.10"]  # Run full suite on older Python versions
+    env:
+      FLUJO_CLI_PERF_THRESHOLD: "0.2"
+      FLUJO_CV_THRESHOLD: "1.0"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v1
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Run all tests with coverage
         run: |
           # Run non-SQLite tests with parallel mode for better performance
           uv run coverage run --source=flujo --parallel-mode -m pytest tests/ -k "not sqlite and not test_sqlite"
@@ -78,19 +161,19 @@ jobs:
           # Run SQLite tests separately without parallel mode to avoid bus errors
           uv run coverage run --source=flujo --append -m pytest tests/ -k "sqlite or test_sqlite"
 
-      - name: Store coverage file
+      - name: Store full test coverage file
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-data-${{ matrix.python-version }}
+          name: coverage-full-${{ matrix.python-version }}
           path: .coverage.*
 
   # ----------------------------------------------------------------------------
-  # Job 3: Combine and Report Code Coverage
+  # Job 5: Combine and Report Code Coverage
   # ----------------------------------------------------------------------------
   coverage:
     name: Report Coverage
     runs-on: ubuntu-latest
-    needs: test
+    needs: [test-fast, test-slow, test-full]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -112,7 +195,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: .
-          pattern: coverage-data-*
+          pattern: coverage-*
           merge-multiple: true
 
       - name: Combine coverage reports and check threshold
@@ -133,7 +216,45 @@ jobs:
           path: htmlcov
 
   # ----------------------------------------------------------------------------
-  # Job 4: Live API Tests (Optional but Recommended)
+  # Job 6: Performance Analysis (Optional)
+  # ----------------------------------------------------------------------------
+  test-performance:
+    name: Performance Analysis
+    runs-on: ubuntu-latest
+    needs: lint-and-typecheck
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11"]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v1
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Run performance analysis
+        run: make test-perf
+
+      - name: Upload performance report
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-report
+          path: test_performance_report.json
+
+  # ----------------------------------------------------------------------------
+  # Job 7: Live API Tests (Optional but Recommended)
   # ----------------------------------------------------------------------------
   # This job is a placeholder for a critical testing practice.
   # To enable it, you would need to:

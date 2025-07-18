@@ -197,6 +197,7 @@ if __name__ == "__main__":
 
 - **[Full Documentation & Guides](docs/index.md):** The best place to start.
 - **[Test Performance Guide](docs/test_performance_guide.md):** Optimize your test suite for faster development feedback.
+- **[CI Performance Guide](docs/ci_performance_guide.md):** Understand the optimized CI/CD pipeline for faster GitHub Actions.
 - **[Examples Directory](examples/):** See more patterns in action.
 - **[Contributing Guide](CONTRIBUTING.md):** Join us in building the future of reliable AI systems.
 
