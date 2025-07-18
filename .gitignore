@@ -157,3 +157,8 @@ docs/_build/
 site/
 /sbom.json
 uv.lock
+
+# SQLite database files
+*.db-shm
+*.db-wal
+flujo_ops.db*
