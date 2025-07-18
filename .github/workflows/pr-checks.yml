@@ -1,0 +1,205 @@
+# .github/workflows/pr-checks.yml
+# Optimized workflow for pull request checks with fast feedback
+
+name: PR Checks (Fast)
+
+on:
+  pull_request:
+    branches: [ "main" ]
+
+# Cancel any in-progress jobs for the same PR when new commits are pushed.
+concurrency:
+  group: pr-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ----------------------------------------------------------------------------
+  # Job 1: Quick Quality Checks
+  # ----------------------------------------------------------------------------
+  quality-checks:
+    name: Quality Checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v1
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Run Linter
+        run: make lint
+
+      - name: Run Type Checker
+        run: make typecheck
+
+  # ----------------------------------------------------------------------------
+  # Job 2: Fast Tests (Primary Feedback)
+  # ----------------------------------------------------------------------------
+  test-fast:
+    name: Fast Tests
+    runs-on: ubuntu-latest
+    needs: quality-checks
+    strategy:
+      fail-fast: true
+      matrix:
+        python-version: ["3.11"]  # Single Python version for speed
+    env:
+      CI: "true"
+      FLUJO_CLI_PERF_THRESHOLD: "0.2"
+      FLUJO_CV_THRESHOLD: "1.0"
+      FLUJO_CI_DB_SIZE: "500"  # Reduced database size for faster PR feedback
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v1
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Run fast tests with coverage
+        run: |
+          # Run fast tests in parallel with coverage
+          uv run coverage run --source=flujo --parallel-mode -m pytest tests/ -m "not slow and not serial and not benchmark" -n auto
+
+      - name: Store coverage file
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-fast-pr
+          path: .coverage.*
+
+  # ----------------------------------------------------------------------------
+  # Job 3: Unit Tests Only (Ultra Fast)
+  # ----------------------------------------------------------------------------
+  test-unit:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: quality-checks
+    strategy:
+      fail-fast: true
+      matrix:
+        python-version: ["3.12"]  # Latest Python for unit tests
+    env:
+      CI: "true"
+      FLUJO_CLI_PERF_THRESHOLD: "0.2"
+      FLUJO_CV_THRESHOLD: "1.0"
+      FLUJO_CI_DB_SIZE: "250"  # Minimal database size for ultra-fast unit tests
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v1
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Run unit tests only
+        run: |
+          # Run unit tests only for ultra-fast feedback
+          uv run pytest tests/unit/ -n auto
+
+  # ----------------------------------------------------------------------------
+  # Job 4: Security Tests (Critical)
+  # ----------------------------------------------------------------------------
+  test-security:
+    name: Security Tests
+    runs-on: ubuntu-latest
+    needs: quality-checks
+    strategy:
+      fail-fast: true
+      matrix:
+        python-version: ["3.11"]
+    env:
+      CI: "true"
+      FLUJO_CLI_PERF_THRESHOLD: "0.2"
+      FLUJO_CV_THRESHOLD: "1.0"
+      FLUJO_CI_DB_SIZE: "250"  # Minimal database size for security tests
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v1
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Run security tests
+        run: |
+          # Run security tests
+          uv run pytest tests/security/
+
+  # ----------------------------------------------------------------------------
+  # Job 5: Coverage Report (Combined)
+  # ----------------------------------------------------------------------------
+  coverage:
+    name: Coverage Report
+    runs-on: ubuntu-latest
+    needs: [test-fast]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v1
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Download coverage data
+        uses: actions/download-artifact@v4
+        with:
+          path: .
+          pattern: coverage-fast-pr
+          merge-multiple: true
+
+      - name: Generate coverage report
+        run: |
+          if ls .coverage.* 1> /dev/null 2>&1; then
+            uv run coverage combine
+            uv run coverage report --fail-under=90
+            uv run coverage html
+          else
+            echo "No coverage data to report."
+          fi
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report-pr
+          path: htmlcov

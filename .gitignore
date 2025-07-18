@@ -160,3 +160,6 @@ site/
 # uv dependency lock file - not committed to ensure reproducible builds
 # across different platforms and Python versions
 uv.lock
+
+# Test performance reports (ephemeral data)
+test_performance_report.json

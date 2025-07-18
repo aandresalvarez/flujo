@@ -23,6 +23,11 @@ def load_backend_from_config() -> StateBackend:
 
     parsed = urlparse(uri)
     if parsed.scheme.startswith("sqlite"):
-        path = Path(parsed.path or "flujo_ops.db")
+        # Handle absolute paths correctly
+        # sqlite:///path -> path should be /path, not //path
+        path_str = parsed.path
+        if path_str.startswith("//"):
+            path_str = path_str[1:]  # Remove the extra slash
+        path = Path(path_str or "flujo_ops.db")
         return SQLiteBackend(path)
     raise ValueError(f"Unsupported backend URI: {uri}")

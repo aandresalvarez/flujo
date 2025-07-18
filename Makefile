@@ -64,12 +64,59 @@ test: .uv ## Run all tests
 	@echo "🧪 Running tests..."
 	CI=1 uv run pytest tests/
 
+.PHONY: test-fast
+test-fast: .uv ## Run fast tests in parallel (excludes slow, serial, and benchmark tests)
+	@echo "⚡ Running fast tests in parallel..."
+	CI=1 uv run pytest tests/ -m "not slow and not serial and not benchmark" -n auto
+
+.PHONY: test-slow
+test-slow: .uv ## Run slow tests serially
+	@echo "🐌 Running slow tests serially..."
+	CI=1 uv run pytest tests/ -m "slow or serial or benchmark"
+
+.PHONY: test-parallel
+test-parallel: .uv ## Run all tests in parallel (excludes serial tests)
+	@echo "🚀 Running tests in parallel..."
+	CI=1 uv run pytest tests/ -m "not serial" -n auto
+
+.PHONY: test-unit
+test-unit: .uv ## Run unit tests only
+	@echo "🧪 Running unit tests..."
+	CI=1 uv run pytest tests/unit/
+
+.PHONY: test-integration
+test-integration: .uv ## Run integration tests only
+	@echo "🔗 Running integration tests..."
+	CI=1 uv run pytest tests/integration/
+
+.PHONY: test-bench
+test-bench: .uv ## Run benchmark tests only
+	@echo "📊 Running benchmark tests..."
+	CI=1 uv run pytest tests/benchmarks/
+
+.PHONY: test-e2e
+test-e2e: .uv ## Run end-to-end tests only
+	@echo "🌐 Running end-to-end tests..."
+	CI=1 uv run pytest tests/e2e/
+
 .PHONY: testcov
 testcov: .uv ## Run tests and generate an HTML coverage report
 	@echo "🧪 Running tests with coverage..."
 	@uv run coverage run --source=flujo -m pytest tests/
 	@uv run coverage html
 	@echo "\n✅ Coverage report generated in 'htmlcov/'. Open htmlcov/index.html to view."
+
+.PHONY: testcov-fast
+testcov-fast: .uv ## Run fast tests with coverage in parallel
+	@echo "⚡ Running fast tests with coverage in parallel..."
+	@uv run coverage run --source=flujo --parallel-mode -m pytest tests/ -m "not slow and not serial and not benchmark" -n auto
+	@uv run coverage html
+	@echo "\n✅ Coverage report generated in 'htmlcov/'. Open htmlcov/index.html to view."
+
+.PHONY: test-perf
+test-perf: .uv ## Run test performance analysis
+	@echo "📊 Analyzing test performance..."
+	@uv run python tests/performance_monitor.py
 
 
 # ------------------------------------------------------------------------------
