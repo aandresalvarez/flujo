@@ -82,7 +82,7 @@ async def test_sqlite_backend_handles_corrupted_database(tmp_path: Path) -> None
         assert "file is not a database" in str(e) or "database corruption" in str(e)
 
         # Verify that the corrupted file was moved to a backup
-        backup_files = list(db_path.parent.glob("corrupted.db.corrupt.*"))
+        backup_files = list(db_path.parent.glob(f"{db_path.name}.corrupt.*"))
         assert len(backup_files) > 0, "Corrupted file should have been moved to backup"
 
 

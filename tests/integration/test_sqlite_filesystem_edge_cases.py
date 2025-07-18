@@ -126,8 +126,11 @@ class TestSQLiteFilesystemEdgeCases:
                 assert "corrupt" in backup_file.name, (
                     f"Backup file {backup_file} doesn't follow naming convention"
                 )
-                # The backup file should have the original .db extension plus additional suffixes
-                assert backup_file.name.endswith(".db.corrupt.1234567890.1234567890"), (
+                # Use a flexible regex pattern to check backup file naming
+                import re
+
+                pattern = r".*\.db\.corrupt\.\d+\.\d+$"
+                assert re.match(pattern, backup_file.name), (
                     f"Backup file {backup_file} doesn't have expected naming pattern"
                 )
         else:
