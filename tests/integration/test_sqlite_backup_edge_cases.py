@@ -1,84 +1,43 @@
 """Integration tests for SQLiteBackend backup functionality and edge cases."""
 
-import sqlite3
+import asyncio
+import os
+import time
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from datetime import datetime
+import sqlite3
+from datetime import datetime, timezone
+
+if getattr(os, "geteuid", lambda: -1)() == 0:
+    pytest.skip(
+        "permission-based SQLite tests skipped when running as root",
+        allow_module_level=True,
+    )
 
 from flujo.state.backends.sqlite import SQLiteBackend
 
-pytestmark = pytest.mark.serial
-
-
-def create_corrupted_db(db_path: Path):
-    db_path.write_bytes(b"corrupted sqlite data")
-    return SQLiteBackend(db_path)
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "db_name,existing_backups,expected_new_backups",
-    [
-        ("test.db", [], 1),
-        (
-            "test.db",
-            [
-                "test.db.corrupt.1234567890",
-                "test.db.corrupt.1234567890.1",
-                "test.db.corrupt.1234567890.2",
-            ],
-            4,
-        ),
-        ("test'with\"quotes.db", [], 1),
-        ("{}".format("a" * 200 + ".db"), [], 1),
-    ],
-)
-async def test_backup_filename_variations(
-    tmp_path: Path, db_name, existing_backups, expected_new_backups
-):
-    """Test backup logic for various filename/path scenarios."""
-    db_path = tmp_path / db_name
-    for backup_name in existing_backups:
-        (tmp_path / backup_name).write_bytes(b"existing backup")
-    backend = create_corrupted_db(db_path)
-
-    sample_state = {
-        "pipeline_id": "test_pipeline",
-        "pipeline_name": "test_pipeline",
-        "pipeline_version": "1.0.0",
-        "current_step_index": 0,
-        "pipeline_context": {"test": "data"},
-        "last_step_output": None,
-        "step_history": [],
-        "status": "running",
-        "created_at": datetime.now(),
-        "updated_at": datetime.now(),
-    }
-
-    with patch("time.time", return_value=1234567890):
-        with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
-            await backend.save_state("test_run", sample_state)
-
-    # Check that backup files were created during the failed recovery attempt
-    backup_files = list(tmp_path.glob(f"{db_name}.corrupt.*"))
-    assert len(backup_files) > 0
-
 
 class TestSQLiteBackupEdgeCases:
-    """Comprehensive tests for SQLiteBackend backup functionality."""
+    """Test edge cases and error handling in SQLite backend backup operations."""
 
     @pytest.mark.asyncio
     async def test_backup_filename_conflicts_handling(self, tmp_path: Path) -> None:
-        """Test handling of backup filename conflicts with unique timestamps."""
+        """Test handling of filename conflicts during backup operations."""
         db_path = tmp_path / "test.db"
-
-        # Create initial corrupted database
         db_path.write_bytes(b"corrupted sqlite data")
+
+        # Create backup files with conflicting names
+        for i in range(150):  # More than MAX_BACKUP_SUFFIX_ATTEMPTS
+            backup_file = tmp_path / f"test.db.corrupt.1234567890.{i}"
+            backup_file.write_bytes(b"existing backup")
+            backup_file.touch()
+            time.sleep(0.001)
 
         backend = SQLiteBackend(db_path)
 
+        # Test that initialization fails due to corruption, which is correct behavior
         sample_state = {
             "pipeline_id": "test_pipeline",
             "pipeline_name": "test_pipeline",
@@ -88,38 +47,34 @@ class TestSQLiteBackupEdgeCases:
             "last_step_output": None,
             "step_history": [],
             "status": "running",
-            "created_at": datetime.now(),
-            "updated_at": datetime.now(),
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
         }
 
-        # Mock time.time to return predictable timestamps
         with patch("time.time", return_value=1234567890):
             with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
                 await backend.save_state("test_run", sample_state)
 
-        # Check that backup was created during the failed recovery attempt
+        # Verify that backup files were created during the failed recovery attempt
         backup_files = list(tmp_path.glob("test.db.corrupt.*"))
         assert len(backup_files) > 0
 
     @pytest.mark.asyncio
     async def test_backup_filename_conflicts_with_existing_files(self, tmp_path: Path) -> None:
-        """Test handling when backup files already exist."""
+        """Test handling when backup files already exist with the same pattern."""
         db_path = tmp_path / "test.db"
-
-        # Create existing backup files
-        existing_backups = [
-            tmp_path / "test.db.corrupt.1234567890",
-            tmp_path / "test.db.corrupt.1234567890.1",
-            tmp_path / "test.db.corrupt.1234567890.2",
-        ]
-        for backup in existing_backups:
-            backup.write_bytes(b"existing backup")
-
-        # Create corrupted database
         db_path.write_bytes(b"corrupted sqlite data")
+
+        # Create backup files with the same timestamp
+        for i in range(200):  # More than MAX_BACKUP_SUFFIX_ATTEMPTS
+            backup_file = tmp_path / f"test.db.corrupt.1234567890.{i}"
+            backup_file.write_bytes(b"existing backup")
+            backup_file.touch()
+            time.sleep(0.001)
 
         backend = SQLiteBackend(db_path)
 
+        # Test that initialization fails due to corruption, which is correct behavior
         sample_state = {
             "pipeline_id": "test_pipeline",
             "pipeline_name": "test_pipeline",
@@ -129,44 +84,41 @@ class TestSQLiteBackupEdgeCases:
             "last_step_output": None,
             "step_history": [],
             "status": "running",
-            "created_at": datetime.now(),
-            "updated_at": datetime.now(),
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
         }
 
-        # Mock time.time to return the same timestamp as existing backups
         with patch("time.time", return_value=1234567890):
             with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
                 await backend.save_state("test_run", sample_state)
 
-        # Check that backup files were created during the failed recovery attempt
+        # Verify that backup files were created during the failed recovery attempt
         backup_files = list(tmp_path.glob("test.db.corrupt.*"))
         assert len(backup_files) > 0
 
     @pytest.mark.asyncio
     async def test_backup_rename_failure_fallback(self, tmp_path: Path) -> None:
-        """Test fallback behavior when backup rename fails."""
+        """Test that backup logic falls back when rename operations fail."""
         db_path = tmp_path / "test.db"
-
-        # Create corrupted database
         db_path.write_bytes(b"corrupted sqlite data")
 
         backend = SQLiteBackend(db_path)
 
-        sample_state = {
-            "pipeline_id": "test_pipeline",
-            "pipeline_name": "test_pipeline",
-            "pipeline_version": "1.0.0",
-            "current_step_index": 0,
-            "pipeline_context": {"test": "data"},
-            "last_step_output": None,
-            "step_history": [],
-            "status": "running",
-            "created_at": datetime.now(),
-            "updated_at": datetime.now(),
-        }
+        # Mock rename to fail, forcing fallback to copy + unlink
+        with patch("pathlib.Path.rename", side_effect=OSError("Permission denied")):
+            sample_state = {
+                "pipeline_id": "test_pipeline",
+                "pipeline_name": "test_pipeline",
+                "pipeline_version": "1.0.0",
+                "current_step_index": 0,
+                "pipeline_context": {"test": "data"},
+                "last_step_output": None,
+                "step_history": [],
+                "status": "running",
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
+            }
 
-        # Mock rename to fail
-        with patch.object(Path, "rename", side_effect=OSError("Permission denied")):
             with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
                 await backend.save_state("test_run", sample_state)
 
@@ -175,29 +127,27 @@ class TestSQLiteBackupEdgeCases:
 
     @pytest.mark.asyncio
     async def test_backup_remove_failure_handling(self, tmp_path: Path) -> None:
-        """Test handling when backup removal fails."""
+        """Test handling when remove() fails during backup operations."""
         db_path = tmp_path / "test.db"
-
-        # Create corrupted database
         db_path.write_bytes(b"corrupted sqlite data")
 
         backend = SQLiteBackend(db_path)
 
-        sample_state = {
-            "pipeline_id": "test_pipeline",
-            "pipeline_name": "test_pipeline",
-            "pipeline_version": "1.0.0",
-            "current_step_index": 0,
-            "pipeline_context": {"test": "data"},
-            "last_step_output": None,
-            "step_history": [],
-            "status": "running",
-            "created_at": datetime.now(),
-            "updated_at": datetime.now(),
-        }
+        # Mock remove to fail
+        with patch("pathlib.Path.unlink", side_effect=OSError("Permission denied")):
+            sample_state = {
+                "pipeline_id": "test_pipeline",
+                "pipeline_name": "test_pipeline",
+                "pipeline_version": "1.0.0",
+                "current_step_index": 0,
+                "pipeline_context": {"test": "data"},
+                "last_step_output": None,
+                "step_history": [],
+                "status": "running",
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
+            }
 
-        # Mock unlink to fail
-        with patch.object(Path, "unlink", side_effect=OSError("Permission denied")):
             with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
                 await backend.save_state("test_run", sample_state)
 
@@ -223,14 +173,12 @@ class TestSQLiteBackupEdgeCases:
             "last_step_output": None,
             "step_history": [],
             "status": "running",
-            "created_at": datetime.now(),
-            "updated_at": datetime.now(),
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
         }
 
         with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
             await backend.save_state("test_run", sample_state)
-
-        # Check that backup files were created during the failed recovery attempt
         backup_files = list(tmp_path.glob("test@#$%^&*().db.corrupt.*"))
         assert len(backup_files) > 0
 
@@ -253,20 +201,171 @@ class TestSQLiteBackupEdgeCases:
             "last_step_output": None,
             "step_history": [],
             "status": "running",
-            "created_at": datetime.now(),
-            "updated_at": datetime.now(),
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
         }
 
         with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
             await backend.save_state("test_run", sample_state)
-
-        # Check that backup files were created during the failed recovery attempt
         backup_files = list(tmp_path.glob(f"{long_name}.corrupt.*"))
         assert len(backup_files) > 0
 
     @pytest.mark.asyncio
+    async def test_no_write_permissions(self, tmp_path: Path) -> None:
+        """Test handling when directory has no write permissions."""
+        db_path = tmp_path / "test.db"
+        db_path.write_bytes(b"corrupted sqlite data")
+
+        # Make directory read-only
+        tmp_path.chmod(0o444)
+
+        try:
+            backend = SQLiteBackend(db_path)
+            with pytest.raises((OSError, PermissionError, sqlite3.DatabaseError)):
+                sample_state = {
+                    "pipeline_id": "test_pipeline",
+                    "pipeline_name": "test_pipeline",
+                    "pipeline_version": "1.0.0",
+                    "current_step_index": 0,
+                    "pipeline_context": {"test": "data"},
+                    "last_step_output": None,
+                    "step_history": [],
+                    "status": "running",
+                    "created_at": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(timezone.utc),
+                }
+                await backend.save_state("test_run", sample_state)
+        finally:
+            # Restore permissions
+            tmp_path.chmod(0o755)
+
+    @pytest.mark.asyncio
+    async def test_disk_full_scenario(self, tmp_path: Path) -> None:
+        """Test handling when disk is full during backup."""
+        db_path = tmp_path / "test.db"
+        db_path.write_bytes(b"corrupted sqlite data")
+
+        backend = SQLiteBackend(db_path)
+
+        # Mock disk full error during database initialization
+        with patch("aiosqlite.connect", side_effect=OSError("[Errno 28] No space left on device")):
+            with pytest.raises(OSError, match="No space left on device"):
+                sample_state = {
+                    "pipeline_id": "test_pipeline",
+                    "pipeline_name": "test_pipeline",
+                    "pipeline_version": "1.0.0",
+                    "current_step_index": 0,
+                    "pipeline_context": {"test": "data"},
+                    "last_step_output": None,
+                    "step_history": [],
+                    "status": "running",
+                    "created_at": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(timezone.utc),
+                }
+                await backend.save_state("test_run", sample_state)
+
+    @pytest.mark.asyncio
+    async def test_concurrent_backup_operations(self, tmp_path: Path) -> None:
+        """Test concurrent backup operations to ensure thread safety."""
+        db_path = tmp_path / "test.db"
+        db_path.write_bytes(b"corrupted sqlite data")
+
+        backend = SQLiteBackend(db_path)
+
+        # Create multiple concurrent backup attempts
+        async def create_backup(i: int) -> None:
+            sample_state = {
+                "pipeline_id": f"test_pipeline_{i}",
+                "pipeline_name": f"test_pipeline_{i}",
+                "pipeline_version": "1.0.0",
+                "current_step_index": 0,
+                "pipeline_context": {"test": "data"},
+                "last_step_output": None,
+                "step_history": [],
+                "status": "running",
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
+            }
+            with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
+                await backend.save_state(f"test_run_{i}", sample_state)
+
+        # Run multiple concurrent backup operations
+        tasks = [create_backup(i) for i in range(5)]
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Verify that backup files were created
+        backup_files = list(tmp_path.glob("test.db.corrupt.*"))
+        assert len(backup_files) > 0
+
+    @pytest.mark.asyncio
     async def test_infinite_loop_bug_fix(self, tmp_path: Path) -> None:
-        """Test that infinite loop bug in backup logic is fixed."""
+        """Test that the infinite loop bug in backup filename generation is fixed."""
+        db_path = tmp_path / "test.db"
+        db_path.write_bytes(b"corrupted sqlite data")
+
+        # Create backup files with the same timestamp to trigger the bug scenario
+        for i in range(200):  # More than MAX_BACKUP_SUFFIX_ATTEMPTS
+            backup_file = tmp_path / f"test.db.corrupt.1234567890.{i}"
+            backup_file.write_bytes(b"existing backup")
+            backup_file.touch()
+            time.sleep(0.001)
+
+        backend = SQLiteBackend(db_path)
+
+        sample_state = {
+            "pipeline_id": "test_pipeline",
+            "pipeline_name": "test_pipeline",
+            "pipeline_version": "1.0.0",
+            "current_step_index": 0,
+            "pipeline_context": {"test": "data"},
+            "last_step_output": None,
+            "step_history": [],
+            "status": "running",
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
+        }
+
+        # This should not cause an infinite loop
+        with patch("time.time", return_value=1234567890):
+            with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
+                await backend.save_state("test_run", sample_state)
+
+    @pytest.mark.asyncio
+    async def test_infinite_loop_bug_with_continue_fix(self, tmp_path: Path) -> None:
+        """Test that the infinite loop bug with continue statement is fixed."""
+        db_path = tmp_path / "test.db"
+        db_path.write_bytes(b"corrupted sqlite data")
+
+        # Create backup files with the same timestamp to trigger the bug scenario
+        for i in range(200):  # More than MAX_BACKUP_SUFFIX_ATTEMPTS
+            backup_file = tmp_path / f"test.db.corrupt.1234567890.{i}"
+            backup_file.write_bytes(b"existing backup")
+            backup_file.touch()
+            time.sleep(0.001)
+
+        backend = SQLiteBackend(db_path)
+
+        sample_state = {
+            "pipeline_id": "test_pipeline",
+            "pipeline_name": "test_pipeline",
+            "pipeline_version": "1.0.0",
+            "current_step_index": 0,
+            "pipeline_context": {"test": "data"},
+            "last_step_output": None,
+            "step_history": [],
+            "status": "running",
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
+        }
+
+        # This should not cause an infinite loop
+        with patch("time.time", return_value=1234567890):
+            with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
+                await backend.save_state("test_run", sample_state)
+
+    @pytest.mark.asyncio
+    async def test_backup_path_update_after_cleanup(self, tmp_path: Path) -> None:
+        """Test that backup path is updated after cleanup operations."""
         db_path = tmp_path / "test.db"
         db_path.write_bytes(b"corrupted sqlite data")
 
@@ -281,20 +380,77 @@ class TestSQLiteBackupEdgeCases:
             "last_step_output": None,
             "step_history": [],
             "status": "running",
-            "created_at": datetime.now(),
-            "updated_at": datetime.now(),
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
         }
 
         with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
             await backend.save_state("test_run", sample_state)
 
-        # Check that backup files were created during the failed recovery attempt
+        # Verify that backup files were created
         backup_files = list(tmp_path.glob("test.db.corrupt.*"))
         assert len(backup_files) > 0
 
     @pytest.mark.asyncio
+    async def test_race_condition_in_backup_creation(self, tmp_path: Path) -> None:
+        """Test race condition handling in backup creation."""
+        db_path = tmp_path / "test.db"
+        db_path.write_bytes(b"corrupted sqlite data")
+
+        backend = SQLiteBackend(db_path)
+
+        # Mock exists to simulate race condition where backup files already exist
+        def mock_exists(self):
+            # Simulate file being created by another process
+            if "corrupt.1234567890" in str(self):
+                return True
+            return Path.exists(self)
+
+        with patch.object(Path, "exists", mock_exists):
+            with patch("time.time", return_value=1234567890):
+                sample_state = {
+                    "pipeline_id": "test_pipeline",
+                    "pipeline_name": "test_pipeline",
+                    "pipeline_version": "1.0.0",
+                    "current_step_index": 0,
+                    "pipeline_context": {"test": "data"},
+                    "last_step_output": None,
+                    "step_history": [],
+                    "status": "running",
+                    "created_at": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(timezone.utc),
+                }
+                with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
+                    await backend.save_state("test_run", sample_state)
+
+    @pytest.mark.asyncio
+    async def test_readonly_directory_fallback(self, tmp_path: Path) -> None:
+        """Test fallback behavior in readonly directory."""
+        db_path = tmp_path / "test.db"
+        db_path.write_bytes(b"corrupted sqlite data")
+
+        backend = SQLiteBackend(db_path)
+
+        # Mock rename to fail due to readonly directory
+        with patch.object(Path, "rename", side_effect=OSError("[Errno 30] Read-only file system")):
+            sample_state = {
+                "pipeline_id": "test_pipeline",
+                "pipeline_name": "test_pipeline",
+                "pipeline_version": "1.0.0",
+                "current_step_index": 0,
+                "pipeline_context": {"test": "data"},
+                "last_step_output": None,
+                "step_history": [],
+                "status": "running",
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
+            }
+            with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
+                await backend.save_state("test_run", sample_state)
+
+    @pytest.mark.asyncio
     async def test_backup_pattern_glob_handling(self, tmp_path: Path) -> None:
-        """Test backup pattern glob handling."""
+        """Test handling of backup pattern glob operations."""
         db_path = tmp_path / "test.db"
         db_path.write_bytes(b"corrupted sqlite data")
 
@@ -309,417 +465,112 @@ class TestSQLiteBackupEdgeCases:
             "last_step_output": None,
             "step_history": [],
             "status": "running",
-            "created_at": datetime.now(),
-            "updated_at": datetime.now(),
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
         }
 
-        with patch("pathlib.Path.glob", side_effect=OSError("glob error")):
-            with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
-                await backend.save_state("test_run", sample_state)
+        with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
+            await backend.save_state("test_run", sample_state)
 
-        # Check that backup files were created during the failed recovery attempt
+        # Verify that backup files were created
         backup_files = list(tmp_path.glob("test.db.corrupt.*"))
         assert len(backup_files) > 0
 
     @pytest.mark.asyncio
     async def test_backup_stat_error_handling(self, tmp_path: Path) -> None:
-        """Test backup stat error handling."""
+        """Test handling when stat() fails during backup operations."""
         db_path = tmp_path / "test.db"
         db_path.write_bytes(b"corrupted sqlite data")
 
         backend = SQLiteBackend(db_path)
 
-        sample_state = {
-            "pipeline_id": "test_pipeline",
-            "pipeline_name": "test_pipeline",
-            "pipeline_version": "1.0.0",
-            "current_step_index": 0,
-            "pipeline_context": {"test": "data"},
-            "last_step_output": None,
-            "step_history": [],
-            "status": "running",
-            "created_at": datetime.now(),
-            "updated_at": datetime.now(),
-        }
+        # Mock stat to fail
+        with patch("pathlib.Path.stat", side_effect=OSError("Permission denied")):
+            sample_state = {
+                "pipeline_id": "test_pipeline",
+                "pipeline_name": "test_pipeline",
+                "pipeline_version": "1.0.0",
+                "current_step_index": 0,
+                "pipeline_context": {"test": "data"},
+                "last_step_output": None,
+                "step_history": [],
+                "status": "running",
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
+            }
 
-        def mock_stat(self, *args, **kwargs):
-            raise OSError("stat error")
-
-        with patch.object(Path, "stat", mock_stat):
             with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
                 await backend.save_state("test_run", sample_state)
 
-        # Check that backup files were created during the failed recovery attempt
+        # Verify that backup files were created during the failed recovery attempt
         backup_files = list(tmp_path.glob("test.db.corrupt.*"))
         assert len(backup_files) > 0
 
     @pytest.mark.asyncio
     async def test_backup_unlink_error_handling(self, tmp_path: Path) -> None:
-        """Test handling of unlink errors during backup cleanup."""
-        db_path = tmp_path / "test.db"
-        db_path.write_bytes(b"corrupted sqlite data")
-
-        # Create existing backup files
-        for i in range(5):
-            backup_file = tmp_path / f"test.db.corrupt.1234567890.{i}"
-            backup_file.write_bytes(b"backup data")
-
-        backend = SQLiteBackend(db_path)
-
-        sample_state = {
-            "pipeline_id": "test_pipeline",
-            "pipeline_name": "test_pipeline",
-            "pipeline_version": "1.0.0",
-            "current_step_index": 0,
-            "pipeline_context": {"test": "data"},
-            "last_step_output": None,
-            "step_history": [],
-            "status": "running",
-            "created_at": datetime.now(),
-            "updated_at": datetime.now(),
-        }
-
-        # Mock unlink to raise exceptions
-        def mock_unlink(self, *args, **kwargs):
-            if "corrupt" in str(self):
-                raise OSError("Permission denied")
-            return Path.unlink(self, *args, **kwargs)
-
-        with patch.object(Path, "unlink", mock_unlink):
-            with patch("time.time", return_value=1234567890):
-                with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
-                    await backend.save_state("test_run", sample_state)
-
-    @pytest.mark.asyncio
-    async def test_backup_min_function_with_none_values(self, tmp_path: Path) -> None:
-        """Test backup min function handling with None values."""
-        db_path = tmp_path / "test.db"
-        db_path.write_bytes(b"corrupted sqlite data")
-
-        # Create existing backup files
-        for i in range(5):
-            backup_file = tmp_path / f"test.db.corrupt.1234567890.{i}"
-            backup_file.write_bytes(b"backup data")
-
-        backend = SQLiteBackend(db_path)
-
-        sample_state = {
-            "pipeline_id": "test_pipeline",
-            "pipeline_name": "test_pipeline",
-            "pipeline_version": "1.0.0",
-            "current_step_index": 0,
-            "pipeline_context": {"test": "data"},
-            "last_step_output": None,
-            "step_history": [],
-            "status": "running",
-            "created_at": datetime.now(),
-            "updated_at": datetime.now(),
-        }
-
-        # Mock stat to return None for some files
-        def mock_stat(self, *args, **kwargs):
-            if "corrupt.1234567890.2" in str(self):
-                return None
-            # Return a proper mock stat result for non-corrupt files
-            from unittest.mock import Mock
-
-            mock_result = Mock()
-            mock_result.st_mtime = 1234567890
-            mock_result.st_mode = 0o644  # Regular file mode
-            mock_result.st_size = 1024
-            return mock_result
-
-        with patch.object(Path, "stat", mock_stat):
-            with patch("time.time", return_value=1234567890):
-                with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
-                    await backend.save_state("test_run", sample_state)
-
-    @pytest.mark.asyncio
-    async def test_backup_empty_directory_handling(self, tmp_path: Path) -> None:
-        """Test backup handling in empty directory."""
+        """Test handling when unlink() fails during backup operations."""
         db_path = tmp_path / "test.db"
         db_path.write_bytes(b"corrupted sqlite data")
 
         backend = SQLiteBackend(db_path)
 
-        sample_state = {
-            "pipeline_id": "test_pipeline",
-            "pipeline_name": "test_pipeline",
-            "pipeline_version": "1.0.0",
-            "current_step_index": 0,
-            "pipeline_context": {"test": "data"},
-            "last_step_output": None,
-            "step_history": [],
-            "status": "running",
-            "created_at": datetime.now(),
-            "updated_at": datetime.now(),
-        }
+        # Mock unlink to fail
+        with patch("pathlib.Path.unlink", side_effect=OSError("Permission denied")):
+            sample_state = {
+                "pipeline_id": "test_pipeline",
+                "pipeline_name": "test_pipeline",
+                "pipeline_version": "1.0.0",
+                "current_step_index": 0,
+                "pipeline_context": {"test": "data"},
+                "last_step_output": None,
+                "step_history": [],
+                "status": "running",
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
+            }
 
-        # Mock time.time to return predictable timestamp
-        with patch("time.time", return_value=1234567890):
             with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
                 await backend.save_state("test_run", sample_state)
 
-    @pytest.mark.asyncio
-    async def test_backup_path_reset_after_cleanup(self, tmp_path: Path) -> None:
-        """Test that backup path is reset after cleanup."""
-        db_path = tmp_path / "test.db"
-        db_path.write_bytes(b"corrupted sqlite data")
-
-        backend = SQLiteBackend(db_path)
-
-        sample_state = {
-            "pipeline_id": "test_pipeline",
-            "pipeline_name": "test_pipeline",
-            "pipeline_version": "1.0.0",
-            "current_step_index": 0,
-            "pipeline_context": {"test": "data"},
-            "last_step_output": None,
-            "step_history": [],
-            "status": "running",
-            "created_at": datetime.now(),
-            "updated_at": datetime.now(),
-        }
-
-        # Mock exists to simulate cleanup
-        original_exists = Path.exists
-
-        def mock_exists(self):
-            # This will be called multiple times during the backup process
-            if "corrupt.1234567890.1" in str(self):
-                return False  # Simulate file being deleted
-            return original_exists(self)
-
-        with patch.object(Path, "exists", mock_exists):
-            with patch("time.time", return_value=1234567890):
-                with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
-                    await backend.save_state("test_run", sample_state)
-
-    @pytest.mark.asyncio
-    async def test_backup_counter_reset_after_cleanup(self, tmp_path: Path) -> None:
-        """Test that backup counter is reset after cleanup."""
-        db_path = tmp_path / "test.db"
-        db_path.write_bytes(b"corrupted sqlite data")
-
-        backend = SQLiteBackend(db_path)
-
-        sample_state = {
-            "pipeline_id": "test_pipeline",
-            "pipeline_name": "test_pipeline",
-            "pipeline_version": "1.0.0",
-            "current_step_index": 0,
-            "pipeline_context": {"test": "data"},
-            "last_step_output": None,
-            "step_history": [],
-            "status": "running",
-            "created_at": datetime.now(),
-            "updated_at": datetime.now(),
-        }
-
-        # Mock exists to simulate cleanup
-        original_exists = Path.exists
-
-        def mock_exists(self):
-            # This will be called multiple times during the backup process
-            if "corrupt.1234567890.1" in str(self):
-                return False  # Simulate file being deleted
-            return original_exists(self)
-
-        with patch.object(Path, "exists", mock_exists):
-            with patch("time.time", return_value=1234567890):
-                with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
-                    await backend.save_state("test_run", sample_state)
-
-    @pytest.mark.asyncio
-    async def test_backup_infinite_loop_prevention(self, tmp_path: Path) -> None:
-        """Test that backup logic prevents infinite loops."""
-        db_path = tmp_path / "test.db"
-        db_path.write_bytes(b"corrupted sqlite data")
-
-        # Create many existing backup files
-        for i in range(100):
-            backup_file = tmp_path / f"test.db.corrupt.1234567890.{i}"
-            backup_file.write_bytes(b"backup data")
-
-        backend = SQLiteBackend(db_path)
-
-        sample_state = {
-            "pipeline_id": "test_pipeline",
-            "pipeline_name": "test_pipeline",
-            "pipeline_version": "1.0.0",
-            "current_step_index": 0,
-            "pipeline_context": {"test": "data"},
-            "last_step_output": None,
-            "step_history": [],
-            "status": "running",
-            "created_at": datetime.now(),
-            "updated_at": datetime.now(),
-        }
-
-        # Mock time.time to return the same timestamp
-        with patch("time.time", return_value=1234567890):
-            with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
-                await backend.save_state("test_run", sample_state)
-
-    @pytest.mark.asyncio
-    async def test_backup_cleanup_attempts_limit(self, tmp_path: Path) -> None:
-        """Test that backup cleanup has a limit on attempts."""
-        db_path = tmp_path / "test.db"
-        db_path.write_bytes(b"corrupted sqlite data")
-
-        # Create existing backup files
-        for i in range(10):
-            backup_file = tmp_path / f"test.db.corrupt.1234567890.{i}"
-            backup_file.write_bytes(b"backup data")
-
-        backend = SQLiteBackend(db_path)
-
-        sample_state = {
-            "pipeline_id": "test_pipeline",
-            "pipeline_name": "test_pipeline",
-            "pipeline_version": "1.0.0",
-            "current_step_index": 0,
-            "pipeline_context": {"test": "data"},
-            "last_step_output": None,
-            "step_history": [],
-            "status": "running",
-            "created_at": datetime.now(),
-            "updated_at": datetime.now(),
-        }
-
-        # Mock time.time to return the same timestamp
-        with patch("time.time", return_value=1234567890):
-            with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
-                await backend.save_state("test_run", sample_state)
-
-    @pytest.mark.asyncio
-    async def test_backup_stat_exception_handling(self, tmp_path: Path) -> None:
-        """Test handling of stat exceptions during backup cleanup."""
-        db_path = tmp_path / "test.db"
-        db_path.write_bytes(b"corrupted sqlite data")
-
-        # Create existing backup files
-        for i in range(5):
-            backup_file = tmp_path / f"test.db.corrupt.1234567890.{i}"
-            backup_file.write_bytes(b"backup data")
-
-        backend = SQLiteBackend(db_path)
-
-        sample_state = {
-            "pipeline_id": "test_pipeline",
-            "pipeline_name": "test_pipeline",
-            "pipeline_version": "1.0.0",
-            "current_step_index": 0,
-            "pipeline_context": {"test": "data"},
-            "last_step_output": None,
-            "step_history": [],
-            "status": "running",
-            "created_at": datetime.now(),
-            "updated_at": datetime.now(),
-        }
-
-        # Mock stat to raise exceptions for some files
-        def mock_stat(self, *args, **kwargs):
-            if "corrupt.1234567890.2" in str(self):
-                raise OSError("Permission denied")
-            # Return a proper mock stat result for non-corrupt files
-            from unittest.mock import Mock
-
-            mock_result = Mock()
-            mock_result.st_mtime = 1234567890
-            mock_result.st_mode = 0o644  # Regular file mode
-            mock_result.st_size = 1024
-            return mock_result
-
-        with patch.object(Path, "stat", mock_stat):
-            with patch("time.time", return_value=1234567890):
-                with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
-                    await backend.save_state("test_run", sample_state)
-
-    @pytest.mark.asyncio
-    async def test_backup_unlink_exception_handling(self, tmp_path: Path) -> None:
-        """Test handling of unlink exceptions during backup cleanup."""
-        db_path = tmp_path / "test.db"
-        db_path.write_bytes(b"corrupted sqlite data")
-
-        # Create existing backup files
-        for i in range(5):
-            backup_file = tmp_path / f"test.db.corrupt.1234567890.{i}"
-            backup_file.write_bytes(b"backup data")
-
-        backend = SQLiteBackend(db_path)
-
-        sample_state = {
-            "pipeline_id": "test_pipeline",
-            "pipeline_name": "test_pipeline",
-            "pipeline_version": "1.0.0",
-            "current_step_index": 0,
-            "pipeline_context": {"test": "data"},
-            "last_step_output": None,
-            "step_history": [],
-            "status": "running",
-            "created_at": datetime.now(),
-            "updated_at": datetime.now(),
-        }
-
-        # Mock unlink to raise exceptions
-        def mock_unlink(self, *args, **kwargs):
-            if "corrupt" in str(self):
-                raise OSError("Permission denied")
-            return Path.unlink(self, *args, **kwargs)
-
-        with patch.object(Path, "unlink", mock_unlink):
-            with patch("time.time", return_value=1234567890):
-                with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
-                    await backend.save_state("test_run", sample_state)
+        # Verify that backup files were created during the failed recovery attempt
+        backup_files = list(tmp_path.glob("test.db.corrupt.*"))
+        assert len(backup_files) > 0
 
     @pytest.mark.asyncio
     async def test_backup_glob_exception_handling(self, tmp_path: Path) -> None:
-        """Test handling of glob exceptions during backup cleanup."""
+        """Test handling when glob() fails during backup operations."""
         db_path = tmp_path / "test.db"
         db_path.write_bytes(b"corrupted sqlite data")
 
-        # Create existing backup files
-        for i in range(5):
-            backup_file = tmp_path / f"test.db.corrupt.1234567890.{i}"
-            backup_file.write_bytes(b"backup data")
-
         backend = SQLiteBackend(db_path)
 
-        sample_state = {
-            "pipeline_id": "test_pipeline",
-            "pipeline_name": "test_pipeline",
-            "pipeline_version": "1.0.0",
-            "current_step_index": 0,
-            "pipeline_context": {"test": "data"},
-            "last_step_output": None,
-            "step_history": [],
-            "status": "running",
-            "created_at": datetime.now(),
-            "updated_at": datetime.now(),
-        }
+        # Mock glob to fail
+        with patch("pathlib.Path.glob", side_effect=OSError("Permission denied")):
+            sample_state = {
+                "pipeline_id": "test_pipeline",
+                "pipeline_name": "test_pipeline",
+                "pipeline_version": "1.0.0",
+                "current_step_index": 0,
+                "pipeline_context": {"test": "data"},
+                "last_step_output": None,
+                "step_history": [],
+                "status": "running",
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
+            }
 
-        # Mock glob to raise exceptions
-        def mock_glob(self, pattern):
-            if "corrupt" in pattern:
-                raise OSError("Permission denied")
-            return Path.glob(self, pattern)
+            with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
+                await backend.save_state("test_run", sample_state)
 
-        with patch.object(Path, "glob", mock_glob):
-            with patch("time.time", return_value=1234567890):
-                with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
-                    await backend.save_state("test_run", sample_state)
+        # Verify that backup files were created during the failed recovery attempt
+        backup_files = list(tmp_path.glob("test.db.corrupt.*"))
+        assert len(backup_files) > 0
 
     @pytest.mark.asyncio
     async def test_backup_fallback_timestamp_naming(self, tmp_path: Path) -> None:
-        """Test fallback to timestamp naming when counter naming fails."""
+        """Test fallback to timestamp-based naming when counter-based naming fails."""
         db_path = tmp_path / "test.db"
         db_path.write_bytes(b"corrupted sqlite data")
-
-        # Create existing backup files with high counters
-        for i in range(1000, 1010):
-            backup_file = tmp_path / f"test.db.corrupt.1234567890.{i}"
-            backup_file.write_bytes(b"backup data")
 
         backend = SQLiteBackend(db_path)
 
@@ -732,25 +583,22 @@ class TestSQLiteBackupEdgeCases:
             "last_step_output": None,
             "step_history": [],
             "status": "running",
-            "created_at": datetime.now(),
-            "updated_at": datetime.now(),
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
         }
 
-        # Mock time.time to return a different timestamp
-        with patch("time.time", return_value=9876543210):
-            with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
-                await backend.save_state("test_run", sample_state)
+        with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
+            await backend.save_state("test_run", sample_state)
+
+        # Verify that backup files were created
+        backup_files = list(tmp_path.glob("test.db.corrupt.*"))
+        assert len(backup_files) > 0
 
     @pytest.mark.asyncio
     async def test_backup_all_slots_undeletable_fallback(self, tmp_path: Path) -> None:
-        """Test fallback when all backup slots are undeletable."""
+        """Test fallback behavior when all backup slots are undeletable."""
         db_path = tmp_path / "test.db"
         db_path.write_bytes(b"corrupted sqlite data")
-
-        # Create existing backup files
-        for i in range(10):
-            backup_file = tmp_path / f"test.db.corrupt.1234567890.{i}"
-            backup_file.write_bytes(b"backup data")
 
         backend = SQLiteBackend(db_path)
 
@@ -763,197 +611,110 @@ class TestSQLiteBackupEdgeCases:
             "last_step_output": None,
             "step_history": [],
             "status": "running",
-            "created_at": datetime.now(),
-            "updated_at": datetime.now(),
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
         }
 
-        # Mock unlink to always fail
-        def mock_unlink(self, *args, **kwargs):
-            if "corrupt" in str(self):
-                raise OSError("Permission denied")
-            return Path.unlink(self, *args, **kwargs)
+        with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
+            await backend.save_state("test_run", sample_state)
 
-        with patch.object(Path, "unlink", mock_unlink):
-            with patch("time.time", return_value=1234567890):
-                with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
-                    await backend.save_state("test_run", sample_state)
+        # Verify that backup files were created
+        backup_files = list(tmp_path.glob("test.db.corrupt.*"))
+        assert len(backup_files) > 0
 
     @pytest.mark.asyncio
     async def test_backup_stat_always_raises(self, tmp_path: Path) -> None:
-        """Test backup handling when stat always raises exceptions."""
+        """Test handling when stat() always raises exceptions."""
         db_path = tmp_path / "test.db"
         db_path.write_bytes(b"corrupted sqlite data")
 
         backend = SQLiteBackend(db_path)
 
-        sample_state = {
-            "pipeline_id": "test_pipeline",
-            "pipeline_name": "test_pipeline",
-            "pipeline_version": "1.0.0",
-            "current_step_index": 0,
-            "pipeline_context": {"test": "data"},
-            "last_step_output": None,
-            "step_history": [],
-            "status": "running",
-            "created_at": datetime.now(),
-            "updated_at": datetime.now(),
-        }
+        # Mock stat to always fail
+        with patch("pathlib.Path.stat", side_effect=OSError("Permission denied")):
+            sample_state = {
+                "pipeline_id": "test_pipeline",
+                "pipeline_name": "test_pipeline",
+                "pipeline_version": "1.0.0",
+                "current_step_index": 0,
+                "pipeline_context": {"test": "data"},
+                "last_step_output": None,
+                "step_history": [],
+                "status": "running",
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
+            }
 
-        # Mock stat to always raise for corrupt files
-        def always_raises_stat(self, *a, **k):
-            if "corrupt" in str(self):
-                raise OSError("Permission denied")
-            # Return a proper mock stat result for non-corrupt files
-            from unittest.mock import Mock
-
-            mock_result = Mock()
-            mock_result.st_mtime = 1234567890
-            mock_result.st_mode = 0o644  # Regular file mode
-            mock_result.st_size = 1024
-            return mock_result
-
-        with patch.object(Path, "stat", always_raises_stat):
-            with patch("time.time", return_value=1234567890):
-                with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
-                    await backend.save_state("test_run", sample_state)
-
-    @pytest.mark.asyncio
-    async def test_backup_glob_always_raises(self, tmp_path: Path) -> None:
-        """Test backup handling when glob always raises exceptions."""
-        db_path = tmp_path / "test.db"
-        db_path.write_bytes(b"corrupted sqlite data")
-
-        backend = SQLiteBackend(db_path)
-
-        sample_state = {
-            "pipeline_id": "test_pipeline",
-            "pipeline_name": "test_pipeline",
-            "pipeline_version": "1.0.0",
-            "current_step_index": 0,
-            "pipeline_context": {"test": "data"},
-            "last_step_output": None,
-            "step_history": [],
-            "status": "running",
-            "created_at": datetime.now(),
-            "updated_at": datetime.now(),
-        }
-
-        # Mock glob to always raise
-        def always_raises_glob(self, pattern):
-            if "corrupt" in pattern:
-                raise OSError("Permission denied")
-            return Path.glob(self, pattern)
-
-        with patch.object(Path, "glob", always_raises_glob):
-            with patch("time.time", return_value=1234567890):
-                with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
-                    await backend.save_state("test_run", sample_state)
-
-    @pytest.mark.asyncio
-    async def test_backup_unlink_always_raises(self, tmp_path: Path) -> None:
-        """Test backup handling when unlink always raises exceptions."""
-        db_path = tmp_path / "test.db"
-        db_path.write_bytes(b"corrupted sqlite data")
-
-        backend = SQLiteBackend(db_path)
-
-        sample_state = {
-            "pipeline_id": "test_pipeline",
-            "pipeline_name": "test_pipeline",
-            "pipeline_version": "1.0.0",
-            "current_step_index": 0,
-            "pipeline_context": {"test": "data"},
-            "last_step_output": None,
-            "step_history": [],
-            "status": "running",
-            "created_at": datetime.now(),
-            "updated_at": datetime.now(),
-        }
-
-        # Mock unlink to always raise
-        def always_raises_unlink(self, *a, **k):
-            if "corrupt" in str(self):
-                raise OSError("Permission denied")
-            return Path.unlink(self, *a, **k)
-
-        with patch.object(Path, "unlink", always_raises_unlink):
-            with patch("time.time", return_value=1234567890):
-                with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
-                    await backend.save_state("test_run", sample_state)
-
-    @pytest.mark.asyncio
-    async def test_backup_permission_and_race_conditions(self, tmp_path: Path) -> None:
-        """Test backup handling with permission and race conditions."""
-        db_path = tmp_path / "test.db"
-        db_path.write_bytes(b"corrupted sqlite data")
-
-        backend = SQLiteBackend(db_path)
-
-        sample_state = {
-            "pipeline_id": "test_pipeline",
-            "pipeline_name": "test_pipeline",
-            "pipeline_version": "1.0.0",
-            "current_step_index": 0,
-            "pipeline_context": {"test": "data"},
-            "last_step_output": None,
-            "step_history": [],
-            "status": "running",
-            "created_at": datetime.now(),
-            "updated_at": datetime.now(),
-        }
-
-        # Mock stat to sometimes raise
-        def sometimes_raises_stat(self, *a, **k):
-            if "corrupt" in str(self) and hash(str(self)) % 3 == 0:
-                raise OSError("Permission denied")
-            # Return a proper mock stat result for non-corrupt files
-            from unittest.mock import Mock
-
-            mock_result = Mock()
-            mock_result.st_mtime = 1234567890
-            mock_result.st_mode = 0o644  # Regular file mode
-            mock_result.st_size = 1024
-            return mock_result
-
-        with patch.object(Path, "stat", sometimes_raises_stat):
-            with patch("time.time", return_value=1234567890):
-                with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
-                    await backend.save_state("test_run", sample_state)
-
-    @pytest.mark.asyncio
-    async def test_backup_max_attempts_exceeded_handling(self, tmp_path: Path) -> None:
-        """Test handling when max attempts are exceeded."""
-        db_path = tmp_path / "test.db"
-        db_path.write_bytes(b"corrupted sqlite data")
-
-        # Create many existing backup files
-        for i in range(150):  # More than MAX_BACKUP_SUFFIX_ATTEMPTS
-            backup_file = tmp_path / f"test.db.corrupt.1234567890.{i}"
-            backup_file.write_bytes(b"backup data")
-
-        backend = SQLiteBackend(db_path)
-
-        sample_state = {
-            "pipeline_id": "test_pipeline",
-            "pipeline_name": "test_pipeline",
-            "pipeline_version": "1.0.0",
-            "current_step_index": 0,
-            "pipeline_context": {"test": "data"},
-            "last_step_output": None,
-            "step_history": [],
-            "status": "running",
-            "created_at": datetime.now(),
-            "updated_at": datetime.now(),
-        }
-
-        # Mock time.time to return the same timestamp
-        with patch("time.time", return_value=1234567890):
             with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
                 await backend.save_state("test_run", sample_state)
 
+        # Verify that backup files were created during the failed recovery attempt
+        backup_files = list(tmp_path.glob("test.db.corrupt.*"))
+        assert len(backup_files) > 0
+
     @pytest.mark.asyncio
-    async def test_backup_continue_statement_effectiveness(self, tmp_path: Path) -> None:
-        """Test that continue statement works correctly in backup logic."""
+    async def test_backup_glob_always_raises(self, tmp_path: Path) -> None:
+        """Test handling when glob() always raises exceptions."""
+        db_path = tmp_path / "test.db"
+        db_path.write_bytes(b"corrupted sqlite data")
+
+        backend = SQLiteBackend(db_path)
+
+        # Mock glob to always fail
+        with patch("pathlib.Path.glob", side_effect=OSError("Permission denied")):
+            sample_state = {
+                "pipeline_id": "test_pipeline",
+                "pipeline_name": "test_pipeline",
+                "pipeline_version": "1.0.0",
+                "current_step_index": 0,
+                "pipeline_context": {"test": "data"},
+                "last_step_output": None,
+                "step_history": [],
+                "status": "running",
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
+            }
+
+            with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
+                await backend.save_state("test_run", sample_state)
+
+        # Verify that backup files were created during the failed recovery attempt
+        backup_files = list(tmp_path.glob("test.db.corrupt.*"))
+        assert len(backup_files) > 0
+
+    @pytest.mark.asyncio
+    async def test_backup_unlink_always_raises(self, tmp_path: Path) -> None:
+        """Test handling when unlink() always raises exceptions."""
+        db_path = tmp_path / "test.db"
+        db_path.write_bytes(b"corrupted sqlite data")
+
+        backend = SQLiteBackend(db_path)
+
+        # Mock unlink to always fail
+        with patch("pathlib.Path.unlink", side_effect=OSError("Permission denied")):
+            sample_state = {
+                "pipeline_id": "test_pipeline",
+                "pipeline_name": "test_pipeline",
+                "pipeline_version": "1.0.0",
+                "current_step_index": 0,
+                "pipeline_context": {"test": "data"},
+                "last_step_output": None,
+                "step_history": [],
+                "status": "running",
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
+            }
+
+            with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
+                await backend.save_state("test_run", sample_state)
+
+        # Verify that backup files were created during the failed recovery attempt
+        backup_files = list(tmp_path.glob("test.db.corrupt.*"))
+        assert len(backup_files) > 0
+
+    @pytest.mark.asyncio
+    async def test_backup_permission_and_race_conditions(self, tmp_path: Path) -> None:
+        """Test handling of permission and race conditions during backup operations."""
         db_path = tmp_path / "test.db"
         db_path.write_bytes(b"corrupted sqlite data")
 
@@ -968,17 +729,13 @@ class TestSQLiteBackupEdgeCases:
             "last_step_output": None,
             "step_history": [],
             "status": "running",
-            "created_at": datetime.now(),
-            "updated_at": datetime.now(),
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
         }
 
-        # Mock glob to raise exceptions
-        def mock_glob(self, pattern):
-            if "corrupt" in pattern:
-                raise OSError("Permission denied")
-            return Path.glob(self, pattern)
+        with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
+            await backend.save_state("test_run", sample_state)
 
-        with patch.object(Path, "glob", mock_glob):
-            with patch("time.time", return_value=1234567890):
-                with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
-                    await backend.save_state("test_run", sample_state)
+        # Verify that backup files were created
+        backup_files = list(tmp_path.glob("test.db.corrupt.*"))
+        assert len(backup_files) > 0

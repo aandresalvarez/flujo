@@ -64,15 +64,42 @@ async def test_retry_on_schema_errors(sqlite_backend, sample_state) -> None:
 @pytest.mark.asyncio
 async def test_retry_on_database_locked_errors(sqlite_backend, sample_state) -> None:
     """Test retry behavior for database locked errors through public methods."""
+    from unittest.mock import patch
+    import aiosqlite
+
     backend = sqlite_backend("locked_retry_test.db")
 
-    # Test that save_state handles database locked errors with retries
-    await backend.save_state("locked_test", sample_state)
+    # First, initialize the backend normally
+    await backend.save_state("init_test", sample_state)
 
-    # Verify the operation succeeded despite potential locks
-    loaded = await backend.load_state("locked_test")
-    assert loaded is not None
-    assert loaded["pipeline_id"] == "test_pipeline"
+    # Now test retry behavior by mocking only the specific operation
+    call_count = 0
+    original_execute = aiosqlite.Connection.execute
+
+    async def mock_execute_with_retry(self, sql, parameters=None):
+        nonlocal call_count
+
+        # Only mock the specific INSERT/UPDATE operations for save_state
+        if "INSERT INTO workflow_state" in sql or "ON CONFLICT" in sql:
+            call_count += 1
+
+            # Fail first two calls with database locked error
+            if call_count <= 2:
+                raise sqlite3.OperationalError("database is locked")
+
+        # Succeed on third call or for other operations
+        return await original_execute(self, sql, parameters)
+
+    with patch("aiosqlite.Connection.execute", mock_execute_with_retry):
+        # Test that save_state handles database locked errors with retries
+        await backend.save_state("locked_test", sample_state)
+
+        # Verify that the operation succeeded after retries
+        assert call_count >= 3, f"Expected at least 3 calls due to retries, got {call_count}"
+
+        loaded = await backend.load_state("locked_test")
+        assert loaded is not None
+        assert loaded["pipeline_id"] == "test_pipeline"
 
 
 @pytest.mark.asyncio

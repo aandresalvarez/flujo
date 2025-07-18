@@ -273,6 +273,9 @@ class TestSQLInjectionPrevention:
     @pytest.mark.asyncio
     async def test_parameterized_queries_used(self, backend: SQLiteBackend):
         """Test that all database operations use parameterized queries."""
+        from unittest.mock import patch
+        import aiosqlite
+
         # Initialize the backend through a public method
         await backend.save_state(
             "test_run",
@@ -294,9 +297,9 @@ class TestSQLInjectionPrevention:
             },
         )
 
-        # Try to save state with potentially malicious input
+        # Create malicious input that would cause SQL injection if not parameterized
+        malicious_run_id = "test'; DROP TABLE workflow_state; --"
         malicious_state = {
-            "run_id": "test'; DROP TABLE workflow_state; --",
             "pipeline_id": "test_pipeline",
             "pipeline_name": "Test Pipeline",
             "pipeline_version": "1.0",
@@ -313,25 +316,52 @@ class TestSQLInjectionPrevention:
             "memory_usage_mb": None,
         }
 
-        # The real test is that the malicious input is safely handled
-        # by the parameterized query system, preventing SQL injection
-        malicious_run_id = "test'; DROP TABLE workflow_state; --"
-        await backend.save_state(malicious_run_id, malicious_state)
+        # Spy on the database execute calls to verify parameterized queries
+        executed_sql = []
+        executed_params = []
 
-        # Verify that the operation completed without SQL injection
-        # by checking that we can still load the state and the database is intact
+        original_execute = aiosqlite.Connection.execute
+
+        async def spy_execute(self, sql, parameters=None):
+            executed_sql.append(sql)
+            executed_params.append(parameters)
+            return await original_execute(self, sql, parameters)
+
+        with patch("aiosqlite.Connection.execute", spy_execute):
+            # Perform the operation with malicious input
+            await backend.save_state(malicious_run_id, malicious_state)
+
+        # Verify that parameterized queries were used
+        assert len(executed_sql) > 0, "No SQL queries were executed"
+
+        # Check that the malicious input is NOT in the SQL string
+        for sql in executed_sql:
+            assert malicious_run_id not in sql, f"Malicious input found in SQL: {sql}"
+            assert "DROP TABLE" not in sql, f"DROP TABLE found in SQL: {sql}"
+            assert "--" not in sql, f"SQL comment found in SQL: {sql}"
+
+        # Check that the malicious input IS in the parameters
+        malicious_found_in_params = False
+        for params in executed_params:
+            if params and any(malicious_run_id in str(param) for param in params):
+                malicious_found_in_params = True
+                break
+
+        assert malicious_found_in_params, (
+            "Malicious input not found in parameters - query may not be parameterized"
+        )
+
+        # Verify that the operation completed successfully
         loaded_state = await backend.load_state(malicious_run_id)
         assert loaded_state is not None
         assert loaded_state["run_id"] == malicious_run_id
 
-        # Verify that the database is still functional by checking we can list workflows
+        # Verify that the database is still functional
         workflows = await backend.list_workflows()
         assert len(workflows) >= 1
 
         # Verify that the malicious input was stored as data, not executed as SQL
-        # by checking that the table structure is still intact
         failed_workflows = await backend.get_failed_workflows(hours_back=24)
-        # This should work without errors, indicating no SQL injection occurred
         assert isinstance(failed_workflows, list)
 
     def test_healthcare_data_security(self):

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional, TypeVar, Generic
 
 from ...domain.models import BaseModel, PipelineContext, PipelineResult, StepResult
@@ -96,7 +96,11 @@ class StateManager(Generic[ContextT]):
         # Calculate execution time if we have creation timestamp
         execution_time_ms = None
         if state_created_at is not None:
-            execution_time_ms = int((datetime.now() - state_created_at).total_seconds() * 1000)
+            now = datetime.now(timezone.utc)
+            # Ensure state_created_at is timezone-aware
+            if state_created_at.tzinfo is None:
+                state_created_at = state_created_at.replace(tzinfo=timezone.utc)
+            execution_time_ms = int((now - state_created_at).total_seconds() * 1000)
 
         # Estimate memory usage (rough approximation)
         memory_usage_mb = None
@@ -137,8 +141,8 @@ class StateManager(Generic[ContextT]):
             "last_step_output": last_step_output,
             "step_history": serialized_step_history,
             "status": status,
-            "created_at": state_created_at or datetime.now(),
-            "updated_at": datetime.now(),
+            "created_at": state_created_at or datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
             "total_steps": getattr(context, "total_steps", 0),
             "error_message": getattr(context, "error_message", None),
             "execution_time_ms": execution_time_ms,

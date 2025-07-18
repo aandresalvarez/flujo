@@ -4,7 +4,7 @@ import asyncio
 import json
 import time
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import (
     Any,
@@ -86,12 +86,16 @@ _CONSTRAINT_RE = re.compile(
 
 def _datetime_to_epoch_microseconds(dt: datetime) -> int:
     """Convert datetime to epoch microseconds for efficient storage and comparison."""
+    # Ensure datetime is timezone-aware, defaulting to UTC if naive
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
     return int(dt.timestamp() * 1_000_000)
 
 
 def _epoch_microseconds_to_datetime(epoch_us: int) -> datetime:
     """Convert epoch microseconds back to datetime."""
-    return datetime.fromtimestamp(epoch_us / 1_000_000)
+    # Convert to UTC datetime to maintain consistency
+    return datetime.fromtimestamp(epoch_us / 1_000_000, tz=timezone.utc)
 
 
 def db_retry(
@@ -1462,7 +1466,7 @@ class SQLiteBackend(StateBackend):
                                 INSERT INTO spans (
                                     span_id, run_id, parent_span_id, name, start_time,
                                     end_time, status, attributes, created_at
-                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, (strftime('%s', 'now') * 1000000))
                                 """,
                                 spans_to_insert,
                             )

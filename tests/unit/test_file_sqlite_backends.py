@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import asyncio
 
@@ -35,7 +35,7 @@ async def test_file_backend_load_during_delete(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_sqlite_backend_roundtrip(tmp_path: Path) -> None:
     backend = SQLiteBackend(tmp_path / "state.db")
-    now = datetime.utcnow().replace(microsecond=0)
+    now = datetime.now(timezone.utc).replace(microsecond=0)
     state = {
         "run_id": "run1",
         "pipeline_id": "p",
@@ -81,7 +81,7 @@ async def test_sqlite_backend_migrates_existing_db(tmp_path: Path) -> None:
         await conn.commit()
 
     backend = SQLiteBackend(db)
-    now = datetime.utcnow().replace(microsecond=0)
+    now = datetime.now(timezone.utc).replace(microsecond=0)
     state = {
         "run_id": "run1",
         "pipeline_id": "p",
@@ -108,7 +108,7 @@ class MyModel(BaseModel):
 async def test_backends_serialize_pydantic(tmp_path: Path) -> None:
     fb = FileBackend(tmp_path)
     sb = SQLiteBackend(tmp_path / "s.db")
-    now = datetime.utcnow().replace(microsecond=0)
+    now = datetime.now(timezone.utc).replace(microsecond=0)
     state = {
         "run_id": "run1",
         "pipeline_id": "p",
@@ -135,7 +135,7 @@ async def test_backends_serialize_pydantic(tmp_path: Path) -> None:
 async def test_sqlite_backend_admin_queries(tmp_path: Path) -> None:
     """Test list_workflows, get_workflow_stats, get_failed_workflows, cleanup_old_workflows."""
     backend = SQLiteBackend(tmp_path / "state.db")
-    now = datetime.utcnow().replace(microsecond=0)
+    now = datetime.now(timezone.utc).replace(microsecond=0)
     past = now - timedelta(days=1)
     # Insert several states with different statuses and times
     for i, status in enumerate(["running", "completed", "failed", "paused", "failed"]):
@@ -181,7 +181,7 @@ async def test_sqlite_backend_concurrent(tmp_path: Path) -> None:
     """Test concurrent save/load/delete for SQLiteBackend."""
 
     async def worker(backend, run_id):
-        now = datetime.utcnow().replace(microsecond=0)
+        now = datetime.now(timezone.utc).replace(microsecond=0)
         state = {
             "run_id": run_id,
             "pipeline_id": "p",
@@ -211,7 +211,7 @@ async def test_backends_deserialize_special_types(tmp_path: Path) -> None:
     fb = FileBackend(tmp_path / "fb")
     sb = SQLiteBackend(tmp_path / "s.db")
 
-    now = datetime.utcnow().replace(microsecond=0)
+    now = datetime.now(timezone.utc).replace(microsecond=0)
     state = {
         "run_id": "run1",
         "pipeline_id": "p",
@@ -280,7 +280,7 @@ async def test_sqlite_backend_get_workflow_stats_empty_database(tmp_path: Path) 
 async def test_sqlite_backend_cleanup_old_workflows_no_old_workflows(tmp_path: Path) -> None:
     """Test cleanup_old_workflows when no workflows are old enough to be deleted."""
     backend = SQLiteBackend(tmp_path / "state.db")
-    now = datetime.utcnow().replace(microsecond=0)
+    now = datetime.now(timezone.utc).replace(microsecond=0)
 
     # Create recent workflows (less than 1 day old)
     for i in range(3):
@@ -329,7 +329,7 @@ async def test_sqlite_backend_list_workflows_filter_by_nonexistent_pipeline_id(
 ) -> None:
     """Test filtering by pipeline_id when the ID does not exist."""
     backend = SQLiteBackend(tmp_path / "state.db")
-    now = datetime.utcnow().replace(microsecond=0)
+    now = datetime.now(timezone.utc).replace(microsecond=0)
 
     # Create workflows with specific pipeline IDs
     pipeline_ids = ["pipeline_a", "pipeline_b", "pipeline_c"]
