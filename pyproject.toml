@@ -55,6 +55,7 @@ dev = [
   "pytest",
   "pytest-cov",
   "pytest-asyncio",
+  "pytest-xdist",  # Added for parallel test execution
   "hypothesis",
   "vcrpy",
   "build",     # Added for package building
@@ -163,10 +164,20 @@ markers = [
   "benchmark: marks tests as benchmarks (requires pytest-benchmark)",
   "asyncio: marks tests as async (handled by pytest-asyncio)",
   "serial: marks tests that must run serially to avoid concurrency issues",
+  "slow: marks tests that are slow and should be run separately",
+  "fast: marks tests that are fast and can be run in parallel",
 ]
 filterwarnings = [
   "ignore:coroutine 'AsyncMockMixin._execute_mock_call' was never awaited:RuntimeWarning"
 ]
+# Parallel testing configuration
+addopts = [
+  "--strict-markers",
+  "--strict-config",
+  "--tb=short",
+]
+# Performance optimization: disable output capture for faster execution
+# addopts = ["--no-cov", "--tb=short"]  # Uncomment for maximum speed
 
 # --------------------------------------------------------------------------- #
 # Build system configuration

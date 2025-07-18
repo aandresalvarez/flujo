@@ -1,0 +1,176 @@
+{
+  "timestamp": 1752873453.561355,
+  "total_duration": 302.59224915504456,
+  "statistics": {
+    "total_tests": 10,
+    "total_time": 214.33,
+    "average_time": 21.433,
+    "slowest_tests": [
+      {
+        "name": "tests/unit/test_persistence_performance.py::TestCLIPerformance::test_lens_list_performance",
+        "duration": 50.43,
+        "status": "PASSED"
+      },
+      {
+        "name": "tests/unit/test_persistence_performance.py::TestCLIPerformance::test_lens_show_performance",
+        "duration": 49.59,
+        "status": "PASSED"
+      },
+      {
+        "name": "tests/unit/test_persistence_performance.py::TestCLIPerformance::test_lens_show_nonexistent_run_performance",
+        "duration": 49.22,
+        "status": "PASSED"
+      },
+      {
+        "name": "tests/unit/test_persistence_performance.py::TestCLIPerformance::test_lens_list_with_filters_performance",
+        "duration": 47.11,
+        "status": "PASSED"
+      },
+      {
+        "name": "tests/benchmarks/test_sqlite_performance.py::test_sqlite_backend_large_dataset_performance",
+        "duration": 5.07,
+        "status": "PASSED"
+      },
+      {
+        "name": "tests/unit/test_cli_performance_edge_cases.py::TestCLIPerformanceEdgeCases::test_lens_list_with_large_mixed_database",
+        "duration": 2.73,
+        "status": "PASSED"
+      },
+      {
+        "name": "tests/unit/test_persistence_performance.py::TestPersistencePerformanceOverhead::test_default_backend_performance_overhead",
+        "duration": 2.58,
+        "status": "PASSED"
+      },
+      {
+        "name": "tests/benchmarks/test_tracing_performance.py::TestTracingPerformance::test_tracing_performance_regression",
+        "duration": 2.57,
+        "status": "PASSED"
+      },
+      {
+        "name": "tests/unit/test_cli_performance_edge_cases.py::TestCLIPerformanceEdgeCases::test_cli_performance_with_nonexistent_data",
+        "duration": 2.52,
+        "status": "PASSED"
+      },
+      {
+        "name": "tests/unit/test_cli_performance_edge_cases.py::TestCLIPerformanceEdgeCases::test_lens_list_with_various_filters",
+        "duration": 2.51,
+        "status": "PASSED"
+      }
+    ],
+    "slow_tests": [],
+    "slow_threshold": 50.43,
+    "test_categories": {
+      "unit": [
+        {
+          "name": "tests/unit/test_persistence_performance.py::TestCLIPerformance::test_lens_list_performance",
+          "duration": 50.43,
+          "status": "PASSED"
+        },
+        {
+          "name": "tests/unit/test_persistence_performance.py::TestCLIPerformance::test_lens_show_performance",
+          "duration": 49.59,
+          "status": "PASSED"
+        },
+        {
+          "name": "tests/unit/test_persistence_performance.py::TestCLIPerformance::test_lens_show_nonexistent_run_performance",
+          "duration": 49.22,
+          "status": "PASSED"
+        },
+        {
+          "name": "tests/unit/test_persistence_performance.py::TestCLIPerformance::test_lens_list_with_filters_performance",
+          "duration": 47.11,
+          "status": "PASSED"
+        },
+        {
+          "name": "tests/unit/test_cli_performance_edge_cases.py::TestCLIPerformanceEdgeCases::test_lens_list_with_large_mixed_database",
+          "duration": 2.73,
+          "status": "PASSED"
+        },
+        {
+          "name": "tests/unit/test_persistence_performance.py::TestPersistencePerformanceOverhead::test_default_backend_performance_overhead",
+          "duration": 2.58,
+          "status": "PASSED"
+        },
+        {
+          "name": "tests/unit/test_cli_performance_edge_cases.py::TestCLIPerformanceEdgeCases::test_cli_performance_with_nonexistent_data",
+          "duration": 2.52,
+          "status": "PASSED"
+        },
+        {
+          "name": "tests/unit/test_cli_performance_edge_cases.py::TestCLIPerformanceEdgeCases::test_lens_list_with_various_filters",
+          "duration": 2.51,
+          "status": "PASSED"
+        }
+      ],
+      "integration": [],
+      "benchmark": [
+        {
+          "name": "tests/benchmarks/test_sqlite_performance.py::test_sqlite_backend_large_dataset_performance",
+          "duration": 5.07,
+          "status": "PASSED"
+        },
+        {
+          "name": "tests/benchmarks/test_tracing_performance.py::TestTracingPerformance::test_tracing_performance_regression",
+          "duration": 2.57,
+          "status": "PASSED"
+        }
+      ],
+      "e2e": [],
+      "security": [],
+      "smoke": [],
+      "processors": []
+    }
+  },
+  "all_tests": [
+    {
+      "name": "tests/unit/test_persistence_performance.py::TestCLIPerformance::test_lens_list_performance",
+      "duration": 50.43,
+      "status": "PASSED"
+    },
+    {
+      "name": "tests/unit/test_persistence_performance.py::TestCLIPerformance::test_lens_show_performance",
+      "duration": 49.59,
+      "status": "PASSED"
+    },
+    {
+      "name": "tests/unit/test_persistence_performance.py::TestCLIPerformance::test_lens_show_nonexistent_run_performance",
+      "duration": 49.22,
+      "status": "PASSED"
+    },
+    {
+      "name": "tests/unit/test_persistence_performance.py::TestCLIPerformance::test_lens_list_with_filters_performance",
+      "duration": 47.11,
+      "status": "PASSED"
+    },
+    {
+      "name": "tests/benchmarks/test_sqlite_performance.py::test_sqlite_backend_large_dataset_performance",
+      "duration": 5.07,
+      "status": "PASSED"
+    },
+    {
+      "name": "tests/unit/test_cli_performance_edge_cases.py::TestCLIPerformanceEdgeCases::test_lens_list_with_large_mixed_database",
+      "duration": 2.73,
+      "status": "PASSED"
+    },
+    {
+      "name": "tests/unit/test_persistence_performance.py::TestPersistencePerformanceOverhead::test_default_backend_performance_overhead",
+      "duration": 2.58,
+      "status": "PASSED"
+    },
+    {
+      "name": "tests/benchmarks/test_tracing_performance.py::TestTracingPerformance::test_tracing_performance_regression",
+      "duration": 2.57,
+      "status": "PASSED"
+    },
+    {
+      "name": "tests/unit/test_cli_performance_edge_cases.py::TestCLIPerformanceEdgeCases::test_cli_performance_with_nonexistent_data",
+      "duration": 2.52,
+      "status": "PASSED"
+    },
+    {
+      "name": "tests/unit/test_cli_performance_edge_cases.py::TestCLIPerformanceEdgeCases::test_lens_list_with_various_filters",
+      "duration": 2.51,
+      "status": "PASSED"
+    }
+  ]
+}

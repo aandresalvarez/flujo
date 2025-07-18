@@ -20,6 +20,7 @@ class TestTracingPerformance:
     """Benchmark the performance impact of tracing functionality."""
 
     @pytest.mark.benchmark
+    @pytest.mark.slow
     def test_tracing_overhead_simple_pipeline(self, benchmark):
         """Benchmark tracing overhead on a simple linear pipeline."""
 
@@ -84,6 +85,7 @@ class TestTracingPerformance:
         assert len(tracing_result.trace_tree.children) == 3
 
     @pytest.mark.benchmark
+    @pytest.mark.slow
     def test_tracing_overhead_complex_pipeline_with_tracing(self, benchmark):
         """Benchmark complex pipeline with tracing enabled."""
 
@@ -139,6 +141,7 @@ class TestTracingPerformance:
         print(f"[BENCHMARK] Complex pipeline with tracing: {benchmark.stats['mean']:.4f} ms")
 
     @pytest.mark.benchmark
+    @pytest.mark.slow
     def test_tracing_overhead_complex_pipeline_no_tracing(self, benchmark):
         """Benchmark complex pipeline with tracing disabled."""
 
@@ -194,6 +197,7 @@ class TestTracingPerformance:
         print(f"[BENCHMARK] Complex pipeline without tracing: {benchmark.stats['mean']:.4f} ms")
 
     @pytest.mark.benchmark
+    @pytest.mark.slow
     def test_trace_persistence_overhead(self, benchmark):
         """Benchmark the overhead of trace persistence to database."""
 

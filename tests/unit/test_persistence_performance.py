@@ -195,6 +195,7 @@ class TestCLIPerformance:
 
         return db_path
 
+    @pytest.mark.slow
     def test_lens_list_performance(self, large_database: Path) -> None:
         """Test that `flujo lens list` completes in <2s with 10,000 runs."""
         # Set environment variable to point to our test database
@@ -219,8 +220,9 @@ class TestCLIPerformance:
         )
         assert result.exit_code == 0, f"CLI command failed: {result.stdout}"
 
+    @pytest.mark.slow
     def test_lens_show_performance(self, large_database: Path) -> None:
-        """Test that `flujo lens show` completes in <500ms."""
+        """Test that `flujo lens show` completes in <2s with 10,000 runs."""
         # Set environment variable to point to our test database
         os.environ["FLUJO_STATE_URI"] = f"sqlite:///{large_database}"
 
@@ -243,8 +245,9 @@ class TestCLIPerformance:
         )
         assert result.exit_code == 0, f"CLI command failed: {result.stdout}"
 
+    @pytest.mark.slow
     def test_lens_list_with_filters_performance(self, large_database: Path) -> None:
-        """Test that `flujo lens list` with filters completes in <2s."""
+        """Test that `flujo lens list` with filters completes in <2s with 10,000 runs."""
         # Set environment variable to point to our test database
         os.environ["FLUJO_STATE_URI"] = f"sqlite:///{large_database}"
 
@@ -267,10 +270,9 @@ class TestCLIPerformance:
         )
         assert result.exit_code == 0, f"CLI command failed: {result.stdout}"
 
+    @pytest.mark.slow
     def test_lens_show_nonexistent_run_performance(self, large_database: Path) -> None:
-        """Test that `flujo lens show` with nonexistent run completes quickly.
-        The threshold is relaxed in CI via FLUJO_CLI_PERF_THRESHOLD due to CI variability.
-        """
+        """Test that `flujo lens show` with nonexistent run completes in <2s with 10,000 runs."""
         # Set environment variable to point to our test database
         os.environ["FLUJO_STATE_URI"] = f"sqlite:///{large_database}"
 
