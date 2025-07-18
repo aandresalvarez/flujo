@@ -43,6 +43,7 @@ async def test_async_agent_wrapper_retry_then_success() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.performance
 async def test_async_agent_wrapper_timeout() -> None:
     agent = AsyncMock()
 
@@ -267,6 +268,7 @@ def test_async_agent_wrapper_init_non_positive_timeout_value(
 
 
 @pytest.mark.asyncio
+@pytest.mark.performance
 async def test_async_agent_wrapper_runtime_timeout(
     mock_pydantic_ai_agent: MagicMock,
 ) -> None:

@@ -141,6 +141,7 @@ async def test_timeout_and_redirect_loop_detection() -> None:
         await gather_result(runner2, "p")
 
 
+@pytest.mark.performance
 async def test_pipeline_cancellation() -> None:
     agent = StubAgent(["out"])
     step = Step.model_validate({"name": "s", "agent": agent})

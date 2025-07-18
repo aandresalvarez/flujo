@@ -131,6 +131,7 @@ async def test_invalid_step_index_raises() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.performance
 async def test_cancelled_pipeline_state_saved() -> None:
     backend = InMemoryBackend()
 
