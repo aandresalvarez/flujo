@@ -71,7 +71,12 @@ except ModuleNotFoundError:
 from ...domain.dsl.step import Step
 from ...domain.models import BaseModel, StepResult, UsageLimits
 from ...domain.resources import AppResources
-from ...exceptions import UsageLimitExceededError, PausedException
+from ...exceptions import (
+    UsageLimitExceededError,
+    PausedException,
+    InfiniteFallbackError,
+    InfiniteRedirectError,
+)
 
 # Optional telemetry (no-op if absent)
 try:
@@ -701,8 +706,11 @@ class UltraStepExecutor(Generic[TContext]):
             except PausedException:
                 # Re-raise PausedException for agentic loops
                 raise
+            except (InfiniteFallbackError, InfiniteRedirectError):
+                # Allow critical exceptions to propagate
+                raise
             except Exception as e:
-                # Handle other exceptions
+                # Log and re-raise other exceptions
                 import logging
 
                 logger = logging.getLogger(__name__)

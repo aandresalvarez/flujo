@@ -199,6 +199,15 @@ if __name__ == "__main__":
 - **[Examples Directory](examples/):** See more patterns in action.
 - **[Contributing Guide](CONTRIBUTING.md):** Join us in building the future of reliable AI systems.
 
+## Environment Variables & Configuration
+
+Flujo supports several environment variables for configuration:
+
+- **`FLUJO_CV_THRESHOLD`**: Controls the coefficient of variation threshold for tracing performance tests. Default is `1.0`. Set to a higher value (e.g., `2.0`) in CI environments to account for timing variability.
+- **`FLUJO_OVERHEAD_LIMIT`**: Controls the maximum allowed overhead percentage for persistence performance tests. Default is `15.0`. Set to a higher value in CI environments to account for timing variability.
+- **`FLUJO_STATE_URI`**: URI for the state backend (e.g., `sqlite:///path/to/db.sqlite`).
+- **`OPENAI_API_KEY`**: Your OpenAI API key for LLM operations.
+
 ## License
 
 This project is dual-licensed under AGPL-3.0 and a Commercial License. See [LICENSE](LICENSE) for more information.

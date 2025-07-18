@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import copy
+import hashlib
 import time
 from typing import Any, Dict, Optional, TypeVar, Callable, Awaitable, cast
 from unittest.mock import Mock
@@ -90,10 +91,121 @@ def _should_pass_context(
     return spec.needs_context or (context is not None and bool(accepts_context))
 
 
-# Track fallback chain per execution context to detect loops
-_fallback_chain_var: contextvars.ContextVar[list[Step[Any, Any]]] = contextvars.ContextVar(
-    "_fallback_chain", default=[]
+# Context variables for tracking fallback relationships and chains
+_fallback_relationships_var: contextvars.ContextVar[Dict[str, str]] = contextvars.ContextVar(
+    "fallback_relationships", default={}
 )
+_fallback_chain_var: contextvars.ContextVar[list[Step[Any, Any]]] = contextvars.ContextVar(
+    "fallback_chain", default=[]
+)
+
+# Cache for fallback relationship loop detection (True if loop detected, False otherwise)
+_fallback_graph_cache: contextvars.ContextVar[Dict[str, bool]] = contextvars.ContextVar(
+    "fallback_graph_cache", default={}
+)
+
+# Maximum length for fallback chains to prevent infinite loops
+# This limit is chosen based on typical pipeline complexity in enterprise applications
+# where fallback chains rarely exceed 10 steps. For healthcare/legal/finance applications,
+# this provides a good balance between safety and flexibility.
+_MAX_FALLBACK_CHAIN_LENGTH = 10
+
+# Maximum iterations for fallback loop detection to prevent infinite loops
+# This limit is chosen to handle complex fallback relationships while preventing
+# performance issues in large pipelines.
+_DEFAULT_MAX_FALLBACK_ITERATIONS = 100
+
+
+def _manage_fallback_relationships(
+    step: Step[Any, Any],
+) -> Optional[contextvars.Token[Dict[str, str]]]:
+    """Helper function to manage fallback relationship tracking.
+
+    Args:
+        step: The step with a fallback to track
+
+    Returns:
+        Token for resetting the context variable, or None if no fallback relationship
+    """
+    if not hasattr(step, "fallback_step") or step.fallback_step is None:
+        # If fallback_step is None, no fallback relationship needs to be managed
+        return None
+
+    # Clear the graph cache when relationships change to prevent stale cache entries
+    _fallback_graph_cache.set({})
+
+    relationships = _fallback_relationships_var.get()
+    relationships_token = _fallback_relationships_var.set(
+        {**relationships, step.name: step.fallback_step.name}
+    )
+    return relationships_token
+
+
+def _detect_fallback_loop(step: Step[Any, Any], chain: list[Step[Any, Any]]) -> bool:
+    """Detect fallback loops using robust strategies for healthcare/legal/finance applications.
+
+    Uses both local chain analysis and global relationship tracking to detect loops
+    that could occur across the entire pipeline execution. Implements caching for
+    improved performance in large pipelines.
+
+    1. Object identity check (current implementation)
+    2. Immediate name match (current step name matches last step in chain)
+    3. Chain length limit (prevents extremely long chains)
+    4. Global relationship loop detection with caching
+    """
+    # Strategy 1: Object identity check
+    if step in chain:
+        return True
+
+    # Strategy 2: Immediate name match (current step name matches last step in chain)
+    if chain and chain[-1].name == step.name:
+        return True
+
+    # Strategy 3: Chain length limit
+    if len(chain) >= _MAX_FALLBACK_CHAIN_LENGTH:
+        return True
+
+    # Strategy 4: Global relationship loop detection with caching
+    relationships = _fallback_relationships_var.get()
+    if step.name in relationships:
+        # Use cached graph for improved performance
+        graph_cache = _fallback_graph_cache.get()
+
+        # Create a robust cache key that includes the actual relationship content
+        # This prevents cache collisions when different relationship sets have the same length
+        # but different content (e.g., {'A': 'B', 'C': 'D'} vs {'A': 'C', 'C': 'A'})
+        relationships_hash = hashlib.sha256(
+            str(sorted(relationships.items())).encode("utf-8")
+        ).hexdigest()  # Use SHA-256 for improved collision resistance
+        cache_key = f"{step.name}_{len(relationships)}_{relationships_hash}"
+
+        if cache_key not in graph_cache:
+            # Build the graph for this step and cache it
+            visited: set[str] = set()
+            current_step = step.name
+            next_step = relationships.get(current_step)
+
+            # Add maximum iteration limit to prevent infinite loops
+            max_iterations = _DEFAULT_MAX_FALLBACK_ITERATIONS
+            iteration_count = 0
+
+            while next_step and iteration_count < max_iterations:
+                # If next_step is in visited, we've found a cycle
+                if next_step in visited:
+                    graph_cache[cache_key] = True
+                    return True  # Loop detected
+                visited.add(next_step)
+                next_step = relationships.get(next_step)
+                iteration_count += 1
+
+            # Cache the result (no loop found)
+            graph_cache[cache_key] = False
+        else:
+            # Use cached result
+            cached_result = graph_cache[cache_key]
+            return bool(cached_result)
+
+    return False  # No loop detected or iteration limit reached
 
 
 async def _execute_parallel_step_logic(
@@ -1292,8 +1404,18 @@ async def _run_step_logic(
         original_failure_feedback = result.feedback
 
         chain = _fallback_chain_var.get()
-        if step in chain:
+
+        # Use helper function to manage fallback relationships
+        relationships_token = _manage_fallback_relationships(step)
+
+        # Detect fallback loop after tracking the relationship globally
+        # Use step.fallback_step for detection since we're checking if the fallback would create a loop
+        if _detect_fallback_loop(step.fallback_step, chain):
+            # Reset relationships before raising to prevent global state pollution
+            if relationships_token is not None:
+                _fallback_relationships_var.reset(relationships_token)
             raise InfiniteFallbackError(f"Fallback loop detected in step '{step.name}'")
+
         token = _fallback_chain_var.set(chain + [step])
         # Store primary token counts for summing, but do not add cost yet
         primary_token_counts = result.token_counts
@@ -1308,6 +1430,9 @@ async def _run_step_logic(
                 raise TypeError("step_executor did not return StepResult in fallback logic")
         finally:
             _fallback_chain_var.reset(token)
+            # Reset relationships to prevent global state pollution across multiple pipeline runs
+            if relationships_token is not None:
+                _fallback_relationships_var.reset(relationships_token)
 
         result.latency_s += fallback_result.latency_s
         if fallback_result.success:

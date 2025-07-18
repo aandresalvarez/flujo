@@ -15,8 +15,207 @@ from .base import StateBackend
 from ...utils.serialization import safe_deserialize, robust_serialize
 from ...infra import telemetry
 
+import re
+
+
 if TYPE_CHECKING:
     from asyncio import AbstractEventLoop
+
+
+# Maximum length for SQL identifiers
+MAX_SQL_IDENTIFIER_LENGTH = 1000
+
+# Problematic Unicode characters that should not be in SQL identifiers
+PROBLEMATIC_UNICODE_CHARS = [
+    "\u0000",  # Null character
+    "\u2028",  # Line separator
+    "\u2029",  # Paragraph separator
+    "\u200b",  # Zero-width space
+    "\u200c",  # Zero-width non-joiner
+    "\u200d",  # Zero-width joiner
+    "\x01",  # Start of heading
+    "\x1f",  # Unit separator
+]
+
+# Whitelist of allowed column names and definitions for enhanced security
+ALLOWED_COLUMNS = {
+    "total_steps": "INTEGER DEFAULT 0",
+    "error_message": "TEXT",
+    "execution_time_ms": "INTEGER",
+    "memory_usage_mb": "REAL",
+    "step_history": "TEXT",
+}
+
+# Compiled regex pattern for column definition validation
+COLUMN_DEF_PATTERN = re.compile(
+    r"""^(INTEGER|REAL|TEXT|BLOB|NUMERIC|BOOLEAN)(\([0-9, ]+\))?(
+        (\s+PRIMARY\s+KEY)?
+        (\s+UNIQUE)?
+        (\s+NOT\s+NULL)?
+        (\s+DEFAULT\s+(NULL|[0-9]+|[0-9]*\.[0-9]+|'.*?'|\".*?\"|TRUE|FALSE))?
+        (\s+CHECK\s+\([a-zA-Z0-9_<>=!&|()\s]+\))?
+        (\s+COLLATE\s+(BINARY|NOCASE|RTRIM))?
+    )*$""",
+    re.IGNORECASE | re.VERBOSE,
+)
+
+
+def _validate_sql_identifier(identifier: str) -> bool:
+    """Validate that a string is a safe SQL identifier.
+
+    This function ensures that column names and table names are safe to use
+    in SQL statements by checking against a whitelist of allowed characters.
+
+    Args:
+        identifier: The identifier to validate
+
+    Returns:
+        True if the identifier is safe, False otherwise
+
+    Raises:
+        ValueError: If the identifier contains unsafe characters
+    """
+    if not identifier or not isinstance(identifier, str):
+        raise ValueError(f"Invalid identifier type or empty: {identifier}")
+
+    # SQLite identifiers can contain: letters, digits, underscore
+    # Must start with a letter or underscore
+    # Also check for problematic Unicode characters
+    safe_pattern = r"^[a-zA-Z_][a-zA-Z0-9_]*$"
+
+    # Check for problematic Unicode characters
+    for char in PROBLEMATIC_UNICODE_CHARS:
+        if char in identifier:
+            raise ValueError(f"Identifier contains problematic Unicode character: {identifier}")
+
+    # Check for very long identifiers (SQLite has limits)
+    if len(identifier) > MAX_SQL_IDENTIFIER_LENGTH:
+        raise ValueError(
+            f"Identifier too long (max {MAX_SQL_IDENTIFIER_LENGTH} characters): {identifier}"
+        )
+
+    if not re.match(safe_pattern, identifier):
+        raise ValueError(f"Unsafe SQL identifier: {identifier}")
+
+    # Additional safety: check for SQL keywords that could be dangerous
+    dangerous_keywords = {
+        "DROP",
+        "DELETE",
+        "INSERT",
+        "UPDATE",
+        "CREATE",
+        "ALTER",
+        "TRUNCATE",
+        "EXEC",
+        "EXECUTE",
+        "UNION",
+        "SELECT",
+        "FROM",
+        "WHERE",
+        "OR",
+        "AND",
+    }
+
+    identifier_upper = identifier.upper()
+    if identifier_upper in dangerous_keywords:
+        raise ValueError(f"Identifier matches dangerous SQL keyword: {identifier}")
+
+    return True
+
+
+def _validate_column_definition(column_def: str) -> bool:
+    """Validate that a column definition is safe.
+
+    Args:
+        column_def: The column definition to validate
+
+    Returns:
+        True if the definition is safe, False otherwise
+
+    Raises:
+        ValueError: If the definition contains unsafe content
+    """
+    if not column_def or not isinstance(column_def, str):
+        raise ValueError(f"Invalid column definition type or empty: {column_def}")
+
+    # Reject non-printable, non-ASCII, or control characters using regex for better performance
+    if re.search(r"[^\x20-\x7e]", column_def):
+        raise ValueError(
+            f"Unsafe column definition: contains non-printable or non-ASCII characters: {column_def}"
+        )
+    # Reject SQL injection patterns and malformed definitions
+    if any(x in column_def for x in [";", "--", "/*", "*/", "'", '"']):
+        raise ValueError(
+            f"Unsafe column definition: contains forbidden SQL characters: {column_def}"
+        )
+    if column_def.count("(") != column_def.count(")"):
+        raise ValueError(f"Unsafe column definition: unmatched parentheses: {column_def}")
+
+    # Parse the definition to check for unsafe content
+    definition_upper = column_def.upper()
+
+    # Check for dangerous SQL constructs (pre-computed as uppercase for efficiency)
+    dangerous_patterns = [
+        "DROP",
+        "DELETE",
+        "INSERT",
+        "UPDATE",
+        "CREATE",
+        "ALTER",
+        "TRUNCATE",
+        "EXEC",
+        "EXECUTE",
+        "UNION",
+        "FROM",
+        "WHERE",
+        "OR",
+        "AND",
+        ";",
+        "--",
+        "/*",
+        "*/",
+        "XP_",
+        "SP_",
+    ]
+
+    for pattern in dangerous_patterns:
+        if pattern in definition_upper:
+            raise ValueError(f"Unsafe column definition contains '{pattern}': {column_def}")
+
+    # Validate the entire column definition structure using a regular expression
+    # Use more restrictive patterns for DEFAULT and CHECK constraints to prevent SQL injection
+    match = COLUMN_DEF_PATTERN.match(column_def)
+    if not match:
+        raise ValueError(f"Column definition does not match a safe SQLite structure: {column_def}")
+    # Ensure no unknown trailing content after allowed constraints
+    allowed_constraints = ["PRIMARY KEY", "UNIQUE", "NOT NULL", "DEFAULT", "CHECK", "COLLATE"]
+    # Remove type and type parameters
+    rest = column_def[len(match.group(1) or "") :]
+    if match.group(2):
+        rest = rest[len(match.group(2)) :]  # Remove type parameters
+    # Remove all allowed constraints
+    for constraint in allowed_constraints:
+        rest = re.sub(rf"\b{constraint}\b(\s+\S+|\s*\(.+?\))?", "", rest, flags=re.IGNORECASE)
+    if rest.strip():
+        raise ValueError(
+            f"Unsafe column definition: unknown or unsafe trailing content: {column_def}"
+        )
+    # Additional checks for COLLATE and DEFAULT
+    collate_match = re.search(r"COLLATE\s+(\w+)", column_def, re.IGNORECASE)
+    if collate_match:
+        if collate_match.group(1).upper() not in {"BINARY", "NOCASE", "RTRIM"}:
+            raise ValueError(
+                f"Unsafe column definition: invalid COLLATE value: {collate_match.group(1)}"
+            )
+    default_match = re.search(r"DEFAULT\s+([^ ]+)", column_def, re.IGNORECASE)
+    if default_match:
+        val = default_match.group(1)
+        if not re.match(
+            r"^(NULL|[0-9]+|[0-9]*\.[0-9]+|'.*?'|\".*?\"|TRUE|FALSE)$", val, re.IGNORECASE
+        ):
+            raise ValueError(f"Unsafe column definition: invalid DEFAULT value: {val}")
+
+    return True
 
 
 class SQLiteBackend(StateBackend):
@@ -326,8 +525,24 @@ class SQLiteBackend(StateBackend):
 
         for column_name, column_def in new_columns:
             if column_name not in existing_columns:
+                # Validate column name and definition against the whitelist
+                if column_name not in ALLOWED_COLUMNS or ALLOWED_COLUMNS[column_name] != column_def:
+                    telemetry.logfire.error(
+                        f"Invalid column definition: {column_name} {column_def}"
+                    )
+                    raise ValueError(
+                        f"Schema migration failed due to invalid column definition: {column_name} {column_def}"
+                    )
+
+                # Use proper SQLite quoting to prevent SQL injection
+                # Note: SQLite doesn't support parameterized DDL, so we use validation + proper quoting
+                # The validation functions ensure safety before this point
+                # Use proper SQLite identifier quoting for maximum security
+                # SQLite doesn't have a built-in quote_identifier, so we use our own implementation
+                escaped_name = column_name.replace('"', '""')
+                quoted_column_name = f'"{escaped_name}"'
                 await db.execute(
-                    f"ALTER TABLE workflow_state ADD COLUMN {column_name} {column_def}"
+                    f"ALTER TABLE workflow_state ADD COLUMN {quoted_column_name} {column_def}"
                 )
 
         # Ensure required columns exist with proper constraints

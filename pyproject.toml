@@ -34,7 +34,7 @@ classifiers = [
 
 # Runtime dependencies
 dependencies = [
-  "pydantic>=2.7",
+  "pydantic>=2.11.7,<2.13", # Allow patch updates and minor upgrades within v2, ensures TypeAdapter and v2 features
   "pydantic-ai>=0.4.2",
   "pydantic-settings",
   "python-dotenv>=1.0",
