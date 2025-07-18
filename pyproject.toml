@@ -193,32 +193,9 @@ include = [
 "LICENSE" = "share/doc/flujo/LICENSE"
 "CHANGELOG.md" = "share/doc/flujo/CHANGELOG.md"
 
-[tool.hatch.envs.default]
-features = ["dev"]
-
-[tool.hatch.envs.default.scripts]
-lint = "ruff check flujo tests"
-format = "ruff format flujo tests"
-type-check = "mypy flujo"
-test = "pytest {args}"
-cov = "pytest --cov=flujo --cov-report=term-missing {args}"
-bandit-check = "bandit -c pyproject.toml -r flujo -s B101,B404,B603 --exit-zero"
-cyclonedx = "cyclonedx-py environment --output-file sbom.json --output-format JSON"
-setup = [
-  "pip install --upgrade pip",
-  "pip install -e '.[dev,bench,docs]'",
-  "pre-commit install",
-]
-
-install-dev = "hatch run setup"
-
-# Composite script for all quality checks
-quality = [
-  "format",
-  "lint",
-  "type-check",
-  "bandit-check",
-]
+# Note: This project uses uv for dependency management and development workflow.
+# The Makefile provides convenient commands that use uv under the hood.
+# For local development, use: make install, make test, make all, etc.
 
 # Suppress LogfireNotConfiguredWarning for users who do not enable Logfire
 [tool.logfire]
