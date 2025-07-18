@@ -55,6 +55,7 @@ dev = [
   "pytest",
   "pytest-cov",
   "pytest-asyncio",
+  "pytest-xdist",  # Added for parallel test execution
   "hypothesis",
   "vcrpy",
   "build",     # Added for package building
@@ -207,10 +208,12 @@ features = ["dev"]
 lint = "ruff check flujo tests"
 format = "ruff format flujo tests"
 type-check = "mypy flujo"
-test = "pytest {args}"
-test-all = "pytest {args}"  # Run all tests including performance
-test-fast = "pytest -m 'not performance' {args}"  # Run tests excluding performance
-test-performance = "pytest -m 'performance' {args}"  # Run only performance tests
+test = "pytest -n auto -m 'not e2e and not benchmark and not performance' {args}"  # Fast tests only
+test-fast = "pytest -n auto -m 'not e2e and not benchmark and not performance' {args}"  # Fast tests with parallel
+test-e2e = "pytest -m 'e2e' {args}"  # E2E tests only
+test-bench = "pytest -m 'benchmark' {args}"  # Benchmark tests only
+test-performance = "pytest -m 'performance' {args}"  # Performance tests only
+test-all = "pytest -n auto {args}"  # All tests with parallel
 cov = "pytest --cov=flujo --cov-report=term-missing {args}"
 bandit-check = "bandit -c pyproject.toml -r flujo -s B101,B404,B603 --exit-zero"
 cyclonedx = "cyclonedx-py environment --output-file sbom.json --output-format JSON"

@@ -72,11 +72,11 @@ jobs:
 
       - name: Run tests with coverage
         run: |
-          # Run non-SQLite tests with parallel mode for better performance (excluding performance tests)
-          uv run coverage run --source=flujo --parallel-mode -m pytest tests/ -k "not sqlite and not test_sqlite and not performance"
+          # Run non-SQLite tests with parallel mode for better performance (excluding slow tests)
+          uv run coverage run --source=flujo --parallel-mode -m pytest -m "not e2e and not benchmark and not performance" tests/ -k "not sqlite and not test_sqlite"
 
-          # Run SQLite tests separately without parallel mode to avoid bus errors (excluding performance tests)
-          uv run coverage run --source=flujo --append -m pytest tests/ -k "(sqlite or test_sqlite) and not performance"
+          # Run SQLite tests separately without parallel mode to avoid bus errors (excluding slow tests)
+          uv run coverage run --source=flujo --append -m pytest -m "not e2e and not benchmark and not performance" tests/ -k "(sqlite or test_sqlite)"
 
       - name: Store coverage file
         uses: actions/upload-artifact@v4

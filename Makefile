@@ -59,15 +59,32 @@ typecheck: .uv ## Run static type checking with mypy
 # Testing & Coverage
 # ------------------------------------------------------------------------------
 
-.PHONY: test
-test: .uv ## Run all tests
-	@echo "🧪 Running tests..."
-	CI=1 uv run pytest tests/
+.PHONY: test test-fast test-e2e test-bench test-performance test-all
+test: .uv ## Run fast tests only (excludes e2e, benchmark, performance)
+	@echo "🧪 Running fast tests (parallel execution)..."
+	CI=1 uv run pytest -n auto -m "not e2e and not benchmark and not performance" tests/
 
-.PHONY: testcov
-testcov: .uv ## Run tests and generate an HTML coverage report
-	@echo "🧪 Running tests with coverage..."
-	@uv run coverage run --source=flujo -m pytest tests/
+test-fast: test ## Alias for fast tests
+
+test-e2e: .uv ## Run only end-to-end tests
+	@echo "🌐 Running E2E tests..."
+	uv run pytest -m "e2e" tests/
+
+test-bench: .uv ## Run only benchmark tests
+	@echo "📊 Running benchmark tests..."
+	uv run pytest -m "benchmark" tests/
+
+test-performance: .uv ## Run only performance tests
+	@echo "⚡ Running performance tests..."
+	uv run pytest -m "performance" tests/
+
+test-all: .uv ## Run ALL tests including slow ones
+	@echo "🧪 Running all tests (including slow ones)..."
+	CI=1 uv run pytest -n auto tests/
+
+testcov: .uv ## Run fast tests with coverage
+	@echo "🧪 Running fast tests with coverage..."
+	@uv run coverage run --source=flujo -m pytest -m "not e2e and not benchmark and not performance" tests/
 	@uv run coverage html
 	@echo "\n✅ Coverage report generated in 'htmlcov/'. Open htmlcov/index.html to view."
 
