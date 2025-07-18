@@ -10,11 +10,10 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from flujo import Flujo, Step
-from flujo.application.context_manager import PipelineContext
+from flujo.domain.models import PipelineContext
 from flujo.cli.main import app
-from flujo.domain.models import StubAgent
 from flujo.state.backends.sqlite import SQLiteBackend
-from flujo.testing.utils import gather_result
+from flujo.testing.utils import gather_result, StubAgent
 
 # Default overhead limit for performance tests
 DEFAULT_OVERHEAD_LIMIT = 15.0
