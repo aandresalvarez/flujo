@@ -5,6 +5,7 @@ import time
 import json
 from typing import Any, Dict, List
 from pydantic import BaseModel, Field
+import pytest
 
 from flujo.testing.utils import SimpleDummyRemoteBackend as DummyRemoteBackend
 from flujo.utils.serialization import safe_serialize
@@ -107,6 +108,7 @@ def create_nested_model() -> NestedBenchmarkModel:
     return NestedBenchmarkModel(root=root, children=children, config=config)
 
 
+@pytest.mark.performance
 class TestSerializationPerformance:
     """Performance benchmarks for serialization operations."""
 

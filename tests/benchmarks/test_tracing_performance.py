@@ -16,6 +16,7 @@ from flujo import Step, Flujo
 from flujo.testing.utils import StubAgent
 
 
+@pytest.mark.performance
 class TestTracingPerformance:
     """Benchmark the performance impact of tracing functionality."""
 

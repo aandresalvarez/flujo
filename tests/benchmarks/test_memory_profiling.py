@@ -22,34 +22,37 @@ class LargeModelAgent:
         return idx + 1
 
 
-@pytest.mark.asyncio
-async def test_loop_step_memory_stability() -> None:
+@pytest.mark.performance
+class TestMemoryProfiling:
     """Ensure LoopStep does not leak memory across many iterations."""
 
-    iterations = 1000
-    body_step = Step.model_validate({"name": "make_large", "agent": LargeModelAgent()})
-    body_pipeline = Pipeline.from_step(body_step)
-    loop = Step.loop_until(
-        name="loop_mem_test",
-        loop_body_pipeline=body_pipeline,
-        exit_condition_callable=lambda *_: False,
-        max_loops=iterations,
-    )
-    runner = Flujo(loop)
+    @pytest.mark.asyncio
+    async def test_loop_step_memory_stability(self) -> None:
+        """Ensure LoopStep does not leak memory across many iterations."""
+        iterations = 1000
+        body_step = Step.model_validate({"name": "make_large", "agent": LargeModelAgent()})
+        body_pipeline = Pipeline.from_step(body_step)
+        loop = Step.loop_until(
+            name="loop_mem_test",
+            loop_body_pipeline=body_pipeline,
+            exit_condition_callable=lambda *_: False,
+            max_loops=iterations,
+        )
+        runner = Flujo(loop)
 
-    process = psutil.Process(os.getpid())
-    gc.collect()
-    initial_memory = process.memory_info().rss
+        process = psutil.Process(os.getpid())
+        gc.collect()
+        initial_memory = process.memory_info().rss
 
-    result = await gather_result(runner, 0)
+        result = await gather_result(runner, 0)
 
-    gc.collect()
-    final_memory = process.memory_info().rss
-    delta = final_memory - initial_memory
+        gc.collect()
+        final_memory = process.memory_info().rss
+        delta = final_memory - initial_memory
 
-    print(f"\nInitial memory: {initial_memory / 1024**2:.2f} MB")
-    print(f"Final memory: {final_memory / 1024**2:.2f} MB")
-    print(f"Delta memory: {delta / 1024**2:.2f} MB")
+        print(f"\nInitial memory: {initial_memory / 1024**2:.2f} MB")
+        print(f"Final memory: {final_memory / 1024**2:.2f} MB")
+        print(f"Delta memory: {delta / 1024**2:.2f} MB")
 
-    assert result.step_history[-1].attempts == iterations
-    assert delta < 50 * 1024 * 1024
+        assert result.step_history[-1].attempts == iterations
+        assert delta < 50 * 1024 * 1024

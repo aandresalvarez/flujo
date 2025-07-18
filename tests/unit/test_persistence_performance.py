@@ -22,6 +22,7 @@ DEFAULT_OVERHEAD_LIMIT = 15.0
 logger = logging.getLogger(__name__)
 
 
+@pytest.mark.performance
 class TestPersistencePerformanceOverhead:
     """Test NFR-9: Default persistence must not introduce >15% overhead (relaxed for CI environments)."""
 
@@ -131,6 +132,7 @@ class TestPersistencePerformanceOverhead:
         )
 
 
+@pytest.mark.performance
 class TestCLIPerformance:
     """Test NFR-10: CLI commands must complete in <500ms with 10,000 runs."""
 

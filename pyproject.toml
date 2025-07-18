@@ -163,7 +163,14 @@ markers = [
   "benchmark: marks tests as benchmarks (requires pytest-benchmark)",
   "asyncio: marks tests as async (handled by pytest-asyncio)",
   "serial: marks tests that must run serially to avoid concurrency issues",
+  "slow: marks tests that are slow and should be skipped in CI",
+  "performance: marks tests that measure performance and should be run locally only",
+  "ci-skip: marks tests that should be skipped in CI environments",
 ]
+# Test execution strategies:
+# - CI: Exclude performance tests for speed: pytest -m "not performance"
+# - Local: Run all tests including performance: pytest
+# - Performance only: pytest -m "performance"
 filterwarnings = [
   "ignore:coroutine 'AsyncMockMixin._execute_mock_call' was never awaited:RuntimeWarning"
 ]
@@ -201,6 +208,9 @@ lint = "ruff check flujo tests"
 format = "ruff format flujo tests"
 type-check = "mypy flujo"
 test = "pytest {args}"
+test-all = "pytest {args}"  # Run all tests including performance
+test-fast = "pytest -m 'not performance' {args}"  # Run tests excluding performance
+test-performance = "pytest -m 'performance' {args}"  # Run only performance tests
 cov = "pytest --cov=flujo --cov-report=term-missing {args}"
 bandit-check = "bandit -c pyproject.toml -r flujo -s B101,B404,B603 --exit-zero"
 cyclonedx = "cyclonedx-py environment --output-file sbom.json --output-format JSON"

@@ -12,6 +12,7 @@ from typer.testing import CliRunner
 from flujo.cli.main import app
 
 
+@pytest.mark.performance
 class TestCLIPerformanceEdgeCases:
     """Test CLI performance edge cases and optimizations."""
 

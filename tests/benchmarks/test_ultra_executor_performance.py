@@ -21,6 +21,7 @@ def create_slow_run_helper():
     return slow_run
 
 
+@pytest.mark.performance
 class TestUltraExecutorPerformance:
     """Test the performance characteristics of the ultra executor."""
 
