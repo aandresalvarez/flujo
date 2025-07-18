@@ -328,7 +328,7 @@ content_review_agent = make_review_agent(
 ### Getting Help
 
 - Check the [Troubleshooting Guide](troubleshooting.md)
-- Review the [API Reference](api_reference.md)
+- Review the [API Reference](api/index.md)
 - Search [existing issues](https://github.com/aandresalvarez/flujo/issues)
 
 ## Next Steps

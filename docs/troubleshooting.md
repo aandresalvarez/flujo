@@ -374,7 +374,7 @@ print(details)
 1. **Documentation**
    - [Installation Guide](installation.md)
    - [Usage Guide](usage.md)
-   - [API Reference](api_reference.md)
+   - [API Reference](api/index.md)
 
 2. **Community**
    - [GitHub Issues](https://github.com/aandresalvarez/flujo/issues)

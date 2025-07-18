@@ -480,5 +480,5 @@ async for chunk in runner.stream_async("hello"):
 
 - Try the [Tutorial](tutorial.md) for hands-on examples
 - Explore [Use Cases](use_cases.md) for inspiration
-- Read the [API Reference](api_reference.md) for details
+- Read the [API Reference](api/index.md) for details
 - Learn about [Custom Components](extending.md)
