@@ -119,6 +119,7 @@ class DataclassModel:
     items: List[str]
 
 
+@pytest.mark.performance
 class TestSerializationEdgeCases:
     """Test edge cases in serialization and reconstruction."""
 

@@ -20,7 +20,8 @@ from typing import Any, Dict
 from flujo.utils.serialization import safe_serialize, robust_serialize
 
 
-class TestCISerializationCompatibility:
+@pytest.mark.performance
+class TestCICompatibility:
     """Test serialization compatibility in CI environments."""
 
     def test_serialization_consistency_across_environments(self):

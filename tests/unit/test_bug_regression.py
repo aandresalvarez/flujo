@@ -247,6 +247,7 @@ class TestSerializationEdgeCases:
         assert "ProblematicObject" in result
 
 
+@pytest.mark.performance
 class TestPerformanceRegression:
     """Test for performance regressions."""
 
