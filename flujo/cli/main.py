@@ -247,7 +247,7 @@ def version_cmd() -> None:
     try:
         version = importlib_metadata.version("flujo")
         typer.echo(f"flujo version: {version}")
-    except importlib_metadata.PackageNotFoundError:
+    except Exception:
         typer.echo("flujo version: unknown")
 
 
