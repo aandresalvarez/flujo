@@ -46,7 +46,7 @@ The documentation has been systematically reviewed and updated to reflect the cu
 - ✅ **UPDATED**: Enhanced troubleshooting section
 - ✅ **UPDATED**: Added CLI-based verification steps
 
-#### `docs/api_reference.md` - API Documentation
+#### `docs/api/index.md` - API Documentation
 - ✅ **UPDATED**: Fixed Default recipe workflow description (now includes Reflection step)
 - ✅ **UPDATED**: Corrected agent type annotations and signatures
 - ✅ **UPDATED**: Updated Pipeline DSL examples with actual API
@@ -108,7 +108,7 @@ All documented CLI commands verified in `flujo/cli/main.py`:
 - ✅ `installation.md` - Installation guide
 - ✅ `quickstart.md` - Quick start guide
 - ✅ `concepts.md` - Core concepts
-- ✅ `api_reference.md` - API reference
+- ✅ `api/index.md` - API reference
 - ✅ `index.md` - Main landing page
 
 ### Existing (Not Modified - Assumed Current)

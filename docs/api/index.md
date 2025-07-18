@@ -84,7 +84,7 @@ custom_pipeline = (
 )
 
 # The `processors` argument lets you run custom pre- and post-processing
-# logic for a step. See [Using Processors](cookbook/using_processors.md).
+# logic for a step. See [Using Processors](../cookbook/using_processors.md).
 
 # You can also build steps from async functions using
 # `Step.from_mapper` or the `mapper` alias:
@@ -953,10 +953,10 @@ flujo pipeline-mermaid \
 
 ## Next Steps
 
-- Explore [Pipeline DSL Guide](pipeline_dsl.md) for advanced workflows
-- Read [Intelligent Evals](intelligent_evals.md) for evaluation strategies
-- Check [Telemetry Guide](telemetry.md) for monitoring setup
-- Review [Extending Guide](extending.md) for custom components
+- Explore [Pipeline DSL Guide](../pipeline_dsl.md) for advanced workflows
+- Read [Intelligent Evals](../intelligent_evals.md) for evaluation strategies
+- Check [Telemetry Guide](../telemetry.md) for monitoring setup
+- Review [Extending Guide](../extending.md) for custom components
 
 ## Pipeline Visualization
 
@@ -989,7 +989,7 @@ mermaid_code = pipeline.to_mermaid_with_detail_level("medium")
 print(mermaid_code)
 ```
 
-See also: [Visualizing Pipelines](cookbook/visualizing_pipelines.md)
+See also: [Visualizing Pipelines](../cookbook/visualizing_pipelines.md)
 
 ## Serialization Utilities
 
@@ -1394,4 +1394,4 @@ class CustomStateBackend(StateBackend):
         # ... save logic
 ```
 
-For more detailed examples and advanced usage patterns, see the [Advanced Serialization Guide](cookbook/advanced_serialization.md).
+For more detailed examples and advanced usage patterns, see the [Advanced Serialization Guide](../cookbook/advanced_serialization.md).
