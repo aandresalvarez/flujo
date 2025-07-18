@@ -159,6 +159,7 @@ def test_default_recipe_initialization_with_optional_params():
 
 
 @pytest.mark.asyncio
+@pytest.mark.performance
 async def test_default_recipe_run_async():
     """Test Default recipe run_async method."""
     warnings.simplefilter("always")
@@ -192,6 +193,7 @@ async def test_default_recipe_run_async():
 
 
 @pytest.mark.asyncio
+@pytest.mark.performance
 async def test_default_recipe_run_async_with_reflection():
     """Test Default recipe run_async method with reflection."""
     warnings.simplefilter("always")
@@ -280,6 +282,7 @@ async def test_default_recipe_run_async_no_checklist():
         assert result.checklist is not None
 
 
+@pytest.mark.performance
 def test_default_recipe_run_sync():
     """Test Default recipe run_sync method."""
     warnings.simplefilter("always")
@@ -312,6 +315,7 @@ def test_default_recipe_run_sync():
         assert result.score is not None
 
 
+@pytest.mark.performance
 def test_default_recipe_run_sync_with_reflection():
     """Test Default recipe run_sync method with reflection."""
     warnings.simplefilter("always")

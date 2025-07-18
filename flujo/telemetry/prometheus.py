@@ -136,3 +136,17 @@ def start_prometheus_server(port: int, backend: StateBackend) -> tuple[Callable[
         return _wait_for_server("localhost", assigned_port)
 
     return wait_for_ready, assigned_port
+
+
+def cleanup_prometheus_server() -> None:
+    """Clean up Prometheus server resources."""
+    if PROM_AVAILABLE:
+        try:
+            # Unregister all collectors to prevent memory leaks
+            for collector in list(REGISTRY._collector_to_names.keys()):
+                try:
+                    REGISTRY.unregister(collector)
+                except KeyError:
+                    pass
+        except Exception:
+            pass

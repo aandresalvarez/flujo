@@ -138,4 +138,23 @@ class Default:
         return Candidate(solution=solution, score=score, checklist=checklist)
 
     def run_sync(self, task: Task) -> Candidate | None:
-        return asyncio.run(self.run_async(task))
+        try:
+            return asyncio.run(self.run_async(task))
+        finally:
+            # Ensure cleanup of any resources
+            if hasattr(self.flujo_engine, "state_backend") and self.flujo_engine.state_backend:
+                try:
+                    # Create a new event loop for cleanup if needed
+                    try:
+                        loop = asyncio.get_event_loop()
+                        if not loop.is_closed():
+                            # Type check: only call close() if it's a SQLiteBackend
+                            if hasattr(self.flujo_engine.state_backend, "close"):
+                                loop.run_until_complete(self.flujo_engine.state_backend.close())
+                    except RuntimeError:
+                        # No event loop, create one for cleanup
+                        if hasattr(self.flujo_engine.state_backend, "close"):
+                            asyncio.run(self.flujo_engine.state_backend.close())
+                except Exception:
+                    # Ignore cleanup errors
+                    pass

@@ -44,6 +44,8 @@ dependencies = [
   "rich>=13.7",
   "pydantic-evals>=0.0.47", # Added for Intelligent Evals
   "aiosqlite>=0.21.0",
+  "pytest-timeout>=2.4.0",
+  "psutil>=7.0.0",
 ]
 
 # Optional dependency groups (install with: `pip install .[dev]`, etc.)
@@ -56,6 +58,7 @@ dev = [
   "pytest-cov",
   "pytest-asyncio",
   "pytest-xdist",  # Added for parallel test execution
+  "pytest-timeout",  # Added for test timeout handling
   "hypothesis",
   "vcrpy",
   "build",     # Added for package building
@@ -173,7 +176,8 @@ markers = [
 # - Local: Run all tests including performance: pytest
 # - Performance only: pytest -m "performance"
 filterwarnings = [
-  "ignore:coroutine 'AsyncMockMixin._execute_mock_call' was never awaited:RuntimeWarning"
+  "ignore:coroutine 'AsyncMockMixin._execute_mock_call' was never awaited:RuntimeWarning",
+  "ignore:Exception ignored in.*threading.*:RuntimeWarning"
 ]
 
 # --------------------------------------------------------------------------- #
