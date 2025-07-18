@@ -48,31 +48,44 @@ python --version                    # should print 3.11.x
 
 ### Local Development Workflow
 
-All `make` commands are thin wrappers around `hatch` scripts defined in
-`pyproject.toml`.
+All `make` commands use `uv` for dependency management, ensuring perfect parity with the CI environment.
 
-1. **Install Hatch:**
+1. **Install uv:**
    ```bash
-   pip install hatch
+   # macOS/Linux
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+
+   # Windows
+   powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+   # Or via pip
+   pip install uv
    ```
 
 2. **Create Environment & Install All Dev Dependencies:**
    ```bash
-   make setup
+   make install
    ```
    This command will:
+   - Create a virtual environment using uv
    - Install all required development, testing, and documentation dependencies (including `pytest`, `pytest-asyncio`, `vcrpy`, `hypothesis`, etc.)
-   - Set up pre-commit hooks for code quality and secret scanning
-   - Ensure your environment matches the CI pipeline
+   - Ensure your environment matches the CI pipeline exactly
 
-   > **Tip:** Always use `make setup` after pulling changes to dependencies or when setting up a new environment. This guarantees all tools (test, lint, type-check) will work as expected.
+   > **Tip:** Always use `make install` after pulling changes to dependencies or when setting up a new environment. This guarantees all tools (test, lint, type-check) will work as expected.
 
-3. **Run Quality Checks:**
+3. **Activate the Environment:**
    ```bash
-   make quality
+   source .venv/bin/activate  # Linux/macOS
+   # or
+   .venv\Scripts\activate     # Windows
    ```
 
-4. **Run Tests:**
+4. **Run Quality Checks:**
+   ```bash
+   make all
+   ```
+
+5. **Run Tests:**
    ```bash
    make test
    # pass arguments with: make test args="-k <pattern>"
@@ -80,6 +93,21 @@ All `make` commands are thin wrappers around `hatch` scripts defined in
    See the [Testing Guide](docs/testing_guide.md) for tips on creating effective unit and integration tests.
 
 ---
+
+### Dependency Management with uv
+
+This project uses `uv` for dependency management, which provides:
+- **Fast installation** - Significantly faster than pip/poetry
+- **Perfect CI parity** - Same tool used in CI and local development
+- **Reliable dependency resolution** - Handles complex dependency graphs efficiently
+- **Built-in virtual environments** - No need for separate venv tools
+
+**Key Commands:**
+- `make install` - Create environment and install all dependencies
+- `make sync` - Update dependencies based on pyproject.toml changes
+- `uv run <command>` - Run any command in the project environment
+
+**Migration Note:** This project previously used multiple dependency management tools (hatch, poetry). We've unified on `uv` to eliminate confusion and ensure perfect parity between local development and CI environments. The `poetry.lock` file has been removed as it was a legacy artifact.
 
 ### Troubleshooting: mypy and Third-Party Stubs
 

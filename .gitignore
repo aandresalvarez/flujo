@@ -156,4 +156,7 @@ pip-delete-this-directory.txt
 docs/_build/
 site/
 /sbom.json
+
+# uv dependency lock file - not committed to ensure reproducible builds
+# across different platforms and Python versions
 uv.lock
