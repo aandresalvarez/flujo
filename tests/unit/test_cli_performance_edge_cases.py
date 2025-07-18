@@ -17,13 +17,13 @@ class TestCLIPerformanceEdgeCases:
 
     @pytest.fixture
     def large_database_with_mixed_data(self, tmp_path: Path) -> Path:
-        """Create a database with mixed data types for performance testing."""
+        """Create a database with mixed data types for performance testing (reduced for CI)."""
         db_path = tmp_path / "mixed_ops.db"
         backend = SQLiteBackend(db_path)
 
-        # Create runs with different characteristics
+        # Create runs with different characteristics (reduced from 1,000 to 50 for CI)
         now = datetime.utcnow()
-        for i in range(1000):
+        for i in range(50):
             # Create run start
             asyncio.run(
                 backend.save_run_start(

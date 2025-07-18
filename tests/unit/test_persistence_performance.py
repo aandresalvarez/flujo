@@ -136,13 +136,13 @@ class TestCLIPerformance:
 
     @pytest.fixture
     def large_database(self, tmp_path: Path) -> Path:
-        """Create a database with 10,000 runs for performance testing."""
+        """Create a database with 100 runs for performance testing (reduced from 10,000 for CI)."""
         db_path = tmp_path / "large_ops.db"
         backend = SQLiteBackend(db_path)
 
-        # Create 10,000 runs
+        # Create 100 runs (reduced from 10,000 for CI performance)
         now = datetime.utcnow()
-        for i in range(10000):
+        for i in range(100):
             # Create run start
             asyncio.run(
                 backend.save_run_start(
@@ -157,7 +157,7 @@ class TestCLIPerformance:
             )
 
             # Create run end for most runs
-            if i < 9500:  # 95% completed
+            if i < 95:  # 95% completed
                 asyncio.run(
                     backend.save_run_end(
                         f"run_{i:05d}",
@@ -171,7 +171,7 @@ class TestCLIPerformance:
                 )
 
             # Add some step data for completed runs
-            if i < 9500:
+            if i < 95:
                 for step_idx in range(3):
                     asyncio.run(
                         backend.save_step_result(

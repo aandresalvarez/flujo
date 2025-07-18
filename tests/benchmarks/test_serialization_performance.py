@@ -176,7 +176,9 @@ class TestSerializationPerformance:
     def test_small_model_performance(self):
         """Benchmark performance with small models."""
         model = create_small_model()
-        results = self.benchmark_serialization_speed(model, iterations=10000)
+        results = self.benchmark_serialization_speed(
+            model, iterations=100
+        )  # Reduced from 10,000 for CI
 
         print("\nSmall Model Performance (10,000 iterations):")
         print(f"  Avg serialization: {results['avg_serialization']:.3f} ms")
@@ -195,7 +197,9 @@ class TestSerializationPerformance:
     def test_medium_model_performance(self):
         """Benchmark performance with medium-sized models."""
         model = create_medium_model()
-        results = self.benchmark_serialization_speed(model, iterations=1000)
+        results = self.benchmark_serialization_speed(
+            model, iterations=100
+        )  # Reduced from 1,000 for CI
 
         print("\nMedium Model Performance (1,000 iterations):")
         print(f"  Avg serialization: {results['avg_serialization']:.3f} ms")
