@@ -228,6 +228,7 @@ async def test_default_recipe_run_async_with_reflection():
 
 
 @pytest.mark.asyncio
+@pytest.mark.performance
 async def test_default_recipe_run_async_no_solution():
     warnings.simplefilter("always")
     with pytest.warns(DeprecationWarning):
@@ -259,6 +260,7 @@ async def test_default_recipe_run_async_no_solution():
 
 
 @pytest.mark.asyncio
+@pytest.mark.performance
 async def test_default_recipe_run_async_no_checklist():
     warnings.simplefilter("always")
     with pytest.warns(DeprecationWarning):
@@ -379,6 +381,7 @@ async def test_default_recipe_agent_wrappers():
 
 
 @pytest.mark.asyncio
+@pytest.mark.performance
 async def test_default_recipe_with_callable_agents():
     """Test Default recipe with callable agents instead of objects with run method."""
     warnings.simplefilter("always")
