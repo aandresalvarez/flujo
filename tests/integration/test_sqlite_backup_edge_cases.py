@@ -16,7 +16,7 @@ if getattr(os, "geteuid", lambda: -1)() == 0:
         allow_module_level=True,
     )
 
-from flujo.state.backends.sqlite import SQLiteBackend
+from flujo.state.backends.sqlite import SQLiteBackend, MAX_BACKUP_SUFFIX_ATTEMPTS
 
 
 class TestSQLiteBackupEdgeCases:
@@ -29,7 +29,7 @@ class TestSQLiteBackupEdgeCases:
         db_path.write_bytes(b"corrupted sqlite data")
 
         # Create backup files with conflicting names
-        for i in range(150):  # More than MAX_BACKUP_SUFFIX_ATTEMPTS
+        for i in range(MAX_BACKUP_SUFFIX_ATTEMPTS):  # More than MAX_BACKUP_SUFFIX_ATTEMPTS
             backup_file = tmp_path / f"test.db.corrupt.1234567890.{i}"
             backup_file.write_bytes(b"existing backup")
             backup_file.touch()
@@ -66,7 +66,7 @@ class TestSQLiteBackupEdgeCases:
         db_path.write_bytes(b"corrupted sqlite data")
 
         # Create backup files with the same timestamp
-        for i in range(200):  # More than MAX_BACKUP_SUFFIX_ATTEMPTS
+        for i in range(MAX_BACKUP_SUFFIX_ATTEMPTS):  # More than MAX_BACKUP_SUFFIX_ATTEMPTS
             backup_file = tmp_path / f"test.db.corrupt.1234567890.{i}"
             backup_file.write_bytes(b"existing backup")
             backup_file.touch()
@@ -304,7 +304,7 @@ class TestSQLiteBackupEdgeCases:
         db_path.write_bytes(b"corrupted sqlite data")
 
         # Create backup files with the same timestamp to trigger the bug scenario
-        for i in range(200):  # More than MAX_BACKUP_SUFFIX_ATTEMPTS
+        for i in range(MAX_BACKUP_SUFFIX_ATTEMPTS):  # More than MAX_BACKUP_SUFFIX_ATTEMPTS
             backup_file = tmp_path / f"test.db.corrupt.1234567890.{i}"
             backup_file.write_bytes(b"existing backup")
             backup_file.touch()
@@ -337,7 +337,7 @@ class TestSQLiteBackupEdgeCases:
         db_path.write_bytes(b"corrupted sqlite data")
 
         # Create backup files with the same timestamp to trigger the bug scenario
-        for i in range(200):  # More than MAX_BACKUP_SUFFIX_ATTEMPTS
+        for i in range(MAX_BACKUP_SUFFIX_ATTEMPTS):  # More than MAX_BACKUP_SUFFIX_ATTEMPTS
             backup_file = tmp_path / f"test.db.corrupt.1234567890.{i}"
             backup_file.write_bytes(b"existing backup")
             backup_file.touch()

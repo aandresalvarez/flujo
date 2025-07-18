@@ -39,9 +39,14 @@ if TYPE_CHECKING:
 P = ParamSpec("P")
 T = TypeVar("T")
 
+# Export constants for testing
+__all__ = ["SQLiteBackend", "MAX_BACKUP_SUFFIX_ATTEMPTS"]
 
 # Maximum length for SQL identifiers
 MAX_SQL_IDENTIFIER_LENGTH = 1000
+
+# Maximum backup suffix attempts for corruption recovery
+MAX_BACKUP_SUFFIX_ATTEMPTS = 100
 
 # Problematic Unicode characters that should not be in SQL identifiers
 PROBLEMATIC_UNICODE_CHARS = [
@@ -527,7 +532,6 @@ class SQLiteBackend(StateBackend):
 
             # Handle existing backup files gracefully
             counter = 1
-            MAX_BACKUP_SUFFIX_ATTEMPTS = 100
             MAX_CLEANUP_ATTEMPTS = 10  # Prevent infinite cleanup loops
             cleanup_attempts = 0
 

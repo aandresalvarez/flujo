@@ -7,13 +7,19 @@ from pathlib import Path
 import pytest
 from datetime import datetime, timezone
 
-if getattr(os, "geteuid", lambda: -1)() == 0:
-    pytest.skip(
-        "permission-based SQLite tests skipped when running as root",
-        allow_module_level=True,
-    )
-
 from flujo.state.backends.sqlite import SQLiteBackend
+
+
+def skip_if_root():
+    """Skip tests if running as root user to avoid permission issues."""
+    if getattr(os, "geteuid", lambda: -1)() == 0:
+        pytest.skip(
+            "permission-based SQLite tests skipped when running as root",
+            allow_module_level=True,
+        )
+
+
+skip_if_root()
 
 
 class TestSQLiteConcurrencyEdgeCases:

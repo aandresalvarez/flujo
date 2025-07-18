@@ -299,7 +299,9 @@ class TestSQLInjectionPrevention:
 
         # Create malicious input that would cause SQL injection if not parameterized
         malicious_run_id = "test'; DROP TABLE workflow_state; --"
-        malicious_state = {
+
+        # Create a test state for the injection tests
+        test_state = {
             "pipeline_id": "test_pipeline",
             "pipeline_name": "Test Pipeline",
             "pipeline_version": "1.0",
@@ -316,6 +318,46 @@ class TestSQLInjectionPrevention:
             "memory_usage_mb": None,
         }
 
+        # Test additional injection patterns for comprehensive security testing
+        injection_patterns = [
+            # Basic injection
+            "test'; DROP TABLE workflow_state; --",
+            # UNION-based attacks
+            "test' UNION SELECT * FROM workflow_state --",
+            "test' UNION SELECT run_id, pipeline_id FROM workflow_state --",
+            # Boolean-based blind injection
+            "test' OR 1=1 --",
+            "test' OR '1'='1' --",
+            "test' AND 1=1 --",
+            # Time-based blind injection
+            "test'; WAITFOR DELAY '00:00:05' --",
+            "test'; SELECT SLEEP(5) --",
+            # Stacked queries
+            "test'; INSERT INTO workflow_state VALUES ('hacked', 'hacked', 'hacked', 0, '{}', NULL, '[]', 'running', 0, 0, 0, NULL, NULL, NULL); --",
+            # Comment-based injection
+            "test'/*comment*/OR/*comment*/1=1--",
+            "test'--comment\nOR 1=1--",
+            # Hex encoding
+            "test' OR 0x31=0x31 --",
+            # URL encoding simulation
+            "test'%20OR%201=1--",
+            # Double encoding
+            "test'%2520OR%25201=1--",
+        ]
+
+        for malicious_run_id in injection_patterns:
+            # This should not cause SQL injection due to parameterized queries
+            # The backend should handle this safely
+            try:
+                await backend.save_state(malicious_run_id, test_state)
+                # If we get here, the injection was prevented (good)
+                pass
+            except Exception as e:
+                # Any exception should not be due to SQL injection
+                assert "DROP TABLE" not in str(e)
+                assert "UNION" not in str(e)
+                assert "OR 1=1" not in str(e)
+
         # Spy on the database execute calls to verify parameterized queries
         executed_sql = []
         executed_params = []
@@ -327,23 +369,26 @@ class TestSQLInjectionPrevention:
             executed_params.append(parameters)
             return await original_execute(self, sql, parameters)
 
+        # Use a specific malicious input for the spy test
+        malicious_test_input = "test'; DROP TABLE workflow_state; --"
+
         with patch("aiosqlite.Connection.execute", spy_execute):
             # Perform the operation with malicious input
-            await backend.save_state(malicious_run_id, malicious_state)
+            await backend.save_state(malicious_test_input, test_state)
 
         # Verify that parameterized queries were used
         assert len(executed_sql) > 0, "No SQL queries were executed"
 
         # Check that the malicious input is NOT in the SQL string
         for sql in executed_sql:
-            assert malicious_run_id not in sql, f"Malicious input found in SQL: {sql}"
+            assert malicious_test_input not in sql, f"Malicious input found in SQL: {sql}"
             assert "DROP TABLE" not in sql, f"DROP TABLE found in SQL: {sql}"
             assert "--" not in sql, f"SQL comment found in SQL: {sql}"
 
         # Check that the malicious input IS in the parameters
         malicious_found_in_params = False
         for params in executed_params:
-            if params and any(malicious_run_id in str(param) for param in params):
+            if params and any(malicious_test_input in str(param) for param in params):
                 malicious_found_in_params = True
                 break
 

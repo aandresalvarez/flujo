@@ -25,7 +25,7 @@ class TestSQLiteTransactionRollback:
     async def test_transaction_rollback_on_constraint_violation(self, backend):
         """Test that transactions rollback when a constraint violation occurs."""
         # Save initial state
-        test_datetime = datetime(2023, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        test_datetime = datetime.now(timezone.utc)
         initial_state = {
             "pipeline_id": "test-pipeline",
             "pipeline_name": "test-pipeline",
@@ -92,7 +92,7 @@ class TestSQLiteTransactionRollback:
         # Create multiple concurrent save operations
         async def save_state_with_delay(run_id, delay):
             await asyncio.sleep(delay)
-            test_datetime = datetime(2023, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+            test_datetime = datetime.now(timezone.utc)
             return await backend.save_state(
                 run_id,
                 {
@@ -126,7 +126,7 @@ class TestSQLiteTransactionRollback:
         # This test verifies that the @db_retry decorator works correctly
         # and that transactions are properly handled during retries
 
-        test_datetime = datetime(2023, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        test_datetime = datetime.now(timezone.utc)
         test_state = {
             "pipeline_id": "test-pipeline",
             "pipeline_name": "test-pipeline",
@@ -159,7 +159,7 @@ class TestSQLiteTransactionRollback:
         # This test verifies that the @db_retry decorator works correctly
         # by testing through public methods that use the decorator
 
-        test_datetime = datetime(2023, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        test_datetime = datetime.now(timezone.utc)
         test_state = {
             "pipeline_id": "test-pipeline",
             "pipeline_name": "test-pipeline",
