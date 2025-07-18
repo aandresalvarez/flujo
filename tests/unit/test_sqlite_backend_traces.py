@@ -12,7 +12,6 @@ async def sqlite_backend(tmp_path):
     """Create a SQLite backend for testing."""
     db_path = tmp_path / "test_traces.db"
     backend = SQLiteBackend(db_path)
-    await backend._ensure_init()
     yield backend
     await backend.close()
 

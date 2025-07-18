@@ -1,6 +1,6 @@
 import asyncio
 from flujo import make_agent_async, Step, Task, Pipeline, step, Flujo, init_telemetry
-from flujo.domain.models import Checklist, Candidate, PipelineContext
+from flujo.domain.models import Checklist
 from flujo.domain.scoring import weighted_score, ratio_score
 from pydantic import BaseModel
 

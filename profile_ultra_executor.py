@@ -1,7 +1,7 @@
 import asyncio
 import cProfile
 import pstats
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import Mock
 from flujo.application.core.ultra_executor import UltraStepExecutor
 from flujo.domain.models import StepResult
 from flujo.domain.dsl.step import Step

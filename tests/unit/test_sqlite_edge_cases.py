@@ -4,7 +4,7 @@ import pytest
 import asyncio
 import sqlite3
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 from pathlib import Path
 from unittest.mock import patch
@@ -315,7 +315,26 @@ class TestSQLiteBackendLoggerContextManagement:
         # Use the context manager
         with capture_logs():
             backend = SQLiteBackend(tmp_path / "test.db")
-            await backend._ensure_init()
+            # Trigger initialization through a public method
+            await backend.save_state(
+                "test_run",
+                {
+                    "pipeline_id": "test_pipeline",
+                    "pipeline_name": "Test Pipeline",
+                    "pipeline_version": "1.0",
+                    "current_step_index": 0,
+                    "pipeline_context": {"test": "data"},
+                    "last_step_output": None,
+                    "step_history": [],
+                    "status": "running",
+                    "created_at": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(timezone.utc),
+                    "total_steps": 0,
+                    "error_message": None,
+                    "execution_time_ms": None,
+                    "memory_usage_mb": None,
+                },
+            )
 
         # Verify handlers were cleaned up
         assert logger.handlers == original_handlers
@@ -331,7 +350,26 @@ class TestSQLiteBackendLoggerContextManagement:
         try:
             with capture_logs():
                 backend = SQLiteBackend(tmp_path / "test.db")
-                await backend._ensure_init()
+                # Trigger initialization through a public method
+                await backend.save_state(
+                    "test_run",
+                    {
+                        "pipeline_id": "test_pipeline",
+                        "pipeline_name": "Test Pipeline",
+                        "pipeline_version": "1.0",
+                        "current_step_index": 0,
+                        "pipeline_context": {"test": "data"},
+                        "last_step_output": None,
+                        "step_history": [],
+                        "status": "running",
+                        "created_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(timezone.utc),
+                        "total_steps": 0,
+                        "error_message": None,
+                        "execution_time_ms": None,
+                        "memory_usage_mb": None,
+                    },
+                )
                 raise RuntimeError("Test exception")
         except RuntimeError:
             pass

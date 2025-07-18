@@ -1,7 +1,6 @@
 import asyncio
 from flujo import make_agent_async, Task, init_telemetry
 from flujo.domain.models import PipelineContext
-from flujo.recipes.factories import run_default_pipeline
 from flujo.domain.models import Checklist, Candidate
 from flujo.domain.scoring import weighted_score, ratio_score
 

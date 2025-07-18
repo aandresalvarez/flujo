@@ -17,7 +17,26 @@ async def test_sqlite_backend_logs_initialization_events(tmp_path: Path) -> None
     """Test that SQLiteBackend logs initialization events properly."""
     with capture_logs() as log_capture:
         backend = SQLiteBackend(tmp_path / "init_test.db")
-        await backend._ensure_init()
+        # Trigger initialization through a public method
+        await backend.save_state(
+            "test_run",
+            {
+                "pipeline_id": "test_pipeline",
+                "pipeline_name": "Test Pipeline",
+                "pipeline_version": "1.0",
+                "current_step_index": 0,
+                "pipeline_context": {"test": "data"},
+                "last_step_output": None,
+                "step_history": [],
+                "status": "running",
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
+                "total_steps": 0,
+                "error_message": None,
+                "execution_time_ms": None,
+                "memory_usage_mb": None,
+            },
+        )
 
         # Check that initialization was logged
         log_output = log_capture.getvalue()

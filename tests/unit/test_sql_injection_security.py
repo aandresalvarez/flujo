@@ -363,7 +363,8 @@ class TestSQLInjectionSecurity:
     async def test_parameterized_queries_work_correctly(self, backend: SQLiteBackend) -> None:
         """Test that parameterized queries work correctly with various input types."""
 
-        now = datetime.utcnow().replace(microsecond=0)
+        # Create a workflow with a recent timestamp to ensure it's found by queries
+        now = datetime.utcnow()
         state = {
             "run_id": "test_run",
             "pipeline_id": "pipeline1",
@@ -383,7 +384,7 @@ class TestSQLInjectionSecurity:
         for hours in test_hours:
             result = await backend.get_failed_workflows(hours_back=hours)
             assert isinstance(result, list)
-            # Should find our failed workflow
+            # Should find our failed workflow for all time ranges since it was just created
             assert len(result) >= 1
             assert any(wf["run_id"] == "test_run" for wf in result)
 

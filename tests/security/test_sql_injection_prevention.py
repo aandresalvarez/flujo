@@ -7,7 +7,6 @@ legal, and finance applications where data integrity and security are paramount.
 
 import pytest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
 from datetime import datetime
 
 from flujo.state.backends.sqlite import (
@@ -182,8 +181,26 @@ class TestSQLInjectionPrevention:
     @pytest.mark.asyncio
     async def test_schema_migration_sql_injection_prevention(self, backend: SQLiteBackend):
         """Test that schema migration prevents SQL injection attacks."""
-        # Initialize the backend to create the base schema
-        await backend._ensure_init()
+        # Initialize the backend through a public method
+        await backend.save_state(
+            "test_run",
+            {
+                "pipeline_id": "test_pipeline",
+                "pipeline_name": "Test Pipeline",
+                "pipeline_version": "1.0",
+                "current_step_index": 0,
+                "pipeline_context": {"test": "data"},
+                "last_step_output": None,
+                "step_history": [],
+                "status": "running",
+                "created_at": datetime.now(),
+                "updated_at": datetime.now(),
+                "total_steps": 0,
+                "error_message": None,
+                "execution_time_ms": None,
+                "memory_usage_mb": None,
+            },
+        )
 
         # Test with malicious column names and definitions
         malicious_columns = [
@@ -204,8 +221,26 @@ class TestSQLInjectionPrevention:
     @pytest.mark.asyncio
     async def test_safe_schema_migration(self, backend: SQLiteBackend):
         """Test that safe schema migrations work correctly."""
-        # Initialize the backend
-        await backend._ensure_init()
+        # Initialize the backend through a public method
+        await backend.save_state(
+            "test_run",
+            {
+                "pipeline_id": "test_pipeline",
+                "pipeline_name": "Test Pipeline",
+                "pipeline_version": "1.0",
+                "current_step_index": 0,
+                "pipeline_context": {"test": "data"},
+                "last_step_output": None,
+                "step_history": [],
+                "status": "running",
+                "created_at": datetime.now(),
+                "updated_at": datetime.now(),
+                "total_steps": 0,
+                "error_message": None,
+                "execution_time_ms": None,
+                "memory_usage_mb": None,
+            },
+        )
 
         # Verify that the database was created successfully
         assert backend.db_path.exists()
@@ -238,26 +273,10 @@ class TestSQLInjectionPrevention:
     @pytest.mark.asyncio
     async def test_parameterized_queries_used(self, backend: SQLiteBackend):
         """Test that all database operations use parameterized queries."""
-        await backend._ensure_init()
-
-        # Mock aiosqlite.connect to capture SQL statements
-        with patch("aiosqlite.connect") as mock_connect:
-            mock_db = MagicMock()
-
-            # Configure the mock to handle async operations
-            async def async_execute(*args, **kwargs):
-                return None
-
-            async def async_commit():
-                return None
-
-            mock_db.execute = async_execute
-            mock_db.commit = async_commit
-            mock_connect.return_value.__aenter__.return_value = mock_db
-
-            # Try to save state with potentially malicious input
-            malicious_state = {
-                "run_id": "test'; DROP TABLE workflow_state; --",
+        # Initialize the backend through a public method
+        await backend.save_state(
+            "test_run",
+            {
                 "pipeline_id": "test_pipeline",
                 "pipeline_name": "Test Pipeline",
                 "pipeline_version": "1.0",
@@ -272,21 +291,48 @@ class TestSQLInjectionPrevention:
                 "error_message": None,
                 "execution_time_ms": None,
                 "memory_usage_mb": None,
-            }
+            },
+        )
 
-            await backend.save_state("test_run", malicious_state)
+        # Try to save state with potentially malicious input
+        malicious_state = {
+            "run_id": "test'; DROP TABLE workflow_state; --",
+            "pipeline_id": "test_pipeline",
+            "pipeline_name": "Test Pipeline",
+            "pipeline_version": "1.0",
+            "current_step_index": 0,
+            "pipeline_context": {"test": "data"},
+            "last_step_output": None,
+            "step_history": [],
+            "status": "running",
+            "created_at": datetime.now(),
+            "updated_at": datetime.now(),
+            "total_steps": 0,
+            "error_message": None,
+            "execution_time_ms": None,
+            "memory_usage_mb": None,
+        }
 
-            # Verify that the operation completed without SQL injection
-            # The real test is that the malicious input was safely handled
-            # by the parameterized query system, preventing SQL injection
+        # The real test is that the malicious input is safely handled
+        # by the parameterized query system, preventing SQL injection
+        malicious_run_id = "test'; DROP TABLE workflow_state; --"
+        await backend.save_state(malicious_run_id, malicious_state)
 
-            # Verify that parameterized queries were used by checking mock calls
-            # The mock should have been called with parameterized queries, not string concatenation
-            assert mock_connect.called, "Database connection should have been established"
+        # Verify that the operation completed without SQL injection
+        # by checking that we can still load the state and the database is intact
+        loaded_state = await backend.load_state(malicious_run_id)
+        assert loaded_state is not None
+        assert loaded_state["run_id"] == malicious_run_id
 
-            # Check that the operation completed without raising exceptions
-            # This indicates that the parameterized query system handled the malicious input safely
-            assert True  # Operation completed safely with parameterized queries
+        # Verify that the database is still functional by checking we can list workflows
+        workflows = await backend.list_workflows()
+        assert len(workflows) >= 1
+
+        # Verify that the malicious input was stored as data, not executed as SQL
+        # by checking that the table structure is still intact
+        failed_workflows = await backend.get_failed_workflows(hours_back=24)
+        # This should work without errors, indicating no SQL injection occurred
+        assert isinstance(failed_workflows, list)
 
     def test_healthcare_data_security(self):
         """Test security measures for healthcare data scenarios."""

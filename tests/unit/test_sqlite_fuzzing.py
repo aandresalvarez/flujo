@@ -4,7 +4,7 @@ import pytest
 import asyncio
 import sqlite3
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 import time
@@ -52,8 +52,26 @@ class TestSQLiteBackendFuzzing:
                 db_path = tmp_path / f"{safe_filename}.db"
                 backend = SQLiteBackend(db_path)
 
-                # Try to initialize
-                await backend._ensure_init()
+                # Try to initialize through a public method
+                await backend.save_state(
+                    "test_run",
+                    {
+                        "pipeline_id": "test_pipeline",
+                        "pipeline_name": "Test Pipeline",
+                        "pipeline_version": "1.0",
+                        "current_step_index": 0,
+                        "pipeline_context": {"test": "data"},
+                        "last_step_output": None,
+                        "step_history": [],
+                        "status": "running",
+                        "created_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(timezone.utc),
+                        "total_steps": 0,
+                        "error_message": None,
+                        "execution_time_ms": None,
+                        "memory_usage_mb": None,
+                    },
+                )
 
                 # Verify it works
                 assert backend._initialized
@@ -359,7 +377,25 @@ class TestSQLiteBackendFuzzing:
                 # Mock database operations to raise the error
                 with patch("aiosqlite.connect", side_effect=error):
                     try:
-                        await backend._ensure_init()
+                        await backend.save_state(
+                            "test_run",
+                            {
+                                "pipeline_id": "test_pipeline",
+                                "pipeline_name": "Test Pipeline",
+                                "pipeline_version": "1.0",
+                                "current_step_index": 0,
+                                "pipeline_context": {"test": "data"},
+                                "last_step_output": None,
+                                "step_history": [],
+                                "status": "running",
+                                "created_at": datetime.now(timezone.utc),
+                                "updated_at": datetime.now(timezone.utc),
+                                "total_steps": 0,
+                                "error_message": None,
+                                "execution_time_ms": None,
+                                "memory_usage_mb": None,
+                            },
+                        )
                     except Exception as e:
                         # Should handle the error gracefully
                         assert isinstance(

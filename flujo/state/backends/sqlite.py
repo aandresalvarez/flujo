@@ -3,9 +3,11 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from datetime import datetime
+from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Awaitable, Callable, Any, Dict, List, Optional, cast, TYPE_CHECKING, Tuple
+from typing_extensions import override
 
 import aiosqlite
 import sqlite3
@@ -58,6 +60,69 @@ COLUMN_DEF_PATTERN = re.compile(
     )*$""",
     re.IGNORECASE | re.VERBOSE,
 )
+
+# Pre-compiled constraint regex for better performance
+_CONSTRAINT_RE = re.compile(
+    r"\b(PRIMARY KEY|UNIQUE|NOT NULL|DEFAULT|CHECK|COLLATE)\b(\s+\S+|\s*\([^)]*\))?",
+    flags=re.IGNORECASE,
+)
+
+
+def _datetime_to_epoch_microseconds(dt: datetime) -> int:
+    """Convert datetime to epoch microseconds for efficient storage and comparison."""
+    return int(dt.timestamp() * 1_000_000)
+
+
+def _epoch_microseconds_to_datetime(epoch_us: int) -> datetime:
+    """Convert epoch microseconds back to datetime."""
+    return datetime.fromtimestamp(epoch_us / 1_000_000)
+
+
+def db_retry(max_retries: int = 3, base_delay: float = 0.1, max_delay: float = 2.0) -> Any:
+    """Decorator for database operations with exponential backoff retry logic."""
+
+    def decorator(func: Callable[..., Awaitable[Any]]) -> Callable[..., Awaitable[Any]]:
+        async def wrapper(*args: Any, **kwargs: Any) -> Any:
+            delay = base_delay
+            for attempt in range(max_retries):
+                try:
+                    result = await func(*args, **kwargs)
+                    return result
+                except sqlite3.OperationalError as e:
+                    if "database is locked" in str(e).lower() and attempt < max_retries - 1:
+                        telemetry.logfire.warn(
+                            f"Database is locked, retrying ({attempt + 1}/{max_retries})..."
+                        )
+                        await asyncio.sleep(delay)
+                        delay = min(delay * 2, max_delay)  # Cap exponential backoff
+                        continue
+                    raise
+                except sqlite3.DatabaseError as e:
+                    if "no such column" in str(e).lower():
+                        if attempt < max_retries - 1:
+                            telemetry.logfire.warn(
+                                f"Schema mismatch detected: {e}. Attempting migration (attempt {attempt + 1}/{max_retries})..."
+                            )
+                            # Reset initialization state and re-initialize properly
+                            if hasattr(args[0], "_initialized"):
+                                args[0]._initialized = False
+                                await args[0]._ensure_init()
+                            continue
+                        else:
+                            telemetry.logfire.error(
+                                f"Schema migration failed after {max_retries} attempts. Last error: {e}"
+                            )
+                            raise
+                    raise
+
+            # This should never be reached due to explicit raises above, but ensures type safety
+            raise RuntimeError(
+                f"Operation failed after {max_retries} attempts due to unexpected conditions"
+            )
+
+        return wrapper
+
+    return decorator
 
 
 def _validate_sql_identifier(identifier: str) -> bool:
@@ -232,10 +297,39 @@ class SQLiteBackend(StateBackend):
         self._lock = asyncio.Lock()
         self._initialized = False
         self._connection_pool: Optional[aiosqlite.Connection] = None
+        self._pool_lock = asyncio.Lock()  # guards singleton creation
 
         # Event-loop-local file-level lock - will be initialized lazily
         self._file_lock: Optional[asyncio.Lock] = None
         self._file_lock_key = str(self.db_path.absolute())
+
+    async def _get_conn(self) -> aiosqlite.Connection:
+        """Get the singleton connection from the pool."""
+        if self._connection_pool:
+            return self._connection_pool
+        async with self._pool_lock:
+            if self._connection_pool:
+                return self._connection_pool  # double-checked
+            self._connection_pool = await aiosqlite.connect(
+                self.db_path, isolation_level=None
+            )  # autocommit off
+            self._connection_pool.row_factory = aiosqlite.Row
+            await self._connection_pool.executescript("""
+                PRAGMA journal_mode=WAL;
+                PRAGMA synchronous=NORMAL;
+                PRAGMA foreign_keys=ON;
+            """)
+            return self._connection_pool
+
+    @asynccontextmanager
+    async def _transaction(self) -> Any:
+        """Transaction context manager with automatic retry logic."""
+        conn = await self._get_conn()
+        async with conn.execute("BEGIN IMMEDIATE"):
+            try:
+                yield conn
+            finally:
+                await conn.commit()
 
     def _get_file_lock(self) -> asyncio.Lock:
         """Get the file lock for the current event loop."""
@@ -282,9 +376,7 @@ class SQLiteBackend(StateBackend):
             max_retries: Maximum number of retry attempts for corruption recovery
         """
         try:
-            async with aiosqlite.connect(self.db_path) as db:
-                await db.execute("PRAGMA foreign_keys = ON")
-                await db.execute("PRAGMA journal_mode = WAL")
+            async with self._transaction() as db:
                 await db.execute(
                     """
                     CREATE TABLE IF NOT EXISTS workflow_state (
@@ -297,13 +389,13 @@ class SQLiteBackend(StateBackend):
                         last_step_output TEXT,
                         step_history TEXT,
                         status TEXT NOT NULL CHECK (status IN ('running', 'paused', 'completed', 'failed', 'cancelled')),
-                        created_at TEXT NOT NULL,
-                        updated_at TEXT NOT NULL,
+                        created_at INTEGER NOT NULL,
+                        updated_at INTEGER NOT NULL,
                         total_steps INTEGER DEFAULT 0,
                         error_message TEXT,
                         execution_time_ms INTEGER,
                         memory_usage_mb REAL
-                    )
+                    ) WITHOUT ROWID
                     """
                 )
                 await db.execute(
@@ -323,11 +415,11 @@ class SQLiteBackend(StateBackend):
                         pipeline_name TEXT NOT NULL,
                         pipeline_version TEXT NOT NULL,
                         status TEXT NOT NULL,
-                        start_time TEXT NOT NULL,
-                        end_time TEXT,
+                        start_time INTEGER NOT NULL,
+                        end_time INTEGER,
                         total_cost REAL,
                         final_context_blob TEXT
-                    )
+                    ) WITHOUT ROWID
                     """
                 )
                 await db.execute("CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status)")
@@ -348,8 +440,8 @@ class SQLiteBackend(StateBackend):
                         step_name TEXT NOT NULL,
                         step_index INTEGER NOT NULL,
                         status TEXT NOT NULL,
-                        start_time TEXT NOT NULL,
-                        end_time TEXT,
+                        start_time INTEGER NOT NULL,
+                        end_time INTEGER,
                         duration_ms INTEGER,
                         cost REAL,
                         tokens INTEGER,
@@ -357,7 +449,7 @@ class SQLiteBackend(StateBackend):
                         output_blob TEXT,
                         error_blob TEXT,
                         FOREIGN KEY(run_id) REFERENCES runs(run_id) ON DELETE CASCADE
-                    )
+                    ) WITHOUT ROWID
                     """
                 )
                 await db.execute("CREATE INDEX IF NOT EXISTS idx_steps_run_id ON steps(run_id)")
@@ -372,10 +464,10 @@ class SQLiteBackend(StateBackend):
                         end_time REAL,
                         status TEXT DEFAULT 'running',
                         attributes TEXT, -- JSON for flexible metadata
-                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        created_at INTEGER DEFAULT (strftime('%s', 'now')),
                         FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE,
                         FOREIGN KEY (parent_span_id) REFERENCES spans(span_id) ON DELETE CASCADE
-                    )
+                    ) WITHOUT ROWID
                     """
                 )
                 # Indexes for efficient querying
@@ -563,6 +655,70 @@ class SQLiteBackend(StateBackend):
         )
         await db.execute("UPDATE workflow_state SET status = 'running' WHERE status IS NULL")
 
+        # Migrate timestamp columns from TEXT to INTEGER if needed
+        if "created_at" in existing_columns:
+            # Check if created_at is still TEXT (old format)
+            cursor = await db.execute("PRAGMA table_info(workflow_state)")
+            columns_info = await cursor.fetchall()
+            await cursor.close()
+
+            created_at_type = None
+            for col_info in columns_info:
+                if col_info[1] == "created_at":
+                    created_at_type = col_info[2]
+                    break
+
+            if created_at_type == "TEXT":
+                # Migrate TEXT timestamps to INTEGER epoch microseconds
+                telemetry.logfire.info("Migrating timestamp columns from TEXT to INTEGER...")
+
+                # Create temporary table with new schema
+                await db.execute("""
+                    CREATE TABLE workflow_state_new (
+                        run_id TEXT PRIMARY KEY,
+                        pipeline_id TEXT NOT NULL,
+                        pipeline_name TEXT NOT NULL,
+                        pipeline_version TEXT NOT NULL,
+                        current_step_index INTEGER NOT NULL DEFAULT 0,
+                        pipeline_context TEXT NOT NULL,
+                        last_step_output TEXT,
+                        step_history TEXT,
+                        status TEXT NOT NULL CHECK (status IN ('running', 'paused', 'completed', 'failed', 'cancelled')),
+                        created_at INTEGER NOT NULL,
+                        updated_at INTEGER NOT NULL,
+                        total_steps INTEGER DEFAULT 0,
+                        error_message TEXT,
+                        execution_time_ms INTEGER,
+                        memory_usage_mb REAL
+                    ) WITHOUT ROWID
+                """)
+
+                # Copy data with timestamp conversion
+                await db.execute("""
+                    INSERT INTO workflow_state_new
+                    SELECT
+                        run_id, pipeline_id, pipeline_name, pipeline_version, current_step_index,
+                        pipeline_context, last_step_output, step_history, status,
+                        CASE
+                            WHEN created_at IS NOT NULL AND created_at != ''
+                            THEN strftime('%s', created_at) * 1000000
+                            ELSE strftime('%s', 'now') * 1000000
+                        END as created_at,
+                        CASE
+                            WHEN updated_at IS NOT NULL AND updated_at != ''
+                            THEN strftime('%s', updated_at) * 1000000
+                            ELSE strftime('%s', 'now') * 1000000
+                        END as updated_at,
+                        total_steps, error_message, execution_time_ms, memory_usage_mb
+                    FROM workflow_state
+                """)
+
+                # Replace old table with new one
+                await db.execute("DROP TABLE workflow_state")
+                await db.execute("ALTER TABLE workflow_state_new RENAME TO workflow_state")
+
+                telemetry.logfire.info("Successfully migrated timestamp columns to INTEGER format")
+
     async def _ensure_init(self) -> None:
         if not self._initialized:
             # Use file-level lock to prevent concurrent initialization across instances
@@ -582,7 +738,9 @@ class SQLiteBackend(StateBackend):
             self._connection_pool = None
         self._initialized = False
 
-        # No global locks to clean up
+        # Clean up global locks
+        if self._file_lock:
+            self._file_lock = None
 
     async def __aenter__(self) -> "SQLiteBackend":
         """Async context manager entry."""
@@ -592,64 +750,7 @@ class SQLiteBackend(StateBackend):
         """Async context manager exit with cleanup."""
         await self.close()
 
-    async def _with_retries(
-        self, coro_func: Callable[..., Awaitable[Any]], *args: Any, **kwargs: Any
-    ) -> Any:
-        """Execute a coroutine function with retry logic for database operations.
-
-        Implements exponential backoff for database locked errors and schema migration
-        retry for schema mismatch errors. Respects retry limits to prevent infinite loops.
-
-        Args:
-            coro_func: The coroutine function to execute
-            *args: Positional arguments to pass to coro_func
-            **kwargs: Keyword arguments to pass to coro_func
-
-        Returns:
-            The result of coro_func if successful
-
-        Raises:
-            sqlite3.OperationalError: If database locked errors persist after retries
-            sqlite3.DatabaseError: If schema migration fails after retries or other DB errors
-            RuntimeError: If all retry attempts are exhausted
-        """
-        max_retries = 3
-        delay = 0.1
-        for attempt in range(max_retries):
-            try:
-                result = await coro_func(*args, **kwargs)
-                return result
-            except sqlite3.OperationalError as e:
-                if "database is locked" in str(e).lower() and attempt < max_retries - 1:
-                    telemetry.logfire.warn(
-                        f"Database is locked, retrying ({attempt + 1}/{max_retries})..."
-                    )
-                    await asyncio.sleep(delay)
-                    delay *= 2
-                    continue
-                raise
-            except sqlite3.DatabaseError as e:
-                if "no such column" in str(e).lower():
-                    if attempt < max_retries - 1:
-                        telemetry.logfire.warn(
-                            f"Schema mismatch detected: {e}. Attempting migration (attempt {attempt + 1}/{max_retries})..."
-                        )
-                        # Reset initialization state and re-initialize properly
-                        self._initialized = False
-                        await self._ensure_init()
-                        continue
-                    else:
-                        telemetry.logfire.error(
-                            f"Schema migration failed after {max_retries} attempts. Last error: {e}"
-                        )
-                        raise
-                raise
-
-        # This should never be reached due to explicit raises above, but ensures type safety
-        raise RuntimeError(
-            f"Operation failed after {max_retries} attempts due to unexpected conditions"
-        )
-
+    @override
     async def save_state(self, run_id: str, state: Dict[str, Any]) -> None:
         """Save workflow state to the database.
 
@@ -661,7 +762,7 @@ class SQLiteBackend(StateBackend):
         async with self._lock:
 
             async def _save() -> None:
-                async with aiosqlite.connect(self.db_path) as db:
+                async with self._transaction() as db:
                     # Get execution_time_ms directly from state
                     execution_time_ms = state.get("execution_time_ms")
                     pipeline_context_json = json.dumps(robust_serialize(state["pipeline_context"]))
@@ -677,12 +778,26 @@ class SQLiteBackend(StateBackend):
                     )
                     await db.execute(
                         """
-                        INSERT OR REPLACE INTO workflow_state (
+                        INSERT INTO workflow_state (
                             run_id, pipeline_id, pipeline_name, pipeline_version,
                             current_step_index, pipeline_context, last_step_output, step_history,
                             status, created_at, updated_at, total_steps,
                             error_message, execution_time_ms, memory_usage_mb
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(run_id) DO UPDATE SET
+                            pipeline_id = excluded.pipeline_id,
+                            pipeline_name = excluded.pipeline_name,
+                            pipeline_version = excluded.pipeline_version,
+                            current_step_index = excluded.current_step_index,
+                            pipeline_context = excluded.pipeline_context,
+                            last_step_output = excluded.last_step_output,
+                            step_history = excluded.step_history,
+                            status = excluded.status,
+                            updated_at = excluded.updated_at,
+                            total_steps = excluded.total_steps,
+                            error_message = excluded.error_message,
+                            execution_time_ms = excluded.execution_time_ms,
+                            memory_usage_mb = excluded.memory_usage_mb
                         """,
                         (
                             run_id,
@@ -694,25 +809,25 @@ class SQLiteBackend(StateBackend):
                             last_step_output_json,
                             step_history_json,
                             state["status"],
-                            state["created_at"].isoformat(),
-                            state["updated_at"].isoformat(),
+                            _datetime_to_epoch_microseconds(state["created_at"]),
+                            _datetime_to_epoch_microseconds(state["updated_at"]),
                             state.get("total_steps", 0),
                             state.get("error_message"),
                             execution_time_ms,
                             state.get("memory_usage_mb"),
                         ),
                     )
-                    await db.commit()
                     telemetry.logfire.info(f"Saved state for run_id={run_id}")
 
-            await self._with_retries(_save)
+            await _save()
 
+    @override
     async def load_state(self, run_id: str) -> Optional[Dict[str, Any]]:
         await self._ensure_init()
         async with self._lock:
 
             async def _load() -> Optional[Dict[str, Any]]:
-                async with aiosqlite.connect(self.db_path) as db:
+                async with self._transaction() as db:
                     cursor = await db.execute(
                         """
                         SELECT run_id, pipeline_id, pipeline_name, pipeline_version, current_step_index,
@@ -743,16 +858,16 @@ class SQLiteBackend(StateBackend):
                     "last_step_output": last_step_output,
                     "step_history": step_history,
                     "status": row[8],
-                    "created_at": datetime.fromisoformat(row[9]),
-                    "updated_at": datetime.fromisoformat(row[10]),
+                    "created_at": _epoch_microseconds_to_datetime(row[9]),
+                    "updated_at": _epoch_microseconds_to_datetime(row[10]),
                     "total_steps": row[11] or 0,
                     "error_message": row[12],
                     "execution_time_ms": row[13],
                     "memory_usage_mb": row[14],
                 }
 
-            result = await self._with_retries(_load)
-            return cast(Optional[Dict[str, Any]], result)
+            result = await _load()
+            return result
 
     async def delete_state(self, run_id: str) -> None:
         """Delete workflow state."""
@@ -951,11 +1066,17 @@ class SQLiteBackend(StateBackend):
                 await cursor.close()
 
                 # Get recent workflows (last 24 hours)
-                cursor = await db.execute("""
+                cutoff_time = _datetime_to_epoch_microseconds(
+                    datetime.utcnow() - timedelta(hours=24)
+                )
+                cursor = await db.execute(
+                    """
                     SELECT COUNT(*)
                     FROM workflow_state
-                    WHERE created_at >= datetime('now', '-24 hours')
-                """)
+                    WHERE created_at >= ?
+                """,
+                    (cutoff_time,),
+                )
                 recent_workflows_24h_row = await cursor.fetchone()
                 recent_workflows_24h = (
                     recent_workflows_24h_row[0] if recent_workflows_24h_row else 0
@@ -984,18 +1105,36 @@ class SQLiteBackend(StateBackend):
         await self._ensure_init()
         async with self._lock:
             async with aiosqlite.connect(self.db_path) as db:
-                cursor = await db.execute(
-                    """
-                    SELECT run_id, pipeline_id, pipeline_name, pipeline_version,
-                           current_step_index, status, created_at, updated_at,
-                           total_steps, error_message, execution_time_ms, memory_usage_mb
-                    FROM workflow_state
-                    WHERE status = 'failed'
-                    AND updated_at >= datetime('now', '-' || ? || ' hours')
-                    ORDER BY updated_at DESC
-                """,
-                    (hours_back,),
-                )
+                # For hours_back=0, return all failed workflows (no time restriction)
+                if hours_back == 0:
+                    cursor = await db.execute(
+                        """
+                        SELECT run_id, pipeline_id, pipeline_name, pipeline_version,
+                               current_step_index, status, created_at, updated_at,
+                               total_steps, error_message, execution_time_ms, memory_usage_mb
+                        FROM workflow_state
+                        WHERE status = 'failed'
+                        ORDER BY updated_at DESC
+                        """
+                    )
+                else:
+                    # Calculate the cutoff time in epoch microseconds
+                    cutoff_time = _datetime_to_epoch_microseconds(
+                        datetime.utcnow() - timedelta(hours=hours_back)
+                    )
+
+                    cursor = await db.execute(
+                        """
+                        SELECT run_id, pipeline_id, pipeline_name, pipeline_version,
+                               current_step_index, status, created_at, updated_at,
+                               total_steps, error_message, execution_time_ms, memory_usage_mb
+                        FROM workflow_state
+                        WHERE status = 'failed'
+                        AND updated_at >= ?
+                        ORDER BY updated_at DESC
+                        """,
+                        (cutoff_time,),
+                    )
 
                 rows = await cursor.fetchall()
                 await cursor.close()
@@ -1029,13 +1168,18 @@ class SQLiteBackend(StateBackend):
 
             async def _cleanup() -> int:
                 async with aiosqlite.connect(self.db_path) as db:
+                    # Calculate the cutoff time in epoch microseconds
+                    cutoff_time = _datetime_to_epoch_microseconds(
+                        datetime.utcnow() - timedelta(days=days_old)
+                    )
+
                     cursor = await db.execute(
                         """
                         SELECT COUNT(*)
                         FROM workflow_state
-                        WHERE created_at < datetime('now', '-' || ? || ' days')
+                        WHERE created_at < ?
                         """,
-                        (days_old,),
+                        (cutoff_time,),
                     )
                     count_row = await cursor.fetchone()
                     count = count_row[0] if count_row else 0
@@ -1043,9 +1187,9 @@ class SQLiteBackend(StateBackend):
                     await db.execute(
                         """
                         DELETE FROM workflow_state
-                        WHERE created_at < datetime('now', '-' || ? || ' days')
+                        WHERE created_at < ?
                         """,
-                        (days_old,),
+                        (cutoff_time,),
                     )
                     await db.commit()
                     telemetry.logfire.info(
@@ -1053,50 +1197,89 @@ class SQLiteBackend(StateBackend):
                     )
                     return int(count)
 
-            result = await self._with_retries(_cleanup)
-            return cast(int, result)
+            result = await _cleanup()
+            return result
 
     # ------------------------------------------------------------------
     # New structured persistence API
     # ------------------------------------------------------------------
 
+    @override
     async def save_run_start(self, run_data: Dict[str, Any]) -> None:
         await self._ensure_init()
         async with self._lock:
 
             async def _save() -> None:
-                async with aiosqlite.connect(self.db_path) as db:
+                async with self._transaction() as db:
                     await db.execute(
                         """
-                        INSERT OR REPLACE INTO runs (
+                        INSERT INTO runs (
                             run_id, pipeline_name, pipeline_version, status, start_time
                         ) VALUES (?, ?, ?, ?, ?)
+                        ON CONFLICT(run_id) DO UPDATE SET
+                            pipeline_name = excluded.pipeline_name,
+                            pipeline_version = excluded.pipeline_version,
+                            status = excluded.status,
+                            start_time = excluded.start_time
                         """,
                         (
                             run_data["run_id"],
                             run_data.get("pipeline_name", "unknown"),
                             run_data.get("pipeline_version", "latest"),
                             run_data.get("status", "running"),
-                            run_data.get("start_time", datetime.utcnow()).isoformat(),
+                            _datetime_to_epoch_microseconds(
+                                run_data.get("start_time", datetime.utcnow())
+                            ),
                         ),
                     )
-                    await db.commit()
 
-            await self._with_retries(_save)
+            await _save()
 
+    @override
     async def save_step_result(self, step_data: Dict[str, Any]) -> None:
         await self._ensure_init()
         async with self._lock:
 
             async def _save() -> None:
-                async with aiosqlite.connect(self.db_path) as db:
+                async with self._transaction() as db:
+                    # Ensure the run exists in the runs table first
                     await db.execute(
                         """
-                        INSERT OR REPLACE INTO steps (
+                        INSERT OR IGNORE INTO runs (
+                            run_id, pipeline_name, pipeline_version, status, start_time
+                        ) VALUES (?, ?, ?, ?, ?)
+                        """,
+                        (
+                            step_data["run_id"],
+                            step_data.get("pipeline_name", "unknown"),
+                            step_data.get("pipeline_version", "latest"),
+                            step_data.get("status", "running"),
+                            _datetime_to_epoch_microseconds(
+                                step_data.get("start_time", datetime.utcnow())
+                            ),
+                        ),
+                    )
+
+                    await db.execute(
+                        """
+                        INSERT INTO steps (
                             step_run_id, run_id, step_name, step_index, status,
                             start_time, end_time, duration_ms, cost, tokens,
                             input_blob, output_blob, error_blob
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(step_run_id) DO UPDATE SET
+                            run_id = excluded.run_id,
+                            step_name = excluded.step_name,
+                            step_index = excluded.step_index,
+                            status = excluded.status,
+                            start_time = excluded.start_time,
+                            end_time = excluded.end_time,
+                            duration_ms = excluded.duration_ms,
+                            cost = excluded.cost,
+                            tokens = excluded.tokens,
+                            input_blob = excluded.input_blob,
+                            output_blob = excluded.output_blob,
+                            error_blob = excluded.error_blob
                         """,
                         (
                             step_data["step_run_id"],
@@ -1104,20 +1287,18 @@ class SQLiteBackend(StateBackend):
                             step_data["step_name"],
                             step_data["step_index"],
                             step_data.get("status", "completed"),
-                            (
-                                (
-                                    lambda v: v.isoformat()
-                                    if isinstance(v, datetime)
-                                    else (str(v) if v is not None else None)
-                                )(step_data.get("start_time"))
-                            ),
-                            (
-                                (
-                                    lambda v: v.isoformat()
-                                    if isinstance(v, datetime)
-                                    else (str(v) if v is not None else None)
-                                )(step_data.get("end_time"))
-                            ),
+                            _datetime_to_epoch_microseconds(
+                                cast(datetime, step_data.get("start_time"))
+                            )
+                            if step_data.get("start_time") is not None
+                            and isinstance(step_data.get("start_time"), datetime)
+                            else None,
+                            _datetime_to_epoch_microseconds(
+                                cast(datetime, step_data.get("end_time"))
+                            )
+                            if step_data.get("end_time") is not None
+                            and isinstance(step_data.get("end_time"), datetime)
+                            else None,
                             step_data.get("duration_ms"),
                             step_data.get("cost"),
                             step_data.get("tokens"),
@@ -1128,16 +1309,16 @@ class SQLiteBackend(StateBackend):
                             else None,
                         ),
                     )
-                    await db.commit()
 
-            await self._with_retries(_save)
+            await _save()
 
+    @override
     async def save_run_end(self, run_id: str, end_data: Dict[str, Any]) -> None:
         await self._ensure_init()
         async with self._lock:
 
             async def _save() -> None:
-                async with aiosqlite.connect(self.db_path) as db:
+                async with self._transaction() as db:
                     await db.execute(
                         """
                         UPDATE runs
@@ -1146,20 +1327,22 @@ class SQLiteBackend(StateBackend):
                         """,
                         (
                             end_data.get("status", "completed"),
-                            end_data.get("end_time", datetime.utcnow()).isoformat(),
+                            _datetime_to_epoch_microseconds(
+                                end_data.get("end_time", datetime.utcnow())
+                            ),
                             end_data.get("total_cost"),
                             json.dumps(robust_serialize(end_data.get("final_context"))),
                             run_id,
                         ),
                     )
-                    await db.commit()
 
-            await self._with_retries(_save)
+            await _save()
 
+    @override
     async def get_run_details(self, run_id: str) -> Optional[Dict[str, Any]]:
         await self._ensure_init()
         async with self._lock:
-            async with aiosqlite.connect(self.db_path) as db:
+            async with self._transaction() as db:
                 cursor = await db.execute(
                     "SELECT run_id, pipeline_name, pipeline_version, status, start_time, end_time, total_cost, final_context_blob FROM runs WHERE run_id = ?",
                     (run_id,),
@@ -1173,16 +1356,17 @@ class SQLiteBackend(StateBackend):
                     "pipeline_name": row[1],
                     "pipeline_version": row[2],
                     "status": row[3],
-                    "start_time": row[4],
-                    "end_time": row[5],
+                    "start_time": _epoch_microseconds_to_datetime(row[4]) if row[4] else None,
+                    "end_time": _epoch_microseconds_to_datetime(row[5]) if row[5] else None,
                     "total_cost": row[6],
                     "final_context": safe_deserialize(json.loads(row[7])) if row[7] else None,
                 }
 
+    @override
     async def list_run_steps(self, run_id: str) -> List[Dict[str, Any]]:
         await self._ensure_init()
         async with self._lock:
-            async with aiosqlite.connect(self.db_path) as db:
+            async with self._transaction() as db:
                 cursor = await db.execute(
                     """
                     SELECT step_name, step_index, status, start_time, end_time, duration_ms,
@@ -1200,8 +1384,8 @@ class SQLiteBackend(StateBackend):
                             "step_name": r[0],
                             "step_index": r[1],
                             "status": r[2],
-                            "start_time": r[3],
-                            "end_time": r[4],
+                            "start_time": _epoch_microseconds_to_datetime(r[3]) if r[3] else None,
+                            "end_time": _epoch_microseconds_to_datetime(r[4]) if r[4] else None,
                             "duration_ms": r[5],
                             "cost": r[6],
                             "tokens": r[7],
@@ -1246,7 +1430,7 @@ class SQLiteBackend(StateBackend):
                             )
                         await db.commit()
 
-            await self._with_retries(_save)
+            await _save()
 
     def _extract_spans_from_tree(
         self, trace: Dict[str, Any], run_id: str, max_depth: int = 100
