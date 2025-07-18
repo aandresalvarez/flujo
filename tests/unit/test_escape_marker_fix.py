@@ -1,5 +1,6 @@
 """Comprehensive tests for the escape marker collision fix."""
 
+import pytest
 from flujo.utils import format_prompt
 from flujo.domain.models import BaseModel
 
@@ -274,6 +275,7 @@ class TestEscapeMarkerCollisionFix:
         result = format_prompt(template)
         assert result == "Literal: {{ not a placeholder }}"
 
+    @pytest.mark.performance
     def test_escape_marker_performance(self):
         """Test that the fix doesn't significantly impact performance."""
         import time

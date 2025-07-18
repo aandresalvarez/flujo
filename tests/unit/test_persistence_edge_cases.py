@@ -150,6 +150,7 @@ class TestPersistenceOptimizationEdgeCases:
         assert workflow_state["current_step_index"] == 1
 
     @pytest.mark.asyncio
+    @pytest.mark.performance
     async def test_large_context_serialization_performance(self, tmp_path: Path):
         """Test that large context serialization doesn't cause performance issues."""
         db_path = tmp_path / "test.db"
@@ -461,6 +462,7 @@ class TestPersistenceOptimizationEdgeCases:
         assert "list_of_dicts" in workflow_state["pipeline_context"]
 
     @pytest.mark.asyncio
+    @pytest.mark.performance
     async def test_persistence_performance_under_load(self, tmp_path: Path):
         """Test persistence performance under high load."""
         db_path = tmp_path / "test.db"
