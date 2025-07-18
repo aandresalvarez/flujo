@@ -74,7 +74,6 @@ class TestPersistencePerformanceOverhead:
         overhead_percentage = ((avg_with_backend - avg_no_backend) / avg_no_backend) * 100
 
         # Log performance results for debugging
-        logger = logging.getLogger(__name__)
         logger.debug("Performance Overhead Test Results:")
         logger.debug(f"Average time without backend: {avg_no_backend:.4f}s")
         logger.debug(f"Average time with default backend: {avg_with_backend:.4f}s")

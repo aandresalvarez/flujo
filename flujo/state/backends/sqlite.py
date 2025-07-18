@@ -138,8 +138,8 @@ def _validate_column_definition(column_def: str) -> bool:
     if not column_def or not isinstance(column_def, str):
         raise ValueError(f"Invalid column definition type or empty: {column_def}")
 
-    # Reject non-printable, non-ASCII, or control characters
-    if any(ord(c) < 32 or ord(c) > 126 for c in column_def):
+    # Reject non-printable, non-ASCII, or control characters using regex for better performance
+    if re.search(r"[^\x20-\x7e]", column_def):
         raise ValueError(
             f"Unsafe column definition: contains non-printable or non-ASCII characters: {column_def}"
         )

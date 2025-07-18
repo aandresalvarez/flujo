@@ -353,7 +353,6 @@ class TestFallbackLoopDetection:
     @pytest.mark.asyncio
     async def test_infinite_fallback_error_raises_correctly(self):
         """Test that InfiniteFallbackError is raised correctly."""
-        from flujo.exceptions import InfiniteFallbackError
 
         # Test that the exception can be raised and caught
         try:
