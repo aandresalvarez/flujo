@@ -264,7 +264,10 @@ def show_config_cmd() -> None:
 
 
 @app.command()
-def bench(prompt: str, rounds: Annotated[Optional[int], typer.Option(help="Number of benchmark rounds to run")] = None) -> None:
+def bench(
+    prompt: str,
+    rounds: Annotated[Optional[int], typer.Option(help="Number of benchmark rounds to run")] = None,
+) -> None:
     """
     Quick micro-benchmark of generation latency/score.
 
@@ -286,7 +289,7 @@ def bench(prompt: str, rounds: Annotated[Optional[int], typer.Option(help="Numbe
         # Apply CLI defaults
         defaults = apply_cli_defaults("bench", rounds=rounds)
         rounds = defaults["rounds"]
-        
+
         # Provide fallback default if rounds is still None
         if rounds is None:
             rounds = 10
@@ -589,7 +592,9 @@ def run(
     pipeline_name: Annotated[
         Optional[str],
         typer.Option(
-            "--pipeline-name", "-p", help="Name of the pipeline variable (default: pipeline)"
+            "--pipeline-name",
+            "-p",
+            help="Name of the pipeline variable (default: pipeline)",
         ),
     ] = "pipeline",
     json_output: Annotated[
@@ -638,7 +643,10 @@ def run(
             if not sys.stdin.isatty():
                 input_data = sys.stdin.read().strip()
             else:
-                typer.echo("[red]No input provided. Use --input or pipe data to stdin", err=True)
+                typer.echo(
+                    "[red]No input provided. Use --input or pipe data to stdin",
+                    err=True,
+                )
                 raise typer.Exit(1)
 
         # Handle context model
@@ -660,7 +668,8 @@ def run(
 
                 if not issubclass(context_model_class, PipelineContext):
                     typer.echo(
-                        f"[red]'{context_model}' must inherit from PipelineContext", err=True
+                        f"[red]'{context_model}' must inherit from PipelineContext",
+                        err=True,
                     )
                     raise typer.Exit(1)
             except Exception as e:
@@ -752,7 +761,10 @@ def run(
             if result.final_pipeline_context:
                 console.print("\n[bold]Final Context:[/bold]")
                 console.print(
-                    json.dumps(safe_serialize(result.final_pipeline_context.model_dump()), indent=2)
+                    json.dumps(
+                        safe_serialize(result.final_pipeline_context.model_dump()),
+                        indent=2,
+                    )
                 )
 
     except Exception as e:

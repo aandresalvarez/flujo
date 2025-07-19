@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Callable, Dict, Optional, Union, cast
 import tomllib
 from pydantic import BaseModel
 
@@ -168,9 +169,8 @@ class ConfigManager:
         # BaseSettings handles the initialization automatically
         from .settings import Settings
 
-        # Settings() constructor is called without arguments as BaseSettings handles
-        # environment variable loading automatically
-        settings = Settings()
+        # Use the same pattern as in settings.py to avoid type checker issues
+        settings = cast(Callable[[], Settings], Settings)()
         config = self.load_config()
 
         # Apply settings overrides from configuration file
@@ -201,18 +201,16 @@ class ConfigManager:
         return config.state_uri
 
 
-import threading
-
 # Thread-local configuration manager instance to ensure thread safety
 _thread_local_config_manager = threading.local()
 
 
 def get_config_manager() -> ConfigManager:
     """Get the thread-local configuration manager instance."""
-    if not hasattr(_thread_local_config_manager, 'config_manager'):
+    if not hasattr(_thread_local_config_manager, "config_manager"):
         _thread_local_config_manager.config_manager = ConfigManager()
 
-    return _thread_local_config_manager.config_manager
+    return cast(ConfigManager, _thread_local_config_manager.config_manager)
 
 
 def load_settings() -> Settings:

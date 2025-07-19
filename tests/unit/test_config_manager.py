@@ -4,16 +4,12 @@ import pytest
 import tempfile
 import os
 from pathlib import Path
-from unittest.mock import patch
-
 from flujo.infra.config_manager import (
     ConfigManager,
     FlujoConfig,
     SolveConfig,
     BenchConfig,
     SettingsOverrides,
-    get_cli_defaults,
-    get_state_uri,
 )
 from flujo.exceptions import ConfigurationError
 
@@ -211,7 +207,8 @@ class TestConfigManager:
             config_manager = ConfigManager(config_path)
             # Should raise an exception due to invalid type
             with pytest.raises(
-                ConfigurationError, match="An unexpected error occurred while loading configuration"
+                ConfigurationError,
+                match="An unexpected error occurred while loading configuration",
             ):
                 config_manager.load_config()
         finally:
@@ -238,7 +235,7 @@ class TestConfigManager:
         try:
             # Test with a real config manager using our test file
             config_manager = ConfigManager(config_path)
-            
+
             # Test CLI defaults
             defaults = config_manager.get_cli_defaults("solve")
             assert defaults["max_iters"] == 5
@@ -298,7 +295,11 @@ class TestConfigurationModels:
     def test_solve_config(self):
         """Test SolveConfig model."""
         solve_config = SolveConfig(
-            max_iters=5, k=2, reflection=True, scorer="ratio", solution_model="openai:gpt-4o"
+            max_iters=5,
+            k=2,
+            reflection=True,
+            scorer="ratio",
+            solution_model="openai:gpt-4o",
         )
 
         assert solve_config.max_iters == 5

@@ -1,6 +1,7 @@
 """Settings and configuration for flujo."""
 
 import os
+import threading
 from typing import Callable, ClassVar, Dict, Literal, Optional, cast
 
 import dotenv
@@ -125,7 +126,8 @@ class ExecutionConfig(BaseModel):
 
     # Iterative executor settings
     use_iterative_executor: bool = Field(
-        default=False, description="Use the new iterative step executor for better performance"
+        default=False,
+        description="Use the new iterative step executor for better performance",
     )
 
     # Memoization settings
@@ -171,8 +173,6 @@ if settings.openai_api_key:
     os.environ.setdefault("OPENAI_API_KEY", settings.openai_api_key.get_secret_value())
 
 
-import threading
-
 # Thread-local cache for settings to avoid repeated imports and ensure thread safety
 _thread_local_settings = threading.local()
 
@@ -186,7 +186,7 @@ def get_settings() -> Settings:
 
     The result is cached per thread to avoid repeated import overhead and ensure thread safety.
     """
-    if not hasattr(_thread_local_settings, 'cached_settings'):
+    if not hasattr(_thread_local_settings, "cached_settings"):
         try:
             from .config_manager import load_settings
 
@@ -195,4 +195,4 @@ def get_settings() -> Settings:
             # Fall back to default settings if config manager is not available
             _thread_local_settings.cached_settings = settings
 
-    return _thread_local_settings.cached_settings
+    return cast(Settings, _thread_local_settings.cached_settings)
