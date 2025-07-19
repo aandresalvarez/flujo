@@ -12,7 +12,7 @@ The `UsageGovernor` is a first-class feature in `flujo` that works seamlessly wi
 
 - **Automatic cost tracking** across all steps and iterations
 - **Immediate halting** when limits are breached
-- **Proactive cancellation** of parallel branches to save resources
+- **Task cancellation** of parallel branches to save resources
 - **Detailed error reporting** with complete execution history
 
 ## Core Concepts
@@ -120,7 +120,7 @@ Running loop with cost limit...
 
 ## Example 2: Proactive Cancellation in Parallel Steps
 
-The `UsageGovernor` provides sophisticated optimization for parallel execution. When one branch breaches the limit, it proactively cancels other in-flight branches to save time and resources.
+The `UsageGovernor` provides efficient optimization for parallel execution. When one branch breaches the limit, it cancels other in-flight branches to save time and resources.
 
 ```python
 import asyncio
@@ -175,7 +175,7 @@ except UsageLimitExceededError as e:
     print(f"   Error: {e}")
     print(f"   Execution time: {execution_time:.2f}s")
     print(f"   Total cost: ${e.result.total_cost_usd:.2f}")
-    print(f"   Note: slow_cheap branch was proactively cancelled")
+    print(f"   Note: slow_cheap branch was cancelled")
 ```
 
 **Expected Output:**
@@ -186,17 +186,17 @@ Running parallel steps with cost limit...
    Error: Cost limit of $0.1 exceeded
    Execution time: 0.06s
    Total cost: $0.15
-   Note: slow_cheap branch was proactively cancelled
+   Note: slow_cheap branch was cancelled
 ```
 
 ### How Parallel Cancellation Works
 
 1. **Concurrent Execution**: Both branches start executing simultaneously
 2. **Fast Branch Breaches**: The `fast_expensive` branch completes quickly and breaches the limit
-3. **Proactive Cancellation**: The governor immediately cancels the `slow_cheap` branch that was still running
-4. **Time Savings**: Execution completes in ~0.06s instead of waiting for the 0.5s slow branch
+3. **Task Cancellation**: The governor cancels the `slow_cheap` branch that was still running
+4. **Time Savings**: Execution completes quickly instead of waiting for the slow branch
 
-This optimization is particularly valuable in production scenarios where you might have expensive API calls running in parallel.
+This optimization is valuable in production scenarios where you might have expensive API calls running in parallel.
 
 ## Example 3: Complex Nested Workflows
 
@@ -292,7 +292,7 @@ except UsageLimitExceededError as e:
 The `UsageGovernor` transforms cost control from a manual, error-prone process into an automatic, reliable safety net. By integrating seamlessly with all `flujo` control flow primitives, it enables you to:
 
 - **Run complex pipelines confidently** without fear of runaway costs
-- **Optimize resource usage** through proactive cancellation
+- **Optimize resource usage** through task cancellation
 - **Maintain predictable budgets** in production environments
 - **Scale safely** with automatic protection at every level
 
