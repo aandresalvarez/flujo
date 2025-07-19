@@ -197,7 +197,11 @@ def get_settings() -> Settings:
         except ImportError:
             # Fall back to default settings if config manager is not available due to import issues
             _thread_local_settings.cached_settings = settings
-        except Exception:
+        except Exception as e:
+            # Log the unexpected error for debugging purposes
+            import logging
+
+            logging.error(f"Unexpected error while retrieving settings: {e}")
             # Fall back to default settings if there is an unexpected error
             _thread_local_settings.cached_settings = settings
 
