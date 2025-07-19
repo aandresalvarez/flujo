@@ -19,21 +19,32 @@ from flujo import Flujo, Step
 from flujo.testing.utils import StubAgent
 
 # Create a sub-pipeline that processes text
-text_processor = StubAgent(["processed text"])
-sub_pipeline = Step("process", text_processor)
+async def process_text(text: str) -> str:
+    return f"Processed: {text.upper()}"
 
-# Create a Flujo runner for the sub-pipeline
+async def add_footer(text: str) -> str:
+    return f"{text} [COMPLETED]"
+
+# Create a sub-pipeline that processes text
+sub_pipeline = Step.from_callable(process_text, name="process")
 sub_runner = Flujo(sub_pipeline, context_model=PipelineContext)
 
 # Wrap the sub-pipeline as a step
 sub_step = sub_runner.as_step(name="text_processor")
 
 # Create a master pipeline that uses the sub-pipeline
-master_pipeline = sub_step >> Step("finalize", StubAgent(["final result"]))
+async def extract_text(result: PipelineResult) -> str:
+    return result.step_history[-1].output
+
+master_pipeline = sub_step >> Step.from_mapper(extract_text, name="extract") >> Step.from_callable(add_footer, name="finalize")
 master_runner = Flujo(master_pipeline, context_model=PipelineContext)
 
 # Run the master pipeline
-result = await master_runner.run_async("input text")
+result = await master_runner.run_async("hello world", initial_context_data={"initial_prompt": "test"})
+
+# Verify the result
+expected_output = "Processed: HELLO WORLD [COMPLETED]"
+assert result.step_history[-1].output == expected_output
 ```
 
 ## Handling State: Context Propagation
@@ -148,9 +159,21 @@ from flujo.domain.models import PipelineContext
 from flujo.state.backends.sqlite import SQLiteBackend
 
 # Create a sub-pipeline with state persistence
+async def add_one(x: int) -> int:
+    return x + 1
+
+async def double(x: int) -> int:
+    return x * 2
+
+async def extract_final_value(result: PipelineResult) -> int:
+    return result.step_history[-1].output
+
+async def add_ten(x: int) -> int:
+    return x + 10
+
 inner_pipeline = (
-    Step.from_callable(lambda x: x + 1, name="first") >>
-    Step.from_callable(lambda x: x + 1, name="second")
+    Step.from_callable(add_one, name="first") >>
+    Step.from_callable(double, name="second")
 )
 
 inner_runner = Flujo(
@@ -165,9 +188,10 @@ nested = inner_runner.as_step(name="nested", inherit_context=False)
 
 # Create a master pipeline
 outer_pipeline = (
-    Step.from_callable(lambda x: x + 1, name="outer_start") >>
+    Step.from_callable(add_one, name="outer_start") >>
     nested >>
-    Step.from_callable(lambda x: x + 1, name="outer_end")
+    Step.from_mapper(extract_final_value, name="extract") >>
+    Step.from_callable(add_ten, name="outer_end")
 )
 
 outer_runner = Flujo(outer_pipeline, context_model=PipelineContext)
@@ -175,12 +199,16 @@ outer_runner = Flujo(outer_pipeline, context_model=PipelineContext)
 # Run the pipeline
 result = await outer_runner.run_async(0, initial_context_data={"initial_prompt": "start"})
 
-# The nested pipeline result is preserved
-inner_result = result.step_history[1].output
-assert isinstance(inner_result, PipelineResult)
-assert len(inner_result.step_history) == 2
-assert inner_result.step_history[0].output == 1
-assert inner_result.step_history[1].output == 2
+    # The nested pipeline result is preserved
+    inner_result = result.step_history[1].output
+    assert isinstance(inner_result, PipelineResult)
+    assert len(inner_result.step_history) == 2
+    assert inner_result.step_history[0].output == 2  # 1 + 1
+    assert inner_result.step_history[1].output == 4  # 2 * 2
+
+    # Final result: ((1 + 1) * 2) + 10 = 14
+    expected_final_result = 14
+    assert result.step_history[-1].output == expected_final_result
 ```
 
 ## Best Practices and When to Use `as_step`
@@ -203,14 +231,29 @@ assert inner_result.step_history[1].output == 2
 
 ```python
 # Good: Clear, descriptive names
-data_processing_pipeline = Flujo(data_steps, context_model=PipelineContext)
-data_step = data_processing_pipeline.as_step(name="data_processing")
+async def process_data(data: str) -> str:
+    return f"Processed: {data.upper()}"
+
+async def validate_data(data: str) -> str:
+    return f"Validated: {data}"
+
+async def format_output(data: str) -> str:
+    return f"Final: {data}"
+
+data_processing_pipeline = Step.from_callable(process_data, name="process")
+data_runner = Flujo(data_processing_pipeline, context_model=PipelineContext)
+data_step = data_runner.as_step(name="data_processing")
 
 # Good: Logical grouping
-validation_pipeline = Flujo(validation_steps, context_model=PipelineContext)
-validation_step = validation_pipeline.as_step(name="validation")
+validation_pipeline = Step.from_callable(validate_data, name="validate")
+validation_runner = Flujo(validation_pipeline, context_model=PipelineContext)
+validation_step = validation_runner.as_step(name="validation")
 
 # Master pipeline composition
+output_pipeline = Step.from_callable(format_output, name="format")
+output_runner = Flujo(output_pipeline, context_model=PipelineContext)
+output_step = output_runner.as_step(name="output")
+
 master_pipeline = data_step >> validation_step >> output_step
 ```
 
@@ -221,21 +264,43 @@ Test your sub-pipelines in isolation before composing them:
 ```python
 import pytest
 
+async def process_data(text: str) -> str:
+    return f"Processed: {text.upper()}"
+
+async def validate_data(text: str) -> str:
+    if "PROCESSED:" in text:
+        return f"Validated: {text}"
+    else:
+        raise ValueError("Invalid data format")
+
 @pytest.mark.asyncio
 async def test_data_processing_pipeline():
-    data_runner = Flujo(data_steps, context_model=PipelineContext)
-    result = await data_runner.run_async("test input")
-    assert result.step_history[-1].output == "expected output"
+    data_pipeline = Step.from_callable(process_data, name="process")
+    data_runner = Flujo(data_pipeline, context_model=PipelineContext)
+    result = await data_runner.run_async("hello")
+    expected_output = "Processed: HELLO"
+    assert result.step_history[-1].output == expected_output
 
 @pytest.mark.asyncio
 async def test_master_pipeline_with_sub_pipelines():
+    # Create sub-pipelines
+    data_pipeline = Step.from_callable(process_data, name="process")
+    validation_pipeline = Step.from_callable(validate_data, name="validate")
+
+    data_runner = Flujo(data_pipeline, context_model=PipelineContext)
+    validation_runner = Flujo(validation_pipeline, context_model=PipelineContext)
+
+    # Wrap as steps
     data_step = data_runner.as_step(name="data")
     validation_step = validation_runner.as_step(name="validation")
-    master_pipeline = data_step >> validation_step
 
+    # Compose master pipeline
+    master_pipeline = data_step >> validation_step
     master_runner = Flujo(master_pipeline, context_model=PipelineContext)
-    result = await master_runner.run_async("test input")
-    assert result.step_history[-1].output == "final result"
+
+    result = await master_runner.run_async("hello", initial_context_data={"initial_prompt": "test"})
+    expected_output = "Validated: Processed: HELLO"
+    assert result.step_history[-1].output == expected_output
 ```
 
 ## Related Guides
