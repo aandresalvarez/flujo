@@ -125,7 +125,7 @@ def solve(
         typer.Exit: If there is an error loading weights or other CLI errors
     """
     try:
-        # Load settings with configuration file overrides
+        # Load settings with configuration file overrides (cached)
         settings = load_settings()
 
         # Apply CLI defaults
@@ -264,7 +264,7 @@ def show_config_cmd() -> None:
 
 
 @app.command()
-def bench(prompt: str, rounds: int = 10) -> None:
+def bench(prompt: str, rounds: Annotated[Optional[int], typer.Option(help="Number of benchmark rounds to run")] = None) -> None:
     """
     Quick micro-benchmark of generation latency/score.
 
@@ -286,6 +286,10 @@ def bench(prompt: str, rounds: int = 10) -> None:
         # Apply CLI defaults
         defaults = apply_cli_defaults("bench", rounds=rounds)
         rounds = defaults["rounds"]
+        
+        # Provide fallback default if rounds is still None
+        if rounds is None:
+            rounds = 10
 
         review_agent = make_review_agent()
         solution_agent = make_solution_agent()

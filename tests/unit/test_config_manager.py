@@ -196,6 +196,8 @@ class TestConfigManager:
 
     def test_invalid_config_file(self):
         """Test handling of invalid configuration files."""
+        # The string 'not_a_number' is used to simulate an invalid value for the 'max_iters' field,
+        # which is expected to be an integer. This triggers a validation error in the configuration manager.
         invalid_content = """
         [settings]
         max_iters = "not_a_number"  # Invalid type
@@ -234,19 +236,16 @@ class TestConfigManager:
             config_path = f.name
 
         try:
-            # Mock the config manager to use our test file
-            with patch("flujo.infra.config_manager._config_manager", None):
-                with patch("flujo.infra.config_manager.ConfigManager") as mock_config_manager_class:
-                    mock_config_manager = mock_config_manager_class.return_value
-                    mock_config_manager.get_cli_defaults.return_value = {"max_iters": 5}
-                    mock_config_manager.get_state_uri.return_value = "sqlite:///test.db"
+            # Test with a real config manager using our test file
+            config_manager = ConfigManager(config_path)
+            
+            # Test CLI defaults
+            defaults = config_manager.get_cli_defaults("solve")
+            assert defaults["max_iters"] == 5
 
-                    # Test global functions
-                    defaults = get_cli_defaults("solve")
-                    assert defaults["max_iters"] == 5
-
-                    uri = get_state_uri()
-                    assert uri == "sqlite:///test.db"
+            # Test state URI
+            uri = config_manager.get_state_uri()
+            assert uri == "sqlite:///test.db"
         finally:
             os.unlink(config_path)
 

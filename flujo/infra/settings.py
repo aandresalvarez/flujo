@@ -171,8 +171,10 @@ if settings.openai_api_key:
     os.environ.setdefault("OPENAI_API_KEY", settings.openai_api_key.get_secret_value())
 
 
-# Cache for settings to avoid repeated imports
-_cached_settings: Optional[Settings] = None
+import threading
+
+# Thread-local cache for settings to avoid repeated imports and ensure thread safety
+_thread_local_settings = threading.local()
 
 
 def get_settings() -> Settings:
@@ -182,17 +184,15 @@ def get_settings() -> Settings:
     by configuration files. It will use the configuration manager if available,
     otherwise fall back to the default settings.
 
-    The result is cached to avoid repeated import overhead.
+    The result is cached per thread to avoid repeated import overhead and ensure thread safety.
     """
-    global _cached_settings
-
-    if _cached_settings is None:
+    if not hasattr(_thread_local_settings, 'cached_settings'):
         try:
             from .config_manager import load_settings
 
-            _cached_settings = load_settings()
+            _thread_local_settings.cached_settings = load_settings()
         except ImportError:
             # Fall back to default settings if config manager is not available
-            _cached_settings = settings
+            _thread_local_settings.cached_settings = settings
 
-    return _cached_settings
+    return _thread_local_settings.cached_settings

@@ -168,7 +168,9 @@ class ConfigManager:
         # BaseSettings handles the initialization automatically
         from .settings import Settings
 
-        settings = Settings()  # type: ignore[call-arg]
+        # Settings() constructor is called without arguments as BaseSettings handles
+        # environment variable loading automatically
+        settings = Settings()
         config = self.load_config()
 
         # Apply settings overrides from configuration file
@@ -199,16 +201,18 @@ class ConfigManager:
         return config.state_uri
 
 
-# Global configuration manager instance
-_config_manager: Optional[ConfigManager] = None
+import threading
+
+# Thread-local configuration manager instance to ensure thread safety
+_thread_local_config_manager = threading.local()
 
 
 def get_config_manager() -> ConfigManager:
-    """Get the global configuration manager instance."""
-    global _config_manager
-    if _config_manager is None:
-        _config_manager = ConfigManager()
-    return _config_manager
+    """Get the thread-local configuration manager instance."""
+    if not hasattr(_thread_local_config_manager, 'config_manager'):
+        _thread_local_config_manager.config_manager = ConfigManager()
+
+    return _thread_local_config_manager.config_manager
 
 
 def load_settings() -> Settings:
