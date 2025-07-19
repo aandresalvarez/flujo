@@ -208,7 +208,7 @@ class TestConfigManager:
             # Should raise an exception due to invalid type
             with pytest.raises(
                 ConfigurationError,
-                match="An unexpected error occurred while loading configuration",
+                match="Error loading configuration",
             ):
                 config_manager.load_config()
         finally:

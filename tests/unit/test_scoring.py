@@ -1,9 +1,24 @@
+"""Tests for scoring utilities."""
+
 import pytest
 from pydantic import SecretStr
 
+from flujo.infra.settings import Settings
 from flujo.domain.models import Checklist, ChecklistItem
 from flujo.domain.scoring import weighted_score, ratio_score, RewardScorer
-from flujo.infra.settings import Settings
+
+
+def monkeypatch_settings(monkeypatch, test_settings):
+    """Helper function to monkeypatch settings across modules."""
+    import sys
+
+    settings_module = sys.modules["flujo.infra.settings"]
+    monkeypatch.setattr(settings_module, "settings", test_settings)
+    # Also monkeypatch get_settings to return our test settings
+    monkeypatch.setattr(settings_module, "get_settings", lambda: test_settings)
+    # Monkeypatch the import in the scoring module
+    scoring_module = sys.modules["flujo.domain.scoring"]
+    monkeypatch.setattr(scoring_module, "get_settings", lambda: test_settings)
 
 
 def test_ratio_score() -> None:
@@ -51,7 +66,6 @@ def test_weighted_score() -> None:
 def test_reward_scorer_init_success(monkeypatch) -> None:
     from flujo.domain.scoring import RewardScorer
     from unittest.mock import Mock
-    import sys
 
     enabled_settings = Settings(
         reward_enabled=True,
@@ -74,13 +88,7 @@ def test_reward_scorer_init_success(monkeypatch) -> None:
         otlp_endpoint=None,
         agent_timeout=60,
     )
-    settings_module = sys.modules["flujo.infra.settings"]
-    monkeypatch.setattr(settings_module, "settings", enabled_settings)
-    # Also monkeypatch get_settings to return our test settings
-    monkeypatch.setattr(settings_module, "get_settings", lambda: enabled_settings)
-    # Monkeypatch the import in the scoring module
-    scoring_module = sys.modules["flujo.domain.scoring"]
-    monkeypatch.setattr(scoring_module, "get_settings", lambda: enabled_settings)
+    monkeypatch_settings(monkeypatch, enabled_settings)
     mock_agent = Mock()
     monkeypatch.setattr("flujo.domain.scoring.Agent", mock_agent)
     RewardScorer()  # Should not raise
@@ -89,7 +97,6 @@ def test_reward_scorer_init_success(monkeypatch) -> None:
 def test_reward_scorer_init_failure(monkeypatch) -> None:
     from flujo.domain.scoring import RewardScorer, RewardModelUnavailable
     from unittest.mock import Mock
-    import sys
 
     # Unset any possible API key env vars
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
@@ -116,13 +123,7 @@ def test_reward_scorer_init_failure(monkeypatch) -> None:
         otlp_endpoint=None,
         agent_timeout=60,
     )
-    settings_module = sys.modules["flujo.infra.settings"]
-    monkeypatch.setattr(settings_module, "settings", disabled_settings)
-    # Also monkeypatch get_settings to return our test settings
-    monkeypatch.setattr(settings_module, "get_settings", lambda: disabled_settings)
-    # Monkeypatch the import in the scoring module
-    scoring_module = sys.modules["flujo.domain.scoring"]
-    monkeypatch.setattr(scoring_module, "get_settings", lambda: disabled_settings)
+    monkeypatch_settings(monkeypatch, disabled_settings)
 
     # Mock Agent to raise RewardModelUnavailable
     def agent_side_effect(*args, **kwargs):
@@ -138,7 +139,6 @@ def test_reward_scorer_init_failure(monkeypatch) -> None:
 async def test_reward_scorer_returns_float(monkeypatch) -> None:
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
-    import sys
 
     monkeypatch.setenv("REWARD_ENABLED", "true")
     test_settings = Settings(
@@ -162,13 +162,7 @@ async def test_reward_scorer_returns_float(monkeypatch) -> None:
         otlp_endpoint=None,
         agent_timeout=60,
     )
-    settings_module = sys.modules["flujo.infra.settings"]
-    monkeypatch.setattr(settings_module, "settings", test_settings)
-    # Also monkeypatch get_settings to return our test settings
-    monkeypatch.setattr(settings_module, "get_settings", lambda: test_settings)
-    # Monkeypatch the import in the scoring module
-    scoring_module = sys.modules["flujo.domain.scoring"]
-    monkeypatch.setattr(scoring_module, "get_settings", lambda: test_settings)
+    monkeypatch_settings(monkeypatch, test_settings)
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
 
     scorer = RewardScorer()
@@ -180,7 +174,6 @@ async def test_reward_scorer_returns_float(monkeypatch) -> None:
 
 def test_reward_scorer_disabled(monkeypatch) -> None:
     from flujo.domain.scoring import RewardScorer, FeatureDisabled
-    import sys
 
     test_settings = Settings(
         reward_enabled=False,
@@ -203,13 +196,7 @@ def test_reward_scorer_disabled(monkeypatch) -> None:
         otlp_endpoint=None,
         agent_timeout=60,
     )
-    settings_module = sys.modules["flujo.infra.settings"]
-    monkeypatch.setattr(settings_module, "settings", test_settings)
-    # Also monkeypatch get_settings to return our test settings
-    monkeypatch.setattr(settings_module, "get_settings", lambda: test_settings)
-    # Monkeypatch the import in the scoring module
-    scoring_module = sys.modules["flujo.domain.scoring"]
-    monkeypatch.setattr(scoring_module, "get_settings", lambda: test_settings)
+    monkeypatch_settings(monkeypatch, test_settings)
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
 
     with pytest.raises(FeatureDisabled):
@@ -251,7 +238,6 @@ def test_redact_string_secret_in_text() -> None:
 @pytest.mark.asyncio
 async def test_reward_scorer_score_no_output(monkeypatch) -> None:
     from unittest.mock import AsyncMock
-    import sys
 
     monkeypatch.setenv("REWARD_ENABLED", "true")
     test_settings = Settings(
@@ -275,13 +261,7 @@ async def test_reward_scorer_score_no_output(monkeypatch) -> None:
         otlp_endpoint=None,
         agent_timeout=60,
     )
-    settings_module = sys.modules["flujo.infra.settings"]
-    monkeypatch.setattr(settings_module, "settings", test_settings)
-    # Also monkeypatch get_settings to return our test settings
-    monkeypatch.setattr(settings_module, "get_settings", lambda: test_settings)
-    # Monkeypatch the import in the scoring module
-    scoring_module = sys.modules["flujo.domain.scoring"]
-    monkeypatch.setattr(scoring_module, "get_settings", lambda: test_settings)
+    monkeypatch_settings(monkeypatch, test_settings)
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
 
     scorer = RewardScorer()

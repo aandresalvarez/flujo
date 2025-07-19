@@ -155,9 +155,11 @@ class ConfigManager:
             raise ConfigurationError(
                 f"Failed to parse TOML configuration file {self.config_path}: {e}"
             )
+        except (OSError, ValueError, tomllib.TOMLDecodeError) as e:
+            raise ConfigurationError(f"Error loading configuration from {self.config_path}: {e}")
         except Exception as e:
             raise ConfigurationError(
-                f"An unexpected error occurred while loading configuration from {self.config_path}: {e}"
+                f"An unexpected error occurred during configuration loading: {e}"
             )
 
     def get_settings(self) -> Settings:

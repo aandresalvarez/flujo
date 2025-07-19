@@ -5,7 +5,7 @@ import tempfile
 import os
 from pathlib import Path
 
-from flujo.infra.config_manager import ConfigManager
+from flujo.infra.config_manager import ConfigManager, ConfigurationError
 
 
 class TestConfigurationIntegration:
@@ -185,12 +185,12 @@ class TestConfigurationIntegration:
         try:
             config_manager = ConfigManager(config_path)
             # Should raise an exception due to invalid type
-            with pytest.raises(Exception):
+            with pytest.raises(ConfigurationError):
                 config_manager.load_config()
         finally:
             os.unlink(config_path)
 
     def test_missing_config_file_handling(self):
         """Test that missing configuration files are handled properly."""
-        with pytest.raises(Exception):
+        with pytest.raises(ConfigurationError):
             ConfigManager("nonexistent.toml")
