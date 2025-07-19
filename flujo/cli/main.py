@@ -72,30 +72,6 @@ def apply_cli_defaults(command: str, **kwargs: Any) -> Dict[str, Any]:
     return result
 
 
-def apply_cli_defaults_with_explicit_check(
-    command: str, explicit_args: Dict[str, Any], **kwargs: Any
-) -> Dict[str, Any]:
-    """Apply CLI defaults from configuration file, respecting explicitly provided arguments.
-
-    Args:
-        command: The command name (e.g., "solve", "bench")
-        explicit_args: Dict of arguments that were explicitly provided by the user
-        **kwargs: The command arguments to apply defaults to
-
-    Returns:
-        Dict containing the arguments with defaults applied
-    """
-    cli_defaults = get_cli_defaults(command)
-    result = kwargs.copy()
-
-    for key, value in kwargs.items():
-        # Only apply config defaults if the argument was not explicitly provided
-        if key not in explicit_args and value is None and key in cli_defaults:
-            result[key] = cli_defaults[key]
-
-    return result
-
-
 @app.command()
 def solve(
     prompt: str,
@@ -153,19 +129,8 @@ def solve(
         settings = load_settings()
 
         # Apply CLI defaults
-        defaults = apply_cli_defaults_with_explicit_check(
+        defaults = apply_cli_defaults(
             "solve",
-            {
-                "max_iters": max_iters,
-                "k": k,
-                "reflection": reflection,
-                "scorer": scorer,
-                "weights_path": weights_path,
-                "solution_model": solution_model,
-                "review_model": review_model,
-                "validator_model": validator_model,
-                "reflection_model": reflection_model,
-            },
             max_iters=max_iters,
             k=k,
             reflection=reflection,
@@ -303,7 +268,7 @@ def show_config_cmd() -> None:
 @app.command()
 def bench(
     prompt: str,
-    rounds: Annotated[Optional[int], typer.Option(help="Number of benchmark rounds to run")] = None,
+    rounds: Annotated[int, typer.Option(help="Number of benchmark rounds to run")] = 10,
 ) -> None:
     """
     Quick micro-benchmark of generation latency/score.
@@ -323,17 +288,13 @@ def bench(
     import asyncio
 
     try:
-        # Apply CLI defaults
-        defaults = apply_cli_defaults_with_explicit_check(
-            "bench",
-            {"rounds": rounds},
-            rounds=rounds,
-        )
-        rounds = defaults["rounds"]
+        # Load CLI defaults from configuration file
+        cli_defaults = get_cli_defaults("bench")
 
-        # Provide fallback default if rounds is still None
-        if rounds is None:
-            rounds = 10
+        # Apply CLI defaults if the value matches the hardcoded default
+        # This is a compromise since typer doesn't provide explicit argument tracking
+        if rounds == 10 and "rounds" in cli_defaults:
+            rounds = cli_defaults["rounds"]
 
         review_agent = make_review_agent()
         solution_agent = make_solution_agent()
