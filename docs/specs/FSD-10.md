@@ -1,139 +1,169 @@
-# Functional Specification Document: FSD-10
+# FSD-10: Comprehensive Golden Transcript Test Suite
 
-**Title:** Golden Transcript Regression Testing for Core Orchestration
-**Author:** AI Assistant
-**Status:** Implemented
-**Priority:** P0 - Critical
-**Date:** 2024-10-27
-**Version:** 1.0
+## Overview
 
----
+This specification defines a comprehensive suite of golden transcript tests for the Flujo framework, designed to provide maximum confidence and feedback with minimum maintenance overhead. Instead of one monolithic test, we implement a small suite of focused tests, each with a clear purpose aligned with distinct architectural layers.
 
-## 1. Overview
+## Motivation
 
-This document specifies the creation of a comprehensive "golden transcript" regression test suite. This suite serves as the primary safety net for the `flujo` orchestration engine, ensuring its complex, end-to-end behavior remains stable and predictable across future development cycles.
+The previous approach of a single monolithic golden transcript test was fragile and hard to debug. This new strategy provides:
 
-The core of this initiative is to build a single, sophisticated pipeline that exercises all major control flow and state management features of the framework. We use `vcrpy` to record a known-good execution of this pipeline, including all real API interactions, into a static "cassette" file. This cassette is then committed to the repository.
+1. **Isolation and Debuggability**: If a test fails, you know exactly which part of the framework is broken
+2. **Clarity and Maintainability**: Each test file has a clear, single purpose
+3. **Architectural Alignment**: The test structure mirrors the framework architecture
+4. **Robustness**: Each test can be perfectly deterministic for its specific purpose
 
-Subsequent test runs in CI execute the same pipeline against the recorded cassette, asserting that the final output, context state, and step history match the golden transcript precisely. This provides immediate, high-confidence detection of any regressions introduced by refactoring or new features, including the upcoming YAML implementation.
+## Test Suite Structure
 
-## 2. Problem Statement
+### 1. Core Orchestration Transcript (`test_golden_transcript_core.py`)
 
-The `flujo` framework has a rich set of features (`LoopStep`, `ConditionalStep`, `ParallelStep`, fallbacks, context management) that interact in complex ways. While the existing unit and integration tests validate these components in isolation, there is no single test that guarantees the holistic, end-to-end behavior of the orchestration engine.
+**Purpose**: Lock in the behavior of the fundamental, low-level control flow primitives and their interactions with context, resources, and resilience features.
 
-The current `test_golden_transcript.py` is an excellent proof-of-concept but covers only a simple, linear pipeline. It does not protect against subtle regressions in more complex scenarios, such as:
-- How context modifications are propagated through nested loops.
-- How fallbacks interact with retry logic.
-- How metrics are aggregated in parallel branches.
+**Pipeline Content**: The "Definitive Golden Pipeline" that tests:
+- `Step.loop_until`
+- `Step.branch_on`
+- `Step.parallel`
+- `Step.fallback` and `StepConfig(max_retries=...)`
+- `PipelineContext` modification and propagation
+- `AppResources` injection
 
-Without a comprehensive characterization test, any significant refactoring (like the planned YAML-native execution engine) carries a high risk of introducing subtle, hard-to-diagnose bugs in the core orchestration logic.
+**What it Guarantees**: That the fundamental building blocks of any custom pipeline work as expected.
 
-## 3. Functional Requirements (FR)
+### 2. Agentic Loop Recipe Transcript (`test_golden_transcript_agentic_loop.py`)
 
-| ID | Requirement | Justification |
-| :--- | :--- | :--- |
-| FR-35 | A new, dedicated test pipeline **SHALL** be created in the `examples/` directory, named `golden_pipeline.py`. | Separates the complex pipeline definition from the test logic, making both easier to understand and maintain. |
-| FR-36 | The golden pipeline **SHALL** exercise the following core framework features in a single run: a `LoopStep`, a `ConditionalStep`, a `ParallelStep`, a step with a configured `fallback`, a custom `PipelineContext` that is modified by multiple steps, and a step that utilizes `AppResources`. | Ensures that the test provides comprehensive coverage of the interactions between all major orchestration primitives. |
-| FR-37 | A new test file, `tests/e2e/test_golden_transcript_complex.py`, **SHALL** be created to run the golden pipeline. | Isolates this critical, high-level test within the end-to-end test suite. |
-| FR-38 | The test **SHALL** use `vcrpy` to record the full, uncensored HTTP interactions of a successful run into a cassette file located at `tests/e2e/cassettes/golden_complex.yaml`. | Creates a static, deterministic baseline of a known-good execution. |
-| FR-39 | The test **SHALL** perform deep assertions on the final `PipelineResult` against the recorded execution, verifying the correctness of the final output, the exact number of steps in the history, the final state of the `PipelineContext`, and the presence of expected metadata (e.g., `fallback_triggered`). | Guarantees that the test is not just checking for crashes but is strictly enforcing the exact, expected behavior of the entire engine. |
-| FR-40 | The GitHub Actions workflow (`e2e_tests.yml`) **SHALL** be updated to include a mechanism to re-record the `golden_complex.yaml` cassette on demand (e.g., via `workflow_dispatch`). | Provides a secure and maintainable process for updating the golden transcript when intentional changes to the core logic are made. |
+**Purpose**: Lock in the behavior of the most important high-level recipe, `make_agentic_loop_pipeline`.
 
-## 4. Non-Functional Requirements (NFR)
+**Pipeline Content**:
+- A pipeline created with `make_agentic_loop_pipeline`
+- A deterministic `StubAgent` for the planner that emits a sequence of commands
+- A simple `agent_registry` with `StubAgent`s as tools
+- Tests for final state, command log, and resume functionality
 
-| ID | Requirement | Justification |
-| :--- | :--- | :--- |
-| NFR-13 | The golden transcript test **MUST** be 100% deterministic when run against its cassette. | The test must never be flaky. Any non-determinism (e.g., from unpatched `datetime.now()` or `random`) must be eliminated. |
-| NFR-14 | The golden transcript test **MUST** be integrated into the main CI workflow (`ci.yml`) as a required check for merges to the `main` branch. | Establishes the test as a critical gatekeeper for core framework stability. |
-| NFR-15 | All sensitive data (i.e., API keys) **MUST** be scrubbed from the `golden_complex.yaml` cassette file before it is committed. | Prevents security vulnerabilities from leaked credentials, following the existing best practice in `test_golden_transcript.py`. |
+**What it Guarantees**: That the user-facing `AgenticLoop` recipe works as documented.
 
-## 5. Technical Design & Specification
+### 3. Refinement Loop Recipe Transcript (`test_golden_transcript_refine.py`)
 
-### 5.1 Golden Pipeline Definition (`examples/golden_pipeline.py`)
+**Purpose**: Lock in the behavior of the `Step.refine_until` recipe.
 
-The pipeline is constructed to exercise all major framework features:
+**Pipeline Content**:
+- A `Step.refine_until` step
+- A deterministic `generator_pipeline` using a `StubAgent`
+- A deterministic `critic_pipeline` using a `StubAgent` that returns `RefinementCheck` objects
+- Tests for loop termination and final output
 
-1. **Setup Step**: Initializes the pipeline and sets up context
-2. **Loop Step**: Executes 3 iterations with context modification
-3. **Conditional Step**: Evaluates data length and branches accordingly
-4. **Parallel Step**: Executes 3 concurrent branches with different transformations
-5. **Fallback Step**: Tests fallback mechanism (not triggered in normal execution)
-6. **Resource Usage Step**: Utilizes AppResources for tracking
-7. **Aggregation Step**: Collects all results into final output
+**What it Guarantees**: That the generator-critic pattern works as expected.
 
-### 5.2 Custom Context and Resources
+### 4. Dynamic Parallel Router Transcript (`test_golden_transcript_dynamic_parallel.py`)
 
-- **GoldenContext**: Extends PipelineContext with fields for tracking loop iterations, branch results, conditional paths, fallback triggers, and resource usage
-- **GoldenResources**: Extends AppResources with fields for API call counting and processing time tracking
+**Purpose**: Test the `Step.dynamic_parallel_branch` primitive.
 
-### 5.3 Test Implementation (`tests/e2e/test_golden_transcript_complex.py`)
+**Pipeline Content**:
+- A `Step.dynamic_parallel_branch` step
+- A deterministic `router_agent` that returns a list of branch names
+- Tests for selective branch execution and result aggregation
 
-The test performs comprehensive assertions on:
-- Final pipeline context state
-- Step history with exact execution counts
-- Branch results and conditional paths
-- Resource usage tracking
-- Fallback behavior
-- Context scratchpad contents
+**What it Guarantees**: That the runtime branch selection and execution logic works correctly.
 
-### 5.4 CI/CD Integration
+## Implementation Requirements
 
-- **ci.yml**: Added the new test to the slow tests job for comprehensive coverage
-- **e2e_tests.yml**: Updated to support re-recording both golden transcript cassettes
+### Core Orchestration Test
 
-## 6. Implementation Plan
+```python
+# tests/e2e/test_golden_transcript_core.py
+@pytest.mark.asyncio
+async def test_golden_transcript_core():
+    """Test the core orchestration primitives with deterministic behavior."""
+    # Uses the definitive golden pipeline
+    # Tests both branches A and B
+    # Verifies all fundamental primitives work correctly
+```
 
-### Phase 1: Pipeline Construction ✅
-- [x] Create `examples/golden_pipeline.py`
-- [x] Define `GoldenContext` and `GoldenResources`
-- [x] Construct the complex pipeline exercising all features listed in FR-36
+### Agentic Loop Test
 
-### Phase 2: Test and Cassette Creation ✅
-- [x] Create `tests/e2e/test_golden_transcript_complex.py`
-- [x] Implement the test logic, including the `vcrpy` decorator and assertions
-- [x] Run the test with a valid API key to record the initial `golden_complex.yaml` cassette
-- [x] Manually verify that the cassette file is properly scrubbed of secrets
+```python
+# tests/e2e/test_golden_transcript_agentic_loop.py
+@pytest.mark.asyncio
+async def test_golden_transcript_agentic_loop():
+    """Test the agentic loop recipe with deterministic behavior."""
+    # Uses make_agentic_loop_pipeline
+    # Tests command execution and state management
+    # Verifies resume functionality
+```
 
-### Phase 3: CI/CD Integration ✅
-- [x] Add the new test to the `ci.yml` workflow
-- [x] Update the `e2e_tests.yml` manual workflow to allow re-recording of the new cassette
+### Refinement Loop Test
 
-### Phase 4: Documentation ✅
-- [x] Create this FSD-10 specification document
-- [x] Update testing documentation to explain the purpose and maintenance of the new golden transcript test
+```python
+# tests/e2e/test_golden_transcript_refine.py
+@pytest.mark.asyncio
+async def test_golden_transcript_refine():
+    """Test the refinement loop recipe with deterministic behavior."""
+    # Uses Step.refine_until
+    # Tests generator-critic feedback flow
+    # Verifies termination conditions
+```
 
-## 7. Testing Plan
+### Dynamic Parallel Test
 
-The testing plan for this FSD involves testing the test itself to ensure its reliability:
+```python
+# tests/e2e/test_golden_transcript_dynamic_parallel.py
+@pytest.mark.asyncio
+async def test_golden_transcript_dynamic_parallel():
+    """Test the dynamic parallel router with deterministic behavior."""
+    # Uses Step.dynamic_parallel_branch
+    # Tests runtime branch selection
+    # Verifies result aggregation
+```
 
-1. **Cassette-Based Run**: Run `pytest` on the new test file *with* the cassette present. The test must pass, and no external API calls should be made.
+## Quality Requirements
 
-2. **Sensitivity Check**: Temporarily introduce a small, breaking change to the orchestration logic (e.g., change the order of operations in `_execute_steps`). Run the test again against the existing cassette. The test **must fail** with a `VCRMismatchError`, proving it is sensitive to behavioral changes.
+### Determinism
 
-3. **Re-recording Workflow**: Trigger the manual "re-record" workflow in GitHub Actions to confirm it successfully deletes the old cassette and allows the test to record a new one.
+- All tests must be perfectly deterministic
+- No manual state setting or forcing of expected values
+- Framework must naturally produce the expected state
 
-## 8. Risks and Mitigation
+### Isolation
 
-| Risk | Impact | Mitigation |
-| :--- | :--- | :--- |
-| **Test Flakiness:** The test could become flaky due to non-deterministic LLM outputs or unpatched sources of randomness. | High | The pipeline is designed with deterministic agents and controlled inputs. `vcrpy` inherently mitigates LLM non-determinism by replaying exact responses. |
-| **API Key Leakage:** An API key could be accidentally committed in the cassette file. | Critical | The `vcrpy` `before_record_request` hook is implemented and manually verified to scrub all `Authorization` headers, following the existing security pattern. |
-| **Maintenance Burden:** The golden transcript may become difficult to update if the core logic changes frequently. | Medium | This is an acceptable trade-off for stability. The on-demand re-recording workflow is designed to make intentional updates as easy as possible. The test's primary purpose is to *prevent unintentional changes*. |
+- Each test focuses on a specific architectural layer
+- Clear separation between core primitives and high-level recipes
+- Independent test execution without shared state
 
-## 9. Implementation Status
+### Maintainability
 
-**Status**: ✅ **COMPLETED**
+- Simple, focused test pipelines
+- Clear assertions that verify specific behaviors
+- Comprehensive documentation of test purposes
 
-All functional and non-functional requirements have been successfully implemented:
+### Robustness
 
-- ✅ FR-35: Golden pipeline created in `examples/golden_pipeline.py`
-- ✅ FR-36: Pipeline exercises all required framework features
-- ✅ FR-37: Test file created at `tests/e2e/test_golden_transcript_complex.py`
-- ✅ FR-38: vcrpy integration with cassette recording
-- ✅ FR-39: Comprehensive assertions on PipelineResult
-- ✅ FR-40: CI/CD integration with re-recording capability
-- ✅ NFR-13: Deterministic test execution
-- ✅ NFR-14: CI workflow integration
-- ✅ NFR-15: Security scrubbing implemented
+- Tests should catch regressions in their specific domain
+- Clear error messages when tests fail
+- Easy debugging and root cause analysis
 
-The implementation provides a robust regression testing foundation for the flujo framework's core orchestration behavior.
+## Success Criteria
+
+1. **All tests pass consistently**: No flaky tests or intermittent failures
+2. **Clear failure isolation**: When a test fails, it's obvious which framework component is broken
+3. **Comprehensive coverage**: All major framework features are tested
+4. **Fast execution**: Tests run quickly and efficiently
+5. **Easy maintenance**: Tests are simple to understand and modify
+
+## Migration Plan
+
+1. **Phase 1**: Implement `test_golden_transcript_core.py` (highest priority)
+2. **Phase 2**: Implement `test_golden_transcript_agentic_loop.py`
+3. **Phase 3**: Implement `test_golden_transcript_refine.py`
+4. **Phase 4**: Implement `test_golden_transcript_dynamic_parallel.py`
+5. **Phase 5**: Update CI/CD to run all golden transcript tests
+6. **Phase 6**: Deprecate the old monolithic test
+
+## Benefits
+
+This approach provides:
+
+- **Maximum confidence**: Each test is focused and deterministic
+- **Minimum maintenance**: Simple, clear test structure
+- **Professional quality**: Aligns with industry best practices
+- **Scalable architecture**: Easy to add new tests as framework evolves
+
+The golden transcript test suite will serve as the foundation for ensuring Flujo framework reliability and correctness.
