@@ -31,9 +31,14 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v1
+        with:
+          enable-cache: true
+
       - name: Install dependencies
         # Install the project with the 'docs' extra dependencies
-        run: pip install .[docs]
+        run: uv sync --extra docs
 
       - name: Build the documentation site
         run: mkdocs build
