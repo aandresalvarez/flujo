@@ -101,6 +101,6 @@ Stores each run as a JSON file in a directory. Great for simple serverless setup
 
 ### SQLiteBackend
 
-Persists state in a single SQLite database file. Robust enough for many production scenarios and perfect for local development.
+Persists state in a single SQLite database file. Robust enough for many production scenarios and perfect for local development. For comprehensive documentation including admin queries, performance optimization, and operational best practices, see the [SQLite Backend Guide](sqlite_backend_guide.md).
 
 See also: [Managing Pipeline Versions](pipeline_versioning.md).
