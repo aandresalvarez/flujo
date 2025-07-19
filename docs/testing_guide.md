@@ -11,13 +11,13 @@ from flujo import Flujo, Step
 from flujo.testing.utils import StubAgent
 
 # Two step pipeline that normally calls real agents
-pipeline = Step("draft", StubAgent(["draft-1", "draft-2"])) >> Step("review", StubAgent(["ok"]))
+pipeline = Step("draft", StubAgent(["First draft: Hello world", "Second draft: Hello, world!"])) >> Step("review", StubAgent(["APPROVED"]))
 
 async def test_pipeline() -> None:
     runner = Flujo(pipeline)
-    result = await runner.arun("start")
-    assert result.step_history[-1].output == "ok"
-    assert pipeline.steps[0].agent.inputs == ["start"]
+    result = await runner.arun("hello world")
+    assert result.step_history[-1].output == "APPROVED"
+    assert pipeline.steps[0].agent.inputs == ["hello world"]
 ```
 
 Use this pattern to verify branching logic or retry behaviour without making API calls.
@@ -33,16 +33,16 @@ from flujo.domain import PluginOutcome
 from flujo.testing.utils import StubAgent, DummyPlugin
 
 plugin = DummyPlugin([
-    PluginOutcome(success=False, feedback="bad input"),
+    PluginOutcome(success=False, feedback="Invalid JSON format"),
     PluginOutcome(success=True),
 ])
-step = Step("validate", StubAgent(["fixed", "final"]), plugins=[plugin])
+step = Step("validate", StubAgent(["Fixed JSON: {'name': 'John'}", "Validated: {'name': 'John', 'age': 30}"]), plugins=[plugin])
 
 async def test_plugin_step() -> None:
     runner = Flujo(step)
     result = await runner.arun("data")
     assert plugin.call_count == 2
-    assert result.step_history[0].output == "final"
+    assert result.step_history[0].output == "Validated: {'name': 'John', 'age': 30}"
 ```
 
 ## 3. Testing Individual Steps
@@ -149,13 +149,13 @@ class ApplicationService:
 # Test the application service with overridden agents
 async def test_application_service():
     service = ApplicationService()
-    fast_test_agent = StubAgent(["test_processed", "test_validated"])
+    fast_test_agent = StubAgent(["Processed: test_input", "Validated: Processed: test_input"])
 
     # Override both steps in the pipeline
     with override_agent(service.pipeline.steps[0], fast_test_agent):
         with override_agent(service.pipeline.steps[1], fast_test_agent):
             result = await service.process_data("test_input")
-            assert result == "test_validated"
+            assert result == "Validated: Processed: test_input"
 ```
 
 ### Testing Different Scenarios
@@ -167,10 +167,10 @@ async def test_different_scenarios():
     service = ApplicationService()
 
     # Test success scenario
-    success_agent = StubAgent(["success_output"])
+    success_agent = StubAgent(["Successfully processed: test"])
     with override_agent(service.pipeline.steps[0], success_agent):
         result = await service.process_data("test")
-        assert result == "success_output"
+        assert result == "Successfully processed: test"
 
     # Test failure scenario
     failure_agent = StubAgent([RuntimeError("Test failure")])
@@ -233,7 +233,7 @@ def always_fail_validator(output: str) -> tuple[bool, str | None]:
     return False, "This validator always fails!"
 
 pipeline = (
-    Step.solution(StubAgent(["some output"]))
+    Step.solution(StubAgent(["Generated content: Hello world"]))
     >> Step.validate(validators=[always_fail_validator])
 )
 
@@ -263,7 +263,7 @@ async def increment_context(input_data: str, *, context: MyContext) -> str:
     return input_data
 
 pipeline = (
-    Step.solution(StubAgent(["initial"]))
+    Step.solution(StubAgent(["Initial data: test"]))
     >> increment_context
 )
 

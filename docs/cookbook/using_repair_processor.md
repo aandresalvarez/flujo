@@ -23,7 +23,7 @@ from flujo.processors.repair import DeterministicRepairProcessor
 from flujo.testing.utils import StubAgent
 
 # This agent returns a malformed JSON string
-agent = StubAgent(['{'key': "value",}'])
+agent = StubAgent(['{'name': "John", 'age': 30,}'])
 
 # The repair processor will fix the JSON before it is passed to the next step
 processors = AgentProcessors(output_processors=[DeterministicRepairProcessor()])
@@ -37,4 +37,4 @@ result = runner.run("Give me some JSON")
 print(result.step_history[0].output)
 ```
 
-In this example, the `DeterministicRepairProcessor` will take the malformed JSON string `{'key': "value",}` and convert it to the valid JSON string `{"key": "value"}`.
+In this example, the `DeterministicRepairProcessor` will take the malformed JSON string `{'name': "John", 'age': 30,}` and convert it to the valid JSON string `{"name": "John", "age": 30}`.
