@@ -161,11 +161,13 @@ class ConfigManager:
             )
         except (OSError, ValueError) as e:
             raise ConfigurationError(f"Error loading configuration from {self.config_path}: {e}")
-        except RuntimeError as e:
-            raise ConfigurationError(f"A runtime error occurred during configuration loading: {e}")
         except KeyError as e:
             raise ConfigurationError(f"Missing expected key in configuration data: {e}")
         except Exception as e:
+            # Log the exception type and details for debugging purposes
+            import logging
+
+            logging.error(f"Unexpected error during configuration loading: {type(e).__name__}: {e}")
             # Catch any other truly unexpected errors and provide a generic message
             # This is kept as a final fallback after handling all specific exceptions
             # to ensure we always provide a meaningful error message

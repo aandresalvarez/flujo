@@ -88,26 +88,6 @@ def apply_cli_defaults(
     return result
 
 
-def process_cli_arguments(
-    command: str, fallback_values: Optional[Dict[str, Any]] = None, **kwargs: Any
-) -> Dict[str, Any]:
-    """Process CLI arguments with defaults applied.
-
-    This helper function encapsulates the common pattern of applying CLI defaults
-    and returning the processed arguments. It can be used to reduce code duplication
-    across command functions.
-
-    Args:
-        command: The command name (e.g., "solve", "bench", "run")
-        fallback_values: Dict mapping argument names to their hardcoded default values
-        **kwargs: The command arguments to process
-
-    Returns:
-        Dict containing the processed arguments with defaults applied
-    """
-    return apply_cli_defaults(command, fallback_values, **kwargs)
-
-
 @app.command()
 def solve(
     prompt: str,
@@ -164,8 +144,8 @@ def solve(
         # Load settings with configuration file overrides (thread-local cached)
         settings = load_settings()
 
-        # Process CLI arguments with defaults applied
-        cli_args = process_cli_arguments(
+        # Apply CLI defaults from configuration file
+        cli_args = apply_cli_defaults(
             "solve",
             max_iters=max_iters,
             k=k,
@@ -323,8 +303,8 @@ def bench(
     import asyncio
 
     try:
-        # Process CLI arguments with defaults applied
-        cli_args = process_cli_arguments("bench", {"rounds": 10}, rounds=rounds)
+        # Apply CLI defaults from configuration file
+        cli_args = apply_cli_defaults("bench", {"rounds": 10}, rounds=rounds)
         rounds = cast(int, cli_args["rounds"])
 
         review_agent = make_review_agent()
@@ -647,8 +627,8 @@ def run(
         flujo run my_pipeline.py --input "Test" --context-file context.yaml
     """
     try:
-        # Process CLI arguments with defaults applied
-        cli_args = process_cli_arguments(
+        # Apply CLI defaults from configuration file
+        cli_args = apply_cli_defaults(
             "run",
             {"pipeline_name": "pipeline", "json_output": False},
             pipeline_name=pipeline_name,

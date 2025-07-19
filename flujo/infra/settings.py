@@ -212,7 +212,7 @@ def get_settings() -> Settings:
             # Log the unexpected error for debugging purposes
             import logging
 
-            logging.error(f"Unexpected error while retrieving settings: {e}")
+            logging.error(f"Unexpected error while retrieving settings: {type(e).__name__}: {e}")
             # Fall back to default settings if there is an unexpected error
             _thread_local_settings.cached_settings = settings
 
