@@ -30,20 +30,17 @@
 Prototype chains wow in demos—then crash, loop, or overspend in prod.
 Flujo solves these **"day‑2" headaches** without Redis, Kafka, or any external DB.
 
-## 1 · **Memory & Resumability** (built‑in durability)
+## 1. An Employee Who Remembers Their Work (Durability)
 
-*Zero‑infra durability.* Every step is automatically persisted to a local **SQLite** (or file) back‑end.
-If the host restarts mid‑run, your workflow **resumes exactly where it left off**—no re‑queueing, no lost context.
+*Zero‑infra durability.* Every step is automatically persisted to a local **SQLite** (or file) back‑end. If the host restarts mid‑run, your workflow **resumes exactly where it left off**—no re‑queueing, no lost context.
 
-## 2 · **Automatic Budget Guardrails** (proactive governance)
+## 2. An Employee Who Sticks to a Budget (Governance)
 
-*Model‑agnostic guardrails.* Set a per‑run budget (`$0.50`, `2 M tokens`, etc.).
-Flujo's **`UsageGovernor`** halts the pipeline — and cancels in‑flight parallel tasks — **before** costs exceed the limit.
+*Model‑agnostic guardrails.* Set a per‑run budget (`$0.50`, `2 M tokens`, etc.). Flujo's **`UsageGovernor`** halts the pipeline — and cancels in‑flight parallel tasks — **before** costs exceed the limit.
 
-## 3 · **Actionable Evals** (self‑healing workflows)
+## 3. An Employee Who Helps You Improve (Actionable Evals)
 
-Observability shows *what* broke; Flujo goes further.
-Run `flujo improve <dataset>` → an AI meta‑agent analyses failures and **auto‑generates JSON patches** for prompts & config, closing the feedback loop.
+*Observability shows what broke; Flujo shows how to fix it.* Run `flujo improve <dataset>` → an AI meta‑agent analyses failures and **auto‑generates JSON patches** for prompts & config, closing the feedback loop.
 
 ---
 
@@ -61,10 +58,9 @@ Run `flujo improve <dataset>` → an AI meta‑agent analyses failures and **aut
 
 ## Engineer's View — A Python "Algebra" for Workflows
 
-### Core expression `@step >>`
+### Core expression: `@step >>`
 
-A **Step** can be a plain `async` function *or* an **AI agent**.
-The `>>` operator chains Steps into a Pipeline:
+A **Step** can be a plain `async` function *or* an **AI agent**. The `>>` operator chains them into a verifiable Pipeline.
 
 ```python
 from flujo import step, Flujo, Step, make_agent_async
@@ -88,18 +84,18 @@ print(
 )
 ```
 
-### Control‑flow primitives & encapsulation
+### Built for Production, from Day One
 
-* 🔄 `Step.loop_until(...)` — iterative refinement
-* 🔀 `Step.branch_on(...)` — typed conditionals
-* ⚡ `Step.map_over(...)` / `Step.parallel(...)` — fan‑out concurrency
-* 👤 `Step.human_in_the_loop(...)` — pause for approval
+Flujo provides the primitives you need to build robust, observable, and efficient services.
 
-Wrap any pipeline into **one reusable `Step`** via `runner.as_step()`, enabling hierarchical, testable systems.
+* ✅ **Safe Autonomy:** Build agents that work independently but know when to escalate. Use `Step.loop_until` for autonomous work, and `Step.branch_on` to route edge cases to a `Step.human_in_the_loop` for approval.
+* ✅ **High-Performance Execution:** Don't let your framework be the bottleneck. Flujo provides `Step.parallel` for concurrent fan-out, `Step.cached` to eliminate redundant work, and an optimized runtime to minimize overhead.
+* ✅ **Full Traceability:** Know exactly what happened. The `flujo lens` CLI gives you a complete, auditable history of every step's execution, input, and output, persisted in a queryable database.
+* ✅ **Extensible & Interoperable:** Flujo plays well with your existing tools. The `@step` decorator wraps any `async` Python code, and the event hook system lets you integrate with any notification or monitoring service you use.
 
 ---
 
-## Showcase — Stateful, Budget‑Aware **AI Financial Analyst**
+## Showcase — Stateful, Budget‑Aware AI Financial Analyst
 
 ```python
 # financial_analyst.py
@@ -120,11 +116,10 @@ class MarketCtx(PipelineContext):
     final_report: str | None = None
 
 # 2️⃣ Steps — mix code & AI agents -------------------------------
-
 class FinancialData(BaseModel):
     company: str
     text: str
-    cost_usd: float = 0.0  # no model cost
+    cost_usd: float = 0.0
 
 @step
 async def fetch_financials(company: str) -> FinancialData:
@@ -132,67 +127,71 @@ async def fetch_financials(company: str) -> FinancialData:
     revenue = {"Alpha": 5, "Beta": 4, "Gamma": 6}.get(company, 3)
     return FinancialData(company=company, text=f"Q3 revenue was ${revenue} B")
 
-summariser_step = Step.model_validate({
-    "name": "Summarise",
-    "agent": make_agent_async(
-        model="openai:gpt-4o-mini",
-        system_prompt="You are a financial analyst. Summarise the data point in one sentence.",
-        output_type=str,
-    ),
-    "updates_context": True,
-})
-
-report_step = Step.model_validate({
-    "name": "FinalReport",
-    "agent": make_agent_async(
-        model="openai:gpt-4o",
-        system_prompt=(
-            "You are a senior analyst. Write a concise, professional quarterly "
-            "market report in Markdown based on the list of company findings."
-        ),
-        output_type=str,
-    ),
-    "updates_context": True,
-})
+summariser = make_agent_async(
+    model="openai:gpt-4o-mini",
+    system_prompt="Summarise the data point in one sentence.",
+    output_type=str
+)
+report_agent = make_agent_async(
+    model="openai:gpt-4o",
+    system_prompt="Write a professional quarterly market report in Markdown based on the findings.",
+    output_type=str
+)
 
 # 3️⃣ Pipeline composition ---------------------------------------
-analyse_one = fetch_financials >> summariser_step
-pipeline = Step.map_over("AnalyseAll", analyse_one, iterable_input="companies") >> report_step
+analyse_one = fetch_financials >> Step.model_validate({
+    "name": "Summarise",
+    "agent": summariser
+})
+pipeline = Step.map_over("AnalyseAll", analyse_one, iterable_input="companies") \
+           >> Step.model_validate({
+               "name": "FinalReport",
+               "agent": report_agent
+           })
 
 # 4️⃣ Run with durability & budget -------------------------------
 async def main() -> None:
     if "OPENAI_API_KEY" not in os.environ:
         raise RuntimeError("Set OPENAI_API_KEY to run this example.")
-
     init_telemetry()
-
     runner = Flujo(
-        pipeline,
-        context_model=MarketCtx,
+        pipeline, context_model=MarketCtx,
         state_backend=SQLiteBackend(Path("reports.db")),
         usage_limits=UsageLimits(total_cost_usd_limit=0.15),  # 15¢ cap
-        delete_on_completion=False,
     )
-
-    run_id = "q3-analysis-2025"
     try:
         async for result in runner.run_async(
             initial_input=None,
             initial_context_data={"companies": ["Alpha", "Beta", "Gamma"]},
-            run_id=run_id,
+            run_id="q3-analysis-2025",
         ):
             pass  # Get the last result
-        print("\n🎉  Done!\n")
-        print(result.step_history[-1].output)           # Markdown report
+        print("\n🎉  Done!\n\n" + result.step_history[-1].output)
     except Exception as err:
-        print(f"\n⚠️  Halted: {err}")                # Budget guard triggered?
+        print(f"\n⚠️  Halted: {err}")
 
 if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-> Paste‑and‑run with an `OPENAI_API_KEY`.
-> The workflow orchestrates **real AI agents**, persists state to SQLite, and halts if total spend exceeds $0.15.
+> Paste‑and‑run with an `OPENAI_API_KEY`. The workflow persists state to SQLite and halts if total spend exceeds $0.15.
+
+---
+
+## Roadmap — The Path to v1.0 and Beyond
+
+Our goal is to make Flujo the most reliable AI "employee" you can hire. Here's where we are and where we're headed.
+
+| Trait (The Goal) | Flujo Capability (The How) | Status |
+| :--- | :--- | :--- |
+| **Remembers Their Work** | SQLite / File-based durable state | ✅ **Done** |
+| **Sticks to a Budget** | Proactive cost & token governors | ✅ **Done** |
+| **Finishes Fast** | Parallel execution, caching, optimized runtime | ✅ **Done** |
+| **Escalates Early** | Human-in-the-loop and conditional branching | ✅ **Done** |
+| **Communicates Proactively** | Event hooks for Slack, email, webhooks | 🟡 **In Progress** |
+| **Owns Their Results** | Enhanced `flujo lens` with version-pinning | 🚧 **Next Up** |
+| **Scales With the Business** | Distributed state backends (Redis, etc.) | 🗺️ **On the Horizon** |
+| **Guards Sensitive Info** | PII redaction, RBAC hooks, compliance features | 🗺️ **On the Horizon** |
 
 ---
 
@@ -210,7 +209,7 @@ from flujo import step
 async def hello(name: str) -> str:
     return f"Hello, {name}!"
 
-# The `flujo run` CLI looks for a top‑level variable named "pipeline"
+# The `flujo run` CLI looks for a top-level variable named "pipeline"
 pipeline = hello
 ' > hello_pipeline.py
 
@@ -218,8 +217,8 @@ pipeline = hello
 flujo run hello_pipeline.py --input "Flujo"
 ```
 
-Expected output → `HELLO, Flujo!`
-For a deeper tour, see **[`docs/quickstart.md`](docs/quickstart.md)**.
+> Expected output → `Hello, Flujo!`
+> For a deeper tour, see **[`docs/quickstart.md`](docs/quickstart.md)**.
 
 ---
 
