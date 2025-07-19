@@ -41,7 +41,10 @@ master_pipeline = sub_step >> Step.from_mapper(extract_text, name="extract") >> 
 master_runner = Flujo(master_pipeline, context_model=PipelineContext)
 
 # Run the master pipeline
-result = await master_runner.run_async("hello world", initial_context_data={"initial_prompt": "test"})
+result = None
+async for item in master_runner.run_async("hello world", initial_context_data={"initial_prompt": "test"}):
+    result = item
+assert result is not None
 
 # Verify the result
 expected_output = "Processed: HELLO WORLD [COMPLETED]"
@@ -73,13 +76,16 @@ pipeline = inner_runner.as_step(name="inner")
 runner = Flujo(pipeline, context_model=PipelineContext)
 
 # Run with initial context
-result = await runner.run_async(
+result = None
+async for item in runner.run_async(
     2,
     initial_context_data={
         "initial_prompt": "goal",
         "scratchpad": {"counter": 1}
     }
-)
+):
+    result = item
+assert result is not None
 
 # The context is automatically propagated
 assert result.final_pipeline_context.scratchpad["counter"] == 3
@@ -105,13 +111,16 @@ inner_runner = Flujo(
 pipeline = inner_runner.as_step(name="inner", inherit_context=False)
 runner = Flujo(pipeline, context_model=PipelineContext)
 
-result = await runner.run_async(
+result = None
+async for item in runner.run_async(
     2,
     initial_context_data={
         "initial_prompt": "goal",
         "scratchpad": {"counter": 1}
     }
-)
+):
+    result = item
+assert result is not None
 
 # The context is NOT propagated - counter remains 1
 assert result.final_pipeline_context.scratchpad["counter"] == 1
@@ -144,7 +153,10 @@ pipeline = inner_runner.as_step(name="inner")
 res = Res()
 runner = Flujo(pipeline, context_model=PipelineContext, resources=res)
 
-await runner.run_async(5, initial_context_data={"initial_prompt": "goal"})
+result = None
+async for item in runner.run_async(5, initial_context_data={"initial_prompt": "goal"}):
+    result = item
+assert result is not None
 
 # The shared resource is updated
 assert res.counter == 5
@@ -156,7 +168,7 @@ assert res.counter == 5
 
 ```python
 from flujo import Flujo, Step
-from flujo.domain.models import PipelineContext
+from flujo.domain.models import PipelineContext, PipelineResult
 from flujo.state.backends.sqlite import SQLiteBackend
 
 # Create a sub-pipeline with state persistence
@@ -278,7 +290,10 @@ async def validate_data(text: str) -> str:
 async def test_data_processing_pipeline():
     data_pipeline = Step.from_callable(process_data, name="process")
     data_runner = Flujo(data_pipeline, context_model=PipelineContext)
-    result = await data_runner.run_async("hello")
+    result = None
+async for item in data_runner.run_async("hello"):
+    result = item
+assert result is not None
     expected_output = "Processed: HELLO"
     assert result.step_history[-1].output == expected_output
 
@@ -299,7 +314,10 @@ async def test_master_pipeline_with_sub_pipelines():
     master_pipeline = data_step >> validation_step
     master_runner = Flujo(master_pipeline, context_model=PipelineContext)
 
-    result = await master_runner.run_async("hello", initial_context_data={"initial_prompt": "test"})
+    result = None
+async for item in master_runner.run_async("hello", initial_context_data={"initial_prompt": "test"}):
+    result = item
+assert result is not None
     expected_output = "Validated: Processed: HELLO"
     assert result.step_history[-1].output == expected_output
 ```
