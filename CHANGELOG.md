@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.33] - 2025-01-15
+
+### Added
+- **Budget-Aware Workflows**: Enhanced workflow execution with cost and token budget management
+  - New budget-aware execution strategies for cost-effective AI workflows
+  - Token usage tracking and optimization across pipeline steps
+  - Cost monitoring and alerting capabilities for production deployments
+  - Dynamic resource allocation based on budget constraints
+
+### Changed
+- **Performance Optimizations**: Improved execution efficiency and resource utilization
+  - Enhanced parallel step execution with better resource management
+  - Optimized context handling for large-scale workflows
+  - Improved memory usage patterns for long-running pipelines
+  - Better error recovery and resilience mechanisms
+
+### Fixed
+- **Documentation Updates**: Resolved documentation build warnings and link issues
+  - Fixed broken internal links in documentation
+  - Updated navigation structure for better user experience
+  - Enhanced cookbook examples with current API patterns
+  - Improved documentation coverage for new features
+
 ## [0.4.32] - 2025-07-14
 
 ### Fixed
