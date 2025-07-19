@@ -208,7 +208,9 @@ class TestConfigManager:
         try:
             config_manager = ConfigManager(config_path)
             # Should raise an exception due to invalid type
-            with pytest.raises(ConfigurationError, match="An unexpected error occurred while loading configuration"):
+            with pytest.raises(
+                ConfigurationError, match="An unexpected error occurred while loading configuration"
+            ):
                 config_manager.load_config()
         finally:
             os.unlink(config_path)

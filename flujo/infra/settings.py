@@ -181,17 +181,18 @@ def get_settings() -> Settings:
     This function provides a way to get settings that may be overridden
     by configuration files. It will use the configuration manager if available,
     otherwise fall back to the default settings.
-    
+
     The result is cached to avoid repeated import overhead.
     """
     global _cached_settings
-    
+
     if _cached_settings is None:
         try:
             from .config_manager import load_settings
+
             _cached_settings = load_settings()
         except ImportError:
             # Fall back to default settings if config manager is not available
             _cached_settings = settings
-    
+
     return _cached_settings
