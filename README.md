@@ -1,215 +1,207 @@
 <div align="center">
-  <img src="assets/flujo.png" alt="Flujo Logo" width="180"/>
+
+<img src="assets/flujo.png" alt="Flujo logo" width="180"/>
+
+**Beyond Agents: The AI Employee.**
+
 </div>
 
+---
+
 > **TL;DR**
-> Stop babysitting brittle prompt chains. **Flujo** runs your LLM agents **durably**, **within budget**, and helps them **learn from every run**.
+> Flujo turns AI **agents** into production‑grade **digital employees**—with persistent memory, proactive budgeting, and continuous learning.
 
-> **⚠️ Pre-v1 Status**
-> Flujo is actively evolving towards v1.0. While we're committed to stability, breaking changes may occur as we refine the API. We recommend pinning your version and checking our [changelog](CHANGELOG.md) for updates. The core concepts are stable, but some interfaces are still being optimized.
+> **Approaching v1.0**  Core APIs (`@step`, `>>`, `Flujo`, state back‑ends) are stable. Pin your version and watch the changelog.
 
----
-
-# Flujo: Building AI Systems That Learn
-
-**Prototype chains break in production** – they forget context on restart, blow through token budgets, and their prompts go stale without constant human intervention.
-
-**Flujo is designed to fix this.** It's a Python-native framework for building AI systems that **observe, learn, and improve themselves over time.** While many tools can connect LLM calls, Flujo solves the Day-2 problems of running AI in the real world: How do you ensure reliability? How do you govern costs? And how do you create a feedback loop to make your agents smarter?
-
-## Why Flujo?
-
-Today, any developer can prototype an LLM agent in minutes. But shipping it to production reveals three hard problems that simple frameworks don't solve:
-
-| The Pain | The Flujo Solution |
-| :--- | :--- |
-| **Durability:** A server restarts and your long-running agent loses all its progress and memory. | **Durable State:** Flujo has built-in SQLite & File backends to automatically save state after every step, enabling workflows that survive crashes and can be resumed. |
-| **Governance:** An agent gets stuck in a loop and you get a surprise $300 bill from your LLM provider. | **Cost & Token Guardrails:** Flujo's `UsageGovernor` lets you set a hard budget on any run. The pipeline halts automatically if it exceeds its limit. |
-| **Improvement:** Your prompts go stale, and you have no data-driven way to know if your changes are actually making the agent better or worse. | **AI-Driven Evals:** With `flujo improve`, you can run evaluations against a dataset, feed the results to a meta-agent, and get concrete, AI-generated patches for your prompts and configs. |
-
-## The Flujo Vision: Self-Optimizing Workflows
-
-Our architecture is built for a future where AI systems improve themselves. A workflow's source of truth is a **declarative YAML file**, which is parsed at runtime into a **type-safe Pydantic graph**. This enables our core vision: **AI-driven self-optimization.** The Flujo engine uses telemetry to identify opportunities for improvement—like high-cost steps or common failure patterns—and generates suggested changes as auditable **JSON Patches**.
-
-This creates a powerful feedback loop where your systems learn from their own performance.
-
-## Key Features: The Pillars of Reliable AI
-
-Flujo's current features are the essential foundation for building intelligent, adaptive systems.
-
--   🧠 **Stateful & Durable by Default:** True learning requires memory. Flujo's built-in **SQLite backend** provides durable state persistence, so workflows can survive restarts and their history can be analyzed for improvement patterns.
--   ⛓️ **Explicit & Structured Control Flow:** Adaptive logic needs a predictable canvas. Flujo's Pythonic DSL provides first-class **loops (`Step.loop_until`)**, **conditionals (`Step.branch_on`)**, and **parallel fan-outs (`Step.parallel`)**, giving you full control over the agent's execution paths.
--   🔭 **Deep Observability as a Data Source:** You can't optimize what you can't see. One-line `init_telemetry()` enables **OpenTelemetry (OTLP)** tracing. This detailed data isn't just for debugging; it's the raw material for the AI meta-agent to analyze and improve the system.
--   💸 **Production Guardrails & Economic Policies:** Safety is paramount. The **Usage Governor** enforces hard cost and token limits. Our roadmap extends this to an **Economic Policy DSL**, allowing you to define sophisticated, ROI-aware rules for your agents' resource consumption.
--   🧩 **Composable Python-Native Design:** Build complex systems from simple, testable Python functions and classes. Flujo's design avoids configuration magic, keeping your logic clean, maintainable, and easy to integrate.
+> **Flexible Licensing**  Dual‑licensed **AGPL‑3.0 / Commercial**. See [`LICENSE`](LICENSE) for details.
 
 ---
 
-> **💡 Flujo's Sweet Spot**
-> Write workflows as a simple left‑to‑right algebraic chain of steps (`step1 >> step2 >> step3`) and let the library build the full execution graph for you in the background. You get a full‑featured DAG engine—state, branching, loops, persistence—without extra ceremony.
+# Meet Flujo — The AI Employee That Delivers
+
+Moving AI from prototype to production shouldn’t mean chaos. Flujo gives you AI workflows as reliable, accountable, and effective as your best employees.
+
+## Traits of a Perfect AI Employee
+
+### ✅ Never Forgets (**Durability**)
+
+\* **Problem:** AI workflows often crash and lose progress.
+\* **Flujo:** Automatically saves state with built‑in **SQLite**, resuming exactly where tasks left off.
+
+### ✅ Keeps Spending in Check (**Governance**)
+
+\* **Problem:** AI processes can overspend unpredictably.
+\* **Flujo:** Set strict usage limits (e.g., `$0.50` per run); proactive cost guards halt execution before you overspend.
+
+### ✅ Learns from Mistakes (**Improvement Loop**)
+
+\* **Problem:** Debugging AI is slow and manual.
+\* **Flujo:** `flujo improve` analyzes failures and auto‑generates concrete prompt and config suggestions.
+
+### ✅ Knows When to Escalate (**Safety Rails**)
+
+\* **Problem:** AI can’t handle every edge‑case alone.
+\* **Flujo:** Route edge cases to human approval with `Step.branch_on` and `Step.human_in_the_loop`.
+
+### ✅ Communicates Clearly (**Observability**)
+
+\* **Problem:** AI tasks are a black box until they fail.
+\* **Flujo:** Get real‑time updates via event hooks and full run histories with the `flujo lens` CLI.
 
 ---
 
-## Get Started in 60 Seconds
+## Simple Python Workflow, Powerful Results
 
-### 1. Installation
+```python
+from flujo import step, Flujo, Step, make_agent_async
+
+@step
+async def validate_input(text: str) -> str:
+    if not text:
+        raise ValueError("Input required.")
+    return text
+
+summariser = make_agent_async(
+    model="openai:gpt-4o-mini",
+    system_prompt="You are an expert summariser.",
+    output_type=str,
+)
+
+pipeline = validate_input >> Step("Summarise", summariser)
+
+print(Flujo(pipeline).run("Flujo is...").step_history[-1].output)
+```
+
+---
+
+## The Flujo Advantage
+
+* ✅ **Build Autonomously:** Compose agents that handle routine work and escalate edge cases with `Step.human_in_the_loop`.
+* ✅ **Run Efficiently:** Execute tasks concurrently with `Step.parallel`, eliminate redundant work with `Step.cached`, and rely on a high‑performance runtime.
+* ✅ **Audit Everything:** Get a complete, persistent history of every run. Use the `flujo lens` CLI to trace decisions and debug failures.
+* ✅ **Integrate Anywhere:** `@step` turns any `async` Python code into a durable workflow component. Event hooks connect Flujo to your existing monitoring and notification tools.
+
+---
+
+## Showcase: A Stateful, Budget‑Aware AI Financial Analyst
+
+This example builds a multi‑agent workflow that analyzes a list of companies, persists its state to SQLite, and halts if the total cost exceeds a 15¢ budget.
+
+```python
+# examples/financial_analyst.py
+from flujo import (
+    Flujo, Step, step, UsageLimits, make_agent_async
+)
+from flujo.state import SQLiteBackend
+from flujo.domain.models import PipelineContext
+from flujo.domain.dsl.step import adapter_step
+from pydantic import Field
+
+# 1️⃣ Define a shared context ("memory") for the run
+class MarketCtx(PipelineContext):
+    companies: list[str] = Field(default_factory=list)
+
+# 2️⃣ Define steps using Python code and AI agents
+@step
+async def fetch_data(company: str) -> dict:
+    return {"company": company, "data": f"Financial info for {company}"}
+
+@adapter_step
+async def select_data(fetched: dict) -> str:
+    return fetched.get("data", "")
+
+summariser = make_agent_async(
+    model="openai:gpt-4o-mini",
+    system_prompt="Summarise the financial data point.",
+    output_type=str,
+)
+
+# 3️⃣ Compose steps into a high‑level workflow
+analysis_flow = fetch_data >> select_data >> Step.model_validate({
+    "name": "Summarise",
+    "agent": summariser
+})
+
+pipeline = Step.map_over(
+    "AnalyseAllCompanies",
+    analysis_flow,
+    iterable_input="companies",
+)
+
+# 4️⃣ Execute the workflow with durability and governance
+runner = Flujo(
+    pipeline,
+    context_model=MarketCtx,
+    state_backend=SQLiteBackend("financial_reports.db"),
+    usage_limits=UsageLimits(total_cost_usd_limit=0.15),
+)
+
+result = runner.run(
+    initial_input=None,
+    initial_context_data={"companies": ["Alpha", "Beta", "Gamma"]},
+)
+print(result.step_history[-1].output)
+```
+
+> This example is fully runnable. Copy it to a file and run with your `OPENAI_API_KEY`.
+
+---
+
+## Flujo vs Alternatives
+
+| Feature                   | **Flujo**         | LangChain / LangGraph | Crew AI     | n8n / Make     |
+| ------------------------- | ----------------- | --------------------- | ----------- | -------------- |
+| Built‑in Persistent State | ✅ SQLite          | ⚠️ External store     | ⚠️ External | 🔒 Hidden SaaS |
+| Proactive Cost Governor   | ✅                 | ❌                     | ❌           | ❌              |
+| Self‑Improvement Loop     | ✅ `flujo improve` | ⚠️ Observe‑only       | ❌           | ❌              |
+| Self‑Hosting Friendly     | ✅                 | ⚠️ Needs infra        | ⚠️ Needs DB | ❌              |
+| Licence                   | AGPL / Commercial | MIT                   | MIT         | Proprietary    |
+
+---
+
+## Roadmap — Reliability at Scale
+
+| Capability                | Status        |
+| ------------------------- | ------------- |
+| ✅ Persistent & Durable    | **Done**      |
+| ✅ Budget Controls         | **Done**      |
+| ✅ Parallel & Caching      | **Done**      |
+| ✅ Conditional Routing     | **Done**      |
+| 🟡 Notifications & Hooks  | *In Progress* |
+| 🗺️ Security & Compliance | *Upcoming*    |
+
+---
+
+## Quick Start (60 seconds)
 
 ```bash
 pip install flujo
+
+echo '
+from flujo import step
+
+@step
+async def hello(name: str) -> str:
+    return f"Hello, {name}!"
+
+# The `flujo run` CLI looks for a top‑level variable named "pipeline"
+pipeline = hello
+' > hello_pipeline.py
+
+flujo run hello_pipeline.py --input "Flujo"
 ```
 
-### 2. Set Up Your API Key
-
-Create a `.env` file with your OpenAI API key:
-```
-OPENAI_API_KEY="sk-..."
-```
-
-### 3. Run Your First Agentic Loop
-
-This simple example creates an agent that decides which tool to use.
-
-```python
-from flujo.recipes.factories import make_agentic_loop_pipeline, run_agentic_loop_pipeline
-from flujo import make_agent_async, init_telemetry
-from flujo.domain.commands import AgentCommand
-from pydantic import TypeAdapter
-
-# Enable telemetry (optional but recommended)
-init_telemetry()
-
-async def search_agent(query: str) -> str:
-    """A simple tool agent that returns information."""
-    if "python" in query.lower():
-        return "Python is a high-level, general-purpose programming language."
-    return "No information found."
-
-PLANNER_PROMPT = """
-You are a research assistant. Use the `search_agent` tool to gather facts.
-When you know the answer, issue a `FinishCommand` with the final result.
-"""
-planner = make_agent_async(
-    "openai:gpt-4o",
-    PLANNER_PROMPT,
-    TypeAdapter(AgentCommand),
-)
-
-# Create the pipeline using the factory
-pipeline = make_agentic_loop_pipeline(
-    planner_agent=planner,
-    agent_registry={"search_agent": search_agent}
-)
-
-# Run the pipeline
-# Note: In a real script, you'd use `await run_agentic_loop_pipeline(...)`
-# For simplicity, this is a conceptual example.
-# result = await run_agentic_loop_pipeline(pipeline, "What is Python?")
-# print(result)
-```
+> Expected output: `Hello, Flujo!`
 
 ---
 
-## Showcase: The Stateful, Budget-Aware Financial Analyst
+## Get Involved
 
-This example highlights Flujo's unique strengths: orchestrating a stateful, multi-step process that operates under a strict budget and persists its state for auditing.
+* 📖 **[Documentation](docs/index.md)** — Guides, tutorials, API reference
+* 🤝 **[Contribute](CONTRIBUTING.md)** — Join the community and shape Flujo’s future
 
-```python
-# financial_analyst.py
-import asyncio
-from pathlib import Path
-from pydantic import BaseModel, Field
+---
 
-from flujo import Flujo, Step, step, init_telemetry, UsageLimits
-from flujo.state import SQLiteBackend
+## Licensing
 
-# --- 1. Define the Shared State (The "Memory" for this Run) ---
-class MarketAnalysisContext(BaseModel):
-    companies: list[str] = Field(default_factory=list)
-    findings: dict[str, str] = Field(default_factory=dict)
-    final_report: str | None = None
-
-# --- 2. Define the Specialized Agents & Steps ---
-@step
-async def fetch_financials(company: str) -> dict:
-    print(f"   🔎 Fetching financials for: {company}...")
-    class FinancialData(BaseModel):
-        data: str; cost_usd: float = 0.02
-    return FinancialData(data=f"Q3 revenue for {company} was $5B.")
-
-@step
-async def summarize_data(data: dict, *, context: MarketAnalysisContext) -> dict:
-    print(f"   ✍️  Summarizing data...")
-    company = data['data'].split(" ")[3]
-    summary = f"Summary for {company}: Strong performance with revenue of $5B."
-    context.findings[company] = summary # Update shared memory
-    class SummaryOutput(BaseModel):
-        summary: str; cost_usd: float = 0.05
-    return SummaryOutput(summary=summary)
-
-@step
-async def generate_final_report(*, context: MarketAnalysisContext) -> str:
-    print("   📈 Generating final market report...")
-    report_lines = ["**Quarterly Market Report**"]
-    for company, summary in context.findings.items():
-        report_lines.append(f"- {summary}")
-    return "\n".join(report_lines)
-
-# --- 3. Assemble the Workflow with Flujo's DSL ---
-company_analysis_pipeline = fetch_financials >> summarize_data
-full_pipeline = (
-    Step.map_over(name="AnalyzeAllCompanies", pipeline_to_run=company_analysis_pipeline, iterable_input="companies")
-    >> generate_final_report
-)
-
-# --- 4. Orchestrate the Workflow with Production Guardrails ---
-async def main():
-    init_telemetry()
-    backend = SQLiteBackend(Path("financial_reports.db"))
-    limits = UsageLimits(total_cost_usd_limit=0.15)
-
-    runner = Flujo(full_pipeline, context_model=MarketAnalysisContext, state_backend=backend, usage_limits=limits, delete_on_completion=False)
-    run_id = "q3-market-analysis-2025"
-    initial_data = { "companies": ["AlphaCorp", "BetaInc", "GammaLLC", "DeltaCo"] }
-
-    print(f"🚀 Starting Financial Analysis workflow (run_id: {run_id})")
-    print(f"   (Budget: ${limits.total_cost_usd_limit:.2f})\n")
-
-    try:
-        result = await runner.arun(None, initial_context_data=initial_data, run_id=run_id)
-        print("\n🎉 Workflow complete!")
-        print(result.step_history[-1].output)
-    except Exception as e:
-        print(f"\n⚠️  Workflow halted: {e}")
-
-    final_state = await backend.load_state(run_id)
-    if final_state:
-        print("\n--- Final Workflow State (from DB) ---")
-        final_ctx = MarketAnalysisContext.model_validate(final_state['pipeline_context'])
-        print(f"Companies processed: {list(final_ctx.findings.keys())}")
-        print(f"Final status: {final_state['status']}")
-        print(f"Total cost incurred: ${final_state.get('cost_usd', 0):.2f}")
-
-if __name__ == "__main__":
-    asyncio.run(main())
-```
-**What makes this different:** This stateful, budget-aware process would require significant custom code to implement reliably in simpler frameworks. Flujo handles the durability and governance automatically.
-
-## Documentation & Community
-
-- **[Full Documentation & Guides](docs/index.md):** The best place to start.
-- **[Test Performance Guide](docs/test_performance_guide.md):** Optimize your test suite for faster development feedback.
-- **[CI Performance Guide](docs/ci_performance_guide.md):** Understand the optimized CI/CD pipeline for faster GitHub Actions.
-- **[Examples Directory](examples/):** See more patterns in action.
-- **[Contributing Guide](CONTRIBUTING.md):** Join us in building the future of reliable AI systems.
-
-## Environment Variables & Configuration
-
-Flujo supports several environment variables for configuration:
-
-- **`FLUJO_CV_THRESHOLD`**: Controls the coefficient of variation threshold for tracing performance tests. Default is `1.0`. Set to a higher value (e.g., `2.0`) in CI environments to account for timing variability.
-- **`FLUJO_OVERHEAD_LIMIT`**: Controls the maximum allowed overhead percentage for persistence performance tests. Default is `15.0`. Set to a higher value in CI environments to account for timing variability.
-- **`FLUJO_STATE_URI`**: URI for the state backend (e.g., `sqlite:///path/to/db.sqlite`).
-- **`OPENAI_API_KEY`**: Your OpenAI API key for LLM operations.
-
-## License
-
-This project is dual-licensed under AGPL-3.0 and a Commercial License. See [LICENSE](LICENSE) for more information.
+Flexible **AGPL‑3.0 / Commercial**. See the [`LICENSE`](LICENSE) file for details.
