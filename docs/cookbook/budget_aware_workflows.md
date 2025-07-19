@@ -77,7 +77,7 @@ metric_pipeline = Pipeline.from_step(
 loop_step = Step.loop_until(
     name="governed_loop",
     loop_body_pipeline=metric_pipeline,
-    exit_condition_callable=lambda out, ctx: out.value >= 10,  # Will never exit naturally
+    exit_condition_callable=lambda out, ctx: out.value >= 10,  # Could exit naturally, but governor likely halts first
     max_loops=20,  # High max to ensure governor triggers first
 )
 
@@ -91,10 +91,13 @@ try:
     print("Loop completed successfully!")
 except UsageLimitExceededError as e:
     print(f"\n✅ Loop halted by governor as expected!")
-    print(f"   Error: {e}")
-    print(f"   Iterations completed: {e.result.step_history[0].attempts}")
-    print(f"   Final value: {e.result.step_history[0].output.value}")
-    print(f"   Total cost: ${e.result.total_cost_usd:.2f}")
+            print(f"   Error: {e}")
+        print(f"   Iterations completed: {e.result.step_history[0].attempts}")
+        if hasattr(e.result.step_history[0].output, 'value'):
+            print(f"   Final value: {e.result.step_history[0].output.value}")
+        else:
+            print(f"   Final value: None (loop halted mid-iteration)")
+        print(f"   Total cost: ${e.result.total_cost_usd:.2f}")
 ```
 
 **Expected Output:**
@@ -113,6 +116,7 @@ Running loop with cost limit...
 1. **Per-Iteration Checking**: After each loop iteration, the governor checks the cumulative cost
 2. **Immediate Halting**: When the limit is breached, the loop stops immediately, even mid-iteration
 3. **Complete Context**: The exception contains the full execution history, including how many iterations completed
+4. **Safe Output Access**: The code safely handles cases where the output might not be available due to mid-iteration halting
 
 ## Example 2: Proactive Cancellation in Parallel Steps
 
