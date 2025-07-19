@@ -73,6 +73,36 @@ def apply_cli_defaults(command: str, **kwargs: Any) -> Dict[str, Any]:
     return result
 
 
+def apply_cli_defaults_with_fallback(
+    command: str, fallback_values: Dict[str, Any], **kwargs: Any
+) -> Dict[str, Any]:
+    """Apply CLI defaults from configuration file to command arguments with fallback value checking.
+
+    This function handles both None values and hardcoded defaults by checking if the current value
+    matches the fallback value, indicating it wasn't explicitly provided by the user.
+
+    Args:
+        command: The command name (e.g., "solve", "bench")
+        fallback_values: Dict mapping argument names to their hardcoded default values
+        **kwargs: The command arguments to apply defaults to
+
+    Returns:
+        Dict containing the arguments with defaults applied
+    """
+    cli_defaults = get_cli_defaults(command)
+    result = kwargs.copy()
+
+    for key, value in kwargs.items():
+        # Check if value is None (explicitly not provided)
+        if value is None and key in cli_defaults:
+            result[key] = cli_defaults[key]
+        # Check if value matches fallback (using hardcoded default)
+        elif key in fallback_values and value == fallback_values[key] and key in cli_defaults:
+            result[key] = cli_defaults[key]
+
+    return result
+
+
 @app.command()
 def solve(
     prompt: str,
@@ -129,29 +159,30 @@ def solve(
         # Load settings with configuration file overrides (cached)
         settings = load_settings()
 
-        # Get CLI defaults from configuration file
-        cli_defaults = get_cli_defaults("solve")
+        # Apply CLI defaults using the helper function
+        cli_args = {
+            "max_iters": max_iters,
+            "k": k,
+            "reflection": reflection,
+            "scorer": scorer,
+            "weights_path": weights_path,
+            "solution_model": solution_model,
+            "review_model": review_model,
+            "validator_model": validator_model,
+            "reflection_model": reflection_model,
+        }
+        cli_args = apply_cli_defaults("solve", **cli_args)
 
-        # Apply CLI defaults only for arguments that are None (not explicitly provided)
-        # This is a compromise since typer doesn't provide explicit argument tracking
-        if max_iters is None and "max_iters" in cli_defaults:
-            max_iters = cli_defaults["max_iters"]
-        if k is None and "k" in cli_defaults:
-            k = cli_defaults["k"]
-        if reflection is None and "reflection" in cli_defaults:
-            reflection = cli_defaults["reflection"]
-        if scorer is None and "scorer" in cli_defaults:
-            scorer = cli_defaults["scorer"]
-        if weights_path is None and "weights_path" in cli_defaults:
-            weights_path = cli_defaults["weights_path"]
-        if solution_model is None and "solution_model" in cli_defaults:
-            solution_model = cli_defaults["solution_model"]
-        if review_model is None and "review_model" in cli_defaults:
-            review_model = cli_defaults["review_model"]
-        if validator_model is None and "validator_model" in cli_defaults:
-            validator_model = cli_defaults["validator_model"]
-        if reflection_model is None and "reflection_model" in cli_defaults:
-            reflection_model = cli_defaults["reflection_model"]
+        # Unpack updated arguments with proper type casting
+        max_iters = cast(Optional[int], cli_args["max_iters"])
+        k = cast(Optional[int], cli_args["k"])
+        reflection = cast(Optional[bool], cli_args["reflection"])
+        scorer = cast(Optional[ScorerType], cli_args["scorer"])
+        weights_path = cast(Optional[str], cli_args["weights_path"])
+        solution_model = cast(Optional[str], cli_args["solution_model"])
+        review_model = cast(Optional[str], cli_args["review_model"])
+        validator_model = cast(Optional[str], cli_args["validator_model"])
+        reflection_model = cast(Optional[str], cli_args["reflection_model"])
 
         # Argument validation
         if max_iters is not None and max_iters <= 0:
@@ -287,13 +318,9 @@ def bench(
     import asyncio
 
     try:
-        # Get CLI defaults from configuration file
-        cli_defaults = get_cli_defaults("bench")
-
-        # Apply CLI defaults if the value matches the hardcoded default
-        # This is a compromise since typer doesn't provide explicit argument tracking
-        if rounds == 10 and "rounds" in cli_defaults:
-            rounds = cli_defaults["rounds"]
+        # Apply CLI defaults using the helper function with fallback value checking
+        cli_args = apply_cli_defaults_with_fallback("bench", {"rounds": 10}, rounds=rounds)
+        rounds = cast(int, cli_args["rounds"])
 
         review_agent = make_review_agent()
         solution_agent = make_solution_agent()
@@ -615,21 +642,15 @@ def run(
         flujo run my_pipeline.py --input "Test" --context-file context.yaml
     """
     try:
-        # Load CLI defaults from configuration file
-        cli_defaults = get_cli_defaults("run")
-
-        # Apply CLI defaults for arguments that match the hardcoded default
-        # This is a compromise since typer doesn't provide explicit argument tracking
-        if pipeline_name == "pipeline" and "pipeline_name" in cli_defaults:
-            pipeline_name = cli_defaults["pipeline_name"]
-
-        # For json_output, only apply config default if it's False and config has True
-        if (
-            not json_output
-            and "json_output" in cli_defaults
-            and cli_defaults["json_output"] is True
-        ):
-            json_output = cli_defaults["json_output"]
+        # Apply CLI defaults using the helper function with fallback value checking
+        cli_args = apply_cli_defaults_with_fallback(
+            "run",
+            {"pipeline_name": "pipeline", "json_output": False},
+            pipeline_name=pipeline_name,
+            json_output=json_output,
+        )
+        pipeline_name = cast(str, cli_args["pipeline_name"])
+        json_output = cast(bool, cli_args["json_output"])
         # Load the pipeline file
         ns: Dict[str, Any] = runpy.run_path(pipeline_file)
 
