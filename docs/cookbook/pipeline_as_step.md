@@ -16,6 +16,7 @@ Here's a simple example showing how to compose pipelines using `as_step`:
 
 ```python
 from flujo import Flujo, Step
+from flujo.domain.models import PipelineContext, PipelineResult
 from flujo.testing.utils import StubAgent
 
 # Create a sub-pipeline that processes text
@@ -199,16 +200,16 @@ outer_runner = Flujo(outer_pipeline, context_model=PipelineContext)
 # Run the pipeline
 result = await outer_runner.run_async(0, initial_context_data={"initial_prompt": "start"})
 
-    # The nested pipeline result is preserved
-    inner_result = result.step_history[1].output
-    assert isinstance(inner_result, PipelineResult)
-    assert len(inner_result.step_history) == 2
-    assert inner_result.step_history[0].output == 2  # 1 + 1
-    assert inner_result.step_history[1].output == 4  # 2 * 2
+# The nested pipeline result is preserved
+inner_result = result.step_history[1].output
+assert isinstance(inner_result, PipelineResult)
+assert len(inner_result.step_history) == 2
+assert inner_result.step_history[0].output == 2  # 1 + 1
+assert inner_result.step_history[1].output == 4  # 2 * 2
 
-    # Final result: ((1 + 1) * 2) + 10 = 14
-    expected_final_result = 14
-    assert result.step_history[-1].output == expected_final_result
+# Final result: ((1 + 1) * 2) + 10 = 14
+expected_final_result = 14
+assert result.step_history[-1].output == expected_final_result
 ```
 
 ## Best Practices and When to Use `as_step`

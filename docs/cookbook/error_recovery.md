@@ -13,7 +13,11 @@ from flujo import Step, Flujo
 from flujo.testing.utils import StubAgent
 
 # Primary step that fails after retries
-primary = Step("primary", StubAgent([RuntimeError("API rate limit exceeded")]), max_retries=1)
+class FailingAgent:
+    async def run(self, data: str, **kwargs) -> str:
+        raise RuntimeError("API rate limit exceeded")
+
+primary = Step("primary", FailingAgent(), max_retries=1)
 # Backup step that provides a simpler, more reliable solution
 backup = Step("backup", StubAgent(["Fallback result: Simplified analysis completed"]))
 primary.fallback(backup)

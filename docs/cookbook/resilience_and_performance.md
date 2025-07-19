@@ -35,7 +35,11 @@ from flujo import Step, Flujo
 from flujo.testing.utils import StubAgent
 
 # Primary step that fails due to external service issues
-primary = Step("primary", StubAgent([RuntimeError("External API unavailable")]), max_retries=1)
+class FailingAgent:
+    async def run(self, data: str, **kwargs) -> str:
+        raise RuntimeError("External API unavailable")
+
+primary = Step("primary", FailingAgent(), max_retries=1)
 # Backup step that uses a more reliable, simpler approach
 backup = Step("backup", StubAgent(["Backup processing completed successfully"]))
 primary.fallback(backup)
