@@ -217,9 +217,8 @@ async def test_proactive_cancellation_with_multiple_branches() -> None:
     execution_time = time.monotonic() - start_time
 
     # Verify execution was fast (indicating proactive cancellation)
-    # With multiple branches running in parallel, we need to account for the time
-    # it takes for the limit-breaching branch to complete (0.1s) plus some overhead
-    assert execution_time < 0.5  # Should be much faster than the 0.5s delay of branch_4
+    # The slow branch should have been cancelled, so execution should be quick
+    assert execution_time < 0.3  # Should be much faster than the 0.5s delay of branch_4
 
     # Verify the cost exceeded the limit
     result = exc_info.value.result

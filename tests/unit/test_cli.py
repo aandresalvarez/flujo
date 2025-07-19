@@ -345,7 +345,7 @@ def test_cli_bench_keyboard_interrupt(monkeypatch) -> None:
 def test_cli_version_cmd_package_not_found(monkeypatch) -> None:
     import importlib.metadata
 
-    def raise_package_not_found(name):
+    def raise_package_not_found(_name):
         raise importlib.metadata.PackageNotFoundError("fail")
 
     monkeypatch.setattr(

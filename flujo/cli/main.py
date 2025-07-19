@@ -43,8 +43,6 @@ WeightsType = List[Dict[str, Union[str, float]]]
 MetadataType = Dict[str, Any]
 ScorerType = Literal["ratio", "weighted", "reward"]
 
-# Sentinel value to track explicitly provided arguments
-_EXPLICITLY_PROVIDED = object()
 
 app: typer.Typer = typer.Typer(rich_markup_mode="markdown")
 
@@ -250,9 +248,7 @@ def version_cmd() -> None:
     try:
         version = importlib_metadata.version("flujo")
         typer.echo(f"flujo version: {version}")
-    except importlib_metadata.PackageNotFoundError:
-        typer.echo("flujo version: unknown")
-    except Exception:
+    except (importlib_metadata.PackageNotFoundError, Exception):
         typer.echo("flujo version: unknown")
 
 
@@ -601,7 +597,7 @@ def run(
             "-p",
             help="Name of the pipeline variable (default: pipeline)",
         ),
-    ] = None,
+    ] = "pipeline",
     json_output: Annotated[
         bool,
         typer.Option("--json", help="Output raw JSON instead of formatted result"),
@@ -622,11 +618,10 @@ def run(
         # Load CLI defaults from configuration file
         cli_defaults = get_cli_defaults("run")
 
-        # Apply CLI defaults for arguments that are None (not explicitly provided)
-        if pipeline_name is None and "pipeline_name" in cli_defaults:
+        # Apply CLI defaults for arguments that match the hardcoded default
+        # This is a compromise since typer doesn't provide explicit argument tracking
+        if pipeline_name == "pipeline" and "pipeline_name" in cli_defaults:
             pipeline_name = cli_defaults["pipeline_name"]
-        elif pipeline_name is None:
-            pipeline_name = "pipeline"  # Fallback default
 
         # For json_output, only apply config default if it's False and config has True
         if (
