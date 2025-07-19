@@ -6,7 +6,7 @@ Use a `HumanInTheLoopStep` to pause a pipeline until a person approves the resul
 from flujo import Step, Pipeline, Flujo
 from flujo.testing.utils import StubAgent
 
-pipeline = Step("draft", StubAgent(["draft text"])) >> Step.human_in_the_loop("approve", message_for_user="Approve the draft?")
+pipeline = Step("draft", StubAgent(["Draft email: Please review the quarterly report for Q3 2024."])) >> Step.human_in_the_loop("approve", message_for_user="Approve the draft?")
 # "run_async" returns an async iterator, so consume it to get the result
 runner = Flujo(pipeline)
 result = None

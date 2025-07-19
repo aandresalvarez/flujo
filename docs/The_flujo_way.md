@@ -361,6 +361,10 @@ pipeline_step = runner.as_step(name="SubWorkflow")
 main_pipeline = Step("Start", start_agent) >> pipeline_step >> Step("End", end_agent)
 ```
 
+> [!TIP]
+> **Advanced Composition Patterns:**
+> For comprehensive examples of the `as_step` pattern, including context propagation, resource sharing, and crash recovery, see the [Pipeline as a Step](../cookbook/pipeline_as_step.md) cookbook guide.
+
 ---
 
 ## 📚 9. Import Structure

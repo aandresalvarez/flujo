@@ -860,3 +860,7 @@ step = Step("metadata", agent, meta={"version": "1.0", "author": "team"})
 > [!TIP]
 > **Rapid Iteration:**
 > You can now run any custom pipeline directly from the command line using `flujo run my_pipeline.py --input "your prompt"`. This is the fastest way to test and debug your pipelines—no need for a custom script. See [usage.md](usage.md#running-custom-pipelines-from-the-cli-flujo-run) for details.
+
+> [!TIP]
+> **Pipeline Composition:**
+> For advanced pipeline composition patterns, including wrapping entire pipelines as steps within other pipelines, see the [Pipeline as a Step](../cookbook/pipeline_as_step.md) cookbook guide.

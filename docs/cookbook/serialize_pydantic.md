@@ -19,7 +19,7 @@ producer = Step.solution(
 )
 
 # Second step expects a dict
-consumer_agent = StubAgent(["ok"])
+consumer_agent = StubAgent(["User data processed: Ada (42 years old)"])
 consumer = Step.solution(consumer_agent)
 
 pipeline = producer >> consumer

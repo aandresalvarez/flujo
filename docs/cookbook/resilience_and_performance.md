@@ -13,7 +13,8 @@ from flujo import Step
 from flujo.caching import InMemoryCache
 from flujo.testing.utils import StubAgent
 
-slow_step = Step.solution(StubAgent(["ok"]))
+# Expensive step that performs complex analysis
+slow_step = Step.solution(StubAgent(["Complex analysis result: Data processed successfully"]))
 cached = Step.cached(slow_step, cache_backend=InMemoryCache())
 ```
 
@@ -33,13 +34,19 @@ This is useful for handling transient errors or providing a simpler model when a
 from flujo import Step, Flujo
 from flujo.testing.utils import StubAgent
 
-primary = Step("primary", StubAgent(["fail"]), max_retries=1)
-backup = Step("backup", StubAgent(["ok"]))
+# Primary step that fails due to external service issues
+class FailingAgent:
+    async def run(self, data: str, **kwargs) -> str:
+        raise RuntimeError("External API unavailable")
+
+primary = Step("primary", FailingAgent(), max_retries=1)
+# Backup step that uses a more reliable, simpler approach
+backup = Step("backup", StubAgent(["Backup processing completed successfully"]))
 primary.fallback(backup)
 
 runner = Flujo(primary)
 result = runner.run("data")
-print(result.step_history[0].output)  # -> "ok"
+print(result.step_history[0].output)  # -> "Backup processing completed successfully"
 ```
 
 When the fallback runs successfully, `StepResult.metadata_['fallback_triggered']` is set to `True` and the pipeline continues normally.

@@ -52,7 +52,7 @@ from flujo import Step, Flujo, AgentProcessors
 from flujo.processors import EnforceJsonResponse
 from flujo.testing.utils import StubAgent
 
-agent = StubAgent(['{"count": 1}'])
+agent = StubAgent(['{"count": 1, "status": "success"}'])
 processors = AgentProcessors(output_processors=[EnforceJsonResponse()])
 step = Step.solution(agent, processors=processors)
 runner = Flujo(step)
@@ -60,7 +60,7 @@ result = runner.run("Give me a JSON object")
 print(result.step_history[0].output)
 ```
 
-This prints `{'count': 1}` because the processor parsed the JSON string.
+This prints `{'count': 1, 'status': 'success'}` because the processor parsed the JSON string.
 
 ## Serializing Pydantic Models
 

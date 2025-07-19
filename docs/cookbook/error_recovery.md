@@ -12,13 +12,19 @@ Use `Step.fallback()` to declare a backup step that runs when the primary step f
 from flujo import Step, Flujo
 from flujo.testing.utils import StubAgent
 
-primary = Step("primary", StubAgent(["fail"]), max_retries=1)
-backup = Step("backup", StubAgent(["ok"]))
+# Primary step that fails after retries
+class FailingAgent:
+    async def run(self, data: str, **kwargs) -> str:
+        raise RuntimeError("API rate limit exceeded")
+
+primary = Step("primary", FailingAgent(), max_retries=1)
+# Backup step that provides a simpler, more reliable solution
+backup = Step("backup", StubAgent(["Fallback result: Simplified analysis completed"]))
 primary.fallback(backup)
 
 runner = Flujo(primary)
 result = runner.run("data")
-print(result.step_history[0].output)  # -> "ok"
+print(result.step_history[0].output)  # -> "Fallback result: Simplified analysis completed"
 ```
 
 `StepResult.metadata_["fallback_triggered"]` will be `True` when the fallback runs successfully.

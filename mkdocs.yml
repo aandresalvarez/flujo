@@ -35,6 +35,7 @@ nav:
   - 'Guides':
     - 'SQLite Backend': 'guides/sqlite_backend_guide.md'
   - 'Cookbook':
+    - 'Pipeline as a Step': 'cookbook/pipeline_as_step.md'
     - 'Advanced Serialization': 'cookbook/advanced_serialization.md'
     - 'Hybrid Validation': 'cookbook/hybrid_validation.md'
     - 'Cost Control': 'cookbook/cost_control.md'
