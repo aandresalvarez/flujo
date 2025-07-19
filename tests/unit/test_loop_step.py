@@ -2,6 +2,13 @@ import pytest
 
 from flujo.domain import Step, Pipeline
 from flujo.domain.dsl import LoopStep
+from flujo.domain.models import PipelineContext
+from flujo.application.runner import Flujo
+
+
+class Ctx(PipelineContext):
+    initial_prompt: str = "test"
+    counter: int = 0
 
 
 def test_loop_step_init_validation() -> None:
@@ -23,3 +30,29 @@ def test_step_factory_loop_until() -> None:
     )
     assert isinstance(step, LoopStep)
     assert step.max_loops == 5
+
+
+@pytest.mark.asyncio
+async def test_loopstep_context_isolation_unit():
+    class IncAgent:
+        async def run(self, x: int, *, context: Ctx | None = None) -> int:
+            if context:
+                context.counter += 1
+            return x + 1
+
+    body = Pipeline.from_step(Step.model_validate({"name": "inc", "agent": IncAgent()}))
+    loop = Step.loop_until(
+        name="loop_ctx_isolation_unit",
+        loop_body_pipeline=body,
+        exit_condition_callable=lambda out, ctx: out >= 2,
+        max_loops=5,
+    )
+    runner = Flujo(loop, context_model=Ctx)
+    result = None
+    async for r in runner.run_async(0, initial_context_data={"initial_prompt": "test"}):
+        result = r
+    assert result is not None, "No result returned from runner.run_async()"
+    # The context should not be mutated by the loop body
+    assert result.final_pipeline_context.counter == 0, (
+        "Context should remain isolated after LoopStep execution"
+    )
