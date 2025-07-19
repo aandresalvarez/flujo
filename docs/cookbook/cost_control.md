@@ -50,3 +50,7 @@ except UsageLimitExceededError as e:
 7.  The exception contains the `result` object with the history up to the point of failure, which is useful for debugging.
 
 This mechanism is a critical safety feature for running `Flujo` in production.
+
+## Advanced Usage
+
+For more complex scenarios involving loops, parallel execution, and nested workflows, see the [Budget-Aware Workflows](../cookbook/budget_aware_workflows.md) guide, which demonstrates how the Usage Governor works with `LoopStep` and `ParallelStep` constructs.
