@@ -32,6 +32,8 @@ nav:
     - 'Scoring': 'scoring.md'
     - 'Telemetry': 'telemetry.md'
     - 'Configuration': 'configuration.md'
+  - 'Guides':
+    - 'SQLite Backend': 'guides/sqlite_backend_guide.md'
   - 'Cookbook':
     - 'Advanced Serialization': 'cookbook/advanced_serialization.md'
     - 'Hybrid Validation': 'cookbook/hybrid_validation.md'

@@ -375,6 +375,7 @@ print(details)
    - [Installation Guide](installation.md)
    - [Usage Guide](usage.md)
    - [API Reference](api/index.md)
+   - [SQLite Backend Guide](guides/sqlite_backend_guide.md) - For persistence and observability issues
 
 2. **Community**
    - [GitHub Issues](https://github.com/aandresalvarez/flujo/issues)

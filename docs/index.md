@@ -21,6 +21,7 @@ Go beyond static prompts. Flujo provides the structure, state, and observability
 ## Advanced Features
 
 - [Advanced Serialization](cookbook/advanced_serialization.md) - Handle custom types and complex serialization scenarios
+- [SQLite Backend](guides/sqlite_backend_guide.md) - Production-ready persistence with observability
 - [Migration Guide](migration/v0.7.0.md) - Upgrade to the latest serialization features
 
 Use the navigation on the left to explore the guides, examples, and API reference.
