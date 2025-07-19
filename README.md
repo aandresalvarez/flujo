@@ -2,14 +2,14 @@
 
 <img src="assets/flujo.png" alt="Flujo logo" width="180"/>
 
-**Turn fragile AI scripts into reliable digital employees.**
+**Beyond Agents: The AI Employee.**
 
 </div>
 
 ---
 
 > **TL;DR**
-> Flujo turns brittle AI **agents** into production‑grade **digital employees**—with persistent memory, proactive budgeting, and continuous learning.
+> Flujo turns AI **agents** into production‑grade **digital employees**—with persistent memory, proactive budgeting, and continuous learning.
 
 > **Approaching v1.0**  Core APIs (`@step`, `>>`, `Flujo`, state back‑ends) are stable. Pin your version and watch the changelog.
 
