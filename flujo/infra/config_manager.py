@@ -5,7 +5,12 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Union, cast
-import tomllib
+
+try:
+    import tomllib
+except ImportError:
+    # Fallback for Python versions < 3.11
+    import tomli as tomllib  # type: ignore
 from pydantic import BaseModel
 
 from ..exceptions import ConfigurationError
@@ -158,6 +163,8 @@ class ConfigManager:
             raise ConfigurationError(f"Error loading configuration from {self.config_path}: {e}")
         except Exception as e:
             # Catch any other unexpected errors and provide a generic message
+            # This is kept as a final fallback after handling all specific exceptions
+            # to ensure we always provide a meaningful error message
             raise ConfigurationError(
                 f"An unexpected error occurred during configuration loading: {e}"
             )

@@ -174,6 +174,10 @@ if settings.openai_api_key:
 
 
 # Thread-local cache for settings to avoid repeated imports and ensure thread safety
+# We use thread-local storage instead of lru_cache because:
+# 1. Thread safety: Different threads can have different settings (useful for testing)
+# 2. Dynamic configuration: Settings can change during runtime via config files
+# 3. Proper isolation: Each thread gets its own cached settings instance
 _thread_local_settings = threading.local()
 
 

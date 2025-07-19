@@ -103,6 +103,29 @@ def apply_cli_defaults_with_fallback(
     return result
 
 
+def process_cli_arguments(
+    command: str, fallback_values: Optional[Dict[str, Any]] = None, **kwargs: Any
+) -> Dict[str, Any]:
+    """Process CLI arguments with defaults applied.
+
+    This helper function encapsulates the common pattern of applying CLI defaults
+    and returning the processed arguments. It can be used to reduce code duplication
+    across command functions.
+
+    Args:
+        command: The command name (e.g., "solve", "bench", "run")
+        fallback_values: Dict mapping argument names to their hardcoded default values
+        **kwargs: The command arguments to process
+
+    Returns:
+        Dict containing the processed arguments with defaults applied
+    """
+    if fallback_values:
+        return apply_cli_defaults_with_fallback(command, fallback_values, **kwargs)
+    else:
+        return apply_cli_defaults(command, **kwargs)
+
+
 @app.command()
 def solve(
     prompt: str,
@@ -159,19 +182,19 @@ def solve(
         # Load settings with configuration file overrides (cached)
         settings = load_settings()
 
-        # Apply CLI defaults using the helper function
-        cli_args = {
-            "max_iters": max_iters,
-            "k": k,
-            "reflection": reflection,
-            "scorer": scorer,
-            "weights_path": weights_path,
-            "solution_model": solution_model,
-            "review_model": review_model,
-            "validator_model": validator_model,
-            "reflection_model": reflection_model,
-        }
-        cli_args = apply_cli_defaults("solve", **cli_args)
+        # Process CLI arguments with defaults applied
+        cli_args = process_cli_arguments(
+            "solve",
+            max_iters=max_iters,
+            k=k,
+            reflection=reflection,
+            scorer=scorer,
+            weights_path=weights_path,
+            solution_model=solution_model,
+            review_model=review_model,
+            validator_model=validator_model,
+            reflection_model=reflection_model,
+        )
 
         # Unpack updated arguments with proper type casting
         max_iters = cast(Optional[int], cli_args["max_iters"])
@@ -318,8 +341,8 @@ def bench(
     import asyncio
 
     try:
-        # Apply CLI defaults using the helper function with fallback value checking
-        cli_args = apply_cli_defaults_with_fallback("bench", {"rounds": 10}, rounds=rounds)
+        # Process CLI arguments with defaults applied
+        cli_args = process_cli_arguments("bench", {"rounds": 10}, rounds=rounds)
         rounds = cast(int, cli_args["rounds"])
 
         review_agent = make_review_agent()
@@ -642,8 +665,8 @@ def run(
         flujo run my_pipeline.py --input "Test" --context-file context.yaml
     """
     try:
-        # Apply CLI defaults using the helper function with fallback value checking
-        cli_args = apply_cli_defaults_with_fallback(
+        # Process CLI arguments with defaults applied
+        cli_args = process_cli_arguments(
             "run",
             {"pipeline_name": "pipeline", "json_output": False},
             pipeline_name=pipeline_name,

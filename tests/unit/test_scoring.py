@@ -9,7 +9,22 @@ from flujo.domain.scoring import weighted_score, ratio_score, RewardScorer
 
 
 def monkeypatch_settings(monkeypatch, test_settings):
-    """Helper function to monkeypatch settings across modules."""
+    """Helper function to monkeypatch settings across modules.
+
+    This function patches both the settings instance and the get_settings function
+    across multiple modules to ensure consistent test behavior. It updates:
+    - flujo.infra.settings.settings: The singleton settings instance
+    - flujo.infra.settings.get_settings: The settings accessor function
+    - flujo.domain.scoring.get_settings: The settings accessor in scoring module
+
+    Args:
+        monkeypatch: pytest's monkeypatch fixture for modifying module attributes
+        test_settings: Settings instance to use for testing
+
+    Usage:
+        test_settings = Settings(reward_enabled=True, ...)
+        monkeypatch_settings(monkeypatch, test_settings)
+    """
     import sys
 
     settings_module = sys.modules["flujo.infra.settings"]
