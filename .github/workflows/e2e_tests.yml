@@ -42,9 +42,17 @@ jobs:
         run: |
           pytest tests/e2e/test_golden_transcript.py
 
-      - name: Upload new cassette if recorded
+      - name: Run comprehensive golden transcript tests
+        env:
+          OPENAI_API_KEY: ${{ secrets.E2E_OPENAI_API_KEY }}
+          CI_E2E_RUN: "true"
+        run: |
+          pytest tests/e2e/test_golden_transcript_*.py
+
+      - name: Upload new cassettes if recorded
         if: ${{ github.event.inputs.re_record_cassette == 'true' }}
         uses: actions/upload-artifact@v4
         with:
-          name: new-e2e-cassette
-          path: tests/e2e/cassettes/golden.yaml
+          name: new-e2e-cassettes
+          path: |
+            tests/e2e/cassettes/golden.yaml

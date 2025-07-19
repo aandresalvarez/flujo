@@ -595,7 +595,7 @@ async def _execute_loop_step_logic(
 
         try:
             should_exit = loop_step.exit_condition_callable(
-                final_body_output_of_last_iteration, context
+                final_body_output_of_last_iteration, iteration_context
             )
         except Exception as e:
             telemetry.logfire.error(

@@ -95,6 +95,7 @@ def _types_compatible(a: Any, b: Any) -> bool:
         return True
 
     origin_a, origin_b = get_origin(a), get_origin(b)
+
     # Handle typing.Union and types.UnionType (Python 3.10+)
     if origin_b is Union:
         return any(_types_compatible(a, arg) for arg in get_args(b))
@@ -104,6 +105,22 @@ def _types_compatible(a: Any, b: Any) -> bool:
         return all(_types_compatible(arg, b) for arg in get_args(a))
     if hasattr(types, "UnionType") and isinstance(a, types.UnionType):
         return all(_types_compatible(arg, b) for arg in a.__args__)
+
+    # Handle Tuple types - tuple is compatible with Tuple[...]
+    if origin_b is tuple:
+        # If b is Tuple[...], then any tuple type is compatible
+        return a is tuple or (isinstance(a, type) and issubclass(a, tuple))
+    if origin_a is tuple:
+        # If a is Tuple[...], then it's compatible with tuple
+        return b is tuple or (isinstance(b, type) and issubclass(b, tuple))
+
+    # Handle Dict types - dict is compatible with Dict[...]
+    if origin_b is dict:
+        # If b is Dict[...], then any dict type is compatible
+        return a is dict or (isinstance(a, type) and issubclass(a, dict))
+    if origin_a is dict:
+        # If a is Dict[...], then it's compatible with dict
+        return b is dict or (isinstance(b, type) and issubclass(b, dict))
 
     # Only call issubclass if both are actual classes
     if not isinstance(a, type) or not isinstance(b, type):
