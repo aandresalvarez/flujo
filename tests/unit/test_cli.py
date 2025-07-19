@@ -126,7 +126,7 @@ def test_cli_version_command(monkeypatch) -> None:
 
     result = runner.invoke(app, ["version-cmd"])
     assert result.exit_code == 0
-    assert "flujo version" in result.stdout
+    assert "1.2.3" in result.stdout
 
 
 def test_cli_solve_with_weights(monkeypatch) -> None:
@@ -343,8 +343,15 @@ def test_cli_bench_keyboard_interrupt(monkeypatch) -> None:
 
 
 def test_cli_version_cmd_package_not_found(monkeypatch) -> None:
+    import importlib.metadata
+
+    def raise_package_not_found(_name):
+        raise importlib.metadata.PackageNotFoundError("fail")
+
     monkeypatch.setattr(
-        "importlib.metadata.version", lambda name: (_ for _ in ()).throw(Exception("fail"))
+        importlib.metadata,
+        "version",
+        raise_package_not_found,
     )
     # from flujo.cli.main import app # This line is moved to the top of the file
 
@@ -546,7 +553,7 @@ def test_cli_run_with_args() -> None:
         patch("flujo.cli.main.make_solution_agent", return_value=DummyAgent()),
         patch("flujo.cli.main.make_validator_agent", return_value=DummyAgent()),
         patch("flujo.cli.main.get_reflection_agent"),
-        patch("flujo.cli.main.settings", dummy_settings),
+        patch("flujo.cli.main.load_settings", return_value=dummy_settings),
     ):
         # from flujo.cli.main import app # This line is moved to the top of the file
 
@@ -746,3 +753,31 @@ def test_cli_improve_uses_custom_improvement_model(monkeypatch, tmp_path) -> Non
     )
     assert result.exit_code == 0
     assert called["model"] == "custom"
+
+
+def test_apply_cli_defaults_helper(monkeypatch):
+    """Test the apply_cli_defaults helper function."""
+    from flujo.cli.main import apply_cli_defaults
+
+    # Test with no defaults (should return original values)
+    result = apply_cli_defaults("solve", max_iters=None, k=5)
+    assert result["max_iters"] is None
+    assert result["k"] == 5
+
+    # Test with defaults applied
+    # Mock the get_cli_defaults to return some defaults
+    def mock_get_defaults(command):
+        if command == "solve":
+            return {"max_iters": 10, "k": 3}
+        return {}
+
+    monkeypatch.setattr("flujo.cli.main.get_cli_defaults", mock_get_defaults)
+
+    result = apply_cli_defaults("solve", max_iters=None, k=None)
+    assert result["max_iters"] == 10
+    assert result["k"] == 3
+
+    # Test that provided values are not overridden
+    result = apply_cli_defaults("solve", max_iters=5, k=None)
+    assert result["max_iters"] == 5  # Should not be overridden
+    assert result["k"] == 3  # Should be overridden

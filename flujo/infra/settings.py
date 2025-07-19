@@ -1,6 +1,7 @@
 """Settings and configuration for flujo."""
 
 import os
+import threading
 from typing import Callable, ClassVar, Dict, Literal, Optional, cast
 
 import dotenv
@@ -125,7 +126,8 @@ class ExecutionConfig(BaseModel):
 
     # Iterative executor settings
     use_iterative_executor: bool = Field(
-        default=False, description="Use the new iterative step executor for better performance"
+        default=False,
+        description="Use the new iterative step executor for better performance",
     )
 
     # Memoization settings
@@ -159,7 +161,7 @@ class ExecutionConfig(BaseModel):
 
 
 # Singleton instance, fail fast if critical vars missing
-
+# Note: This will be overridden by the configuration manager when available
 try:
     settings = cast(Callable[[], Settings], Settings)()
 except ValidationError as e:
@@ -169,3 +171,49 @@ except ValidationError as e:
 # Ensure OpenAI library can find the API key if provided
 if settings.openai_api_key:
     os.environ.setdefault("OPENAI_API_KEY", settings.openai_api_key.get_secret_value())
+
+
+# Thread-local cache for settings to avoid repeated imports and ensure thread safety
+# We use thread-local storage instead of lru_cache because:
+# 1. Thread safety: Different threads can have different settings (useful for testing)
+# 2. Dynamic configuration: Settings can change during runtime via config files
+# 3. Proper isolation: Each thread gets its own cached settings instance
+_thread_local_settings = threading.local()
+
+
+def get_settings() -> Settings:
+    """Get the current settings instance.
+
+    This function provides a way to get settings that may be overridden
+    by configuration files. It will use the configuration manager if available,
+    otherwise fall back to the default settings.
+
+    The result is cached per thread to avoid repeated import overhead and ensure thread safety.
+    """
+    if not hasattr(_thread_local_settings, "cached_settings"):
+        # Use lazy import to avoid circular dependency
+        try:
+            # Import here to avoid circular dependency
+            from .config_manager import get_config_manager
+
+            config_manager = get_config_manager()
+            _thread_local_settings.cached_settings = config_manager.get_settings()
+        except ImportError:
+            # Fall back to default settings if config manager is not available due to import issues
+            _thread_local_settings.cached_settings = settings
+        except (RuntimeError, AttributeError) as e:
+            # Log the specific error for debugging purposes
+            import logging
+
+            logging.error(f"Error while retrieving settings: {e}")
+            # Fall back to default settings if there is an error
+            _thread_local_settings.cached_settings = settings
+        except Exception as e:
+            # Log the unexpected error for debugging purposes
+            import logging
+
+            logging.error(f"Unexpected error while retrieving settings: {type(e).__name__}: {e}")
+            # Fall back to default settings if there is an unexpected error
+            _thread_local_settings.cached_settings = settings
+
+    return cast(Settings, _thread_local_settings.cached_settings)

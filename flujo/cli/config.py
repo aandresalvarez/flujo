@@ -6,18 +6,19 @@ from urllib.parse import urlparse
 
 from ..state.backends.sqlite import SQLiteBackend
 from ..state.backends.base import StateBackend
+from ..infra.config_manager import get_state_uri
 
 
 def load_backend_from_config() -> StateBackend:
     """Load a state backend based on env var or flujo.toml."""
+    # First check environment variable
     uri = os.getenv("FLUJO_STATE_URI")
-    if uri is None and Path("flujo.toml").exists():
-        import tomllib
 
-        with open("flujo.toml", "rb") as f:
-            data = tomllib.load(f)
-        uri = data.get("state_uri")
+    # If not found, try to get from configuration file
+    if uri is None:
+        uri = get_state_uri()
 
+    # Default fallback
     if uri is None:
         uri = "sqlite:///flujo_ops.db"
 

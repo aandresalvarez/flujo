@@ -26,7 +26,7 @@ from flujo.application.self_improvement import (
 )
 from flujo.domain.models import ImprovementSuggestion
 from flujo.application.runner import Flujo
-from flujo.infra.settings import settings
+from flujo.infra.config_manager import load_settings, get_cli_defaults
 from flujo.exceptions import ConfigurationError, SettingsError
 from flujo.infra import telemetry
 from typing_extensions import Annotated
@@ -43,6 +43,7 @@ WeightsType = List[Dict[str, Union[str, float]]]
 MetadataType = Dict[str, Any]
 ScorerType = Literal["ratio", "weighted", "reward"]
 
+
 app: typer.Typer = typer.Typer(rich_markup_mode="markdown")
 
 # Initialize telemetry at the start of CLI execution
@@ -50,6 +51,41 @@ telemetry.init_telemetry()
 logfire = telemetry.logfire
 
 app.add_typer(lens_app, name="lens")
+
+
+def apply_cli_defaults(
+    command: str, fallback_values: Optional[Dict[str, Any]] = None, **kwargs: Any
+) -> Dict[str, Any]:
+    """Apply CLI defaults from configuration file to command arguments.
+
+    This function handles both None values and hardcoded defaults by checking if the current value
+    matches the fallback value, indicating it wasn't explicitly provided by the user.
+
+    Args:
+        command: The command name (e.g., "solve", "bench")
+        fallback_values: Optional dict mapping argument names to their hardcoded default values
+        **kwargs: The command arguments to apply defaults to
+
+    Returns:
+        Dict containing the arguments with defaults applied
+    """
+    cli_defaults = get_cli_defaults(command)
+    result = kwargs.copy()
+
+    for key, value in kwargs.items():
+        # Check if value is None (explicitly not provided)
+        if value is None and key in cli_defaults:
+            result[key] = cli_defaults[key]
+        # Check if value matches fallback (using hardcoded default)
+        elif (
+            fallback_values
+            and key in fallback_values
+            and value == fallback_values[key]
+            and key in cli_defaults
+        ):
+            result[key] = cli_defaults[key]
+
+    return result
 
 
 @app.command()
@@ -105,6 +141,34 @@ def solve(
         typer.Exit: If there is an error loading weights or other CLI errors
     """
     try:
+        # Load settings with configuration file overrides (thread-local cached)
+        settings = load_settings()
+
+        # Apply CLI defaults from configuration file
+        cli_args = apply_cli_defaults(
+            "solve",
+            max_iters=max_iters,
+            k=k,
+            reflection=reflection,
+            scorer=scorer,
+            weights_path=weights_path,
+            solution_model=solution_model,
+            review_model=review_model,
+            validator_model=validator_model,
+            reflection_model=reflection_model,
+        )
+
+        # Unpack updated arguments with proper type casting
+        max_iters = cast(Optional[int], cli_args["max_iters"])
+        k = cast(Optional[int], cli_args["k"])
+        reflection = cast(Optional[bool], cli_args["reflection"])
+        scorer = cast(Optional[ScorerType], cli_args["scorer"])
+        weights_path = cast(Optional[str], cli_args["weights_path"])
+        solution_model = cast(Optional[str], cli_args["solution_model"])
+        review_model = cast(Optional[str], cli_args["review_model"])
+        validator_model = cast(Optional[str], cli_args["validator_model"])
+        reflection_model = cast(Optional[str], cli_args["reflection_model"])
+
         # Argument validation
         if max_iters is not None and max_iters <= 0:
             typer.echo("[red]Error: --max-iters must be a positive integer[/red]", err=True)
@@ -198,15 +262,10 @@ def version_cmd() -> None:
     import importlib.metadata as importlib_metadata
 
     try:
-        try:
-            v: str = importlib_metadata.version("flujo")
-        except importlib_metadata.PackageNotFoundError:
-            v = "unknown"
-        except Exception:
-            v = "unknown"
-    except Exception:
-        v = "unknown"
-    print(f"flujo version: {v}")
+        version = importlib_metadata.version("flujo")
+        typer.echo(f"flujo version: {version}")
+    except (importlib_metadata.PackageNotFoundError, Exception):
+        typer.echo("flujo version: unknown")
 
 
 @app.command(name="show-config")
@@ -217,11 +276,15 @@ def show_config_cmd() -> None:
     Returns:
         None: Prints configuration to stdout
     """
+    settings = load_settings()
     typer.echo(settings.model_dump(exclude={"openai_api_key", "logfire_api_key"}))
 
 
 @app.command()
-def bench(prompt: str, rounds: int = 10) -> None:
+def bench(
+    prompt: str,
+    rounds: Annotated[int, typer.Option(help="Number of benchmark rounds to run")] = 10,
+) -> None:
     """
     Quick micro-benchmark of generation latency/score.
 
@@ -240,6 +303,10 @@ def bench(prompt: str, rounds: int = 10) -> None:
     import asyncio
 
     try:
+        # Apply CLI defaults from configuration file
+        cli_args = apply_cli_defaults("bench", {"rounds": 10}, rounds=rounds)
+        rounds = cast(int, cli_args["rounds"])
+
         review_agent = make_review_agent()
         solution_agent = make_solution_agent()
         validator_agent = make_validator_agent()
@@ -538,7 +605,9 @@ def run(
     pipeline_name: Annotated[
         Optional[str],
         typer.Option(
-            "--pipeline-name", "-p", help="Name of the pipeline variable (default: pipeline)"
+            "--pipeline-name",
+            "-p",
+            help="Name of the pipeline variable (default: pipeline)",
         ),
     ] = "pipeline",
     json_output: Annotated[
@@ -558,6 +627,15 @@ def run(
         flujo run my_pipeline.py --input "Test" --context-file context.yaml
     """
     try:
+        # Apply CLI defaults from configuration file
+        cli_args = apply_cli_defaults(
+            "run",
+            {"pipeline_name": "pipeline", "json_output": False},
+            pipeline_name=pipeline_name,
+            json_output=json_output,
+        )
+        pipeline_name = cast(str, cli_args["pipeline_name"])
+        json_output = cast(bool, cli_args["json_output"])
         # Load the pipeline file
         ns: Dict[str, Any] = runpy.run_path(pipeline_file)
 
@@ -579,7 +657,10 @@ def run(
             if not sys.stdin.isatty():
                 input_data = sys.stdin.read().strip()
             else:
-                typer.echo("[red]No input provided. Use --input or pipe data to stdin", err=True)
+                typer.echo(
+                    "[red]No input provided. Use --input or pipe data to stdin",
+                    err=True,
+                )
                 raise typer.Exit(1)
 
         # Handle context model
@@ -601,7 +682,8 @@ def run(
 
                 if not issubclass(context_model_class, PipelineContext):
                     typer.echo(
-                        f"[red]'{context_model}' must inherit from PipelineContext", err=True
+                        f"[red]'{context_model}' must inherit from PipelineContext",
+                        err=True,
                     )
                     raise typer.Exit(1)
             except Exception as e:
@@ -693,7 +775,10 @@ def run(
             if result.final_pipeline_context:
                 console.print("\n[bold]Final Context:[/bold]")
                 console.print(
-                    json.dumps(safe_serialize(result.final_pipeline_context.model_dump()), indent=2)
+                    json.dumps(
+                        safe_serialize(result.final_pipeline_context.model_dump()),
+                        indent=2,
+                    )
                 )
 
     except Exception as e:
