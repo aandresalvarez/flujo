@@ -187,11 +187,14 @@ def get_settings() -> Settings:
     The result is cached per thread to avoid repeated import overhead and ensure thread safety.
     """
     if not hasattr(_thread_local_settings, "cached_settings"):
+        # Use lazy import to avoid circular dependency
         try:
-            from .config_manager import load_settings
+            # Import here to avoid circular dependency
+            from .config_manager import get_config_manager
 
-            _thread_local_settings.cached_settings = load_settings()
-        except ImportError:
+            config_manager = get_config_manager()
+            _thread_local_settings.cached_settings = config_manager.get_settings()
+        except (ImportError, Exception):
             # Fall back to default settings if config manager is not available
             _thread_local_settings.cached_settings = settings
 

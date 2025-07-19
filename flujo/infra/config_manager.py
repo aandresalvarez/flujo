@@ -8,7 +8,6 @@ from typing import Any, Callable, Dict, Optional, Union, cast
 import tomllib
 from pydantic import BaseModel
 
-from .settings import Settings
 from ..exceptions import ConfigurationError
 
 
@@ -92,7 +91,7 @@ class ConfigManager:
         """
         self.config_path = self._find_config_file(config_path)
         self._config: Optional[FlujoConfig] = None
-        self._settings: Optional[Settings] = None
+        self._settings: Optional[Any] = None
 
     def _find_config_file(self, config_path: Optional[Union[str, Path]]) -> Optional[Path]:
         """Find the configuration file to use."""
@@ -162,7 +161,7 @@ class ConfigManager:
                 f"An unexpected error occurred during configuration loading: {e}"
             )
 
-    def get_settings(self) -> Settings:
+    def get_settings(self) -> Any:
         """Get settings with configuration file overrides applied."""
         if self._settings is not None:
             return self._settings
@@ -215,7 +214,7 @@ def get_config_manager() -> ConfigManager:
     return cast(ConfigManager, _thread_local_config_manager.config_manager)
 
 
-def load_settings() -> Settings:
+def load_settings() -> Any:
     """Load settings with configuration file overrides."""
     return get_config_manager().get_settings()
 

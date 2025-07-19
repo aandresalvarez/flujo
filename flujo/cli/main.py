@@ -72,6 +72,30 @@ def apply_cli_defaults(command: str, **kwargs: Any) -> Dict[str, Any]:
     return result
 
 
+def apply_cli_defaults_with_explicit_check(
+    command: str, explicit_args: Dict[str, Any], **kwargs: Any
+) -> Dict[str, Any]:
+    """Apply CLI defaults from configuration file, respecting explicitly provided arguments.
+
+    Args:
+        command: The command name (e.g., "solve", "bench")
+        explicit_args: Dict of arguments that were explicitly provided by the user
+        **kwargs: The command arguments to apply defaults to
+
+    Returns:
+        Dict containing the arguments with defaults applied
+    """
+    cli_defaults = get_cli_defaults(command)
+    result = kwargs.copy()
+
+    for key, value in kwargs.items():
+        # Only apply config defaults if the argument was not explicitly provided
+        if key not in explicit_args and value is None and key in cli_defaults:
+            result[key] = cli_defaults[key]
+
+    return result
+
+
 @app.command()
 def solve(
     prompt: str,
@@ -129,8 +153,19 @@ def solve(
         settings = load_settings()
 
         # Apply CLI defaults
-        defaults = apply_cli_defaults(
+        defaults = apply_cli_defaults_with_explicit_check(
             "solve",
+            {
+                "max_iters": max_iters,
+                "k": k,
+                "reflection": reflection,
+                "scorer": scorer,
+                "weights_path": weights_path,
+                "solution_model": solution_model,
+                "review_model": review_model,
+                "validator_model": validator_model,
+                "reflection_model": reflection_model,
+            },
             max_iters=max_iters,
             k=k,
             reflection=reflection,
@@ -289,7 +324,11 @@ def bench(
 
     try:
         # Apply CLI defaults
-        defaults = apply_cli_defaults("bench", rounds=rounds)
+        defaults = apply_cli_defaults_with_explicit_check(
+            "bench",
+            {"rounds": rounds},
+            rounds=rounds,
+        )
         rounds = defaults["rounds"]
 
         # Provide fallback default if rounds is still None
@@ -598,7 +637,7 @@ def run(
             "-p",
             help="Name of the pipeline variable (default: pipeline)",
         ),
-    ] = "pipeline",
+    ] = None,
     json_output: Annotated[
         bool,
         typer.Option("--json", help="Output raw JSON instead of formatted result"),
@@ -619,10 +658,18 @@ def run(
         # Load CLI defaults from configuration file
         cli_defaults = get_cli_defaults("run")
 
-        # Apply CLI defaults if not provided as arguments
-        if pipeline_name == "pipeline" and "pipeline_name" in cli_defaults:
+        # Apply CLI defaults for arguments that are None (not explicitly provided)
+        if pipeline_name is None and "pipeline_name" in cli_defaults:
             pipeline_name = cli_defaults["pipeline_name"]
-        if not json_output and "json_output" in cli_defaults:
+        elif pipeline_name is None:
+            pipeline_name = "pipeline"  # Fallback default
+
+        # For json_output, only apply config default if it's False and config has True
+        if (
+            not json_output
+            and "json_output" in cli_defaults
+            and cli_defaults["json_output"] is True
+        ):
             json_output = cli_defaults["json_output"]
         # Load the pipeline file
         ns: Dict[str, Any] = runpy.run_path(pipeline_file)
