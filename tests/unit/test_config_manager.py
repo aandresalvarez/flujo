@@ -15,6 +15,7 @@ from flujo.infra.config_manager import (
     get_cli_defaults,
     get_state_uri,
 )
+from flujo.exceptions import ConfigurationError
 
 
 class TestConfigManager:
@@ -207,14 +208,14 @@ class TestConfigManager:
         try:
             config_manager = ConfigManager(config_path)
             # Should raise an exception due to invalid type
-            with pytest.raises(Exception):
+            with pytest.raises(ConfigurationError, match="An unexpected error occurred while loading configuration"):
                 config_manager.load_config()
         finally:
             os.unlink(config_path)
 
     def test_missing_config_file(self):
         """Test handling of missing configuration file."""
-        with pytest.raises(Exception):
+        with pytest.raises(ConfigurationError, match="Configuration file not found"):
             ConfigManager("nonexistent.toml")
 
     def test_global_functions(self):

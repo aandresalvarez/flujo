@@ -146,8 +146,14 @@ class ConfigManager:
             self._config = FlujoConfig(**config_data)
             return self._config
 
+        except FileNotFoundError as e:
+            raise ConfigurationError(f"Configuration file not found at {self.config_path}: {e}")
+        except PermissionError as e:
+            raise ConfigurationError(f"Permission denied when accessing {self.config_path}: {e}")
+        except tomllib.TOMLDecodeError as e:
+            raise ConfigurationError(f"Failed to parse TOML configuration file {self.config_path}: {e}")
         except Exception as e:
-            raise ConfigurationError(f"Failed to load configuration from {self.config_path}: {e}")
+            raise ConfigurationError(f"An unexpected error occurred while loading configuration from {self.config_path}: {e}")
 
     def get_settings(self) -> Settings:
         """Get settings with configuration file overrides applied."""
@@ -156,7 +162,7 @@ class ConfigManager:
 
         # Start with the default settings using the proper constructor
         # BaseSettings handles the initialization automatically
-        settings = Settings()  # type: ignore
+        settings = Settings()
         config = self.load_config()
 
         # Apply settings overrides from configuration file
