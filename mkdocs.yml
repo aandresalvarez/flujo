@@ -38,6 +38,7 @@ nav:
     - 'Pipeline as a Step': 'cookbook/pipeline_as_step.md'
     - 'Advanced Serialization': 'cookbook/advanced_serialization.md'
     - 'Hybrid Validation': 'cookbook/hybrid_validation.md'
+    - 'Budget-Aware Workflows': 'cookbook/budget_aware_workflows.md'
     - 'Cost Control': 'cookbook/cost_control.md'
     - 'Error Recovery': 'cookbook/error_recovery.md'
     - 'Visualizing Pipelines': 'cookbook/visualizing_pipelines.md'

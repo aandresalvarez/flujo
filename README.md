@@ -198,6 +198,7 @@ flujo run hello_pipeline.py --input "Flujo"
 ## Get Involved
 
 * 📖 **[Documentation](docs/index.md)** — Guides, tutorials, API reference
+* 💰 **[Budget-Aware Workflows](docs/cookbook/budget_aware_workflows.md)** — Production cost control with loops and parallel execution
 * 🤝 **[Contribute](CONTRIBUTING.md)** — Join the community and shape Flujo's future
 
 ---
