@@ -154,9 +154,14 @@ class ConfigManager:
             raise ConfigurationError(
                 f"Failed to parse TOML configuration file {self.config_path}: {e}"
             )
-        except (OSError, ValueError, tomllib.TOMLDecodeError) as e:
+        except (OSError, ValueError) as e:
             raise ConfigurationError(f"Error loading configuration from {self.config_path}: {e}")
+        except tomllib.TOMLDecodeError as e:
+            raise ConfigurationError(
+                f"Failed to parse TOML configuration file {self.config_path}: {e}"
+            )
         except Exception as e:
+            # Catch any other unexpected errors and provide a generic message
             raise ConfigurationError(
                 f"An unexpected error occurred during configuration loading: {e}"
             )

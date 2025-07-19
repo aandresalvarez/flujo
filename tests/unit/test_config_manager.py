@@ -192,8 +192,7 @@ class TestConfigManager:
 
     def test_invalid_config_file(self):
         """Test handling of invalid configuration files."""
-        # The string 'not_a_number' is used to simulate an invalid value for the 'max_iters' field,
-        # which is expected to be an integer. This triggers a validation error in the configuration manager.
+        # Invalid type for max_iters to trigger validation error
         invalid_content = """
         [settings]
         max_iters = "not_a_number"  # Invalid type

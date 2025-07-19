@@ -194,8 +194,11 @@ def get_settings() -> Settings:
 
             config_manager = get_config_manager()
             _thread_local_settings.cached_settings = config_manager.get_settings()
-        except (ImportError, Exception):
-            # Fall back to default settings if config manager is not available
+        except ImportError:
+            # Fall back to default settings if config manager is not available due to import issues
+            _thread_local_settings.cached_settings = settings
+        except Exception:
+            # Fall back to default settings if there is an unexpected error
             _thread_local_settings.cached_settings = settings
 
     return cast(Settings, _thread_local_settings.cached_settings)
