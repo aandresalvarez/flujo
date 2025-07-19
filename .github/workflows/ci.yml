@@ -120,8 +120,8 @@ jobs:
           # Run slow tests serially with coverage
           uv run coverage run --source=flujo --parallel-mode -m pytest tests/ -m "slow or serial or benchmark"
 
-          # Run the comprehensive golden transcript test
-          uv run coverage run --source=flujo --append -m pytest tests/e2e/test_golden_transcript_complex.py
+          # Run the comprehensive golden transcript tests
+          uv run coverage run --source=flujo --append -m pytest tests/e2e/test_golden_transcript_*.py
 
       - name: Store slow tests coverage file
         uses: actions/upload-artifact@v4
