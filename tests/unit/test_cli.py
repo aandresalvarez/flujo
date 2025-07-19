@@ -553,7 +553,7 @@ def test_cli_run_with_args() -> None:
         patch("flujo.cli.main.make_solution_agent", return_value=DummyAgent()),
         patch("flujo.cli.main.make_validator_agent", return_value=DummyAgent()),
         patch("flujo.cli.main.get_reflection_agent"),
-        patch("flujo.infra.config_manager.load_settings", return_value=dummy_settings),
+        patch("flujo.cli.main.load_settings", return_value=dummy_settings),
     ):
         # from flujo.cli.main import app # This line is moved to the top of the file
 

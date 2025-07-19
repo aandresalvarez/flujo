@@ -53,37 +53,17 @@ logfire = telemetry.logfire
 app.add_typer(lens_app, name="lens")
 
 
-def apply_cli_defaults(command: str, **kwargs: Any) -> Dict[str, Any]:
-    """Apply CLI defaults from configuration file to command arguments.
-
-    Args:
-        command: The command name (e.g., "solve", "bench")
-        **kwargs: The command arguments to apply defaults to
-
-    Returns:
-        Dict containing the arguments with defaults applied
-    """
-    cli_defaults = get_cli_defaults(command)
-    result = kwargs.copy()
-
-    for key, value in kwargs.items():
-        if value is None and key in cli_defaults:
-            result[key] = cli_defaults[key]
-
-    return result
-
-
-def apply_cli_defaults_with_fallback(
-    command: str, fallback_values: Dict[str, Any], **kwargs: Any
+def apply_cli_defaults(
+    command: str, fallback_values: Optional[Dict[str, Any]] = None, **kwargs: Any
 ) -> Dict[str, Any]:
-    """Apply CLI defaults from configuration file to command arguments with fallback value checking.
+    """Apply CLI defaults from configuration file to command arguments.
 
     This function handles both None values and hardcoded defaults by checking if the current value
     matches the fallback value, indicating it wasn't explicitly provided by the user.
 
     Args:
         command: The command name (e.g., "solve", "bench")
-        fallback_values: Dict mapping argument names to their hardcoded default values
+        fallback_values: Optional dict mapping argument names to their hardcoded default values
         **kwargs: The command arguments to apply defaults to
 
     Returns:
@@ -97,7 +77,12 @@ def apply_cli_defaults_with_fallback(
         if value is None and key in cli_defaults:
             result[key] = cli_defaults[key]
         # Check if value matches fallback (using hardcoded default)
-        elif key in fallback_values and value == fallback_values[key] and key in cli_defaults:
+        elif (
+            fallback_values
+            and key in fallback_values
+            and value == fallback_values[key]
+            and key in cli_defaults
+        ):
             result[key] = cli_defaults[key]
 
     return result
@@ -120,10 +105,7 @@ def process_cli_arguments(
     Returns:
         Dict containing the processed arguments with defaults applied
     """
-    if fallback_values:
-        return apply_cli_defaults_with_fallback(command, fallback_values, **kwargs)
-    else:
-        return apply_cli_defaults(command, **kwargs)
+    return apply_cli_defaults(command, fallback_values, **kwargs)
 
 
 @app.command()
@@ -179,7 +161,7 @@ def solve(
         typer.Exit: If there is an error loading weights or other CLI errors
     """
     try:
-        # Load settings with configuration file overrides (cached)
+        # Load settings with configuration file overrides (thread-local cached)
         settings = load_settings()
 
         # Process CLI arguments with defaults applied
