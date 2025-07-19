@@ -53,4 +53,4 @@ This mechanism is a critical safety feature for running `Flujo` in production.
 
 ## Advanced Usage
 
-For more complex scenarios involving loops, parallel execution, and nested workflows, see the [Budget-Aware Workflows](../cookbook/budget_aware_workflows.md) guide, which demonstrates how the Usage Governor works with `LoopStep` and `ParallelStep` constructs.
+For more complex scenarios involving loops, parallel execution, and nested workflows, see the [Budget-Aware Workflows](budget_aware_workflows.md) guide, which demonstrates how the Usage Governor works with `LoopStep` and `ParallelStep` constructs.
