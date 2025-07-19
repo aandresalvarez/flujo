@@ -24,6 +24,11 @@ install: .uv ## Install dependencies into a virtual environment
 	@uv sync --all-extras
 	@echo "\n✅ Done! Activate the environment with 'source .venv/bin/activate'"
 
+.PHONY: install-robust
+install-robust: .uv ## Install dependencies with robust verification
+	@echo "🔧 Installing dependencies with robust verification..."
+	@python scripts/install_dependencies.py dev
+
 .PHONY: sync
 sync: .uv ## Update dependencies based on pyproject.toml
 	@echo "🔄 Syncing dependencies..."
