@@ -2,51 +2,51 @@
 
 <img src="assets/flujo.png" alt="Flujo logo" width="180"/>
 
-**Beyond Agents: The AI Employee.**
+**Beyond Agents: Build AI Employees.**
 
 </div>
 
 ---
 
 > **TL;DR**
-> Flujo turns AI **agents** into production‑grade **digital employees**—with persistent memory, proactive budgeting, and continuous learning.
+> Flujo is a Python framework that turns AI **agents** into production‑grade **digital employees**—with persistent memory, proactive budgeting, and continuous learning.
 
-> **Approaching v1.0**  Core APIs (`@step`, `>>`, `Flujo`, state back‑ends) are stable. Pin your version and watch the changelog.
+> **Approaching v1.0**  Core APIs (`@step`, `>>`, `Flujo`, state back‑ends) are stable. Pin your version and watch the changelog.
 
-> **Flexible Licensing**  Dual‑licensed **AGPL‑3.0 / Commercial**. See [`LICENSE`](LICENSE) for details.
+> **Flexible Licensing**  Dual‑licensed **AGPL‑3.0 / Commercial**. See [`LICENSE`](LICENSE) for details.
 
 ---
 
-# Meet Flujo — The AI Employee That Delivers
+# Meet Flujo — The Framework for AI Employees That Deliver
 
-Moving AI from prototype to production shouldn’t mean chaos. Flujo gives you AI workflows as reliable, accountable, and effective as your best employees.
+Moving AI from prototype to production shouldn't mean chaos. Flujo provides the framework to build AI workflows as reliable, accountable, and effective as your best employees.
 
-## Traits of a Perfect AI Employee
+## Give Your AI Agents the Traits of a Perfect Employee
 
-### ✅ Never Forgets (**Durability**)
+### ✅ Never Forgets (**Durability**)
 
-\* **Problem:** AI workflows often crash and lose progress.
-\* **Flujo:** Automatically saves state with built‑in **SQLite**, resuming exactly where tasks left off.
+* **Problem:** AI workflows often crash and lose progress.
+* **Flujo's Solution:** Automatically save state with built‑in **SQLite**, resuming exactly where tasks left off.
 
-### ✅ Keeps Spending in Check (**Governance**)
+### ✅ Keeps Spending in Check (**Governance**)
 
-\* **Problem:** AI processes can overspend unpredictably.
-\* **Flujo:** Set strict usage limits (e.g., `$0.50` per run); proactive cost guards halt execution before you overspend.
+* **Problem:** AI processes can overspend unpredictably.
+* **Flujo's Solution:** Set strict usage limits (e.g., `$0.50` per run); proactive cost guards halt execution before you overspend.
 
-### ✅ Learns from Mistakes (**Improvement Loop**)
+### ✅ Learns from Mistakes (**Improvement Loop**)
 
-\* **Problem:** Debugging AI is slow and manual.
-\* **Flujo:** `flujo improve` analyzes failures and auto‑generates concrete prompt and config suggestions.
+* **Problem:** Debugging AI is slow and manual.
+* **Flujo's Solution:** `flujo improve` analyzes failures and auto‑generates concrete prompt and config suggestions.
 
-### ✅ Knows When to Escalate (**Safety Rails**)
+### ✅ Knows When to Escalate (**Safety Rails**)
 
-\* **Problem:** AI can’t handle every edge‑case alone.
-\* **Flujo:** Route edge cases to human approval with `Step.branch_on` and `Step.human_in_the_loop`.
+* **Problem:** AI can't handle every edge‑case alone.
+* **Flujo's Solution:** Route edge cases to human approval with `Step.branch_on` and `Step.human_in_the_loop`.
 
-### ✅ Communicates Clearly (**Observability**)
+### ✅ Communicates Clearly (**Observability**)
 
-\* **Problem:** AI tasks are a black box until they fail.
-\* **Flujo:** Get real‑time updates via event hooks and full run histories with the `flujo lens` CLI.
+* **Problem:** AI tasks are a black box until they fail.
+* **Flujo's Solution:** Get real‑time updates via event hooks and full run histories with the `flujo lens` CLI.
 
 ---
 
@@ -67,7 +67,7 @@ summariser = make_agent_async(
     output_type=str,
 )
 
-pipeline = validate_input >> Step("Summarise", summariser)
+pipeline = validate_input >> Step.model_validate({"name": "Summarise", "agent": summariser})
 
 print(Flujo(pipeline).run("Flujo is...").step_history[-1].output)
 ```
@@ -76,16 +76,16 @@ print(Flujo(pipeline).run("Flujo is...").step_history[-1].output)
 
 ## The Flujo Advantage
 
-* ✅ **Build Autonomously:** Compose agents that handle routine work and escalate edge cases with `Step.human_in_the_loop`.
-* ✅ **Run Efficiently:** Execute tasks concurrently with `Step.parallel`, eliminate redundant work with `Step.cached`, and rely on a high‑performance runtime.
-* ✅ **Audit Everything:** Get a complete, persistent history of every run. Use the `flujo lens` CLI to trace decisions and debug failures.
-* ✅ **Integrate Anywhere:** `@step` turns any `async` Python code into a durable workflow component. Event hooks connect Flujo to your existing monitoring and notification tools.
+* ✅ **Build Autonomous Systems:** Compose agents that handle routine work and escalate edge cases with `Step.human_in_the_loop`.
+* ✅ **Run with Production-Grade Efficiency:** Execute tasks concurrently with `Step.parallel`, eliminate redundant work with `Step.cached`, and rely on a high‑performance runtime.
+* ✅ **Maintain Full Accountability:** Get a complete, persistent history of every run. Use the `flujo lens` CLI to trace decisions and debug failures.
+* ✅ **Integrate with Your Stack:** `@step` turns any `async` Python code into a durable workflow component. Event hooks connect Flujo to your existing monitoring and notification tools.
 
 ---
 
 ## Showcase: A Stateful, Budget‑Aware AI Financial Analyst
 
-This example builds a multi‑agent workflow that analyzes a list of companies, persists its state to SQLite, and halts if the total cost exceeds a 15¢ budget.
+This example builds a multi‑agent workflow that analyzes a list of companies, persists its state to SQLite, and halts if the total cost exceeds a 15¢ budget.
 
 ```python
 # examples/financial_analyst.py
@@ -147,32 +147,32 @@ print(result.step_history[-1].output)
 
 ---
 
-## Flujo vs Alternatives
+## Flujo vs Alternatives
 
-| Feature                   | **Flujo**         | LangChain / LangGraph | Crew AI     | n8n / Make     |
+| Feature                   | **Flujo**         | LangChain / LangGraph | Crew AI     | n8n / Make     |
 | ------------------------- | ----------------- | --------------------- | ----------- | -------------- |
-| Built‑in Persistent State | ✅ SQLite          | ⚠️ External store     | ⚠️ External | 🔒 Hidden SaaS |
-| Proactive Cost Governor   | ✅                 | ❌                     | ❌           | ❌              |
-| Self‑Improvement Loop     | ✅ `flujo improve` | ⚠️ Observe‑only       | ❌           | ❌              |
-| Self‑Hosting Friendly     | ✅                 | ⚠️ Needs infra        | ⚠️ Needs DB | ❌              |
-| Licence                   | AGPL / Commercial | MIT                   | MIT         | Proprietary    |
+| Built‑in Persistent State | ✅ SQLite          | ⚠️ External store     | ⚠️ External | 🔒 Hidden SaaS |
+| Proactive Cost Governor   | ✅                 | ❌                     | ❌           | ❌              |
+| Self‑Improvement Loop     | ✅ `flujo improve` | ⚠️ Observe‑only       | ❌           | ❌              |
+| Self‑Hosting Friendly     | ✅                 | ⚠️ Needs infra        | ⚠️ Needs DB | ❌              |
+| Licence                   | AGPL / Commercial | MIT                   | MIT         | Proprietary    |
 
 ---
 
-## Roadmap — Reliability at Scale
+## Roadmap — Reliability at Scale
 
 | Capability                | Status        |
 | ------------------------- | ------------- |
-| ✅ Persistent & Durable    | **Done**      |
-| ✅ Budget Controls         | **Done**      |
-| ✅ Parallel & Caching      | **Done**      |
-| ✅ Conditional Routing     | **Done**      |
-| 🟡 Notifications & Hooks  | *In Progress* |
-| 🗺️ Security & Compliance | *Upcoming*    |
+| ✅ Persistent & Durable    | **Done**      |
+| ✅ Budget Controls         | **Done**      |
+| ✅ Parallel & Caching      | **Done**      |
+| ✅ Conditional Routing     | **Done**      |
+| 🟡 Notifications & Hooks  | *In Progress* |
+| 🗺️ Security & Compliance | *Upcoming*    |
 
 ---
 
-## Quick Start (60 seconds)
+## Quick Start (60 seconds)
 
 ```bash
 pip install flujo
@@ -195,13 +195,13 @@ flujo run hello_pipeline.py --input "Flujo"
 
 ---
 
-## Get Involved
+## Get Involved
 
-* 📖 **[Documentation](docs/index.md)** — Guides, tutorials, API reference
-* 🤝 **[Contribute](CONTRIBUTING.md)** — Join the community and shape Flujo’s future
+* 📖 **[Documentation](docs/index.md)** — Guides, tutorials, API reference
+* 🤝 **[Contribute](CONTRIBUTING.md)** — Join the community and shape Flujo's future
 
 ---
 
 ## Licensing
 
-Flexible **AGPL‑3.0 / Commercial**. See the [`LICENSE`](LICENSE) file for details.
+Flexible **AGPL‑3.0 / Commercial**. See the [`LICENSE`](LICENSE) file for details.
