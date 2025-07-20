@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.35] - 2025-01-15
+
+### Added
+- **Performance Optimizations**: Enhanced execution efficiency and resource management
+  - Improved parallel step execution with better resource allocation
+  - Optimized memory usage patterns for large-scale workflows
+  - Enhanced caching mechanisms for better performance
+  - Streamlined context handling for improved throughput
+
+### Changed
+- **Stability Improvements**: Enhanced error handling and recovery mechanisms
+  - Improved error recovery and resilience patterns
+  - Better exception handling across pipeline components
+  - Enhanced validation and error reporting
+  - More robust state management and persistence
+
+### Fixed
+- **Bug Fixes**: Resolved various edge cases and issues
+  - Fixed context serialization issues in complex workflows
+  - Resolved race conditions in parallel execution
+  - Corrected memory leaks in long-running pipelines
+  - Fixed edge cases in error recovery mechanisms
+
 ## [0.4.34] - 2025-01-15
 
 ### Added
