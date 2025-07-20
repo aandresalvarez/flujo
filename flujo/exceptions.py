@@ -146,12 +146,12 @@ class FlujoFrameworkError(Exception):
         Returns:
             str: A formatted string containing the error details.
         """
-        msg = f"Flujo Error: {self.message}"
+        components = [f"Flujo Error: {self.message}"]
         if self.suggestion:
-            msg += f"\n\nSuggestion: {self.suggestion}"
+            components.append(f"\n\nSuggestion: {self.suggestion}")
         if self.code:
-            msg += f"\n\nError Code: {self.code}"
-        return msg
+            components.append(f"\n\nError Code: {self.code}")
+        return "".join(components)
 
 
 class ContextFieldError(FlujoFrameworkError):

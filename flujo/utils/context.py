@@ -36,6 +36,8 @@ def get_excluded_fields() -> set[str]:
         return _EXCLUDED_FIELDS_CACHE
 
     # Default excluded fields
+    # 'command_log' is excluded to prevent redundant or conflicting entries during loop operations
+    # where the same command might be logged multiple times across iterations
     default_excluded_fields = {"command_log"}
 
     # Retrieve excluded fields from configuration (e.g., environment variable or file)

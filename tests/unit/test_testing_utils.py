@@ -317,7 +317,7 @@ class TestAssertValidatorFailed:
         assert not _test_validator_failed_sync(none_validator, "test_data")
 
     @pytest.mark.asyncio
-    async def test_validator_failed_sync_with_complex_data(self, caplog):
+    async def test_test_validator_failed_sync_with_complex_data(self, caplog):
         """Test _test_validator_failed_sync with complex data structures using proper logging."""
         from flujo.monitor import global_monitor
 
