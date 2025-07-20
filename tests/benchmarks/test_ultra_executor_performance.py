@@ -6,10 +6,35 @@ import asyncio
 import time
 import statistics
 from unittest.mock import Mock, AsyncMock
+from contextlib import contextmanager
 
 from flujo.application.core.ultra_executor import UltraStepExecutor
 from flujo.domain.dsl.step import Step
 from flujo.domain.models import StepResult
+
+
+@contextmanager
+def temporary_env_var(var_name, value):
+    """Context manager to temporarily set an environment variable.
+
+    Args:
+        var_name: Name of the environment variable
+        value: Value to set (None to delete the variable)
+    """
+    original_value = os.getenv(var_name)
+    try:
+        if value is None:
+            if var_name in os.environ:
+                del os.environ[var_name]
+        else:
+            os.environ[var_name] = value
+        yield
+    finally:
+        if original_value is None:
+            if var_name in os.environ:
+                del os.environ[var_name]
+        else:
+            os.environ[var_name] = original_value
 
 
 def get_performance_threshold(base_threshold, ci_multiplier=1.5):
@@ -45,47 +70,27 @@ def test_performance_threshold_detection():
     """Test that performance thresholds are correctly detected for different environments."""
 
     # Test local environment (no CI variable)
-    original_ci = os.getenv("CI")
-    try:
-        # Ensure CI is not set for local test
-        if "CI" in os.environ:
-            del os.environ["CI"]
+    with temporary_env_var("CI", None):
         local_threshold = get_performance_threshold(0.1)
         assert abs(local_threshold - 0.1) < 1e-10, (
             f"Local threshold should be 0.1, got {local_threshold}"
         )
-    finally:
-        if original_ci is None:
-            if "CI" in os.environ:
-                del os.environ["CI"]
-        else:
-            os.environ["CI"] = original_ci
 
-    # Test CI environment (with CI variable)
-    original_ci_2 = os.getenv("CI")
-    try:
-        os.environ["CI"] = "true"
-        ci_threshold = get_performance_threshold(0.1)
-        assert abs(ci_threshold - 0.15) < 1e-10, f"CI threshold should be 0.15, got {ci_threshold}"
-    finally:
-        if original_ci_2 is None:
-            del os.environ["CI"]
-        else:
-            os.environ["CI"] = original_ci_2
+    # Test CI environment with different formats
+    ci_formats = ["true", "1", "yes"]
+    for ci_format in ci_formats:
+        with temporary_env_var("CI", ci_format):
+            ci_threshold = get_performance_threshold(0.1)
+            assert abs(ci_threshold - 0.15) < 1e-10, (
+                f"CI threshold should be 0.15 for '{ci_format}', got {ci_threshold}"
+            )
 
     # Test with custom multiplier in CI environment
-    original_ci_3 = os.getenv("CI")
-    try:
-        os.environ["CI"] = "true"
+    with temporary_env_var("CI", "true"):
         custom_threshold = get_performance_threshold(0.1, ci_multiplier=2.0)
         assert abs(custom_threshold - 0.2) < 1e-10, (
             f"Custom threshold should be 0.2, got {custom_threshold}"
         )
-    finally:
-        if original_ci_3 is None:
-            del os.environ["CI"]
-        else:
-            os.environ["CI"] = original_ci_3
 
 
 class TestUltraExecutorPerformance:
