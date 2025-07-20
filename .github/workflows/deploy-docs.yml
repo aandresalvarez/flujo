@@ -37,8 +37,8 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        # Install the project with the 'docs' extra dependencies
-        run: uv sync --extra docs
+        # Install all dependencies including docs extras
+        run: uv sync --all-extras
 
       - name: Build the documentation site
         run: mkdocs build
