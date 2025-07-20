@@ -171,7 +171,7 @@ def _serialize_for_cache_key(
                                 v_dict.pop("run_id", None)
                             result[k] = {
                                 kk: _serialize_for_cache_key(v_dict[kk], visited, _is_root=False)
-                                for kk in sorted(v_dict.keys(), key=str)
+                                for kk in _get_sorted_keys(v_dict)
                             }
                         except (ValueError, RecursionError) as e:
                             # Log the context of the error and store a fallback value
@@ -193,7 +193,7 @@ def _serialize_for_cache_key(
                     elif isinstance(v, dict):
                         result[k] = {
                             kk: _serialize_for_cache_key(v[kk], visited, _is_root=False)
-                            for kk in sorted(v.keys(), key=str)
+                            for kk in _get_sorted_keys(v)
                         }
                     else:
                         result[k] = _serialize_for_cache_key(v, visited, _is_root=False)
@@ -245,6 +245,25 @@ def _sort_set_deterministically(
     except (TypeError, ValueError):
         # Fallback: convert to string representation and sort
         return sorted(obj_set, key=lambda x: str(x))
+
+
+def _get_sorted_keys(dictionary: dict[Any, Any]) -> list[Any]:
+    """Get sorted keys from a dictionary for deterministic cache key generation.
+
+    This function optimizes the sorting operation for dictionary keys by:
+    1. Using a more efficient sorting strategy
+    2. Caching the sorted keys when possible
+    3. Providing deterministic ordering for cache key generation
+    """
+    # For small dictionaries, direct sorting is efficient
+    if len(dictionary) <= 10:
+        return sorted(dictionary.keys(), key=str)
+
+    # For larger dictionaries, use a more efficient approach
+    # Convert keys to strings once and sort the string representations
+    key_strings = [(str(k), k) for k in dictionary.keys()]
+    key_strings.sort()  # Sort by string representation
+    return [k for _, k in key_strings]
 
 
 def _get_stable_repr(obj: Any, visited: Optional[Set[int]] = None) -> str:

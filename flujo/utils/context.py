@@ -44,16 +44,41 @@ def get_excluded_fields() -> set[str]:
     # For simplicity, this example uses an environment variable.
     import os
 
+    # Whitelist of allowed field names for security
+    ALLOWED_EXCLUDED_FIELDS = {
+        "command_log",
+        "cache_hits",
+        "cache_misses",
+        "processing_history",
+        "current_operation",
+        "operation_count",
+        "cache_timestamps",
+        "cache_keys",
+        "scratchpad",
+        "hitl_history",
+        "run_id",
+        "initial_prompt",
+    }
+
     excluded_fields = os.getenv("EXCLUDED_FIELDS", "")
     if excluded_fields:
-        # Validate and sanitize the field names
-        sanitized_fields = {field.strip() for field in excluded_fields.split(",") if field.strip()}
+        # Validate and sanitize the field names against whitelist
+        sanitized_fields = set()
+        for field in excluded_fields.split(","):
+            field = field.strip()
+            if field and field in ALLOWED_EXCLUDED_FIELDS:
+                sanitized_fields.add(field)
+            elif field:
+                logger.warning(
+                    f"Field '{field}' from EXCLUDED_FIELDS environment variable is not in allowed whitelist. Skipping."
+                )
+
         if sanitized_fields:
             _EXCLUDED_FIELDS_CACHE = sanitized_fields
             return sanitized_fields
         else:
             logger.warning(
-                "Environment variable 'EXCLUDED_FIELDS' contains invalid or empty field names. Falling back to default excluded fields."
+                "Environment variable 'EXCLUDED_FIELDS' contains no valid field names. Falling back to default excluded fields."
             )
 
     _EXCLUDED_FIELDS_CACHE = default_excluded_fields
