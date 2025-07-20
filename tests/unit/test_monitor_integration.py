@@ -10,8 +10,11 @@ from flujo import Step, Flujo
 class TestInMemoryMonitorUsage:
     """Test proper usage of In-Memory Monitor for unit testing."""
 
-    def setup_method(self):
-        """Clear monitor before each test."""
+    @pytest.fixture(autouse=True)
+    def clear_monitor(self):
+        """Clear monitor before each test to ensure isolation."""
+        global_monitor.calls.clear()
+        yield
         global_monitor.calls.clear()
 
     @pytest.mark.asyncio

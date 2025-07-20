@@ -168,7 +168,7 @@ class ContextFieldError(FlujoFrameworkError):
 
 
 class StepInvocationError(FlujoFrameworkError):
-    """Raised when a step is invoked incorrectly."""
+    """Unified exception for step invocation errors."""
 
     def __init__(self, step_name: str):
         super().__init__(

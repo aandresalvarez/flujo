@@ -120,16 +120,18 @@ def safe_merge_context_updates(
                         updated_count += 1
                 except (TypeError, ValueError, AttributeError, ValidationError) as e:
                     # Skip fields that can't be compared or set
-                    logger.debug(f"Skipping field '{field_name}' due to comparison/set error: {e}")
+                    logger.debug(
+                        "Skipping field '%s' due to comparison/set error: %s", field_name, e
+                    )
                     continue
 
             except (AttributeError, TypeError, ValidationError) as e:
                 # Skip fields that can't be accessed or set
-                logger.debug(f"Skipping field '{field_name}' due to access/set error: {e}")
+                logger.debug("Skipping field '%s' due to access/set error: %s", field_name, e)
                 continue
 
         if updated_count > 0:
-            logger.debug(f"Successfully updated {updated_count} fields in context")
+            logger.debug("Successfully updated %d fields in context", updated_count)
 
         return True
 

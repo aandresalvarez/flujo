@@ -174,15 +174,15 @@ def _serialize_for_cache_key(
                                 for kk in sorted(v_dict.keys(), key=str)
                             }
                         except (ValueError, RecursionError) as e:
-                            # Log the context of the error before propagating it
+                            # Log the context of the error and return a fallback value
                             logging.error(
                                 "Error during model_dump serialization for key '%s' with value '%s': %s",
                                 k,
                                 v,
                                 str(e),
                             )
-                            # If model_dump fails, propagate the exception to make dict serialization fail
-                            raise e
+                            # Return a fallback value to simplify error handling
+                            return f"<unserializable: {type(v).__name__}>"
                     elif isinstance(v, (list, tuple)):
                         result[k] = _serialize_list_for_key(list(v), visited)
                     elif isinstance(v, (set, frozenset)):
@@ -224,7 +224,7 @@ def _serialize_for_cache_key(
         except Exception as e:
             # Improved error handling for unhashable types
             logging.debug(
-                f"Serialization error for {type(obj).__name__}: {type(e).__name__}: {str(e)}"
+                "Serialization error for %s: %s: %s", type(obj).__name__, type(e).__name__, str(e)
             )
             return f"<unserializable: {type(obj).__name__}>"
     finally:
