@@ -665,7 +665,9 @@ async def _execute_loop_step_logic(
                         telemetry.logfire.error(
                             f"Failed to merge context updates in {loop_step.name} iteration {i}: {e}"
                         )
-        # Regular LoopStep: keep iterations isolated
+        # Regular LoopStep: ensure iterations remain isolated to prevent unintended
+        # side effects between iterations. Isolation ensures that each iteration operates
+        # independently, maintaining the integrity of the loop's logic and results.
 
         try:
             should_exit = loop_step.exit_condition_callable(

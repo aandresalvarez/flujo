@@ -35,6 +35,7 @@ from ..validation import Validator
 
 from ..processors import AgentProcessors
 from flujo.caching import CacheBackend
+from flujo.exceptions import StepInvocationError
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -205,8 +206,6 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
 
         # Check if this is a method that indicates direct step invocation
         if item in {"run", "stream"}:
-            from flujo.exceptions import StepInvocationError
-
             raise StepInvocationError(self.name)
 
         # For all other missing attributes, raise standard AttributeError
