@@ -16,7 +16,6 @@ import os
 from flujo import Step, Flujo
 from flujo.testing.utils import StubAgent
 from flujo.state.backends.sqlite import SQLiteBackend
-from flujo.infra.telemetry import logfire
 
 
 class TestTraceCompleteFlow:
@@ -106,7 +105,9 @@ class TestTraceCompleteFlow:
 
         # Verify trace was persisted
         run_id = result.final_pipeline_context.run_id
-        logfire.debug("run_id for failed step: %s", run_id)
+        # Integration test: Use State Backend for persistent recording
+        # Debug information is captured in the pipeline context and can be queried
+        # No direct logging needed in integration tests - use context assertions instead
         # Retry up to 3 times in case of async delay
         traces = None
         for _ in range(3):
@@ -116,7 +117,6 @@ class TestTraceCompleteFlow:
             import asyncio
 
             await asyncio.sleep(0.2)
-        logfire.debug("traces for failed step: %s", traces)
         assert traces is not None
 
     @pytest.mark.asyncio

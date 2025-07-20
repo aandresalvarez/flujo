@@ -6,7 +6,6 @@ from typing import Any
 
 from flujo.testing.utils import SimpleDummyRemoteBackend as DummyRemoteBackend
 from flujo.utils.serialization import safe_serialize
-from flujo.infra.telemetry import logfire
 
 
 class SimpleNested(BaseModel):
@@ -211,9 +210,9 @@ class TestReconstructionLogic:
             isinstance(value, ComplexNested) for value in reconstructed_input.level3.values()
         )
         if reconstructed_input.model_dump() != complex_payload.model_dump():
-            # Debug logging removed for production
-            logfire.debug("reconstructed_input.model_dump(): %s", reconstructed_input.model_dump())
-            logfire.debug("complex_payload.model_dump(): %s", complex_payload.model_dump())
+            # Unit test: Use In-Memory Monitor for programmatic verification
+            # Debug logging removed for production - use assertions instead
+            pass
         assert reconstructed_input.model_dump() == complex_payload.model_dump()
 
     def test_reconstruction_handles_mixed_types(self):

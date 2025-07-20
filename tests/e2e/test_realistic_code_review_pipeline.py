@@ -354,7 +354,8 @@ async def test_realistic_code_review_pipeline_with_failure_recovery():
 def problematic_function():
     # This code has issues that might cause analysis failures
     result = eval("2 + 2")  # Dangerous eval
-    # Debug output removed for production
+    # E2E test: Use State Backend for persistent recording
+    # Debug output removed for production - use context assertions instead
     return result
 """,
         "review_requirements": "Test failure recovery",
@@ -403,7 +404,8 @@ def process_data(data_list):
 def main():
     data = [1, 2, 3, 4, 5]
     output = process_data(data)
-    # Output logging removed for production
+    # E2E test: Use State Backend for persistent recording
+    # Output logging removed for production - use context assertions instead
     return output
 """
 

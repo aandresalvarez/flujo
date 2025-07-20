@@ -17,16 +17,13 @@ import inspect
 
 def _test_validator_failed_sync(validator_func: Any, test_data: Any) -> bool:
     import asyncio
-    from flujo.infra.telemetry import logfire
 
     try:
         result = validator_func(test_data)
-        logfire.debug("result type: %s, value: %s", type(result), result)
         if inspect.isawaitable(result):
             asyncio.run(result)
         return False  # No exception means success
-    except Exception as e:
-        logfire.debug("Exception: %s", e)
+    except Exception:
         return True  # Any exception means failure
 
 
@@ -320,16 +317,28 @@ class TestAssertValidatorFailed:
         assert not _test_validator_failed_sync(none_validator, "test_data")
 
     @pytest.mark.asyncio
-    async def test_assert_validator_failed_with_complex_data(self):
-        """Test assert_validator_failed with complex data structures."""
+    async def test_assert_validator_failed_with_complex_data(self, caplog):
+        """Test assert_validator_failed with complex data structures using proper logging."""
+        from flujo.monitor import global_monitor
 
         def complex_validator(data):
             if isinstance(data, dict) and "invalid" in data:
                 raise ValueError("Invalid data")
             return data
 
-        assert not _test_validator_failed_sync(complex_validator, {"valid": "data"})
-        assert _test_validator_failed_sync(complex_validator, {"invalid": "data"})
+        # Clear monitor before test
+        global_monitor.calls.clear()
+
+        # Should pass (validator fails)
+        result = _test_validator_failed_sync(complex_validator, {"invalid": "data"})
+        assert result is True
+
+        # Should fail (validator succeeds)
+        result = _test_validator_failed_sync(complex_validator, {"valid": "data"})
+        assert result is False
+
+        # Verify no unexpected log messages in unit tests
+        assert not caplog.records
 
     @pytest.mark.asyncio
     async def test_assert_validator_failed_with_async_validator(self):

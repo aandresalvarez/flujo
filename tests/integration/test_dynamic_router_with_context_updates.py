@@ -14,7 +14,6 @@ from flujo.domain import Step, Pipeline
 from flujo.domain.models import PipelineContext
 from flujo.domain.dsl import step, MergeStrategy
 from flujo.testing.utils import gather_result
-from flujo.infra.telemetry import logfire
 
 
 class RouterContext(PipelineContext):
@@ -348,12 +347,9 @@ async def test_dynamic_router_with_context_updates_error_handling():
     assert result.step_history[-1].success is False
     assert "branch 'failing_branch' failed" in result.step_history[-1].feedback.lower()
 
-    # Debug: Log the context to see what's happening
-    logfire.debug(
-        f"Final context branch_executed = '{result.final_pipeline_context.branch_executed}'"
-    )
-    logfire.debug(f"Final context router_state = '{result.final_pipeline_context.router_state}'")
-    logfire.debug(f"Final context branch_count = {result.final_pipeline_context.branch_count}")
+    # Integration test: Use State Backend for persistent recording
+    # Debug information is captured in the pipeline context and can be queried
+    # No direct logging needed in integration tests - use context assertions instead
 
     assert result.final_pipeline_context.branch_executed == "failing_branch"
     assert result.final_pipeline_context.router_state == "executed_failing"
@@ -402,12 +398,9 @@ async def test_dynamic_router_with_context_updates_state_isolation():
     # Verify state isolation and context propagation
     assert result.step_history[-1].success is True
 
-    # Debug: Log the context to see what's happening
-    logfire.debug(
-        f"Final context branch_executed = '{result.final_pipeline_context.branch_executed}'"
-    )
-    logfire.debug(f"Final context branch_count = {result.final_pipeline_context.branch_count}")
-    logfire.debug(f"Final context total_updates = {result.final_pipeline_context.total_updates}")
+    # Integration test: Use State Backend for persistent recording
+    # Debug information is captured in the pipeline context and can be queried
+    # No direct logging needed in integration tests - use context assertions instead
 
     assert result.final_pipeline_context.branch_executed == "isolation_branch"
     assert result.final_pipeline_context.branch_count >= 1
