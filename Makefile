@@ -128,9 +128,9 @@ test-perf: .uv ## Run test performance analysis
 # ------------------------------------------------------------------------------
 
 .PHONY: package
-package: ## Build package distribution files
+package: .uv ## Build package distribution files
 	@echo "📦 Building package distribution..."
-	python -m build
+	@uv run python -m build
 	@echo "\n✅ Package built in dist/ directory."
 
 
