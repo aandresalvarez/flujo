@@ -102,7 +102,7 @@ def test_safe_merge_context_updates_basic():
     # Perform merge
     success = safe_merge_context_updates(target, source)
 
-    assert success is True
+    assert success
     assert target.base_value == 10
     assert target.computed_value == 20
     assert target.validation_count > 0  # Validator should have been triggered
@@ -116,7 +116,7 @@ def test_safe_merge_context_updates_preserves_computed_fields():
     # Perform merge
     success = safe_merge_context_updates(target, source)
 
-    assert success is True
+    assert success
     assert target.base_value == 10
     # Computed field should be updated based on new base_value
     assert target.computed_field == 20  # 10 * 2
@@ -133,7 +133,7 @@ def test_safe_merge_context_updates_triggers_validators():
     # Perform merge
     success = safe_merge_context_updates(target, source)
 
-    assert success is True
+    assert success
     assert target.validation_count > 0  # Should have triggered validation
 
 
@@ -148,7 +148,7 @@ def test_safe_merge_context_updates_handles_invalid_values():
     success = safe_context_field_update(target, "base_value", -1)
 
     # The update should succeed, but the value will be invalid
-    assert success is True
+    assert success
     assert target.base_value == -1  # Value is set but invalid
 
 
@@ -162,7 +162,7 @@ def test_safe_merge_context_updates_handles_complex_equality():
     # This should work even if equality comparison is complex
     success = safe_merge_context_updates(target, source)
 
-    assert success is True
+    assert success
     assert target.simple_field == "source"
 
 
@@ -178,7 +178,7 @@ def test_safe_merge_context_updates_ignores_private_fields():
     # Perform merge
     success = safe_merge_context_updates(target, source)
 
-    assert success is True
+    assert success
     assert target.public_field == "source_public"
     # Private field should remain unchanged (not included in model_dump by default)
     # Note: Pydantic v2 includes private fields in model_dump by default
@@ -191,7 +191,7 @@ def test_safe_context_field_update():
 
     # Update a valid field
     success = safe_context_field_update(context, "base_value", 10)
-    assert success is True
+    assert success
     assert context.base_value == 10
 
     # Try to update a non-existent field
@@ -209,7 +209,7 @@ def test_safe_context_field_update_triggers_validation():
     # Update field
     success = safe_context_field_update(context, "base_value", 10)
 
-    assert success is True
+    assert success
     # Note: Pydantic v2 validation may not always trigger model_post_init
     # The important thing is that the field was updated successfully
     assert context.base_value == 10
@@ -225,7 +225,7 @@ def test_safe_context_field_update_handles_invalid_values():
     success = safe_context_field_update(context, "base_value", -1)
 
     # Should succeed, but the value will be invalid
-    assert success is True
+    assert success
     assert context.base_value == -1  # Value is set but invalid
 
 
@@ -273,6 +273,6 @@ def test_merge_with_different_types():
     success = safe_merge_context_updates(target, source)
 
     # Should succeed but only update common fields
-    assert success is True
+    assert success
     # Target should remain unchanged since fields don't match
     assert target.simple_field == "target"

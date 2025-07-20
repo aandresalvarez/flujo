@@ -232,7 +232,9 @@ class TestSerializeForCacheKey:
         result = _serialize_for_cache_key(d)
         print(f"Full result: {result!r}")
         # Our improved serialization provides more detailed error messages
-        assert result.startswith("<unserializable: ModelWithException")
+        assert isinstance(result, dict)
+        assert "key" in result
+        assert result["key"].startswith("<unserializable: ModelWithException")
 
     def test_serialize_dict_with_model_dump_value_recursion_error(self):
         """Test serializing a dict with model_dump value that raises RecursionError."""
@@ -248,7 +250,9 @@ class TestSerializeForCacheKey:
         result = _serialize_for_cache_key(d)
         print(f"Full result: {result!r}")
         # Our improved serialization provides more detailed error messages
-        assert result.startswith("<unserializable: ModelWithRecursion")
+        assert isinstance(result, dict)
+        assert "key" in result
+        assert result["key"].startswith("<unserializable: ModelWithRecursion")
 
     def test_serialize_callable(self):
         """Test serializing a callable object."""
