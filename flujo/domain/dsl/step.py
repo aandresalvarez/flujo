@@ -174,7 +174,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
 
     def __getattr__(self, item: str) -> Any:  # pragma: no cover - behavior
         """Raise a helpful error when trying to access non-existent attributes."""
-        # Allow internal framework attributes to be accessed
+        # Check if this is a legitimate framework attribute that should exist
         if item in {
             "callable",
             "agent",
@@ -184,9 +184,11 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             "validators",
             "fallback_step",
         }:
+            # These attributes should exist on the Step object
+            # If they don't, it's a legitimate AttributeError
             raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{item}'")
 
-        # Allow inspection-related attributes for doctest and other tools
+        # Check if this is an inspection-related attribute that should be accessible
         if item in {
             "__wrapped__",
             "__doc__",
@@ -197,20 +199,19 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             "__defaults__",
             "__kwdefaults__",
         }:
+            # These are legitimate Python introspection attributes
+            # If they don't exist, raise standard AttributeError
             raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{item}'")
 
-        # Only raise error for attributes that indicate direct invocation
+        # Check if this is a method that indicates direct step invocation
         if item in {"run", "stream"}:
             from flujo.exceptions import StepInvocationError
 
             raise StepInvocationError(self.name)
 
-        # For other attributes, raise the standard error
-        from flujo.exceptions import ImproperStepInvocationError
-
-        raise ImproperStepInvocationError(
-            f"Step '{self.name}' cannot be invoked directly. Steps are configuration objects and must be run within a Pipeline. For unit testing, use `step.arun()`."
-        )
+        # For all other missing attributes, raise standard AttributeError
+        # This is the correct behavior for missing attributes
+        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{item}'")
 
     # ------------------------------------------------------------------
     # Composition helpers ( >> operator )
