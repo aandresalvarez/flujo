@@ -3,6 +3,19 @@ Realistic Code Review Pipeline E2E Test
 
 This test demonstrates a realistic end-to-end workflow for a code review system
 that includes code analysis, validation, human-in-the-loop approval, and error handling.
+
+SECURITY WARNING:
+This test file intentionally includes dangerous code patterns (eval(), exec(), etc.)
+for demonstration purposes to test security analysis capabilities. These patterns are
+NEVER safe to use in production code and are included here solely for testing the
+code review pipeline's ability to detect security vulnerabilities.
+
+In production code:
+- NEVER use eval() with user input
+- NEVER use exec() with user input
+- Always validate and sanitize all user inputs
+- Use ast.literal_eval() for safe literal evaluation
+- Implement proper input validation and sanitization
 """
 
 import pytest
@@ -296,6 +309,8 @@ import sys
 def bad_function():
     password = "secret123"
     user_input = input("Enter command: ")
+    # WARNING: This eval() usage is intentionally dangerous for testing security analysis
+    # This demonstrates what NOT to do in production code
     result = eval(user_input)  # Dangerous!
     print("Result:", result)
     return result
@@ -355,7 +370,10 @@ def problematic_function():
     # This code has issues that might cause analysis failures
     result = eval("2 + 2")  # Dangerous eval
     # E2E test: Use State Backend for persistent recording
-    # Debug output removed for production - use context assertions instead
+    # WARNING: This test intentionally demonstrates dangerous eval() usage for security testing
+    # This code uses eval, which is dangerous and can lead to security vulnerabilities.
+    # Ensure proper validation and sanitization of user input before using eval.
+    # In production code, NEVER use eval() with user input.
     return result
 """,
         "review_requirements": "Test failure recovery",
