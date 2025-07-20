@@ -11,7 +11,7 @@ from ...domain.models import BaseModel
 __all__ = ["_build_context_update", "_inject_context"]
 
 
-def _build_context_update(output: Any) -> dict[str, Any] | None:
+def _build_context_update(output: BaseModel | dict[str, Any] | Any) -> dict[str, Any] | None:
     """Return context update dict extracted from a step output."""
     if isinstance(output, (BaseModel, PydanticBaseModel)):
         return output.model_dump(exclude_unset=True)
