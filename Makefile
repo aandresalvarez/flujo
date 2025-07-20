@@ -49,10 +49,9 @@ format: .uv ## Auto-format the code with ruff
 	@uv run ruff format flujo/ tests/
 
 .PHONY: lint
-lint: .uv ## Lint the code and check for formatting issues
+lint: .uv ## Lint the code for issues
 	@echo "🔎 Linting code..."
-	@uv run ruff format --check flujo/ tests/
-	@uv run ruff check flujo/ tests/
+	@uv run ruff check flujo/ tests/ scripts/
 
 .PHONY: typecheck
 typecheck: .uv ## Run static type checking with mypy

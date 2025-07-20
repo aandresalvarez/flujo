@@ -8,13 +8,24 @@ clear error messages for missing dependencies.
 
 import subprocess
 import sys
-import os
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Optional
 
 
 def run_command(cmd: List[str], check: bool = True) -> subprocess.CompletedProcess:
-    """Run a command and return the result."""
+    """
+    Run a command and return the result.
+    
+    Args:
+        cmd: The command to run, provided as a list of strings.
+        check: If True, the function will terminate the program with an error
+            message if the command fails (non-zero return code). If False, the function
+            will return the result regardless of the command's success or failure.
+    
+    Returns:
+        subprocess.CompletedProcess: The result of the executed command, including
+        stdout, stderr, and the return code.
+    """
     print(f"Running: {' '.join(cmd)}")
     result = subprocess.run(cmd, capture_output=True, text=True)
     if check and result.returncode != 0:
@@ -32,7 +43,7 @@ def check_uv_installed() -> bool:
         return False
 
 
-def install_dependencies(extras: List[str] = None) -> None:
+def install_dependencies(extras: Optional[List[str]] = None) -> None:
     """Install dependencies using uv."""
     if not check_uv_installed():
         print("❌ Error: uv is not installed.")
@@ -114,11 +125,11 @@ def run_tests() -> None:
 
     try:
         # Test basic import
-        import flujo
+        import flujo  # noqa: F401
         print("✅ Basic import works")
 
         # Test core imports
-        from flujo import Pipeline, step
+        from flujo import step  # noqa: F401
         print("✅ Core imports work")
 
         # Test that we can create a simple step
@@ -129,7 +140,13 @@ def run_tests() -> None:
         print("✅ Step creation works")
 
     except Exception as e:
-        print(f"❌ Test failed: {e}")
+        print(f"❌ Basic functionality test failed: {e}")
+        print("This indicates that the installation may not be working correctly.")
+        print("Please check:")
+        print("1. That all dependencies were installed correctly")
+        print("2. That you're running this from the project root directory")
+        print("3. That the virtual environment is activated")
+        print("4. Try running: uv sync --all-extras")
         sys.exit(1)
 
 
