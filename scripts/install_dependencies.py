@@ -15,13 +15,13 @@ from typing import List, Optional
 def run_command(cmd: List[str], check: bool = True) -> subprocess.CompletedProcess:
     """
     Run a command and return the result.
-    
+
     Args:
         cmd: The command to run, provided as a list of strings.
         check: If True, the function will terminate the program with an error
             message if the command fails (non-zero return code). If False, the function
             will return the result regardless of the command's success or failure.
-    
+
     Returns:
         subprocess.CompletedProcess: The result of the executed command, including
         stdout, stderr, and the return code.
