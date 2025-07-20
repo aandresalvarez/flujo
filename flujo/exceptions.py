@@ -122,3 +122,56 @@ class AgentIOValidationError(OrchestratorError):
     """Raised when an agent's input or output validation fails."""
 
     pass
+
+
+class FlujoError(Exception):
+    """Base exception for Flujo framework with enhanced error messages."""
+
+    def __init__(
+        self, message: str, suggestion: str | None = None, code: str | None = None
+    ) -> None:
+        self.message = message
+        self.suggestion = suggestion
+        self.code = code
+        super().__init__(self._format_message())
+
+    def _format_message(self) -> str:
+        msg = f"Flujo Error: {self.message}"
+        if self.suggestion:
+            msg += f"\n\nSuggestion: {self.suggestion}"
+        if self.code:
+            msg += f"\n\nError Code: {self.code}"
+        return msg
+
+
+class ContextFieldError(FlujoError):
+    """Raised when trying to set a field that doesn't exist in the context."""
+
+    def __init__(self, field_name: str, context_class: str, available_fields: list[str]) -> None:
+        super().__init__(
+            f"'{context_class}' object has no field '{field_name}'",
+            f"Available fields: {', '.join(available_fields)}",
+            "CONTEXT_FIELD_ERROR",
+        )
+
+
+class StepInvocationError(FlujoError):
+    """Raised when a step is invoked incorrectly."""
+
+    def __init__(self, step_name: str):
+        super().__init__(
+            f"Step '{step_name}' cannot be invoked directly",
+            "Use Pipeline.from_step() or Step.solution() to wrap the step",
+            "STEP_INVOCATION_ERROR",
+        )
+
+
+class ParallelStepError(FlujoError):
+    """Raised when there's an issue with parallel step execution."""
+
+    def __init__(self, step_name: str, branch_name: str, issue: str):
+        super().__init__(
+            f"Parallel step '{step_name}' branch '{branch_name}': {issue}",
+            "Consider using MergeStrategy.CONTEXT_UPDATE with field_mapping",
+            "PARALLEL_STEP_ERROR",
+        )

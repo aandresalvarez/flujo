@@ -45,6 +45,11 @@ class DynamicParallelRouterStep(Step[Any, Any], Generic[TContext]):
         default=BranchFailureStrategy.PROPAGATE,
         description="How to handle branch failures.",
     )
+    field_mapping: Optional[Dict[str, List[str]]] = Field(
+        default=None,
+        description="Explicit mapping of branch names to context fields that should be merged. "
+        "Only used with CONTEXT_UPDATE merge strategy.",
+    )
 
     model_config = {"arbitrary_types_allowed": True}
 

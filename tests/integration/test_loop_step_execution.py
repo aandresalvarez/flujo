@@ -97,8 +97,8 @@ async def test_loop_with_context_modification() -> None:
     step_result = result.step_history[-1]
     assert step_result.success is True
     assert step_result.output == 2
-    assert result.final_pipeline_context.counter == 0
-    assert seen == [0, 0]
+    assert result.final_pipeline_context.counter == 2
+    assert seen == [0, 1]  # Context is now properly updated between iterations
 
 
 @pytest.mark.asyncio
@@ -123,8 +123,8 @@ async def test_loop_iteration_context_isolated() -> None:
     result = await gather_result(runner, 0)
     step_result = result.step_history[-1]
     assert step_result.success is True
-    assert result.final_pipeline_context.counter == 0
-    assert seen == [0, 0]
+    assert result.final_pipeline_context.counter == 2
+    assert seen == [0, 1]  # Context is now properly updated between iterations
 
 
 @pytest.mark.asyncio

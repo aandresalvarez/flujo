@@ -198,9 +198,29 @@ def _serialize_for_cache_key(
             return _serialize_list_for_key(_sort_set_deterministically(obj, visited), visited)
         if callable(obj):
             return f"<callable {getattr(obj, '__name__', repr(obj))}>"
-        return obj
+
+        # Handle basic types that should be cacheable
+        if isinstance(obj, (int, float, str, bool)):
+            return obj
+
+        # For other types, try to get a stable representation
+        try:
+            # Check if the object has a problematic __hash__ method
+            if hasattr(obj, "__hash__") and obj.__hash__ is not None:
+                try:
+                    hash(obj)
+                except Exception:
+                    return f"<unserializable: {type(obj).__name__}>"
+            return str(obj)
+        except Exception:
+            return f"<unserializable: {type(obj).__name__}>"
     except Exception:
-        return f"<unserializable: {type(obj).__name__}>"
+        # Improved error handling for unhashable types
+        try:
+            # Try to get a string representation as fallback
+            return f"<unserializable: {type(obj).__name__}: {str(obj)[:100]}>"
+        except Exception:
+            return f"<unserializable: {type(obj).__name__}>"
     finally:
         visited.discard(obj_id)
 
@@ -402,10 +422,26 @@ def _generate_cache_key(
     try:
         serialized = json.dumps(payload, sort_keys=True).encode()
         digest = hashlib.sha256(serialized).hexdigest()
-    except Exception:
+    except (TypeError, ValueError):
+        # Handle unhashable types more gracefully
         try:
-            serialized = pickle.dumps(payload)  # nosec B403 - Fallback serialization for cache keys
+            # Try to create a more robust serialization
+            safe_payload = {}
+            for key, value in payload.items():
+                try:
+                    safe_payload[key] = _serialize_for_cache_key(value)
+                except Exception:
+                    # If serialization fails for a specific field, use a fallback
+                    safe_payload[key] = f"<unserializable_{key}: {type(value).__name__}>"
+
+            serialized = json.dumps(safe_payload, sort_keys=True).encode()
             digest = hashlib.sha256(serialized).hexdigest()
         except Exception:
-            return None
+            # Final fallback: use pickle for complex objects
+            try:
+                serialized = pickle.dumps(payload)  # nosec B403 - Fallback serialization for cache keys
+                digest = hashlib.sha256(serialized).hexdigest()
+            except Exception:
+                # If all serialization methods fail, return None (no caching)
+                return None
     return f"{step.name}:{digest}"

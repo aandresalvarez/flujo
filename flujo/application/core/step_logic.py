@@ -377,17 +377,7 @@ async def _execute_parallel_step_logic(
         else:
             failed_branches[name] = br
 
-    if failed_branches and parallel_step.on_branch_failure == BranchFailureStrategy.PROPAGATE:
-        result.success = False
-        fail_name = next(iter(failed_branches))
-        result.feedback = f"Branch '{fail_name}' failed. Propagating failure."
-        result.output = {
-            **{k: v.output for k, v in succeeded_branches.items()},
-            **{k: v for k, v in failed_branches.items()},
-        }
-        result.attempts = 1
-        return result
-
+    # Context merging should happen BEFORE checking for failures
     if parallel_step.merge_strategy != MergeStrategy.NO_MERGE and context is not None:
         base_snapshot: Dict[str, Any] = {}
         seen_keys: set[str] = set()
@@ -405,12 +395,21 @@ async def _execute_parallel_step_logic(
             else branch_order
         )
 
+        # For CONTEXT_UPDATE strategy, we want to iterate over ALL branches (both succeeded and failed)
+        if parallel_step.merge_strategy == MergeStrategy.CONTEXT_UPDATE:
+            branch_iter = branch_order
+
         merged: Dict[str, Any] | None = None
         if parallel_step.merge_strategy == MergeStrategy.OVERWRITE:
             merged = context.model_dump()
 
         for branch_name in branch_iter:
-            if branch_name not in succeeded_branches:
+            # For CONTEXT_UPDATE strategy, merge context from ALL branches (both succeeded and failed)
+            # For other strategies, only merge from succeeded branches
+            if (
+                parallel_step.merge_strategy != MergeStrategy.CONTEXT_UPDATE
+                and branch_name not in succeeded_branches
+            ):
                 continue
             branch_ctx = branch_contexts.get(branch_name)
             if branch_ctx is None:
@@ -434,6 +433,21 @@ async def _execute_parallel_step_logic(
                             merged[key].update(branch_data[key])
                         else:
                             merged[key] = branch_data[key]
+            elif parallel_step.merge_strategy == MergeStrategy.CONTEXT_UPDATE:
+                # New strategy: properly handle context updates without branch name conflicts
+                branch_data = branch_ctx.model_dump()
+
+                # If field_mapping is provided, use it to determine which fields to merge
+                if parallel_step.field_mapping and branch_name in parallel_step.field_mapping:
+                    fields_to_merge = parallel_step.field_mapping[branch_name]
+                    for field in fields_to_merge:
+                        if field in branch_data and hasattr(context, field):
+                            setattr(context, field, branch_data[field])
+                else:
+                    # Default behavior: merge all fields that exist in the context
+                    for key, value in branch_data.items():
+                        if hasattr(context, key):
+                            setattr(context, key, value)
             elif parallel_step.merge_strategy == MergeStrategy.MERGE_SCRATCHPAD and hasattr(
                 branch_ctx, "scratchpad"
             ):
@@ -458,6 +472,18 @@ async def _execute_parallel_step_logic(
         if parallel_step.merge_strategy == MergeStrategy.OVERWRITE and merged is not None:
             validated = context.__class__.model_validate(merged)
             context.__dict__.update(validated.__dict__)
+
+    # Now check for failures and return early if needed
+    if failed_branches and parallel_step.on_branch_failure == BranchFailureStrategy.PROPAGATE:
+        result.success = False
+        fail_name = next(iter(failed_branches))
+        result.feedback = f"Branch '{fail_name}' failed. Propagating failure."
+        result.output = {
+            **{k: v.output for k, v in succeeded_branches.items()},
+            **{k: v for k, v in failed_branches.items()},
+        }
+        result.attempts = 1
+        return result
 
     result.success = bool(succeeded_branches)
     final_output = {k: v.output for k, v in succeeded_branches.items()}
@@ -588,6 +614,35 @@ async def _execute_loop_step_logic(
                     break
 
                 current_iteration_data_for_body_step = body_step_result_obj.output
+
+        # Merge context updates from this iteration back to the main context
+        if context is not None and iteration_context is not None:
+            try:
+                # Merge context updates from the iteration back to the main context
+                if hasattr(context, "__dict__") and hasattr(iteration_context, "__dict__"):
+                    # Update the main context with changes from the iteration
+                    for key, value in iteration_context.__dict__.items():
+                        if key in context.__dict__:
+                            # Only update if the value has changed (to avoid overwriting with defaults)
+                            if context.__dict__[key] != value:
+                                context.__dict__[key] = value
+                else:
+                    # Fallback: try to update individual attributes
+                    for attr_name in dir(iteration_context):
+                        if not attr_name.startswith("_"):
+                            try:
+                                iteration_value = getattr(iteration_context, attr_name)
+                                if hasattr(context, attr_name):
+                                    current_value = getattr(context, attr_name)
+                                    if current_value != iteration_value:
+                                        setattr(context, attr_name, iteration_value)
+                            except (AttributeError, TypeError):
+                                # Skip attributes that can't be set or compared
+                                continue
+            except Exception as e:
+                telemetry.logfire.error(
+                    f"Failed to merge context updates in LoopStep '{loop_step.name}' iteration {i}: {e}"
+                )
 
         if iteration_succeeded_fully:
             last_successful_iteration_body_output = current_iteration_data_for_body_step
@@ -863,6 +918,7 @@ async def _execute_dynamic_router_step_logic(
         context_include_keys=router_step.context_include_keys,
         merge_strategy=router_step.merge_strategy,
         on_branch_failure=router_step.on_branch_failure,
+        field_mapping=router_step.field_mapping,
         **config_kwargs,
     )
 
@@ -901,6 +957,21 @@ async def _handle_cache_step(
         cache_result = cached.model_copy(deep=True)
         cache_result.metadata_ = cache_result.metadata_ or {}
         cache_result.metadata_["cache_hit"] = True
+
+        # CRITICAL FIX: Apply context updates even for cache hits
+        if step.wrapped_step.updates_context and context is not None:
+            try:
+                # Apply the cached output to context as if the step had executed
+                if isinstance(cache_result.output, dict):
+                    for key, value in cache_result.output.items():
+                        if hasattr(context, key):
+                            setattr(context, key, value)
+                elif hasattr(context, "result"):
+                    # Fallback: store in generic result field
+                    setattr(context, "result", cache_result.output)
+            except Exception as e:
+                telemetry.logfire.error(f"Failed to apply context updates from cache hit: {e}")
+
         return cache_result
 
     cache_result = await step_executor(step.wrapped_step, data, context, resources)

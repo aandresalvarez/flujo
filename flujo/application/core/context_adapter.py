@@ -43,7 +43,18 @@ def _inject_context(
                         value = custom_deserializer(value)
                     except Exception:
                         pass
+        elif not hasattr(context, key):
+            # Enhanced error handling with better messages
+            from flujo.exceptions import ContextFieldError
+
+            available_fields = (
+                list(context.__fields__.keys()) if hasattr(context, "__fields__") else []
+            )
+            if hasattr(context, "model_fields"):
+                available_fields = list(context.model_fields.keys())
+            raise ContextFieldError(key, context.__class__.__name__, available_fields)
         setattr(context, key, value)
+
     # Final pass: forcibly re-apply deserializer to context attribute if needed
     for key in context_model.model_fields:
         field_info = context_model.model_fields[key]

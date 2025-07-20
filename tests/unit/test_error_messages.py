@@ -3,6 +3,7 @@ import pytest
 from flujo import Step, Pipeline, Flujo, step
 from flujo.exceptions import (
     ImproperStepInvocationError,
+    StepInvocationError,  # Add the new error class
     MissingAgentError,
     TypeMismatchError,
     ConfigurationError,
@@ -17,7 +18,7 @@ async def echo(x: str) -> str:
 def test_improper_step_call() -> None:
     with pytest.raises(ImproperStepInvocationError):
         echo("hi")
-    with pytest.raises(ImproperStepInvocationError):
+    with pytest.raises(StepInvocationError):  # Updated to expect the new error
         getattr(echo, "run")("hi")
 
 

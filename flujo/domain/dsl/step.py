@@ -63,6 +63,7 @@ class MergeStrategy(Enum):
     NO_MERGE = "no_merge"
     OVERWRITE = "overwrite"
     MERGE_SCRATCHPAD = "merge_scratchpad"
+    CONTEXT_UPDATE = "context_update"  # New strategy for proper context updates
 
 
 class BranchFailureStrategy(Enum):
@@ -121,6 +122,10 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         default=False,
         description="Whether the step output should merge into the pipeline context.",
     )
+    validate_fields: bool = Field(
+        default=False,
+        description="Whether to validate that step return values match context fields.",
+    )
     meta: Dict[str, Any] = Field(
         default_factory=dict,
         description="Arbitrary metadata about this step.",
@@ -168,15 +173,44 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         )
 
     def __getattr__(self, item: str) -> Any:  # pragma: no cover - behavior
-        if item in {"run", "stream"}:
-            from ...exceptions import ImproperStepInvocationError
+        """Raise a helpful error when trying to access non-existent attributes."""
+        # Allow internal framework attributes to be accessed
+        if item in {
+            "callable",
+            "agent",
+            "config",
+            "name",
+            "processors",
+            "validators",
+            "fallback_step",
+        }:
+            raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{item}'")
 
-            raise ImproperStepInvocationError(
-                f"Step '{self.name}' cannot be invoked directly. "
-                "Steps are configuration objects and must be run within a Pipeline. "
-                "For unit testing, use `step.arun()`."
-            )
-        raise AttributeError(item)
+        # Allow inspection-related attributes for doctest and other tools
+        if item in {
+            "__wrapped__",
+            "__doc__",
+            "__name__",
+            "__qualname__",
+            "__module__",
+            "__annotations__",
+            "__defaults__",
+            "__kwdefaults__",
+        }:
+            raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{item}'")
+
+        # Only raise error for attributes that indicate direct invocation
+        if item in {"run", "stream"}:
+            from flujo.exceptions import StepInvocationError
+
+            raise StepInvocationError(self.name)
+
+        # For other attributes, raise the standard error
+        from flujo.exceptions import ImproperStepInvocationError
+
+        raise ImproperStepInvocationError(
+            f"Step '{self.name}' cannot be invoked directly. Steps are configuration objects and must be run within a Pipeline. For unit testing, use `step.arun()`."
+        )
 
     # ------------------------------------------------------------------
     # Composition helpers ( >> operator )
@@ -325,6 +359,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         callable_: Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]],
         name: str | None = None,
         updates_context: bool = False,
+        validate_fields: bool = False,  # New parameter
         processors: Optional[AgentProcessors] = None,
         persist_feedback_to_context: Optional[str] = None,
         persist_validation_results_to: Optional[str] = None,
@@ -397,6 +432,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                 "persist_feedback_to_context": persist_feedback_to_context,
                 "persist_validation_results_to": persist_validation_results_to,
                 "updates_context": updates_context,
+                "validate_fields": validate_fields,
                 "meta": {"is_adapter": True} if is_adapter else {},
                 "config": StepConfig(**config),
             }
@@ -582,6 +618,8 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             MergeStrategy, Callable[[ContextModelT, ContextModelT], None]
         ] = MergeStrategy.NO_MERGE,
         on_branch_failure: BranchFailureStrategy = BranchFailureStrategy.PROPAGATE,
+        field_mapping: Optional[Dict[str, List[str]]] = None,
+        ignore_branch_names: bool = False,
         **config_kwargs: Any,
     ) -> "ParallelStep[ContextModelT]":
         from .parallel import ParallelStep  # local import
@@ -593,6 +631,8 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                 "context_include_keys": context_include_keys,
                 "merge_strategy": merge_strategy,
                 "on_branch_failure": on_branch_failure,
+                "field_mapping": field_mapping,
+                "ignore_branch_names": ignore_branch_names,
                 **config_kwargs,
             }
         )
@@ -608,6 +648,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             MergeStrategy, Callable[[ContextModelT, ContextModelT], None]
         ] = MergeStrategy.NO_MERGE,
         on_branch_failure: BranchFailureStrategy = BranchFailureStrategy.PROPAGATE,
+        field_mapping: Optional[Dict[str, List[str]]] = None,
         **config_kwargs: Any,
     ) -> "DynamicParallelRouterStep[ContextModelT]":
         from .dynamic_router import DynamicParallelRouterStep  # local import
@@ -620,6 +661,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                 "context_include_keys": context_include_keys,
                 "merge_strategy": merge_strategy,
                 "on_branch_failure": on_branch_failure,
+                "field_mapping": field_mapping,
                 **config_kwargs,
             }
         )
@@ -718,15 +760,12 @@ def step(
 @overload
 def step(
     *,
-    name: str | None = None,
     updates_context: bool = False,
-    processors: Optional[AgentProcessors] = None,
-    persist_feedback_to_context: Optional[str] = None,
-    persist_validation_results_to: Optional[str] = None,
-    is_adapter: bool = False,
+    validate_fields: bool = False,  # New parameter for field validation
+    name: Optional[str] = None,
     **config_kwargs: Any,
 ) -> Callable[
-    [Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]]],
+    [Callable[Concatenate[Any, P], Coroutine[Any, Any, Any]]],
     "Step[StepInT, StepOutT]",
 ]: ...
 
@@ -736,6 +775,7 @@ def step(
     *,
     name: str | None = None,
     updates_context: bool = False,
+    validate_fields: bool = False,  # New parameter for field validation
     processors: Optional[AgentProcessors] = None,
     persist_feedback_to_context: Optional[str] = None,
     persist_validation_results_to: Optional[str] = None,
@@ -751,6 +791,7 @@ def step(
             fn,
             name=name or fn.__name__,
             updates_context=updates_context,
+            validate_fields=validate_fields,  # Pass the new parameter
             processors=processors,
             persist_feedback_to_context=persist_feedback_to_context,
             persist_validation_results_to=persist_validation_results_to,
