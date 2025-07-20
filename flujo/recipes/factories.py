@@ -253,21 +253,75 @@ def make_agentic_loop_pipeline(
     loop_body: Pipeline[Any, Any] = planner_step_s >> executor_step_s
 
     # Create the loop step with proper config
-    def exit_condition(output: Any, context: Any) -> bool:
-        return isinstance(output, ExecutedCommandLog) and isinstance(
+    def exit_condition(output: Any, context: PipelineContext | None) -> bool:
+        """Determine whether the loop should exit.
+
+        The primary signal is receiving an ``ExecutedCommandLog`` whose
+        ``generated_command`` is a ``FinishCommand``.  In certain edge-cases
+        (e.g. when the step executor returns ``None`` due to silent failures
+        or validation short-circuits) `output` may be ``None``.  To remain
+        robust we fall back to inspecting the latest entry in
+        ``context.command_log`` if available.
+        """
+
+        # Direct check on the current output.
+        if isinstance(output, ExecutedCommandLog) and isinstance(
             getattr(output, "generated_command", None), FinishCommand
-        )
+        ):
+            return True
+
+        # Fallback: inspect the last command in the context log.
+        if context is not None and context.command_log:
+            last_cmd = context.command_log[-1].generated_command
+            return isinstance(last_cmd, FinishCommand)
+
+        return False
 
     def _log_if_new(log: ExecutedCommandLog, ctx: PipelineContext | None) -> None:
-        if ctx is not None:
-            # Use equality, not identity, to avoid duplicates
-            if not ctx.command_log or ctx.command_log[-1] != log:
-                ctx.command_log.append(log)
+        """Safely append a new command log entry to the context.
+
+        Notes
+        -----
+        1. Guard against ``log`` being ``None`` – this can happen during edge
+           cases where the loop mappers are invoked with a placeholder value.
+        2. Use *equality* (not identity) checks to prevent duplicate entries.
+        """
+        if ctx is None or log is None:
+            # Nothing to do if there is no context or the log entry is None.
+            return
+
+        from flujo.domain.commands import (
+            RunAgentCommand,
+            AskHumanCommand,
+            FinishCommand,
+        )  # local import to avoid cycle
+
+        if ctx.command_log:
+            last = ctx.command_log[-1]
+            # If the planner pre-logged a raw AgentCommand, replace it with the
+            # richer ExecutedCommandLog representing its execution result.
+            if (
+                isinstance(last, (RunAgentCommand, AskHumanCommand, FinishCommand))
+                and last == log.generated_command
+            ):
+                ctx.command_log[-1] = log
+                return
+
+        # Only append when the last entry differs to avoid duplicates.
+        if not ctx.command_log or ctx.command_log[-1] != log:
+            ctx.command_log.append(log)
 
     def _iter_mapper(
         log: ExecutedCommandLog, ctx: PipelineContext | None, _i: int
     ) -> dict[str, Any]:
         """Transformation function that logs commands if not already present."""
+        # Skip logging and return a default mapping if `log` is None to avoid
+        # attribute errors in edge-cases where the body step failed and the
+        # loop invokes the mapper with a placeholder value.
+        if log is None:
+            goal = ctx.initial_prompt if ctx is not None else ""
+            return {"last_command_result": None, "goal": goal}
+
         _log_if_new(log, ctx)
         goal = ctx.initial_prompt if ctx is not None else ""
         return {"last_command_result": log.execution_result, "goal": goal}
@@ -276,6 +330,14 @@ def make_agentic_loop_pipeline(
         """Transformation function that logs commands if not already present.
         Ensures the final output is always logged, even if the loop ends due to max_loops or error.
         """
+        # Fallback: if `log` is None, attempt to use the latest command in the
+        # context (if available) so the caller still receives a meaningful
+        # `ExecutedCommandLog` instead of ``None``.
+        if log is None:
+            if ctx is not None and ctx.command_log:
+                return ctx.command_log[-1]
+            return None
+
         _log_if_new(log, ctx)
         return log  # Return the full log instead of just the execution result
 

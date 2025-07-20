@@ -19,7 +19,10 @@ EXCLUDED_FIELDS = {"command_log"}
 
 
 def safe_merge_context_updates(
-    target_context: T, source_context: T, context_type: Optional[Type[T]] = None
+    target_context: T,
+    source_context: T,
+    context_type: Optional[Type[T]] = None,
+    excluded_fields: set[str] = EXCLUDED_FIELDS,
 ) -> bool:
     """
     Safely merge context updates from source to target, respecting Pydantic validation.
@@ -67,21 +70,22 @@ def safe_merge_context_updates(
                     continue
 
                 # Skip excluded fields to prevent duplication during loop merging
-                if field_name in EXCLUDED_FIELDS:
+                if field_name in excluded_fields:
                     continue
 
                 # Check if field exists in target
                 if not hasattr(target_context, field_name):
                     continue
 
-                # Get current value for comparison
+                # Always get the actual value from the source context for merging
+                actual_source_value = getattr(source_context, field_name)
                 current_value = getattr(target_context, field_name)
 
                 # Compare values safely
                 try:
-                    if current_value != source_value:
+                    if current_value != actual_source_value:
                         # Use setattr to trigger Pydantic validation
-                        setattr(target_context, field_name, source_value)
+                        setattr(target_context, field_name, actual_source_value)
                         updated_count += 1
                 except (TypeError, ValueError, AttributeError, ValidationError) as e:
                     # Skip fields that can't be compared or set
