@@ -175,7 +175,7 @@ def _serialize_for_cache_key(
                             }
                         except (ValueError, RecursionError) as e:
                             # Log the context of the error and store a fallback value
-                            logging.warning(
+                            logging.debug(
                                 "Error during model_dump serialization for key '%s' with value '%s': %s",
                                 k,
                                 v,

@@ -170,6 +170,9 @@ class StepInvocationError(FlujoFrameworkError):
 
     This exception replaces ImproperStepInvocationError for consistency
     and provides enhanced error messages for better debugging.
+
+    Note: ImproperStepInvocationError is deprecated and will be removed in a future version.
+    Use StepInvocationError for new code.
     """
 
     def __init__(self, step_name: str):

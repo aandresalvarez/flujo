@@ -59,12 +59,17 @@ BranchKey = Any
 
 
 class MergeStrategy(Enum):
-    """Strategies for merging branch contexts back into the main context."""
+    """Strategies for merging branch contexts back into the main context.
+
+    The CONTEXT_UPDATE strategy is recommended for most use cases as it provides
+    proper validation and handles complex context structures safely. Use NO_MERGE
+    for performance-critical scenarios where context updates are not needed.
+    """
 
     NO_MERGE = "no_merge"
     OVERWRITE = "overwrite"
     MERGE_SCRATCHPAD = "merge_scratchpad"
-    CONTEXT_UPDATE = "context_update"  # New strategy for proper context updates
+    CONTEXT_UPDATE = "context_update"  # New strategy for proper context updates with validation
 
 
 class BranchFailureStrategy(Enum):

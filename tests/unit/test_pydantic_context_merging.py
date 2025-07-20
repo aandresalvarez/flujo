@@ -1,8 +1,12 @@
 """
-Test Pydantic context merging to ensure validation is not bypassed.
-
-This test verifies that the context merging logic properly respects Pydantic validation
-and doesn't bypass computed fields, validators, or field access mechanisms.
+Test Pydantic context merging to ensure validation is not bypassed and context updates are handled correctly.
+This test suite addresses specific bugs related to Pydantic context merging, including:
+- Ensuring computed fields are preserved during context updates.
+- Triggering validators to enforce field constraints during updates.
+- Handling complex equality comparisons without raising exceptions.
+- Ignoring private fields during context merging.
+These tests contribute to broader context update propagation fixes by ensuring robust and predictable behavior
+when merging contexts, preventing issues such as validation bypass or incorrect field updates.
 """
 
 import pytest

@@ -1,4 +1,9 @@
-"""Tests demonstrating proper use of In-Memory Monitor for unit testing."""
+"""Tests demonstrating proper use of In-Memory Monitor for unit testing.
+The In-Memory Monitor is critical for the bug hunting campaign as it captures detailed information
+about agent calls, including input data, output data, success status, and error details. This allows
+developers to programmatically verify agent behavior and identify issues during testing. By ensuring
+that the monitor records all relevant details, these tests help prevent regressions by validating
+that changes to the codebase do not introduce unexpected failures or alter expected behavior."""
 
 import pytest
 import asyncio
