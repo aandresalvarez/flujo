@@ -146,52 +146,55 @@ def _serialize_for_cache_key(
                     return {k: f"<{obj.__class__.__name__} circular>" for k in field_names}
                 return f"<{obj.__class__.__name__} circular>"
         if isinstance(obj, dict):
-            d = dict(obj)
-            if "run_id" in d and "initial_prompt" in d:
-                d.pop("run_id", None)
-            result: dict[Any, Any] = {}
-            for k in sorted(d.keys(), key=str):
-                v = d[k]
-                # Always check for custom serializer for every value
-                custom_serializer_v = lookup_custom_serializer(v)
-                if custom_serializer_v is not None:
-                    try:
-                        result[k] = _serialize_for_cache_key(
-                            custom_serializer_v(v), visited, _is_root=False
+            try:
+                d = dict(obj)
+                if "run_id" in d and "initial_prompt" in d:
+                    d.pop("run_id", None)
+                result: dict[Any, Any] = {}
+                for k in sorted(d.keys(), key=str):
+                    v = d[k]
+                    # Always check for custom serializer for every value
+                    custom_serializer_v = lookup_custom_serializer(v)
+                    if custom_serializer_v is not None:
+                        try:
+                            result[k] = _serialize_for_cache_key(
+                                custom_serializer_v(v), visited, _is_root=False
+                            )
+                            continue
+                        except Exception:
+                            pass
+                    if hasattr(v, "model_dump"):
+                        try:
+                            v_dict = v.model_dump(mode="cache")
+                            if "run_id" in v_dict:
+                                v_dict.pop("run_id", None)
+                            result[k] = {
+                                kk: _serialize_for_cache_key(v_dict[kk], visited, _is_root=False)
+                                for kk in sorted(v_dict.keys(), key=str)
+                            }
+                        except (ValueError, RecursionError) as e:
+                            # If model_dump fails, propagate the exception to make dict serialization fail
+                            raise e
+                    elif isinstance(v, (list, tuple)):
+                        result[k] = _serialize_list_for_key(list(v), visited)
+                    elif isinstance(v, (set, frozenset)):
+                        result[k] = _serialize_list_for_key(
+                            _sort_set_deterministically(v, visited), visited
                         )
-                        continue
-                    except Exception:
-                        pass
-                if hasattr(v, "model_dump"):
-                    try:
-                        v_dict = v.model_dump(mode="cache")
-                        if "run_id" in v_dict:
-                            v_dict.pop("run_id", None)
+                    elif isinstance(v, dict):
                         result[k] = {
-                            kk: _serialize_for_cache_key(v_dict[kk], visited, _is_root=False)
-                            for kk in sorted(v_dict.keys(), key=str)
+                            kk: _serialize_for_cache_key(v[kk], visited, _is_root=False)
+                            for kk in sorted(v.keys(), key=str)
                         }
-                    except (ValueError, RecursionError):
-                        field_names = []
-                        if hasattr(v, "__annotations__"):
-                            field_names = list(v.__annotations__.keys())
-                        elif hasattr(v, "__fields__"):
-                            field_names = list(v.__fields__.keys())
-                        result[k] = {kk: f"<{v.__class__.__name__} circular>" for kk in field_names}
-                elif isinstance(v, (list, tuple)):
-                    result[k] = _serialize_list_for_key(list(v), visited)
-                elif isinstance(v, (set, frozenset)):
-                    result[k] = _serialize_list_for_key(
-                        _sort_set_deterministically(v, visited), visited
-                    )
-                elif isinstance(v, dict):
-                    result[k] = {
-                        kk: _serialize_for_cache_key(v[kk], visited, _is_root=False)
-                        for kk in sorted(v.keys(), key=str)
-                    }
-                else:
-                    result[k] = _serialize_for_cache_key(v, visited, _is_root=False)
-            return result
+                    else:
+                        result[k] = _serialize_for_cache_key(v, visited, _is_root=False)
+                return result
+            except Exception as e:
+                # If dict serialization fails completely, return a string representation
+                import logging
+
+                logging.debug(f"Dict serialization failed: {type(e).__name__}: {str(e)}")
+                return f"<unserializable: {type(obj).__name__}>"
         if isinstance(obj, (list, tuple)):
             return _serialize_list_for_key(list(obj), visited)
         if isinstance(obj, (set, frozenset)):
@@ -212,14 +215,13 @@ def _serialize_for_cache_key(
                 except Exception:
                     return f"<unserializable: {type(obj).__name__}>"
             return str(obj)
-        except Exception:
-            return f"<unserializable: {type(obj).__name__}>"
-    except Exception:
-        # Improved error handling for unhashable types
-        try:
-            # Try to get a string representation as fallback
-            return f"<unserializable: {type(obj).__name__}: {str(obj)[:100]}>"
-        except Exception:
+        except Exception as e:
+            # Improved error handling for unhashable types
+            import logging
+
+            logging.debug(
+                f"Serialization error for {type(obj).__name__}: {type(e).__name__}: {str(e)}"
+            )
             return f"<unserializable: {type(obj).__name__}>"
     finally:
         visited.discard(obj_id)

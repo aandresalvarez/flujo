@@ -40,8 +40,7 @@ class TestContextWithComputedFields(BaseModel):
 
     def model_post_init(self, __context) -> None:
         """Post-init hook to track validation."""
-        if hasattr(self, "validation_count"):
-            self.validation_count += 1
+        self.validation_count += 1
 
 
 class TestContextWithComplexEquality(BaseModel):
@@ -60,8 +59,11 @@ class TestContextWithComplexEquality(BaseModel):
                 self.simple_field == other.simple_field
                 and self.complex_field == other.complex_field
             )
-        except Exception:
-            # Return False instead of raising
+        except (TypeError, ValueError) as e:
+            # Log the exception and return False for complex comparison failures
+            import logging
+
+            logging.debug(f"Complex equality comparison failed: {e}")
             return False
 
 

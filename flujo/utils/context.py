@@ -14,6 +14,9 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
 
+# Fields that should be excluded from context merging to prevent duplication
+EXCLUDED_FIELDS = {"command_log"}
+
 
 def safe_merge_context_updates(
     target_context: T, source_context: T, context_type: Optional[Type[T]] = None
@@ -63,8 +66,8 @@ def safe_merge_context_updates(
                 if field_name.startswith("_"):
                     continue
 
-                # Skip command_log to prevent duplication during loop merging
-                if field_name == "command_log":
+                # Skip excluded fields to prevent duplication during loop merging
+                if field_name in EXCLUDED_FIELDS:
                     continue
 
                 # Check if field exists in target

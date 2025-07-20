@@ -18,7 +18,9 @@ async def echo(x: str) -> str:
 def test_improper_step_call() -> None:
     with pytest.raises(ImproperStepInvocationError):
         echo("hi")
-    with pytest.raises(StepInvocationError):  # Updated to expect the new error
+    with pytest.raises(
+        StepInvocationError
+    ):  # StepInvocationError is raised when a step is invoked improperly via its internal 'run' method, ensuring stricter validation compared to ImproperStepInvocationError
         getattr(echo, "run")("hi")
 
 
