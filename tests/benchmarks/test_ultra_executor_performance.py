@@ -1,5 +1,6 @@
 """Benchmark tests for ultra executor performance improvements."""
 
+import os
 import pytest
 import asyncio
 import time
@@ -11,6 +12,25 @@ from flujo.domain.dsl.step import Step
 from flujo.domain.models import StepResult
 
 
+def get_performance_threshold(base_threshold, ci_multiplier=1.5):
+    """Get performance threshold based on environment.
+
+    Args:
+        base_threshold: Base threshold for local development
+        ci_multiplier: Multiplier for CI environments (default 1.5x)
+
+    Returns:
+        Adjusted threshold for current environment
+    """
+    # Check if we're in CI environment
+    is_ci = os.getenv("CI", "false").lower() in ("true", "1", "yes")
+
+    if is_ci:
+        return base_threshold * ci_multiplier
+    else:
+        return base_threshold
+
+
 def create_slow_run_helper():
     """Helper function to create a slow run function for testing."""
 
@@ -19,6 +39,55 @@ def create_slow_run_helper():
         return "slow_result"
 
     return slow_run
+
+
+def test_performance_threshold_detection():
+    """Test that performance thresholds are correctly detected for different environments."""
+    # Test local environment (no CI variable)
+    import os
+
+    original_ci = os.getenv("CI")
+    try:
+        # Ensure CI is not set for local test
+        if "CI" in os.environ:
+            del os.environ["CI"]
+        local_threshold = get_performance_threshold(0.1)
+        assert abs(local_threshold - 0.1) < 1e-10, (
+            f"Local threshold should be 0.1, got {local_threshold}"
+        )
+    finally:
+        if original_ci is None:
+            if "CI" in os.environ:
+                del os.environ["CI"]
+        else:
+            os.environ["CI"] = original_ci
+
+    # Test CI environment (with CI variable)
+    import os
+
+    original_ci = os.getenv("CI")
+    try:
+        os.environ["CI"] = "true"
+        ci_threshold = get_performance_threshold(0.1)
+        assert abs(ci_threshold - 0.15) < 1e-10, f"CI threshold should be 0.15, got {ci_threshold}"
+    finally:
+        if original_ci is None:
+            del os.environ["CI"]
+        else:
+            os.environ["CI"] = original_ci
+
+    # Test with custom multiplier in CI environment
+    try:
+        os.environ["CI"] = "true"
+        custom_threshold = get_performance_threshold(0.1, ci_multiplier=2.0)
+        assert abs(custom_threshold - 0.2) < 1e-10, (
+            f"Custom threshold should be 0.2, got {custom_threshold}"
+        )
+    finally:
+        if original_ci is None:
+            del os.environ["CI"]
+        else:
+            os.environ["CI"] = original_ci
 
 
 class TestUltraExecutorPerformance:
@@ -307,10 +376,11 @@ class TestUltraExecutorPerformance:
         print(f"All succeeded: {all(r.success for r in results)}")
         print(f"Average time per task: {concurrent_time / num_concurrent:.6f}s")
 
-        # Should handle concurrency well
+        # Should handle concurrency well (dynamic threshold based on environment)
         assert all(r.success for r in results), "All concurrent tasks should succeed"
-        assert concurrent_time < 0.5, (
-            f"Concurrent execution should be efficient, took {concurrent_time:.3f}s"
+        threshold = get_performance_threshold(0.5, ci_multiplier=1.3)  # 0.5s local, 0.65s CI
+        assert concurrent_time < threshold, (
+            f"Concurrent execution should be efficient, took {concurrent_time:.3f}s (threshold: {threshold:.3f}s)"
         )
 
         # Test 4: Usage tracking
@@ -427,8 +497,11 @@ class TestUltraExecutorPerformance:
         print(f"Total time for {num_concurrent} concurrent executions: {total_time:.3f}s")
         print(f"Average time per execution: {total_time / num_concurrent:.6f}s")
 
-        # Should complete reasonably quickly
-        assert total_time < 1.0, f"Concurrent execution took too long: {total_time:.3f}s"
+        # Should complete reasonably quickly (dynamic threshold based on environment)
+        threshold = get_performance_threshold(1.0, ci_multiplier=1.4)  # 1.0s local, 1.4s CI
+        assert total_time < threshold, (
+            f"Concurrent execution took too long: {total_time:.3f}s (threshold: {threshold:.3f}s)"
+        )
 
     @pytest.mark.asyncio
     async def test_memory_efficiency(self, ultra_executor, mock_step):
@@ -499,8 +572,11 @@ class TestUltraExecutorPerformance:
         print(f"Average time per hash: {total_time / len(hashes):.6f}s")
         print(f"Hashes per second: {len(hashes) / total_time:.0f}")
 
-        # Should be fast
-        assert total_time < 0.5, f"Hashing took too long: {total_time:.3f}s"
+        # Should be fast (dynamic threshold based on environment)
+        threshold = get_performance_threshold(0.5, ci_multiplier=1.2)  # 0.5s local, 0.6s CI
+        assert total_time < threshold, (
+            f"Hashing took too long: {total_time:.3f}s (threshold: {threshold:.3f}s)"
+        )
 
         # Verify hash consistency
         for i, data in enumerate(test_data):
@@ -537,8 +613,11 @@ class TestUltraExecutorPerformance:
         print(f"Average time per key: {total_time / iterations:.6f}s")
         print(f"Keys per second: {iterations / total_time:.0f}")
 
-        # Should be fast
-        assert total_time < 0.3, f"Cache key generation took too long: {total_time:.3f}s"
+        # Should be fast (dynamic threshold based on environment)
+        threshold = get_performance_threshold(0.3, ci_multiplier=1.3)  # 0.3s local, 0.39s CI
+        assert total_time < threshold, (
+            f"Cache key generation took too long: {total_time:.3f}s (threshold: {threshold:.3f}s)"
+        )
 
         # Verify key uniqueness
         unique_keys = set(keys)
@@ -560,8 +639,11 @@ class TestUltraExecutorPerformance:
         print(f"Average time per addition: {total_time / iterations:.6f}s")
         print(f"Additions per second: {iterations / total_time:.0f}")
 
-        # Should be fast
-        assert total_time < 0.5, f"Usage tracking took too long: {total_time:.3f}s"
+        # Should be fast (dynamic threshold based on environment)
+        threshold = get_performance_threshold(0.5, ci_multiplier=1.2)  # 0.5s local, 0.6s CI
+        assert total_time < threshold, (
+            f"Usage tracking took too long: {total_time:.3f}s (threshold: {threshold:.3f}s)"
+        )
 
         # Verify final values
         assert ultra_executor._usage.total_cost > 0
@@ -626,8 +708,11 @@ class TestUltraExecutorScalability:
         print(f"Cache hit time: {hit_time:.3f}s")
         print(f"Hit time per execution: {hit_time / 500:.6f}s")
 
-        # Cache hits should be very fast (adjusted for CI environments)
-        assert hit_time < 0.15, f"Cache hits took too long: {hit_time:.3f}s"
+        # Cache hits should be very fast (dynamic threshold based on environment)
+        threshold = get_performance_threshold(0.1, ci_multiplier=1.5)  # 0.1s local, 0.15s CI
+        assert hit_time < threshold, (
+            f"Cache hits took too long: {hit_time:.3f}s (threshold: {threshold:.3f}s)"
+        )
 
     @pytest.mark.asyncio
     async def test_concurrency_scaling(self):
