@@ -280,6 +280,9 @@ class TestSerializeForCacheKey:
         print(f"Actual result: {result!r}")
         # Our improved serialization provides better error handling
         assert result.startswith("<unserializable: UnserializableObject")
+        # Verify that serialization gracefully handles the unhashable object without raising an exception
+        assert isinstance(result, str)
+        assert "UnserializableObject" in result
 
 
 class TestSortSetDeterministically:

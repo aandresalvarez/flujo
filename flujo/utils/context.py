@@ -34,7 +34,14 @@ def get_excluded_fields() -> set[str]:
 
     excluded_fields = os.getenv("EXCLUDED_FIELDS", "")
     if excluded_fields:
-        return set(excluded_fields.split(","))
+        # Validate and sanitize the field names
+        sanitized_fields = {field.strip() for field in excluded_fields.split(",") if field.strip()}
+        if sanitized_fields:
+            return sanitized_fields
+        else:
+            logger.warning(
+                "Environment variable 'EXCLUDED_FIELDS' contains invalid or empty field names. Falling back to default excluded fields."
+            )
     return default_excluded_fields
 
 

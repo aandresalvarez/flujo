@@ -157,7 +157,9 @@ class FlujoFrameworkError(Exception):
 class ContextFieldError(FlujoFrameworkError):
     """Raised when trying to set a field that doesn't exist in the context."""
 
-    def __init__(self, field_name: str, context_class: str, available_fields: list[str]) -> None:
+    def __init__(
+        self, field_name: str, context_class: str, available_fields: tuple[str, ...]
+    ) -> None:
         super().__init__(
             f"'{context_class}' object has no field '{field_name}'",
             f"Available fields: {', '.join(available_fields)}",

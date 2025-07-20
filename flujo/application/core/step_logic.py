@@ -638,7 +638,9 @@ async def _execute_loop_step_logic(
                         )
                         if not merge_success:
                             telemetry.logfire.warn(
-                                f"Context merge failed in MapStep '{loop_step.name}' iteration {i}, "
+                                f"Context merge failed in MapStep '{loop_step.name}' iteration {i} "
+                                f"(context fields: {list(context.__dict__.keys()) if context else 'None'}, "
+                                f"iteration context fields: {list(iteration_context.__dict__.keys()) if iteration_context else 'None'}), "
                                 "but continuing execution"
                             )
                     except Exception as e:
@@ -658,7 +660,9 @@ async def _execute_loop_step_logic(
                         )
                         if not merge_success:
                             telemetry.logfire.warn(
-                                f"Context merge failed in {loop_step.name} iteration {i}, "
+                                f"Context merge failed in {loop_step.name} iteration {i} "
+                                f"(context fields: {list(context.__dict__.keys()) if context else 'None'}, "
+                                f"iteration context fields: {list(iteration_context.__dict__.keys()) if iteration_context else 'None'}), "
                                 "but continuing execution"
                             )
                     except Exception as e:

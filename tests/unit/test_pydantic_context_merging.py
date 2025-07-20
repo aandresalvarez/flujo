@@ -39,7 +39,7 @@ class TestContextWithComputedFields(BaseModel):
             raise ValueError("base_value must be non-negative")
         return v
 
-    def model_post_init(self, __context) -> None:
+    def model_post_init(self, _context) -> None:
         """Post-init hook to track validation."""
         self.validation_count += 1
 

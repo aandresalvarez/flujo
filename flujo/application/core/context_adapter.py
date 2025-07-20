@@ -52,7 +52,7 @@ def _inject_context(
             )
             if hasattr(context, "model_fields"):
                 available_fields = list(context.model_fields.keys())
-            raise ContextFieldError(key, context.__class__.__name__, available_fields)
+            raise ContextFieldError(key, context.__class__.__name__, tuple(available_fields))
         setattr(context, key, value)
 
     # Final pass: forcibly re-apply deserializer to context attribute if needed
