@@ -104,6 +104,44 @@ async def failing_cache_step(data: Any, *, context: CacheContext) -> Dict[str, A
     return {"operation_count": context.operation_count, "result": f"success_result_{data}"}
 
 
+# Utility function to create simplified steps
+def create_simple_step(step_type: str) -> Step:
+    """Create a simplified step based on the specified type.
+
+    Args:
+        step_type: The type of step to create ("timestamp" or "cache_key")
+
+    Returns:
+        A configured step function
+
+    Raises:
+        ValueError: If step_type is not recognized
+    """
+
+    @step(updates_context=True)
+    async def simple_step(data: Any, *, context: CacheContext) -> Dict[str, Any]:
+        """Generic simplified step based on step_type."""
+        context.operation_count += 1
+        if step_type == "timestamp":
+            current_time = time.time()
+            return {
+                "operation_count": context.operation_count,
+                "timestamp": current_time,
+                "result": f"simple_timestamp_result_{data}",
+            }
+        elif step_type == "cache_key":
+            cache_key = f"simple_cache_key_{data}_{context.operation_count}"
+            return {
+                "operation_count": context.operation_count,
+                "cache_key": cache_key,
+                "result": f"simple_key_result_{data}",
+            }
+        else:
+            raise ValueError(f"Unknown step_type: {step_type}")
+
+    return simple_step
+
+
 @pytest.mark.asyncio
 async def test_cache_with_context_updates_basic():
     """Test basic cache operations with context updates."""
@@ -269,32 +307,7 @@ async def test_cache_with_context_updates_complex_interaction():
         cache_backend=InMemoryCache(),
     )
 
-    # Utility function to create simplified steps
-    def create_simple_step(step_type: str):
-        @step(updates_context=True)
-        async def simple_step(data: Any, *, context: CacheContext) -> Dict[str, Any]:
-            """Generic simplified step based on step_type."""
-            context.operation_count += 1
-            if step_type == "timestamp":
-                current_time = time.time()
-                return {
-                    "operation_count": context.operation_count,
-                    "timestamp": current_time,
-                    "result": f"simple_timestamp_result_{data}",
-                }
-            elif step_type == "cache_key":
-                cache_key = f"simple_cache_key_{data}_{context.operation_count}"
-                return {
-                    "operation_count": context.operation_count,
-                    "cache_key": cache_key,
-                    "result": f"simple_key_result_{data}",
-                }
-            else:
-                raise ValueError(f"Unknown step_type: {step_type}")
-
-        return simple_step
-
-    # Create cached steps using the utility function
+    # Create cached steps using the module-level utility function
     cached_step2 = Step.cached(
         create_simple_step("timestamp"),
         cache_backend=InMemoryCache(),
