@@ -18,7 +18,7 @@ def test_run_succeeds_in_synchronous_context():
 @pytest.mark.asyncio
 async def test_run_raises_type_error_in_asynchronous_context():
     runner = Flujo(pipeline)
-    with pytest.raises(TypeError, match="Flujo.run\(\) cannot be called"):
+    with pytest.raises(TypeError, match=r"Flujo.run\(\) cannot be called"):
         runner.run("async input")
 
 
@@ -34,7 +34,7 @@ def test_run_in_simulated_jupyter_environment():
     runner = Flujo(pipeline)
 
     async def jupyter_cell_execution():
-        with pytest.raises(TypeError, match="Flujo.run\(\) cannot be called"):
+        with pytest.raises(TypeError, match=r"Flujo.run\(\) cannot be called"):
             runner.run("jupyter input")
 
     asyncio.run(jupyter_cell_execution())
