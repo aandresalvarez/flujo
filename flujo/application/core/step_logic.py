@@ -618,27 +618,19 @@ async def _execute_loop_step_logic(
         # Merge context updates from this iteration back to the main context
         if context is not None and iteration_context is not None:
             try:
-                # Merge context updates from the iteration back to the main context
-                if hasattr(context, "__dict__") and hasattr(iteration_context, "__dict__"):
-                    # Update the main context with changes from the iteration
-                    for key, value in iteration_context.__dict__.items():
-                        if key in context.__dict__:
-                            # Only update if the value has changed (to avoid overwriting with defaults)
-                            if context.__dict__[key] != value:
-                                context.__dict__[key] = value
-                else:
-                    # Fallback: try to update individual attributes
-                    for attr_name in dir(iteration_context):
-                        if not attr_name.startswith("_"):
-                            try:
-                                iteration_value = getattr(iteration_context, attr_name)
-                                if hasattr(context, attr_name):
-                                    current_value = getattr(context, attr_name)
-                                    if current_value != iteration_value:
-                                        setattr(context, attr_name, iteration_value)
-                            except (AttributeError, TypeError):
-                                # Skip attributes that can't be set or compared
-                                continue
+                # Use safe context merging that respects Pydantic validation
+                from flujo.utils.context import safe_merge_context_updates
+
+                merge_success = safe_merge_context_updates(
+                    target_context=context, source_context=iteration_context
+                )
+
+                if not merge_success:
+                    telemetry.logfire.warn(
+                        f"Context merge failed in LoopStep '{loop_step.name}' iteration {i}, "
+                        "but continuing execution"
+                    )
+
             except Exception as e:
                 telemetry.logfire.error(
                     f"Failed to merge context updates in LoopStep '{loop_step.name}' iteration {i}: {e}"
@@ -699,10 +691,33 @@ async def _execute_loop_step_logic(
         )
         if context is not None and iteration_context is not None:
             try:
-                c_log = getattr(context, "command_log", None)
-                i_log = getattr(iteration_context, "command_log", None)
+                from flujo.utils.context import safe_context_field_update, get_context_field_safely
+
+                # Safely handle command_log updates
+                c_log = get_context_field_safely(context, "command_log")
+                i_log = get_context_field_safely(iteration_context, "command_log")
+
                 if isinstance(c_log, list) and isinstance(i_log, list) and len(i_log) > len(c_log):
-                    context.command_log.append(i_log[-1])  # type: ignore[attr-defined]
+                    # Only append the last command if it's not already in the context
+                    # Check by comparing the execution_result to avoid duplicates
+                    last_command = i_log[-1]
+                    last_execution_result = getattr(last_command, "execution_result", None)
+                    if last_execution_result is None and isinstance(last_command, dict):
+                        last_execution_result = last_command.get("execution_result")
+
+                    # Check if this execution result is already in the context
+                    existing_results = []
+                    for cmd in c_log:
+                        result = getattr(cmd, "execution_result", None)
+                        if result is None and isinstance(cmd, dict):
+                            result = cmd.get("execution_result")
+                        if result:
+                            existing_results.append(result)
+
+                    if last_execution_result not in existing_results:
+                        # Use safe field update to trigger Pydantic validation
+                        safe_context_field_update(context, "command_log", c_log + [last_command])
+
             except Exception as e:
                 telemetry.logfire.error(
                     f"Failed to append to command_log after max_loops in LoopStep: {e}"

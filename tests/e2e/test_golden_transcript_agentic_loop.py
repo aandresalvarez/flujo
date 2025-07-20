@@ -99,15 +99,17 @@ async def test_golden_transcript_agentic_loop():
     from flujo.domain.models import ExecutedCommandLog
 
     # Check that we have the expected command types
-    assert isinstance(final_context.command_log[0], RunAgentCommand)
-    assert isinstance(final_context.command_log[1], ExecutedCommandLog)
-    assert isinstance(final_context.command_log[2], AskHumanCommand)
+    # The first command should be an ExecutedCommandLog containing a RunAgentCommand
+    assert isinstance(final_context.command_log[0], ExecutedCommandLog)
+    assert isinstance(final_context.command_log[0].generated_command, RunAgentCommand)
+    # The second command should be an AskHumanCommand (not ExecutedCommandLog)
+    assert isinstance(final_context.command_log[1], AskHumanCommand)
     # Check the generated command inside ExecutedCommandLog
-    generated_command = final_context.command_log[1].generated_command
+    generated_command = final_context.command_log[0].generated_command
     assert isinstance(generated_command, RunAgentCommand)
     assert generated_command.agent_name == "tool1"
     assert generated_command.input_data == "test_input_1"
-    assert final_context.command_log[2].question == "Please review the first result"
+    assert final_context.command_log[1].question == "Please review the first result"
 
     # Verify the pipeline paused correctly
     assert final_context.scratchpad.get("status") == "paused"
@@ -155,11 +157,13 @@ async def test_golden_transcript_agentic_loop_resume():
     # Verify the pipeline paused after the first command
     final_context = result.final_pipeline_context
     assert len(final_context.command_log) >= 1
+    from flujo.domain.models import ExecutedCommandLog
 
-    # The first command should be a RunAgentCommand
-    assert isinstance(final_context.command_log[0], RunAgentCommand)
-    assert final_context.command_log[0].agent_name == "tool1"
-    assert final_context.command_log[0].input_data == "resume_test"
+    # The first command should be an ExecutedCommandLog containing a RunAgentCommand
+    assert isinstance(final_context.command_log[0], ExecutedCommandLog)
+    assert isinstance(final_context.command_log[0].generated_command, RunAgentCommand)
+    assert final_context.command_log[0].generated_command.agent_name == "tool1"
+    assert final_context.command_log[0].generated_command.input_data == "resume_test"
 
     # Test resume functionality (simulated)
     # In a real scenario, this would involve saving and loading state
