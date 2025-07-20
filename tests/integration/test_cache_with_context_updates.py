@@ -269,39 +269,38 @@ async def test_cache_with_context_updates_complex_interaction():
         cache_backend=InMemoryCache(),
     )
 
-    # Create a simpler timestamp step that doesn't return complex structures
-    @step(updates_context=True)
-    async def simple_timestamp_step(data: Any, *, context: CacheContext) -> Dict[str, Any]:
-        """Simplified timestamp step that doesn't return complex structures."""
-        context.operation_count += 1
-        current_time = time.time()
+    # Utility function to create simplified steps
+    def create_simple_step(step_type: str):
+        @step(updates_context=True)
+        async def simple_step(data: Any, *, context: CacheContext) -> Dict[str, Any]:
+            """Generic simplified step based on step_type."""
+            context.operation_count += 1
+            if step_type == "timestamp":
+                current_time = time.time()
+                return {
+                    "operation_count": context.operation_count,
+                    "timestamp": current_time,
+                    "result": f"simple_timestamp_result_{data}",
+                }
+            elif step_type == "cache_key":
+                cache_key = f"simple_cache_key_{data}_{context.operation_count}"
+                return {
+                    "operation_count": context.operation_count,
+                    "cache_key": cache_key,
+                    "result": f"simple_key_result_{data}",
+                }
+            else:
+                raise ValueError(f"Unknown step_type: {step_type}")
 
-        return {
-            "operation_count": context.operation_count,
-            "timestamp": current_time,
-            "result": f"simple_timestamp_result_{data}",
-        }
+        return simple_step
 
+    # Create cached steps using the utility function
     cached_step2 = Step.cached(
-        simple_timestamp_step,
+        create_simple_step("timestamp"),
         cache_backend=InMemoryCache(),
     )
-
-    # Create a simpler cache key tracking step
-    @step(updates_context=True)
-    async def simple_cache_key_step(data: Any, *, context: CacheContext) -> Dict[str, Any]:
-        """Simplified cache key step that doesn't return complex structures."""
-        context.operation_count += 1
-        cache_key = f"simple_cache_key_{data}_{context.operation_count}"
-
-        return {
-            "operation_count": context.operation_count,
-            "cache_key": cache_key,
-            "result": f"simple_key_result_{data}",
-        }
-
     cached_step3 = Step.cached(
-        simple_cache_key_step,
+        create_simple_step("cache_key"),
         cache_backend=InMemoryCache(),
     )
 

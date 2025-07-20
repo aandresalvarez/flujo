@@ -15,6 +15,10 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T", bound=BaseModel)
 
 
+# Cache for excluded fields to avoid repeated environment variable access
+_EXCLUDED_FIELDS_CACHE: Optional[set[str]] = None
+
+
 def get_excluded_fields() -> set[str]:
     """
     Retrieve the set of fields to exclude from context merging.
@@ -25,6 +29,12 @@ def get_excluded_fields() -> set[str]:
     Returns:
         set[str]: A set of field names to exclude.
     """
+    global _EXCLUDED_FIELDS_CACHE
+
+    # Return cached result if available
+    if _EXCLUDED_FIELDS_CACHE is not None:
+        return _EXCLUDED_FIELDS_CACHE
+
     # Default excluded fields
     default_excluded_fields = {"command_log"}
 
@@ -37,11 +47,14 @@ def get_excluded_fields() -> set[str]:
         # Validate and sanitize the field names
         sanitized_fields = {field.strip() for field in excluded_fields.split(",") if field.strip()}
         if sanitized_fields:
+            _EXCLUDED_FIELDS_CACHE = sanitized_fields
             return sanitized_fields
         else:
             logger.warning(
                 "Environment variable 'EXCLUDED_FIELDS' contains invalid or empty field names. Falling back to default excluded fields."
             )
+
+    _EXCLUDED_FIELDS_CACHE = default_excluded_fields
     return default_excluded_fields
 
 
