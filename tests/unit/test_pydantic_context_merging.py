@@ -6,6 +6,7 @@ and doesn't bypass computed fields, validators, or field access mechanisms.
 """
 
 import pytest
+import logging
 from typing import List, Optional
 from pydantic import BaseModel, Field, field_validator, computed_field
 
@@ -61,8 +62,6 @@ class TestContextWithComplexEquality(BaseModel):
             )
         except (TypeError, ValueError) as e:
             # Log the exception and return False for complex comparison failures
-            import logging
-
             logging.debug(f"Complex equality comparison failed: {e}")
             return False
 

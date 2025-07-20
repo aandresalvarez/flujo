@@ -4,6 +4,7 @@ from typing import Any, Optional, TypeVar, Set
 import hashlib
 import pickle  # nosec B403 - Used for fallback serialization of complex objects in cache keys
 import json
+import logging
 from pydantic import Field
 
 from flujo.domain.dsl import Step
@@ -191,8 +192,6 @@ def _serialize_for_cache_key(
                 return result
             except Exception as e:
                 # If dict serialization fails completely, return a string representation
-                import logging
-
                 logging.debug(f"Dict serialization failed: {type(e).__name__}: {str(e)}")
                 return f"<unserializable: {type(obj).__name__}>"
         if isinstance(obj, (list, tuple)):
@@ -217,8 +216,6 @@ def _serialize_for_cache_key(
             return str(obj)
         except Exception as e:
             # Improved error handling for unhashable types
-            import logging
-
             logging.debug(
                 f"Serialization error for {type(obj).__name__}: {type(e).__name__}: {str(e)}"
             )

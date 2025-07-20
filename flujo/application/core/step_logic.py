@@ -45,6 +45,7 @@ from ..context_manager import (
     _get_validation_flags,
     _apply_validation_metadata,
 )
+from ...utils.context import safe_merge_context_updates
 
 TContext = TypeVar("TContext", bound=BaseModel)
 
@@ -630,8 +631,6 @@ async def _execute_loop_step_logic(
             if hasattr(loop_step, "iterable_input"):
                 if context is not None and iteration_context is not None:
                     try:
-                        from flujo.utils.context import safe_merge_context_updates
-
                         merge_success = safe_merge_context_updates(
                             target_context=context,
                             source_context=iteration_context,
@@ -652,8 +651,6 @@ async def _execute_loop_step_logic(
             ):
                 if context is not None and iteration_context is not None:
                     try:
-                        from flujo.utils.context import safe_merge_context_updates
-
                         merge_success = safe_merge_context_updates(
                             target_context=context,
                             source_context=iteration_context,

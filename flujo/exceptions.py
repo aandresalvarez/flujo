@@ -124,7 +124,7 @@ class AgentIOValidationError(OrchestratorError):
     pass
 
 
-class FlujoError(Exception):
+class FlujoFrameworkError(Exception):
     """Base exception for Flujo framework with enhanced error messages."""
 
     def __init__(
@@ -144,7 +144,7 @@ class FlujoError(Exception):
         return msg
 
 
-class ContextFieldError(FlujoError):
+class ContextFieldError(FlujoFrameworkError):
     """Raised when trying to set a field that doesn't exist in the context."""
 
     def __init__(self, field_name: str, context_class: str, available_fields: list[str]) -> None:
@@ -155,7 +155,7 @@ class ContextFieldError(FlujoError):
         )
 
 
-class StepInvocationError(FlujoError):
+class StepInvocationError(FlujoFrameworkError):
     """Raised when a step is invoked incorrectly."""
 
     def __init__(self, step_name: str):
@@ -166,7 +166,7 @@ class StepInvocationError(FlujoError):
         )
 
 
-class ParallelStepError(FlujoError):
+class ParallelStepError(FlujoFrameworkError):
     """Raised when there's an issue with parallel step execution."""
 
     def __init__(self, step_name: str, branch_name: str, issue: str):

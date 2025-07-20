@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T", bound=BaseModel)
 
 # Fields that should be excluded from context merging to prevent duplication
+# The 'command_log' field is excluded to avoid redundant or conflicting entries during loop operations.
 EXCLUDED_FIELDS = {"command_log"}
 
 
