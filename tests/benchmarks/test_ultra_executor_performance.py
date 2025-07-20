@@ -12,6 +12,10 @@ from flujo.application.core.ultra_executor import UltraStepExecutor
 from flujo.domain.dsl.step import Step
 from flujo.domain.models import StepResult
 
+# Constants for better maintainability
+FLOAT_TOLERANCE = 1e-10
+CI_TRUE_VALUES = ("true", "1", "yes")
+
 
 @contextmanager
 def temporary_env_var(var_name, value):
@@ -37,18 +41,18 @@ def temporary_env_var(var_name, value):
             os.environ[var_name] = original_value
 
 
-def get_performance_threshold(base_threshold, ci_multiplier=1.5):
+def get_performance_threshold(base_threshold: float, ci_multiplier: float = 1.5) -> float:
     """Get performance threshold based on environment.
 
     Args:
-        base_threshold: Base threshold for local development
-        ci_multiplier: Multiplier for CI environments (default 1.5x)
+        base_threshold: Base threshold for local development (float)
+        ci_multiplier: Multiplier for CI environments (float, default 1.5x)
 
     Returns:
-        Adjusted threshold for current environment
+        float: Adjusted threshold for current environment
     """
     # Check if we're in CI environment
-    is_ci = os.getenv("CI", "false").lower() in ("true", "1", "yes")
+    is_ci = os.getenv("CI", "false").lower() in CI_TRUE_VALUES
 
     if is_ci:
         return base_threshold * ci_multiplier
@@ -72,23 +76,23 @@ def test_performance_threshold_detection():
     # Test local environment (no CI variable)
     with temporary_env_var("CI", None):
         local_threshold = get_performance_threshold(0.1)
-        assert abs(local_threshold - 0.1) < 1e-10, (
+        assert abs(local_threshold - 0.1) < FLOAT_TOLERANCE, (
             f"Local threshold should be 0.1, got {local_threshold}"
         )
 
     # Test CI environment with different formats
-    ci_formats = ["true", "1", "yes"]
+    ci_formats = list(CI_TRUE_VALUES)
     for ci_format in ci_formats:
         with temporary_env_var("CI", ci_format):
             ci_threshold = get_performance_threshold(0.1)
-            assert abs(ci_threshold - 0.15) < 1e-10, (
+            assert abs(ci_threshold - 0.15) < FLOAT_TOLERANCE, (
                 f"CI threshold should be 0.15 for '{ci_format}', got {ci_threshold}"
             )
 
     # Test with custom multiplier in CI environment
     with temporary_env_var("CI", "true"):
         custom_threshold = get_performance_threshold(0.1, ci_multiplier=2.0)
-        assert abs(custom_threshold - 0.2) < 1e-10, (
+        assert abs(custom_threshold - 0.2) < FLOAT_TOLERANCE, (
             f"Custom threshold should be 0.2, got {custom_threshold}"
         )
 
