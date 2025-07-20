@@ -17,15 +17,16 @@ import inspect
 
 def _test_validator_failed_sync(validator_func: Any, test_data: Any) -> bool:
     import asyncio
+    from flujo.infra.telemetry import logfire
 
     try:
         result = validator_func(test_data)
-        print(f"[DEBUG] result type: {type(result)}, value: {result}")
+        logfire.debug("result type: %s, value: %s", type(result), result)
         if inspect.isawaitable(result):
             asyncio.run(result)
         return False  # No exception means success
     except Exception as e:
-        print(f"[DEBUG] Exception: {e}")
+        logfire.debug("Exception: %s", e)
         return True  # Any exception means failure
 
 
