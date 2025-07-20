@@ -1,5 +1,10 @@
 # .github/workflows/ci.yml
 # Continuous Integration workflow for the Flujo project.
+#
+# Dependency Management:
+# - Uses uv sync --all-extras to ensure all dependencies are installed
+# - Includes prometheus-client and httpx for comprehensive testing
+# - All dependencies are properly declared in pyproject.toml
 
 name: Flujo CI
 

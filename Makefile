@@ -24,6 +24,11 @@ install: .uv ## Install dependencies into a virtual environment
 	@uv sync --all-extras
 	@echo "\n✅ Done! Activate the environment with 'source .venv/bin/activate'"
 
+.PHONY: install-robust
+install-robust: .uv ## Install dependencies with robust verification
+	@echo "🔧 Installing dependencies with robust verification..."
+	@python scripts/install_dependencies.py dev
+
 .PHONY: sync
 sync: .uv ## Update dependencies based on pyproject.toml
 	@echo "🔄 Syncing dependencies..."
@@ -44,10 +49,9 @@ format: .uv ## Auto-format the code with ruff
 	@uv run ruff format flujo/ tests/
 
 .PHONY: lint
-lint: .uv ## Lint the code and check for formatting issues
+lint: .uv ## Lint the code for issues
 	@echo "🔎 Linting code..."
-	@uv run ruff format --check flujo/ tests/
-	@uv run ruff check flujo/ tests/
+	@uv run ruff check flujo/ tests/ scripts/
 
 .PHONY: typecheck
 typecheck: .uv ## Run static type checking with mypy

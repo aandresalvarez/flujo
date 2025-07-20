@@ -174,6 +174,7 @@ print(result.step_history[-1].output)
 
 ## Quick Start (60 seconds)
 
+### For Users
 ```bash
 pip install flujo
 
@@ -192,6 +193,22 @@ flujo run hello_pipeline.py --input "Flujo"
 ```
 
 > Expected output: `Hello, Flujo!`
+
+### For Developers
+```bash
+# Clone and install with robust verification
+git clone https://github.com/aandresalvarez/flujo.git
+cd flujo
+make install-robust
+
+# Run tests
+make test
+
+# Try the quickstart example
+python examples/00_quickstart.py
+```
+
+> See [INSTALLATION.md](INSTALLATION.md) for comprehensive setup instructions.
 
 ---
 

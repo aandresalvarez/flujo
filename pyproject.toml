@@ -67,6 +67,8 @@ dev = [
   "logfire>=0.3",
   "sqlvalidator>=0.0.8",
   "psutil>=5.9.0",  # Added for performance and memory tests
+  "prometheus-client>=0.22.1,<0.23.0",  # Required for prometheus tests
+  "httpx",  # Required for prometheus integration tests
 ]
 docs = [
     "mkdocs",

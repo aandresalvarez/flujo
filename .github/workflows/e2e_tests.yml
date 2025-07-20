@@ -24,10 +24,13 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v1
+        with:
+          enable-cache: true
+
       - name: Install dependencies
-        run: |
-          pip install hatch
-          hatch run setup
+        run: uv sync --all-extras
 
       - name: Delete cassette if re-recording
         if: ${{ github.event.inputs.re_record_cassette == 'true' }}
