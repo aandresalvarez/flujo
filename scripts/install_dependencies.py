@@ -12,6 +12,26 @@ from pathlib import Path
 from typing import List, Optional
 
 
+def sanitize_command(cmd: List[str]) -> List[str]:
+    """
+    Sanitize command for logging to avoid exposing sensitive information.
+
+    Args:
+        cmd: The command to sanitize.
+
+    Returns:
+        List[str]: Sanitized command with sensitive parts replaced.
+    """
+    sanitized = []
+    for part in cmd:
+        # Replace potential API keys, tokens, or passwords
+        if any(sensitive in part.lower() for sensitive in ['key', 'token', 'password', 'secret']):
+            sanitized.append('***')
+        else:
+            sanitized.append(part)
+    return sanitized
+
+
 def run_command(cmd: List[str], check: bool = True) -> subprocess.CompletedProcess:
     """
     Run a command and return the result.
@@ -26,7 +46,8 @@ def run_command(cmd: List[str], check: bool = True) -> subprocess.CompletedProce
         subprocess.CompletedProcess: The result of the executed command, including
         stdout, stderr, and the return code.
     """
-    print(f"Running: {' '.join(cmd)}")
+    sanitized_cmd = sanitize_command(cmd)
+    print(f"Running: {' '.join(sanitized_cmd)}")
     result = subprocess.run(cmd, capture_output=True, text=True)
     if check and result.returncode != 0:
         print(f"Error: {result.stderr}")
@@ -60,7 +81,8 @@ def install_dependencies(extras: Optional[List[str]] = None) -> None:
     # Install dependencies
     cmd = ["uv", "sync"]
     if extras:
-        cmd.extend(["--extra", ",".join(extras)])
+        for extra in extras:
+            cmd.extend(["--extra", extra])
 
     run_command(cmd)
     print("✅ Dependencies installed successfully!")
@@ -115,6 +137,7 @@ def verify_installation() -> None:
     if missing_optional:
         print(f"\n⚠️  Optional dependencies missing: {', '.join(missing_optional)}")
         print("These are not required for basic functionality.")
+        print("Note: sqlvalidator is used for SQL validation features but is not critical for core functionality.")
 
     print("\n✅ Installation verification complete!")
 
@@ -140,13 +163,25 @@ def run_tests() -> None:
         print("✅ Step creation works")
 
     except Exception as e:
-        print(f"❌ Basic functionality test failed: {e}")
+        print(f"❌ Basic functionality test failed: {type(e).__name__}: {e}")
         print("This indicates that the installation may not be working correctly.")
-        print("Please check:")
-        print("1. That all dependencies were installed correctly")
-        print("2. That you're running this from the project root directory")
-        print("3. That the virtual environment is activated")
-        print("4. Try running: uv sync --all-extras")
+
+        # Provide specific guidance based on exception type
+        if isinstance(e, ImportError):
+            print("ImportError detected. Please check:")
+            print("1. That all dependencies were installed correctly")
+            print("2. Try running: uv sync --all-extras")
+        elif isinstance(e, ModuleNotFoundError):
+            print("ModuleNotFoundError detected. Please check:")
+            print("1. That you're running this from the project root directory")
+            print("2. That the virtual environment is activated")
+            print("3. Try running: uv sync --all-extras")
+        else:
+            print("Please check:")
+            print("1. That all dependencies were installed correctly")
+            print("2. That you're running this from the project root directory")
+            print("3. That the virtual environment is activated")
+            print("4. Try running: uv sync --all-extras")
         sys.exit(1)
 
 
