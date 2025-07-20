@@ -43,9 +43,8 @@ def create_slow_run_helper():
 
 def test_performance_threshold_detection():
     """Test that performance thresholds are correctly detected for different environments."""
-    # Test local environment (no CI variable)
-    import os
 
+    # Test local environment (no CI variable)
     original_ci = os.getenv("CI")
     try:
         # Ensure CI is not set for local test
@@ -63,20 +62,19 @@ def test_performance_threshold_detection():
             os.environ["CI"] = original_ci
 
     # Test CI environment (with CI variable)
-    import os
-
-    original_ci = os.getenv("CI")
+    original_ci_2 = os.getenv("CI")
     try:
         os.environ["CI"] = "true"
         ci_threshold = get_performance_threshold(0.1)
         assert abs(ci_threshold - 0.15) < 1e-10, f"CI threshold should be 0.15, got {ci_threshold}"
     finally:
-        if original_ci is None:
+        if original_ci_2 is None:
             del os.environ["CI"]
         else:
-            os.environ["CI"] = original_ci
+            os.environ["CI"] = original_ci_2
 
     # Test with custom multiplier in CI environment
+    original_ci_3 = os.getenv("CI")
     try:
         os.environ["CI"] = "true"
         custom_threshold = get_performance_threshold(0.1, ci_multiplier=2.0)
@@ -84,10 +82,10 @@ def test_performance_threshold_detection():
             f"Custom threshold should be 0.2, got {custom_threshold}"
         )
     finally:
-        if original_ci is None:
+        if original_ci_3 is None:
             del os.environ["CI"]
         else:
-            os.environ["CI"] = original_ci
+            os.environ["CI"] = original_ci_3
 
 
 class TestUltraExecutorPerformance:
