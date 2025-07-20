@@ -14,16 +14,35 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
 
-# Fields that should be excluded from context merging to prevent duplication
-# The 'command_log' field is excluded to avoid redundant or conflicting entries during loop operations.
-EXCLUDED_FIELDS = {"command_log"}
+
+def get_excluded_fields() -> set[str]:
+    """
+    Retrieve the set of fields to exclude from context merging.
+
+    The default excluded fields are:
+    - 'command_log': Avoids redundant or conflicting entries during loop operations.
+
+    Returns:
+        set[str]: A set of field names to exclude.
+    """
+    # Default excluded fields
+    default_excluded_fields = {"command_log"}
+
+    # Retrieve excluded fields from configuration (e.g., environment variable or file)
+    # For simplicity, this example uses an environment variable.
+    import os
+
+    excluded_fields = os.getenv("EXCLUDED_FIELDS", "")
+    if excluded_fields:
+        return set(excluded_fields.split(","))
+    return default_excluded_fields
 
 
 def safe_merge_context_updates(
     target_context: T,
     source_context: T,
     context_type: Optional[Type[T]] = None,
-    excluded_fields: set[str] = EXCLUDED_FIELDS,
+    excluded_fields: Optional[set[str]] = None,
 ) -> bool:
     """
     Safely merge context updates from source to target, respecting Pydantic validation.
@@ -44,6 +63,10 @@ def safe_merge_context_updates(
     """
     if target_context is None or source_context is None:
         return False
+
+    # Use default excluded fields if none provided
+    if excluded_fields is None:
+        excluded_fields = get_excluded_fields()
 
     try:
         # Get field values using Pydantic's model_dump() method

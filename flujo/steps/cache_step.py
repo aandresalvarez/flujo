@@ -174,6 +174,13 @@ def _serialize_for_cache_key(
                                 for kk in sorted(v_dict.keys(), key=str)
                             }
                         except (ValueError, RecursionError) as e:
+                            # Log the context of the error before propagating it
+                            logging.error(
+                                "Error during model_dump serialization for key '%s' with value '%s': %s",
+                                k,
+                                v,
+                                str(e),
+                            )
                             # If model_dump fails, propagate the exception to make dict serialization fail
                             raise e
                     elif isinstance(v, (list, tuple)):

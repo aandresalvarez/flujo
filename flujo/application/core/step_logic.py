@@ -9,7 +9,7 @@ from typing import Any, Dict, Optional, TypeVar, Callable, Awaitable, cast
 from unittest.mock import Mock
 
 from ...domain.dsl.pipeline import Pipeline
-from ...domain.dsl.loop import LoopStep
+from ...domain.dsl.loop import LoopStep, MapStep
 from ...domain.dsl.conditional import ConditionalStep
 from ...domain.dsl.parallel import ParallelStep
 from ...domain.dsl.step import (
@@ -628,7 +628,7 @@ async def _execute_loop_step_logic(
                 last_successful_iteration_body_output = current_iteration_data_for_body_step
 
             # Context merging for MapStep, RefineUntil, AgenticLoop: must happen after body step execution
-            if hasattr(loop_step, "iterable_input"):
+            if isinstance(loop_step, MapStep):  # Replace hasattr with type check
                 if context is not None and iteration_context is not None:
                     try:
                         merge_success = safe_merge_context_updates(

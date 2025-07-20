@@ -319,6 +319,13 @@ def make_agentic_loop_pipeline(
         # attribute errors in edge-cases where the body step failed and the
         # loop invokes the mapper with a placeholder value.
         if log is None:
+            import logging
+
+            logging.warning(
+                "Log is None in _iter_mapper. Context: %s, Iteration index: %d",
+                ctx,
+                _i,
+            )
             goal = ctx.initial_prompt if ctx is not None else ""
             return {"last_command_result": None, "goal": goal}
 

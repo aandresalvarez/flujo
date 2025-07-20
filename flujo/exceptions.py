@@ -136,6 +136,16 @@ class FlujoFrameworkError(Exception):
         super().__init__(self._format_message())
 
     def _format_message(self) -> str:
+        """
+        Constructs a formatted error message for the exception.
+
+        The message includes the main error description (`self.message`), and optionally
+        appends a suggestion (`self.suggestion`) and an error code (`self.code`) if they
+        are provided.
+
+        Returns:
+            str: A formatted string containing the error details.
+        """
         msg = f"Flujo Error: {self.message}"
         if self.suggestion:
             msg += f"\n\nSuggestion: {self.suggestion}"
