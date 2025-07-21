@@ -1069,13 +1069,13 @@ class SQLiteBackend(StateBackend):
 
             async def _save() -> None:
                 async with aiosqlite.connect(self.db_path) as db:
-                    now = (
+                    base_timestamp = (
                         run_data.get("created_at")
                         or run_data.get("start_time")
                         or datetime.utcnow().isoformat()
                     )
-                    created_at = now
-                    updated_at = run_data.get("updated_at") or now
+                    created_at = base_timestamp
+                    updated_at = run_data.get("updated_at") or base_timestamp
                     start_time = run_data.get("start_time") or created_at
                     end_time = run_data.get("end_time")
                     total_cost = run_data.get("total_cost")

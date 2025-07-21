@@ -289,6 +289,25 @@ class ParallelUsageGovernor:
         self.limit_breached = asyncio.Event()
         self.limit_breach_error: Optional[UsageLimitExceededError] = None
 
+    def _create_breach_error(
+        self, result: StepResult, limit_type: str, limit_value: Any, current_value: Any
+    ) -> UsageLimitExceededError:
+        """Create a UsageLimitExceededError with proper PipelineResult."""
+        from flujo.exceptions import UsageLimitExceededError
+        from flujo.domain.models import PipelineResult
+
+        pipeline_result: PipelineResult[Any] = PipelineResult(
+            step_history=[result],
+            total_cost_usd=self.total_cost,
+        )
+
+        if limit_type == "cost":
+            message = f"Cost limit of ${limit_value} exceeded. Current cost: ${current_value}"
+        else:  # token
+            message = f"Token limit of {limit_value} exceeded. Current tokens: {current_value}"
+
+        return UsageLimitExceededError(message, result=pipeline_result)
+
     async def add_usage(self, cost_delta: float, token_delta: int, result: StepResult) -> bool:
         async with self.lock:
             self.total_cost += cost_delta
@@ -298,34 +317,16 @@ class ParallelUsageGovernor:
                     self.usage_limits.total_cost_usd_limit is not None
                     and self.total_cost > self.usage_limits.total_cost_usd_limit
                 ):
-                    from flujo.exceptions import UsageLimitExceededError
-                    from flujo.domain.models import PipelineResult
-
-                    # Create a proper PipelineResult for the error
-                    pipeline_result: PipelineResult[Any] = PipelineResult(
-                        step_history=[result],
-                        total_cost_usd=self.total_cost,
-                    )
-                    self.limit_breach_error = UsageLimitExceededError(
-                        f"Cost limit of ${self.usage_limits.total_cost_usd_limit} exceeded. Current cost: ${self.total_cost}",
-                        result=pipeline_result,
+                    self.limit_breach_error = self._create_breach_error(
+                        result, "cost", self.usage_limits.total_cost_usd_limit, self.total_cost
                     )
                     self.limit_breached.set()
                 elif (
                     self.usage_limits.total_tokens_limit is not None
                     and self.total_tokens > self.usage_limits.total_tokens_limit
                 ):
-                    from flujo.exceptions import UsageLimitExceededError
-                    from flujo.domain.models import PipelineResult
-
-                    # Create a proper PipelineResult for the error
-                    pipeline_result_tokens: PipelineResult[Any] = PipelineResult(
-                        step_history=[result],
-                        total_cost_usd=self.total_cost,
-                    )
-                    self.limit_breach_error = UsageLimitExceededError(
-                        f"Token limit of {self.usage_limits.total_tokens_limit} exceeded. Current tokens: {self.total_tokens}",
-                        result=pipeline_result_tokens,
+                    self.limit_breach_error = self._create_breach_error(
+                        result, "token", self.usage_limits.total_tokens_limit, self.total_tokens
                     )
                     self.limit_breached.set()
             return self.limit_breached.is_set()
@@ -359,7 +360,10 @@ async def _execute_parallel_step_logic(
     branch_contexts: Dict[str, Optional[TContext]] = {}
 
     usage_governor = ParallelUsageGovernor(usage_limits)
-    max_concurrency = min(3, len(parallel_step.branches))  # Limit concurrency to 3 or fewer
+    # Limit concurrency to prevent resource exhaustion while maintaining parallelism
+    # This is a reasonable default that balances performance with resource usage
+    DEFAULT_MAX_CONCURRENCY = 3
+    max_concurrency = min(DEFAULT_MAX_CONCURRENCY, len(parallel_step.branches))
     semaphore = asyncio.Semaphore(max_concurrency)
 
     async def run_branch(key: str, branch_pipe: Pipeline[Any, Any]) -> None:

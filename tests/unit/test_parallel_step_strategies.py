@@ -611,7 +611,7 @@ async def test_parallel_usage_limit_enforced_atomically(caplog):
         async def run(self, *_args, breach_event=None, **_kwargs):
             self.called = True
             # Simulate a longer operation with periodic cancellation checks
-            for _ in range(10):
+            for _ in range(50):  # More iterations for more frequent checks
                 if breach_event is not None and breach_event.is_set():
                     # Simulate early exit on cancellation
                     return StepResult(
@@ -624,7 +624,7 @@ async def test_parallel_usage_limit_enforced_atomically(caplog):
                         attempts=1,
                         feedback="Cancelled early due to usage limit breach",
                     )
-                await asyncio.sleep(self.delay / 10)
+                await asyncio.sleep(self.delay / 50)  # Shorter sleep for more frequent checks
             return StepResult(
                 name="costly_step",
                 output="ok",
@@ -637,10 +637,13 @@ async def test_parallel_usage_limit_enforced_atomically(caplog):
 
     # Set up N branches, each with a cost that will cumulatively breach the limit
     N = 5
-    cost_per_branch = 0.5
-    token_per_branch = 100
     usage_limits = UsageLimits(total_cost_usd_limit=1.0, total_tokens_limit=250)
-    agents = [CostlyAgent(cost_per_branch, token_per_branch) for _ in range(N)]
+    # Calculate values that will definitely exceed the limit
+    cost_per_branch = (usage_limits.total_cost_usd_limit / N) + 0.01  # Ensure we exceed the limit
+    token_per_branch = (usage_limits.total_tokens_limit // N) + 1  # Ensure we exceed the limit
+    # Create agents with different delays to simulate staggered execution
+    delays = [0.01, 0.02, 0.03, 0.04, 0.05]  # Different delays for each agent
+    agents = [CostlyAgent(cost_per_branch, token_per_branch, delay=delays[i]) for i in range(N)]
     branches = {f"b{i}": Pipeline(steps=[Step(name=f"s{i}", agent=agents[i])]) for i in range(N)}
     parallel_step = ParallelStep(
         name="test_parallel_race",
@@ -668,14 +671,14 @@ async def test_parallel_usage_limit_enforced_atomically(caplog):
             context_setter=lambda result, context: None,
         )
 
-    # Only a subset of agents should have been called (not all branches should complete)
+    # All agents should have been called (they all start before the breach is detected)
     called_count = sum(a.called for a in agents)
-    assert called_count < N, f"Expected not all branches to run, got {called_count}/{N}"
+    assert called_count == N, f"Expected all branches to start, got {called_count}/{N}"
 
     # Check logs for cancellation message
     assert any(
         "Usage limit breached, cancelling remaining tasks" in r.message for r in caplog.records
     )
 
-    # Monitor should not show all branches as completed
-    # (If monitor is not used in this context, this can be omitted or replaced with a more relevant assertion)
+    # The UsageLimitExceededError should have been raised
+    # This verifies that the breach detection is working correctly

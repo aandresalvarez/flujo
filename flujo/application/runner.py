@@ -212,9 +212,12 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         self.pipeline: Pipeline[RunnerInT, RunnerOutT] | None = pipeline
         self.registry = registry
         if pipeline_name is None:
-            pipeline_name = f"unnamed_{uuid.uuid4()}"
+            from datetime import datetime
+
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            pipeline_name = f"unnamed_{timestamp}"
             warnings.warn(
-                "pipeline_name was not provided. Generated unique name: {}. This is discouraged for production runs.".format(
+                "pipeline_name was not provided. Generated name based on timestamp: {}. This is discouraged for production runs.".format(
                     pipeline_name
                 ),
                 UserWarning,
