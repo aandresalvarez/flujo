@@ -17,6 +17,7 @@ T = TypeVar("T", bound=BaseModel)
 
 # Cache for excluded fields to avoid repeated environment variable access
 _EXCLUDED_FIELDS_CACHE: Optional[set[str]] = None
+_ENV_EXCLUDED_FIELDS_CACHE: Optional[str] = None
 
 
 def get_excluded_fields() -> set[str]:
@@ -44,6 +45,13 @@ def get_excluded_fields() -> set[str]:
     # For simplicity, this example uses an environment variable.
     import os
 
+    # Cache the environment variable value to prevent repeated access
+    global _ENV_EXCLUDED_FIELDS_CACHE
+    if _ENV_EXCLUDED_FIELDS_CACHE is None:
+        _ENV_EXCLUDED_FIELDS_CACHE = os.getenv("EXCLUDED_FIELDS", "")
+
+    excluded_fields = _ENV_EXCLUDED_FIELDS_CACHE
+
     # Whitelist of allowed field names for security
     ALLOWED_EXCLUDED_FIELDS = {
         "command_log",
@@ -63,7 +71,6 @@ def get_excluded_fields() -> set[str]:
     # Maximum allowed length for field names to prevent abuse
     MAX_FIELD_NAME_LENGTH = 50
 
-    excluded_fields = os.getenv("EXCLUDED_FIELDS", "")
     if excluded_fields:
         # Validate and sanitize the field names against whitelist
         sanitized_fields = set()

@@ -250,9 +250,9 @@ def _get_sorted_keys(dictionary: dict[Any, Any]) -> list[Any]:
     """Get sorted keys from a dictionary for deterministic cache key generation.
 
     This function optimizes the sorting operation for dictionary keys by:
-    1. Using a more efficient sorting strategy
-    2. Caching the sorted keys when possible
-    3. Providing deterministic ordering for cache key generation
+    1. Using a more efficient sorting strategy for different dictionary sizes
+    2. Providing deterministic ordering for cache key generation
+    3. Optimized for small dictionaries (≤10 keys) vs large dictionaries
     """
     # For small dictionaries, direct sorting is efficient
     if len(dictionary) <= 10:

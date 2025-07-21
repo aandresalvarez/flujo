@@ -383,7 +383,9 @@ def problematic_function():
     # This code has issues that might cause analysis failures
     # SECURITY RISK: eval() is dangerous and should never be used in production
     # This is intentionally dangerous code for security testing purposes only
-    result = eval("2 + 2")  # Dangerous eval - Only for security testing
+    # DEMONSTRATION: This shows what NOT to do in production
+    # In production, use ast.literal_eval() or proper input validation instead
+    result = eval("2 + 2")  # DANGEROUS: Only for security testing demonstration
     # E2E test: Use State Backend for persistent recording
     # WARNING: This test intentionally demonstrates dangerous eval() usage for security testing
     # This code uses eval, which is dangerous and can lead to security vulnerabilities.
