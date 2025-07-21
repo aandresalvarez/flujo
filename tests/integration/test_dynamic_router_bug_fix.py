@@ -186,3 +186,53 @@ async def test_dynamic_router_context_preservation_on_failure():
 
     # Verify step failed
     assert not all(step.success for step in result.step_history)
+
+
+@pytest.mark.asyncio
+async def test_dynamic_router_no_context_requirement():
+    """Test that router agents without context requirements still work correctly."""
+
+    class NoContextRouterAgent:
+        """Router agent that doesn't require context parameter."""
+
+        async def run(self, data: str) -> List[str]:
+            # This agent doesn't need context, testing backward compatibility
+            if "billing" in data.lower():
+                return ["billing"]
+            return ["support"]
+
+    class NoContextBillingAgent:
+        """Billing agent that doesn't require context parameter."""
+
+        async def run(self, data: str) -> Dict[str, Any]:
+            return {"billing_result": f"billing:{data}"}
+
+    class NoContextSupportAgent:
+        """Support agent that doesn't require context parameter."""
+
+        async def run(self, data: str) -> Dict[str, Any]:
+            return {"support_result": f"support:{data}"}
+
+    router = Step.dynamic_parallel_branch(
+        name="dynamic_router",
+        router_agent=NoContextRouterAgent(),
+        branches={
+            "billing": Pipeline.from_step(
+                Step.from_callable(NoContextBillingAgent().run, name="billing")
+            ),
+            "support": Pipeline.from_step(
+                Step.from_callable(NoContextSupportAgent().run, name="support")
+            ),
+        },
+        merge_strategy=MergeStrategy.CONTEXT_UPDATE,
+    )
+
+    runner = Flujo(router, context_model=TestContext)
+    result = await gather_result(runner, "Need billing info")
+
+    # Verify the step executed successfully without context requirements
+    assert result.step_history[0].success
+
+    # Verify billing branch was executed (based on input)
+    # Note: PipelineResult doesn't have an 'output' attribute
+    # The step succeeded, which means the router agent worked without context

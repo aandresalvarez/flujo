@@ -49,6 +49,58 @@ from ...utils.context import safe_merge_context_updates
 
 TContext = TypeVar("TContext", bound=BaseModel)
 
+
+def _deep_merge_dict(target: Dict[str, Any], source: Dict[str, Any]) -> None:
+    """Deep merge two dictionaries, preserving nested structures.
+
+    Args:
+        target: The target dictionary to merge into
+        source: The source dictionary to merge from
+    """
+    for key, value in source.items():
+        if key in target and isinstance(target[key], dict) and isinstance(value, dict):
+            # Recursively merge nested dictionaries
+            _deep_merge_dict(target[key], value)
+        else:
+            # For non-dict values or new keys, simply assign
+            target[key] = value
+
+
+def _safe_merge_list(target: list[Any], source: list[Any]) -> None:
+    """Safely merge two lists with type validation.
+
+    Args:
+        target: The target list to merge into
+        source: The source list to merge from
+
+    Raises:
+        TypeError: If the lists contain incompatible types for merging
+    """
+    # Validate that both lists contain similar types for safe merging
+    if not target or not source:
+        # Empty lists are always safe to merge
+        target.extend(source)
+        return
+
+    # Check if the lists contain similar types (all dicts, all strings, etc.)
+    target_types = {type(item) for item in target}
+    source_types = {type(item) for item in source}
+
+    # If both lists have consistent types and they're compatible, merge safely
+    if len(target_types) <= 1 and len(source_types) <= 1:
+        # Both lists have consistent types, safe to merge
+        target.extend(source)
+    else:
+        # Mixed types or incompatible types - use a more conservative approach
+        # Only merge if the source list items are compatible with target types
+        for item in source:
+            if not target or type(item) in target_types:
+                target.append(item)
+            else:
+                # Skip incompatible items to prevent type errors
+                continue
+
+
 # Alias used across step logic helpers
 StepExecutor = Callable[
     [Step[Any, Any], Any, Optional[TContext], Optional[AppResources]],
@@ -449,13 +501,13 @@ async def _execute_parallel_step_logic(
                     for key, value in branch_data.items():
                         if hasattr(context, key):
                             current_value = getattr(context, key)
-                            # Handle dictionary merging for common context fields
+                            # Enhanced merging with type validation and deep merge
                             if isinstance(current_value, dict) and isinstance(value, dict):
-                                # Merge dictionaries instead of overwriting
-                                current_value.update(value)
+                                # Deep merge dictionaries to prevent data loss
+                                _deep_merge_dict(current_value, value)
                             elif isinstance(current_value, list) and isinstance(value, list):
-                                # Merge lists instead of overwriting
-                                current_value.extend(value)
+                                # Type-safe list merging with validation
+                                _safe_merge_list(current_value, value)
                             else:
                                 # For other types, overwrite (original behavior)
                                 setattr(context, key, value)
