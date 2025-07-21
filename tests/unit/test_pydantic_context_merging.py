@@ -47,8 +47,6 @@ class TestContextWithComputedFields(BaseModel):
         """Post-init hook to track validation."""
         self.validation_count += 1
 
-    # Removed the custom __init__ method as validation counting is handled in model_post_init.
-
 
 class TestContextWithComplexEquality(BaseModel):
     """Test context with complex objects that may fail equality comparison."""

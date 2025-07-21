@@ -5,6 +5,7 @@ import hashlib
 import json
 import logging
 from pydantic import Field
+from flujo.utils.hash import stable_digest
 
 from flujo.domain.dsl import Step
 from flujo.caching import CacheBackend, InMemoryCache
@@ -463,8 +464,6 @@ def _generate_cache_key(
             digest = hashlib.sha256(serialized).hexdigest()
         except Exception:
             # Final fallback: use stable hashing helper (pickle-free)
-            from flujo.utils.hash import stable_digest
-
             try:
                 digest = stable_digest(payload)
             except Exception as e:

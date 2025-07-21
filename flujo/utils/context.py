@@ -62,7 +62,7 @@ def get_excluded_fields() -> set[str]:
         "operation_count",
         "cache_timestamps",
         "cache_keys",
-        "scratchpad",
+        "scratchpad",  # Temporary storage for intermediate computation results
         "hitl_history",
         "run_id",
         "initial_prompt",

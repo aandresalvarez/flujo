@@ -27,12 +27,12 @@ __all__ = ["stable_digest", "hash_bytes"]
 _MAX_DEPTH = 10  # Prevent runaway recursion
 
 
-def _update_with_separator(hasher: "hashlib._Hash", sep: str) -> None:
+def _update_with_separator(hasher: hashlib._Hash, sep: str) -> None:
     """Feed a separator string into the hasher (as UTF-8)."""
     hasher.update(sep.encode())
 
 
-def _hash_obj(obj: Any, hasher: "hashlib._Hash", visited: Set[int], depth: int) -> None:
+def _hash_obj(obj: Any, hasher: hashlib._Hash, visited: Set[int], depth: int) -> None:
     """Recursively update *hasher* with a deterministic representation of *obj*."""
     if depth > _MAX_DEPTH:
         hasher.update(b"<max_depth>")
