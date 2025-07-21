@@ -88,16 +88,33 @@ def _safe_merge_list(target: list[Any], source: list[Any]) -> None:
 
     # If both lists have consistent types and they're compatible, merge safely
     if len(target_types) <= 1 and len(source_types) <= 1:
-        # Both lists have consistent types, safe to merge
-        target.extend(source)
+        # Check if the types are compatible for merging
+        if not target_types or not source_types or target_types == source_types:
+            # Both lists have consistent types, safe to merge
+            target.extend(source)
+        else:
+            # Types are consistent but incompatible - skip merging
+            # This prevents mixing int and str, for example
+            return
     else:
-        # Mixed types or incompatible types - use a more conservative approach
+        # Mixed types - use a more conservative approach
         # Only merge if the source list items are compatible with target types
         for item in source:
-            if not target or type(item) in target_types:
+            if not target:
+                # Empty target, add first item and update target_types
+                target.append(item)
+                target_types = {type(item)}
+            elif type(item) in target_types:
+                # Item is compatible with existing target types
                 target.append(item)
             else:
                 # Skip incompatible items to prevent type errors
+                # Log a warning for debugging
+                import logging
+
+                logging.warning(
+                    f"Skipped incompatible item of type {type(item)} during list merging."
+                )
                 continue
 
 

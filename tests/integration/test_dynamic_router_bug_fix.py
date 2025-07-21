@@ -234,5 +234,5 @@ async def test_dynamic_router_no_context_requirement():
     assert result.step_history[0].success
 
     # Verify billing branch was executed (based on input)
-    # Note: PipelineResult doesn't have an 'output' attribute
     # The step succeeded, which means the router agent worked without context
+    # Output data can be accessed via result.step_history[0].output if needed
