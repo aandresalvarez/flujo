@@ -60,15 +60,36 @@ def get_excluded_fields() -> set[str]:
         "initial_prompt",
     }
 
+    # Maximum allowed length for field names to prevent abuse
+    MAX_FIELD_NAME_LENGTH = 50
+
     excluded_fields = os.getenv("EXCLUDED_FIELDS", "")
     if excluded_fields:
         # Validate and sanitize the field names against whitelist
         sanitized_fields = set()
         for field in excluded_fields.split(","):
             field = field.strip()
-            if field and field in ALLOWED_EXCLUDED_FIELDS:
+
+            # Skip empty entries
+            if not field:
+                continue
+
+            # Enforce maximum length to mitigate potential DoS attacks with huge env vars
+            if len(field) > MAX_FIELD_NAME_LENGTH:
+                logger.warning(
+                    f"Field '{field}' exceeds maximum length of {MAX_FIELD_NAME_LENGTH}. Skipping."
+                )
+                continue
+
+            # Ensure field is a valid Python identifier (alphanumeric + underscores, no leading digits)
+            if not field.isidentifier():
+                logger.warning(f"Field '{field}' contains invalid characters. Skipping.")
+                continue
+
+            # Whitelist validation
+            if field in ALLOWED_EXCLUDED_FIELDS:
                 sanitized_fields.add(field)
-            elif field:
+            else:
                 logger.warning(
                     f"Field '{field}' from EXCLUDED_FIELDS environment variable is not in allowed whitelist. Skipping."
                 )

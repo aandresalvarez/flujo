@@ -5,6 +5,7 @@ import hashlib
 import pickle  # nosec B403 - Used for fallback serialization of complex objects in cache keys
 import json
 import logging
+import os  # Added for environment variable configuration
 from pydantic import Field
 
 from flujo.domain.dsl import Step
@@ -463,8 +464,16 @@ def _generate_cache_key(
             serialized = json.dumps(safe_payload, sort_keys=True).encode()
             digest = hashlib.sha256(serialized).hexdigest()
         except Exception:
-            # Final fallback: use pickle for complex objects
+            # Final fallback: optionally use pickle for complex objects
             try:
+                allow_pickle = os.getenv("ALLOW_PICKLE_CACHE", "0") == "1"
+                if not allow_pickle:
+                    logging.warning(
+                        "Pickle serialization for cache key is disabled by default for security reasons. "
+                        "Set ALLOW_PICKLE_CACHE=1 to enable."
+                    )
+                    return None
+
                 serialized = pickle.dumps(payload)  # nosec B403 - Fallback serialization for cache keys
                 digest = hashlib.sha256(serialized).hexdigest()
             except Exception:

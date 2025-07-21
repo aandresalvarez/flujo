@@ -6,6 +6,7 @@ which could reveal bugs in cache key generation and context state management.
 """
 
 import pytest
+import asyncio
 import time
 from typing import Any, Dict, List
 from flujo import Flujo, step, Step
@@ -35,8 +36,8 @@ async def cache_aware_step(data: Any, *, context: CacheContext) -> Dict[str, Any
     context.current_operation = f"cached_operation_{data}"
     context.processing_history.append(f"processed_{data}")
 
-    # Simulate expensive computation
-    time.sleep(0.01)
+    # Simulate expensive computation without blocking the event loop
+    await asyncio.sleep(0.01)
 
     return {
         "operation_count": context.operation_count,
