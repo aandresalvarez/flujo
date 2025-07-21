@@ -448,7 +448,17 @@ async def _execute_parallel_step_logic(
                     # Default behavior: merge all fields that exist in the context
                     for key, value in branch_data.items():
                         if hasattr(context, key):
-                            setattr(context, key, value)
+                            current_value = getattr(context, key)
+                            # Handle dictionary merging for common context fields
+                            if isinstance(current_value, dict) and isinstance(value, dict):
+                                # Merge dictionaries instead of overwriting
+                                current_value.update(value)
+                            elif isinstance(current_value, list) and isinstance(value, list):
+                                # Merge lists instead of overwriting
+                                current_value.extend(value)
+                            else:
+                                # For other types, overwrite (original behavior)
+                                setattr(context, key, value)
             elif parallel_step.merge_strategy == MergeStrategy.MERGE_SCRATCHPAD and hasattr(
                 branch_ctx, "scratchpad"
             ):
@@ -895,14 +905,18 @@ async def _execute_dynamic_router_step_logic(
         spec = analyze_signature(func)
 
         router_kwargs: Dict[str, Any] = {}
+
+        # Handle context parameter passing - follow the same pattern as regular step logic
         if spec.needs_context:
             if context is None:
                 raise TypeError(
-                    "Router agent requires a context but none was provided to the runner."
+                    f"Router agent in step '{router_step.name}' requires a context, but no context model was provided to the Flujo runner."
                 )
+            router_kwargs["context"] = context
         elif _should_pass_context(spec, context, func):
             router_kwargs["context"] = context
 
+        # Handle resources parameter passing
         if resources is not None:
             if _accepts_param(func, "resources"):
                 router_kwargs["resources"] = resources
