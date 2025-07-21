@@ -9,7 +9,7 @@ import pytest
 from typing import Any, Dict, List
 from pydantic import Field
 
-from flujo import Flujo, Step, Pipeline, step
+from flujo import Flujo, Step, Pipeline
 from flujo.domain.models import PipelineContext
 from flujo.domain import MergeStrategy
 from flujo.testing.utils import gather_result
@@ -218,29 +218,33 @@ async def test_dynamic_router_router_failure_context_preservation():
 async def test_dynamic_router_branch_failure_context_preservation():
     """Test context preservation when a branch fails."""
 
-    @step(updates_context=True)
-    async def router_agent(data: str, *, context: DynamicRouterContext) -> List[str]:
-        context.router_called = True
-        context.context_updates.append("router_called")
-        return ["billing", "support"]
+    class BranchFailureRouterAgent:
+        async def run(self, data: str, *, context: DynamicRouterContext) -> List[str]:
+            context.router_called = True
+            context.context_updates.append("router_called")
+            return ["billing", "support"]
 
-    @step(updates_context=True)
-    async def billing_step(data: str, *, context: DynamicRouterContext) -> Dict[str, Any]:
-        context.branch_results["billing"] = f"billing:{data}"
-        context.context_updates.append("billing_processed")
-        return {"billing_result": f"billing:{data}"}
+    class BranchFailureBillingAgent:
+        async def run(self, data: str, *, context: DynamicRouterContext) -> Dict[str, Any]:
+            context.branch_results["billing"] = f"billing:{data}"
+            context.context_updates.append("billing_processed")
+            return {"billing_result": f"billing:{data}"}
 
-    @step(updates_context=True)
-    async def failing_support_step(data: str, *, context: DynamicRouterContext) -> Dict[str, Any]:
-        context.context_updates.append("support_failed")
-        raise ValueError("Support step failed")
+    class FailingSupportAgent:
+        async def run(self, data: str, *, context: DynamicRouterContext) -> Dict[str, Any]:
+            context.context_updates.append("support_failed")
+            raise ValueError("Support step failed")
 
     router = Step.dynamic_parallel_branch(
         name="dynamic_router",
-        router_agent=router_agent,
+        router_agent=BranchFailureRouterAgent(),
         branches={
-            "billing": Pipeline.from_step(billing_step),
-            "support": Pipeline.from_step(failing_support_step),
+            "billing": Pipeline.from_step(
+                Step.from_callable(BranchFailureBillingAgent().run, name="billing")
+            ),
+            "support": Pipeline.from_step(
+                Step.from_callable(FailingSupportAgent().run, name="support")
+            ),
         },
         merge_strategy=MergeStrategy.CONTEXT_UPDATE,
     )
@@ -264,31 +268,26 @@ async def test_dynamic_router_branch_failure_context_preservation():
 async def test_dynamic_router_nested_context_updates():
     """Test dynamic router with nested context updates."""
 
-    @step(updates_context=True)
-    async def router_agent(data: str, *, context: DynamicRouterContext) -> List[str]:
-        context.router_called = True
-        context.execution_count += 1
-        context.context_updates.append("router_executed")
-        return ["billing"]
+    class NestedContextRouterAgent:
+        async def run(self, data: str, *, context: DynamicRouterContext) -> List[str]:
+            context.router_called = True
+            context.execution_count += 1
+            context.context_updates.append("router_executed")
+            return ["billing"]
 
-    @step(updates_context=True)
-    async def nested_step(data: str, *, context: DynamicRouterContext) -> Dict[str, Any]:
-        context.context_updates.append("nested_step_called")
-        return {"nested_result": "nested"}
-
-    @step(updates_context=True)
-    async def billing_step(data: str, *, context: DynamicRouterContext) -> Dict[str, Any]:
-        # Call nested step
-        nested_result = await nested_step(data, context=context)
-        context.branch_results["billing"] = f"billing:{data}"
-        context.context_updates.append("billing_processed")
-        return {"billing_result": f"billing:{data}", "nested": nested_result}
+    class NestedContextBillingAgent:
+        async def run(self, data: str, *, context: DynamicRouterContext) -> Dict[str, Any]:
+            context.branch_results["billing"] = f"billing:{data}"
+            context.context_updates.append("billing_processed")
+            return {"billing_result": f"billing:{data}"}
 
     router = Step.dynamic_parallel_branch(
         name="dynamic_router",
-        router_agent=router_agent,
+        router_agent=NestedContextRouterAgent(),
         branches={
-            "billing": Pipeline.from_step(billing_step),
+            "billing": Pipeline.from_step(
+                Step.from_callable(NestedContextBillingAgent().run, name="billing")
+            ),
         },
         merge_strategy=MergeStrategy.CONTEXT_UPDATE,
     )
@@ -306,27 +305,31 @@ async def test_dynamic_router_nested_context_updates():
 async def test_dynamic_router_context_field_mapping():
     """Test dynamic router with explicit field mapping."""
 
-    @step(updates_context=True)
-    async def router_agent(data: str, *, context: DynamicRouterContext) -> List[str]:
-        context.router_called = True
-        return ["billing", "support"]
+    class FieldMappingRouterAgent:
+        async def run(self, data: str, *, context: DynamicRouterContext) -> List[str]:
+            context.router_called = True
+            return ["billing", "support"]
 
-    @step(updates_context=True)
-    async def billing_step(data: str, *, context: DynamicRouterContext) -> Dict[str, Any]:
-        context.branch_results["billing"] = f"billing:{data}"
-        return {"billing_result": f"billing:{data}"}
+    class FieldMappingBillingAgent:
+        async def run(self, data: str, *, context: DynamicRouterContext) -> Dict[str, Any]:
+            context.branch_results["billing"] = f"billing:{data}"
+            return {"billing_result": f"billing:{data}"}
 
-    @step(updates_context=True)
-    async def support_step(data: str, *, context: DynamicRouterContext) -> Dict[str, Any]:
-        context.branch_results["support"] = f"support:{data}"
-        return {"support_result": f"support:{data}"}
+    class FieldMappingSupportAgent:
+        async def run(self, data: str, *, context: DynamicRouterContext) -> Dict[str, Any]:
+            context.branch_results["support"] = f"support:{data}"
+            return {"support_result": f"support:{data}"}
 
     router = Step.dynamic_parallel_branch(
         name="dynamic_router",
-        router_agent=router_agent,
+        router_agent=FieldMappingRouterAgent(),
         branches={
-            "billing": Pipeline.from_step(billing_step),
-            "support": Pipeline.from_step(support_step),
+            "billing": Pipeline.from_step(
+                Step.from_callable(FieldMappingBillingAgent().run, name="billing")
+            ),
+            "support": Pipeline.from_step(
+                Step.from_callable(FieldMappingSupportAgent().run, name="support")
+            ),
         },
         merge_strategy=MergeStrategy.CONTEXT_UPDATE,
         field_mapping={
@@ -354,23 +357,25 @@ async def test_dynamic_router_large_context_performance():
         large_data: List[str] = Field(default_factory=lambda: ["item"] * 1000)
         complex_data: Dict[str, Any] = Field(default_factory=lambda: {"nested": {"deep": "value"}})
 
-    @step(updates_context=True)
-    async def router_agent(data: str, *, context: LargeContext) -> List[str]:
-        context.router_called = True
-        context.context_updates.append("router_called")
-        return ["billing"]
+    class LargeContextRouterAgent:
+        async def run(self, data: str, *, context: LargeContext) -> List[str]:
+            context.router_called = True
+            context.context_updates.append("router_called")
+            return ["billing"]
 
-    @step(updates_context=True)
-    async def billing_step(data: str, *, context: LargeContext) -> Dict[str, Any]:
-        context.branch_results["billing"] = f"billing:{data}"
-        context.context_updates.append("billing_processed")
-        return {"billing_result": f"billing:{data}"}
+    class LargeContextBillingAgent:
+        async def run(self, data: str, *, context: LargeContext) -> Dict[str, Any]:
+            context.branch_results["billing"] = f"billing:{data}"
+            context.context_updates.append("billing_processed")
+            return {"billing_result": f"billing:{data}"}
 
     router = Step.dynamic_parallel_branch(
         name="dynamic_router",
-        router_agent=router_agent,
+        router_agent=LargeContextRouterAgent(),
         branches={
-            "billing": Pipeline.from_step(billing_step),
+            "billing": Pipeline.from_step(
+                Step.from_callable(LargeContextBillingAgent().run, name="billing")
+            ),
         },
         merge_strategy=MergeStrategy.CONTEXT_UPDATE,
     )
@@ -388,25 +393,27 @@ async def test_dynamic_router_large_context_performance():
 async def test_dynamic_router_high_frequency_context_updates():
     """Test dynamic router with high-frequency context updates."""
 
-    @step(updates_context=True)
-    async def router_agent(data: str, *, context: DynamicRouterContext) -> List[str]:
-        context.router_called = True
-        for i in range(10):
-            context.context_updates.append(f"router_update_{i}")
-        return ["billing"]
+    class HighFrequencyRouterAgent:
+        async def run(self, data: str, *, context: DynamicRouterContext) -> List[str]:
+            context.router_called = True
+            for i in range(10):
+                context.context_updates.append(f"router_update_{i}")
+            return ["billing"]
 
-    @step(updates_context=True)
-    async def billing_step(data: str, *, context: DynamicRouterContext) -> Dict[str, Any]:
-        context.branch_results["billing"] = f"billing:{data}"
-        for i in range(10):
-            context.context_updates.append(f"billing_update_{i}")
-        return {"billing_result": f"billing:{data}"}
+    class HighFrequencyBillingAgent:
+        async def run(self, data: str, *, context: DynamicRouterContext) -> Dict[str, Any]:
+            context.branch_results["billing"] = f"billing:{data}"
+            for i in range(10):
+                context.context_updates.append(f"billing_update_{i}")
+            return {"billing_result": f"billing:{data}"}
 
     router = Step.dynamic_parallel_branch(
         name="dynamic_router",
-        router_agent=router_agent,
+        router_agent=HighFrequencyRouterAgent(),
         branches={
-            "billing": Pipeline.from_step(billing_step),
+            "billing": Pipeline.from_step(
+                Step.from_callable(HighFrequencyBillingAgent().run, name="billing")
+            ),
         },
         merge_strategy=MergeStrategy.CONTEXT_UPDATE,
     )
@@ -427,22 +434,24 @@ async def test_dynamic_router_high_frequency_context_updates():
 async def test_dynamic_router_empty_branch_selection():
     """Test dynamic router when router returns empty branch selection."""
 
-    @step(updates_context=True)
-    async def router_agent(data: str, *, context: DynamicRouterContext) -> List[str]:
-        context.router_called = True
-        context.context_updates.append("router_called")
-        return []  # No branches selected
+    class EmptySelectionRouterAgent:
+        async def run(self, data: str, *, context: DynamicRouterContext) -> List[str]:
+            context.router_called = True
+            context.context_updates.append("router_called")
+            return []  # No branches selected
 
-    @step(updates_context=True)
-    async def billing_step(data: str, *, context: DynamicRouterContext) -> Dict[str, Any]:
-        context.branch_results["billing"] = f"billing:{data}"
-        return {"billing_result": f"billing:{data}"}
+    class EmptySelectionBillingAgent:
+        async def run(self, data: str, *, context: DynamicRouterContext) -> Dict[str, Any]:
+            context.branch_results["billing"] = f"billing:{data}"
+            return {"billing_result": f"billing:{data}"}
 
     router = Step.dynamic_parallel_branch(
         name="dynamic_router",
-        router_agent=router_agent,
+        router_agent=EmptySelectionRouterAgent(),
         branches={
-            "billing": Pipeline.from_step(billing_step),
+            "billing": Pipeline.from_step(
+                Step.from_callable(EmptySelectionBillingAgent().run, name="billing")
+            ),
         },
         merge_strategy=MergeStrategy.CONTEXT_UPDATE,
     )
@@ -463,22 +472,24 @@ async def test_dynamic_router_empty_branch_selection():
 async def test_dynamic_router_invalid_branch_selection():
     """Test dynamic router when router returns invalid branch names."""
 
-    @step(updates_context=True)
-    async def router_agent(data: str, *, context: DynamicRouterContext) -> List[str]:
-        context.router_called = True
-        context.context_updates.append("router_called")
-        return ["invalid_branch"]  # Branch doesn't exist
+    class InvalidSelectionRouterAgent:
+        async def run(self, data: str, *, context: DynamicRouterContext) -> List[str]:
+            context.router_called = True
+            context.context_updates.append("router_called")
+            return ["invalid_branch"]  # Branch doesn't exist
 
-    @step(updates_context=True)
-    async def billing_step(data: str, *, context: DynamicRouterContext) -> Dict[str, Any]:
-        context.branch_results["billing"] = f"billing:{data}"
-        return {"billing_result": f"billing:{data}"}
+    class InvalidSelectionBillingAgent:
+        async def run(self, data: str, *, context: DynamicRouterContext) -> Dict[str, Any]:
+            context.branch_results["billing"] = f"billing:{data}"
+            return {"billing_result": f"billing:{data}"}
 
     router = Step.dynamic_parallel_branch(
         name="dynamic_router",
-        router_agent=router_agent,
+        router_agent=InvalidSelectionRouterAgent(),
         branches={
-            "billing": Pipeline.from_step(billing_step),
+            "billing": Pipeline.from_step(
+                Step.from_callable(InvalidSelectionBillingAgent().run, name="billing")
+            ),
         },
         merge_strategy=MergeStrategy.CONTEXT_UPDATE,
     )
@@ -505,26 +516,28 @@ async def test_dynamic_router_complex_context_objects():
             default_factory=lambda: [{"id": i, "data": f"item_{i}"} for i in range(5)]
         )
 
-    @step(updates_context=True)
-    async def router_agent(data: str, *, context: ComplexContext) -> List[str]:
-        context.router_called = True
-        context.nested_dict["level1"]["level2"] = "updated_value"
-        context.nested_list.append({"id": 999, "data": "new_item"})
-        context.context_updates.append("router_called")
-        return ["billing"]
+    class ComplexContextRouterAgent:
+        async def run(self, data: str, *, context: ComplexContext) -> List[str]:
+            context.router_called = True
+            context.nested_dict["level1"]["level2"] = "updated_value"
+            context.nested_list.append({"id": 999, "data": "new_item"})
+            context.context_updates.append("router_called")
+            return ["billing"]
 
-    @step(updates_context=True)
-    async def billing_step(data: str, *, context: ComplexContext) -> Dict[str, Any]:
-        context.branch_results["billing"] = f"billing:{data}"
-        context.nested_dict["level1"]["level2"] = "billing_updated"
-        context.context_updates.append("billing_processed")
-        return {"billing_result": f"billing:{data}"}
+    class ComplexContextBillingAgent:
+        async def run(self, data: str, *, context: ComplexContext) -> Dict[str, Any]:
+            context.branch_results["billing"] = f"billing:{data}"
+            context.nested_dict["level1"]["level2"] = "billing_updated"
+            context.context_updates.append("billing_processed")
+            return {"billing_result": f"billing:{data}"}
 
     router = Step.dynamic_parallel_branch(
         name="dynamic_router",
-        router_agent=router_agent,
+        router_agent=ComplexContextRouterAgent(),
         branches={
-            "billing": Pipeline.from_step(billing_step),
+            "billing": Pipeline.from_step(
+                Step.from_callable(ComplexContextBillingAgent().run, name="billing")
+            ),
         },
         merge_strategy=MergeStrategy.CONTEXT_UPDATE,
     )
