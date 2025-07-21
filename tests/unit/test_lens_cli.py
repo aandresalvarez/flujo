@@ -21,10 +21,12 @@ def test_lens_commands(tmp_path: Path, monkeypatch) -> None:
         backend.save_run_start(
             {
                 "run_id": "r1",
+                "pipeline_id": "test-pid-1",
                 "pipeline_name": "p",
                 "pipeline_version": "v",
                 "status": "running",
-                "start_time": datetime.utcnow(),
+                "created_at": datetime.utcnow().isoformat(),
+                "updated_at": datetime.utcnow().isoformat(),
             }
         )
     )
@@ -66,10 +68,12 @@ def test_lens_commands_with_filters(tmp_path: Path) -> None:
             backend.save_run_start(
                 {
                     "run_id": run_id,
+                    "pipeline_id": f"test-pid-{run_id}",
                     "pipeline_name": f"pipeline_{i}",
                     "pipeline_version": "1.0",
                     "status": "running",
-                    "start_time": datetime.utcnow(),
+                    "created_at": datetime.utcnow().isoformat(),
+                    "updated_at": datetime.utcnow().isoformat(),
                 }
             )
         )
@@ -111,10 +115,12 @@ def test_lens_show_detailed_run(tmp_path: Path) -> None:
         backend.save_run_start(
             {
                 "run_id": run_id,
+                "pipeline_id": f"test-pid-{run_id}",
                 "pipeline_name": "test_pipeline",
                 "pipeline_version": "1.0",
                 "status": "running",
-                "start_time": datetime.utcnow(),
+                "created_at": datetime.utcnow().isoformat(),
+                "updated_at": datetime.utcnow().isoformat(),
             }
         )
     )
@@ -204,10 +210,12 @@ def test_lens_commands_with_failed_run(tmp_path: Path) -> None:
         backend.save_run_start(
             {
                 "run_id": run_id,
+                "pipeline_id": f"test-pid-{run_id}",
                 "pipeline_name": "failing_pipeline",
                 "pipeline_version": "1.0",
                 "status": "running",
-                "start_time": datetime.utcnow(),
+                "created_at": datetime.utcnow().isoformat(),
+                "updated_at": datetime.utcnow().isoformat(),
             }
         )
     )
@@ -272,10 +280,12 @@ def test_lens_commands_with_environment_configuration(tmp_path: Path) -> None:
         backend.save_run_start(
             {
                 "run_id": "env_test_run",
+                "pipeline_id": "test-pid-env",
                 "pipeline_name": "env_test",
                 "pipeline_version": "1.0",
                 "status": "running",
-                "start_time": datetime.utcnow(),
+                "created_at": datetime.utcnow().isoformat(),
+                "updated_at": datetime.utcnow().isoformat(),
             }
         )
     )

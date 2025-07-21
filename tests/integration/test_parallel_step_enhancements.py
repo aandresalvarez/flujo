@@ -30,7 +30,17 @@ class CostlyAgent:
         self.tokens = tokens
         self.delay = delay
 
-    async def run(self, data: Any) -> Any:
+    async def run(self, data: Any, *, breach_event=None) -> Any:
+        # Check for breach event to support proactive cancellation
+        if breach_event is not None and breach_event.is_set():
+            # Early exit if breach detected
+            class Output(BaseModel):
+                value: Any
+                cost_usd: float = 0.0
+                token_counts: int = 0
+
+            return Output(value=data)
+
         await asyncio.sleep(self.delay)  # Simulate expensive operation
 
         class Output(BaseModel):

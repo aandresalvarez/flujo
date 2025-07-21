@@ -393,7 +393,7 @@ class TestFallbackLoopDetection:
         step_b.fallback(step_a)
 
         # Recursive step executor to simulate fallback recursion
-        async def recursive_step_executor(step, data, context, resources):
+        async def recursive_step_executor(step, data, context, resources, breach_event=None):
             # Always fail, triggering fallback if present
             if step.fallback_step:
                 # Simulate the fallback recursion

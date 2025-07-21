@@ -320,10 +320,13 @@ class SQLiteBackend(StateBackend):
                     """
                     CREATE TABLE IF NOT EXISTS runs (
                         run_id TEXT PRIMARY KEY,
+                        pipeline_id TEXT NOT NULL,
                         pipeline_name TEXT NOT NULL,
                         pipeline_version TEXT NOT NULL,
                         status TEXT NOT NULL,
-                        start_time TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        start_time TEXT,
                         end_time TEXT,
                         total_cost REAL,
                         final_context_blob TEXT
@@ -1066,18 +1069,35 @@ class SQLiteBackend(StateBackend):
 
             async def _save() -> None:
                 async with aiosqlite.connect(self.db_path) as db:
+                    now = (
+                        run_data.get("created_at")
+                        or run_data.get("start_time")
+                        or datetime.utcnow().isoformat()
+                    )
+                    created_at = now
+                    updated_at = run_data.get("updated_at") or now
+                    start_time = run_data.get("start_time") or created_at
+                    end_time = run_data.get("end_time")
+                    total_cost = run_data.get("total_cost")
+                    final_context_blob = run_data.get("final_context_blob")
                     await db.execute(
                         """
                         INSERT OR REPLACE INTO runs (
-                            run_id, pipeline_name, pipeline_version, status, start_time
-                        ) VALUES (?, ?, ?, ?, ?)
+                            run_id, pipeline_id, pipeline_name, pipeline_version, status, created_at, updated_at, start_time, end_time, total_cost, final_context_blob
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             run_data["run_id"],
+                            run_data["pipeline_id"],
                             run_data.get("pipeline_name", "unknown"),
                             run_data.get("pipeline_version", "latest"),
                             run_data.get("status", "running"),
-                            run_data.get("start_time", datetime.utcnow()).isoformat(),
+                            created_at,
+                            updated_at,
+                            start_time,
+                            end_time,
+                            total_cost,
+                            final_context_blob,
                         ),
                     )
                     await db.commit()

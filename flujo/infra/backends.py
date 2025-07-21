@@ -36,5 +36,6 @@ class LocalBackend(ExecutionBackend):
                 usage_limits=request.usage_limits,
                 stream=request.stream,
                 on_chunk=request.on_chunk,
+                breach_event=request.breach_event,
             ),
         )

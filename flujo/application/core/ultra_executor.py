@@ -346,6 +346,7 @@ class UltraStepExecutor(Generic[TContext]):
         usage_limits: Optional[UsageLimits] = None,
         stream: bool = False,
         on_chunk: Optional[Callable[[Any], Awaitable[None]]] = None,
+        breach_event: Optional[Any] = None,
     ) -> StepResult:
         """Execute a single step with ultra-fast path for trivial agent steps."""
 
@@ -387,6 +388,8 @@ class UltraStepExecutor(Generic[TContext]):
                         kwargs["resources"] = resources
                     if step.config.temperature is not None:
                         kwargs["temperature"] = step.config.temperature
+                    if breach_event is not None:
+                        kwargs["breach_event"] = breach_event
 
                     run_func = getattr(agent, "run", None)
                     is_mock = isinstance(run_func, (Mock, MagicMock, AsyncMock))
@@ -466,6 +469,10 @@ class UltraStepExecutor(Generic[TContext]):
                                                 filtered_kwargs["temperature"] = (
                                                     step.config.temperature
                                                 )
+                                            if breach_event is not None and _accepts_param(
+                                                run_func, "breach_event"
+                                            ):
+                                                filtered_kwargs["breach_event"] = breach_event
 
                                             raw = await run_func(processed_data, **filtered_kwargs)
                                         else:
@@ -606,6 +613,7 @@ class UltraStepExecutor(Generic[TContext]):
         usage_limits: Optional[UsageLimits] = None,
         stream: bool = False,
         on_chunk: Optional[Callable[[Any], Awaitable[None]]] = None,
+        breach_event: Optional[Any] = None,
     ) -> StepResult:
         """Execute complex steps (with plugins, validators, fallbacks) using step logic helpers."""
 
@@ -627,9 +635,13 @@ class UltraStepExecutor(Generic[TContext]):
 
         # Create a step executor that uses this UltraExecutor for recursion
         async def step_executor(
-            s: Step[Any, Any], d: Any, c: Optional[Any], r: Optional[Any]
+            s: Step[Any, Any],
+            d: Any,
+            c: Optional[Any],
+            r: Optional[Any],
+            breach_event: Optional[Any] = None,
         ) -> StepResult:
-            return await self.execute_step(s, d, c, r, usage_limits, stream, on_chunk)
+            return await self.execute_step(s, d, c, r, usage_limits, stream, on_chunk, breach_event)
 
         # Handle different step types
         if isinstance(step, CacheStep):

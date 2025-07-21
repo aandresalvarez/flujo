@@ -163,18 +163,31 @@ class StateManager(Generic[ContextT]):
     # ----------------------- New persistence helpers -----------------------
 
     async def record_run_start(
-        self, run_id: str, pipeline_name: str, pipeline_version: str
+        self,
+        run_id: str,
+        pipeline_id: str,
+        pipeline_name: str,
+        pipeline_version: str,
+        created_at: Optional[str] = None,
+        updated_at: Optional[str] = None,
     ) -> None:
         if self.state_backend is None:
             return
         try:
+            # Use provided timestamps or generate defaults
+            now = datetime.utcnow().isoformat()
+            created_at = created_at or now
+            updated_at = updated_at or now
+
             await self.state_backend.save_run_start(
                 {
                     "run_id": run_id,
+                    "pipeline_id": pipeline_id,
                     "pipeline_name": pipeline_name,
                     "pipeline_version": pipeline_version,
                     "status": "running",
-                    "start_time": datetime.utcnow(),
+                    "created_at": created_at,
+                    "updated_at": updated_at,
                 }
             )
         except NotImplementedError:

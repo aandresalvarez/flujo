@@ -13,6 +13,9 @@ from flujo.state.backends.sqlite import SQLiteBackend
 from flujo.domain import Step
 from flujo.testing.utils import StubAgent
 
+import uuid
+from datetime import datetime
+
 
 class TestPersistenceOptimizationEdgeCases:
     """Test edge cases related to persistence optimizations."""
@@ -38,7 +41,10 @@ class TestPersistenceOptimizationEdgeCases:
         execution_manager = ExecutionManager(pipeline=pipeline, state_manager=state_manager)
 
         # Register the run in the backend
-        await state_manager.record_run_start("test_run", "test_pipeline", "1.0")
+        now = datetime.utcnow().isoformat()
+        await state_manager.record_run_start(
+            "test_run", str(uuid.uuid4()), "test_pipeline", "1.0", created_at=now, updated_at=now
+        )
 
         # Run the pipeline
         result = PipelineResult()
@@ -115,7 +121,15 @@ class TestPersistenceOptimizationEdgeCases:
         execution_manager = ExecutionManager(pipeline=pipeline, state_manager=state_manager)
 
         # Register the run in the backend
-        await state_manager.record_run_start("test_failure_run", "test_pipeline", "1.0")
+        now = datetime.utcnow().isoformat()
+        await state_manager.record_run_start(
+            "test_failure_run",
+            str(uuid.uuid4()),
+            "test_pipeline",
+            "1.0",
+            created_at=now,
+            updated_at=now,
+        )
 
         # Run the step
         result = PipelineResult()
@@ -171,7 +185,15 @@ class TestPersistenceOptimizationEdgeCases:
         execution_manager = ExecutionManager(pipeline=pipeline, state_manager=state_manager)
 
         # Register the run in the backend
-        await state_manager.record_run_start("test_large_context_run", "test_pipeline", "1.0")
+        now = datetime.utcnow().isoformat()
+        await state_manager.record_run_start(
+            "test_large_context_run",
+            str(uuid.uuid4()),
+            "test_pipeline",
+            "1.0",
+            created_at=now,
+            updated_at=now,
+        )
 
         # Run with large context
         result = PipelineResult()
@@ -236,7 +258,15 @@ class TestPersistenceOptimizationEdgeCases:
         execution_manager = ExecutionManager(pipeline=pipeline, state_manager=state_manager)
 
         # Register the run in the backend
-        await state_manager.record_run_start("test_serialization_error_run", "test_pipeline", "1.0")
+        now = datetime.utcnow().isoformat()
+        await state_manager.record_run_start(
+            "test_serialization_error_run",
+            str(uuid.uuid4()),
+            "test_pipeline",
+            "1.0",
+            created_at=now,
+            updated_at=now,
+        )
 
         # Run with problematic context
         result = PipelineResult()
@@ -292,7 +322,15 @@ class TestPersistenceOptimizationEdgeCases:
         from flujo.domain.dsl.pipeline import Pipeline
 
         # Register the run in the backend
-        await state_manager.record_run_start("concurrent_run_0", "test_pipeline", "1.0")
+        now = datetime.utcnow().isoformat()
+        await state_manager.record_run_start(
+            "concurrent_run_0",
+            str(uuid.uuid4()),
+            "test_pipeline",
+            "1.0",
+            created_at=now,
+            updated_at=now,
+        )
 
         # Run multiple pipelines concurrently
         async def run_pipeline(run_id: str):
@@ -353,7 +391,15 @@ class TestPersistenceOptimizationEdgeCases:
         execution_manager = ExecutionManager(pipeline=pipeline, state_manager=state_manager)
 
         # Register the run in the backend
-        await state_manager.record_run_start("test_none_context_run", "test_pipeline", "1.0")
+        now = datetime.utcnow().isoformat()
+        await state_manager.record_run_start(
+            "test_none_context_run",
+            str(uuid.uuid4()),
+            "test_pipeline",
+            "1.0",
+            created_at=now,
+            updated_at=now,
+        )
 
         # Run with None context
         result = PipelineResult()
@@ -413,7 +459,15 @@ class TestPersistenceOptimizationEdgeCases:
         # step = Step.model_validate({"name": "complex_object_step", "agent": agent})
 
         # Register the run in the backend
-        await state_manager.record_run_start("test_complex_object_run", "test_pipeline", "1.0")
+        now = datetime.utcnow().isoformat()
+        await state_manager.record_run_start(
+            "test_complex_object_run",
+            str(uuid.uuid4()),
+            "test_pipeline",
+            "1.0",
+            created_at=now,
+            updated_at=now,
+        )
 
         # Run with complex context
         result = PipelineResult()
@@ -470,7 +524,15 @@ class TestPersistenceOptimizationEdgeCases:
         # Create a simple agent
 
         # Register the run in the backend
-        await state_manager.record_run_start("load_test_run_0", "test_pipeline", "1.0")
+        now = datetime.utcnow().isoformat()
+        await state_manager.record_run_start(
+            "load_test_run_0",
+            str(uuid.uuid4()),
+            "test_pipeline",
+            "1.0",
+            created_at=now,
+            updated_at=now,
+        )
 
         # Run many pipelines quickly
         async def run_pipeline(run_id: str):
@@ -547,7 +609,15 @@ class TestPersistenceOptimizationEdgeCases:
         pipeline = Pipeline(steps=[step])
 
         # Register the run in the backend
-        await state_manager.record_run_start("test_circular_ref_run", "test_pipeline", "1.0")
+        now = datetime.utcnow().isoformat()
+        await state_manager.record_run_start(
+            "test_circular_ref_run",
+            str(uuid.uuid4()),
+            "test_pipeline",
+            "1.0",
+            created_at=now,
+            updated_at=now,
+        )
 
         # Run with circular reference context
         result = PipelineResult()

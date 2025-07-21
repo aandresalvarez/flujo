@@ -173,13 +173,16 @@ class TestCLIPerformance:
             # Prepare all run start operations
             run_start_tasks = []
             for i in range(db_size):
+                dt = (now - timedelta(minutes=i)).isoformat()
                 task = backend.save_run_start(
                     {
                         "run_id": f"run_{i:05d}",
+                        "pipeline_id": f"pid_{i:05d}",
                         "pipeline_name": f"pipeline_{i % 10}",
                         "pipeline_version": "1.0",
                         "status": "running",
-                        "start_time": now - timedelta(minutes=i),
+                        "created_at": dt,
+                        "updated_at": dt,
                     }
                 )
                 run_start_tasks.append(task)

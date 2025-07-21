@@ -120,7 +120,7 @@ def _safe_merge_list(target: list[Any], source: list[Any]) -> None:
 
 # Alias used across step logic helpers
 StepExecutor = Callable[
-    [Step[Any, Any], Any, Optional[TContext], Optional[AppResources]],
+    [Step[Any, Any], Any, Optional[TContext], Optional[AppResources], Optional[Any]],
     Awaitable[StepResult],
 ]
 
@@ -278,6 +278,65 @@ def _detect_fallback_loop(step: Step[Any, Any], chain: list[Step[Any, Any]]) -> 
     return False  # No loop detected or iteration limit reached
 
 
+class ParallelUsageGovernor:
+    """Helper to track and enforce usage limits atomically across parallel branches."""
+
+    def __init__(self, usage_limits: Optional[UsageLimits]) -> None:
+        self.usage_limits = usage_limits
+        self.lock = asyncio.Lock()
+        self.total_cost = 0.0
+        self.total_tokens = 0
+        self.limit_breached = asyncio.Event()
+        self.limit_breach_error: Optional[UsageLimitExceededError] = None
+
+    async def add_usage(self, cost_delta: float, token_delta: int, result: StepResult) -> bool:
+        async with self.lock:
+            self.total_cost += cost_delta
+            self.total_tokens += token_delta
+            if self.usage_limits is not None:
+                if (
+                    self.usage_limits.total_cost_usd_limit is not None
+                    and self.total_cost > self.usage_limits.total_cost_usd_limit
+                ):
+                    from flujo.exceptions import UsageLimitExceededError
+                    from flujo.domain.models import PipelineResult
+
+                    # Create a proper PipelineResult for the error
+                    pipeline_result: PipelineResult[Any] = PipelineResult(
+                        step_history=[result],
+                        total_cost_usd=self.total_cost,
+                    )
+                    self.limit_breach_error = UsageLimitExceededError(
+                        f"Cost limit of ${self.usage_limits.total_cost_usd_limit} exceeded. Current cost: ${self.total_cost}",
+                        result=pipeline_result,
+                    )
+                    self.limit_breached.set()
+                elif (
+                    self.usage_limits.total_tokens_limit is not None
+                    and self.total_tokens > self.usage_limits.total_tokens_limit
+                ):
+                    from flujo.exceptions import UsageLimitExceededError
+                    from flujo.domain.models import PipelineResult
+
+                    # Create a proper PipelineResult for the error
+                    pipeline_result_tokens: PipelineResult[Any] = PipelineResult(
+                        step_history=[result],
+                        total_cost_usd=self.total_cost,
+                    )
+                    self.limit_breach_error = UsageLimitExceededError(
+                        f"Token limit of {self.usage_limits.total_tokens_limit} exceeded. Current tokens: {self.total_tokens}",
+                        result=pipeline_result_tokens,
+                    )
+                    self.limit_breached.set()
+            return self.limit_breached.is_set()
+
+    def breached(self) -> bool:
+        return self.limit_breached.is_set()
+
+    def get_error(self) -> Optional[UsageLimitExceededError]:
+        return self.limit_breach_error
+
+
 async def _execute_parallel_step_logic(
     parallel_step: ParallelStep[TContext],
     parallel_input: Any,
@@ -289,149 +348,132 @@ async def _execute_parallel_step_logic(
     usage_limits: UsageLimits | None = None,
     context_setter: Callable[[PipelineResult[TContext], Optional[TContext]], None],
 ) -> StepResult:
-    """Execute branch pipelines concurrently and merge their results."""
+    """Execute branch pipelines concurrently and merge their results.
+
+    Uses a semaphore to bound concurrency and passes the breach event to agents for early cancellation.
+    """
 
     result = StepResult(name=parallel_step.name)
     outputs: Dict[str, Any] = {}
     branch_results: Dict[str, StepResult] = {}
     branch_contexts: Dict[str, Optional[TContext]] = {}
 
-    limit_breached = asyncio.Event()
-    limit_breach_error: Optional[UsageLimitExceededError] = None
-    usage_lock = asyncio.Lock()
-    total_cost_so_far = 0.0
-    total_tokens_so_far = 0
+    usage_governor = ParallelUsageGovernor(usage_limits)
+    max_concurrency = min(3, len(parallel_step.branches))  # Limit concurrency to 3 or fewer
+    semaphore = asyncio.Semaphore(max_concurrency)
 
     async def run_branch(key: str, branch_pipe: Pipeline[Any, Any]) -> None:
-        nonlocal limit_breach_error, total_cost_so_far, total_tokens_so_far
-
-        if context is not None:
-            if parallel_step.context_include_keys is not None:
-                branch_context_data = {}
-                for field_key in parallel_step.context_include_keys:
-                    if hasattr(context, field_key):
-                        branch_context_data[field_key] = getattr(context, field_key)
-                ctx_copy = context.__class__(**copy.deepcopy(branch_context_data))
+        if usage_governor.breached():
+            return
+        async with semaphore:
+            if usage_governor.breached():
+                return
+            if context is not None:
+                if parallel_step.context_include_keys is not None:
+                    branch_context_data = {}
+                    for field_key in parallel_step.context_include_keys:
+                        if hasattr(context, field_key):
+                            branch_context_data[field_key] = getattr(context, field_key)
+                    ctx_copy = context.__class__(**copy.deepcopy(branch_context_data))
+                else:
+                    ctx_copy = copy.deepcopy(context)
             else:
-                ctx_copy = copy.deepcopy(context)
-        else:
-            ctx_copy = None
+                ctx_copy = None
 
-        current = parallel_input
-        branch_res = StepResult(name=f"{parallel_step.name}:{key}")
+            current = parallel_input
+            branch_res = StepResult(name=f"{parallel_step.name}:{key}")
 
-        try:
-            for s in branch_pipe.steps:
-                if limit_breached.is_set():
-                    telemetry.logfire.info(
-                        f"Branch '{key}' cancelled due to limit breach in sibling branch"
-                    )
-                    branch_res.success = False
-                    branch_res.feedback = "Cancelled due to usage limit breach in sibling branch"
-                    break
-
-                sr = await step_executor(s, current, ctx_copy, resources)
-                branch_res.latency_s += sr.latency_s
-                cost_delta = getattr(sr, "cost_usd", 0.0)
-                token_delta = getattr(sr, "token_counts", 0)
-                branch_res.cost_usd += cost_delta
-                branch_res.token_counts += token_delta
-                branch_res.attempts += sr.attempts
-
-                if usage_limits is not None:
-                    async with usage_lock:
-                        total_cost_so_far += cost_delta
-                        total_tokens_so_far += token_delta
-
-                        if (
-                            usage_limits.total_cost_usd_limit is not None
-                            and total_cost_so_far > usage_limits.total_cost_usd_limit
-                        ):
-                            limit_breach_error = UsageLimitExceededError(
-                                f"Cost limit of ${usage_limits.total_cost_usd_limit} exceeded",
-                                PipelineResult(
-                                    step_history=[result],
-                                    total_cost_usd=total_cost_so_far,
-                                ),
-                            )
-                            limit_breached.set()
-                        elif (
-                            usage_limits.total_tokens_limit is not None
-                            and total_tokens_so_far > usage_limits.total_tokens_limit
-                        ):
-                            limit_breach_error = UsageLimitExceededError(
-                                f"Token limit of {usage_limits.total_tokens_limit} exceeded",
-                                PipelineResult(
-                                    step_history=[result],
-                                    total_cost_usd=total_cost_so_far,
-                                ),
-                            )
-                            limit_breached.set()
-
-                    if limit_breached.is_set():
+            try:
+                for s in branch_pipe.steps:
+                    if usage_governor.breached():
+                        telemetry.logfire.info(
+                            f"Branch '{key}' cancelled due to limit breach in sibling branch"
+                        )
+                        branch_res.success = False
+                        branch_res.feedback = (
+                            "Cancelled due to usage limit breach in sibling branch"
+                        )
                         break
 
-                if not sr.success:
-                    branch_res.success = False
-                    branch_res.feedback = sr.feedback
-                    branch_res.output = sr.output
-                    break
-                current = sr.output
-            else:
-                branch_res.success = True
-                branch_res.output = current
+                    # Pass the breach event to the agent if it supports it
+                    # (Test agents can check for this and exit early)
+                    sr = await step_executor(
+                        s, current, ctx_copy, resources, usage_governor.limit_breached
+                    )
+                    branch_res.latency_s += sr.latency_s
+                    cost_delta = getattr(sr, "cost_usd", 0.0)
+                    token_delta = getattr(sr, "token_counts", 0)
+                    branch_res.cost_usd += cost_delta
+                    branch_res.token_counts += token_delta
+                    branch_res.attempts += sr.attempts
 
-        except UsageLimitExceededError as e:
-            limit_breach_error = e
-            limit_breached.set()
-            raise
-        except Exception as e:
-            telemetry.logfire.error(f"Error in branch '{key}': {e}")
-            branch_res.success = False
-            branch_res.feedback = f"Branch execution error: {e}"
-            branch_res.output = None
+                    breached = await usage_governor.add_usage(cost_delta, token_delta, result)
+                    if breached:
+                        break
 
-        branch_res.branch_context = ctx_copy
+                    if not sr.success:
+                        branch_res.success = False
+                        branch_res.feedback = sr.feedback
+                        branch_res.output = sr.output
+                        break
+                    current = sr.output
+                else:
+                    branch_res.success = True
+                    branch_res.output = current
 
-        outputs[key] = branch_res.output
-        branch_results[key] = branch_res
-        branch_contexts[key] = ctx_copy
+            except UsageLimitExceededError:
+                # Re-raise usage limit errors to propagate them up
+                raise
+            except Exception as e:
+                telemetry.logfire.error(f"Error in branch '{key}': {e}")
+                branch_res.success = False
+                branch_res.feedback = f"Branch execution error: {e}"
+                branch_res.output = None
+
+            branch_res.branch_context = ctx_copy
+            outputs[key] = branch_res.output
+            branch_results[key] = branch_res
+            branch_contexts[key] = ctx_copy
 
     start = time.monotonic()
 
     branch_order = list(parallel_step.branches.keys())
-    tasks = {
-        asyncio.create_task(run_branch(k, pipe)): k for k, pipe in parallel_step.branches.items()
-    }
+    tasks = {}
+    for k, pipe in parallel_step.branches.items():
+        if usage_governor.breached():
+            break
+        tasks[asyncio.create_task(run_branch(k, pipe))] = k
 
     while tasks:
         done, pending = await asyncio.wait(tasks.keys(), return_when=asyncio.FIRST_COMPLETED)
 
-        if limit_breached.is_set():
+        if usage_governor.breached():
             telemetry.logfire.info("Usage limit breached, cancelling remaining tasks...")
             for task in pending:
                 task.cancel()
             if pending:
                 await asyncio.gather(*pending, return_exceptions=True)
-            if limit_breach_error is not None:
-                context_setter(limit_breach_error.result, context)
-                raise limit_breach_error
+            error = usage_governor.get_error()
+            if error is not None:
+                context_setter(error.result, context)
+                raise error
             break
 
         for task in done:
             try:
                 await task
+            except UsageLimitExceededError:
+                # Re-raise usage limit errors to propagate them up
+                raise
             except Exception as e:
                 telemetry.logfire.error(f"Task failed: {e}")
             tasks.pop(task)
 
-    # After all branches, if a usage limit was breached, raise it
-    if limit_breach_error is not None:
-        telemetry.logfire.error(
-            f"Raising UsageLimitExceededError after all branches: {limit_breach_error}"
-        )
-        context_setter(limit_breach_error.result, context)
-        raise limit_breach_error
+    error = usage_governor.get_error()
+    if error is not None:
+        telemetry.logfire.error(f"Raising UsageLimitExceededError after all branches: {error}")
+        context_setter(error.result, context)
+        raise error
 
     result.latency_s = time.monotonic() - start
 
@@ -629,6 +671,7 @@ async def _execute_loop_step_logic(
                         current_iteration_data_for_body_step,
                         iteration_context,
                         resources,
+                        None,  # breach_event
                     )
                 except PausedException:
                     if context is not None and iteration_context is not None:
@@ -892,6 +935,7 @@ async def _execute_conditional_step_logic(
                     current_branch_data,
                     context,
                     resources,
+                    None,  # breach_event
                 )
 
             conditional_overall_result.latency_s += branch_step_result_obj.latency_s
@@ -1075,7 +1119,9 @@ async def _handle_cache_step(
 
         return cache_result
 
-    cache_result = await step_executor(step.wrapped_step, data, context, resources)
+    cache_result = await step_executor(
+        step.wrapped_step, data, context, resources, None
+    )  # breach_event
     if cache_result.success and key:
         try:
             await step.cache_backend.set(key, cache_result)
@@ -1597,6 +1643,7 @@ async def _run_step_logic(
                 data,
                 context,
                 resources,
+                None,  # breach_event
             )
             if not isinstance(fallback_result, StepResult):
                 raise TypeError("step_executor did not return StepResult in fallback logic")

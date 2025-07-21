@@ -25,14 +25,17 @@ class TestCLIPerformanceEdgeCases:
         now = datetime.utcnow()
         for i in range(1000):
             # Create run start
+            dt = (now - timedelta(minutes=i)).isoformat()
             asyncio.run(
                 backend.save_run_start(
                     {
                         "run_id": f"run_{i:04d}",
+                        "pipeline_id": f"pid_{i:04d}",
                         "pipeline_name": f"pipeline_{i % 20}",
                         "pipeline_version": "1.0",
                         "status": "running",
-                        "start_time": now - timedelta(minutes=i),
+                        "created_at": dt,
+                        "updated_at": dt,
                     }
                 )
             )
@@ -203,10 +206,12 @@ class TestCLIPerformanceEdgeCases:
                 backend.save_run_start(
                     {
                         "run_id": f"run_{i:03d}",
+                        "pipeline_id": f"pid_{i:03d}",
                         "pipeline_name": f"pipeline_{i % 10}",
                         "pipeline_version": "1.0",
                         "status": "running",
-                        "start_time": now - timedelta(minutes=i),
+                        "created_at": (now - timedelta(minutes=i)).isoformat(),
+                        "updated_at": (now - timedelta(minutes=i)).isoformat(),
                     }
                 )
             )
@@ -245,10 +250,12 @@ class TestCLIPerformanceEdgeCases:
             await backend.save_run_start(
                 {
                     "run_id": run_id,
+                    "pipeline_id": f"pid_{run_id}",
                     "pipeline_name": f"pipeline_{run_id}",
                     "pipeline_version": "1.0",
                     "status": "running",
-                    "start_time": datetime.utcnow(),
+                    "created_at": datetime.utcnow().isoformat(),
+                    "updated_at": datetime.utcnow().isoformat(),
                 }
             )
             await backend.save_run_end(
@@ -289,10 +296,12 @@ class TestCLIPerformanceEdgeCases:
                 backend.save_run_start(
                     {
                         "run_id": f"memory_run_{i:03d}",
+                        "pipeline_id": f"pid_{i:03d}",
                         "pipeline_name": f"pipeline_{i % 10}",
                         "pipeline_version": "1.0",
                         "status": "running",
-                        "start_time": now - timedelta(minutes=i),
+                        "created_at": (now - timedelta(minutes=i)).isoformat(),
+                        "updated_at": (now - timedelta(minutes=i)).isoformat(),
                     }
                 )
             )
@@ -328,10 +337,12 @@ class TestCLIPerformanceEdgeCases:
             backend.save_run_start(
                 {
                     "run_id": "test_run",
+                    "pipeline_id": "test_pid",
                     "pipeline_name": "test_pipeline",
                     "pipeline_version": "1.0",
                     "status": "running",
-                    "start_time": datetime.utcnow(),
+                    "created_at": datetime.utcnow().isoformat(),
+                    "updated_at": datetime.utcnow().isoformat(),
                 }
             )
         )
@@ -352,10 +363,12 @@ class TestCLIPerformanceEdgeCases:
                 backend.save_run_start(
                     {
                         "run_id": "recovery_test_run",
+                        "pipeline_id": "recovery_pid",
                         "pipeline_name": "recovery_pipeline",
                         "pipeline_version": "1.0",
                         "status": "running",
-                        "start_time": datetime.utcnow(),
+                        "created_at": datetime.utcnow().isoformat(),
+                        "updated_at": datetime.utcnow().isoformat(),
                     }
                 )
             )

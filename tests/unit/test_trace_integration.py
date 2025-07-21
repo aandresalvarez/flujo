@@ -4,6 +4,7 @@ import pytest
 from pathlib import Path
 from unittest.mock import MagicMock
 from datetime import datetime
+from uuid import uuid4
 
 from flujo.application.core.state_manager import StateManager
 from flujo.application.core.execution_manager import ExecutionManager
@@ -61,10 +62,12 @@ async def test_trace_saving_integration(tmp_path: Path) -> None:
     await backend.save_run_start(
         {
             "run_id": run_id,
+            "pipeline_id": str(uuid4()),
             "pipeline_name": "test_pipeline",
             "pipeline_version": "1.0",
             "status": "running",
-            "start_time": datetime.utcnow(),
+            "created_at": datetime.utcnow().isoformat(),
+            "updated_at": datetime.utcnow().isoformat(),
         }
     )
 
@@ -129,10 +132,12 @@ async def test_trace_saving_without_trace_tree(tmp_path: Path) -> None:
     await backend.save_run_start(
         {
             "run_id": run_id,
+            "pipeline_id": str(uuid4()),
             "pipeline_name": "test_pipeline",
             "pipeline_version": "1.0",
             "status": "running",
-            "start_time": datetime.utcnow(),
+            "created_at": datetime.utcnow().isoformat(),
+            "updated_at": datetime.utcnow().isoformat(),
         }
     )
 
@@ -176,10 +181,12 @@ async def test_trace_saving_error_handling(tmp_path: Path) -> None:
     await backend.save_run_start(
         {
             "run_id": run_id,
+            "pipeline_id": str(uuid4()),
             "pipeline_name": "test_pipeline",
             "pipeline_version": "1.0",
             "status": "running",
-            "start_time": datetime.utcnow(),
+            "created_at": datetime.utcnow().isoformat(),
+            "updated_at": datetime.utcnow().isoformat(),
         }
     )
 
