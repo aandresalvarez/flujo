@@ -367,10 +367,24 @@ async def _execute_parallel_step_logic(
     semaphore = asyncio.Semaphore(max_concurrency)
 
     async def run_branch(key: str, branch_pipe: Pipeline[Any, Any]) -> None:
+        # Initialize branch result even if we don't execute
+        branch_res = StepResult(name=f"{parallel_step.name}:{key}")
+        branch_res.success = False
+        branch_res.feedback = "Branch not executed due to usage limit breach"
+
         if usage_governor.breached():
+            # Still populate dictionaries for cancelled branches
+            outputs[key] = None
+            branch_results[key] = branch_res
+            branch_contexts[key] = None
             return
+
         async with semaphore:
             if usage_governor.breached():
+                # Still populate dictionaries for cancelled branches
+                outputs[key] = None
+                branch_results[key] = branch_res
+                branch_contexts[key] = None
                 return
             if context is not None:
                 if parallel_step.context_include_keys is not None:
@@ -385,7 +399,9 @@ async def _execute_parallel_step_logic(
                 ctx_copy = None
 
             current = parallel_input
-            branch_res = StepResult(name=f"{parallel_step.name}:{key}")
+            # Reset branch_res for actual execution
+            branch_res.success = True
+            branch_res.feedback = None
 
             try:
                 for s in branch_pipe.steps:
@@ -411,7 +427,7 @@ async def _execute_parallel_step_logic(
                     branch_res.token_counts += token_delta
                     branch_res.attempts += sr.attempts
 
-                    breached = await usage_governor.add_usage(cost_delta, token_delta, result)
+                    breached = await usage_governor.add_usage(cost_delta, token_delta, sr)
                     if breached:
                         break
 

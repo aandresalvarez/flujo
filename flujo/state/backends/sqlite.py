@@ -566,6 +566,44 @@ class SQLiteBackend(StateBackend):
         )
         await db.execute("UPDATE workflow_state SET status = 'running' WHERE status IS NULL")
 
+        # Migrate runs table schema if it exists
+        try:
+            cursor = await db.execute("PRAGMA table_info(runs)")
+            runs_columns = {row[1] for row in await cursor.fetchall()}
+            await cursor.close()
+
+            # Add missing columns to runs table
+            runs_new_columns = [
+                ("pipeline_id", "TEXT NOT NULL DEFAULT 'unknown'"),
+                ("created_at", "TEXT NOT NULL DEFAULT ''"),
+                ("updated_at", "TEXT NOT NULL DEFAULT ''"),
+                ("end_time", "TEXT"),
+                ("total_cost", "REAL"),
+                ("final_context_blob", "TEXT"),
+            ]
+
+            for column_name, column_def in runs_new_columns:
+                if column_name not in runs_columns:
+                    escaped_name = column_name.replace('"', '""')
+                    quoted_column_name = f'"{escaped_name}"'
+                    await db.execute(
+                        f"ALTER TABLE runs ADD COLUMN {quoted_column_name} {column_def}"
+                    )
+
+            # Update existing records with default values for NOT NULL columns
+            if "pipeline_id" in runs_columns:
+                await db.execute(
+                    "UPDATE runs SET pipeline_id = 'unknown' WHERE pipeline_id IS NULL"
+                )
+            if "created_at" in runs_columns:
+                await db.execute("UPDATE runs SET created_at = '' WHERE created_at IS NULL")
+            if "updated_at" in runs_columns:
+                await db.execute("UPDATE runs SET updated_at = '' WHERE updated_at IS NULL")
+
+        except sqlite3.OperationalError:
+            # Table doesn't exist yet, which is fine - it will be created with the new schema
+            pass
+
     async def _ensure_init(self) -> None:
         if not self._initialized:
             # Use file-level lock to prevent concurrent initialization across instances
@@ -1088,7 +1126,7 @@ class SQLiteBackend(StateBackend):
                         """,
                         (
                             run_data["run_id"],
-                            run_data["pipeline_id"],
+                            run_data.get("pipeline_id", "unknown"),
                             run_data.get("pipeline_name", "unknown"),
                             run_data.get("pipeline_version", "latest"),
                             run_data.get("status", "running"),
