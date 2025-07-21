@@ -48,6 +48,15 @@ class ParallelStep(Step[Any, Any], Generic[TContext]):
         default=BranchFailureStrategy.PROPAGATE,
         description="How the ParallelStep should behave when a branch fails.",
     )
+    field_mapping: Optional[Dict[str, List[str]]] = Field(
+        default=None,
+        description="Explicit mapping of branch names to context fields that should be merged. "
+        "Only used with CONTEXT_UPDATE merge strategy.",
+    )
+    ignore_branch_names: bool = Field(
+        default=False,
+        description="When True, branch names are not treated as context fields during merging.",
+    )
 
     model_config = {"arbitrary_types_allowed": True}
 

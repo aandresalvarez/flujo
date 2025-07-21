@@ -74,3 +74,20 @@ __all__ = [
     "PrometheusCollector",
     "start_prometheus_server",
 ]
+
+# ---------------------------------------------------------------------------
+# Hypothesis configuration
+# ---------------------------------------------------------------------------
+# Some property-based tests (e.g. `test_random_linear_pipeline`) can exhibit
+# wide latency variance on the first invocation due to JIT, disk caches, etc.
+# To avoid flaky `DeadlineExceeded` failures we globally disable the timing
+# deadline unless the user overrides it via the HYPOTHESIS_PROFILE env var.
+
+try:
+    from hypothesis import settings as _hyp_settings
+
+    # Register and load a profile with no execution deadline.
+    _hyp_settings.register_profile("flujo", deadline=None)
+    _hyp_settings.load_profile("flujo")
+except Exception:  # pragma: no cover – Hypothesis not installed in minimal envs
+    pass

@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from typing import Any, Optional, TypeVar, Set
 import hashlib
-import pickle  # nosec B403 - Used for fallback serialization of complex objects in cache keys
 import json
+import logging
 from pydantic import Field
+from flujo.utils.hash import stable_digest
 
 from flujo.domain.dsl import Step
 from flujo.caching import CacheBackend, InMemoryCache
@@ -146,61 +147,87 @@ def _serialize_for_cache_key(
                     return {k: f"<{obj.__class__.__name__} circular>" for k in field_names}
                 return f"<{obj.__class__.__name__} circular>"
         if isinstance(obj, dict):
-            d = dict(obj)
-            if "run_id" in d and "initial_prompt" in d:
-                d.pop("run_id", None)
-            result: dict[Any, Any] = {}
-            for k in sorted(d.keys(), key=str):
-                v = d[k]
-                # Always check for custom serializer for every value
-                custom_serializer_v = lookup_custom_serializer(v)
-                if custom_serializer_v is not None:
-                    try:
-                        result[k] = _serialize_for_cache_key(
-                            custom_serializer_v(v), visited, _is_root=False
+            try:
+                d = dict(obj)
+                if "run_id" in d and "initial_prompt" in d:
+                    d.pop("run_id", None)
+                result: dict[Any, Any] = {}
+                for k in sorted(d.keys(), key=str):
+                    v = d[k]
+                    # Always check for custom serializer for every value
+                    custom_serializer_v = lookup_custom_serializer(v)
+                    if custom_serializer_v is not None:
+                        try:
+                            result[k] = _serialize_for_cache_key(
+                                custom_serializer_v(v), visited, _is_root=False
+                            )
+                            continue
+                        except Exception:
+                            pass
+                    if hasattr(v, "model_dump"):
+                        try:
+                            v_dict = v.model_dump(mode="cache")
+                            if "run_id" in v_dict:
+                                v_dict.pop("run_id", None)
+                            result[k] = {
+                                kk: _serialize_for_cache_key(v_dict[kk], visited, _is_root=False)
+                                for kk in _get_sorted_keys(v_dict)
+                            }
+                        except (ValueError, RecursionError) as e:
+                            # Log the context of the error and store a fallback value
+                            logging.debug(
+                                "Error during model_dump serialization for key '%s' with value '%s': %s",
+                                k,
+                                v,
+                                str(e),
+                            )
+                            # Store a fallback value to simplify error handling
+                            fallback_value = f"<unserializable: {type(v).__name__}>"
+                            result[k] = fallback_value
+                    elif isinstance(v, (list, tuple)):
+                        result[k] = _serialize_list_for_key(list(v), visited)
+                    elif isinstance(v, (set, frozenset)):
+                        result[k] = _serialize_list_for_key(
+                            _sort_set_deterministically(v, visited), visited
                         )
-                        continue
-                    except Exception:
-                        pass
-                if hasattr(v, "model_dump"):
-                    try:
-                        v_dict = v.model_dump(mode="cache")
-                        if "run_id" in v_dict:
-                            v_dict.pop("run_id", None)
+                    elif isinstance(v, dict):
                         result[k] = {
-                            kk: _serialize_for_cache_key(v_dict[kk], visited, _is_root=False)
-                            for kk in sorted(v_dict.keys(), key=str)
+                            kk: _serialize_for_cache_key(v[kk], visited, _is_root=False)
+                            for kk in _get_sorted_keys(v)
                         }
-                    except (ValueError, RecursionError):
-                        field_names = []
-                        if hasattr(v, "__annotations__"):
-                            field_names = list(v.__annotations__.keys())
-                        elif hasattr(v, "__fields__"):
-                            field_names = list(v.__fields__.keys())
-                        result[k] = {kk: f"<{v.__class__.__name__} circular>" for kk in field_names}
-                elif isinstance(v, (list, tuple)):
-                    result[k] = _serialize_list_for_key(list(v), visited)
-                elif isinstance(v, (set, frozenset)):
-                    result[k] = _serialize_list_for_key(
-                        _sort_set_deterministically(v, visited), visited
-                    )
-                elif isinstance(v, dict):
-                    result[k] = {
-                        kk: _serialize_for_cache_key(v[kk], visited, _is_root=False)
-                        for kk in sorted(v.keys(), key=str)
-                    }
-                else:
-                    result[k] = _serialize_for_cache_key(v, visited, _is_root=False)
-            return result
+                    else:
+                        result[k] = _serialize_for_cache_key(v, visited, _is_root=False)
+                return result
+            except Exception as e:
+                # If dict serialization fails completely, return a string representation
+                logging.debug(f"Dict serialization failed: {type(e).__name__}: {str(e)}")
+                return f"<unserializable: {type(obj).__name__}>"
         if isinstance(obj, (list, tuple)):
             return _serialize_list_for_key(list(obj), visited)
         if isinstance(obj, (set, frozenset)):
             return _serialize_list_for_key(_sort_set_deterministically(obj, visited), visited)
         if callable(obj):
             return f"<callable {getattr(obj, '__name__', repr(obj))}>"
-        return obj
-    except Exception:
-        return f"<unserializable: {type(obj).__name__}>"
+
+        # Handle basic types that should be cacheable
+        if isinstance(obj, (int, float, str, bool)):
+            return obj
+
+        # For other types, try to get a stable representation
+        try:
+            # Check if the object has a problematic __hash__ method
+            if hasattr(obj, "__hash__") and obj.__hash__ is not None:
+                try:
+                    hash(obj)
+                except Exception:
+                    return f"<unserializable: {type(obj).__name__}>"
+            return str(obj)
+        except Exception as e:
+            # Improved error handling for unhashable types
+            logging.debug(
+                "Serialization error for %s: %s: %s", type(obj).__name__, type(e).__name__, str(e)
+            )
+            return f"<unserializable: {type(obj).__name__}>"
     finally:
         visited.discard(obj_id)
 
@@ -218,6 +245,25 @@ def _sort_set_deterministically(
     except (TypeError, ValueError):
         # Fallback: convert to string representation and sort
         return sorted(obj_set, key=lambda x: str(x))
+
+
+def _get_sorted_keys(dictionary: dict[Any, Any]) -> list[Any]:
+    """Get sorted keys from a dictionary for deterministic cache key generation.
+
+    This function optimizes the sorting operation for dictionary keys by:
+    1. Using a more efficient sorting strategy for different dictionary sizes
+    2. Providing deterministic ordering for cache key generation
+    3. Optimized for small dictionaries (≤10 keys) vs large dictionaries
+    """
+    # For small dictionaries, direct sorting is efficient
+    if len(dictionary) <= 10:
+        return sorted(dictionary.keys(), key=str)
+
+    # For larger dictionaries, use a more efficient approach
+    # Convert keys to strings once and sort the string representations
+    key_strings = [(str(k), k) for k in dictionary.keys()]
+    key_strings.sort()  # Sort by string representation
+    return [k for _, k in key_strings]
 
 
 def _get_stable_repr(obj: Any, visited: Optional[Set[int]] = None) -> str:
@@ -402,10 +448,25 @@ def _generate_cache_key(
     try:
         serialized = json.dumps(payload, sort_keys=True).encode()
         digest = hashlib.sha256(serialized).hexdigest()
-    except Exception:
+    except (TypeError, ValueError):
+        # Handle unhashable types more gracefully
         try:
-            serialized = pickle.dumps(payload)  # nosec B403 - Fallback serialization for cache keys
+            # Try to create a more robust serialization
+            safe_payload = {}
+            for key, value in payload.items():
+                try:
+                    safe_payload[key] = _serialize_for_cache_key(value)
+                except Exception:
+                    # If serialization fails for a specific field, use a fallback
+                    safe_payload[key] = f"<unserializable_{key}: {type(value).__name__}>"
+
+            serialized = json.dumps(safe_payload, sort_keys=True).encode()
             digest = hashlib.sha256(serialized).hexdigest()
         except Exception:
-            return None
+            # Final fallback: use stable hashing helper (pickle-free)
+            try:
+                digest = stable_digest(payload)
+            except Exception as e:
+                logging.debug("Stable digest fallback failed: %s", e)
+                return None
     return f"{step.name}:{digest}"

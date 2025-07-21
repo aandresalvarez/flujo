@@ -210,12 +210,9 @@ class TestReconstructionLogic:
             isinstance(value, ComplexNested) for value in reconstructed_input.level3.values()
         )
         if reconstructed_input.model_dump() != complex_payload.model_dump():
-            import pprint
-
-            print("\n[DEBUG] reconstructed_input.model_dump():")
-            pprint.pprint(reconstructed_input.model_dump())
-            print("\n[DEBUG] complex_payload.model_dump():")
-            pprint.pprint(complex_payload.model_dump())
+            # Unit test: Use In-Memory Monitor for programmatic verification
+            # Debug logging removed for production - use assertions instead
+            pass
         assert reconstructed_input.model_dump() == complex_payload.model_dump()
 
     def test_reconstruction_handles_mixed_types(self):

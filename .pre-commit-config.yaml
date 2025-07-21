@@ -49,3 +49,11 @@ repos:
         language: system
         types: [python]
         pass_filenames: false
+
+      # Fail if forbidden patterns (eval, pickle) appear in non-test code.
+      - id: forbid-patterns
+        name: Forbid use of eval() and pickle in runtime code
+        entry: python scripts/hooks/check_forbidden_patterns.py
+        language: system
+        types: [python]
+        pass_filenames: false

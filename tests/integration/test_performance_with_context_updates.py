@@ -1,0 +1,342 @@
+"""
+Integration tests for Performance Testing + Context Updates feature combination.
+
+This tests the critical combination of performance testing with context-updating steps,
+which could reveal bugs in performance bottlenecks and memory issues with large context objects.
+"""
+
+import pytest
+import time
+import asyncio
+from typing import Any, Dict, List
+from flujo import Flujo, step, Step
+from flujo.domain.models import PipelineContext
+from flujo.domain.dsl.step import MergeStrategy
+from flujo.domain.dsl.pipeline import Pipeline
+from flujo.testing.utils import gather_result
+
+
+class PerformanceContext(PipelineContext):
+    """Context for testing performance with context updates."""
+
+    initial_prompt: str = "test"
+    operation_count: int = 0
+    large_data: str = "x" * 10000  # 10KB of data
+    nested_data: Dict[str, Any] = {"deep": {"nested": {"data": "x" * 5000}}}
+    performance_metrics: Dict[str, float] = {}
+    memory_usage: List[int] = []
+    execution_times: List[float] = []
+    context_updates: int = 0
+    large_list: List[Any] = ["item"] * 1000  # 1000 items, can be strings or dicts
+    complex_object: Dict[str, Any] = {
+        "nested": {"deep": {"structure": {"with": {"many": {"levels": "data"}}}}},
+        "arrays": [{"item": i, "data": "x" * 100} for i in range(100)],
+        "strings": ["string"] * 50,
+    }
+
+
+@step(updates_context=True)
+async def performance_step(data: Any, *, context: PerformanceContext) -> Dict[str, Any]:
+    """Step that updates context with performance metrics."""
+    start_time = time.time()
+    context.operation_count += 1
+    context.context_updates += 1
+
+    # Simulate some work
+    await asyncio.sleep(0.01)
+
+    execution_time = time.time() - start_time
+    context.execution_times.append(execution_time)
+    context.performance_metrics[f"operation_{context.operation_count}"] = execution_time
+
+    return {"operation_count": context.operation_count, "context_updates": context.context_updates}
+
+
+@step(updates_context=True)
+async def large_context_step(data: Any, *, context: PerformanceContext) -> Dict[str, Any]:
+    """Step that works with large context data."""
+    context.operation_count += 1
+    context.context_updates += 1
+
+    # Update large data structures
+    context.large_data += f"_update_{context.operation_count}"
+    context.large_list.append(f"new_item_{context.operation_count}")
+    context.complex_object["arrays"].append(
+        {"item": len(context.complex_object["arrays"]), "data": "x" * 200}
+    )
+
+    return {"operation_count": context.operation_count, "context_updates": context.context_updates}
+
+
+@step(updates_context=True)
+async def high_frequency_step(data: Any, *, context: PerformanceContext) -> Dict[str, Any]:
+    """Step that performs high-frequency context updates."""
+    context.operation_count += 1
+    context.context_updates += 1
+
+    # Rapid context updates
+    for i in range(10):
+        context.performance_metrics[f"rapid_{context.operation_count}_{i}"] = time.time()
+        context.memory_usage.append(len(str(context.large_data)))
+
+    return {"operation_count": context.operation_count, "context_updates": context.context_updates}
+
+
+@step(updates_context=True)
+async def memory_intensive_step(data: Any, *, context: PerformanceContext) -> Dict[str, Any]:
+    """Step that performs memory-intensive operations."""
+    context.operation_count += 1
+    context.context_updates += 1
+
+    # Create large data structures
+    large_string = "x" * 50000  # 50KB
+    large_list = [{"data": large_string, "index": i} for i in range(100)]
+
+    # Update context with large data
+    context.large_data = large_string
+    context.large_list = large_list
+    context.complex_object["large_arrays"] = large_list
+
+    return {"operation_count": context.operation_count, "context_updates": context.context_updates}
+
+
+@pytest.mark.asyncio
+async def test_performance_with_context_updates_basic():
+    """Test basic performance operations with context updates."""
+
+    pipeline = performance_step
+    runner = Flujo(pipeline, context_model=PerformanceContext)
+
+    # Run multiple times to test performance
+    start_time = time.time()
+    results = []
+
+    for i in range(10):
+        result = await gather_result(runner, f"test_input_{i}")
+        results.append(result)
+
+    total_time = time.time() - start_time
+
+    # Verify all runs completed successfully
+    for result in results:
+        assert result.step_history[-1].success is True
+        assert result.final_pipeline_context.operation_count == 1  # Each run gets fresh context
+        assert result.final_pipeline_context.context_updates == 1
+
+    # Performance assertion (should complete within reasonable time)
+    assert total_time < 5.0, f"Performance test took too long: {total_time:.2f}s"
+
+    # Verify context updates are working (check last result)
+    final_result = results[-1]
+    assert final_result.final_pipeline_context.operation_count == 1
+    assert final_result.final_pipeline_context.context_updates == 1
+    assert len(final_result.final_pipeline_context.execution_times) == 1
+
+
+@pytest.mark.asyncio
+async def test_performance_with_context_updates_large_context():
+    """Test performance with large context objects."""
+
+    pipeline = large_context_step
+    runner = Flujo(pipeline, context_model=PerformanceContext)
+
+    # Run with large context data
+    start_time = time.time()
+    result = await gather_result(runner, "large_context_test")
+    execution_time = time.time() - start_time
+
+    # Verify successful execution
+    assert result.step_history[-1].success is True
+    assert result.final_pipeline_context.operation_count == 1
+    assert result.final_pipeline_context.context_updates == 1
+
+    # Verify large data was updated
+    assert len(result.final_pipeline_context.large_data) > 10000
+    assert len(result.final_pipeline_context.large_list) > 1000
+    assert len(result.final_pipeline_context.complex_object["arrays"]) > 100
+
+    # Performance assertion (should complete within reasonable time)
+    assert execution_time < 2.0, f"Large context test took too long: {execution_time:.2f}s"
+
+
+@pytest.mark.asyncio
+async def test_performance_with_context_updates_high_frequency():
+    """Test performance with high-frequency context updates."""
+
+    pipeline = high_frequency_step
+    runner = Flujo(pipeline, context_model=PerformanceContext)
+
+    # Run multiple times to test high-frequency updates
+    start_time = time.time()
+    results = []
+
+    for i in range(20):
+        result = await gather_result(runner, f"high_freq_input_{i}")
+        results.append(result)
+
+    total_time = time.time() - start_time
+
+    # Verify all runs completed successfully
+    for result in results:
+        assert result.step_history[-1].success is True
+        assert result.final_pipeline_context.operation_count == 1  # Each run gets fresh context
+        assert result.final_pipeline_context.context_updates == 1
+
+    # Performance assertion (should complete within reasonable time)
+    assert total_time < 10.0, f"High frequency test took too long: {total_time:.2f}s"
+
+    # Verify high-frequency updates (check last result)
+    final_result = results[-1]
+    assert final_result.final_pipeline_context.operation_count == 1
+    assert final_result.final_pipeline_context.context_updates == 1
+    assert (
+        len(final_result.final_pipeline_context.performance_metrics) >= 10
+    )  # 1 * 10 rapid updates
+
+
+@pytest.mark.asyncio
+async def test_performance_with_context_updates_memory_intensive():
+    """Test performance with memory-intensive operations."""
+
+    pipeline = memory_intensive_step
+    runner = Flujo(pipeline, context_model=PerformanceContext)
+
+    # Run memory-intensive operation
+    start_time = time.time()
+    result = await gather_result(runner, "memory_intensive_test")
+    execution_time = time.time() - start_time
+
+    # Verify successful execution
+    assert result.step_history[-1].success is True
+    assert result.final_pipeline_context.operation_count == 1
+    assert result.final_pipeline_context.context_updates == 1
+
+    # Verify large data was created
+    assert len(result.final_pipeline_context.large_data) >= 50000
+    assert len(result.final_pipeline_context.large_list) >= 100
+    assert "large_arrays" in result.final_pipeline_context.complex_object
+
+    # Performance assertion (should complete within reasonable time)
+    assert execution_time < 3.0, f"Memory intensive test took too long: {execution_time:.2f}s"
+
+
+@pytest.mark.asyncio
+async def test_performance_with_context_updates_parallel():
+    """Test performance with parallel context updates."""
+
+    # Create parallel pipeline with context-updating steps
+    parallel_pipeline = Step.parallel(
+        "parallel_performance",
+        {
+            "perf1": performance_step,
+            "perf2": performance_step,
+            "perf3": performance_step,
+        },
+        merge_strategy=MergeStrategy.CONTEXT_UPDATE,
+    )
+
+    runner = Flujo(parallel_pipeline, context_model=PerformanceContext)
+
+    # Run parallel performance test
+    start_time = time.time()
+    result = await gather_result(runner, "parallel_performance_test")
+    execution_time = time.time() - start_time
+
+    # Verify successful execution
+    assert result.step_history[-1].success is True
+    assert len(result.step_history) == 1  # Parallel steps are aggregated into one result
+
+    # Verify parallel context updates (should be aggregated, but only one operation per branch)
+    assert result.final_pipeline_context.operation_count >= 1  # At least one operation
+    assert result.final_pipeline_context.context_updates >= 1  # At least one context update
+
+    # Performance assertion (parallel should be faster than sequential)
+    assert execution_time < 2.0, f"Parallel performance test took too long: {execution_time:.2f}s"
+
+
+@pytest.mark.asyncio
+async def test_performance_with_context_updates_complex_pipeline():
+    """Test performance with complex pipeline involving multiple context updates."""
+
+    # Create complex pipeline with multiple context-updating steps
+    complex_pipeline = Pipeline(
+        steps=[
+            performance_step,
+            large_context_step,
+            high_frequency_step,
+            memory_intensive_step,
+        ]
+    )
+
+    runner = Flujo(complex_pipeline, context_model=PerformanceContext)
+
+    # Run complex pipeline
+    start_time = time.time()
+    result = await gather_result(runner, "complex_performance_test")
+    execution_time = time.time() - start_time
+
+    # Verify successful execution
+    assert result.step_history[-1].success is True
+    assert len(result.step_history) == 4
+
+    # Verify all steps executed and updated context
+    assert result.final_pipeline_context.operation_count == 4
+    assert result.final_pipeline_context.context_updates == 4
+
+    # Verify large data was processed
+    assert len(result.final_pipeline_context.large_data) > 10000
+    assert (
+        len(result.final_pipeline_context.large_list) >= 100
+    )  # Memory intensive step creates 100 items
+    assert len(result.final_pipeline_context.performance_metrics) > 0
+
+    # Performance assertion (complex pipeline should complete within reasonable time)
+    assert execution_time < 5.0, f"Complex pipeline test took too long: {execution_time:.2f}s"
+
+
+@pytest.mark.asyncio
+async def test_performance_with_context_updates_error_handling():
+    """Test performance with error handling and context updates."""
+
+    @step(updates_context=True)
+    async def error_prone_step(data: Any, *, context: PerformanceContext) -> Dict[str, Any]:
+        """Step that may fail but updates context."""
+        context.operation_count += 1
+        context.context_updates += 1
+
+        if context.operation_count % 3 == 0:  # Fail every 3rd operation
+            raise RuntimeError(f"Intentional failure at operation {context.operation_count}")
+
+        return {
+            "operation_count": context.operation_count,
+            "context_updates": context.context_updates,
+        }
+
+    pipeline = error_prone_step
+    runner = Flujo(pipeline, context_model=PerformanceContext)
+
+    # Run multiple times to test error handling
+    start_time = time.time()
+    results = []
+
+    for i in range(10):
+        try:
+            result = await gather_result(runner, f"error_test_{i}")
+            results.append(result)
+        except Exception:
+            # Expected some failures
+            pass
+
+    total_time = time.time() - start_time
+
+    # Verify some runs completed successfully (should be about 7 out of 10)
+    assert len(results) >= 5, f"Expected at least 5 successful runs, got {len(results)}"
+
+    # Performance assertion (should complete within reasonable time despite errors)
+    assert total_time < 5.0, f"Error handling test took too long: {total_time:.2f}s"
+
+    # Verify context updates from successful runs
+    if results:
+        final_result = results[-1]
+        assert final_result.final_pipeline_context.operation_count > 0
+        assert final_result.final_pipeline_context.context_updates > 0

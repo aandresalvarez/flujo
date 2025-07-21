@@ -551,3 +551,40 @@ class TestParallelStepExecution:
                 usage_limits=usage_limits,
                 context_setter=mock_context_setter,
             )
+
+    @pytest.mark.asyncio
+    async def test_parallel_execution_merge_context_update(
+        self, mock_step_executor, mock_context_setter
+    ):
+        """Test parallel execution with CONTEXT_UPDATE merge strategy."""
+        from flujo.domain.dsl.step import MergeStrategy
+
+        parallel_step = ParallelStep(
+            name="test_parallel",
+            branches={
+                "branch1": Pipeline(steps=[Step(name="step1", agent=StubAgent(["output1"]))]),
+                "branch2": Pipeline(steps=[Step(name="step2", agent=StubAgent(["output2"]))]),
+            },
+            merge_strategy=MergeStrategy.CONTEXT_UPDATE,
+            field_mapping={
+                "branch1": ["field1"],
+                "branch2": ["field2"],
+            },
+            on_branch_failure=BranchFailureStrategy.PROPAGATE,
+        )
+
+        context = MockContext({"key": "value"})
+
+        result = await _execute_parallel_step_logic(
+            parallel_step=parallel_step,
+            parallel_input="test_input",
+            context=context,
+            resources=None,
+            step_executor=mock_step_executor,
+            context_model_defined=True,
+            context_setter=mock_context_setter,
+        )
+
+        assert result.success
+        # The mock executor returns input_data as output, so both branches return "test_input"
+        assert result.output == {"branch1": "test_input", "branch2": "test_input"}

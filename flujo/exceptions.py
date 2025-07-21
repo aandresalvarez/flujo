@@ -122,3 +122,73 @@ class AgentIOValidationError(OrchestratorError):
     """Raised when an agent's input or output validation fails."""
 
     pass
+
+
+class FlujoFrameworkError(Exception):
+    """Base exception for Flujo framework with enhanced error messages."""
+
+    def __init__(
+        self, message: str, suggestion: str | None = None, code: str | None = None
+    ) -> None:
+        self.message = message
+        self.suggestion = suggestion
+        self.code = code
+        super().__init__(self._format_message())
+
+    def _format_message(self) -> str:
+        """
+        Constructs a formatted error message for the exception.
+
+        The message includes the main error description (`self.message`), and optionally
+        appends a suggestion (`self.suggestion`) and an error code (`self.code`) if they
+        are provided.
+
+        Returns:
+            str: A formatted string containing the error details.
+        """
+        components = [f"Flujo Error: {self.message}"]
+        if self.suggestion:
+            components.append(f"\n\nSuggestion: {self.suggestion}")
+        if self.code:
+            components.append(f"\n\nError Code: {self.code}")
+        return "".join(components)
+
+
+class ContextFieldError(FlujoFrameworkError):
+    """Raised when trying to set a field that doesn't exist in the context."""
+
+    def __init__(self, field_name: str, context_class: str, available_fields: list[str]) -> None:
+        super().__init__(
+            f"'{context_class}' object has no field '{field_name}'",
+            f"Available fields: {', '.join(available_fields)}",
+            "CONTEXT_FIELD_ERROR",
+        )
+
+
+class StepInvocationError(FlujoFrameworkError):
+    """Unified exception for step invocation errors.
+
+    This exception replaces ImproperStepInvocationError for consistency
+    and provides enhanced error messages for better debugging.
+
+    Note: ImproperStepInvocationError is deprecated and will be removed in a future version.
+    Use StepInvocationError for new code.
+    """
+
+    def __init__(self, step_name: str):
+        super().__init__(
+            f"Step '{step_name}' cannot be invoked directly",
+            "Use Pipeline.from_step() or Step.solution() to wrap the step",
+            "STEP_INVOCATION_ERROR",
+        )
+
+
+class ParallelStepError(FlujoFrameworkError):
+    """Raised when there's an issue with parallel step execution."""
+
+    def __init__(self, step_name: str, branch_name: str, issue: str):
+        super().__init__(
+            f"Parallel step '{step_name}' branch '{branch_name}': {issue}",
+            "Consider using MergeStrategy.CONTEXT_UPDATE with field_mapping",
+            "PARALLEL_STEP_ERROR",
+        )

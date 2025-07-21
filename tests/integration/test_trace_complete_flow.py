@@ -105,7 +105,9 @@ class TestTraceCompleteFlow:
 
         # Verify trace was persisted
         run_id = result.final_pipeline_context.run_id
-        print(f"[DEBUG] run_id for failed step: {run_id}")
+        # Integration test: Use State Backend for persistent recording
+        # Debug information is captured in the pipeline context and can be queried
+        # No direct logging needed in integration tests - use context assertions instead
         # Retry up to 3 times in case of async delay
         traces = None
         for _ in range(3):
@@ -115,7 +117,6 @@ class TestTraceCompleteFlow:
             import asyncio
 
             await asyncio.sleep(0.2)
-        print(f"[DEBUG] traces for failed step: {traces}")
         assert traces is not None
 
     @pytest.mark.asyncio
