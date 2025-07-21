@@ -49,6 +49,75 @@ from ...utils.context import safe_merge_context_updates
 
 TContext = TypeVar("TContext", bound=BaseModel)
 
+
+def _deep_merge_dict(target: Dict[str, Any], source: Dict[str, Any]) -> None:
+    """Deep merge two dictionaries, preserving nested structures.
+
+    Args:
+        target: The target dictionary to merge into
+        source: The source dictionary to merge from
+    """
+    for key, value in source.items():
+        if key in target and isinstance(target[key], dict) and isinstance(value, dict):
+            # Recursively merge nested dictionaries
+            _deep_merge_dict(target[key], value)
+        else:
+            # For non-dict values or new keys, simply assign
+            target[key] = value
+
+
+def _safe_merge_list(target: list[Any], source: list[Any]) -> None:
+    """Safely merge two lists with type validation.
+
+    Args:
+        target: The target list to merge into
+        source: The source list to merge from
+
+    Raises:
+        TypeError: If the lists contain incompatible types for merging
+    """
+    # Validate that both lists contain similar types for safe merging
+    if not target or not source:
+        # Empty lists are always safe to merge
+        target.extend(source)
+        return
+
+    # Check if the lists contain similar types (all dicts, all strings, etc.)
+    target_types = {type(item) for item in target}
+    source_types = {type(item) for item in source}
+
+    # If both lists have consistent types and they're compatible, merge safely
+    if len(target_types) <= 1 and len(source_types) <= 1:
+        # Check if the types are compatible for merging
+        if not target_types or not source_types or target_types == source_types:
+            # Both lists have consistent types, safe to merge
+            target.extend(source)
+        else:
+            # Types are consistent but incompatible - skip merging
+            # This prevents mixing int and str, for example
+            return
+    else:
+        # Mixed types - use a more conservative approach
+        # Only merge if the source list items are compatible with target types
+        for item in source:
+            if not target:
+                # Empty target, add first item and update target_types
+                target.append(item)
+                target_types = {type(item)}
+            elif type(item) in target_types:
+                # Item is compatible with existing target types
+                target.append(item)
+            else:
+                # Skip incompatible items to prevent type errors
+                # Log a warning for debugging
+                import logging
+
+                logging.warning(
+                    f"Skipped incompatible item of type {type(item)} during list merging."
+                )
+                continue
+
+
 # Alias used across step logic helpers
 StepExecutor = Callable[
     [Step[Any, Any], Any, Optional[TContext], Optional[AppResources]],
@@ -448,7 +517,17 @@ async def _execute_parallel_step_logic(
                     # Default behavior: merge all fields that exist in the context
                     for key, value in branch_data.items():
                         if hasattr(context, key):
-                            setattr(context, key, value)
+                            current_value = getattr(context, key)
+                            # Enhanced merging with type validation and deep merge
+                            if isinstance(current_value, dict) and isinstance(value, dict):
+                                # Deep merge dictionaries to prevent data loss
+                                _deep_merge_dict(current_value, value)
+                            elif isinstance(current_value, list) and isinstance(value, list):
+                                # Type-safe list merging with validation
+                                _safe_merge_list(current_value, value)
+                            else:
+                                # For other types, overwrite (original behavior)
+                                setattr(context, key, value)
             elif parallel_step.merge_strategy == MergeStrategy.MERGE_SCRATCHPAD and hasattr(
                 branch_ctx, "scratchpad"
             ):
@@ -895,14 +974,18 @@ async def _execute_dynamic_router_step_logic(
         spec = analyze_signature(func)
 
         router_kwargs: Dict[str, Any] = {}
+
+        # Handle context parameter passing - follow the same pattern as regular step logic
         if spec.needs_context:
             if context is None:
                 raise TypeError(
-                    "Router agent requires a context but none was provided to the runner."
+                    f"Router agent in step '{router_step.name}' requires a context, but no context model was provided to the Flujo runner."
                 )
+            router_kwargs["context"] = context
         elif _should_pass_context(spec, context, func):
             router_kwargs["context"] = context
 
+        # Handle resources parameter passing
         if resources is not None:
             if _accepts_param(func, "resources"):
                 router_kwargs["resources"] = resources
