@@ -6,6 +6,7 @@ from typing import Any
 from flujo.domain.commands import AgentCommand, FinishCommand, RunAgentCommand
 from flujo.domain.models import PipelineContext, PipelineResult
 from flujo.recipes.factories import make_agentic_loop_pipeline, run_agentic_loop_pipeline
+from tests.conftest import create_test_flujo
 
 
 class MockPlannerAgent:
@@ -107,7 +108,7 @@ async def test_agentic_loop_pipeline_resume():
 @pytest.mark.asyncio
 async def test_agentic_loop_pipeline_as_step():
     """Test agentic loop pipeline as a step in another pipeline."""
-    from flujo import Flujo, Step
+    from flujo import Step
 
     planner = MockPlannerAgent([FinishCommand(final_answer="done")])
     registry = {"test": MockExecutorAgent(["result"])}
@@ -120,7 +121,7 @@ async def test_agentic_loop_pipeline_as_step():
     )
 
     # Use it in another pipeline
-    runner = Flujo(step)
+    runner = create_test_flujo(step)
     from flujo.testing.utils import gather_result
 
     result = await gather_result(runner, "test goal")

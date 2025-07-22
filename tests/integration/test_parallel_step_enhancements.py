@@ -4,10 +4,11 @@ import time
 from typing import Any
 from flujo.domain.models import BaseModel
 
-from flujo import Flujo, Step
+from flujo import Step
 from flujo.domain import UsageLimits
 from flujo.exceptions import UsageLimitExceededError
 from flujo.testing.utils import gather_result
+from tests.conftest import create_test_flujo
 
 
 class LargeContext(BaseModel):
@@ -30,7 +31,17 @@ class CostlyAgent:
         self.tokens = tokens
         self.delay = delay
 
-    async def run(self, data: Any) -> Any:
+    async def run(self, data: Any, *, breach_event=None) -> Any:
+        # Check for breach event to support proactive cancellation
+        if breach_event is not None and breach_event.is_set():
+            # Early exit if breach detected
+            class Output(BaseModel):
+                value: Any
+                cost_usd: float = 0.0
+                token_counts: int = 0
+
+            return Output(value=data)
+
         await asyncio.sleep(self.delay)  # Simulate expensive operation
 
         class Output(BaseModel):
@@ -89,8 +100,8 @@ async def test_context_include_keys_optimization() -> None:
     parallel_full = Step.parallel("parallel_full", branches)
 
     context = LargeContext()
-    runner_selective = Flujo(parallel_selective, context_model=LargeContext)
-    runner_full = Flujo(parallel_full, context_model=LargeContext)
+    runner_selective = create_test_flujo(parallel_selective, context_model=LargeContext)
+    runner_full = create_test_flujo(parallel_full, context_model=LargeContext)
 
     # Measure performance difference
     start = time.monotonic()
@@ -128,7 +139,7 @@ async def test_context_include_keys_isolation() -> None:
     parallel = Step.parallel("parallel_isolated", branches, context_include_keys=["field_1"])
 
     context = LargeContext()
-    runner = Flujo(parallel, context_model=LargeContext)
+    runner = create_test_flujo(parallel, context_model=LargeContext)
 
     result = await gather_result(runner, "input", initial_context_data=context.model_dump())
 
@@ -159,7 +170,7 @@ async def test_proactive_governor_cancellation() -> None:
 
     parallel = Step.parallel("parallel_cancellation", branches)
     limits = UsageLimits(total_cost_usd_limit=0.10)  # Limit that will be breached by fast_expensive
-    runner = Flujo(parallel, usage_limits=limits)
+    runner = create_test_flujo(parallel, usage_limits=limits)
 
     start_time = time.monotonic()
 
@@ -207,7 +218,7 @@ async def test_proactive_cancellation_with_multiple_branches() -> None:
 
     parallel = Step.parallel("parallel_multi_cancellation", branches)
     limits = UsageLimits(total_cost_usd_limit=0.12)  # Limit that will be breached by branch_3
-    runner = Flujo(parallel, usage_limits=limits)
+    runner = create_test_flujo(parallel, usage_limits=limits)
 
     start_time = time.monotonic()
 
@@ -246,7 +257,7 @@ async def test_proactive_cancellation_token_limits() -> None:
 
     parallel = Step.parallel("parallel_token_cancellation", branches)
     limits = UsageLimits(total_tokens_limit=100)  # Limit that will be breached by high_tokens
-    runner = Flujo(parallel, usage_limits=limits)
+    runner = create_test_flujo(parallel, usage_limits=limits)
 
     start_time = time.monotonic()
 
@@ -273,7 +284,7 @@ async def test_backward_compatibility_no_context_include_keys() -> None:
 
     # Test without context_include_keys (default behavior)
     parallel = Step.parallel("parallel_default", branches)
-    runner = Flujo(parallel)
+    runner = create_test_flujo(parallel)
 
     result = await gather_result(runner, "input")
 
@@ -294,7 +305,7 @@ async def test_backward_compatibility_no_usage_limits() -> None:
     }
 
     parallel = Step.parallel("parallel_no_limits", branches)
-    runner = Flujo(parallel)  # No usage limits
+    runner = create_test_flujo(parallel)  # No usage limits
 
     result = await gather_result(runner, "input")
 
@@ -322,7 +333,7 @@ async def test_context_include_keys_with_nonexistent_fields() -> None:
     )
 
     context = LargeContext()
-    runner = Flujo(parallel, context_model=LargeContext)
+    runner = create_test_flujo(parallel, context_model=LargeContext)
 
     result = await gather_result(runner, "input", initial_context_data=context.model_dump())
 
@@ -356,7 +367,7 @@ async def test_proactive_cancellation_error_handling() -> None:
     }
 
     parallel = Step.parallel("parallel_error_handling", branches)
-    runner = Flujo(parallel)
+    runner = create_test_flujo(parallel)
 
     result = await gather_result(runner, "input")
 

@@ -3,13 +3,13 @@ from typing import AsyncIterator, Any
 
 import pytest
 
-from flujo.application.runner import Flujo
 from flujo.domain import Step
 from flujo.domain.models import PipelineResult
 from flujo.domain.resources import AppResources
 from flujo.testing.utils import StubAgent, FailingStreamAgent
 from flujo.domain.models import BaseModel
 from flujo.domain.agent_protocol import ContextAwareAgentProtocol
+from tests.conftest import create_test_flujo
 
 
 class MockStreamingAgent:
@@ -22,7 +22,7 @@ class MockStreamingAgent:
 @pytest.mark.asyncio
 async def test_basic_streaming() -> None:
     pipeline = Step.solution(MockStreamingAgent())
-    runner = Flujo(pipeline)
+    runner = create_test_flujo(pipeline)
 
     chunks = []
     final: PipelineResult | None = None
@@ -39,7 +39,7 @@ async def test_basic_streaming() -> None:
 @pytest.mark.asyncio
 async def test_non_streaming_pipeline() -> None:
     pipeline = Step.solution(StubAgent(["ok"]))
-    runner = Flujo(pipeline)
+    runner = create_test_flujo(pipeline)
 
     items = [c async for c in runner.stream_async("x")]
     assert len(items) == 1
@@ -70,7 +70,7 @@ class CtxStreamAgent(ContextAwareAgentProtocol[int, list, Ctx]):
 async def test_context_and_resources_in_stream() -> None:
     pipeline = Step.model_validate({"name": "s", "agent": CtxStreamAgent()})
     resources = MyResources(increment=2)
-    runner = Flujo(
+    runner = create_test_flujo(
         pipeline,
         context_model=Ctx,
         initial_context_data={"count": 0},
@@ -88,7 +88,7 @@ async def test_context_and_resources_in_stream() -> None:
 async def test_pipeline_handles_streaming_agent_failure_gracefully() -> None:
     agent = FailingStreamAgent(["H", "e", "l"], RuntimeError("Stream connection lost"))
     pipeline = Step.solution(agent)
-    runner = Flujo(pipeline)
+    runner = create_test_flujo(pipeline)
 
     collected: list[str] = []
     final: PipelineResult | None = None

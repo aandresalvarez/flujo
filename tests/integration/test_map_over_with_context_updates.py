@@ -7,11 +7,12 @@ which could reveal bugs in context state management during iterative operations.
 
 import pytest
 from typing import Any, List, Dict
-from flujo import Flujo, step, Step
+from flujo import step, Step
 from flujo.domain.models import PipelineContext
 from flujo.domain.dsl.step import MergeStrategy
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.testing.utils import gather_result
+from tests.conftest import create_test_flujo
 
 
 class MapContext(PipelineContext):
@@ -117,7 +118,7 @@ async def test_map_over_with_context_updates_basic():
         ],
     )
 
-    runner = Flujo(map_step, context_model=MapContext)
+    runner = create_test_flujo(map_step, context_model=MapContext)
     result = await gather_result(runner, None)
 
     # Verify map operation with context updates
@@ -151,7 +152,7 @@ async def test_map_over_with_context_updates_error_handling():
         ],
     )
 
-    runner = Flujo(map_step, context_model=MapContext)
+    runner = create_test_flujo(map_step, context_model=MapContext)
     result = await gather_result(runner, None)
 
     # Verify error handling with context updates
@@ -187,7 +188,7 @@ async def test_map_over_with_context_updates_context_dependent():
         ],
     )
 
-    runner = Flujo(map_step, context_model=MapContext)
+    runner = create_test_flujo(map_step, context_model=MapContext)
     result = await gather_result(runner, None)
 
     # Verify context-dependent processing
@@ -221,7 +222,7 @@ async def test_map_over_with_context_updates_nested_context():
         ],
     )
 
-    runner = Flujo(map_step, context_model=MapContext)
+    runner = create_test_flujo(map_step, context_model=MapContext)
     result = await gather_result(runner, None)
 
     # Verify nested context operations
@@ -269,7 +270,7 @@ async def test_map_over_with_context_updates_state_isolation():
         field_mapping=["current_item", "total_processed", "processed_items", "map_results"],
     )
 
-    runner = Flujo(map_step, context_model=MapContext)
+    runner = create_test_flujo(map_step, context_model=MapContext)
     result = await gather_result(runner, None)
 
     # Verify state isolation
@@ -321,7 +322,7 @@ async def test_map_over_with_context_updates_complex_aggregation():
         field_mapping=["current_item", "total_processed", "processed_items", "map_results"],
     )
 
-    runner = Flujo(map_step, context_model=MapContext)
+    runner = create_test_flujo(map_step, context_model=MapContext)
     result = await gather_result(runner, None)
 
     # Verify complex aggregation
@@ -372,7 +373,7 @@ async def test_map_over_with_context_updates_metadata_conflicts():
         field_mapping=["current_item", "total_processed", "processed_items", "map_results"],
     )
 
-    runner = Flujo(map_step, context_model=MapContext)
+    runner = create_test_flujo(map_step, context_model=MapContext)
     result = await gather_result(runner, None)
 
     # Verify metadata handling

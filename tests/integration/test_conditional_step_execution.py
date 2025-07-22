@@ -3,9 +3,9 @@ from typing import Any
 from pydantic import BaseModel
 
 from flujo.domain import Step, Pipeline
-from flujo.application.runner import Flujo
 from flujo.testing.utils import StubAgent, DummyPlugin, gather_result
 from flujo.domain.plugins import PluginOutcome
+from tests.conftest import create_test_flujo
 
 
 class EchoAgent:
@@ -25,7 +25,7 @@ async def test_branch_a_executes() -> None:
         condition_callable=lambda out, ctx: out,
         branches=branches,
     )
-    runner = Flujo(classify >> branch_step)
+    runner = create_test_flujo(classify >> branch_step)
     result = await gather_result(runner, "in")
     step_result = result.step_history[-1]
     assert step_result.success is True
@@ -45,7 +45,7 @@ async def test_branch_b_executes() -> None:
         condition_callable=lambda out, ctx: out,
         branches=branches,
     )
-    runner = Flujo(classify >> branch_step)
+    runner = create_test_flujo(classify >> branch_step)
     result = await gather_result(runner, "in")
     assert result.step_history[-1].output == "B"
     assert result.step_history[-1].metadata_["executed_branch_key"] == "b"
@@ -64,7 +64,7 @@ async def test_default_branch_used() -> None:
         branches=branches,
         default_branch_pipeline=default,
     )
-    runner = Flujo(classify >> branch_step)
+    runner = create_test_flujo(classify >> branch_step)
     result = await gather_result(runner, "in")
     assert result.step_history[-1].output == "DEF"
     assert result.step_history[-1].metadata_["executed_branch_key"] == "x"
@@ -81,7 +81,7 @@ async def test_no_match_no_default_fails() -> None:
         condition_callable=lambda out, ctx: out,
         branches=branches,
     )
-    runner = Flujo(classify >> branch_step)
+    runner = create_test_flujo(classify >> branch_step)
     result = await gather_result(runner, "in")
     step_result = result.step_history[-1]
     assert step_result.success is False
@@ -104,7 +104,7 @@ async def test_condition_uses_context() -> None:
         condition_callable=lambda out, ctx: ctx.flag if ctx else "a",
         branches=branches,
     )
-    runner = Flujo(
+    runner = create_test_flujo(
         classify >> branch_step,
         context_model=FlagCtx,
         initial_context_data={"flag": "b"},
@@ -126,7 +126,7 @@ async def test_mappers_applied() -> None:
         branch_input_mapper=lambda inp, ctx: inp + 1,
         branch_output_mapper=lambda out, key, ctx: out * 10,
     )
-    runner = Flujo(branch_step)
+    runner = create_test_flujo(branch_step)
     result = await gather_result(runner, 1)
     assert result.step_history[-1].output == 20
 
@@ -143,7 +143,7 @@ async def test_failure_in_branch_propagates() -> None:
         condition_callable=lambda out, ctx: "a",
         branches=branches,
     )
-    runner = Flujo(branch_step)
+    runner = create_test_flujo(branch_step)
     result = await gather_result(runner, "in")
     step_result = result.step_history[-1]
     assert step_result.success is False
@@ -164,7 +164,7 @@ async def test_condition_exception_fails_step() -> None:
         condition_callable=condition,
         branches=branches,
     )
-    runner = Flujo(branch_step)
+    runner = create_test_flujo(branch_step)
     result = await gather_result(runner, "in")
     step_result = result.step_history[-1]
     assert step_result.success is False
@@ -186,7 +186,7 @@ async def test_conditional_step_error_in_condition_callable() -> None:
         branches=branches,
     )
     after = Step.model_validate({"name": "after", "agent": StubAgent(["after"])})
-    runner = Flujo(branch_step >> after)
+    runner = create_test_flujo(branch_step >> after)
     result = await gather_result(runner, "in")
     assert len(result.step_history) == 1
     step_result = result.step_history[0]
@@ -209,7 +209,7 @@ async def test_conditional_step_error_in_branch_input_mapper() -> None:
         branches=branches,
         branch_input_mapper=branch_input,
     )
-    runner = Flujo(branch_step)
+    runner = create_test_flujo(branch_step)
     result = await gather_result(runner, "in")
     step_result = result.step_history[-1]
     assert step_result.success is False
@@ -231,7 +231,7 @@ async def test_conditional_step_error_in_branch_output_mapper() -> None:
         branches=branches,
         branch_output_mapper=out_map,
     )
-    runner = Flujo(branch_step)
+    runner = create_test_flujo(branch_step)
     result = await gather_result(runner, 0)
     step_result = result.step_history[-1]
     assert step_result.success is False
@@ -254,7 +254,7 @@ async def test_conditional_step_branch_input_mapper_flow() -> None:
         branches=branches,
         branch_input_mapper=inp_map,
     )
-    runner = Flujo(step, context_model=FlagCtx)
+    runner = create_test_flujo(step, context_model=FlagCtx)
     await gather_result(runner, 1)
     assert captured and captured[0][0] == 1
     assert isinstance(captured[0][1], BaseModel)
@@ -277,7 +277,7 @@ async def test_conditional_step_branch_output_mapper_flow() -> None:
         branches=branches,
         branch_output_mapper=out_map,
     )
-    runner = Flujo(step, context_model=FlagCtx)
+    runner = create_test_flujo(step, context_model=FlagCtx)
     result = await gather_result(runner, 0)
     step_result = result.step_history[-1]
     assert step_result.output == 10
@@ -309,7 +309,7 @@ async def test_conditional_step_mappers_with_context_modification() -> None:
         branch_input_mapper=inp_map,
         branch_output_mapper=out_map,
     )
-    runner = Flujo(step, context_model=Ctx2)
+    runner = create_test_flujo(step, context_model=Ctx2)
     result = await gather_result(runner, 0)
     assert result.final_pipeline_context.val == 2
 
@@ -323,7 +323,7 @@ async def test_conditional_step_default_mapper_behavior() -> None:
         condition_callable=lambda out, ctx: "a",
         branches=branches,
     )
-    runner = Flujo(step)
+    runner = create_test_flujo(step)
     result = await gather_result(runner, "hi")
     step_result = result.step_history[-1]
     assert agent.inputs[0] == "hi"
@@ -358,7 +358,7 @@ async def test_conditional_step_overall_span(monkeypatch) -> None:
         condition_callable=lambda out, ctx: "a",
         branches=branches,
     )
-    runner = Flujo(branch_step)
+    runner = create_test_flujo(branch_step)
     await gather_result(runner, "in")
     assert "span_cond" in spans
 
@@ -403,7 +403,7 @@ async def test_conditional_step_branch_selection_logging_and_span_attributes(mon
         condition_callable=lambda out, ctx: "a",
         branches=branches,
     )
-    runner = Flujo(branch_step)
+    runner = create_test_flujo(branch_step)
     await gather_result(runner, "in")
     assert any("Condition evaluated to branch key 'a'" in m for m in infos)
     assert any("Executing branch for key 'a'" in m for m in infos)
@@ -447,7 +447,7 @@ async def test_conditional_step_no_branch_match_logging(monkeypatch) -> None:
         condition_callable=lambda out, ctx: "b",
         branches=branches,
     )
-    result = await gather_result(Flujo(step), "in")
+    result = await gather_result(create_test_flujo(step), "in")
     assert result.step_history[-1].success is False
     assert any("No branch" in w for w in warns)
 
@@ -490,5 +490,5 @@ async def test_conditional_step_error_logging_in_callables(monkeypatch) -> None:
             "a": Pipeline.from_step(Step.model_validate({"name": "a", "agent": StubAgent(["A"])}))
         },
     )
-    await gather_result(Flujo(step), "in")
+    await gather_result(create_test_flujo(step), "in")
     assert any("cond boom" in m for m in errors)

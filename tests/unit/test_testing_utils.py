@@ -11,6 +11,7 @@ from flujo.testing.utils import (
     gather_result,
     override_agent_direct,
 )
+from tests.conftest import create_test_flujo
 
 import inspect
 
@@ -170,11 +171,11 @@ class TestGatherResult:
     @pytest.mark.asyncio
     async def test_gather_result_basic(self):
         """Test basic gather_result functionality."""
-        from flujo import Flujo, Step
+        from flujo import Step
 
         # Create a simple pipeline
         step = Step(name="test", agent=StubAgent(["output"]))
-        pipeline = Flujo(step)
+        pipeline = create_test_flujo(step)
 
         result = await gather_result(pipeline, "input")
 
@@ -187,10 +188,10 @@ class TestGatherResult:
     @pytest.mark.asyncio
     async def test_gather_result_with_context(self):
         """Test gather_result with context."""
-        from flujo import Flujo, Step
+        from flujo import Step
 
         step = Step(name="test", agent=StubAgent(["output"]))
-        pipeline = Flujo(step)
+        pipeline = create_test_flujo(step)
 
         context_data = {"key": "value"}
         result = await gather_result(pipeline, "input", initial_context_data=context_data)
@@ -200,10 +201,10 @@ class TestGatherResult:
     @pytest.mark.asyncio
     async def test_gather_result_with_resources(self):
         """Test gather_result with resources."""
-        from flujo import Flujo, Step
+        from flujo import Step
 
         step = Step(name="test", agent=StubAgent(["output"]))
-        pipeline = Flujo(step)
+        pipeline = create_test_flujo(step)
 
         # Note: resources parameter is not supported by run_async
         result = await gather_result(pipeline, "input")
@@ -217,10 +218,10 @@ class TestAssertPipelineResult:
     @pytest.mark.asyncio
     async def test_assert_pipeline_result_success(self):
         """Test assert_pipeline_result with successful pipeline."""
-        from flujo import Flujo, Step
+        from flujo import Step
 
         step = Step(name="test", agent=StubAgent(["expected_output"]))
-        pipeline = Flujo(step)
+        pipeline = create_test_flujo(step)
 
         # Run the pipeline and get the result
         result = await gather_result(pipeline, "input")
@@ -231,10 +232,10 @@ class TestAssertPipelineResult:
     @pytest.mark.asyncio
     async def test_assert_pipeline_result_failure(self):
         """Test assert_pipeline_result with failed pipeline."""
-        from flujo import Flujo, Step
+        from flujo import Step
 
         step = Step(name="test", agent=StubAgent([]))  # Will raise IndexError
-        pipeline = Flujo(step)
+        pipeline = create_test_flujo(step)
 
         # The pipeline will fail, so we need to handle the exception
         try:
@@ -249,10 +250,10 @@ class TestAssertPipelineResult:
     @pytest.mark.asyncio
     async def test_assert_pipeline_result_wrong_output(self):
         """Test assert_pipeline_result with wrong output."""
-        from flujo import Flujo, Step
+        from flujo import Step
 
         step = Step(name="test", agent=StubAgent(["actual_output"]))
-        pipeline = Flujo(step)
+        pipeline = create_test_flujo(step)
 
         # Run the pipeline and get the result
         result = await gather_result(pipeline, "input")
@@ -263,10 +264,10 @@ class TestAssertPipelineResult:
     @pytest.mark.asyncio
     async def test_assert_pipeline_result_no_output_check(self):
         """Test assert_pipeline_result without output checking."""
-        from flujo import Flujo, Step
+        from flujo import Step
 
         step = Step(name="test", agent=StubAgent(["any_output"]))
-        pipeline = Flujo(step)
+        pipeline = create_test_flujo(step)
 
         # Run the pipeline and get the result
         result = await gather_result(pipeline, "input")

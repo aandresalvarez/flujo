@@ -1,7 +1,6 @@
 import pytest
 from unittest.mock import MagicMock
 from flujo import (
-    Flujo,
     Step,
     Pipeline,
 )
@@ -17,6 +16,7 @@ from flujo.domain.agent_protocol import AsyncAgentProtocol
 from flujo.testing.utils import StubAgent, DummyPlugin, PluginOutcome, gather_result
 from tests.integration.test_usage_governor import FixedMetricAgent
 from flujo.exceptions import UsageLimitExceededError, PipelineAbortSignal
+from tests.conftest import create_test_flujo
 
 
 class HookResources(AppResources):
@@ -70,7 +70,7 @@ async def test_all_hooks_are_called_in_correct_order(
     async def recorder(payload: HookPayload) -> None:
         await generic_recorder_hook(call_recorder, payload)
 
-    runner = Flujo(pipeline, hooks=[recorder])
+    runner = create_test_flujo(pipeline, hooks=[recorder])
     await gather_result(runner, "start")
 
     events = [p.event_name for p in call_recorder]
@@ -102,7 +102,7 @@ async def test_on_step_failure_hook_is_called(
     async def recorder(payload: HookPayload) -> None:
         await generic_recorder_hook(call_recorder, payload)
 
-    runner = Flujo(pipeline, hooks=[recorder])
+    runner = create_test_flujo(pipeline, hooks=[recorder])
     await gather_result(runner, "start")
 
     events = [p.event_name for p in call_recorder]
@@ -127,7 +127,7 @@ async def test_hook_receives_correct_arguments(
     async def recorder(payload: HookPayload) -> None:
         await generic_recorder_hook(call_recorder, payload)
 
-    runner = Flujo(pipeline, hooks=[recorder])
+    runner = create_test_flujo(pipeline, hooks=[recorder])
     await gather_result(runner, "start")
 
     pre_run_call = next(p for p in call_recorder if p.event_name == "pre_run")
@@ -161,7 +161,7 @@ async def test_pipeline_aborts_gracefully_from_hook(
     async def hook(payload: HookPayload) -> None:
         await aborting_hook(call_recorder, payload)
 
-    runner = Flujo(pipeline, hooks=[hook])
+    runner = create_test_flujo(pipeline, hooks=[hook])
     result = await gather_result(runner, "start")
 
     assert isinstance(result, PipelineResult)
@@ -177,7 +177,7 @@ async def test_faulty_hook_does_not_crash_pipeline(
     pipeline = Step.model_validate(
         {"name": "s1", "agent": cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok"]))}
     )
-    runner = Flujo(pipeline, hooks=[erroring_hook])
+    runner = create_test_flujo(pipeline, hooks=[erroring_hook])
 
     result = await gather_result(runner, "start")
 
@@ -198,7 +198,7 @@ async def test_hooks_receive_context_and_resources(
     async def recorder(payload: HookPayload) -> None:
         await generic_recorder_hook(call_recorder, payload)
 
-    runner = Flujo(
+    runner = create_test_flujo(
         pipeline,
         context_model=HookContext,
         initial_context_data={"call_count": 0},
@@ -221,7 +221,7 @@ async def test_post_run_abort_does_not_mask_errors() -> None:
     pipeline = Pipeline.from_step(
         Step.model_validate({"name": "metric_step", "agent": FixedMetricAgent()})
     )
-    runner = Flujo(pipeline, usage_limits=limits, hooks=[post_run_abort_hook])
+    runner = create_test_flujo(pipeline, usage_limits=limits, hooks=[post_run_abort_hook])
 
     with pytest.raises(UsageLimitExceededError):
         await gather_result(runner, 0)
@@ -245,7 +245,7 @@ async def test_incrementing_stub_agent(
     async def recorder(payload: HookPayload) -> None:
         await generic_recorder_hook(call_recorder, payload)
 
-    runner = Flujo(
+    runner = create_test_flujo(
         pipeline,
         context_model=HookContext,
         initial_context_data={"call_count": 0},

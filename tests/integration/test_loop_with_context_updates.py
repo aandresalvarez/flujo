@@ -9,11 +9,11 @@ problematic due to context state management across iterations.
 import pytest
 from typing import Any
 
-from flujo.application.runner import Flujo
 from flujo.domain import Step, Pipeline
 from flujo.domain.models import PipelineContext
 from flujo.domain.dsl import step
 from flujo.testing.utils import gather_result
+from tests.conftest import create_test_flujo
 
 
 class LoopContext(PipelineContext):
@@ -84,7 +84,7 @@ async def test_loop_with_context_updates_basic():
         max_loops=5,
     )
 
-    runner = Flujo(loop_step, context_model=LoopContext)
+    runner = create_test_flujo(loop_step, context_model=LoopContext)
     result = await gather_result(runner, 5)
 
     # Verify loop executed correctly with context updates
@@ -115,7 +115,7 @@ async def test_loop_with_context_updates_complex():
     # Add finalization step
     pipeline = loop_step >> finalize_state
 
-    runner = Flujo(pipeline, context_model=LoopContext)
+    runner = create_test_flujo(pipeline, context_model=LoopContext)
     result = await gather_result(runner, 3)
 
     # Verify complex loop execution with context updates
@@ -153,7 +153,7 @@ async def test_loop_with_context_updates_mapper_conflicts():
         max_loops=5,
     )
 
-    runner = Flujo(loop_step, context_model=LoopContext)
+    runner = create_test_flujo(loop_step, context_model=LoopContext)
     result = await gather_result(runner, 2)
 
     # Verify mapper doesn't conflict with context updates
@@ -178,7 +178,7 @@ async def test_loop_with_context_updates_max_loops():
         max_loops=3,
     )
 
-    runner = Flujo(loop_step, context_model=LoopContext)
+    runner = create_test_flujo(loop_step, context_model=LoopContext)
     result = await gather_result(runner, 1)
 
     # Verify max_loops behavior with context updates
@@ -208,7 +208,7 @@ async def test_loop_with_context_updates_error_handling():
         max_loops=5,
     )
 
-    runner = Flujo(loop_step, context_model=LoopContext)
+    runner = create_test_flujo(loop_step, context_model=LoopContext)
     result = await gather_result(runner, 1)
 
     # Verify error handling with context updates
@@ -247,7 +247,7 @@ async def test_loop_with_context_updates_state_isolation():
         max_loops=5,
     )
 
-    runner = Flujo(loop_step, context_model=LoopContext)
+    runner = create_test_flujo(loop_step, context_model=LoopContext)
     result = await gather_result(runner, 5)
 
     # Verify state isolation and context propagation

@@ -9,11 +9,11 @@ problematic due to router state management and context field conflicts.
 import pytest
 from typing import Any, Dict
 
-from flujo.application.runner import Flujo
 from flujo.domain import Step, Pipeline
 from flujo.domain.models import PipelineContext
 from flujo.domain.dsl import step, MergeStrategy
 from flujo.testing.utils import gather_result
+from tests.conftest import create_test_flujo
 
 
 class RouterContext(PipelineContext):
@@ -205,7 +205,7 @@ async def test_dynamic_router_with_context_updates_basic():
     # Add finalization step
     pipeline = router_step >> finalize_router
 
-    runner = Flujo(pipeline, context_model=RouterContext)
+    runner = create_test_flujo(pipeline, context_model=RouterContext)
     result = await gather_result(runner, "test_a")
 
     # Verify router execution with context updates
@@ -257,7 +257,7 @@ async def test_dynamic_router_with_context_updates_numeric():
 
     pipeline = router_step >> finalize_router
 
-    runner = Flujo(pipeline, context_model=RouterContext)
+    runner = create_test_flujo(pipeline, context_model=RouterContext)
     result = await gather_result(runner, 7)
 
     # Verify router execution with context updates
@@ -305,7 +305,7 @@ async def test_dynamic_router_with_context_updates_multiple_branches():
 
     pipeline = router_step >> finalize_router
 
-    runner = Flujo(pipeline, context_model=RouterContext)
+    runner = create_test_flujo(pipeline, context_model=RouterContext)
     result = await gather_result(runner, "test")
 
     # Verify multiple steps in branch with context updates
@@ -340,7 +340,7 @@ async def test_dynamic_router_with_context_updates_error_handling():
         },
     )
 
-    runner = Flujo(router_step, context_model=RouterContext)
+    runner = create_test_flujo(router_step, context_model=RouterContext)
     result = await gather_result(runner, "test")
 
     # Verify error handling with context updates
@@ -392,7 +392,7 @@ async def test_dynamic_router_with_context_updates_state_isolation():
 
     pipeline = router_step >> finalize_router
 
-    runner = Flujo(pipeline, context_model=RouterContext)
+    runner = create_test_flujo(pipeline, context_model=RouterContext)
     result = await gather_result(runner, "test")
 
     # Verify state isolation and context propagation
@@ -447,7 +447,7 @@ async def test_dynamic_router_with_context_updates_complex_routing():
 
     pipeline = router_step >> finalize_router
 
-    runner = Flujo(pipeline, context_model=RouterContext)
+    runner = create_test_flujo(pipeline, context_model=RouterContext)
     result = await gather_result(runner, "test")
 
     # Verify complex routing with context updates
@@ -494,7 +494,7 @@ async def test_dynamic_router_with_context_updates_router_metadata():
 
     pipeline = router_step >> finalize_router
 
-    runner = Flujo(pipeline, context_model=RouterContext)
+    runner = create_test_flujo(pipeline, context_model=RouterContext)
     result = await gather_result(runner, "test")
 
     # Verify router metadata handling with context updates
@@ -535,7 +535,7 @@ async def test_dynamic_router_with_context_updates_nested_routing():
 
         # Create a pipeline from the nested router and execute it using Flujo runner
         nested_pipeline = Pipeline.from_step(nested_router_pipeline)
-        nested_runner = Flujo(nested_pipeline, context_model=RouterContext)
+        nested_runner = create_test_flujo(nested_pipeline, context_model=RouterContext)
         nested_result = await gather_result(nested_runner, data)
 
         return {
@@ -557,7 +557,7 @@ async def test_dynamic_router_with_context_updates_nested_routing():
 
     pipeline = router_step >> finalize_router
 
-    runner = Flujo(pipeline, context_model=RouterContext)
+    runner = create_test_flujo(pipeline, context_model=RouterContext)
     result = await gather_result(runner, "test")
 
     # Verify nested routing with context updates

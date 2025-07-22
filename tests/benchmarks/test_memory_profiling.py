@@ -4,8 +4,9 @@ import psutil
 import pytest
 from pydantic import BaseModel
 
-from flujo import Flujo, Step, Pipeline
+from flujo import Step, Pipeline
 from flujo.testing.utils import gather_result
+from tests.conftest import create_test_flujo
 
 
 class LargeModel(BaseModel):
@@ -35,7 +36,7 @@ async def test_loop_step_memory_stability() -> None:
         exit_condition_callable=lambda *_: False,
         max_loops=iterations,
     )
-    runner = Flujo(loop)
+    runner = create_test_flujo(loop)
 
     process = psutil.Process(os.getpid())
     gc.collect()

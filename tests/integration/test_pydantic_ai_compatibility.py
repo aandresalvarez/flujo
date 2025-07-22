@@ -1,11 +1,11 @@
 import pytest
 from flujo.domain.models import BaseModel
 
-from flujo.application.runner import Flujo
 from flujo.domain import Step
 from flujo.domain.models import Checklist, ChecklistItem
 from flujo.testing.utils import StubAgent, gather_result
 from flujo.infra.agents import AsyncAgentWrapper
+from tests.conftest import create_test_flujo
 
 
 class TypeCheckingAgent:
@@ -30,7 +30,7 @@ async def test_pydantic_models_are_serialized_for_agents():
         {"name": "consume", "agent": AsyncAgentWrapper(TypeCheckingAgent())}
     )
     pipeline = first >> second
-    runner = Flujo(pipeline)
+    runner = create_test_flujo(pipeline)
 
     result = await gather_result(runner, None)
 
@@ -48,7 +48,7 @@ async def test_pipeline_context_serialized_for_agent_kwargs():
         {"name": "consume", "agent": AsyncAgentWrapper(KwargCheckingAgent())}
     )
     pipeline = first >> second
-    runner = Flujo(
+    runner = create_test_flujo(
         pipeline,
         context_model=SimpleContext,
         initial_context_data={"foo": "bar"},

@@ -1,9 +1,10 @@
 import pytest
 from flujo.domain.models import BaseModel
 
-from flujo import Flujo, step
+from flujo import step
 from flujo.domain.resources import AppResources
 from flujo.testing.utils import gather_result
+from tests.conftest import create_test_flujo
 
 
 class Ctx(BaseModel):
@@ -32,7 +33,7 @@ async def legacy(_: int, *, context: Ctx) -> int:
 
 @pytest.mark.asyncio
 async def test_context_injected() -> None:
-    runner = Flujo(add, context_model=Ctx)
+    runner = create_test_flujo(add, context_model=Ctx)
     result = await gather_result(runner, 1)
     assert result.final_pipeline_context.num == 1
     assert result.step_history[-1].output == 1
@@ -40,13 +41,13 @@ async def test_context_injected() -> None:
 
 @pytest.mark.asyncio
 async def test_resources_injected() -> None:
-    runner = Flujo(res_step, context_model=Ctx, resources=MyRes(tag="X"))
+    runner = create_test_flujo(res_step, context_model=Ctx, resources=MyRes(tag="X"))
     result = await gather_result(runner, 0)
     assert result.step_history[-1].output == "X"
 
 
 @pytest.mark.asyncio
 async def test_legacy_context_works() -> None:
-    runner = Flujo(legacy, context_model=Ctx)
+    runner = create_test_flujo(legacy, context_model=Ctx)
     result = await gather_result(runner, 0)
     assert result.step_history[-1].output == 0

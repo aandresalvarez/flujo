@@ -1,10 +1,10 @@
 import pytest
 from flujo.domain.models import BaseModel
 
-from flujo.application.runner import Flujo
 from flujo.domain import Step, Pipeline
 from flujo.testing.utils import StubAgent, DummyPlugin, gather_result
 from flujo.domain.plugins import PluginOutcome
+from tests.conftest import create_test_flujo
 
 
 class IncrementAgent:
@@ -47,7 +47,7 @@ async def test_nested_loop_in_loop() -> None:
         exit_condition_callable=lambda out, ctx: out >= 2,
         max_loops=3,
     )
-    runner = Flujo(outer_loop)
+    runner = create_test_flujo(outer_loop)
     result = await gather_result(runner, 0)
     step_result = result.step_history[-1]
     assert step_result.success is True
@@ -73,7 +73,7 @@ async def test_nested_conditional_in_loop() -> None:
         exit_condition_callable=lambda out, ctx: out >= 4,
         max_loops=3,
     )
-    runner = Flujo(loop)
+    runner = create_test_flujo(loop)
     result = await gather_result(runner, 0)
     step_result = result.step_history[-1]
     assert step_result.success is True
@@ -95,7 +95,7 @@ async def test_nested_loop_in_conditional_branch() -> None:
         condition_callable=lambda out, ctx: "loop",
         branches={"loop": Pipeline.from_step(inner_loop)},
     )
-    runner = Flujo(cond)
+    runner = create_test_flujo(cond)
     result = await gather_result(runner, 0)
     step_result = result.step_history[-1]
     assert step_result.success is True
@@ -116,7 +116,7 @@ async def test_nested_conditional_in_conditional_branch() -> None:
         condition_callable=lambda out, ctx: "inner",
         branches={"inner": Pipeline.from_step(inner_cond)},
     )
-    runner = Flujo(outer_cond)
+    runner = create_test_flujo(outer_cond)
     result = await gather_result(runner, 0)
     step_result = result.step_history[-1]
     assert step_result.success is True
@@ -159,7 +159,7 @@ async def test_deeply_nested_context_modification_and_access() -> None:
         loop_output_mapper=loop_out,
         max_loops=5,
     )
-    runner = Flujo(outer_loop, context_model=Ctx)
+    runner = create_test_flujo(outer_loop, context_model=Ctx)
     result = await gather_result(runner, 0)
     assert result.final_pipeline_context.val == 4
 
@@ -181,7 +181,7 @@ async def test_deeply_nested_error_propagation() -> None:
         loop_body_pipeline=Pipeline.from_step(inner_loop),
         exit_condition_callable=lambda out, ctx: True,
     )
-    runner = Flujo(outer_loop)
+    runner = create_test_flujo(outer_loop)
     result = await gather_result(runner, "in")
     step_result = result.step_history[-1]
     assert step_result.success is False
@@ -201,7 +201,7 @@ async def test_deeply_nested_metric_aggregation() -> None:
         condition_callable=lambda out, ctx: "loop",
         branches={"loop": Pipeline.from_step(inner_loop)},
     )
-    runner = Flujo(cond)
+    runner = create_test_flujo(cond)
     result = await gather_result(runner, 0)
     step_result = result.step_history[-1]
     assert step_result.cost_usd == 0.5

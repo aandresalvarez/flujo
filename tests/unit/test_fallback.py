@@ -5,7 +5,8 @@ import asyncio
 from flujo.domain.dsl import Step, StepConfig
 from flujo.testing.utils import StubAgent, DummyPlugin, gather_result
 from flujo.domain.plugins import PluginOutcome
-from flujo.application.runner import Flujo, InfiniteFallbackError
+from flujo.application.runner import InfiniteFallbackError
+from tests.conftest import create_test_flujo
 
 
 @pytest.mark.asyncio
@@ -22,7 +23,7 @@ async def test_fallback_not_triggered_on_success() -> None:
     primary = Step.model_validate({"name": "p", "agent": agent})
     fb = Step.model_validate({"name": "fb", "agent": StubAgent(["fb"])})
     primary.fallback(fb)
-    runner = Flujo(primary)
+    runner = create_test_flujo(primary)
     res = await gather_result(runner, "in")
     sr = res.step_history[0]
     assert sr.output == "ok"
@@ -46,7 +47,7 @@ async def test_fallback_triggered_on_failure() -> None:
     fb_agent = StubAgent(["recover"])
     fb = Step.model_validate({"name": "fb", "agent": fb_agent})
     primary.fallback(fb)
-    runner = Flujo(primary)
+    runner = create_test_flujo(primary)
     res = await gather_result(runner, "data")
     sr = res.step_history[0]
     assert sr.success is True
@@ -67,7 +68,7 @@ async def test_fallback_failure_propagates() -> None:
     plugin_fb = DummyPlugin([PluginOutcome(success=False, feedback="fb fail")])
     fb = Step.model_validate({"name": "fb", "agent": fb_agent, "plugins": [(plugin_fb, 0)]})
     primary.fallback(fb)
-    runner = Flujo(primary)
+    runner = create_test_flujo(primary)
     res = await gather_result(runner, "data")
     sr = res.step_history[0]
     assert sr.success is False
@@ -102,7 +103,7 @@ async def test_fallback_latency_accumulated() -> None:
     )
     fb = Step.model_validate({"name": "fb", "agent": SlowAgent()})
     failing.fallback(fb)
-    runner = Flujo(failing)
+    runner = create_test_flujo(failing)
     res = await gather_result(runner, "x")
     sr = res.step_history[0]
     assert sr.success is True
@@ -132,7 +133,7 @@ async def test_failed_fallback_accumulates_metrics() -> None:
     fb_agent = StubAgent([CostlyOutput("oops")])
     fb = Step.model_validate({"name": "fb", "agent": fb_agent, "plugins": [(fb_plugin, 0)]})
     primary.fallback(fb)
-    runner = Flujo(primary)
+    runner = create_test_flujo(primary)
     res = await gather_result(runner, "in")
     sr = res.step_history[0]
     assert sr.success is False
@@ -161,6 +162,6 @@ async def test_infinite_fallback_loop_detected() -> None:
     )
     a.fallback(b)
     b.fallback(a)
-    runner = Flujo(a)
+    runner = create_test_flujo(a)
     with pytest.raises(InfiniteFallbackError):
         await gather_result(runner, "data")

@@ -2,10 +2,10 @@ import pytest
 from flujo.domain.models import BaseModel
 from pydantic import model_validator
 
-from flujo.application.runner import Flujo
 from flujo.domain import Step
 from flujo.testing.utils import gather_result, StubAgent
 from flujo.utils.serialization import register_custom_serializer, register_custom_deserializer
+from tests.conftest import create_test_flujo
 
 
 class NestedModel(BaseModel):
@@ -57,7 +57,7 @@ async def test_update_nested_model() -> None:
             return context.nested_item.value
 
     read_step = Step.model_validate({"name": "read", "agent": ReaderAgent()})
-    runner = Flujo(update_step >> read_step, context_model=ContextWithNesting)
+    runner = create_test_flujo(update_step >> read_step, context_model=ContextWithNesting)
     result = await gather_result(runner, None)
 
     ctx = result.final_pipeline_context
@@ -86,7 +86,7 @@ async def test_update_list_of_nested_models() -> None:
             return [i.value for i in context.list_of_items]
 
     reader = Step.model_validate({"name": "reader", "agent": ListReader()})
-    runner = Flujo(update_step >> reader, context_model=ContextWithNesting)
+    runner = create_test_flujo(update_step >> reader, context_model=ContextWithNesting)
     result = await gather_result(runner, None)
 
     assert all(isinstance(i, NestedModel) for i in result.final_pipeline_context.list_of_items)
@@ -102,7 +102,7 @@ async def test_invalid_field_type_fails() -> None:
             "updates_context": True,
         }
     )
-    runner = Flujo(bad_step, context_model=ContextWithNesting)
+    runner = create_test_flujo(bad_step, context_model=ContextWithNesting)
     result = await gather_result(runner, None)
 
     step_result = result.step_history[-1]
@@ -120,7 +120,7 @@ async def test_model_level_validation_failure() -> None:
             "updates_context": True,
         }
     )
-    runner = Flujo(
+    runner = create_test_flujo(
         inc_step,
         context_model=ContextWithNesting,
         initial_context_data={"counter": 5},
@@ -138,7 +138,7 @@ async def test_incompatible_output_type_skips_update() -> None:
     step_no_update = Step.model_validate(
         {"name": "no_update", "agent": StubAgent(["hello"]), "updates_context": True}
     )
-    runner = Flujo(step_no_update, context_model=ContextWithNesting)
+    runner = create_test_flujo(step_no_update, context_model=ContextWithNesting)
     result = await gather_result(runner, None)
 
     assert result.step_history[-1].success is True
@@ -174,7 +174,7 @@ async def test_context_update_with_custom_type() -> None:
                 )
 
     read_step = Step.model_validate({"name": "read_custom", "agent": ReaderAgent()})
-    runner = Flujo(
+    runner = create_test_flujo(
         update_step >> read_step,
         context_model=ContextWithCustom,
         initial_context_data={"custom": CustomContextType(0), "initial_prompt": "x"},

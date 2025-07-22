@@ -6,7 +6,7 @@ from flujo.domain.models import BaseModel, PipelineContext, StepResult
 from flujo.domain import Step, MergeStrategy, BranchFailureStrategy, UsageLimits
 from flujo.exceptions import UsageLimitExceededError
 from flujo.testing.utils import gather_result
-from flujo.application.runner import Flujo
+from tests.conftest import create_test_flujo
 
 os.environ.setdefault("OPENAI_API_KEY", "test-key")
 
@@ -33,7 +33,7 @@ async def test_parallel_step_context_isolation() -> None:
         "b": Step.model_validate({"name": "b", "agent": AddAgent(2)}),
     }
     parallel = Step.parallel("par", branches)
-    runner = Flujo(parallel, context_model=Ctx)
+    runner = create_test_flujo(parallel, context_model=Ctx)
     result = await gather_result(runner, 0)
     step_result = result.step_history[-1]
     assert step_result.output == {"a": 1, "b": 2}
@@ -47,7 +47,7 @@ async def test_parallel_step_result_structure() -> None:
         "y": Step.model_validate({"name": "y", "agent": AddAgent(4)}),
     }
     parallel = Step.parallel("par_out", branches)
-    runner = Flujo(parallel, context_model=Ctx)
+    runner = create_test_flujo(parallel, context_model=Ctx)
     result = await gather_result(runner, 1)
     step_result = result.step_history[-1]
     assert isinstance(step_result.output, dict)
@@ -102,7 +102,7 @@ async def test_parallel_merge_scratchpad() -> None:
         branches,
         merge_strategy=MergeStrategy.MERGE_SCRATCHPAD,
     )
-    runner = Flujo(parallel, context_model=ScratchCtx)
+    runner = create_test_flujo(parallel, context_model=ScratchCtx)
     result = await gather_result(runner, 0, initial_context_data={"initial_prompt": "x"})
     assert result.final_pipeline_context.scratchpad["a"] == 1
     assert result.final_pipeline_context.scratchpad["b"] == 2
@@ -115,7 +115,7 @@ async def test_parallel_overwrite_conflict() -> None:
         "b": Step.model_validate({"name": "b", "agent": ScratchAgent("v", 2, delay=0.2)}),
     }
     parallel = Step.parallel("overwrite", branches, merge_strategy=MergeStrategy.OVERWRITE)
-    runner = Flujo(parallel, context_model=ScratchCtx)
+    runner = create_test_flujo(parallel, context_model=ScratchCtx)
     result = await gather_result(runner, 0, initial_context_data={"initial_prompt": "x"})
     assert result.final_pipeline_context.scratchpad["v"] == 2
 
@@ -132,7 +132,7 @@ async def test_parallel_overwrite_preserves_context() -> None:
         context_include_keys=["scratchpad", "initial_prompt"],
         merge_strategy=MergeStrategy.OVERWRITE,
     )
-    runner = Flujo(parallel, context_model=ScratchCtx)
+    runner = create_test_flujo(parallel, context_model=ScratchCtx)
     result = await gather_result(
         runner,
         0,
@@ -150,7 +150,7 @@ async def test_parallel_overwrite_multi_branch_order() -> None:
         "c": Step.model_validate({"name": "c", "agent": ScratchAgent("w", 3)}),
     }
     parallel = Step.parallel("overwrite_multi", branches, merge_strategy=MergeStrategy.OVERWRITE)
-    runner = Flujo(parallel, context_model=ScratchCtx)
+    runner = create_test_flujo(parallel, context_model=ScratchCtx)
     result = await gather_result(runner, 0, initial_context_data={"initial_prompt": "x"})
     assert result.final_pipeline_context.scratchpad["v"] == 2
     assert result.final_pipeline_context.scratchpad["w"] == 3
@@ -165,7 +165,7 @@ async def test_parallel_propagate_failure() -> None:
     parallel = Step.parallel(
         "fail_prop", branches, on_branch_failure=BranchFailureStrategy.PROPAGATE
     )
-    runner = Flujo(parallel, context_model=ScratchCtx)
+    runner = create_test_flujo(parallel, context_model=ScratchCtx)
     result = await gather_result(runner, 0, initial_context_data={"initial_prompt": "x"})
     step_result = result.step_history[-1]
     assert not step_result.success
@@ -181,7 +181,7 @@ async def test_parallel_ignore_failure() -> None:
     parallel = Step.parallel(
         "fail_ignore", branches, on_branch_failure=BranchFailureStrategy.IGNORE
     )
-    runner = Flujo(parallel, context_model=ScratchCtx)
+    runner = create_test_flujo(parallel, context_model=ScratchCtx)
     result = await gather_result(runner, 0, initial_context_data={"initial_prompt": "x"})
     step_result = result.step_history[-1]
     assert step_result.success
@@ -199,7 +199,7 @@ async def test_parallel_ignore_failure_all_fail() -> None:
         branches,
         on_branch_failure=BranchFailureStrategy.IGNORE,
     )
-    runner = Flujo(parallel, context_model=ScratchCtx)
+    runner = create_test_flujo(parallel, context_model=ScratchCtx)
     result = await gather_result(runner, 0, initial_context_data={"initial_prompt": "x"})
     step_result = result.step_history[-1]
     assert not step_result.success
@@ -220,6 +220,6 @@ async def test_governor_precedence_over_failure_strategy() -> None:
         on_branch_failure=BranchFailureStrategy.IGNORE,
     )
     limits = UsageLimits(total_cost_usd_limit=0.1)
-    runner = Flujo(parallel, usage_limits=limits, context_model=ScratchCtx)
+    runner = create_test_flujo(parallel, usage_limits=limits, context_model=ScratchCtx)
     with pytest.raises(UsageLimitExceededError):
         await gather_result(runner, 0, initial_context_data={"initial_prompt": "x"})

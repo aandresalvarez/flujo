@@ -68,6 +68,9 @@ from .core.state_manager import StateManager
 from .core.usage_governor import UsageGovernor
 from .core.step_coordinator import StepCoordinator
 
+import uuid
+import warnings
+
 _signature_cache_weak: weakref.WeakKeyDictionary[Callable[..., Any], inspect.Signature] = (
     weakref.WeakKeyDictionary()
 )
@@ -202,12 +205,44 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         registry: Optional[PipelineRegistry] = None,
         pipeline_name: Optional[str] = None,
         enable_tracing: bool = True,
+        pipeline_id: Optional[str] = None,
     ) -> None:
         if isinstance(pipeline, Step):
             pipeline = Pipeline.from_step(pipeline)
         self.pipeline: Pipeline[RunnerInT, RunnerOutT] | None = pipeline
         self.registry = registry
+        if pipeline_name is None:
+            from datetime import datetime
+            import os
+
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            pipeline_name = f"unnamed_{timestamp}"
+
+            # Only warn in production environments, not in tests
+            if not os.getenv("FLUJO_TEST_MODE") and not any(
+                path in os.getcwd() for path in ["/tests/", "\\tests\\", "test_"]
+            ):
+                warnings.warn(
+                    "pipeline_name was not provided. Generated name based on timestamp: {}. This is discouraged for production runs.".format(
+                        pipeline_name
+                    ),
+                    UserWarning,
+                )
         self.pipeline_name = pipeline_name
+        if pipeline_id is None:
+            pipeline_id = str(uuid.uuid4())
+
+            # Only warn in production environments, not in tests
+            if not os.getenv("FLUJO_TEST_MODE") and not any(
+                path in os.getcwd() for path in ["/tests/", "\\tests\\", "test_"]
+            ):
+                warnings.warn(
+                    "pipeline_id was not provided. Generated unique id: {}. This is discouraged for production runs.".format(
+                        pipeline_id
+                    ),
+                    UserWarning,
+                )
+        self.pipeline_id = pipeline_id
         self.pipeline_version = pipeline_version
         self.context_model = context_model
         self.initial_context_data: Dict[str, Any] = initial_context_data or {}
@@ -295,6 +330,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         data: Any,
         context: Optional[ContextT],
         resources: Optional[AppResources],
+        breach_event: Optional[Any] = None,
         *,
         stream: bool = False,
     ) -> AsyncIterator[Any]:
@@ -338,6 +374,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             usage_limits=self.usage_limits,
             stream=stream,
             on_chunk=_capture if stream else None,
+            breach_event=breach_event,
         )
 
         if stream:
@@ -583,10 +620,14 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             else:
                 # New run, record start metadata
                 self._ensure_pipeline()
+                now = datetime.utcnow().isoformat()
                 await state_manager.record_run_start(
                     run_id_for_state,
+                    self.pipeline_id,
                     self.pipeline_name or "unknown",
                     self.pipeline_version,
+                    created_at=now,
+                    updated_at=now,
                 )
 
             # Persist initial state
@@ -932,6 +973,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     registry=self.registry,
                     pipeline_name=self.pipeline_name,
                     pipeline_version=self.pipeline_version,
+                    pipeline_id=self.pipeline_id,
                 )
             except PipelineContextInitializationError as e:
                 cause = getattr(e, "__cause__", None)

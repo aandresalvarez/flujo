@@ -3,6 +3,8 @@
 import pytest
 import asyncio
 from typing import Dict, Any
+from uuid import uuid4
+from datetime import datetime
 
 from flujo.state.backends.sqlite import SQLiteBackend
 
@@ -17,16 +19,19 @@ async def sqlite_backend(tmp_path):
     await backend.close()
 
 
-def create_run_data(run_id: str) -> Dict[str, Any]:
-    """Create run data for testing."""
-    from datetime import datetime
-
+def create_run_data(run_id: str) -> dict:
+    now = datetime.utcnow().isoformat()
     return {
         "run_id": run_id,
-        "pipeline_name": "test_pipeline",
+        "pipeline_id": str(uuid4()),
+        "pipeline_name": f"pipeline_{run_id}",
         "pipeline_version": "1.0",
-        "status": "running",
-        "start_time": datetime.utcnow(),
+        "status": "completed",
+        "created_at": now,
+        "updated_at": now,
+        "end_time": now,
+        "total_cost": 0.0,
+        "final_context_blob": None,
     }
 
 

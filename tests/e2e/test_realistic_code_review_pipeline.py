@@ -32,11 +32,11 @@ In production code:
 import pytest
 from typing import Any, Dict, List
 
-from flujo.application.runner import Flujo
 from flujo.domain import Pipeline
 from flujo.domain.models import PipelineContext
 from flujo.domain.dsl import step
 from flujo.testing.utils import gather_result, assert_pipeline_result
+from tests.conftest import create_test_flujo
 
 
 class CodeReviewContext(PipelineContext):
@@ -264,7 +264,7 @@ def main():
 """
 
     pipeline = create_realistic_code_review_pipeline()
-    runner = Flujo(pipeline, context_model=CodeReviewContext)
+    runner = create_test_flujo(pipeline, context_model=CodeReviewContext)
 
     result = await gather_result(
         runner,
@@ -336,7 +336,7 @@ def main():
 """
 
     pipeline = create_realistic_code_review_pipeline()
-    runner = Flujo(pipeline, context_model=CodeReviewContext)
+    runner = create_test_flujo(pipeline, context_model=CodeReviewContext)
 
     result = await gather_result(
         runner,
@@ -402,7 +402,7 @@ def problematic_function():
         "review_requirements": "Test failure recovery",
     }
 
-    runner = Flujo(pipeline, context_model=CodeReviewContext)
+    runner = create_test_flujo(pipeline, context_model=CodeReviewContext)
 
     result = await gather_result(
         runner,
@@ -451,7 +451,7 @@ def main():
 """
 
     pipeline = create_realistic_code_review_pipeline()
-    runner = Flujo(pipeline, context_model=CodeReviewContext)
+    runner = create_test_flujo(pipeline, context_model=CodeReviewContext)
 
     result = await gather_result(
         runner,

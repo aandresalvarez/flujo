@@ -28,7 +28,7 @@ from flujo.domain.events import (
 )
 
 from flujo.testing.utils import StubAgent
-from flujo import Flujo
+from tests.conftest import create_test_flujo
 
 
 class TestTraceManager:
@@ -146,7 +146,7 @@ class TestTraceManager:
         step = Step.model_validate({"name": "test_step", "agent": StubAgent(["test_output"])})
 
         # Create runner with TraceManager
-        runner = Flujo(step)
+        runner = create_test_flujo(step)
 
         # Run the pipeline and get the final result
         result = None

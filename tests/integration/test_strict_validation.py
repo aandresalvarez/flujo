@@ -1,10 +1,10 @@
 import pytest
 
 from flujo.domain import Step
-from flujo.application.runner import Flujo
 from flujo.validation import BaseValidator
 from flujo.domain.validation import ValidationResult
 from flujo.testing.utils import StubAgent, gather_result
+from tests.conftest import create_test_flujo
 
 
 class FailValidator(BaseValidator):
@@ -16,7 +16,7 @@ class FailValidator(BaseValidator):
 async def test_non_strict_validation_pass_through() -> None:
     agent = StubAgent(["ok"])
     step = Step.validate_step(agent, validators=[FailValidator()], strict=False)
-    runner = Flujo(step)
+    runner = create_test_flujo(step)
     result = await gather_result(runner, "in")
     hist = result.step_history[0]
     assert hist.success is True
@@ -28,7 +28,7 @@ async def test_non_strict_validation_pass_through() -> None:
 async def test_strict_validation_drops_output() -> None:
     agent = StubAgent(["bad"])
     step = Step.validate_step(agent, validators=[FailValidator()], strict=True)
-    runner = Flujo(step)
+    runner = create_test_flujo(step)
     result = await gather_result(runner, "in")
     hist = result.step_history[0]
     assert hist.success is False
@@ -39,7 +39,7 @@ async def test_strict_validation_drops_output() -> None:
 async def test_regular_step_keeps_output_on_validation_failure() -> None:
     agent = StubAgent(["value"])
     step = Step.model_validate({"name": "regular", "agent": agent, "validators": [FailValidator()]})
-    runner = Flujo(step)
+    runner = create_test_flujo(step)
     result = await gather_result(runner, "in")
     hist = result.step_history[0]
     assert hist.success is False

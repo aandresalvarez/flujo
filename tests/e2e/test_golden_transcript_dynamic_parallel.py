@@ -8,10 +8,10 @@ which is a specialized and powerful feature for runtime branch selection.
 import pytest
 from typing import Any, List
 
-from flujo.application.runner import Flujo
 from flujo.domain import Step, Pipeline
 from flujo.domain.models import PipelineContext
 from flujo.domain.dsl import MergeStrategy
+from tests.conftest import create_test_flujo
 
 
 class DynamicParallelContext(PipelineContext):
@@ -88,7 +88,7 @@ async def test_golden_transcript_dynamic_parallel():
     )
 
     # Initialize Flujo runner
-    runner = Flujo(dynamic_parallel_pipeline, context_model=DynamicParallelContext)
+    runner = create_test_flujo(dynamic_parallel_pipeline, context_model=DynamicParallelContext)
 
     # Run the pipeline
     result = None
@@ -166,7 +166,7 @@ async def test_golden_transcript_dynamic_parallel_selective():
     )
 
     # Initialize Flujo runner
-    runner = Flujo(dynamic_parallel_pipeline, context_model=DynamicParallelContext)
+    runner = create_test_flujo(dynamic_parallel_pipeline, context_model=DynamicParallelContext)
 
     # Run the pipeline
     result = None
@@ -230,7 +230,7 @@ async def test_golden_transcript_dynamic_parallel_empty():
     )
 
     # Initialize Flujo runner
-    runner = Flujo(dynamic_parallel_pipeline, context_model=DynamicParallelContext)
+    runner = create_test_flujo(dynamic_parallel_pipeline, context_model=DynamicParallelContext)
 
     # Run the pipeline
     result = None

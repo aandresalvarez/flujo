@@ -315,3 +315,202 @@ class TestSQLiteBackupFix:
         # The corrupted DB should be deleted
         assert not db_path.exists()
         # No exception should be raised beyond DatabaseError
+
+    @pytest.mark.asyncio
+    async def test_backup_handles_gap_in_sequence(self, tmp_path: Path) -> None:
+        """Test that backup handles gaps in backup file sequence correctly."""
+        db_path = tmp_path / "test.db"
+        backend = SQLiteBackend(db_path)
+        timestamp = int(time.time())
+
+        # Create backup files with gaps: .1, .3, .5 (missing .2, .4)
+        for i in [1, 3, 5]:
+            backup_file = tmp_path / f"test.db.corrupt.{timestamp}.{i}"
+            backup_file.write_text(f"backup content {i}")
+
+        db_path.write_text("corrupted database content")
+
+        with patch("aiosqlite.connect", side_effect=sqlite3.DatabaseError("Corrupted database")):
+            try:
+                await backend._init_db()
+            except sqlite3.DatabaseError:
+                pass
+
+        # The backup should be created at the base path since it's available
+        backup_file = tmp_path / f"test.db.corrupt.{timestamp}"
+        assert backup_file.exists(), f"Backup file {backup_file} should exist"
+        assert backup_file.read_text() == "corrupted database content"
+
+        # Original DB should be gone
+        assert not db_path.exists()
+
+    @pytest.mark.asyncio
+    async def test_backup_handles_concurrent_access(self, tmp_path: Path) -> None:
+        """Test that backup logic handles concurrent access scenarios."""
+        db_path = tmp_path / "test.db"
+        backend = SQLiteBackend(db_path)
+        timestamp = int(time.time())
+
+        # Create a backup file that might be created by another process
+        existing_backup = tmp_path / f"test.db.corrupt.{timestamp}"
+        existing_backup.write_text("existing backup")
+
+        db_path.write_text("corrupted database content")
+
+        # Simulate race condition where file exists check and rename happen between
+        # another process creating the same backup file
+        original_exists = Path.exists
+        original_rename = Path.rename
+
+        def race_condition_exists(self):
+            if self == existing_backup:
+                # Simulate file being created between check and rename
+                return True
+            return original_exists(self)
+
+        def race_condition_rename(self, target):
+            if target == existing_backup:
+                # Simulate FileExistsError during rename
+                raise FileExistsError("File exists")
+            return original_rename(self, target)
+
+        with (
+            patch("aiosqlite.connect", side_effect=sqlite3.DatabaseError("Corrupted database")),
+            patch.object(Path, "exists", race_condition_exists),
+            patch.object(Path, "rename", race_condition_rename),
+        ):
+            try:
+                await backend._init_db()
+            except sqlite3.DatabaseError:
+                pass
+
+        # The backup should be created with a counter suffix
+        backup_files = list(tmp_path.glob("test.db.corrupt.*"))
+        backup_with_content = None
+        for backup_file in backup_files:
+            if backup_file.read_text() == "corrupted database content":
+                backup_with_content = backup_file
+                break
+
+        assert backup_with_content is not None, "Should find backup with corrupted content"
+        assert not db_path.exists(), "Original DB should be gone"
+
+    @pytest.mark.asyncio
+    async def test_backup_robustness_under_stress(self, tmp_path: Path) -> None:
+        """Test backup logic under stress conditions with many files and edge cases."""
+        db_path = tmp_path / "test.db"
+        backend = SQLiteBackend(db_path)
+        timestamp = int(time.time())
+
+        # Create many backup files with various patterns
+        backup_files = []
+        for i in range(1, 50):
+            backup_file = tmp_path / f"test.db.corrupt.{timestamp}.{i}"
+            backup_file.write_text(f"backup content {i}")
+            backup_files.append(backup_file)
+
+        # Create some files with different patterns to test glob behavior
+        other_files = [
+            tmp_path / f"test.db.corrupt.{timestamp}.old",
+            tmp_path / f"test.db.corrupt.{timestamp}.new",
+            tmp_path / f"test.db.corrupt.{timestamp}.backup",
+        ]
+        for other_file in other_files:
+            other_file.write_text("other backup")
+
+        db_path.write_text("corrupted database content")
+
+        with patch("aiosqlite.connect", side_effect=sqlite3.DatabaseError("Corrupted database")):
+            try:
+                await backend._init_db()
+            except sqlite3.DatabaseError:
+                pass
+
+        # Should find a backup with the corrupted content
+        backup_files = list(tmp_path.glob("test.db.corrupt.*"))
+        backup_with_content = None
+        for backup_file in backup_files:
+            if backup_file.read_text() == "corrupted database content":
+                backup_with_content = backup_file
+                break
+
+        assert backup_with_content is not None, "Should find backup with corrupted content"
+        assert not db_path.exists(), "Original DB should be gone"
+
+        # Verify that the backup logic didn't interfere with other files
+        for other_file in other_files:
+            assert other_file.exists(), f"Other backup file {other_file} should still exist"
+
+    @pytest.mark.asyncio
+    async def test_backup_handles_edge_case_with_base_path_available(self, tmp_path: Path) -> None:
+        """Test that backup logic correctly handles the edge case where numbered backups exist but base path is available."""
+        db_path = tmp_path / "test.db"
+        backend = SQLiteBackend(db_path)
+        timestamp = int(time.time())
+
+        # Create numbered backup files but leave base path available
+        for i in [1, 3, 5]:
+            backup_file = tmp_path / f"test.db.corrupt.{timestamp}.{i}"
+            backup_file.write_text(f"backup content {i}")
+
+        db_path.write_text("corrupted database content")
+
+        with patch("aiosqlite.connect", side_effect=sqlite3.DatabaseError("Corrupted database")):
+            try:
+                await backend._init_db()
+            except sqlite3.DatabaseError:
+                pass
+
+        # The backup should be created at the base path since it's available
+        backup_file = tmp_path / f"test.db.corrupt.{timestamp}"
+        assert backup_file.exists(), f"Backup file {backup_file} should exist"
+        assert backup_file.read_text() == "corrupted database content"
+
+        # Original DB should be gone
+        assert not db_path.exists()
+
+        # Verify that numbered backups are still intact
+        for i in [1, 3, 5]:
+            numbered_backup = tmp_path / f"test.db.corrupt.{timestamp}.{i}"
+            assert numbered_backup.exists(), f"Numbered backup {numbered_backup} should still exist"
+            assert numbered_backup.read_text() == f"backup content {i}"
+
+    @pytest.mark.asyncio
+    async def test_backup_handles_edge_case_with_base_path_taken(self, tmp_path: Path) -> None:
+        """Test that backup logic correctly handles the edge case where base path is taken and numbered backups exist."""
+        db_path = tmp_path / "test.db"
+        backend = SQLiteBackend(db_path)
+        timestamp = int(time.time())
+
+        # Create base backup file and some numbered backups
+        base_backup = tmp_path / f"test.db.corrupt.{timestamp}"
+        base_backup.write_text("existing base backup")
+
+        for i in [1, 3, 5]:
+            backup_file = tmp_path / f"test.db.corrupt.{timestamp}.{i}"
+            backup_file.write_text(f"backup content {i}")
+
+        db_path.write_text("corrupted database content")
+
+        with patch("aiosqlite.connect", side_effect=sqlite3.DatabaseError("Corrupted database")):
+            try:
+                await backend._init_db()
+            except sqlite3.DatabaseError:
+                pass
+
+        # The backup should be created at the first available gap (.2)
+        backup_file = tmp_path / f"test.db.corrupt.{timestamp}.2"
+        assert backup_file.exists(), f"Backup file {backup_file} should exist"
+        assert backup_file.read_text() == "corrupted database content"
+
+        # Original DB should be gone
+        assert not db_path.exists()
+
+        # Verify that existing backups are still intact
+        assert base_backup.exists(), "Base backup should still exist"
+        assert base_backup.read_text() == "existing base backup"
+
+        for i in [1, 3, 5]:
+            numbered_backup = tmp_path / f"test.db.corrupt.{timestamp}.{i}"
+            assert numbered_backup.exists(), f"Numbered backup {numbered_backup} should still exist"
+            assert numbered_backup.read_text() == f"backup content {i}"

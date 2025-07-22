@@ -9,11 +9,12 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from flujo import Flujo, Step
+from flujo import Step
 from flujo.domain.models import PipelineContext
 from flujo.cli.main import app
 from flujo.state.backends.sqlite import SQLiteBackend
 from flujo.testing.utils import gather_result, StubAgent
+from tests.conftest import create_test_flujo
 
 # Default overhead limit for performance tests
 DEFAULT_OVERHEAD_LIMIT = 15.0
@@ -50,10 +51,10 @@ class TestPersistencePerformanceOverhead:
         pipeline = Step.solution(agent)
 
         # Test without backend (baseline)
-        runner_no_backend = Flujo(pipeline, state_backend=None)
+        runner_no_backend = create_test_flujo(pipeline, state_backend=None)
 
         # Test with default backend
-        runner_with_backend = Flujo(pipeline)  # Uses default SQLiteBackend
+        runner_with_backend = create_test_flujo(pipeline)  # Uses default SQLiteBackend
 
         # Run multiple iterations to get stable measurements
         iterations = 10
@@ -104,10 +105,12 @@ class TestPersistencePerformanceOverhead:
         pipeline = Step.solution(agent)
 
         # Test without backend
-        runner_no_backend = Flujo(pipeline, context_model=LargeContext, state_backend=None)
+        runner_no_backend = create_test_flujo(
+            pipeline, context_model=LargeContext, state_backend=None
+        )
 
         # Test with default backend
-        runner_with_backend = Flujo(pipeline, context_model=LargeContext)
+        runner_with_backend = create_test_flujo(pipeline, context_model=LargeContext)
 
         # Run with large context (include required initial_prompt field)
         large_context_data = {"initial_prompt": "test", "large_data": "y" * 10000}
@@ -173,13 +176,16 @@ class TestCLIPerformance:
             # Prepare all run start operations
             run_start_tasks = []
             for i in range(db_size):
+                dt = (now - timedelta(minutes=i)).isoformat()
                 task = backend.save_run_start(
                     {
                         "run_id": f"run_{i:05d}",
+                        "pipeline_id": f"pid_{i:05d}",
                         "pipeline_name": f"pipeline_{i % 10}",
                         "pipeline_version": "1.0",
                         "status": "running",
-                        "start_time": now - timedelta(minutes=i),
+                        "created_at": dt,
+                        "updated_at": dt,
                     }
                 )
                 run_start_tasks.append(task)

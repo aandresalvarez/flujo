@@ -10,9 +10,10 @@ import pytest
 from flujo.domain.dsl import Step, StepConfig
 from flujo.testing.utils import StubAgent, DummyPlugin, gather_result
 from flujo.domain.plugins import PluginOutcome
-from flujo.application.runner import Flujo, InfiniteFallbackError
+from flujo.application.runner import InfiniteFallbackError
 from flujo.application.core.step_logic import _detect_fallback_loop
 from flujo.domain.models import StepResult
+from tests.conftest import create_test_flujo
 
 
 class TestFallbackLoopDetection:
@@ -167,7 +168,7 @@ class TestFallbackLoopDetection:
         step_a.fallback(step_b)
         step_b.fallback(step_a)
 
-        runner = Flujo(step_a)
+        runner = create_test_flujo(step_a)
         with pytest.raises(InfiniteFallbackError, match="Fallback loop detected"):
             await gather_result(runner, "data")
 
@@ -207,7 +208,7 @@ class TestFallbackLoopDetection:
         step_a.fallback(step_b)
         step_b.fallback(step_a2)
 
-        runner = Flujo(step_a)
+        runner = create_test_flujo(step_a)
         with pytest.raises(InfiniteFallbackError, match="Fallback loop detected"):
             await gather_result(runner, "data")
 
@@ -243,7 +244,7 @@ class TestFallbackLoopDetection:
         validate_record.fallback(retry_validation)
         retry_validation.fallback(validate_record)  # This creates a loop
 
-        runner = Flujo(validate_record)
+        runner = create_test_flujo(validate_record)
         with pytest.raises(InfiniteFallbackError, match="Fallback loop detected"):
             await gather_result(runner, "medical_record_data")
 
@@ -279,7 +280,7 @@ class TestFallbackLoopDetection:
         review_document.fallback(compliance_check)
         compliance_check.fallback(review_document)  # This creates a loop
 
-        runner = Flujo(review_document)
+        runner = create_test_flujo(review_document)
         with pytest.raises(InfiniteFallbackError, match="Fallback loop detected"):
             await gather_result(runner, "legal_document_data")
 
@@ -315,7 +316,7 @@ class TestFallbackLoopDetection:
         fraud_detection.fallback(aml_check)
         aml_check.fallback(fraud_detection)  # This creates a loop
 
-        runner = Flujo(fraud_detection)
+        runner = create_test_flujo(fraud_detection)
         with pytest.raises(InfiniteFallbackError, match="Fallback loop detected"):
             await gather_result(runner, "transaction_data")
 
@@ -346,7 +347,7 @@ class TestFallbackLoopDetection:
         step_b.fallback(step_a)
 
         # Verify that the loop detection raises the correct exception
-        runner = Flujo(step_a)
+        runner = create_test_flujo(step_a)
         with pytest.raises(InfiniteFallbackError, match="Fallback loop detected"):
             await gather_result(runner, "data")
 
@@ -393,7 +394,7 @@ class TestFallbackLoopDetection:
         step_b.fallback(step_a)
 
         # Recursive step executor to simulate fallback recursion
-        async def recursive_step_executor(step, data, context, resources):
+        async def recursive_step_executor(step, data, context, resources, breach_event=None):
             # Always fail, triggering fallback if present
             if step.fallback_step:
                 # Simulate the fallback recursion
@@ -451,7 +452,7 @@ class TestFallbackLoopDetection:
         step_b.fallback(step_a)
 
         # This should definitely raise InfiniteFallbackError
-        runner = Flujo(step_a)
+        runner = create_test_flujo(step_a)
         with pytest.raises(InfiniteFallbackError, match="Fallback loop detected"):
             await gather_result(runner, "data")
 

@@ -9,7 +9,8 @@ import pytest
 import asyncio
 
 from flujo.monitor import global_monitor, FlujoMonitor
-from flujo import Step, Flujo
+from flujo import Step
+from tests.conftest import create_test_flujo
 
 
 class TestInMemoryMonitorUsage:
@@ -38,7 +39,7 @@ class TestInMemoryMonitorUsage:
 
         # Create a simple pipeline
         step = Step.model_validate({"name": "test_step", "agent": agent})
-        runner = Flujo(step)
+        runner = create_test_flujo(step)
 
         # Run the pipeline
         from flujo.testing.utils import gather_result
@@ -73,7 +74,7 @@ class TestInMemoryMonitorUsage:
         agent = FailingTestAgent()
 
         step = Step.model_validate({"name": "failing_step", "agent": agent})
-        runner = Flujo(step)
+        runner = create_test_flujo(step)
 
         # Run the pipeline (it will fail)
         from flujo.testing.utils import gather_result
@@ -109,7 +110,7 @@ class TestInMemoryMonitorUsage:
         agent = MultiTestAgent()
 
         step = Step.model_validate({"name": "multi_step", "agent": agent})
-        runner = Flujo(step)
+        runner = create_test_flujo(step)
 
         # Run the pipeline twice
         from flujo.testing.utils import gather_result
@@ -146,7 +147,7 @@ class TestInMemoryMonitorUsage:
         agent = SlowTestAgent()
 
         step = Step.model_validate({"name": "slow_step", "agent": agent})
-        runner = Flujo(step)
+        runner = create_test_flujo(step)
 
         # Run the pipeline
         from flujo.testing.utils import gather_result
@@ -213,7 +214,7 @@ class TestMonitorIntegrationWithCaplog:
 
         agent = CaplogTestAgent()
         step = Step.model_validate({"name": "test_step", "agent": agent})
-        runner = Flujo(step)
+        runner = create_test_flujo(step)
 
         # Run the pipeline
         from flujo.testing.utils import gather_result

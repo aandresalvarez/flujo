@@ -14,10 +14,12 @@ def create_run(backend: SQLiteBackend, run_id: str) -> dict:
     now = datetime.utcnow()
     run_data = {
         "run_id": run_id,
+        "pipeline_id": f"pid_{run_id}",
         "pipeline_name": f"pipeline_{run_id}",
         "pipeline_version": "1.0",
         "status": "completed",
-        "start_time": now,
+        "created_at": now.isoformat(),
+        "updated_at": now.isoformat(),
         "end_time": now,
         "total_cost": 0.0,
     }

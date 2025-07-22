@@ -1,12 +1,12 @@
 import pytest
 from flujo.domain.models import BaseModel, Field
 
-from flujo.application.runner import Flujo
 from flujo.domain import Step
 from flujo.validation import BaseValidator
 from flujo.domain.validation import ValidationResult
 from flujo.testing.utils import StubAgent, gather_result
 from flujo.testing.assertions import assert_validator_failed
+from tests.conftest import create_test_flujo
 
 
 class PassValidator(BaseValidator):
@@ -37,7 +37,7 @@ async def test_persist_feedback_and_results() -> None:
         persist_feedback_to_context="feedback_history",
         persist_validation_results_to="validation_history",
     )
-    runner = Flujo(step, context_model=Ctx)
+    runner = create_test_flujo(step, context_model=Ctx)
     result = await gather_result(runner, "in")
     ctx = result.final_pipeline_context
     assert ctx.feedback_history and ctx.feedback_history[0] == result.step_history[0].feedback
@@ -57,7 +57,7 @@ async def test_persist_results_on_success() -> None:
         validators=[PassValidator()],
         persist_validation_results_to="validation_history",
     )
-    runner = Flujo(step, context_model=Ctx)
+    runner = create_test_flujo(step, context_model=Ctx)
     result = await gather_result(runner, "in")
     ctx = result.final_pipeline_context
     assert ctx.feedback_history == []

@@ -1,6 +1,6 @@
 import pytest
 
-from flujo import Step, Pipeline, Flujo, step
+from flujo import Step, Pipeline, step
 from flujo.exceptions import (
     ImproperStepInvocationError,
     StepInvocationError,  # Add the new error class
@@ -8,6 +8,7 @@ from flujo.exceptions import (
     TypeMismatchError,
     ConfigurationError,
 )
+from tests.conftest import create_test_flujo
 
 
 @step
@@ -31,7 +32,7 @@ def test_missing_agent_errors() -> None:
     assert any(f.rule_id == "V-A1" for f in report.errors)
     with pytest.raises(ConfigurationError):
         pipeline.validate_graph(raise_on_error=True)
-    runner = Flujo(blank)
+    runner = create_test_flujo(blank)
     with pytest.raises(MissingAgentError):
         runner.run(None)
 
@@ -53,7 +54,7 @@ def test_type_mismatch_errors() -> None:
     assert any(f.rule_id == "V-A2" for f in report.errors)
     with pytest.raises(ConfigurationError):
         pipeline.validate_graph(raise_on_error=True)
-    runner = Flujo(pipeline)
+    runner = create_test_flujo(pipeline)
     with pytest.raises(TypeMismatchError):
         runner.run("abc")
 
@@ -72,7 +73,7 @@ def test_union_optional_handling() -> None:
     ok_pipeline = echo >> expect_optional
     report_ok = ok_pipeline.validate_graph()
     assert report_ok.is_valid
-    runner_ok = Flujo(ok_pipeline)
+    runner_ok = create_test_flujo(ok_pipeline)
     result_ok = runner_ok.run("hi")
     assert result_ok.step_history[-1].output == "hi"
 
@@ -81,6 +82,6 @@ def test_union_optional_handling() -> None:
     assert not report_bad.is_valid
     with pytest.raises(ConfigurationError):
         bad_pipeline.validate_graph(raise_on_error=True)
-    runner_bad = Flujo(bad_pipeline)
+    runner_bad = create_test_flujo(bad_pipeline)
     with pytest.raises(TypeMismatchError):
         runner_bad.run("")

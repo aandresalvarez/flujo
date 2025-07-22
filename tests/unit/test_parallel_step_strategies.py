@@ -1,21 +1,22 @@
 """Unit tests for parallel step execution strategies."""
 
 import asyncio
+import logging
 from typing import Any, Dict
 
 import pytest
 
 from flujo.application.core.step_logic import _execute_parallel_step_logic
 from flujo.domain.dsl.parallel import ParallelStep
-from flujo.domain.dsl.step import Step
+from flujo.domain.dsl.step import Step, BranchFailureStrategy, MergeStrategy
+from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.models import (
     StepResult,
     UsageLimits,
 )
-from flujo.domain.dsl.step import BranchFailureStrategy, MergeStrategy
-from flujo.domain.dsl.pipeline import Pipeline
-from flujo.testing.utils import StubAgent
 from flujo.exceptions import UsageLimitExceededError
+from flujo.monitor import global_monitor
+from flujo.testing.utils import StubAgent
 
 
 class MockContext:
@@ -60,15 +61,16 @@ class TestParallelStepExecution:
     def mock_step_executor(self):
         """Create a mock step executor."""
 
-        async def executor(step, input_data, context, resources):
+        async def executor(step, input_data, context, resources, breach_event=None):
+            # Simulate successful step execution
             return StepResult(
-                name=step.name if hasattr(step, "name") else "test",
+                name=step.name,
+                output=input_data,  # Return input_data as expected by tests
                 success=True,
-                output=input_data,
-                latency_s=0.1,
-                cost_usd=0.01,
-                token_counts=10,
                 attempts=1,
+                latency_s=0.1,
+                token_counts=10,
+                cost_usd=0.01,
             )
 
         return executor
@@ -191,7 +193,7 @@ class TestParallelStepExecution:
         """Test parallel execution with cost limit breach."""
 
         # Create a step executor that returns high cost
-        async def high_cost_executor(step, input_data, context, resources):
+        async def high_cost_executor(step, input_data, context, resources, breach_event=None):
             return StepResult(
                 name=step.name if hasattr(step, "name") else "test",
                 success=True,
@@ -232,7 +234,7 @@ class TestParallelStepExecution:
         """Test parallel execution with token limit breach."""
 
         # Create a step executor that returns high token count
-        async def high_token_executor(step, input_data, context, resources):
+        async def high_token_executor(step, input_data, context, resources, breach_event=None):
             return StepResult(
                 name=step.name if hasattr(step, "name") else "test",
                 success=True,
@@ -271,7 +273,7 @@ class TestParallelStepExecution:
         """Test parallel execution with branch failure and PROPAGATE strategy."""
 
         # Create a step executor that fails
-        async def failing_executor(step, input_data, context, resources):
+        async def failing_executor(step, input_data, context, resources, breach_event=None):
             return StepResult(
                 name=step.name if hasattr(step, "name") else "test",
                 success=False,
@@ -314,7 +316,9 @@ class TestParallelStepExecution:
         # Create a step executor that fails for one branch
         branch_results = {"branch1": True, "branch2": False}
 
-        async def conditional_failing_executor(step, input_data, context, resources):
+        async def conditional_failing_executor(
+            step, input_data, context, resources, breach_event=None
+        ):
             step_name = step.name if hasattr(step, "name") else "test"
             success = branch_results.get(step_name, True)
             return StepResult(
@@ -485,7 +489,7 @@ class TestParallelStepExecution:
         """Test parallel execution with exception handling."""
 
         # Create a step executor that raises an exception
-        async def exception_executor(step, input_data, context, resources):
+        async def exception_executor(step, input_data, context, resources, breach_event=None):
             raise ValueError("Test exception")
 
         parallel_step = ParallelStep(
@@ -515,7 +519,7 @@ class TestParallelStepExecution:
         """Test parallel execution with task cancellation."""
 
         # Create a step executor that takes time
-        async def slow_executor(step, input_data, context, resources):
+        async def slow_executor(step, input_data, context, resources, breach_event=None):
             await asyncio.sleep(0.1)
             return StepResult(
                 name=step.name if hasattr(step, "name") else "test",
@@ -588,3 +592,93 @@ class TestParallelStepExecution:
         assert result.success
         # The mock executor returns input_data as output, so both branches return "test_input"
         assert result.output == {"branch1": "test_input", "branch2": "test_input"}
+
+
+@pytest.mark.asyncio
+async def test_parallel_usage_limit_enforced_atomically(caplog):
+    """Test that usage limits are enforced atomically under true concurrency in parallel steps."""
+    caplog.set_level(logging.INFO)
+    global_monitor.calls.clear()
+
+    # Create a step that returns a cost/token increment after a small delay
+    class CostlyAgent:
+        def __init__(self, cost, tokens, delay=0.05):
+            self.cost = cost
+            self.tokens = tokens
+            self.delay = delay
+            self.called = False
+
+        async def run(self, *_args, breach_event=None, **_kwargs):
+            self.called = True
+            # Simulate a longer operation with periodic cancellation checks
+            for _ in range(50):  # More iterations for more frequent checks
+                if breach_event is not None and breach_event.is_set():
+                    # Simulate early exit on cancellation
+                    return StepResult(
+                        name="costly_step",
+                        output="cancelled",
+                        success=False,
+                        latency_s=self.delay,
+                        cost_usd=0.0,
+                        token_counts=0,
+                        attempts=1,
+                        feedback="Cancelled early due to usage limit breach",
+                    )
+                await asyncio.sleep(self.delay / 50)  # Shorter sleep for more frequent checks
+            return StepResult(
+                name="costly_step",
+                output="ok",
+                success=True,
+                latency_s=self.delay,
+                cost_usd=self.cost,
+                token_counts=self.tokens,
+                attempts=1,
+            )
+
+    # Set up N branches, each with a cost that will cumulatively breach the limit
+    N = 5
+    usage_limits = UsageLimits(total_cost_usd_limit=1.0, total_tokens_limit=250)
+    # Calculate values that will definitely exceed the limit
+    cost_per_branch = (usage_limits.total_cost_usd_limit / N) + 0.01  # Ensure we exceed the limit
+    token_per_branch = (usage_limits.total_tokens_limit // N) + 1  # Ensure we exceed the limit
+    # Create agents with different delays to simulate staggered execution
+    delays = [0.01, 0.02, 0.03, 0.04, 0.05]  # Different delays for each agent
+    agents = [CostlyAgent(cost_per_branch, token_per_branch, delay=delays[i]) for i in range(N)]
+    branches = {f"b{i}": Pipeline(steps=[Step(name=f"s{i}", agent=agents[i])]) for i in range(N)}
+    parallel_step = ParallelStep(
+        name="test_parallel_race",
+        branches=branches,
+        merge_strategy=MergeStrategy.NO_MERGE,
+        on_branch_failure=BranchFailureStrategy.PROPAGATE,
+    )
+
+    # Robust step_executor that forwards breach_event
+    async def step_executor(step, input_data, context, resources, breach_event=None):
+        return await step.agent.run(input_data, breach_event=breach_event)
+
+    # Run the parallel step logic and expect UsageLimitExceededError
+    from flujo.application.core.step_logic import _execute_parallel_step_logic
+
+    with pytest.raises(UsageLimitExceededError):
+        await _execute_parallel_step_logic(
+            parallel_step=parallel_step,
+            parallel_input="test_input",
+            context=None,
+            resources=None,
+            step_executor=step_executor,
+            context_model_defined=True,
+            usage_limits=usage_limits,
+            context_setter=lambda result, context: None,
+        )
+
+    # All agents should have been called (they all start before the breach is detected)
+    called_count = sum(a.called for a in agents)
+    assert called_count == N, f"Expected all branches to start, got {called_count}/{N}"
+
+    # Check logs for cancellation message
+    assert any(
+        "Usage limit breached, cancelling remaining tasks" in r.message for r in caplog.records
+    )
+
+    # The UsageLimitExceededError should have been raised
+    # This verifies that the breach detection is working correctly

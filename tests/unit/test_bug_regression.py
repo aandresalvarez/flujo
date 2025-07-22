@@ -282,6 +282,7 @@ class TestPerformanceRegression:
         # Create test data
         run_data = {
             "run_id": "perf_test_run",
+            "pipeline_id": "test_pipeline_id",
             "pipeline_name": "test_pipeline",
             "pipeline_version": "1.0",
             "status": "running",

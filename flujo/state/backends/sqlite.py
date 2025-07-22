@@ -320,10 +320,13 @@ class SQLiteBackend(StateBackend):
                     """
                     CREATE TABLE IF NOT EXISTS runs (
                         run_id TEXT PRIMARY KEY,
+                        pipeline_id TEXT NOT NULL,
                         pipeline_name TEXT NOT NULL,
                         pipeline_version TEXT NOT NULL,
                         status TEXT NOT NULL,
-                        start_time TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        start_time TEXT,
                         end_time TEXT,
                         total_cost REAL,
                         final_context_blob TEXT
@@ -404,42 +407,43 @@ class SQLiteBackend(StateBackend):
             timestamp = int(time.time())
             base_name = self.db_path.stem
             suffix = self.db_path.suffix
-            backup_path = self.db_path.parent / f"{base_name}{suffix}.corrupt.{timestamp}"
 
-            # Handle existing backup files gracefully
-            counter = 1
+            # Find the first available backup path, handling gaps in sequence
+            backup_path = None
             MAX_BACKUP_SUFFIX_ATTEMPTS = 100
             MAX_CLEANUP_ATTEMPTS = 10  # Prevent infinite cleanup loops
             cleanup_attempts = 0
 
-            while True:
-                try:
-                    path_exists = backup_path.exists()
-                except OSError as stat_error:
-                    telemetry.logfire.warn(
-                        f"Could not stat backup path {backup_path}: {stat_error}"
-                    )
-                    path_exists = True  # treat as exists, so we keep searching
-                if not path_exists:
-                    break
-                backup_path = (
-                    self.db_path.parent / f"{base_name}{suffix}.corrupt.{timestamp}.{counter}"
-                )
-                counter += 1
-                if counter > MAX_BACKUP_SUFFIX_ATTEMPTS:  # Prevent infinite loop
-                    cleanup_attempts += 1
-                    if cleanup_attempts > MAX_CLEANUP_ATTEMPTS:
-                        telemetry.logfire.error(
-                            f"Failed to find available backup path after {MAX_CLEANUP_ATTEMPTS} cleanup attempts"
-                        )
-                        # Fallback: use a unique timestamp-based name
-                        backup_path = (
-                            self.db_path.parent
-                            / f"{base_name}{suffix}.corrupt.{timestamp}.{int(time.time())}"
-                        )
-                        break
+            # First try the base path
+            candidate_path = self.db_path.parent / f"{base_name}{suffix}.corrupt.{timestamp}"
+            try:
+                if not candidate_path.exists():
+                    backup_path = candidate_path
+            except OSError as stat_error:
+                telemetry.logfire.warn(f"Could not stat backup path {candidate_path}: {stat_error}")
 
-                    # Find and remove the oldest backup file instead of the current one
+            # If base path is taken, find the first available gap in sequence
+            if backup_path is None:
+                for counter in range(1, MAX_BACKUP_SUFFIX_ATTEMPTS + 1):
+                    candidate_path = (
+                        self.db_path.parent / f"{base_name}{suffix}.corrupt.{timestamp}.{counter}"
+                    )
+                    try:
+                        if not candidate_path.exists():
+                            backup_path = candidate_path
+                            break
+                    except OSError as stat_error:
+                        telemetry.logfire.warn(
+                            f"Could not stat backup path {candidate_path}: {stat_error}"
+                        )
+                        continue
+
+            # If no gaps found, we need to clean up old backups
+            if backup_path is None:
+                while cleanup_attempts < MAX_CLEANUP_ATTEMPTS:
+                    cleanup_attempts += 1
+
+                    # Find and remove the oldest backup file
                     backup_pattern = f"{base_name}{suffix}.corrupt.*"
                     try:
                         existing_backups = list(self.db_path.parent.glob(backup_pattern))
@@ -466,30 +470,37 @@ class SQLiteBackend(StateBackend):
                                 )
                                 try:
                                     oldest_backup.unlink(missing_ok=True)
+                                    # After removing oldest, try the base path again
+                                    candidate_path = (
+                                        self.db_path.parent
+                                        / f"{base_name}{suffix}.corrupt.{timestamp}"
+                                    )
+                                    try:
+                                        if not candidate_path.exists():
+                                            backup_path = candidate_path
+                                            break
+                                    except OSError as stat_error:
+                                        telemetry.logfire.warn(
+                                            f"Could not stat backup path {candidate_path} after cleanup: {stat_error}"
+                                        )
                                 except OSError as unlink_error:
                                     telemetry.logfire.error(
                                         f"Failed to remove oldest backup {oldest_backup}: {unlink_error}"
                                     )
-                                    # Continue anyway, try with a different approach
                             else:
                                 telemetry.logfire.warn("No valid backup files found to remove")
                     except OSError as glob_error:
                         telemetry.logfire.error(f"Failed to glob backup files: {glob_error}")
 
-                    # After cleanup, try using the base path again first
-                    backup_path = self.db_path.parent / f"{base_name}{suffix}.corrupt.{timestamp}"
-                    counter = 1
-                    try:
-                        if not backup_path.exists():
-                            # Found an available path after cleanup; exit the
-                            # search loop so the file can be moved there.
-                            break
-                    except OSError as stat_error:
-                        telemetry.logfire.warn(
-                            f"Could not stat backup path {backup_path} after cleanup: {stat_error}"
-                        )
-                        # If stat fails, fall back to continuing with suffix search
-                    continue
+                # If still no path found after cleanup attempts, use a unique timestamp-based name
+                if backup_path is None:
+                    telemetry.logfire.error(
+                        f"Failed to find available backup path after {MAX_CLEANUP_ATTEMPTS} cleanup attempts"
+                    )
+                    backup_path = (
+                        self.db_path.parent
+                        / f"{base_name}{suffix}.corrupt.{timestamp}.{int(time.time())}"
+                    )
 
             try:
                 self.db_path.rename(backup_path)
@@ -562,6 +573,44 @@ class SQLiteBackend(StateBackend):
             "UPDATE workflow_state SET pipeline_context = '{}' WHERE pipeline_context IS NULL"
         )
         await db.execute("UPDATE workflow_state SET status = 'running' WHERE status IS NULL")
+
+        # Migrate runs table schema if it exists
+        try:
+            cursor = await db.execute("PRAGMA table_info(runs)")
+            runs_columns = {row[1] for row in await cursor.fetchall()}
+            await cursor.close()
+
+            # Add missing columns to runs table
+            runs_new_columns = [
+                ("pipeline_id", "TEXT NOT NULL DEFAULT 'unknown'"),
+                ("created_at", "TEXT NOT NULL DEFAULT ''"),
+                ("updated_at", "TEXT NOT NULL DEFAULT ''"),
+                ("end_time", "TEXT"),
+                ("total_cost", "REAL"),
+                ("final_context_blob", "TEXT"),
+            ]
+
+            for column_name, column_def in runs_new_columns:
+                if column_name not in runs_columns:
+                    escaped_name = column_name.replace('"', '""')
+                    quoted_column_name = f'"{escaped_name}"'
+                    await db.execute(
+                        f"ALTER TABLE runs ADD COLUMN {quoted_column_name} {column_def}"
+                    )
+
+            # Update existing records with default values for NOT NULL columns
+            if "pipeline_id" in runs_columns:
+                await db.execute(
+                    "UPDATE runs SET pipeline_id = 'unknown' WHERE pipeline_id IS NULL"
+                )
+            if "created_at" in runs_columns:
+                await db.execute("UPDATE runs SET created_at = '' WHERE created_at IS NULL")
+            if "updated_at" in runs_columns:
+                await db.execute("UPDATE runs SET updated_at = '' WHERE updated_at IS NULL")
+
+        except sqlite3.OperationalError:
+            # Table doesn't exist yet, which is fine - it will be created with the new schema
+            pass
 
     async def _ensure_init(self) -> None:
         if not self._initialized:
@@ -1066,18 +1115,35 @@ class SQLiteBackend(StateBackend):
 
             async def _save() -> None:
                 async with aiosqlite.connect(self.db_path) as db:
+                    base_timestamp = (
+                        run_data.get("created_at")
+                        or run_data.get("start_time")
+                        or datetime.utcnow().isoformat()
+                    )
+                    created_at = base_timestamp
+                    updated_at = run_data.get("updated_at") or base_timestamp
+                    start_time = run_data.get("start_time") or created_at
+                    end_time = run_data.get("end_time")
+                    total_cost = run_data.get("total_cost")
+                    final_context_blob = run_data.get("final_context_blob")
                     await db.execute(
                         """
                         INSERT OR REPLACE INTO runs (
-                            run_id, pipeline_name, pipeline_version, status, start_time
-                        ) VALUES (?, ?, ?, ?, ?)
+                            run_id, pipeline_id, pipeline_name, pipeline_version, status, created_at, updated_at, start_time, end_time, total_cost, final_context_blob
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             run_data["run_id"],
+                            run_data.get("pipeline_id", "unknown"),
                             run_data.get("pipeline_name", "unknown"),
                             run_data.get("pipeline_version", "latest"),
                             run_data.get("status", "running"),
-                            run_data.get("start_time", datetime.utcnow()).isoformat(),
+                            created_at,
+                            updated_at,
+                            start_time,
+                            end_time,
+                            total_cost,
+                            final_context_blob,
                         ),
                     )
                     await db.commit()

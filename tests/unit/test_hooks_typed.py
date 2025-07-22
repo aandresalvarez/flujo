@@ -2,10 +2,11 @@ import pytest
 from unittest.mock import MagicMock
 from typing import Any, cast
 
-from flujo import Flujo, Step
+from flujo import Step
 from flujo.domain.agent_protocol import AsyncAgentProtocol
 from flujo.testing.utils import StubAgent, gather_result
 from flujo.domain.events import HookPayload, PostStepPayload
+from tests.conftest import create_test_flujo
 
 
 @pytest.mark.asyncio
@@ -18,7 +19,7 @@ async def test_hook_receives_typed_payload() -> None:
     async def hook(payload: HookPayload) -> None:
         recorder(payload)
 
-    runner = Flujo(step, hooks=[hook])
+    runner = create_test_flujo(step, hooks=[hook])
     await gather_result(runner, "start")
 
     post_step_calls = [

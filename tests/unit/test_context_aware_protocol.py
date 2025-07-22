@@ -4,10 +4,11 @@ from typing import Any
 import pytest
 from flujo.domain.models import BaseModel
 
-from flujo import Flujo, Step
+from flujo import Step
 from flujo.domain.agent_protocol import ContextAwareAgentProtocol, AsyncAgentProtocol
 from flujo.domain.plugins import ContextAwarePluginProtocol, PluginOutcome
 from flujo.testing.utils import gather_result
+from tests.conftest import create_test_flujo
 
 
 class Ctx(BaseModel):
@@ -43,7 +44,7 @@ class TypedPlugin(ContextAwarePluginProtocol[Ctx]):
 @pytest.mark.asyncio
 async def test_context_aware_agent_no_warning() -> None:
     step = Step.model_validate({"name": "s", "agent": TypedAgent()})
-    runner = Flujo(step, context_model=Ctx, initial_context_data={"val": 0})
+    runner = create_test_flujo(step, context_model=Ctx, initial_context_data={"val": 0})
     with warnings.catch_warnings(record=True) as rec:
         await gather_result(runner, "in")
     assert not any(isinstance(w.message, DeprecationWarning) for w in rec)
@@ -52,7 +53,7 @@ async def test_context_aware_agent_no_warning() -> None:
 @pytest.mark.asyncio
 async def test_legacy_agent_works_with_context() -> None:
     step = Step.model_validate({"name": "s", "agent": LegacyAgent()})
-    runner = Flujo(step, context_model=Ctx)
+    runner = create_test_flujo(step, context_model=Ctx)
     # Should work without warnings since we now use 'context' parameter
     result = await gather_result(runner, "in")
     assert result.step_history[0].success

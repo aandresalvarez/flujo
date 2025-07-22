@@ -3,10 +3,11 @@ from __future__ import annotations
 import pytest
 from typing import Any, List, Dict
 
-from flujo import Flujo, Step
+from flujo import Step
 from flujo.domain.models import BaseModel as FlujoBaseModel
 from flujo.testing.utils import SimpleDummyRemoteBackend as DummyRemoteBackend, gather_result
 from flujo.utils.serialization import safe_serialize, register_custom_serializer
+from tests.conftest import create_test_flujo
 
 
 class UserContext(FlujoBaseModel):
@@ -82,7 +83,7 @@ class TestReconstructionIntegration:
         step = Step.model_validate({"name": "process_user_profile", "agent": UserProfileAgent()})
 
         backend = DummyRemoteBackend()
-        runner = Flujo(
+        runner = create_test_flujo(
             step,
             backend=backend,
             context_model=UserContext,
@@ -149,7 +150,7 @@ class TestReconstructionIntegration:
         )
 
         backend = DummyRemoteBackend()
-        runner = Flujo(
+        runner = create_test_flujo(
             step,
             backend=backend,
             context_model=ProductContext,
@@ -234,7 +235,7 @@ class TestReconstructionIntegration:
         step = Step.model_validate({"name": "process_order", "agent": OrderProcessingAgent()})
 
         backend = DummyRemoteBackend()
-        runner = Flujo(
+        runner = create_test_flujo(
             step,
             backend=backend,
             context_model=OrderContext,
@@ -328,7 +329,7 @@ class TestReconstructionIntegration:
         step3 = Step.model_validate({"name": "step3", "agent": Step3Agent()})
 
         backend = DummyRemoteBackend()
-        runner = Flujo(
+        runner = create_test_flujo(
             step1 >> step2 >> step3,
             backend=backend,
             context_model=UserContext,
@@ -397,7 +398,7 @@ class TestReconstructionIntegration:
         step = Step.model_validate({"name": "regression_test", "agent": RegressionTestAgent()})
 
         backend = DummyRemoteBackend()
-        runner = Flujo(
+        runner = create_test_flujo(
             step,
             backend=backend,
             context_model=UserContext,

@@ -9,9 +9,9 @@ import pytest
 from typing import Any, Dict, List
 from flujo.domain.models import BaseModel
 
-from flujo.application.runner import Flujo
 from flujo.domain import Step, Pipeline
 from flujo.testing.utils import StubAgent, gather_result
+from tests.conftest import create_test_flujo
 
 
 class ConceptResolutionContext(BaseModel):
@@ -158,7 +158,7 @@ async def test_pipeline_composition_basic() -> None:
 async def test_pipeline_composition_execution() -> None:
     """Test that composed pipelines execute correctly end-to-end."""
     master_pipeline = build_master_pipeline()
-    runner = Flujo(master_pipeline, context_model=MasterContext)
+    runner = create_test_flujo(master_pipeline, context_model=MasterContext)
 
     # Execute the pipeline
     result = await gather_result(runner, "Find all users and their orders")
@@ -185,7 +185,7 @@ async def test_pipeline_composition_execution() -> None:
 async def test_pipeline_composition_context_sharing() -> None:
     """Test that context is properly shared across composed pipelines."""
     master_pipeline = build_master_pipeline()
-    runner = Flujo(master_pipeline, context_model=MasterContext)
+    runner = create_test_flujo(master_pipeline, context_model=MasterContext)
 
     result = await gather_result(runner, "Analyze customer data")
 
@@ -224,7 +224,7 @@ async def test_pipeline_composition_multiple_chains() -> None:
     assert step_names == ["step1", "step2", "step3"]
 
     # Execute the composed pipeline
-    runner = Flujo(composed)
+    runner = create_test_flujo(composed)
     result = await gather_result(runner, "input")
 
     # Verify execution - check if all steps succeeded
@@ -257,7 +257,7 @@ async def test_pipeline_composition_backward_compatibility() -> None:
     assert len(composed.steps) == 4
 
     # Execute to ensure no runtime errors
-    runner = Flujo(composed)
+    runner = create_test_flujo(composed)
     result = await gather_result(runner, "input")
     all_steps_succeeded = all(step.success for step in result.step_history)
     assert all_steps_succeeded is True
@@ -275,7 +275,7 @@ async def test_pipeline_composition_type_safety() -> None:
 
     # The resulting pipeline should have type str -> Dict[str, Any]
     # This is verified by the fact that we can pass a string to the runner
-    runner = Flujo(master_pipeline)
+    runner = create_test_flujo(master_pipeline)
     result = await gather_result(runner, "test input")
 
     # Verify the final output is the expected type
@@ -304,6 +304,6 @@ async def test_pipeline_composition_error_handling() -> None:
     composed = failing_pipeline >> working_pipeline
 
     # Execute - the pipeline should fail at the first step
-    runner = Flujo(composed)
+    runner = create_test_flujo(composed)
     with pytest.raises(Exception, match="Simulated failure"):
         await gather_result(runner, "input")

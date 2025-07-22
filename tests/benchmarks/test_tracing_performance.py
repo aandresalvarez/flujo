@@ -12,8 +12,9 @@ import statistics
 
 import pytest
 
-from flujo import Step, Flujo
+from flujo import Step
 from flujo.testing.utils import StubAgent
+from tests.conftest import create_test_flujo
 
 
 class TestTracingPerformance:
@@ -49,7 +50,7 @@ class TestTracingPerformance:
         def run_pipeline_with_tracing():
             """Run pipeline with tracing enabled (default)."""
             pipeline = create_simple_pipeline()
-            runner = Flujo(pipeline)
+            runner = create_test_flujo(pipeline)
             result = None
 
             async def run():
@@ -64,7 +65,7 @@ class TestTracingPerformance:
             """Run pipeline with tracing disabled."""
             pipeline = create_simple_pipeline()
             # Create runner and disable tracing using the API
-            runner = Flujo(pipeline)
+            runner = create_test_flujo(pipeline)
             runner.disable_tracing()
             result = None
 
@@ -132,7 +133,7 @@ class TestTracingPerformance:
             return Pipeline.from_step(conditional_step)
 
         pipeline = create_complex_pipeline()
-        runner = Flujo(pipeline)
+        runner = create_test_flujo(pipeline)
 
         def run_pipeline():
             runner.run("input")
@@ -188,7 +189,7 @@ class TestTracingPerformance:
             return Pipeline.from_step(conditional_step)
 
         pipeline = create_complex_pipeline()
-        runner = Flujo(pipeline, hooks=[])
+        runner = create_test_flujo(pipeline, hooks=[])
 
         def run_pipeline():
             runner.run("input")
@@ -226,7 +227,7 @@ class TestTracingPerformance:
                 )
 
                 backend = SQLiteBackend(db_path)
-                runner = Flujo(step1 >> step2, state_backend=backend)
+                runner = create_test_flujo(step1 >> step2, state_backend=backend)
 
                 result = None
 
@@ -270,7 +271,7 @@ class TestTracingPerformance:
                     "agent": StubAgent([f"output_{i}"] * 5),  # Multiple outputs for multiple runs
                 }
             )
-            runner = Flujo(step)
+            runner = create_test_flujo(step)
             pipelines.append(runner)
 
         # Run all pipelines
@@ -322,7 +323,7 @@ class TestTracingPerformance:
             return pipeline
 
         pipeline = create_large_pipeline()
-        runner = Flujo(pipeline)
+        runner = create_test_flujo(pipeline)
 
         # Run the large pipeline
         result = None
@@ -373,7 +374,7 @@ class TestTracingPerformance:
             )
 
             pipeline = step1 >> step2
-            runner = Flujo(pipeline)
+            runner = create_test_flujo(pipeline)
 
             execution_times = []
             for _ in range(20):  # Increased from 10 to 20 to reduce random variation

@@ -7,13 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from flujo.application.runner import Flujo
 from flujo.domain import Step
 from flujo.domain.models import PipelineContext
 from flujo.state import WorkflowState
 from flujo.state.backends.file import FileBackend
 from flujo.state.backends.sqlite import SQLiteBackend
 from flujo.testing.utils import gather_result
+from tests.conftest import create_test_flujo
 
 
 class Ctx(PipelineContext):
@@ -43,6 +43,7 @@ from flujo.application.runner import Flujo
 from flujo.domain import Step
 from flujo.domain.models import PipelineContext
 from flujo.state.backends.{"file" if backend_type == "FileBackend" else "sqlite"} import {backend_type}
+from tests.conftest import create_test_flujo
 
 class Ctx(PipelineContext):
     pass
@@ -57,7 +58,7 @@ class CrashAgent:
 async def main():
     backend = {backend_type}(Path(r'{path}'))
     pipeline = Step.from_callable(transform, name='transform') >> Step.from_callable(CrashAgent().run, name='crash')
-    runner = Flujo(
+    runner = create_test_flujo(
         pipeline,
         context_model=Ctx,
         state_backend=backend,
@@ -95,7 +96,7 @@ async def test_resume_after_crash_file_backend(tmp_path: Path) -> None:
     pipeline = Step.from_callable(transform, name="transform") >> Step.from_callable(
         finalize, name="finalize"
     )
-    runner = Flujo(
+    runner = create_test_flujo(
         pipeline,
         context_model=Ctx,
         state_backend=backend,
@@ -145,7 +146,7 @@ async def test_resume_after_crash_sqlite_backend(tmp_path: Path) -> None:
     pipeline = Step.from_callable(transform, name="transform") >> Step.from_callable(
         finalize, name="finalize"
     )
-    runner = Flujo(
+    runner = create_test_flujo(
         pipeline,
         context_model=Ctx,
         state_backend=backend,
