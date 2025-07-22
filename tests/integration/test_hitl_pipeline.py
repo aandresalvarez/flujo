@@ -2,11 +2,11 @@ import pickle
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from flujo.application.runner import Flujo
 from flujo.domain.dsl import Step
 from flujo.domain.models import PipelineContext
 from flujo.exceptions import OrchestratorError
 from flujo.testing.utils import StubAgent, gather_result
+from tests.conftest import create_test_flujo
 
 
 @pytest.mark.asyncio
@@ -14,7 +14,7 @@ async def test_static_approval_pause_and_resume() -> None:
     pipeline = Step.model_validate(
         {"name": "first", "agent": StubAgent(["draft"])}
     ) >> Step.human_in_the_loop("approve", message_for_user="OK?")
-    runner = Flujo(pipeline)
+    runner = create_test_flujo(pipeline)
     paused = await gather_result(runner, "in")
     ctx = paused.final_pipeline_context
     assert isinstance(ctx, PipelineContext)
@@ -34,7 +34,7 @@ async def test_dynamic_clarification_pause_and_resume() -> None:
     pipeline = Step.model_validate(
         {"name": "ask", "agent": StubAgent(["Need help?"])}
     ) >> Step.human_in_the_loop("clarify")
-    runner = Flujo(pipeline)
+    runner = create_test_flujo(pipeline)
     paused = await gather_result(runner, "hi")
     ctx = paused.final_pipeline_context
     assert ctx.scratchpad["pause_message"] == "Need help?"
@@ -53,7 +53,7 @@ class Choice(BaseModel):
 async def test_resume_with_structured_input_validation() -> None:
     step = Step.human_in_the_loop("pick", input_schema=Choice)
     pipeline = Step.model_validate({"name": "pre", "agent": StubAgent(["Q"])}) >> step
-    runner = Flujo(pipeline)
+    runner = create_test_flujo(pipeline)
     paused = await gather_result(runner, "x")
     resumed = await runner.resume_async(paused, {"option": 1})
     assert isinstance(resumed.step_history[-1].output, Choice)
@@ -63,7 +63,7 @@ async def test_resume_with_structured_input_validation() -> None:
 async def test_resume_with_invalid_structured_input() -> None:
     step = Step.human_in_the_loop("pick", input_schema=Choice)
     pipeline = Step.model_validate({"name": "pre", "agent": StubAgent(["Q"])}) >> step
-    runner = Flujo(pipeline)
+    runner = create_test_flujo(pipeline)
     paused = await gather_result(runner, "x")
     with pytest.raises(ValidationError):
         await runner.resume_async(paused, {"bad": 0})
@@ -77,7 +77,7 @@ async def test_multi_turn_correction_loop() -> None:
         >> Step.model_validate({"name": "draft2", "agent": StubAgent(["good"])})
         >> Step.human_in_the_loop("fix2")
     )
-    runner = Flujo(pipeline)
+    runner = create_test_flujo(pipeline)
     paused = await gather_result(runner, "start")
     paused = await runner.resume_async(paused, "no")
     paused = await runner.resume_async(paused, "yes")
@@ -104,7 +104,7 @@ async def test_resume_preserves_metrics() -> None:
     pipeline = Step.model_validate({"name": "m", "agent": MetricAgent()}) >> Step.human_in_the_loop(
         "pause"
     )
-    runner = Flujo(pipeline)
+    runner = create_test_flujo(pipeline)
     paused = await gather_result(runner, 0)
     cost_before = paused.total_cost_usd
     resumed = await runner.resume_async(paused, "ok")
@@ -114,7 +114,7 @@ async def test_resume_preserves_metrics() -> None:
 @pytest.mark.asyncio
 async def test_cannot_resume_non_paused_pipeline() -> None:
     pipeline = Step.model_validate({"name": "a", "agent": StubAgent(["done"])})
-    runner = Flujo(pipeline)
+    runner = create_test_flujo(pipeline)
     result = await gather_result(runner, "x")
     with pytest.raises(OrchestratorError):
         await runner.resume_async(result, "irrelevant")
@@ -125,7 +125,7 @@ async def test_paused_hitl_pipeline_can_be_serialized_and_resumed() -> None:
     pipeline = Step.model_validate(
         {"name": "first", "agent": StubAgent(["draft"])}
     ) >> Step.human_in_the_loop("pause")
-    runner = Flujo(pipeline)
+    runner = create_test_flujo(pipeline)
 
     paused = await gather_result(runner, "start")
     pickled_result = pickle.dumps(paused)

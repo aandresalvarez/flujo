@@ -2,8 +2,8 @@ import doctest
 from pydantic import BaseModel
 import pytest
 
-from flujo import Flujo
 from flujo.domain import adapter_step, step
+from tests.conftest import create_test_flujo
 
 
 class ComplexInput(BaseModel):
@@ -24,7 +24,7 @@ async def follow(data: ComplexInput) -> int:
 @pytest.mark.asyncio
 async def test_adapter_pipeline_runs() -> None:
     pipeline = adapt >> follow
-    runner = Flujo(pipeline)
+    runner = create_test_flujo(pipeline)
     result = None
     async for item in runner.run_async("abc"):
         result = item
@@ -53,7 +53,7 @@ def example_adapter_step():
     >>>
     >>> # Use it in a pipeline
     >>> pipeline = add_one >> double
-    >>> runner = Flujo(pipeline)
+    >>> runner = create_test_flujo(pipeline)
     >>> # Note: In real usage, you would call: result = await runner.run(5)
     >>> # result.final_output would be 12
     """

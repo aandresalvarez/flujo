@@ -2,10 +2,10 @@ import asyncio
 import pytest
 from flujo.domain.models import BaseModel
 
-from flujo.application.runner import Flujo
 from flujo.domain import Step
 from flujo.testing.utils import StubAgent, gather_result
 from flujo.domain.models import PipelineResult
+from tests.conftest import create_test_flujo
 
 
 class Ctx(BaseModel):
@@ -23,7 +23,7 @@ class AddOneAgent:
 async def test_pipeline_runner_shared_context_flow() -> None:
     step1 = Step.model_validate({"name": "a", "agent": AddOneAgent()})
     step2 = Step.model_validate({"name": "b", "agent": AddOneAgent()})
-    runner = Flujo(step1 >> step2, context_model=Ctx, initial_context_data={"count": 0})
+    runner = create_test_flujo(step1 >> step2, context_model=Ctx, initial_context_data={"count": 0})
     result = await gather_result(runner, 1)
     assert result.final_pipeline_context.count == 2
     assert result.step_history[-1].output == 3
@@ -33,7 +33,7 @@ async def test_pipeline_runner_shared_context_flow() -> None:
 async def test_existing_agents_without_context() -> None:
     agent = StubAgent(["ok"])
     step = Step.model_validate({"name": "s", "agent": agent})
-    runner = Flujo(step)
+    runner = create_test_flujo(step)
     result = await gather_result(runner, "hi")
     assert result.step_history[0].output == "ok"
 
@@ -52,7 +52,7 @@ class IncrementAgent:
 @pytest.mark.asyncio
 async def test_concurrent_runs_with_typed_context_are_isolated() -> None:
     step = Step.model_validate({"name": "inc", "agent": IncrementAgent()})
-    runner = Flujo(step, context_model=_TestContext)
+    runner = create_test_flujo(step, context_model=_TestContext)
 
     async def run_one() -> PipelineResult:
         return await gather_result(runner, "input")

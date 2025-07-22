@@ -8,11 +8,11 @@ and their interactions with context, resources, and resilience features.
 import pytest
 from typing import Any
 
-from flujo.application.runner import Flujo
 from flujo.domain import Step, Pipeline
 from flujo.domain.models import PipelineContext
 from flujo.domain.dsl.step import MergeStrategy
 from flujo.domain.dsl import step
+from tests.conftest import create_test_flujo
 
 
 class CoreTestContext(PipelineContext):
@@ -157,7 +157,7 @@ async def test_golden_transcript_core():
     test_data = {}
 
     # Initialize Flujo runner
-    runner = Flujo(pipeline, context_model=CoreTestContext)
+    runner = create_test_flujo(pipeline, context_model=CoreTestContext)
 
     # Run the pipeline
     result = None
@@ -204,7 +204,7 @@ async def test_golden_transcript_core_branch_b():
     test_data = {}
 
     # Initialize Flujo runner
-    runner = Flujo(pipeline, context_model=CoreTestContext)
+    runner = create_test_flujo(pipeline, context_model=CoreTestContext)
 
     # Run the pipeline
     result = None

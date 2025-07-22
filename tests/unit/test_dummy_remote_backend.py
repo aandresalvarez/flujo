@@ -1,8 +1,9 @@
 import pytest
 from flujo.domain.models import BaseModel
 
-from flujo import Flujo, Step
+from flujo import Step
 from flujo.testing.utils import DummyRemoteBackend, gather_result
+from tests.conftest import create_test_flujo
 
 
 class Ctx(BaseModel):
@@ -74,7 +75,7 @@ async def test_dummy_remote_backend_preserves_context() -> None:
     step1 = Step.model_validate({"name": "a", "agent": IncrementAgent()})
     step2 = Step.model_validate({"name": "b", "agent": IncrementAgent()})
     backend = DummyRemoteBackend()
-    runner = Flujo(
+    runner = create_test_flujo(
         step1 >> step2,
         backend=backend,
         context_model=Ctx,
@@ -90,7 +91,7 @@ async def test_dummy_remote_backend_preserves_context() -> None:
 async def test_dummy_remote_backend_roundtrip_complex_input() -> None:
     step = Step.model_validate({"name": "echo", "agent": EchoAgent()})
     backend = DummyRemoteBackend()
-    runner = Flujo(step, backend=backend)
+    runner = create_test_flujo(step, backend=backend)
     payload = Container(nested=Nested(foo="hi", bar=42), items=[1, 2, 3])
     result = await gather_result(runner, payload)
     returned = result.step_history[0].output
@@ -103,7 +104,7 @@ async def test_dummy_remote_backend_simple_nested_structures() -> None:
     """Test reconstruction with simple nested structures that we know work."""
     step = Step.model_validate({"name": "simple_echo", "agent": EchoAgent()})
     backend = DummyRemoteBackend()
-    runner = Flujo(step, backend=backend)
+    runner = create_test_flujo(step, backend=backend)
 
     # Test with the original working case
     payload = Container(nested=Nested(foo="test", bar=42), items=[1, 2, 3])
@@ -119,7 +120,7 @@ async def test_dummy_remote_backend_list_of_primitives() -> None:
     """Test reconstruction with lists of primitive types."""
     step = Step.model_validate({"name": "list_echo", "agent": ListEchoAgent()})
     backend = DummyRemoteBackend()
-    runner = Flujo(step, backend=backend)
+    runner = create_test_flujo(step, backend=backend)
 
     payload = ListContainer(
         simple_list=[1, 2, 3, 4, 5],
@@ -145,7 +146,7 @@ async def test_dummy_remote_backend_dict_of_primitives() -> None:
     """Test reconstruction with dictionaries of primitive types."""
     step = Step.model_validate({"name": "dict_echo", "agent": DictEchoAgent()})
     backend = DummyRemoteBackend()
-    runner = Flujo(step, backend=backend)
+    runner = create_test_flujo(step, backend=backend)
 
     payload = DictContainer(
         simple_dict={"a": 1, "b": 2, "c": 3},
@@ -170,7 +171,7 @@ async def test_dummy_remote_backend_edge_cases() -> None:
     """Test reconstruction with edge cases like empty structures and None values."""
     step = Step.model_validate({"name": "edge_echo", "agent": EchoAgent()})
     backend = DummyRemoteBackend()
-    runner = Flujo(step, backend=backend)
+    runner = create_test_flujo(step, backend=backend)
 
     # Test with empty lists and minimal data
     payload = Container(nested=Nested(foo="", bar=0), items=[])
@@ -186,7 +187,7 @@ async def test_dummy_remote_backend_string_encoded_lists() -> None:
     """Test that string-encoded lists are properly reconstructed."""
     step = Step.model_validate({"name": "string_echo", "agent": EchoAgent()})
     backend = DummyRemoteBackend()
-    runner = Flujo(step, backend=backend)
+    runner = create_test_flujo(step, backend=backend)
 
     # This tests the case where lists might be serialized as strings
     payload = Container(nested=Nested(foo="test", bar=42), items=[1, 2, 3])
@@ -202,7 +203,7 @@ async def test_dummy_remote_backend_preserves_types() -> None:
     """Test that the backend preserves exact types and doesn't convert between types."""
     step = Step.model_validate({"name": "type_echo", "agent": EchoAgent()})
     backend = DummyRemoteBackend()
-    runner = Flujo(step, backend=backend)
+    runner = create_test_flujo(step, backend=backend)
 
     payload = Container(nested=Nested(foo="type_test", bar=100), items=[1, 2, 3])
 
@@ -224,7 +225,7 @@ async def test_dummy_remote_backend_multiple_roundtrips() -> None:
     """Test that multiple serialization/deserialization cycles work correctly."""
     step = Step.model_validate({"name": "multi_echo", "agent": EchoAgent()})
     backend = DummyRemoteBackend()
-    runner = Flujo(step, backend=backend)
+    runner = create_test_flujo(step, backend=backend)
 
     payload = Container(nested=Nested(foo="multi_test", bar=999), items=[10, 20, 30])
 

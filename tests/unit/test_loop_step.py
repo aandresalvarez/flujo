@@ -3,7 +3,7 @@ import pytest
 from flujo.domain import Step, Pipeline
 from flujo.domain.dsl import LoopStep
 from flujo.domain.models import PipelineContext
-from flujo.application.runner import Flujo
+from tests.conftest import create_test_flujo
 
 
 class Ctx(PipelineContext):
@@ -47,7 +47,7 @@ async def test_loopstep_context_isolation_unit():
         exit_condition_callable=lambda out, ctx: out >= 2,
         max_loops=5,
     )
-    runner = Flujo(loop, context_model=Ctx)
+    runner = create_test_flujo(loop, context_model=Ctx)
     result = None
     async for r in runner.run_async(0, initial_context_data={"initial_prompt": "test"}):
         result = r

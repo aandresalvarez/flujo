@@ -1,12 +1,12 @@
 import pytest
 from flujo.domain.models import BaseModel
 
-from flujo.application.runner import Flujo
 from flujo.domain import Step
 from flujo import step
 from flujo.testing.utils import gather_result
 from flujo.exceptions import PipelineContextInitializationError
 from flujo.domain.plugins import PluginOutcome
+from tests.conftest import create_test_flujo
 
 
 class Ctx(BaseModel):
@@ -62,7 +62,7 @@ class KwargsPlugin:
 async def test_context_initialization_and_access() -> None:
     agent = CaptureAgent()
     step = Step.model_validate({"name": "s", "agent": agent})
-    runner = Flujo(step, context_model=Ctx, initial_context_data={"num": 1})
+    runner = create_test_flujo(step, context_model=Ctx, initial_context_data={"num": 1})
     result = await gather_result(runner, "in")
     assert isinstance(agent.seen, Ctx)
     assert result.final_pipeline_context.num == 1
@@ -70,7 +70,7 @@ async def test_context_initialization_and_access() -> None:
 
 @pytest.mark.asyncio
 async def test_context_initialization_failure() -> None:
-    runner = Flujo(
+    runner = create_test_flujo(
         Step.model_validate({"name": "s", "agent": CaptureAgent()}),
         context_model=Ctx,
         initial_context_data={"num": "bad"},
@@ -84,7 +84,7 @@ async def test_context_mutation_between_steps() -> None:
     pipeline = Step.model_validate({"name": "inc", "agent": IncAgent()}) >> Step.model_validate(
         {"name": "read", "agent": ReadAgent()}
     )
-    runner = Flujo(pipeline, context_model=Ctx)
+    runner = create_test_flujo(pipeline, context_model=Ctx)
     result = await gather_result(runner, "x")
     assert result.step_history[-1].output == 1
     assert result.final_pipeline_context.num == 1
@@ -93,7 +93,7 @@ async def test_context_mutation_between_steps() -> None:
 @pytest.mark.asyncio
 async def test_context_isolated_per_run() -> None:
     step = Step.model_validate({"name": "inc", "agent": IncAgent()})
-    runner = Flujo(step, context_model=Ctx)
+    runner = create_test_flujo(step, context_model=Ctx)
     r1 = await gather_result(runner, "a")
     r2 = await gather_result(runner, "b")
     assert r1.final_pipeline_context.num == 1
@@ -112,7 +112,7 @@ async def test_plugin_receives_context_and_strict_plugin_errors() -> None:
             "plugins": [(ctx_plugin, 0), (kwargs_plugin, 0), (strict_plugin, 0)],
         }
     )
-    runner = Flujo(step, context_model=Ctx)
+    runner = create_test_flujo(step, context_model=Ctx)
     # This should run without error, as the engine is smart enough not to pass
     # context to a plugin that doesn't accept it.
     result = await gather_result(runner, "in")
@@ -134,7 +134,7 @@ async def test_step_updates_context_automatic_merge() -> None:
         assert context is not None
         return context.num
 
-    runner = Flujo(init >> read, context_model=Ctx)
+    runner = create_test_flujo(init >> read, context_model=Ctx)
     result = await gather_result(runner, "input")
 
     assert result.final_pipeline_context.num == 42

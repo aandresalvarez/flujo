@@ -5,12 +5,12 @@ import pytest
 
 from flujo.exceptions import OrchestratorError
 
-from flujo.application.runner import Flujo
 from flujo.state import WorkflowState
 from flujo.state.backends.memory import InMemoryBackend
 from flujo.domain import Step
 from flujo.domain.models import PipelineContext
 from flujo.testing.utils import gather_result
+from tests.conftest import create_test_flujo
 
 
 class Ctx(PipelineContext):
@@ -30,7 +30,9 @@ async def test_runner_uses_state_backend() -> None:
     backend = InMemoryBackend()
     s1 = Step.from_callable(step_one, name="s1")
     s2 = Step.from_callable(step_two, name="s2")
-    runner = Flujo(s1 >> s2, context_model=Ctx, state_backend=backend, delete_on_completion=False)
+    runner = create_test_flujo(
+        s1 >> s2, context_model=Ctx, state_backend=backend, delete_on_completion=False
+    )
     result = await gather_result(runner, "x", initial_context_data={"initial_prompt": "x"})
     assert len(result.step_history) == 2
     saved = await backend.load_state(result.final_pipeline_context.run_id)
@@ -62,7 +64,7 @@ async def test_resume_from_saved_state() -> None:
     )
     await backend.save_state(run_id, state.model_dump())
 
-    runner = Flujo(
+    runner = create_test_flujo(
         s1 >> s2,
         context_model=Ctx,
         state_backend=backend,
@@ -86,7 +88,9 @@ async def test_delete_on_completion_removes_state() -> None:
     backend = InMemoryBackend()
     s1 = Step.from_callable(step_one, name="s1")
     s2 = Step.from_callable(step_two, name="s2")
-    runner = Flujo(s1 >> s2, context_model=Ctx, state_backend=backend, delete_on_completion=True)
+    runner = create_test_flujo(
+        s1 >> s2, context_model=Ctx, state_backend=backend, delete_on_completion=True
+    )
     result = await gather_result(runner, "x", initial_context_data={"initial_prompt": "x"})
     saved = await backend.load_state(result.final_pipeline_context.run_id)
     assert saved is None
@@ -113,7 +117,7 @@ async def test_invalid_step_index_raises() -> None:
     )
     await backend.save_state(run_id, state.model_dump())
 
-    runner = Flujo(
+    runner = create_test_flujo(
         s1 >> s2,
         context_model=Ctx,
         state_backend=backend,
@@ -140,7 +144,7 @@ async def test_cancelled_pipeline_state_saved() -> None:
 
     s = Step.from_callable(long_step, name="long")
     run_id = "cancelled_run"
-    runner = Flujo(
+    runner = create_test_flujo(
         s,
         context_model=Ctx,
         state_backend=backend,

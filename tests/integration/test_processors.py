@@ -1,10 +1,11 @@
 import pytest
 from flujo.domain.models import BaseModel, PipelineContext
 
-from flujo import Flujo, Step
+from flujo import Step
 from flujo.domain.processors import AgentProcessors
 from flujo.processors import SerializePydantic
 from flujo.testing.utils import StubAgent, gather_result
+from tests.conftest import create_test_flujo
 
 
 class AddWorld:
@@ -45,7 +46,7 @@ async def test_prompt_processor_modifies_input() -> None:
     agent = StubAgent(["ok"])
     procs = AgentProcessors(prompt_processors=[AddWorld()])
     step = Step.solution(agent, processors=procs)
-    runner = Flujo(step)
+    runner = create_test_flujo(step)
     await gather_result(runner, "hello")
     assert agent.inputs[0] == "hello world"
 
@@ -55,7 +56,7 @@ async def test_output_processor_modifies_output() -> None:
     agent = StubAgent(["hi"])
     procs = AgentProcessors(output_processors=[DoubleOutput()])
     step = Step.solution(agent, processors=procs)
-    runner = Flujo(step)
+    runner = create_test_flujo(step)
     result = await gather_result(runner, "in")
     assert result.step_history[0].output == "hihi"
 
@@ -65,7 +66,7 @@ async def test_processor_receives_context() -> None:
     agent = StubAgent(["ok"])
     procs = AgentProcessors(prompt_processors=[ContextPrefix()])
     step = Step.solution(agent, processors=procs)
-    runner = Flujo(step, context_model=Ctx, initial_context_data={"prefix": "X"})
+    runner = create_test_flujo(step, context_model=Ctx, initial_context_data={"prefix": "X"})
     await gather_result(runner, "hello")
     assert agent.inputs[0].startswith("X:")
 
@@ -75,7 +76,7 @@ async def test_failing_processor_does_not_crash() -> None:
     agent = StubAgent(["ok"])
     procs = AgentProcessors(prompt_processors=[FailingProc()])
     step = Step.solution(agent, processors=procs)
-    runner = Flujo(step)
+    runner = create_test_flujo(step)
     result = await gather_result(runner, "in")
     assert result.step_history[0].success is True
 
@@ -90,7 +91,7 @@ async def test_serialize_pydantic_output_to_dict() -> None:
     agent = StubAgent([User(name="A", age=1)])
     procs = AgentProcessors(output_processors=[SerializePydantic()])
     step = Step.solution(agent, processors=procs)
-    runner = Flujo(step)
+    runner = create_test_flujo(step)
     result = await gather_result(runner, "in")
     assert result.step_history[0].output == {"name": "A", "age": 1}
 
@@ -100,6 +101,6 @@ async def test_serialize_pydantic_is_idempotent() -> None:
     agent = StubAgent([{"x": 1}])
     procs = AgentProcessors(output_processors=[SerializePydantic()])
     step = Step.solution(agent, processors=procs)
-    runner = Flujo(step)
+    runner = create_test_flujo(step)
     result = await gather_result(runner, "in")
     assert result.step_history[0].output == {"x": 1}

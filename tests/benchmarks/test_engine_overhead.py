@@ -1,7 +1,7 @@
 import pytest
 from flujo.domain import Step
-from flujo.application.runner import Flujo
 from flujo.testing.utils import StubAgent
+from tests.conftest import create_test_flujo
 
 pytest.importorskip("pytest_benchmark")
 
@@ -17,7 +17,7 @@ def test_pipeline_runner_overhead(benchmark):
         >> Step.model_validate({"name": "s3", "agent": agent})
         >> Step.model_validate({"name": "s4", "agent": agent})
     )
-    runner = Flujo(pipeline)
+    runner = create_test_flujo(pipeline)
 
     @benchmark
     def run_pipeline():

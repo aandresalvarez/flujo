@@ -3,12 +3,12 @@ import pytest
 from pathlib import Path
 from flujo.domain.models import BaseModel
 
-from flujo.application.runner import Flujo
 from flujo.domain import Step
 from flujo.domain.models import PipelineContext
 from flujo.exceptions import OrchestratorError
 from flujo.state.backends.sqlite import SQLiteBackend
 from flujo.testing.utils import gather_result
+from tests.conftest import create_test_flujo
 
 
 async def setup_agent(data: str, *, context: PipelineContext | None = None) -> str:
@@ -39,7 +39,7 @@ async def test_stateful_hitl_resume(tmp_path: Path) -> None:
         >> Step.from_callable(verify_agent, name="verify")
     )
 
-    runner = Flujo(
+    runner = create_test_flujo(
         pipeline,
         context_model=PipelineContext,
         state_backend=backend,
@@ -65,7 +65,7 @@ async def test_stateful_hitl_resume(tmp_path: Path) -> None:
     assert saved["status"] == "paused"
     assert saved["current_step_index"] == 1
 
-    new_runner = Flujo(
+    new_runner = create_test_flujo(
         pipeline,
         context_model=PipelineContext,
         state_backend=backend,
@@ -105,7 +105,7 @@ async def test_hitl_resume_with_pydantic_input(tmp_path: Path) -> None:
         >> Step.from_callable(verify_agent, name="verify")
     )
 
-    runner = Flujo(
+    runner = create_test_flujo(
         pipeline,
         context_model=PipelineContext,
         state_backend=backend,
@@ -119,7 +119,7 @@ async def test_hitl_resume_with_pydantic_input(tmp_path: Path) -> None:
         initial_context_data={"initial_prompt": "foo", "run_id": run_id},
     )
 
-    new_runner = Flujo(
+    new_runner = create_test_flujo(
         pipeline,
         context_model=PipelineContext,
         state_backend=backend,
@@ -144,7 +144,7 @@ async def test_hitl_as_final_step(tmp_path: Path) -> None:
 
     pipeline = Step.from_callable(setup_agent, name="setup") >> Step.human_in_the_loop("done")
 
-    runner = Flujo(
+    runner = create_test_flujo(
         pipeline,
         context_model=PipelineContext,
         state_backend=backend,
@@ -160,7 +160,7 @@ async def test_hitl_as_final_step(tmp_path: Path) -> None:
 
     assert paused.final_pipeline_context.scratchpad["status"] == "paused"
 
-    new_runner = Flujo(
+    new_runner = create_test_flujo(
         pipeline,
         context_model=PipelineContext,
         state_backend=backend,

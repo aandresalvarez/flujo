@@ -2,11 +2,12 @@ import pytest
 from unittest.mock import MagicMock
 from flujo.domain.models import BaseModel
 
-from flujo import Flujo, Step
+from flujo import Step
 from flujo.domain import AppResources
 from flujo.testing.utils import gather_result
 from flujo.domain.plugins import ValidationPlugin, PluginOutcome
 from flujo.domain.agent_protocol import AsyncAgentProtocol
+from tests.conftest import create_test_flujo
 
 import uuid
 import os
@@ -63,7 +64,7 @@ def mock_resources() -> MyResources:
 @pytest.mark.asyncio
 async def test_resources_passed_to_agent(mock_resources: MyResources):
     pipeline = Step.model_validate({"name": "query_step", "agent": ResourceUsingAgent()})
-    runner = Flujo(pipeline, resources=mock_resources)
+    runner = create_test_flujo(pipeline, resources=mock_resources)
 
     await gather_result(runner, "users")
 
@@ -76,7 +77,7 @@ async def test_resources_passed_to_plugin(mock_resources: MyResources):
     step = Step.model_validate(
         {"name": "plugin_step", "agent": ResourceUsingAgent(), "plugins": [(plugin, 0)]}
     )
-    runner = Flujo(step, resources=mock_resources)
+    runner = create_test_flujo(step, resources=mock_resources)
 
     result = await gather_result(runner, "products")
 
@@ -89,7 +90,7 @@ async def test_resource_instance_is_shared_across_steps(mock_resources: MyResour
     pipeline = Step.model_validate(
         {"name": "step1", "agent": ResourceUsingAgent()}
     ) >> Step.model_validate({"name": "step2", "agent": ResourceUsingAgent()})
-    runner = Flujo(pipeline, resources=mock_resources)
+    runner = create_test_flujo(pipeline, resources=mock_resources)
 
     await gather_result(runner, "orders")
 
@@ -104,7 +105,7 @@ async def test_pipeline_with_no_resources_succeeds():
     agent.run.return_value = "ok"
     pipeline = Step.model_validate({"name": "simple_step", "agent": agent})
 
-    runner = Flujo(pipeline)
+    runner = create_test_flujo(pipeline)
     result = await gather_result(runner, "in")
 
     assert result.step_history[0].success
@@ -123,7 +124,7 @@ async def test_mixing_resources_and_context(tmp_path: Path, mock_resources: MyRe
     agent = ContextAndResourceAgent()
     step = Step.model_validate({"name": "mixed_step", "agent": agent})
     pipeline = step
-    runner = Flujo(
+    runner = create_test_flujo(
         pipeline,
         context_model=MyContext,
         initial_context_data={"run_id": run_id},

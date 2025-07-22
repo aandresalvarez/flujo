@@ -1,9 +1,10 @@
 import time
 import pytest
 
-from flujo import Step, Flujo
+from flujo import Step
 from flujo.caching import InMemoryCache
 from flujo.testing.utils import StubAgent, gather_result
+from tests.conftest import create_test_flujo
 
 pytest.importorskip("pytest_benchmark")
 
@@ -16,8 +17,8 @@ async def test_cache_overhead_vs_plain_step() -> None:
     agent_cached = StubAgent(["ok"] * 5)
     cached_step = Step.cached(Step.solution(agent_cached), cache_backend=InMemoryCache())
 
-    runner_plain = Flujo(plain)
-    runner_cached = Flujo(cached_step)
+    runner_plain = create_test_flujo(plain)
+    runner_cached = create_test_flujo(cached_step)
 
     start = time.monotonic()
     await gather_result(runner_plain, "in")

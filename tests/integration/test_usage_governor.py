@@ -1,13 +1,14 @@
 import pytest
 from flujo.domain.models import BaseModel
 
-from flujo import Flujo, Step, Pipeline
+from flujo import Step, Pipeline
 from flujo.domain import UsageLimits
 from flujo.exceptions import UsageLimitExceededError
 from flujo.testing.utils import gather_result
 from typing import Any
 from flujo.domain.agent_protocol import AsyncAgentProtocol
 from flujo.domain.models import PipelineResult
+from tests.conftest import create_test_flujo
 
 
 class MockAgentOutput(BaseModel):
@@ -43,7 +44,7 @@ async def test_governor_halts_on_cost_limit_breach(
     pipeline: Pipeline[int, MockAgentOutput] = metric_pipeline >> Step.model_validate(
         {"name": "s1", "agent": FixedMetricAgent()}
     )
-    runner = Flujo(pipeline, usage_limits=limits)
+    runner = create_test_flujo(pipeline, usage_limits=limits)
 
     with pytest.raises(UsageLimitExceededError) as exc_info:
         await gather_result(runner, 0)
@@ -63,7 +64,7 @@ async def test_governor_halts_on_token_limit_breach(
     pipeline: Pipeline[int, MockAgentOutput] = metric_pipeline >> Step.model_validate(
         {"name": "s1", "agent": FixedMetricAgent()}
     )
-    runner = Flujo(pipeline, usage_limits=limits)
+    runner = create_test_flujo(pipeline, usage_limits=limits)
 
     with pytest.raises(UsageLimitExceededError) as exc_info:
         await gather_result(runner, 0)
@@ -83,7 +84,7 @@ async def test_governor_allows_completion_within_limits(
     pipeline: Pipeline[int, MockAgentOutput] = metric_pipeline >> Step.model_validate(
         {"name": "s1", "agent": FixedMetricAgent()}
     )
-    runner = Flujo(pipeline, usage_limits=limits)
+    runner = create_test_flujo(pipeline, usage_limits=limits)
 
     result = await gather_result(runner, 0)
 
@@ -100,7 +101,7 @@ async def test_governor_inactive_when_no_limits_provided(
     pipeline: Pipeline[int, MockAgentOutput] = metric_pipeline >> Step.model_validate(
         {"name": "s1", "agent": FixedMetricAgent()}
     )
-    runner = Flujo(pipeline)
+    runner = create_test_flujo(pipeline)
     result = await gather_result(runner, 0)
 
     assert len(result.step_history) == 2
@@ -113,7 +114,7 @@ async def test_governor_halts_immediately_on_zero_limit(
 ) -> None:
     """Verify a zero limit halts the pipeline after the first incurring step."""
     limits = UsageLimits(total_cost_usd_limit=0.0, total_tokens_limit=None)
-    runner = Flujo(metric_pipeline, usage_limits=limits)
+    runner = create_test_flujo(metric_pipeline, usage_limits=limits)
 
     with pytest.raises(UsageLimitExceededError):
         await gather_result(runner, 0)
@@ -131,7 +132,7 @@ async def test_governor_with_loop_step(
         exit_condition_callable=lambda out, ctx: out.value >= 4,
         max_loops=5,
     )
-    runner = Flujo(loop_step, usage_limits=limits)
+    runner = create_test_flujo(loop_step, usage_limits=limits)
 
     with pytest.raises(UsageLimitExceededError) as exc_info:
         await gather_result(runner, 0)
@@ -154,7 +155,7 @@ async def test_governor_halts_loop_step_mid_iteration(
         exit_condition_callable=lambda _out, _ctx: False,
         max_loops=5,
     )
-    runner = Flujo(loop_step, usage_limits=limits)
+    runner = create_test_flujo(loop_step, usage_limits=limits)
 
     with pytest.raises(UsageLimitExceededError) as exc_info:
         await gather_result(runner, 0)
@@ -176,7 +177,7 @@ async def test_governor_parallel_step_limit() -> None:
     }
     parallel = Step.parallel("parallel_usage", branches)
     limits = UsageLimits(total_cost_usd_limit=0.15)
-    runner = Flujo(parallel, usage_limits=limits)
+    runner = create_test_flujo(parallel, usage_limits=limits)
 
     with pytest.raises(UsageLimitExceededError) as exc_info:
         await gather_result(runner, 0)
@@ -212,7 +213,7 @@ async def test_governor_loop_with_nested_parallel_limit() -> None:
         max_loops=10,
     )
     limits = UsageLimits(total_cost_usd_limit=0.5)
-    runner = Flujo(loop_step, usage_limits=limits)
+    runner = create_test_flujo(loop_step, usage_limits=limits)
 
     with pytest.raises(UsageLimitExceededError) as exc_info:
         await gather_result(runner, 0)
@@ -246,7 +247,7 @@ async def test_governor_parallel_limit_first_branch_exceeds() -> None:
         max_loops=10,
     )
     limits = UsageLimits(total_cost_usd_limit=0.5)
-    runner = Flujo(loop_step, usage_limits=limits)
+    runner = create_test_flujo(loop_step, usage_limits=limits)
 
     with pytest.raises(UsageLimitExceededError):
         await gather_result(runner, 0)
@@ -276,7 +277,7 @@ async def test_governor_cumulative_cost_updates() -> None:
         max_loops=10,
     )
     limits = UsageLimits(total_cost_usd_limit=2.0)
-    runner = Flujo(loop_step, usage_limits=limits)
+    runner = create_test_flujo(loop_step, usage_limits=limits)
 
     result = await gather_result(runner, 0)
 

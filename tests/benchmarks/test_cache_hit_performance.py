@@ -1,9 +1,10 @@
 import time
 import pytest
 
-from flujo import Step, Flujo
+from flujo import Step
 from flujo.caching import InMemoryCache
 from flujo.testing.utils import StubAgent, gather_result
+from tests.conftest import create_test_flujo
 
 pytest.importorskip("pytest_benchmark")
 
@@ -12,7 +13,7 @@ pytest.importorskip("pytest_benchmark")
 async def test_cache_hit_performance_gain() -> None:
     agent = StubAgent(["ok", "ok"])
     cached_step = Step.cached(Step.solution(agent), cache_backend=InMemoryCache())
-    runner = Flujo(cached_step)
+    runner = create_test_flujo(cached_step)
 
     start = time.monotonic()
     await gather_result(runner, "x")

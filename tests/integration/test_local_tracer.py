@@ -1,9 +1,10 @@
 import pytest
 from typing import Any, cast
-from flujo import Flujo, Step
+from flujo import Step
 from flujo.console_tracer import ConsoleTracer
 from flujo.testing.utils import StubAgent, gather_result
 from flujo.domain.agent_protocol import AsyncAgentProtocol
+from tests.conftest import create_test_flujo
 
 
 @pytest.mark.asyncio
@@ -11,7 +12,7 @@ async def test_default_local_tracer_added() -> None:
     step = Step.model_validate(
         {"name": "s", "agent": cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok"]))}
     )
-    runner = Flujo(step, local_tracer="default")
+    runner = create_test_flujo(step, local_tracer="default")
     assert len(runner.hooks) == 2  # TraceManager + ConsoleTracer
     assert callable(runner.hooks[0])
     assert callable(runner.hooks[1])
@@ -23,7 +24,7 @@ async def test_custom_console_tracer_instance() -> None:
     step = Step.model_validate(
         {"name": "s", "agent": cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok"]))}
     )
-    runner = Flujo(step, local_tracer=tracer)
+    runner = create_test_flujo(step, local_tracer=tracer)
     assert tracer.hook in runner.hooks
 
 
@@ -32,7 +33,7 @@ async def test_tracer_outputs_info_level(capsys: pytest.CaptureFixture[str]) -> 
     step = Step.model_validate(
         {"name": "s", "agent": cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok"]))}
     )
-    runner = Flujo(step, local_tracer="default")
+    runner = create_test_flujo(step, local_tracer="default")
     await gather_result(runner, "in")
     captured = capsys.readouterr().out
     assert "Pipeline Start" in captured
@@ -46,7 +47,7 @@ async def test_tracer_outputs_debug_level(capsys: pytest.CaptureFixture[str]) ->
     step = Step.model_validate(
         {"name": "s", "agent": cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok"]))}
     )
-    runner = Flujo(step, local_tracer=tracer)
+    runner = create_test_flujo(step, local_tracer=tracer)
     await gather_result(runner, "in")
     captured = capsys.readouterr().out
     assert "Pipeline Start" in captured

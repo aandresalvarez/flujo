@@ -9,6 +9,7 @@ from flujo.domain.dsl import StepConfig
 from flujo.domain.plugins import PluginOutcome
 from typing import Any
 from flujo.utils.serialization import register_custom_serializer
+from tests.conftest import create_test_flujo
 
 
 class CustomKey:
@@ -100,7 +101,7 @@ async def test_pipeline_step_fallback() -> None:
     failing.fallback(fb)
     s3: Step[Any, Any] = Step.model_validate({"name": "s3", "agent": StubAgent(["end"])})
     pipeline: Pipeline[Any, Any] = s1 >> failing >> s3
-    result = await gather_result(Flujo(pipeline), "in")
+    result = await gather_result(create_test_flujo(pipeline), "in")
     assert result.step_history[1].output == "good"
     assert result.step_history[1].metadata_["fallback_triggered"] is True
     assert result.step_history[2].output == "end"
@@ -129,7 +130,7 @@ async def test_loop_step_fallback_continues() -> None:
         exit_condition_callable=lambda out, _ctx: out == "done",
         max_loops=2,
     )
-    result = await gather_result(Flujo(loop_step), "start")
+    result = await gather_result(create_test_flujo(loop_step), "start")
     sr = result.step_history[0]
     assert sr.success is True
     assert body_agent.call_count == 2
@@ -159,7 +160,7 @@ async def test_conditional_branch_with_fallback() -> None:
     )
     final: Step[Any, Any] = Step.model_validate({"name": "final", "agent": StubAgent(["end"])})
     pipeline: Pipeline[Any, Any] = cond >> final
-    result = await gather_result(Flujo(pipeline), "x")
+    result = await gather_result(create_test_flujo(pipeline), "x")
     assert fb_agent.call_count == 1
     assert result.step_history[-1].output == "end"
 

@@ -2,10 +2,10 @@
 
 import pytest
 from unittest.mock import AsyncMock
-from flujo.application.runner import Flujo
 from flujo.domain.dsl import Pipeline, Step, StepConfig
 from flujo.domain.models import PipelineContext
 from flujo.domain.plugins import PluginOutcome
+from tests.conftest import create_test_flujo
 
 
 class MockAgentWithContext:
@@ -42,7 +42,7 @@ async def test_agent_receives_context_parameter():
 
     pipeline = Pipeline(steps=[step])
 
-    flujo = Flujo(pipeline, context_model=PipelineContext)
+    flujo = create_test_flujo(pipeline, context_model=PipelineContext)
 
     # Run the pipeline
     async for result in flujo.run_async(
@@ -74,7 +74,7 @@ async def test_plugin_receives_context_parameter():
 
     pipeline = Pipeline(steps=[step])
 
-    flujo = Flujo(pipeline, context_model=PipelineContext)
+    flujo = create_test_flujo(pipeline, context_model=PipelineContext)
 
     # Run the pipeline
     async for result in flujo.run_async(

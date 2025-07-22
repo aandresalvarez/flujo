@@ -4,6 +4,7 @@ from typer.testing import CliRunner
 from flujo import Flujo, Step
 from flujo.cli.main import app
 from flujo.testing.utils import StubAgent, gather_result
+from tests.conftest import create_test_flujo
 
 
 def test_core_imports() -> None:
@@ -15,7 +16,7 @@ def test_core_imports() -> None:
 @pytest.mark.asyncio
 async def test_basic_pipeline_runs() -> None:
     step = Step.model_validate({"name": "s1", "agent": StubAgent(["ok"])})
-    result = await gather_result(Flujo(step), "hi")
+    result = await gather_result(create_test_flujo(step), "hi")
     assert result.step_history[-1].output == "ok"
 
 

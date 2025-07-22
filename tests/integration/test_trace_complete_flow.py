@@ -13,9 +13,10 @@ import tempfile
 import os
 
 
-from flujo import Step, Flujo
+from flujo import Step
 from flujo.testing.utils import StubAgent
 from flujo.state.backends.sqlite import SQLiteBackend
+from tests.conftest import create_test_flujo
 
 
 class TestTraceCompleteFlow:
@@ -44,7 +45,7 @@ class TestTraceCompleteFlow:
         step2 = Step.model_validate({"name": "step2", "agent": StubAgent(["output2"])})
 
         # Create runner with state backend
-        runner = Flujo(step1 >> step2, state_backend=temp_db)
+        runner = create_test_flujo(step1 >> step2, state_backend=temp_db)
 
         # Run the pipeline
         result = None
@@ -83,7 +84,7 @@ class TestTraceCompleteFlow:
         failing_step = Step.model_validate({"name": "failing_step", "agent": FailingAgent()})
 
         # Create runner
-        runner = Flujo(failing_step, state_backend=temp_db)
+        runner = create_test_flujo(failing_step, state_backend=temp_db)
 
         # Run the pipeline
         result = None
@@ -126,7 +127,7 @@ class TestTraceCompleteFlow:
         step = Step.model_validate({"name": "test_step", "agent": StubAgent(["test_output"])})
 
         # Create runner without state backend
-        runner = Flujo(step)
+        runner = create_test_flujo(step)
 
         # Run the pipeline
         result = None

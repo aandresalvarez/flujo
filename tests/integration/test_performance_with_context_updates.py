@@ -9,11 +9,12 @@ import pytest
 import time
 import asyncio
 from typing import Any, Dict, List
-from flujo import Flujo, step, Step
+from flujo import step, Step
 from flujo.domain.models import PipelineContext
 from flujo.domain.dsl.step import MergeStrategy
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.testing.utils import gather_result
+from tests.conftest import create_test_flujo
 
 
 class PerformanceContext(PipelineContext):
@@ -105,7 +106,7 @@ async def test_performance_with_context_updates_basic():
     """Test basic performance operations with context updates."""
 
     pipeline = performance_step
-    runner = Flujo(pipeline, context_model=PerformanceContext)
+    runner = create_test_flujo(pipeline, context_model=PerformanceContext)
 
     # Run multiple times to test performance
     start_time = time.time()
@@ -138,7 +139,7 @@ async def test_performance_with_context_updates_large_context():
     """Test performance with large context objects."""
 
     pipeline = large_context_step
-    runner = Flujo(pipeline, context_model=PerformanceContext)
+    runner = create_test_flujo(pipeline, context_model=PerformanceContext)
 
     # Run with large context data
     start_time = time.time()
@@ -164,7 +165,7 @@ async def test_performance_with_context_updates_high_frequency():
     """Test performance with high-frequency context updates."""
 
     pipeline = high_frequency_step
-    runner = Flujo(pipeline, context_model=PerformanceContext)
+    runner = create_test_flujo(pipeline, context_model=PerformanceContext)
 
     # Run multiple times to test high-frequency updates
     start_time = time.time()
@@ -199,7 +200,7 @@ async def test_performance_with_context_updates_memory_intensive():
     """Test performance with memory-intensive operations."""
 
     pipeline = memory_intensive_step
-    runner = Flujo(pipeline, context_model=PerformanceContext)
+    runner = create_test_flujo(pipeline, context_model=PerformanceContext)
 
     # Run memory-intensive operation
     start_time = time.time()
@@ -235,7 +236,7 @@ async def test_performance_with_context_updates_parallel():
         merge_strategy=MergeStrategy.CONTEXT_UPDATE,
     )
 
-    runner = Flujo(parallel_pipeline, context_model=PerformanceContext)
+    runner = create_test_flujo(parallel_pipeline, context_model=PerformanceContext)
 
     # Run parallel performance test
     start_time = time.time()
@@ -268,7 +269,7 @@ async def test_performance_with_context_updates_complex_pipeline():
         ]
     )
 
-    runner = Flujo(complex_pipeline, context_model=PerformanceContext)
+    runner = create_test_flujo(complex_pipeline, context_model=PerformanceContext)
 
     # Run complex pipeline
     start_time = time.time()
@@ -313,7 +314,7 @@ async def test_performance_with_context_updates_error_handling():
         }
 
     pipeline = error_prone_step
-    runner = Flujo(pipeline, context_model=PerformanceContext)
+    runner = create_test_flujo(pipeline, context_model=PerformanceContext)
 
     # Run multiple times to test error handling
     start_time = time.time()

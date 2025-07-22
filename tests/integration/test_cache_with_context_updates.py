@@ -9,10 +9,11 @@ import pytest
 import asyncio
 import time
 from typing import Any, Dict, List
-from flujo import Flujo, step, Step
+from flujo import step, Step
 from flujo.domain.models import PipelineContext
 from flujo.testing.utils import gather_result
 from flujo.caching import InMemoryCache
+from tests.conftest import create_test_flujo
 
 
 class CacheContext(PipelineContext):
@@ -154,7 +155,7 @@ async def test_cache_with_context_updates_basic():
     )
 
     pipeline = cached_step
-    runner = Flujo(pipeline, context_model=CacheContext)
+    runner = create_test_flujo(pipeline, context_model=CacheContext)
 
     # First run - should be a cache miss
     result1 = await gather_result(runner, "test_input_1")
@@ -189,7 +190,7 @@ async def test_cache_with_context_updates_error_handling():
     )
 
     pipeline = cached_step
-    runner = Flujo(pipeline, context_model=CacheContext)
+    runner = create_test_flujo(pipeline, context_model=CacheContext)
 
     # Run with failing input
     result1 = await gather_result(runner, "fail")
@@ -234,7 +235,7 @@ async def test_cache_with_context_updates_context_dependent():
     )
 
     pipeline = cached_step
-    runner = Flujo(pipeline, context_model=CacheContext)
+    runner = create_test_flujo(pipeline, context_model=CacheContext)
 
     # First run
     result1 = await gather_result(runner, "input_a")
@@ -274,7 +275,7 @@ async def test_cache_with_context_updates_state_isolation():
     )
 
     pipeline = cached_step
-    runner = Flujo(pipeline, context_model=CacheContext)
+    runner = create_test_flujo(pipeline, context_model=CacheContext)
 
     # Run with different inputs to test state isolation
     result1 = await gather_result(runner, "input_1")
@@ -320,7 +321,7 @@ async def test_cache_with_context_updates_complex_interaction():
 
     # Create pipeline with multiple cached steps
     pipeline = cached_step1 >> cached_step2 >> cached_step3
-    runner = Flujo(pipeline, context_model=CacheContext)
+    runner = create_test_flujo(pipeline, context_model=CacheContext)
 
     # First run
     result1 = await gather_result(runner, "complex_input")
@@ -349,7 +350,7 @@ async def test_cache_with_context_updates_metadata_conflicts():
     )
 
     pipeline = cached_step
-    runner = Flujo(pipeline, context_model=CacheContext)
+    runner = create_test_flujo(pipeline, context_model=CacheContext)
 
     # First run
     result1 = await gather_result(runner, "metadata_test")

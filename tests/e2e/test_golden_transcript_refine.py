@@ -8,9 +8,9 @@ generator-critic pattern with its specific logic.
 import pytest
 from typing import Any
 
-from flujo.application.runner import Flujo
 from flujo.domain import Step, Pipeline
 from flujo.domain.models import PipelineContext, RefinementCheck
+from tests.conftest import create_test_flujo
 
 
 class RefinementContext(PipelineContext):
@@ -67,7 +67,7 @@ async def test_golden_transcript_refine():
     )
 
     # Initialize Flujo runner
-    runner = Flujo(refinement_pipeline, context_model=RefinementContext)
+    runner = create_test_flujo(refinement_pipeline, context_model=RefinementContext)
 
     # Run the pipeline
     result = None
@@ -119,7 +119,7 @@ async def test_golden_transcript_refine_max_iterations():
     )
 
     # Initialize Flujo runner
-    runner = Flujo(refinement_pipeline, context_model=RefinementContext)
+    runner = create_test_flujo(refinement_pipeline, context_model=RefinementContext)
 
     # Run the pipeline
     result = None
@@ -170,7 +170,7 @@ async def test_golden_transcript_refine_feedback_flow():
     )
 
     # Initialize Flujo runner
-    runner = Flujo(refinement_pipeline, context_model=RefinementContext)
+    runner = create_test_flujo(refinement_pipeline, context_model=RefinementContext)
 
     # Run the pipeline
     result = None

@@ -213,24 +213,35 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         self.registry = registry
         if pipeline_name is None:
             from datetime import datetime
+            import os
 
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             pipeline_name = f"unnamed_{timestamp}"
-            warnings.warn(
-                "pipeline_name was not provided. Generated name based on timestamp: {}. This is discouraged for production runs.".format(
-                    pipeline_name
-                ),
-                UserWarning,
-            )
+
+            # Only warn in production environments, not in tests
+            if not os.getenv("FLUJO_TEST_MODE") and not any(
+                path in os.getcwd() for path in ["/tests/", "\\tests\\", "test_"]
+            ):
+                warnings.warn(
+                    "pipeline_name was not provided. Generated name based on timestamp: {}. This is discouraged for production runs.".format(
+                        pipeline_name
+                    ),
+                    UserWarning,
+                )
         self.pipeline_name = pipeline_name
         if pipeline_id is None:
             pipeline_id = str(uuid.uuid4())
-            warnings.warn(
-                "pipeline_id was not provided. Generated unique id: {}. This is discouraged for production runs.".format(
-                    pipeline_id
-                ),
-                UserWarning,
-            )
+
+            # Only warn in production environments, not in tests
+            if not os.getenv("FLUJO_TEST_MODE") and not any(
+                path in os.getcwd() for path in ["/tests/", "\\tests\\", "test_"]
+            ):
+                warnings.warn(
+                    "pipeline_id was not provided. Generated unique id: {}. This is discouraged for production runs.".format(
+                        pipeline_id
+                    ),
+                    UserWarning,
+                )
         self.pipeline_id = pipeline_id
         self.pipeline_version = pipeline_version
         self.context_model = context_model

@@ -1,13 +1,13 @@
 import pytest
 from datetime import datetime
 
-from flujo.application.runner import Flujo
 from flujo.domain import Step
 from flujo.domain.models import PipelineContext
 from flujo.registry import PipelineRegistry
 from flujo.state import WorkflowState
 from flujo.state.backends.memory import InMemoryBackend
 from flujo.testing.utils import gather_result
+from tests.conftest import create_test_flujo
 
 
 class Ctx(PipelineContext):
@@ -57,7 +57,7 @@ async def test_resume_uses_original_pipeline_version() -> None:
     pipeline_v2 = s1 >> s2_v2
     registry.register(pipeline_v2, "pipe", "2.0.0")
 
-    runner = Flujo(
+    runner = create_test_flujo(
         None,
         context_model=Ctx,
         state_backend=backend,

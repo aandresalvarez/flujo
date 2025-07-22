@@ -2,13 +2,13 @@ import functools
 import vcr
 import pytest
 import httpx
-from flujo.application.runner import Flujo
 from flujo.application.eval_adapter import run_pipeline_async
 from flujo.application.self_improvement import evaluate_and_improve, SelfImprovementAgent
 from flujo.domain.models import ImprovementReport, SuggestionType
 from flujo.domain import Step
 from flujo.validation import BaseValidator, ValidationResult
 from flujo.testing.utils import StubAgent
+from tests.conftest import create_test_flujo
 from pydantic_evals import Dataset, Case
 
 
@@ -66,7 +66,7 @@ async def test_e2e_self_improvement_workflow() -> None:
     pipeline = Step.solution(solution_agent) >> Step.validate_step(
         IdentityAgent(), validators=[ConciseValidator()]
     )
-    runner = Flujo(pipeline)
+    runner = create_test_flujo(pipeline)
     dataset = Dataset(
         cases=[
             Case(name="fail_case", inputs="Prompt1", expected_output=None),

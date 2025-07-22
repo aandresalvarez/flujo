@@ -2,7 +2,8 @@ import pytest
 from flujo.domain.dsl import Step, StepConfig
 from flujo.testing.utils import DummyPlugin, gather_result
 from flujo.domain.plugins import PluginOutcome
-from flujo.application.runner import Flujo, InfiniteRedirectError
+from flujo.application.runner import InfiniteRedirectError
+from tests.conftest import create_test_flujo
 
 
 class UnhashableAgent:
@@ -36,6 +37,6 @@ async def test_redirect_loop_detected_with_unhashable_agents() -> None:
             "plugins": [(plugin, 0)],
         }
     )
-    runner = Flujo(step)
+    runner = create_test_flujo(step)
     with pytest.raises(InfiniteRedirectError):
         await gather_result(runner, "start")

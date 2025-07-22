@@ -4,9 +4,9 @@ from typing import Any
 from flujo.domain.models import BaseModel
 import pytest
 
-from flujo.application.runner import Flujo
 from flujo.domain import Step, Pipeline
 from flujo.testing.utils import gather_result
+from tests.conftest import create_test_flujo
 
 
 class Ctx(BaseModel):
@@ -23,7 +23,7 @@ class DoubleAgent:
 async def test_map_over_sequential() -> None:
     body = Pipeline.from_step(Step.model_validate({"name": "double", "agent": DoubleAgent()}))
     mapper = Step.map_over("mapper", body, iterable_input="nums")
-    runner = Flujo(mapper, context_model=Ctx)
+    runner = create_test_flujo(mapper, context_model=Ctx)
     result = await gather_result(runner, None, initial_context_data={"nums": [1, 2, 3]})
     assert result.step_history[-1].output == [2, 4, 6]
 
@@ -38,7 +38,7 @@ class SleepAgent:
 async def test_map_over_parallel() -> None:
     body = Pipeline.from_step(Step.model_validate({"name": "sleep", "agent": SleepAgent()}))
     mapper = Step.map_over("mapper_par", body, iterable_input="nums")
-    runner = Flujo(mapper, context_model=Ctx)
+    runner = create_test_flujo(mapper, context_model=Ctx)
     result = await gather_result(runner, None, initial_context_data={"nums": [0, 1, 2, 3]})
     assert result.step_history[-1].output == [0, 1, 2, 3]
 
@@ -47,7 +47,7 @@ async def test_map_over_parallel() -> None:
 async def test_map_over_empty() -> None:
     body = Pipeline.from_step(Step.model_validate({"name": "double", "agent": DoubleAgent()}))
     mapper = Step.map_over("mapper_empty", body, iterable_input="nums")
-    runner = Flujo(mapper, context_model=Ctx)
+    runner = create_test_flujo(mapper, context_model=Ctx)
     result = await gather_result(runner, None, initial_context_data={"nums": []})
     assert result.step_history[-1].output == []
 
@@ -60,7 +60,7 @@ class LooseCtx(BaseModel):
 async def test_map_over_invalid_input() -> None:
     body = Pipeline.from_step(Step.model_validate({"name": "double", "agent": DoubleAgent()}))
     mapper = Step.map_over("mapper_invalid", body, iterable_input="nums")
-    runner = Flujo(mapper, context_model=LooseCtx)
+    runner = create_test_flujo(mapper, context_model=LooseCtx)
     result = await gather_result(runner, None, initial_context_data={"nums": 42})
     assert not result.step_history[-1].success
     assert "iterable" in result.step_history[-1].feedback
@@ -70,7 +70,7 @@ async def test_map_over_invalid_input() -> None:
 async def test_map_over_reusable_after_empty() -> None:
     body = Pipeline.from_step(Step.model_validate({"name": "double", "agent": DoubleAgent()}))
     mapper = Step.map_over("mapper_reuse", body, iterable_input="nums")
-    runner = Flujo(mapper, context_model=Ctx)
+    runner = create_test_flujo(mapper, context_model=Ctx)
     first = await gather_result(runner, None, initial_context_data={"nums": []})
     assert first.step_history[-1].output == []
     second = await gather_result(
@@ -85,7 +85,7 @@ async def test_map_over_reusable_after_empty() -> None:
 async def test_map_over_concurrent_runs() -> None:
     body = Pipeline.from_step(Step.model_validate({"name": "double", "agent": DoubleAgent()}))
     mapper = Step.map_over("mapper_concurrent", body, iterable_input="nums")
-    runner = Flujo(mapper, context_model=Ctx)
+    runner = create_test_flujo(mapper, context_model=Ctx)
 
     async def run_one(vals: list[int]) -> Any:
         return await gather_result(

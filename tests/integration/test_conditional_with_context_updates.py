@@ -7,10 +7,11 @@ which could reveal bugs in context state management during conditional execution
 
 import pytest
 from typing import Any, Dict, List
-from flujo import Flujo, step, Step
+from flujo import step, Step
 from flujo.domain.models import PipelineContext
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.testing.utils import gather_result
+from tests.conftest import create_test_flujo
 
 
 class ConditionalContext(PipelineContext):
@@ -181,7 +182,7 @@ async def test_conditional_with_context_updates_basic():
         },
     )
 
-    runner = Flujo(conditional_step, context_model=ConditionalContext)
+    runner = create_test_flujo(conditional_step, context_model=ConditionalContext)
     result = await gather_result(runner, "test_branch_a_data")
 
     # Verify conditional operation with context updates
@@ -206,7 +207,7 @@ async def test_conditional_with_context_updates_error_handling():
         },
     )
 
-    runner = Flujo(conditional_step, context_model=ConditionalContext)
+    runner = create_test_flujo(conditional_step, context_model=ConditionalContext)
     result = await gather_result(runner, "test_branch_b_fail_data")
 
     # Verify error handling with context updates
@@ -233,7 +234,7 @@ async def test_conditional_with_context_updates_context_dependent():
         },
     )
 
-    runner = Flujo(conditional_step, context_model=ConditionalContext)
+    runner = create_test_flujo(conditional_step, context_model=ConditionalContext)
     result = await gather_result(runner, "test_data")
 
     # Verify context-dependent conditional
@@ -260,7 +261,7 @@ async def test_conditional_with_context_updates_state_isolation():
         },
     )
 
-    runner = Flujo(conditional_step, context_model=ConditionalContext)
+    runner = create_test_flujo(conditional_step, context_model=ConditionalContext)
     result = await gather_result(runner, "test_data")
 
     # Verify state management
@@ -317,7 +318,7 @@ async def test_conditional_with_context_updates_complex_branching():
         },
     )
 
-    runner = Flujo(conditional_step, context_model=ConditionalContext)
+    runner = create_test_flujo(conditional_step, context_model=ConditionalContext)
     result = await gather_result(runner, "test_branch_a_data")
 
     # Verify complex branching
@@ -368,7 +369,7 @@ async def test_conditional_with_context_updates_metadata_conflicts():
         },
     )
 
-    runner = Flujo(conditional_step, context_model=ConditionalContext)
+    runner = create_test_flujo(conditional_step, context_model=ConditionalContext)
     result = await gather_result(runner, "test_branch_a_data")
 
     # Verify metadata handling

@@ -2,10 +2,10 @@ import asyncio
 from typing import Any
 
 import pytest
-from flujo.application.runner import Flujo
 from flujo.domain import Step, Pipeline
 from flujo.domain.models import RefinementCheck
 from flujo.testing.utils import StubAgent, gather_result
+from tests.conftest import create_test_flujo
 from pydantic import BaseModel
 
 
@@ -31,7 +31,7 @@ async def test_refine_until_basic() -> None:
         max_refinements=3,
     )
 
-    runner = Flujo(loop)
+    runner = create_test_flujo(loop)
     result = await gather_result(runner, "goal")
     step_result = result.step_history[-1]
     assert step_result.success is True
@@ -69,7 +69,7 @@ async def test_refine_until_with_feedback_mapper() -> None:
         feedback_mapper=fmap,
     )
 
-    runner = Flujo(loop)
+    runner = create_test_flujo(loop)
     result = await gather_result(runner, "goal")
     step_result = result.step_history[-1]
     assert step_result.output == "v2"
@@ -96,7 +96,7 @@ async def test_refine_until_with_custom_context() -> None:
         critic_pipeline=critic_pipeline,
     )
 
-    runner = Flujo(loop, context_model=SimpleCtx)
+    runner = create_test_flujo(loop, context_model=SimpleCtx)
     result = await gather_result(runner, "start")
     step_result = result.step_history[-1]
     assert step_result.output == "one"
@@ -136,7 +136,7 @@ async def test_refine_until_concurrent_runs_isolated() -> None:
         max_refinements=2,
     )
 
-    runner = Flujo(loop)
+    runner = create_test_flujo(loop)
 
     async def run_one(val: str) -> Any:
         return await gather_result(runner, val)

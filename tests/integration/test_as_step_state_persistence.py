@@ -4,11 +4,11 @@ from pathlib import Path
 
 import pytest
 
-from flujo.application.runner import Flujo
 from flujo.domain import Step
 from flujo.domain.models import PipelineContext, PipelineResult
 from flujo.state.backends.sqlite import SQLiteBackend
 from flujo.testing.utils import gather_result
+from tests.conftest import create_test_flujo
 
 
 def _run_crashing_inner(db_path: Path, run_id: str) -> int:
@@ -19,6 +19,7 @@ from flujo.application.runner import Flujo
 from flujo.domain import Step
 from flujo.domain.models import PipelineContext
 from flujo.state.backends.sqlite import SQLiteBackend
+from tests.conftest import create_test_flujo
 
 async def step_one(data: int) -> int:
     return data + 1
@@ -30,7 +31,7 @@ class CrashAgent:
 async def main():
     backend = SQLiteBackend(Path(r'{db_path}'))
     pipeline = Step.from_callable(step_one, name='first') >> Step.from_callable(CrashAgent().run, name='crash')
-    runner = Flujo(
+    runner = create_test_flujo(
         pipeline,
         context_model=PipelineContext,
         state_backend=backend,
@@ -69,7 +70,7 @@ async def test_as_step_state_persistence_and_resumption(tmp_path: Path) -> None:
     inner_pipeline = Step.from_callable(inner_step_one, name="first") >> Step.from_callable(
         inner_step_two, name="second"
     )
-    inner_runner = Flujo(
+    inner_runner = create_test_flujo(
         inner_pipeline,
         context_model=PipelineContext,
         state_backend=backend,
@@ -91,7 +92,7 @@ async def test_as_step_state_persistence_and_resumption(tmp_path: Path) -> None:
         >> Step.from_callable(outer_post, name="outer_end")
     )
 
-    outer_runner = Flujo(outer_pipeline, context_model=PipelineContext)
+    outer_runner = create_test_flujo(outer_pipeline, context_model=PipelineContext)
 
     result = await gather_result(outer_runner, 0, initial_context_data={"initial_prompt": "start"})
 

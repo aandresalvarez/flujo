@@ -1,9 +1,10 @@
 import pytest
 
-from flujo import Step, Flujo
+from flujo import Step
 from flujo.testing.utils import StubAgent, gather_result
 from flujo.domain.backends import StepExecutionRequest
 from flujo.domain.models import StepResult
+from tests.conftest import create_test_flujo
 
 
 class DummyBackend:
@@ -20,7 +21,7 @@ class DummyBackend:
 async def test_custom_backend_invoked() -> None:
     backend = DummyBackend()
     step = Step.model_validate({"name": "s", "agent": StubAgent(["ignored"])})
-    runner = Flujo(step, backend=backend)
+    runner = create_test_flujo(step, backend=backend)
     result = await gather_result(runner, "in")
     assert backend.called == 1
     assert result.step_history[0].output == "ok"

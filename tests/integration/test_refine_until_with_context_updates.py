@@ -7,10 +7,11 @@ which could reveal bugs in context state management during iterative refinement.
 
 import pytest
 from typing import Any, Dict, List
-from flujo import Flujo, step, Step
+from flujo import step, Step
 from flujo.domain.models import PipelineContext, RefinementCheck
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.testing.utils import gather_result
+from tests.conftest import create_test_flujo
 
 
 class RefineContext(PipelineContext):
@@ -111,7 +112,7 @@ async def test_refine_until_with_context_updates_basic():
         max_refinements=5,
     )
 
-    runner = Flujo(refine_step, context_model=RefineContext)
+    runner = create_test_flujo(refine_step, context_model=RefineContext)
     result = await gather_result(runner, "initial_data")
 
     # Verify refine until operation with context updates
@@ -136,7 +137,7 @@ async def test_refine_until_with_context_updates_error_handling():
         max_refinements=5,
     )
 
-    runner = Flujo(refine_step, context_model=RefineContext)
+    runner = create_test_flujo(refine_step, context_model=RefineContext)
     result = await gather_result(runner, "initial_data")
 
     # Verify error handling with context updates
@@ -163,7 +164,7 @@ async def test_refine_until_with_context_updates_context_dependent():
         max_refinements=5,
     )
 
-    runner = Flujo(refine_step, context_model=RefineContext)
+    runner = create_test_flujo(refine_step, context_model=RefineContext)
     result = await gather_result(runner, "initial_data")
 
     # Verify context-dependent refinement
@@ -212,7 +213,7 @@ async def test_refine_until_with_context_updates_state_isolation():
         max_refinements=3,
     )
 
-    runner = Flujo(refine_step, context_model=RefineContext)
+    runner = create_test_flujo(refine_step, context_model=RefineContext)
     result = await gather_result(runner, "initial_data")
 
     # Verify state management - test actual business logic rather than just failure
@@ -290,7 +291,7 @@ async def test_refine_until_with_context_updates_complex_feedback():
         max_refinements=4,
     )
 
-    runner = Flujo(refine_step, context_model=RefineContext)
+    runner = create_test_flujo(refine_step, context_model=RefineContext)
     result = await gather_result(runner, "initial_data")
 
     # Verify complex feedback handling
@@ -339,7 +340,7 @@ async def test_refine_until_with_context_updates_metadata_conflicts():
         max_refinements=3,
     )
 
-    runner = Flujo(refine_step, context_model=RefineContext)
+    runner = create_test_flujo(refine_step, context_model=RefineContext)
     result = await gather_result(runner, "initial_data")
 
     # Verify metadata handling

@@ -8,10 +8,10 @@ make_agentic_loop_pipeline, and its complex internal logic.
 import pytest
 from typing import Any, List
 
-from flujo.application.runner import Flujo
 from flujo.domain.models import PipelineContext
 from flujo.domain.commands import AgentCommand, RunAgentCommand, AskHumanCommand, FinishCommand
 from flujo.recipes import make_agentic_loop_pipeline
+from tests.conftest import create_test_flujo
 
 
 class AgenticLoopContext(PipelineContext):
@@ -78,7 +78,7 @@ async def test_golden_transcript_agentic_loop():
     )
 
     # Initialize Flujo runner
-    runner = Flujo(pipeline, context_model=AgenticLoopContext)
+    runner = create_test_flujo(pipeline, context_model=AgenticLoopContext)
 
     # Run the pipeline
     result = None
@@ -140,7 +140,7 @@ async def test_golden_transcript_agentic_loop_resume():
     )
 
     # Initialize Flujo runner
-    runner = Flujo(pipeline, context_model=AgenticLoopContext)
+    runner = create_test_flujo(pipeline, context_model=AgenticLoopContext)
 
     # Run the pipeline until it pauses
     result = None

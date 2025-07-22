@@ -9,10 +9,11 @@ import pytest
 from typing import Any, Dict, List
 from pydantic import Field
 
-from flujo import Flujo, Step, Pipeline
+from flujo import Step, Pipeline
 from flujo.domain.models import PipelineContext
 from flujo.domain import MergeStrategy
 from flujo.testing.utils import gather_result
+from tests.conftest import create_test_flujo
 
 
 class TestContext(PipelineContext):
@@ -68,7 +69,7 @@ async def test_dynamic_router_context_parameter_fix():
         merge_strategy=MergeStrategy.CONTEXT_UPDATE,
     )
 
-    runner = Flujo(router, context_model=TestContext)
+    runner = create_test_flujo(router, context_model=TestContext)
     result = await gather_result(runner, "Need billing info")
 
     # Verify the bug is fixed - router agent should receive context
@@ -105,7 +106,7 @@ async def test_dynamic_router_multiple_branches_context_fix():
         merge_strategy=MergeStrategy.CONTEXT_UPDATE,
     )
 
-    runner = Flujo(router, context_model=TestContext)
+    runner = create_test_flujo(router, context_model=TestContext)
     result = await gather_result(runner, "Need both billing and support")
 
     # Verify router agent received context
@@ -140,7 +141,7 @@ async def test_dynamic_router_empty_selection_context_fix():
         merge_strategy=MergeStrategy.CONTEXT_UPDATE,
     )
 
-    runner = Flujo(router, context_model=TestContext)
+    runner = create_test_flujo(router, context_model=TestContext)
     result = await gather_result(runner, "No branches needed")
 
     # Verify router agent received context
@@ -177,7 +178,7 @@ async def test_dynamic_router_context_preservation_on_failure():
         merge_strategy=MergeStrategy.CONTEXT_UPDATE,
     )
 
-    runner = Flujo(router, context_model=TestContext)
+    runner = create_test_flujo(router, context_model=TestContext)
     result = await gather_result(runner, "test")
 
     # Verify router agent received context and updated it
@@ -227,7 +228,7 @@ async def test_dynamic_router_no_context_requirement():
         merge_strategy=MergeStrategy.CONTEXT_UPDATE,
     )
 
-    runner = Flujo(router, context_model=TestContext)
+    runner = create_test_flujo(router, context_model=TestContext)
     result = await gather_result(runner, "Need billing info")
 
     # Verify the step executed successfully without context requirements

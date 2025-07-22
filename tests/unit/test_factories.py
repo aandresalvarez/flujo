@@ -21,8 +21,8 @@ from flujo.domain.models import (
     PipelineResult,
 )
 from flujo.domain.commands import FinishCommand
-from flujo.application.runner import Flujo
 from flujo.testing.utils import StubAgent
+from tests.conftest import create_test_flujo
 
 
 class TestMakeDefaultPipeline:
@@ -234,7 +234,7 @@ class TestMakeStateMachinePipeline:
             context_model=Ctx,
         )
 
-        runner = Flujo(pipeline, context_model=Ctx)
+        runner = create_test_flujo(pipeline, context_model=Ctx)
         result = None
         async for item in runner.run_async("go", initial_context_data={"initial_prompt": "go"}):
             result = item

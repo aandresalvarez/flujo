@@ -6,7 +6,6 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from flujo.application.runner import Flujo
 from flujo.domain import Step
 from flujo.domain.models import PipelineContext
 from flujo.state.backends.file import FileBackend
@@ -14,6 +13,7 @@ from flujo.state.backends.sqlite import SQLiteBackend
 from flujo.testing.utils import gather_result
 from flujo.state import WorkflowState
 from flujo.utils.serialization import register_custom_serializer
+from tests.conftest import create_test_flujo
 
 
 class Ctx(PipelineContext):
@@ -36,6 +36,7 @@ from flujo.application.runner import Flujo
 from flujo.domain import Step
 from flujo.domain.models import PipelineContext
 from flujo.state.backends.{"file" if backend_type == "FileBackend" else "sqlite"} import {backend_type}
+from tests.conftest import create_test_flujo
 
 class Ctx(PipelineContext):
     pass
@@ -49,7 +50,7 @@ class CrashAgent:
 
 async def main():
     backend = {backend_type}(Path(r'{path}'))
-    runner = Flujo(
+    runner = create_test_flujo(
         Step.from_callable(s1, name='s1') >> Step.from_callable(CrashAgent().run, name='crash'),
         context_model=Ctx,
         state_backend=backend,
@@ -74,7 +75,7 @@ async def test_file_backend_resume_after_crash(tmp_path: Path) -> None:
     assert rc != 0
     backend = FileBackend(state_dir)
     pipeline = Step.from_callable(step_one, name="s1") >> Step.from_callable(step_two, name="s2")
-    runner = Flujo(
+    runner = create_test_flujo(
         pipeline,
         context_model=Ctx,
         state_backend=backend,
@@ -103,7 +104,7 @@ async def test_sqlite_backend_resume_after_crash(tmp_path: Path) -> None:
     assert rc != 0
     backend = SQLiteBackend(db_path)
     pipeline = Step.from_callable(step_one, name="s1") >> Step.from_callable(step_two, name="s2")
-    runner = Flujo(
+    runner = create_test_flujo(
         pipeline,
         context_model=Ctx,
         state_backend=backend,
@@ -136,7 +137,7 @@ async def test_file_backend_concurrent(tmp_path: Path) -> None:
 
     async def run_one(i: int) -> None:
         rid = f"run{i}"
-        runner = Flujo(
+        runner = create_test_flujo(
             pipeline,
             context_model=Ctx,
             state_backend=backend,
@@ -251,7 +252,7 @@ async def test_file_backend_custom_type_serialization(tmp_path: Path) -> None:
     register_custom_serializer(CustomType, lambda x: x.to_dict())
     backend = FileBackend(state_dir)
     pipeline = Step.from_callable(step_one, name="s1")
-    runner = Flujo(
+    runner = create_test_flujo(
         pipeline,
         context_model=CustomCtx,
         state_backend=backend,

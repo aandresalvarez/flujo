@@ -3,11 +3,12 @@ from unittest.mock import Mock
 import pytest
 
 from flujo.domain import Step, StepConfig
-from flujo.application.runner import Flujo, InfiniteRedirectError
+from flujo.application.runner import InfiniteRedirectError
 from flujo.domain.models import PipelineResult
 from flujo.testing.utils import StubAgent, DummyPlugin, gather_result
 from typing import Any
 from flujo.domain.plugins import PluginOutcome
+from tests.conftest import create_test_flujo
 
 
 async def test_runner_respects_max_retries() -> None:
@@ -28,7 +29,7 @@ async def test_runner_respects_max_retries() -> None:
         }
     )
     pipeline = step
-    runner = Flujo(pipeline)
+    runner = create_test_flujo(pipeline)
     result = await gather_result(runner, "in")
     assert agent.call_count == 3
     assert isinstance(result, PipelineResult)
@@ -44,7 +45,7 @@ async def test_feedback_enriches_prompt() -> None:
         ]
     )
     step = Step.solution(sol_agent, max_retries=2, plugins=[(plugin, 0)])
-    runner = Flujo(step)
+    runner = create_test_flujo(step)
     await gather_result(runner, "SELECT *")
     assert sol_agent.call_count == 2
     assert "SQL Error: XYZ" in sol_agent.inputs[1]
@@ -68,7 +69,7 @@ async def test_conditional_redirection() -> None:
         }
     )
     pipeline = step
-    runner = Flujo(pipeline)
+    runner = create_test_flujo(pipeline)
     await gather_result(runner, "prompt")
     assert primary.call_count == 1
     assert fixit.call_count == 1
@@ -88,7 +89,7 @@ async def test_on_failure_called_with_fluent_api() -> None:
             "failure_handlers": [handler],
         }
     )
-    runner = Flujo(step)
+    runner = create_test_flujo(step)
     await gather_result(runner, "prompt")
 
     handler.assert_called_once()
@@ -113,7 +114,7 @@ async def test_timeout_and_redirect_loop_detection() -> None:
             "config": StepConfig(max_retries=1, timeout_s=0.01),
         }
     )
-    runner = Flujo(step)
+    runner = create_test_flujo(step)
     try:
         await gather_result(runner, "prompt")
     except TimeoutError:
@@ -136,7 +137,7 @@ async def test_timeout_and_redirect_loop_detection() -> None:
             "plugins": [(plugin_loop, 0)],
         }
     )
-    runner2 = Flujo(step_loop)
+    runner2 = create_test_flujo(step_loop)
     with pytest.raises(InfiniteRedirectError):
         await gather_result(runner2, "p")
 
@@ -144,7 +145,7 @@ async def test_timeout_and_redirect_loop_detection() -> None:
 async def test_pipeline_cancellation() -> None:
     agent = StubAgent(["out"])
     step = Step.model_validate({"name": "s", "agent": agent})
-    runner = Flujo(step)
+    runner = create_test_flujo(step)
     task = asyncio.create_task(gather_result(runner, "prompt"))
     await asyncio.sleep(0)
     task.cancel()
@@ -176,7 +177,7 @@ async def test_runner_unpacks_agent_result() -> None:
     agent = StubAgent([WrappedResult("ok")])
     plugin = CapturePlugin()
     step = Step.model_validate({"name": "s", "agent": agent, "plugins": [(plugin, 0)]})
-    runner = Flujo(step)
+    runner = create_test_flujo(step)
     result = await gather_result(runner, "in")
     history = result.step_history[0]
     assert history.output == "ok"
@@ -196,7 +197,7 @@ async def test_step_config_temperature_passed() -> None:
 
     agent = CaptureAgent()
     step = Step.model_validate({"name": "s", "agent": agent, "config": StepConfig(temperature=0.3)})
-    runner = Flujo(step)
+    runner = create_test_flujo(step)
     await gather_result(runner, "in")
     assert agent.kwargs is not None
     assert agent.kwargs.get("temperature") == 0.3
@@ -213,7 +214,7 @@ async def test_step_config_temperature_omitted() -> None:
 
     agent = CaptureAgent()
     step = Step.model_validate({"name": "s", "agent": agent})
-    runner = Flujo(step)
+    runner = create_test_flujo(step)
     await gather_result(runner, "in")
     assert agent.kwargs is not None
     assert "temperature" not in agent.kwargs
@@ -232,7 +233,7 @@ async def test_pipeline_with_temperature_setting() -> None:
     step = Step.model_validate(
         {"name": "s2", "agent": agent, "config": StepConfig(temperature=0.8)}
     )
-    runner = Flujo(step)
+    runner = create_test_flujo(step)
     await gather_result(runner, "input")
     assert agent.kwargs is not None
     assert agent.kwargs.get("temperature") == 0.8
@@ -255,6 +256,6 @@ async def test_failure_handler_exception_propagates() -> None:
             "failure_handlers": [handler],
         }
     )
-    runner = Flujo(step)
+    runner = create_test_flujo(step)
     with pytest.raises(RuntimeError, match="handler fail"):
         await gather_result(runner, "in")

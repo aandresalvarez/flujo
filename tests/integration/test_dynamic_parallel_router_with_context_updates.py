@@ -9,10 +9,11 @@ import pytest
 from typing import Any, Dict, List
 from pydantic import Field
 
-from flujo import Flujo, Step, Pipeline
+from flujo import Step, Pipeline
 from flujo.domain.models import PipelineContext
 from flujo.domain import MergeStrategy
 from flujo.testing.utils import gather_result
+from tests.conftest import create_test_flujo
 
 
 class DynamicRouterContext(PipelineContext):
@@ -139,7 +140,7 @@ async def test_dynamic_router_basic_context_updates():
         merge_strategy=MergeStrategy.CONTEXT_UPDATE,
     )
 
-    runner = Flujo(router, context_model=DynamicRouterContext)
+    runner = create_test_flujo(router, context_model=DynamicRouterContext)
     result = await gather_result(runner, "Need billing info")
 
     # Verify router was called
@@ -175,7 +176,7 @@ async def test_dynamic_router_multiple_branches_context_updates():
         merge_strategy=MergeStrategy.CONTEXT_UPDATE,
     )
 
-    runner = Flujo(router, context_model=DynamicRouterContext)
+    runner = create_test_flujo(router, context_model=DynamicRouterContext)
     result = await gather_result(runner, "Need both billing and support")
 
     # Verify both branches were executed
@@ -209,7 +210,7 @@ async def test_dynamic_router_router_failure_context_preservation():
         merge_strategy=MergeStrategy.CONTEXT_UPDATE,
     )
 
-    runner = Flujo(router, context_model=DynamicRouterContext)
+    runner = create_test_flujo(router, context_model=DynamicRouterContext)
     result = await gather_result(runner, "test")
 
     # Verify router was called and context updates were preserved
@@ -255,7 +256,7 @@ async def test_dynamic_router_branch_failure_context_preservation():
         merge_strategy=MergeStrategy.CONTEXT_UPDATE,
     )
 
-    runner = Flujo(router, context_model=DynamicRouterContext)
+    runner = create_test_flujo(router, context_model=DynamicRouterContext)
     result = await gather_result(runner, "test")
 
     # Verify router context updates were preserved
@@ -298,7 +299,7 @@ async def test_dynamic_router_nested_context_updates():
         merge_strategy=MergeStrategy.CONTEXT_UPDATE,
     )
 
-    runner = Flujo(router, context_model=DynamicRouterContext)
+    runner = create_test_flujo(router, context_model=DynamicRouterContext)
     result = await gather_result(runner, "test")
 
     # Verify all context updates were preserved
@@ -343,7 +344,7 @@ async def test_dynamic_router_context_field_mapping():
         },
     )
 
-    runner = Flujo(router, context_model=DynamicRouterContext)
+    runner = create_test_flujo(router, context_model=DynamicRouterContext)
     result = await gather_result(runner, "test")
 
     # Verify field mapping worked correctly
@@ -386,7 +387,7 @@ async def test_dynamic_router_large_context_performance():
         merge_strategy=MergeStrategy.CONTEXT_UPDATE,
     )
 
-    runner = Flujo(router, context_model=LargeContext)
+    runner = create_test_flujo(router, context_model=LargeContext)
     result = await gather_result(runner, "test")
 
     # Verify performance didn't affect functionality
@@ -424,7 +425,7 @@ async def test_dynamic_router_high_frequency_context_updates():
         merge_strategy=MergeStrategy.CONTEXT_UPDATE,
     )
 
-    runner = Flujo(router, context_model=DynamicRouterContext)
+    runner = create_test_flujo(router, context_model=DynamicRouterContext)
     result = await gather_result(runner, "test")
 
     # Verify all high-frequency updates were preserved
@@ -462,7 +463,7 @@ async def test_dynamic_router_empty_branch_selection():
         merge_strategy=MergeStrategy.CONTEXT_UPDATE,
     )
 
-    runner = Flujo(router, context_model=DynamicRouterContext)
+    runner = create_test_flujo(router, context_model=DynamicRouterContext)
     result = await gather_result(runner, "test")
 
     # Verify router was called and context updates were preserved
@@ -500,7 +501,7 @@ async def test_dynamic_router_invalid_branch_selection():
         merge_strategy=MergeStrategy.CONTEXT_UPDATE,
     )
 
-    runner = Flujo(router, context_model=DynamicRouterContext)
+    runner = create_test_flujo(router, context_model=DynamicRouterContext)
     result = await gather_result(runner, "test")
 
     # Verify router was called and context updates were preserved
@@ -548,7 +549,7 @@ async def test_dynamic_router_complex_context_objects():
         merge_strategy=MergeStrategy.CONTEXT_UPDATE,
     )
 
-    runner = Flujo(router, context_model=ComplexContext)
+    runner = create_test_flujo(router, context_model=ComplexContext)
     result = await gather_result(runner, "test")
 
     # Verify complex context objects were handled correctly

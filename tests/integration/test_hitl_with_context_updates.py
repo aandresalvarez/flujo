@@ -7,10 +7,11 @@ which could reveal bugs in context state management during human interaction.
 
 import pytest
 from typing import Any, Dict, List
-from flujo import Flujo, step, Step
+from flujo import step, Step
 from flujo.domain.models import PipelineContext
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.testing.utils import gather_result
+from tests.conftest import create_test_flujo
 
 
 class HITLContext(PipelineContext):
@@ -123,7 +124,7 @@ async def test_hitl_with_context_updates_basic():
 
     pipeline = Pipeline.from_step(pre_hitl_step) >> hitl_step >> Pipeline.from_step(post_hitl_step)
 
-    runner = Flujo(pipeline, context_model=HITLContext)
+    runner = create_test_flujo(pipeline, context_model=HITLContext)
     result = await gather_result(runner, "test_data")
 
     # Verify HITL operation with context updates
@@ -150,7 +151,7 @@ async def test_hitl_with_context_updates_error_handling():
         Pipeline.from_step(hitl_with_error_step) >> hitl_step >> Pipeline.from_step(post_hitl_step)
     )
 
-    runner = Flujo(pipeline, context_model=HITLContext)
+    runner = create_test_flujo(pipeline, context_model=HITLContext)
     result = await gather_result(runner, "test_fail_data")
 
     # Verify error handling with context updates
@@ -199,7 +200,7 @@ async def test_hitl_with_context_updates_context_dependent():
         >> Pipeline.from_step(post_hitl_step)
     )
 
-    runner = Flujo(pipeline, context_model=HITLContext)
+    runner = create_test_flujo(pipeline, context_model=HITLContext)
     result = await gather_result(runner, "test_data")
 
     # Verify context-dependent HITL
@@ -247,7 +248,7 @@ async def test_hitl_with_context_updates_state_isolation():
         Pipeline.from_step(isolation_hitl_step) >> hitl_step >> Pipeline.from_step(post_hitl_step)
     )
 
-    runner = Flujo(pipeline, context_model=HITLContext)
+    runner = create_test_flujo(pipeline, context_model=HITLContext)
     result = await gather_result(runner, "test_data")
 
     # Verify state management
@@ -306,7 +307,7 @@ async def test_hitl_with_context_updates_complex_interaction():
         Pipeline.from_step(complex_hitl_step) >> hitl_step >> Pipeline.from_step(post_hitl_step)
     )
 
-    runner = Flujo(pipeline, context_model=HITLContext)
+    runner = create_test_flujo(pipeline, context_model=HITLContext)
     result = await gather_result(runner, "test_data")
 
     # Verify complex HITL
@@ -359,7 +360,7 @@ async def test_hitl_with_context_updates_metadata_conflicts():
         Pipeline.from_step(metadata_hitl_step) >> hitl_step >> Pipeline.from_step(post_hitl_step)
     )
 
-    runner = Flujo(pipeline, context_model=HITLContext)
+    runner = create_test_flujo(pipeline, context_model=HITLContext)
     result = await gather_result(runner, "test_data")
 
     # Verify metadata handling
