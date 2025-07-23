@@ -174,6 +174,26 @@ these tests manually via GitHub Actions:
 
 ---
 
+## 4a. CLI Integration Testing (Important)
+
+**CLI integration tests** are implemented as standalone scripts in `tests/cli_integration/`.
+
+- These scripts set up their own test data and invoke the CLI using `subprocess`.
+- They are automatically run as part of `make test`, `make test-fast`, and `make all`.
+- You do **not** need to run them manually—just use the standard test commands.
+- To add a new CLI integration test, simply add a new script to `tests/cli_integration/`.
+- The old pytest-based CLI tests (e.g., `tests/unit/test_lens_cli.py`) are now skipped to avoid confusion and noise.
+- This approach ensures robust, environment-independent CLI testing and prevents issues with subprocess/database access under pytest.
+
+**Summary:**
+- Use `make test` or `make test-fast` as usual—CLI integration tests are included automatically.
+- For CLI test coverage, see or add scripts in `tests/cli_integration/`.
+- Do not add new CLI tests to the old pytest-based files.
+
+For more details, see the comments in `tests/unit/test_lens_cli.py` and the example scripts in `tests/cli_integration/`.
+
+---
+
 ## 5. Code Quality
 
 ### All-in-One Quality Check
