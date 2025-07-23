@@ -1,0 +1,728 @@
+Of course. This is the best way to learn a framework. Let's build the `manual_testing` pipeline from the absolute minimum, introducing and testing one Flujo feature at a time.
+
+We will go through 5 steps:
+1.  **The Core Agentic Step:** A single AI call.
+2.  **Adding the Clarification Loop:** Introducing iteration.
+3.  **Introducing State:** Using a `PipelineContext` to remember things.
+4.  **Adding Human Interaction:** Pausing for a human with HITL.
+5.  **Professional Refinement:** Using structured agent outputs for robustness.
+
+---
+
+### **Step 1: The Core Agentic Step**
+
+**Goal:** Create the simplest possible pipeline. It will take a cohort definition, send it to an AI agent once, and print the agent's assessment.
+
+**Concepts being tested:**
+*   `make_agent_async()`: Creating a basic AI agent.
+*   `Step`: The fundamental building block of a pipeline.
+*   `Pipeline`: A sequence of steps.
+*   `Flujo`: The pipeline runner.
+*   `runner.run()`: Executing the pipeline.
+
+#### **1. Create `cohort_pipeline.py`**
+
+This file will define our pipeline components. For now, it's just one agent and one step.
+
+```python
+# manual_testing/cohort_pipeline.py
+
+from flujo import Step, Pipeline
+from flujo.infra.agents import make_agent_async
+from flujo.infra.settings import settings as flujo_settings
+
+# Define the AI agent that will assess the cohort definition
+CLARIFICATION_AGENT_SYSTEM_PROMPT = """
+You are a clinical research assistant. Your job is to review a clinical cohort definition.
+If the definition is clear, re-state it and add the marker '[CLARITY_CONFIRMED]'.
+If the definition is unclear, ask a concise question to clarify it.
+"""
+
+ClarificationAgent = make_agent_async(
+    model=flujo_settings.default_solution_model,
+    system_prompt=CLARIFICATION_AGENT_SYSTEM_PROMPT,
+    output_type=str,
+)
+
+# Create a single step that uses our agent
+assess_clarity_step = Step(
+    name="AssessClarity",
+    agent=ClarificationAgent,
+)
+
+# The pipeline consists of just this one step
+COHORT_CLARIFICATION_PIPELINE = Pipeline.from_step(assess_clarity_step)
+```
+
+#### **2. Create `main.py`**
+
+This is our script to run the pipeline.
+
+```python
+# manual_testing/main.py
+import asyncio
+from flujo import Flujo
+from manual_testing.cohort_pipeline import COHORT_CLARIFICATION_PIPELINE
+
+async def main():
+    print("Step 1: Running a single AI assessment step.\n" + "="*50)
+
+    # The Flujo runner executes our pipeline
+    runner = Flujo(COHORT_CLARIFICATION_PIPELINE)
+
+    initial_definition = input("Enter the clinical cohort definition: ")
+
+    # The run() method executes the pipeline from start to finish
+    result = runner.run(initial_definition)
+
+    print("\n--- Agent Response ---")
+    if result and result.step_history:
+        # The final output is the output of the last step
+        final_output = result.step_history[-1].output
+        print(final_output)
+    else:
+        print("Pipeline execution failed.")
+
+if __name__ == "__main__":
+    # Ensure you have OPENAI_API_KEY (or other) set in your .env file
+    asyncio.run(main())
+```
+
+#### **3. How to Run**
+
+```bash
+# Make sure you are in the root directory of the 'rloop' project
+python -m manual_testing.main
+```
+
+#### **4. Expected Output**
+
+When you run it, it will ask for input. Try giving it something ambiguous like `patients with diabetes`.
+
+```
+Step 1: Running a single AI assessment step.
+==================================================
+Enter the clinical cohort definition: patients with diabetes
+
+--- Agent Response ---
+Which type of diabetes (Type 1, Type 2, or gestational) should be included in the cohort?
+```
+
+You've successfully tested the most basic Flujo feature! Now, let's add iteration.
+
+---
+
+### **Step 2: Adding the Clarification Loop**
+
+**Goal:** Make the agent run repeatedly until the definition is clear. We'll introduce a "magic string" (`[CLARITY_CONFIRMED]`) that the agent must output to signal completion.
+
+**Concepts being tested:**
+*   `Step.loop_until()`: Creating a loop that runs a sub-pipeline.
+*   `exit_condition_callable`: A function that tells the loop when to stop.
+
+#### **1. Modify `cohort_pipeline.py`**
+
+We'll wrap our single step inside a `LoopStep`.
+
+```python
+# manual_testing/cohort_pipeline.py
+
+from flujo import Step, Pipeline
+from flujo.infra.agents import make_agent_async
+from flujo.infra.settings import settings as flujo_settings
+
+# Agent definition remains the same
+CLARIFICATION_AGENT_SYSTEM_PROMPT = """
+You are a clinical research assistant. Your job is to review a clinical cohort definition.
+If the definition is clear, re-state it and add the marker '[CLARITY_CONFIRMED]'.
+If the definition is unclear, ask a concise question to clarify it.
+"""
+
+ClarificationAgent = make_agent_async(
+    model=flujo_settings.default_solution_model,
+    system_prompt=CLARIFICATION_AGENT_SYSTEM_PROMPT,
+    output_type=str,
+)
+
+# --- NEW: Define the loop ---
+
+# The body of our loop is still the single agent step
+loop_body_pipeline = Pipeline.from_step(
+    Step(name="AssessClarity", agent=ClarificationAgent)
+)
+
+# This function checks the agent's output for our magic string
+def exit_loop_when_clear(output: str, context: None) -> bool:
+    """The loop will stop when this function returns True."""
+    is_clear = "[CLARITY_CONFIRMED]" in output
+    print(f"  [Loop Check] Agent output contains clear marker: {is_clear}")
+    return is_clear
+
+# Create the LoopStep
+clarification_loop = Step.loop_until(
+    name="ClarificationLoop",
+    loop_body_pipeline=loop_body_pipeline,
+    exit_condition_callable=exit_loop_when_clear,
+    max_loops=5,  # A safety mechanism to prevent infinite loops
+)
+
+# The pipeline is now just the loop
+COHORT_CLARIFICATION_PIPELINE = Pipeline.from_step(clarification_loop)
+```
+
+#### **2. Modify `main.py`**
+
+The runner script needs a small change to handle the iterative nature. We'll simulate a user providing clarifications.
+
+```python
+# manual_testing/main.py
+import asyncio
+from flujo import Flujo
+from manual_testing.cohort_pipeline import COHORT_CLARIFICATION_PIPELINE
+
+async def main():
+    print("Step 2: Running an iterative clarification loop.\n" + "="*50)
+
+    runner = Flujo(COHORT_CLARIFICATION_PIPELINE)
+
+    # Simulate an interactive session
+    current_definition = input("Enter the initial clinical cohort definition: ")
+    final_output = ""
+
+    # This is a manual loop in our script to simulate the user interaction.
+    # The *real* loop is inside the Flujo pipeline.
+    for i in range(5): # Limit interactions for this demo
+        print(f"\n--- Iteration {i+1} ---")
+        result = runner.run(current_definition)
+        agent_response = result.step_history[-1].output
+
+        if "[CLARITY_CONFIRMED]" in agent_response:
+            print("Agent has confirmed the definition is clear.")
+            final_output = agent_response
+            break
+        else:
+            print(f"Agent Request: {agent_response}")
+            clarification = input("Your clarification: ")
+            current_definition = f"Previous definition: '{current_definition}'. My clarification is: '{clarification}'"
+    else:
+        print("Reached max interactions.")
+        final_output = "Loop finished without confirmation."
+
+
+    print("\n--- Final Result ---")
+    # Clean the magic string from the final output for the user
+    final_definition = final_output.replace("[CLARITY_CONFIRMED]", "").strip()
+    print(final_definition)
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+#### **3. How to Run & Expected Output**
+
+Run `python -m manual_testing.main` again. This time, you can have a conversation.
+
+```
+Step 2: Running an iterative clarification loop.
+==================================================
+Enter the initial clinical cohort definition: cancer patients
+
+--- Iteration 1 ---
+  [Loop Check] Agent output contains clear marker: False
+Agent Request: Please specify the type of cancer (e.g., breast cancer, lung cancer, etc.) for the cohort.
+Your clarification: breast cancer
+
+--- Iteration 2 ---
+  [Loop Check] Agent output contains clear marker: False
+Agent Request: Please specify the stage of breast cancer (e.g., Stage I, Stage II, metastatic) to be included in the cohort.
+Your clarification: stage I and II
+
+--- Iteration 3 ---
+  [Loop Check] Agent output contains clear marker: True
+Agent has confirmed the definition is clear.
+
+--- Final Result ---
+Patients diagnosed with Stage I or Stage II breast cancer.
+```
+
+Great! You've now tested Flujo's looping capability. But notice a problem? The agent keeps asking questions about the *original* prompt, not our updated one. It has no memory. Let's fix that.
+
+---
+
+### **Step 3: Introducing State with `PipelineContext`**
+
+**Goal:** Give the pipeline a memory. We'll create a custom `CohortContext` to store the `current_definition` so it evolves with each clarification.
+
+**Concepts being tested:**
+*   `PipelineContext`: Creating a custom Pydantic model for state.
+*   `@step(updates_context=True)`: Steps that can modify the shared context.
+*   `runner.run(initial_context_data=...)`: Starting a run with initial state.
+*   Mappers in `Step.loop_until`: Controlling data flow between loop iterations.
+
+#### **1. Modify `cohort_pipeline.py`**
+
+This is a significant update. We are making the logic more explicit and stateful.
+
+```python
+# manual_testing/cohort_pipeline.py
+
+from flujo import Step, Pipeline, step
+from flujo.infra.agents import make_agent_async
+from flujo.domain.models import PipelineContext
+from flujo.infra.settings import settings as flujo_settings
+
+# --- NEW: Custom PipelineContext ---
+class CohortContext(PipelineContext):
+    """Stores the evolving state of our cohort definition."""
+    current_definition: str
+    is_clear: bool = False
+
+# Agent definition remains the same
+CLARIFICATION_AGENT_SYSTEM_PROMPT = """
+You are a clinical research assistant. You will be given the current state of a cohort definition.
+If it is clear, re-state it and add the marker '[CLARITY_CONFIRMED]'.
+If it is unclear, ask a *single* clarifying question.
+"""
+
+ClarificationAgent = make_agent_async(
+    model=flujo_settings.default_solution_model,
+    system_prompt=CLARIFICATION_AGENT_SYSTEM_PROMPT,
+    output_type=str,
+)
+
+# --- NEW: A step that updates the context ---
+@step(name="AssessAndRefine", updates_context=True)
+async def assess_and_refine(definition_to_assess: str, *, context: CohortContext) -> dict:
+    """
+    This step calls the agent and returns a dictionary of updates for the context.
+    """
+    agent_response = await ClarificationAgent.run(definition_to_assess, context=context)
+
+    if "[CLARITY_CONFIRMED]" in agent_response:
+        # If clear, update the definition and set the 'is_clear' flag to True
+        return {
+            "current_definition": agent_response.replace("[CLARITY_CONFIRMED]", "").strip(),
+            "is_clear": True
+        }
+    else:
+        # If not clear, combine the old definition with the agent's question for the next round
+        # and keep 'is_clear' as False.
+        # Note: In a real app, we'd handle human input here. For now, we simulate.
+        new_definition = f"Definition so far: '{context.current_definition}'. Agent asks: '{agent_response}'"
+        return {
+            "current_definition": new_definition,
+            "is_clear": False
+        }
+
+# --- UPDATED: Loop now uses the context ---
+loop_body_pipeline = Pipeline.from_step(assess_and_refine)
+
+def exit_loop_when_clear(output: dict, context: CohortContext) -> bool:
+    """The loop now checks the `is_clear` flag in our context."""
+    print(f"  [Loop Check] Context 'is_clear' flag is: {context.is_clear}")
+    return context.is_clear
+
+def map_context_to_input(initial_input: str, context: CohortContext) -> str:
+    """The first loop iteration should use the definition from the context."""
+    return context.current_definition
+
+def map_output_to_next_input(last_output: dict, context: CohortContext, i: int) -> str:
+    """Subsequent iterations also use the updated definition from the context."""
+    return context.current_definition
+
+clarification_loop = Step.loop_until(
+    name="StatefulClarificationLoop",
+    loop_body_pipeline=loop_body_pipeline,
+    exit_condition_callable=exit_loop_when_clear,
+    max_loops=5,
+    # NEW: Mappers control the data flow
+    initial_input_to_loop_body_mapper=map_context_to_input,
+    iteration_input_mapper=map_output_to_next_input
+)
+
+COHORT_CLARIFICATION_PIPELINE = Pipeline.from_step(clarification_loop)
+```
+
+#### **2. Modify `main.py`**
+
+The runner script is now simpler because the pipeline itself manages the state. We just need to initialize the context.
+
+```python
+# manual_testing/main.py
+import asyncio
+from flujo import Flujo
+from manual_testing.cohort_pipeline import COHORT_CLARIFICATION_PIPELINE, CohortContext
+
+async def main():
+    print("Step 3: Running a stateful loop with PipelineContext.\n" + "="*50)
+
+    # Tell the runner about our context model
+    runner = Flujo(COHORT_CLARIFICATION_PIPELINE, context_model=CohortContext)
+
+    initial_definition = "Patients with asthma, on medication, seen in clinic."
+
+    # Provide the initial data for our context
+    initial_context_data = {
+        "initial_prompt": initial_definition,
+        "current_definition": initial_definition,
+    }
+
+    print(f"Initial Definition: {initial_definition}")
+    result = runner.run(initial_definition, initial_context_data=initial_context_data)
+
+    print("\n--- Final Result ---")
+    if result and result.final_pipeline_context:
+        final_context = result.final_pipeline_context
+        print(f"Final Definition:\n{final_context.current_definition}")
+        print(f"Was Clear: {final_context.is_clear}")
+    else:
+        print("Pipeline execution failed.")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+#### **3. How to Run & Expected Output**
+
+Run `python -m manual_testing.main`. The pipeline now runs autonomously, refining the definition based on the agent's own feedback.
+
+```
+Step 3: Running a stateful loop with PipelineContext.
+==================================================
+Initial Definition: Patients with asthma, on medication, seen in clinic.
+  [Loop Check] Context 'is_clear' flag is: False
+  [Loop Check] Context 'is_clear' flag is: True
+
+--- Final Result ---
+Final Definition:
+Patients with a confirmed diagnosis of asthma, currently prescribed and taking inhaled corticosteroids, who have had at least one outpatient clinic visit in the last 12 months.
+Was Clear: True
+```
+
+This is much better! The pipeline now has a memory. The next step is to replace the simulated interaction with a real pause for human input.
+
+---
+
+### **Step 4: Adding Human Interaction (Human-in-the-Loop)**
+
+**Goal:** When the definition is unclear, pause the pipeline and ask a real human for clarification.
+
+**Concepts being tested:**
+*   `Step.branch_on()`: Routing the pipeline based on a condition (is the definition clear?).
+*   `Step.human_in_the_loop()`: A special step that pauses execution.
+*   `runner.run_async()` & `runner.resume_async()`: The pattern for running and resuming pausable pipelines.
+
+#### **1. Modify `cohort_pipeline.py`**
+
+We will now add a branching step. If the definition is clear, it goes to a final "Confirm" step. If not, it goes to a `human_in_the_loop` step.
+
+```python
+# manual_testing/cohort_pipeline.py
+
+from typing import Any
+from flujo import Step, Pipeline, step
+from flujo.infra.agents import make_agent_async
+from flujo.domain.models import PipelineContext, BaseModel
+from flujo.infra.settings import settings as flujo_settings
+from pydantic import Field
+
+class CohortContext(PipelineContext):
+    current_definition: str
+    is_clear: bool = False
+    clarification_requests_count: int = 0
+    agent_response: str = "" # To store the agent's question
+    status: str = "initialized"
+
+CLARIFICATION_AGENT_SYSTEM_PROMPT = """
+You are a clinical research assistant. Review the cohort definition.
+If it is clear, respond with the re-stated definition and the marker '[CLARITY_CONFIRMED]'.
+If it is unclear, respond with ONLY the single question you need to ask for clarification. Do NOT include the marker.
+"""
+
+ClarificationAgent = make_agent_async(
+    model=flujo_settings.default_solution_model,
+    system_prompt=CLARIFICATION_AGENT_SYSTEM_PROMPT,
+    output_type=str,
+)
+
+@step(name="AssessClarity", updates_context=True)
+async def assess_clarity(definition_to_assess: str, *, context: CohortContext) -> dict:
+    agent_response = await ClarificationAgent.run(definition_to_assess, context=context)
+    if "[CLARITY_CONFIRMED]" in agent_response:
+        return {
+            "current_definition": agent_response.replace("[CLARITY_CONFIRMED]", "").strip(),
+            "is_clear": True,
+            "status": "clear",
+        }
+    else:
+        return {
+            "is_clear": False,
+            "agent_response": agent_response, # Store the agent's question
+            "clarification_requests_count": context.clarification_requests_count + 1,
+            "status": "needs_clarification",
+        }
+
+class HumanClarificationInput(BaseModel):
+    clarification: str
+
+@step(name="IncorporateHumanClarification", updates_context=True)
+async def incorporate_human_clarification(human_response: HumanClarificationInput, *, context: CohortContext) -> dict:
+    combined = f"{context.current_definition}\n\nAdditional clarification: {human_response.clarification}"
+    return {"current_definition": combined, "status": "clarified"}
+
+# --- NEW: Branching Logic ---
+def route_based_on_clarity(data: dict, context: CohortContext) -> str:
+    return "DEFINITION_CLEAR" if context.is_clear else "NEEDS_CLARIFICATION"
+
+# Branch 1: The definition is clear, so we just pass through.
+branch_clear_pipeline = Pipeline.from_step(
+    Step.from_callable(lambda x: x, name="ConfirmDefinition")
+)
+
+# Branch 2: The definition is unclear. Pause for human input, then incorporate it.
+branch_clarify_pipeline = (
+    Step.human_in_the_loop(
+        name="GetHumanClarification",
+        message_for_user="{context.agent_response}", # Show the agent's question to the user
+        input_schema=HumanClarificationInput,
+    )
+    >> incorporate_human_clarification
+)
+
+check_clarity_and_route = Step.branch_on(
+    name="CheckClarityAndRoute",
+    condition_callable=route_based_on_clarity,
+    branches={
+        "DEFINITION_CLEAR": branch_clear_pipeline,
+        "NEEDS_CLARIFICATION": branch_clarify_pipeline,
+    },
+)
+
+# The loop body is now Assess -> Branch
+loop_body = assess_clarity >> check_clarity_and_route
+
+def exit_loop_when_clear(output: Any, context: CohortContext) -> bool:
+    return context.is_clear
+
+clarification_loop = Step.loop_until(
+    name="InteractiveClarificationLoop",
+    loop_body_pipeline=loop_body,
+    exit_condition_callable=exit_loop_when_clear,
+    max_loops=10,
+    initial_input_to_loop_body_mapper=lambda initial, ctx: ctx.current_definition,
+    iteration_input_mapper=lambda last, ctx, i: ctx.current_definition,
+    loop_output_mapper=lambda last, ctx: ctx.current_definition
+)
+
+COHORT_CLARIFICATION_PIPELINE = Pipeline.from_step(clarification_loop)
+```
+
+#### **2. Modify `main.py`**
+
+The runner script must be `async` and use the `run_async`/`resume_async` pattern.
+
+```python
+# manual_testing/main.py
+import asyncio
+from typing import Optional
+from flujo import Flujo
+from flujo.domain.models import PipelineResult
+from manual_testing.cohort_pipeline import COHORT_CLARIFICATION_PIPELINE, CohortContext, HumanClarificationInput
+
+async def main():
+    print("Step 4: Running an interactive HITL pipeline.\n" + "="*50)
+
+    runner = Flujo(COHORT_CLARIFICATION_PIPELINE, context_model=CohortContext)
+    run_id = "cohort-run-hitl-001"
+    initial_definition = "Patients with asthma, on medication, seen in clinic."
+    initial_context_data = {
+        "run_id": run_id,
+        "initial_prompt": initial_definition,
+        "current_definition": initial_definition,
+    }
+    print(f"Initial Definition: {initial_definition}")
+
+    # Use run_async to handle pauses. It returns an async iterator.
+    # The last item yielded is the final (or paused) result.
+    result: Optional[PipelineResult[CohortContext]] = None
+    async for item in runner.run_async(
+        initial_input=initial_definition,
+        run_id=run_id,
+        initial_context_data=initial_context_data
+    ):
+        result = item
+
+    # Keep resuming as long as the pipeline is paused
+    while result and result.final_pipeline_context and result.final_pipeline_context.scratchpad.get("status") == "paused":
+        context = result.final_pipeline_context
+        print(f"\n--- PAUSED FOR HUMAN INPUT ---")
+        agent_question = context.agent_response
+        print(f"AI Agent Request: {agent_question}")
+
+        human_input_text = input("Your clarification: ").strip()
+        human_input_model = HumanClarificationInput(clarification=human_input_text)
+
+        print("\n--- RESUMING PIPELINE ---")
+        result = await runner.resume_async(result, human_input_model)
+
+    print("\n" + "="*80 + "\n--- PIPELINE COMPLETE ---")
+    if result and result.final_pipeline_context:
+        final_context = result.final_pipeline_context
+        if final_context.is_clear:
+            print("\nFinal Clarified Definition:")
+            print(final_context.current_definition)
+        else:
+            print("\nPipeline finished without reaching clarity.")
+    else:
+        print("Pipeline execution did not yield a result.")
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+#### **3. How to Run & Expected Output**
+
+This is now a fully interactive session.
+
+```
+Step 4: Running an interactive HITL pipeline.
+==================================================
+Initial Definition: Patients with asthma, on medication, seen in clinic.
+
+--- PAUSED FOR HUMAN INPUT ---
+AI Agent Request: What specific medications for asthma should be considered for inclusion criteria?
+Your clarification: only inhaled corticosteroids
+
+--- RESUMING PIPELINE ---
+
+--- PAUSED FOR HUMAN INPUT ---
+AI Agent Request: Please specify the time frame for when patients were 'seen in clinic'.
+Your clarification: in the last 12 months
+
+--- RESUMING PIPELINE ---
+
+================================================================================
+--- PIPELINE COMPLETE ---
+
+Final Clarified Definition:
+Patients with a diagnosis of asthma, who have been seen in the clinic within the last 12 months, and are currently prescribed inhaled corticosteroids.
+```
+
+We now have a robust, stateful, interactive pipeline. The final step is to make it even more reliable by removing the "magic string" parsing.
+
+---
+
+### **Step 5: Professional Refinement with Structured I/O**
+
+**Goal:** Make the pipeline production-ready by having the agent return a structured Pydantic model instead of a string. This eliminates ambiguity and makes the code cleaner.
+
+**Concepts being tested:**
+*   Agent `output_type=PydanticModel`: Making agents return structured, validated data.
+*   Simplified pipeline logic: Control flow based on explicit boolean flags, not string parsing.
+
+#### **1. Modify `cohort_pipeline.py`**
+
+This is the "best practice" version from the previous answer. We define an `Assessment` model for the agent's output.
+
+```python
+# manual_testing/cohort_pipeline.py
+
+from typing import Any
+from flujo import Step, Pipeline, step
+from flujo.infra.agents import make_agent_async
+from flujo.domain.models import PipelineContext, BaseModel
+from flujo.infra.settings import settings as flujo_settings
+from pydantic import Field
+
+# --- NEW: Structured Models for I/O ---
+class Assessment(BaseModel):
+    is_clear: bool = Field(..., description="True if the definition is clear, False if it needs clarification.")
+    response: str = Field(..., description="The clarified definition if clear, or a question for the user if unclear.")
+
+class CohortContext(PipelineContext):
+    current_definition: str
+    is_clear: bool = False
+    clarification_requests_count: int = 0
+    last_agent_request: str | None = None
+    status: str = "initialized"
+
+class HumanClarificationInput(BaseModel):
+    clarification: str
+
+# --- UPDATED: Agent now returns the Assessment model ---
+CLARIFICATION_AGENT_SYSTEM_PROMPT = """
+You are an expert clinical research assistant. Assess the cohort definition for clarity.
+Your Response MUST be a JSON object matching this schema:
+- `is_clear` (boolean): `true` if clear, `false` otherwise.
+- `response` (string): The final definition if clear, or a question for the user if unclear.
+"""
+
+ClarificationAgent = make_agent_async(
+    model=flujo_settings.default_solution_model,
+    system_prompt=CLARIFICATION_AGENT_SYSTEM_PROMPT,
+    output_type=Assessment, # CRITICAL CHANGE
+)
+
+# --- UPDATED: Steps are now simpler ---
+@step(name="AssessClarity", updates_context=True)
+async def assess_clarity(definition_to_assess: str, *, context: CohortContext) -> dict:
+    assessment = await ClarificationAgent.run(definition_to_assess, context=context)
+
+    if assessment.is_clear:
+        return { "is_clear": True, "current_definition": assessment.response, "status": "clear" }
+    else:
+        return {
+            "is_clear": False,
+            "last_agent_request": assessment.response,
+            "clarification_requests_count": context.clarification_requests_count + 1,
+            "status": "needs_clarification",
+        }
+
+@step(name="IncorporateHumanClarification", updates_context=True)
+async def incorporate_human_clarification(human_response: HumanClarificationInput, *, context: CohortContext) -> dict:
+    combined = f"{context.current_definition}\n\nAdditional context: {human_response.clarification}"
+    return {"current_definition": combined, "status": "clarified"}
+
+# --- UPDATED: Control flow is cleaner ---
+def route_based_on_clarity(data: dict, context: CohortContext) -> str:
+    return "DEFINITION_CLEAR" if context.is_clear else "NEEDS_CLARIFICATION"
+
+branch_clear_pipeline = Pipeline.from_step(Step.from_callable(lambda x: x, name="ConfirmDefinition"))
+branch_clarify_pipeline = (
+    Step.human_in_the_loop(
+        name="GetHumanClarification",
+        message_for_user="The AI agent needs clarification: {context.last_agent_request}",
+        input_schema=HumanClarificationInput,
+    )
+    >> incorporate_human_clarification
+)
+
+check_clarity_and_route = Step.branch_on(
+    name="CheckClarityAndRoute",
+    condition_callable=route_based_on_clarity,
+    branches={ "DEFINITION_CLEAR": branch_clear_pipeline, "NEEDS_CLARIFICATION": branch_clarify_pipeline },
+)
+
+loop_body = assess_clarity >> check_clarity_and_route
+
+clarification_loop = Step.loop_until(
+    name="CohortClarificationLoop",
+    loop_body_pipeline=loop_body,
+    exit_condition_callable=lambda output, ctx: ctx.is_clear,
+    max_loops=10,
+    initial_input_to_loop_body_mapper=lambda initial, ctx: ctx.current_definition,
+    iteration_input_mapper=lambda last, ctx, i: ctx.current_definition,
+    loop_output_mapper=lambda last, ctx: ctx.current_definition,
+)
+
+COHORT_CLARIFICATION_PIPELINE = Pipeline.from_step(clarification_loop)
+```
+
+The `main.py` script requires almost no changes, as the robust runner pattern was already in place. This shows the power of good abstraction.
+
+---
+
+### **Final Result**
+
+You have successfully built a complex, interactive, and robust AI pipeline step-by-step, testing key Flujo features along the way. You've gone from a simple agent call to a production-ready workflow that uses state management, iteration, human-in-the-loop, branching, and structured agent outputs.
