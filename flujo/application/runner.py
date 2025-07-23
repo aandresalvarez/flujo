@@ -34,6 +34,7 @@ from ..exceptions import (
     PausedException,
     MissingAgentError,
     TypeMismatchError,
+    StateIncompatibilityError,  # <-- IMPORT THE NEW EXCEPTION
 )
 from ..domain.dsl.step import Step
 from ..domain.dsl.pipeline import Pipeline
@@ -614,9 +615,24 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 # Validate step index
                 assert self.pipeline is not None
                 if start_idx > len(self.pipeline.steps):
-                    raise OrchestratorError(
-                        f"Invalid persisted step index {start_idx} for pipeline with {len(self.pipeline.steps)} steps"
+                    error_message = (
+                        f"Cannot resume workflow due to a mismatch between the saved state and the current pipeline code.\n\n"
+                        f"- Run ID:                 '{run_id_for_state}'\n"
+                        f"- Persisted State wants to resume at step index: {start_idx}\n"
+                        f"- Current Pipeline code has only: {len(self.pipeline.steps)} step(s)\n\n"
+                        f"This usually happens when the pipeline's code has changed since this workflow was last run or paused.\n\n"
+                        f"To resolve this:\n\n"
+                        f"1. For Development & Testing:\n"
+                        f"   - If this is from a previous test and the old state is no longer needed, you can either:\n"
+                        f"     a) Use the CLI: `flujo lens delete {run_id_for_state}` to remove this workflow state.\n"
+                        f"     b) Use the CLI: `flujo lens prune --days-old <N>` to clean up old or completed states.\n"
+                        f"     c) Delete the state database file (e.g., 'flujo_ops.db') to start completely fresh (not recommended if you have other important runs).\n"
+                        f"     d) Use a new, unique `run_id` for this execution.\n\n"
+                        f"2. For Production:\n"
+                        f"   - If this is a real workflow that needs to be resumed, you must ensure the code is compatible with the saved state.\n"
+                        f"   - You may need to run the exact version of the code that the workflow was started with or write a migration script for the state data if the change was intentional."
                     )
+                    raise StateIncompatibilityError(error_message)
             else:
                 # New run, record start metadata
                 self._ensure_pipeline()

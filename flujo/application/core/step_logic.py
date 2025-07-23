@@ -978,7 +978,9 @@ async def _execute_conditional_step_logic(
         if not branch_pipeline_failed_internally:
             branch_output = current_branch_data
             branch_succeeded = True
-
+    # Specifically catch PausedException and propagate it without marking the branch as failed.
+    except PausedException:
+        raise
     except Exception as e:
         telemetry.logfire.error(
             f"Error during ConditionalStep '{conditional_step.name}' execution: {e}",

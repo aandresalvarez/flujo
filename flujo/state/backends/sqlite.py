@@ -711,6 +711,7 @@ class SQLiteBackend(StateBackend):
 
             async def _save() -> None:
                 async with aiosqlite.connect(self.db_path) as db:
+                    await db.execute("PRAGMA journal_mode=DELETE;")
                     # Get execution_time_ms directly from state
                     execution_time_ms = state.get("execution_time_ms")
                     pipeline_context_json = json.dumps(robust_serialize(state["pipeline_context"]))
@@ -752,6 +753,7 @@ class SQLiteBackend(StateBackend):
                         ),
                     )
                     await db.commit()
+                    await db.execute("VACUUM;")
                     telemetry.logfire.info(f"Saved state for run_id={run_id}")
 
             await self._with_retries(_save)
@@ -846,60 +848,66 @@ class SQLiteBackend(StateBackend):
         offset: int = 0,
     ) -> List[Dict[str, Any]]:
         """Enhanced workflow listing with additional filters and metadata."""
-        await self._ensure_init()
-        async with self._lock:
-            async with aiosqlite.connect(self.db_path) as db:
-                # Build query with optional filters
-                query = """
-                    SELECT run_id, pipeline_id, pipeline_name, pipeline_version,
-                           current_step_index, status, created_at, updated_at,
-                           total_steps, error_message, execution_time_ms, memory_usage_mb
-                    FROM workflow_state
-                    WHERE 1=1
-                """
-                params: List[Any] = []
+        import sqlite3
+        import sys
 
-                if status:
-                    query += " AND status = ?"
-                    params.append(status)
-
-                if pipeline_id:
-                    query += " AND pipeline_id = ?"
-                    params.append(pipeline_id)
-
-                query += " ORDER BY created_at DESC"
-
-                if limit is not None:
-                    query += " LIMIT ?"
-                    params.append(limit)
-                if offset:
-                    query += " OFFSET ?"
-                    params.append(offset)
-
-                async with db.execute(query, params) as cursor:
-                    rows = await cursor.fetchall()
-
-                result: List[Dict[str, Any]] = []
-                for row in rows:
-                    if row is None:
-                        continue
-                    result.append(
-                        {
-                            "run_id": row[0],
-                            "pipeline_id": row[1],
-                            "pipeline_name": row[2],
-                            "pipeline_version": row[3],
-                            "current_step_index": row[4],
-                            "status": row[5],
-                            "created_at": row[6],
-                            "updated_at": row[7],
-                            "total_steps": row[8] or 0,
-                            "error_message": row[9],
-                            "execution_time_ms": row[10],
-                            "memory_usage_mb": row[11],
-                        }
-                    )
-                return result
+        # Use synchronous sqlite3 for diagnostics
+        conn = sqlite3.connect(str(self.db_path))
+        try:
+            # Print all rows in workflow_state
+            all_rows = conn.execute("SELECT * FROM workflow_state").fetchall()
+            print(
+                f"[SYNC DEBUG] ALL workflow_state rows in list_workflows: {all_rows}",
+                file=sys.stderr,
+            )
+            # Build query with optional filters
+            query = """
+                SELECT run_id, pipeline_id, pipeline_name, pipeline_version,
+                       current_step_index, status, created_at, updated_at,
+                       total_steps, error_message, execution_time_ms, memory_usage_mb
+                FROM workflow_state
+                WHERE 1=1
+            """
+            params = []
+            if status:
+                query += " AND status = ?"
+                params.append(status)
+            if pipeline_id:
+                query += " AND pipeline_id = ?"
+                params.append(pipeline_id)
+            query += " ORDER BY created_at DESC"
+            if limit is not None:
+                query += " LIMIT ?"
+                params.append(str(limit))
+            if offset:
+                query += " OFFSET ?"
+                params.append(str(offset))
+            rows = conn.execute(query, params).fetchall()
+            print(f"[SYNC DEBUG] list_workflows raw rows: {rows}", file=sys.stderr)
+            result = []
+            for row in rows:
+                if row is None:
+                    continue
+                result.append(
+                    {
+                        "run_id": row[0],
+                        "pipeline_id": row[1],
+                        "pipeline_name": row[2],
+                        "pipeline_version": row[3],
+                        "current_step_index": row[4],
+                        "status": row[5],
+                        "created_at": row[6],
+                        "updated_at": row[7],
+                        "total_steps": row[8] or 0,
+                        "error_message": row[9],
+                        "execution_time_ms": row[10],
+                        "memory_usage_mb": row[11],
+                    }
+                )
+            print(f"[SYNC DEBUG] list_workflows result: {result}", file=sys.stderr)
+            return result
+        finally:
+            conn.close()
 
     async def list_runs(
         self,

@@ -126,7 +126,7 @@ async def test_invalid_step_index_raises() -> None:
     )
     with pytest.raises(
         OrchestratorError,
-        match=r"Invalid persisted step index 3 for pipeline with 2 steps",
+        match=r"Cannot resume workflow due to a mismatch between the saved state and the current pipeline code.",
     ):
         async for _ in runner.run_async(
             "x", initial_context_data={"initial_prompt": "x", "run_id": run_id}

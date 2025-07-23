@@ -61,19 +61,18 @@ def list_runs(
 ) -> None:
     """List stored runs."""
     backend = load_backend_from_config()
+    import sys
+
+    print(f"[DEBUG] Using backend: {backend}", file=sys.stderr)
     try:
-        # Use the new structured API if available, fallback to legacy
-        if hasattr(backend, "list_runs"):
-            runs = asyncio.run(
-                backend.list_runs(status=status, pipeline_name=pipeline, limit=limit)
-            )
-        else:
-            runs = asyncio.run(
-                backend.list_workflows(status=status, pipeline_id=pipeline, limit=limit)
-            )
-    except NotImplementedError:
-        typer.echo("Backend does not support listing runs", err=True)
-        raise typer.Exit(1)
+        runs = asyncio.run(backend.list_workflows(status=status, pipeline_id=pipeline, limit=limit))
+        print(f"[DEBUG] runs returned from backend: {runs}", file=sys.stderr)
+    except Exception as e:
+        import traceback
+
+        print(f"[DEBUG] Exception in list_runs: {e}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+        raise
 
     table = Table("run_id", "pipeline", "status", "created_at")
     for r in runs:
@@ -81,7 +80,7 @@ def list_runs(
             r.get("run_id", "-"),
             r.get("pipeline_name", "-"),
             r.get("status", "-"),
-            str(r.get("start_time", "-")),
+            str(r.get("created_at", "-")),
         )
     Console().print(table)
 
@@ -244,3 +243,65 @@ def show_statistics(
             if data["count"] > 0:
                 duration_table.add_row(name, f"{data['average']:.2f}s", str(data["count"]))
         console.print(duration_table)
+
+
+@lens_app.command("delete")
+def delete_run_state(
+    run_id: str = typer.Argument(..., help="The specific run_id of the state to delete."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
+) -> None:
+    """Delete the persisted state for a specific workflow run."""
+    if not yes:
+        typer.confirm(
+            f"Are you sure you want to permanently delete the state for run '{run_id}'?", abort=True
+        )
+
+    backend = load_backend_from_config()
+    try:
+        asyncio.run(backend.delete_state(run_id))
+        typer.secho(f"State for run '{run_id}' deleted successfully.", fg=typer.colors.GREEN)
+    except Exception as e:
+        typer.secho(f"Error deleting state for run '{run_id}': {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+
+
+@lens_app.command("prune")
+def prune_run_states(
+    days_old: int = typer.Option(
+        ..., "--days-old", help="Delete states for runs last updated more than this many days ago."
+    ),
+    status: Optional[str] = typer.Option(
+        None,
+        "--status",
+        help="Only prune runs with this specific status (e.g., 'completed', 'failed').",
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
+) -> None:
+    """Prune old workflow states from the backend."""
+    backend = load_backend_from_config()
+    if status and not hasattr(backend, "cleanup_old_workflows_with_status"):
+        typer.secho(
+            "The configured backend does not support pruning by status.",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+    prompt = f"Are you sure you want to permanently delete all workflow states older than {days_old} days?"
+    if status:
+        prompt += f" with status '{status}'?"
+    else:
+        prompt += "?"
+    if not yes:
+        typer.confirm(prompt, abort=True)
+    try:
+        deleted_count = asyncio.run(backend.cleanup_old_workflows(days_old=days_old))
+        typer.secho(f"Pruned {deleted_count} workflow states.", fg=typer.colors.GREEN)
+    except NotImplementedError:
+        typer.secho(
+            f"The configured '{type(backend).__name__}' backend does not support pruning.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(1)
+    except Exception as e:
+        typer.secho(f"Error pruning workflow states: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)

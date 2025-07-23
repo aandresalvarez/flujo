@@ -64,12 +64,12 @@ typecheck: .uv ## Run static type checking with mypy
 # ------------------------------------------------------------------------------
 
 .PHONY: test
-test: .uv ## Run all tests
+test: .uv test-cli-integration ## Run all tests (including CLI integration)
 	@echo "🧪 Running tests..."
 	CI=1 uv run pytest tests/
 
 .PHONY: test-fast
-test-fast: .uv ## Run fast tests in parallel (excludes slow, serial, and benchmark tests)
+test-fast: .uv test-cli-integration ## Run fast tests in parallel (and CLI integration)
 	@echo "⚡ Running fast tests in parallel..."
 	CI=1 uv run pytest tests/ -m "not slow and not serial and not benchmark" -n auto
 
@@ -139,7 +139,7 @@ package: .uv ## Build package distribution files
 # ------------------------------------------------------------------------------
 
 .PHONY: all
-all: format lint typecheck test ## Run all quality checks (format, lint, typecheck, test)
+all: format lint typecheck test ## Run all quality checks (format, lint, typecheck, test, CLI integration)
 	@echo "\n✅ All local checks passed! You are ready to push."
 
 .PHONY: help
@@ -155,3 +155,12 @@ help: ## ✨ Show this help message
 			printf "  \033[36m%-20s\033[0m %s\n", recipe, substr($$0, RSTART + 3, RLENGTH); \
 		} \
 	}' $(MAKEFILE_LIST)
+
+.PHONY: test-cli-integration
+# Run all CLI integration test scripts in tests/cli_integration/
+test-cli-integration:
+	@echo "🧪 Running CLI integration tests..."
+	@for script in tests/cli_integration/*.py; do \
+	  echo "Running $$script..."; \
+	  python3 "$$script"; \
+	done

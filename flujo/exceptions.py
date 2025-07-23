@@ -192,3 +192,9 @@ class ParallelStepError(FlujoFrameworkError):
             "Consider using MergeStrategy.CONTEXT_UPDATE with field_mapping",
             "PARALLEL_STEP_ERROR",
         )
+
+
+class StateIncompatibilityError(OrchestratorError):
+    """Raised when saved state is incompatible with the current pipeline code."""
+
+    pass

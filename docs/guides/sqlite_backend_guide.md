@@ -571,3 +571,22 @@ ml_training_backend = SQLiteBackend(Path("ml_training.db"))
 ```
 
 This comprehensive guide covers all aspects of the SQLiteBackend, from basic usage to advanced operational tasks. The backend is production-ready and provides the observability and reliability needed for serious workflow management.
+
+## State Cleanup and Troubleshooting (CLI)
+
+For most operational tasks, use the CLI tools:
+
+- **Delete a specific workflow state:**
+  ```bash
+  flujo lens delete <RUN_ID>
+  # Example:
+  flujo lens delete my-old-run-123
+  ```
+- **Prune old/completed workflow states:**
+  ```bash
+  flujo lens prune --days-old 30
+  # Optionally filter by status:
+  flujo lens prune --days-old 90 --status completed --yes
+  ```
+
+If you encounter a `StateIncompatibilityError`, follow the CLI-based instructions in the error message. Only use manual file deletion as a last resort.

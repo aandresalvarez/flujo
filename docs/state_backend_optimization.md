@@ -360,3 +360,37 @@ SELECT COUNT(*) as total_rows FROM workflow_state;
 -- Check for data integrity issues
 SELECT run_id, status FROM workflow_state WHERE status NOT IN ('running', 'paused', 'completed', 'failed', 'cancelled');
 ```
+
+## Operational State Cleanup (CLI)
+
+For most state management tasks, you should use the built-in CLI tools:
+
+- **Delete a specific workflow state:**
+  ```bash
+  flujo lens delete <RUN_ID>
+  # Example:
+  flujo lens delete my-old-run-123
+  ```
+- **Prune old/completed workflow states:**
+  ```bash
+  flujo lens prune --days-old 30
+  # Optionally filter by status:
+  flujo lens prune --days-old 90 --status completed --yes
+  ```
+
+These commands are safer and more targeted than deleting the database file directly. Only use manual file deletion as a last resort.
+
+## Updated Error Handling
+
+If you see an error like:
+```
+StateIncompatibilityError: Cannot resume workflow due to a mismatch between the saved state and the current pipeline code.
+...
+1. For Development & Testing:
+   - Use the CLI: `flujo lens delete <RUN_ID>` to remove this workflow state.
+   - Use the CLI: `flujo lens prune --days-old <N>` to clean up old or completed states.
+   - Only as a last resort, delete the state database file (e.g., 'flujo_ops.db').
+   - Or use a new, unique run_id for this execution.
+...
+```
+Follow the CLI-based instructions for the safest and most robust solution.

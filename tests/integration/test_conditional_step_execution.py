@@ -492,3 +492,36 @@ async def test_conditional_step_error_logging_in_callables(monkeypatch) -> None:
     )
     await gather_result(create_test_flujo(step), "in")
     assert any("cond boom" in m for m in errors)
+
+
+@pytest.mark.asyncio
+async def test_hitl_in_conditional_branch_pauses_and_resumes() -> None:
+    """Test that a human-in-the-loop step in a conditional branch correctly pauses and resumes."""
+    classify = Step.model_validate({"name": "classify", "agent": StubAgent(["clarify"])})
+    branches = {
+        "clarify": Pipeline.from_step(
+            Step.human_in_the_loop("clarification", message_for_user="Please clarify.")
+        ),
+        "ok": Pipeline.from_step(
+            Step.model_validate({"name": "ok", "agent": StubAgent(["All good"])})
+        ),
+    }
+    branch_step = Step.branch_on(
+        name="branch",
+        condition_callable=lambda out, ctx: out,
+        branches=branches,
+    )
+    runner = create_test_flujo(classify >> branch_step)
+    # First run should pause for human input
+    paused = await gather_result(runner, "input")
+    ctx = paused.final_pipeline_context
+    assert ctx.scratchpad["status"] == "paused"
+    assert ctx.scratchpad["pause_message"] == "Please clarify."
+    # Resume with human input
+    resumed = await runner.resume_async(paused, "clarified!")
+    assert resumed.step_history[-1].output == "clarified!"
+    assert ctx.scratchpad["status"] == "completed"  # Should be completed after resume
+    assert len(resumed.final_pipeline_context.hitl_history) == 1
+    record = resumed.final_pipeline_context.hitl_history[0]
+    assert record.message_to_human == "Please clarify."
+    assert record.human_response == "clarified!"

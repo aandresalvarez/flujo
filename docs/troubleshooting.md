@@ -237,6 +237,19 @@ This guide helps you resolve common issues when using `flujo`.
    ```
 2. Reduce cost by using cheaper models or fewer iterations.
 
+### 6. State Incompatibility Errors
+
+```
+StateIncompatibilityError: Cannot resume workflow due to a mismatch between the saved state and the current pipeline code.
+```
+
+**Solutions:**
+1. For Development & Testing:
+   - Use the CLI: `flujo lens delete <RUN_ID>` to remove this workflow state.
+   - Use the CLI: `flujo lens prune --days-old <N>` to clean up old or completed states.
+   - Only as a last resort, delete the state database file (e.g., 'flujo_ops.db').
+   - Or use a new, unique run_id for this execution.
+
 ## Telemetry Issues
 
 ### 1. Metrics Collection
