@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import time
 from datetime import datetime
 from pathlib import Path
 from typing import Awaitable, Callable, Any, Dict, List, Optional, cast, TYPE_CHECKING, Tuple
@@ -228,14 +227,38 @@ class SQLiteBackend(StateBackend):
 
     def __init__(self, db_path: Path) -> None:
         self.db_path = Path(db_path)
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        # Only create parent directories for file-based databases, not in-memory ones
+        if str(db_path) != ":memory:":
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = asyncio.Lock()
         self._initialized = False
         self._connection_pool: Optional[aiosqlite.Connection] = None
 
         # Event-loop-local file-level lock - will be initialized lazily
         self._file_lock: Optional[asyncio.Lock] = None
-        self._file_lock_key = str(self.db_path.absolute())
+        # Use a unique key for in-memory databases to avoid conflicts
+        if str(db_path) == ":memory:":
+            import uuid
+
+            self._file_lock_key = f":memory:{uuid.uuid4().hex}"
+        else:
+            self._file_lock_key = str(self.db_path.absolute())
+
+        # For in-memory databases, we need to maintain a shared connection
+        self._shared_connection: Optional[aiosqlite.Connection] = None
+
+    async def _get_db_connection(self) -> aiosqlite.Connection:
+        """Get the appropriate database connection.
+
+        For in-memory databases, returns the shared connection.
+        For file-based databases, returns a new connection.
+        """
+        if str(self.db_path) == ":memory:":
+            if self._shared_connection is None:
+                raise RuntimeError("Database not initialized. Call _ensure_init() first.")
+            return self._shared_connection
+        else:
+            return await aiosqlite.connect(self.db_path)
 
     def _get_file_lock(self) -> asyncio.Lock:
         """Get the file lock for the current event loop."""
@@ -256,7 +279,7 @@ class SQLiteBackend(StateBackend):
                     if thread_id not in SQLiteBackend._thread_file_locks:
                         SQLiteBackend._thread_file_locks[thread_id] = {}
                     lock_map = SQLiteBackend._thread_file_locks[thread_id]
-                    db_key = str(self.db_path.absolute())
+                    db_key = self._file_lock_key
                     if db_key not in lock_map:
                         lock_map[db_key] = asyncio.Lock()
                     self._file_lock = lock_map[db_key]
@@ -266,7 +289,7 @@ class SQLiteBackend(StateBackend):
             if loop not in SQLiteBackend._global_file_locks:
                 SQLiteBackend._global_file_locks[loop] = {}
             lock_map = SQLiteBackend._global_file_locks[loop]
-            db_key = str(self.db_path.absolute())
+            db_key = self._file_lock_key
             if db_key not in lock_map:
                 lock_map[db_key] = asyncio.Lock()
             self._file_lock = lock_map[db_key]
@@ -282,7 +305,16 @@ class SQLiteBackend(StateBackend):
             max_retries: Maximum number of retry attempts for corruption recovery
         """
         try:
-            async with aiosqlite.connect(self.db_path) as db:
+            # For in-memory databases, use a shared connection to ensure all operations
+            # use the same database instance
+            if str(self.db_path) == ":memory:":
+                if self._shared_connection is None:
+                    self._shared_connection = await aiosqlite.connect(self.db_path)
+                db = self._shared_connection
+            else:
+                db = await aiosqlite.connect(self.db_path)
+
+            try:
                 await db.execute("PRAGMA foreign_keys = ON")
                 await db.execute("PRAGMA journal_mode = WAL")
                 await db.execute(
@@ -374,150 +406,40 @@ class SQLiteBackend(StateBackend):
                         start_time REAL NOT NULL,
                         end_time REAL,
                         status TEXT DEFAULT 'running',
-                        attributes TEXT, -- JSON for flexible metadata
-                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                        FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE,
-                        FOREIGN KEY (parent_span_id) REFERENCES spans(span_id) ON DELETE CASCADE
+                        attributes TEXT,
+                        FOREIGN KEY(run_id) REFERENCES runs(run_id) ON DELETE CASCADE
                     )
                     """
                 )
-                # Indexes for efficient querying
                 await db.execute("CREATE INDEX IF NOT EXISTS idx_spans_run_id ON spans(run_id)")
-                await db.execute("CREATE INDEX IF NOT EXISTS idx_spans_status ON spans(status)")
+                await db.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_spans_parent_span_id ON spans(parent_span_id)"
+                )
                 await db.execute("CREATE INDEX IF NOT EXISTS idx_spans_name ON spans(name)")
                 await db.execute(
                     "CREATE INDEX IF NOT EXISTS idx_spans_start_time ON spans(start_time)"
                 )
-                await db.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_spans_parent_span_id ON spans(parent_span_id)"
-                )
-                await self._migrate_existing_schema(db)
+
+                # Commit the changes
                 await db.commit()
-            telemetry.logfire.info(f"Initialized SQLite database at {self.db_path}")
+
+            finally:
+                # Only close the connection if it's not a shared in-memory connection
+                if str(self.db_path) != ":memory:":
+                    await db.close()
+
         except sqlite3.DatabaseError as e:
-            if retry_count >= max_retries:
+            if retry_count < max_retries:
+                telemetry.logfire.warn(
+                    f"Database initialization failed (attempt {retry_count + 1}/{max_retries}): {e}"
+                )
+                await asyncio.sleep(0.1 * (2**retry_count))  # Exponential backoff
+                await self._init_db(retry_count + 1, max_retries)
+            else:
                 telemetry.logfire.error(
-                    f"Failed to initialize database after {max_retries} attempts: {e}"
+                    f"Database initialization failed after {max_retries} attempts: {e}"
                 )
                 raise
-            telemetry.logfire.error(
-                f"Database corruption detected: {e}. Reinitializing {self.db_path} (attempt {retry_count + 1}/{max_retries})."
-            )
-            # Create unique backup filename with timestamp to avoid conflicts
-            timestamp = int(time.time())
-            base_name = self.db_path.stem
-            suffix = self.db_path.suffix
-
-            # Find the first available backup path, handling gaps in sequence
-            backup_path = None
-            MAX_BACKUP_SUFFIX_ATTEMPTS = 100
-            MAX_CLEANUP_ATTEMPTS = 10  # Prevent infinite cleanup loops
-            cleanup_attempts = 0
-
-            # First try the base path
-            candidate_path = self.db_path.parent / f"{base_name}{suffix}.corrupt.{timestamp}"
-            try:
-                if not candidate_path.exists():
-                    backup_path = candidate_path
-            except OSError as stat_error:
-                telemetry.logfire.warn(f"Could not stat backup path {candidate_path}: {stat_error}")
-
-            # If base path is taken, find the first available gap in sequence
-            if backup_path is None:
-                for counter in range(1, MAX_BACKUP_SUFFIX_ATTEMPTS + 1):
-                    candidate_path = (
-                        self.db_path.parent / f"{base_name}{suffix}.corrupt.{timestamp}.{counter}"
-                    )
-                    try:
-                        if not candidate_path.exists():
-                            backup_path = candidate_path
-                            break
-                    except OSError as stat_error:
-                        telemetry.logfire.warn(
-                            f"Could not stat backup path {candidate_path}: {stat_error}"
-                        )
-                        continue
-
-            # If no gaps found, we need to clean up old backups
-            if backup_path is None:
-                while cleanup_attempts < MAX_CLEANUP_ATTEMPTS:
-                    cleanup_attempts += 1
-
-                    # Find and remove the oldest backup file
-                    backup_pattern = f"{base_name}{suffix}.corrupt.*"
-                    try:
-                        existing_backups = list(self.db_path.parent.glob(backup_pattern))
-                        if existing_backups:
-                            # Find oldest backup with proper exception handling
-                            oldest_backup = None
-                            oldest_time = float("inf")
-
-                            for backup in existing_backups:
-                                try:
-                                    backup_time = backup.stat().st_mtime
-                                    if backup_time < oldest_time:
-                                        oldest_time = backup_time
-                                        oldest_backup = backup
-                                except OSError as stat_error:
-                                    telemetry.logfire.warn(
-                                        f"Could not stat backup file {backup}: {stat_error}"
-                                    )
-                                    continue
-
-                            if oldest_backup:
-                                telemetry.logfire.error(
-                                    f"Too many backup files exist, removing oldest: {oldest_backup}"
-                                )
-                                try:
-                                    oldest_backup.unlink(missing_ok=True)
-                                    # After removing oldest, try the base path again
-                                    candidate_path = (
-                                        self.db_path.parent
-                                        / f"{base_name}{suffix}.corrupt.{timestamp}"
-                                    )
-                                    try:
-                                        if not candidate_path.exists():
-                                            backup_path = candidate_path
-                                            break
-                                    except OSError as stat_error:
-                                        telemetry.logfire.warn(
-                                            f"Could not stat backup path {candidate_path} after cleanup: {stat_error}"
-                                        )
-                                except OSError as unlink_error:
-                                    telemetry.logfire.error(
-                                        f"Failed to remove oldest backup {oldest_backup}: {unlink_error}"
-                                    )
-                            else:
-                                telemetry.logfire.warn("No valid backup files found to remove")
-                    except OSError as glob_error:
-                        telemetry.logfire.error(f"Failed to glob backup files: {glob_error}")
-
-                # If still no path found after cleanup attempts, use a unique timestamp-based name
-                if backup_path is None:
-                    telemetry.logfire.error(
-                        f"Failed to find available backup path after {MAX_CLEANUP_ATTEMPTS} cleanup attempts"
-                    )
-                    backup_path = (
-                        self.db_path.parent
-                        / f"{base_name}{suffix}.corrupt.{timestamp}.{int(time.time())}"
-                    )
-
-            try:
-                self.db_path.rename(backup_path)
-                telemetry.logfire.warn(f"Corrupted DB moved to {backup_path}")
-            except (FileExistsError, OSError) as rename_error:
-                telemetry.logfire.error(
-                    f"Failed to rename corrupted DB to {backup_path}: {rename_error}"
-                )
-                # Fallback: try to remove the corrupted file
-                try:
-                    self.db_path.unlink(missing_ok=True)
-                    telemetry.logfire.warn(f"Removed corrupted DB file: {self.db_path}")
-                except OSError as unlink_error:
-                    telemetry.logfire.error(f"Failed to remove corrupted DB: {unlink_error}")
-                    raise sqlite3.DatabaseError(f"Database corruption recovery failed: {e}")
-
-            await self._init_db(retry_count=retry_count + 1, max_retries=max_retries)
 
     async def _migrate_existing_schema(self, db: aiosqlite.Connection) -> None:
         """Migrate existing database schema to the new optimized structure."""
@@ -629,6 +551,12 @@ class SQLiteBackend(StateBackend):
         if self._connection_pool:
             await self._connection_pool.close()
             self._connection_pool = None
+
+        # Close shared connection for in-memory databases
+        if self._shared_connection:
+            await self._shared_connection.close()
+            self._shared_connection = None
+
         self._initialized = False
 
         # No global locks to clean up
@@ -809,15 +737,21 @@ class SQLiteBackend(StateBackend):
         """Delete workflow state."""
         await self._ensure_init()
         async with self._lock:
-            async with aiosqlite.connect(self.db_path) as db:
+            db = await self._get_db_connection()
+            try:
                 await db.execute("DELETE FROM workflow_state WHERE run_id = ?", (run_id,))
                 await db.commit()
+            finally:
+                # Only close if it's not a shared connection
+                if str(self.db_path) != ":memory:":
+                    await db.close()
 
     async def list_states(self, status: Optional[str] = None) -> List[Dict[str, Any]]:
         """List workflow states with optional status filter."""
         await self._ensure_init()
         async with self._lock:
-            async with aiosqlite.connect(self.db_path) as db:
+            db = await self._get_db_connection()
+            try:
                 if status:
                     async with db.execute(
                         "SELECT run_id, status, created_at, updated_at FROM workflow_state WHERE status = ? ORDER BY created_at DESC",
@@ -839,6 +773,10 @@ class SQLiteBackend(StateBackend):
                     }
                     for row in rows
                 ]
+            finally:
+                # Only close if it's not a shared connection
+                if str(self.db_path) != ":memory:":
+                    await db.close()
 
     async def list_workflows(
         self,
@@ -849,66 +787,60 @@ class SQLiteBackend(StateBackend):
     ) -> List[Dict[str, Any]]:
         """Enhanced workflow listing with additional filters and metadata."""
         await self._ensure_init()
-        import sqlite3
-        import sys
+        async with self._lock:
+            db = await self._get_db_connection()
+            try:
+                # Build query with optional filters
+                query = """
+                    SELECT run_id, pipeline_id, pipeline_name, pipeline_version,
+                           current_step_index, status, created_at, updated_at,
+                           total_steps, error_message, execution_time_ms, memory_usage_mb
+                    FROM workflow_state
+                    WHERE 1=1
+                """
+                params = []
+                if status:
+                    query += " AND status = ?"
+                    params.append(status)
+                if pipeline_id:
+                    query += " AND pipeline_id = ?"
+                    params.append(pipeline_id)
+                query += " ORDER BY created_at DESC"
+                if limit is not None:
+                    query += " LIMIT ?"
+                    params.append(str(limit))
+                if offset:
+                    query += " OFFSET ?"
+                    params.append(str(offset))
 
-        # Use synchronous sqlite3 for diagnostics
-        conn = sqlite3.connect(str(self.db_path))
-        try:
-            # Print all rows in workflow_state
-            all_rows = conn.execute("SELECT * FROM workflow_state").fetchall()
-            print(
-                f"[SYNC DEBUG] ALL workflow_state rows in list_workflows: {all_rows}",
-                file=sys.stderr,
-            )
-            # Build query with optional filters
-            query = """
-                SELECT run_id, pipeline_id, pipeline_name, pipeline_version,
-                       current_step_index, status, created_at, updated_at,
-                       total_steps, error_message, execution_time_ms, memory_usage_mb
-                FROM workflow_state
-                WHERE 1=1
-            """
-            params = []
-            if status:
-                query += " AND status = ?"
-                params.append(status)
-            if pipeline_id:
-                query += " AND pipeline_id = ?"
-                params.append(pipeline_id)
-            query += " ORDER BY created_at DESC"
-            if limit is not None:
-                query += " LIMIT ?"
-                params.append(str(limit))
-            if offset:
-                query += " OFFSET ?"
-                params.append(str(offset))
-            rows = conn.execute(query, params).fetchall()
-            print(f"[SYNC DEBUG] list_workflows raw rows: {rows}", file=sys.stderr)
-            result = []
-            for row in rows:
-                if row is None:
-                    continue
-                result.append(
-                    {
-                        "run_id": row[0],
-                        "pipeline_id": row[1],
-                        "pipeline_name": row[2],
-                        "pipeline_version": row[3],
-                        "current_step_index": row[4],
-                        "status": row[5],
-                        "created_at": row[6],
-                        "updated_at": row[7],
-                        "total_steps": row[8] or 0,
-                        "error_message": row[9],
-                        "execution_time_ms": row[10],
-                        "memory_usage_mb": row[11],
-                    }
-                )
-            print(f"[SYNC DEBUG] list_workflows result: {result}", file=sys.stderr)
-            return result
-        finally:
-            conn.close()
+                async with db.execute(query, params) as cursor:
+                    rows = await cursor.fetchall()
+
+                result = []
+                for row in rows:
+                    if row is None:
+                        continue
+                    result.append(
+                        {
+                            "run_id": row[0],
+                            "pipeline_id": row[1],
+                            "pipeline_name": row[2],
+                            "pipeline_version": row[3],
+                            "current_step_index": row[4],
+                            "status": row[5],
+                            "created_at": row[6],
+                            "updated_at": row[7],
+                            "total_steps": row[8],
+                            "error_message": row[9],
+                            "execution_time_ms": row[10],
+                            "memory_usage_mb": row[11],
+                        }
+                    )
+                return result
+            finally:
+                # Only close if it's not a shared connection
+                if str(self.db_path) != ":memory:":
+                    await db.close()
 
     async def list_runs(
         self,

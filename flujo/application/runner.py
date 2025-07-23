@@ -20,6 +20,9 @@ from typing import (
     Literal,
 )
 
+import uuid
+import warnings
+
 from pydantic import ValidationError
 
 from ..infra import telemetry
@@ -69,8 +72,6 @@ from .core.state_manager import StateManager
 from .core.usage_governor import UsageGovernor
 from .core.step_coordinator import StepCoordinator
 
-import uuid
-import warnings
 
 _signature_cache_weak: weakref.WeakKeyDictionary[Callable[..., Any], inspect.Signature] = (
     weakref.WeakKeyDictionary()
@@ -277,7 +278,12 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             from pathlib import Path
             from ..state.backends.sqlite import SQLiteBackend
 
-            self.state_backend = SQLiteBackend(Path.cwd() / "flujo_ops.db")
+            # Use in-memory database for tests to prevent conflicts
+            if os.getenv("FLUJO_TEST_MODE"):
+                # Use in-memory database for tests to avoid file conflicts
+                self.state_backend = SQLiteBackend(Path(":memory:"))
+            else:
+                self.state_backend = SQLiteBackend(Path.cwd() / "flujo_ops.db")
         else:
             self.state_backend = state_backend
         self.delete_on_completion = delete_on_completion
