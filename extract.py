@@ -44,14 +44,15 @@ while skipping folders like `venv`, `.streamlit`, and others.
 
 import os
 import argparse
+import fnmatch
 from collections import defaultdict
 import sys
 
 
-# Hardcoded folders to always exclude
+# Hardcoded folders to always exclude (exact matches only)
 DEFAULT_EXCLUDE_FOLDERS = {
     # Python build artifacts
-    "__pycache__", "dist", "build", ".eggs", "*.egg-info", ".installed.cfg",
+    "__pycache__", "dist", "build", ".eggs", ".installed.cfg",
 
     # Testing and coverage
     ".pytest_cache", ".coverage", "coverage", "htmlcov", ".tox", ".nox", ".hypothesis",
@@ -81,6 +82,12 @@ DEFAULT_EXCLUDE_FOLDERS = {
     ".streamlit", "site-packages", "bin", ".git", "logs", "alembic", "output"
 }
 
+# Folder patterns to exclude (glob patterns for folder matching)
+DEFAULT_EXCLUDE_FOLDER_PATTERNS = {
+    # Python build artifacts with glob patterns
+    "*.egg-info",
+}
+
 # Add this set for git-specific files
 GIT_SPECIFIC_FILES = {".gitignore", ".gitattributes", ".gitmodules"}
 
@@ -108,8 +115,8 @@ EXCLUDED_FILE_PATTERNS = {
     # Logs and databases
     "*.log", "*.sqlite", "*.db", "*.corrupt.*",
 
-    # Docker
-    "docker-compose.override.yml", "*.env.docker",
+    # Docker (excluding .env.docker files that should be included)
+    "docker-compose.override.yml",
 
     # uv dependency lock file
     "uv.lock",
@@ -122,11 +129,23 @@ EXCLUDED_FILE_PATTERNS = {
 }
 
 
-def should_exclude_path(path_parts, exclude_folders, exclude_specific_paths=None, base_folder=None):
-    """Check if a path should be excluded based on folder names or specific paths."""
-    # Check for folder name exclusions
+def should_exclude_path(path_parts, exclude_folders, exclude_folder_patterns, exclude_specific_paths=None, base_folder=None):
+    """Check if a path should be excluded based on folder names, patterns, or specific paths."""
+    # Handle None parameters
+    if exclude_folders is None:
+        exclude_folders = set()
+    if exclude_folder_patterns is None:
+        exclude_folder_patterns = set()
+
+    # Check for exact folder name exclusions
     if any(part in exclude_folders for part in path_parts):
         return True
+
+    # Check for folder pattern exclusions (glob patterns)
+    for part in path_parts:
+        for pattern in exclude_folder_patterns:
+            if fnmatch.fnmatch(part, pattern):
+                return True
 
     # Check for specific path exclusions
     if exclude_specific_paths and base_folder:
@@ -139,8 +158,10 @@ def should_exclude_path(path_parts, exclude_folders, exclude_specific_paths=None
             for exclude_path in exclude_specific_paths:
                 exclude_path_norm = os.path.normpath(exclude_path)
 
-                # Check if the relative path starts with the exclude path
-                if rel_path_norm.startswith(exclude_path_norm):
+                # Use more precise path matching to avoid over-exclusion
+                # Only exclude if it's an exact match or a direct subdirectory
+                if (rel_path_norm == exclude_path_norm or
+                    rel_path_norm.startswith(exclude_path_norm + os.sep)):
                     return True
         except ValueError:
             # If the path is not relative to base_folder, skip this check
@@ -151,7 +172,9 @@ def should_exclude_path(path_parts, exclude_folders, exclude_specific_paths=None
 
 def should_exclude_file(filename, excluded_patterns):
     """Check if a file should be excluded based on filename patterns."""
-    import fnmatch
+    # Handle None patterns
+    if excluded_patterns is None:
+        return False
 
     for pattern in excluded_patterns:
         if fnmatch.fnmatch(filename, pattern):
@@ -159,11 +182,11 @@ def should_exclude_file(filename, excluded_patterns):
     return False
 
 
-def build_tree_structure(base_folder, exclude_folders, allowed_extensions, docker_files, excluded_file_patterns, exclude_specific_paths=None):
+def build_tree_structure(base_folder, exclude_folders, exclude_folder_patterns, allowed_extensions, docker_files, excluded_file_patterns, exclude_specific_paths=None):
     tree = defaultdict(list)
     for root, dirs, files in os.walk(base_folder):
         path_parts = root.split(os.sep)
-        if should_exclude_path(path_parts, exclude_folders, exclude_specific_paths, base_folder):
+        if should_exclude_path(path_parts, exclude_folders, exclude_folder_patterns, exclude_specific_paths, base_folder):
             dirs[:] = []
             continue
 
@@ -219,12 +242,12 @@ def write_markdown_file(output_path, md_lines):
         sys.exit(1)
 
 
-def process_target_folder(target_folder, folder_name, exclude_folders, allowed_extensions, docker_files, venv_indicators, script_path, output_path, md_lines, excluded_file_patterns, exclude_specific_paths=None):
+def process_target_folder(target_folder, folder_name, exclude_folders, exclude_folder_patterns, allowed_extensions, docker_files, venv_indicators, script_path, output_path, md_lines, excluded_file_patterns, exclude_specific_paths=None):
     """Process a single target folder and append its content to md_lines."""
     for root, dirs, files in os.walk(target_folder):
         found_venv = any(dir_name in venv_indicators for dir_name in dirs)
         path_parts = root.split(os.sep)
-        if should_exclude_path(path_parts, exclude_folders, exclude_specific_paths, target_folder):
+        if should_exclude_path(path_parts, exclude_folders, exclude_folder_patterns, exclude_specific_paths, target_folder):
             dirs[:] = []
             continue
         dirs[:] = [d for d in dirs if d not in exclude_folders]
@@ -328,12 +351,13 @@ def main():
     output_filename = args.output_file
     output_path = os.path.join(output_dir, output_filename)
     exclude_folders = DEFAULT_EXCLUDE_FOLDERS.union(set(args.exclude))
+    exclude_folder_patterns = DEFAULT_EXCLUDE_FOLDER_PATTERNS
     exclude_specific_paths = args.exclude_folder
     script_path = os.path.abspath(__file__)
 
     combined_tree = defaultdict(list)
     for target_folder in target_folders:
-        tree = build_tree_structure(target_folder, exclude_folders, allowed_extensions, docker_files, EXCLUDED_FILE_PATTERNS, exclude_specific_paths)
+        tree = build_tree_structure(target_folder, exclude_folders, exclude_folder_patterns, allowed_extensions, docker_files, EXCLUDED_FILE_PATTERNS, exclude_specific_paths)
         folder_name = os.path.basename(target_folder)
         for folder, files in tree.items():
             if folder == ".":
@@ -350,6 +374,7 @@ def main():
             target_folder,
             folder_name,
             exclude_folders,
+            exclude_folder_patterns,
             allowed_extensions,
             docker_files,
             venv_indicators,
