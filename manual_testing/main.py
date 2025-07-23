@@ -8,10 +8,10 @@ from flujo import Flujo
 from flujo.domain.models import PipelineResult
 from manual_testing.cohort_pipeline import COHORT_CLARIFICATION_PIPELINE, CohortContext, HumanClarificationInput
 
-def main():
+async def main():
     """
     Run the cohort clarification pipeline interactively via CLI.
-    Handles PausedException for human-in-the-loop steps and resumes as needed.
+    Handles pauses for human-in-the-loop steps and resumes as needed.
     """
     print("Flujo Clinical Cohort Definition Clarification (Agentic & Human-in-the-Loop)\n" + "="*80)
 
@@ -20,7 +20,7 @@ def main():
     initial_definition = (
         "Patients with asthma, on medication, seen in clinic."
     )
-    # CRUCIAL: Initialize current_definition in initial_context_data for robust context
+    # CRUCIAL: Initialize current_definition for robust context management
     initial_context_data = {
         "run_id": run_id,
         "initial_prompt": initial_definition,
@@ -30,30 +30,24 @@ def main():
     print(initial_definition)
     print("-" * 30)
 
+    # Use run_async to get the final or paused result
     result: Optional[PipelineResult[CohortContext]] = None
-    while True:
-        try:
-            # Run the pipeline. If it pauses, PausedException will be raised.
-            result = runner.run(initial_definition, run_id=run_id, initial_context_data=initial_context_data)
-            break  # Pipeline completed
-        except Exception as e:
-            from flujo.exceptions import PausedException
-            if isinstance(e, PausedException):
-                print(f"\n--- PAUSED FOR HUMAN INPUT ---")
-                print(f"AI Agent Request: {e.message}")
-                human_input_text = input("Your clarification: ").strip()
-                if result is None:
-                    print("Error: Pipeline paused but no partial result available to resume from.")
-                    break
-                human_input_model = HumanClarificationInput(clarification=human_input_text)
-                # Resume pipeline asynchronously for human input
-                result = asyncio.run(runner.resume_async(result, human_input_model))
-            else:
-                print(f"\n--- PIPELINE FAILED ---")
-                print(f"Error: {e}")
-                import traceback
-                traceback.print_exc()
-                break
+    async for item in runner.run_async(initial_definition, run_id=run_id, initial_context_data=initial_context_data):
+        result = item
+
+    # Loop to handle multiple pauses if necessary
+    while result and result.final_pipeline_context and result.final_pipeline_context.scratchpad.get("status") == "paused":
+        print(f"\n--- PAUSED FOR HUMAN INPUT ---")
+        pause_message = result.final_pipeline_context.scratchpad.get("pause_message", "No message provided.")
+        print(f"AI Agent Request: {pause_message}")
+
+        human_input_text = input("Your clarification: ").strip()
+        human_input_model = HumanClarificationInput(clarification=human_input_text)
+
+        print("\n--- RESUMING PIPELINE ---")
+        # Resume the pipeline from the paused state
+        result = await runner.resume_async(result, human_input_model)
+
     print("\n" + "="*80)
     if result and result.final_pipeline_context:
         final_context = result.final_pipeline_context
@@ -75,4 +69,5 @@ def main():
         print("Pipeline execution did not yield a result.")
 
 if __name__ == "__main__":
-    main()
+    # Ensure you have OPENAI_API_KEY set in your .env file
+    asyncio.run(main())

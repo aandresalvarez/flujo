@@ -62,23 +62,23 @@ ClarificationAgent = make_agent_async(
 # --- 3. Define Pipeline Steps using @step decorator ---
 
 # IMPORTANT: This step directly modifies context, so do NOT use updates_context=True.
-@step(name="AssessAndClarify")
-async def assess_and_clarify(definition_to_assess: str, *, context: CohortContext) -> str:
+@step(name="AssessAndClarify", updates_context=True)
+async def assess_and_clarify(definition_to_assess: str, *, context: CohortContext) -> dict:
     """
-    Uses the ClarificationAgent to assess the definition and provide a response.
-    Updates context with clarity status and increments request count.
+    Uses the ClarificationAgent and returns a dictionary containing context updates
+    and the raw agent response for the next step.
     """
     agent_response = await ClarificationAgent.run(definition_to_assess, context=context)
 
+    updates = {"agent_response": agent_response}  # Pass raw response to the router
     if agent_response.startswith("[CLARITY_CONFIRMED]"):
-        context.is_clear = True
-        context.current_definition = agent_response.replace("[CLARITY_CONFIRMED]", "").strip()
-        return context.current_definition
+        updates["is_clear"] = True
+        updates["current_definition"] = agent_response.replace("[CLARITY_CONFIRMED]", "").strip()
     else:
-        context.is_clear = False
-        context.clarification_requests_count += 1
-        # current_definition remains unchanged
-        return agent_response
+        updates["is_clear"] = False
+        updates["clarification_requests_count"] = context.clarification_requests_count + 1
+
+    return updates
 
 class HumanClarificationInput(BaseModel):
     """
@@ -100,14 +100,15 @@ async def incorporate_human_clarification(
     return {"current_definition": combined_definition}
 
 # --- 4. Define the Loop Structure ---
-def is_clarification_needed(agent_response: str, context: CohortContext) -> str:
+def is_clarification_needed(data: dict, context: CohortContext) -> str:
+    # The context is updated by the previous `assess_and_clarify` step
     return "DEFINITION_CLEAR" if context.is_clear else "CLARIFICATION_NEEDED"
 
 human_in_the_loop_step = Step.human_in_the_loop(
     name="HumanInputForClarification",
     message_for_user=(
         "The AI agent needs clarification. Please provide additional details:\n"
-        "AI Request: {input}"
+        "AI Request: {input[agent_response]}"
     ),
     input_schema=HumanClarificationInput,
 )
@@ -116,9 +117,7 @@ branch_clear_pipeline = Pipeline.from_step(
     Step.from_callable(lambda x: x, name="DefinitionConfirmed")
 )
 
-branch_clarify_pipeline = Pipeline.from_step(
-    human_in_the_loop_step >> incorporate_human_clarification
-)
+branch_clarify_pipeline = human_in_the_loop_step >> incorporate_human_clarification
 
 check_clarity_and_route = Step.branch_on(
     name="CheckClarityAndRoute",
@@ -129,7 +128,7 @@ check_clarity_and_route = Step.branch_on(
     },
 )
 
-loop_body = Pipeline.from_step(assess_and_clarify) >> check_clarity_and_route
+loop_body = assess_and_clarify >> check_clarity_and_route
 
 def loop_exit_condition(output: Any, context: CohortContext) -> bool:
     return context.is_clear
@@ -139,7 +138,7 @@ clarification_loop = Step.loop_until(
     loop_body_pipeline=loop_body,
     exit_condition_callable=loop_exit_condition,
     max_loops=10,
-    initial_input_to_loop_body_mapper=lambda initial_prompt_from_runner, ctx: initial_prompt_from_runner,
+    initial_input_to_loop_body_mapper=lambda initial_prompt_from_runner, ctx: ctx.current_definition,
     iteration_input_mapper=lambda last_output_of_loop_body, ctx, i: ctx.current_definition,
     loop_output_mapper=lambda last_output_of_loop_body, ctx: ctx.current_definition,
 )
