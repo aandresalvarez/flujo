@@ -848,6 +848,7 @@ class SQLiteBackend(StateBackend):
         offset: int = 0,
     ) -> List[Dict[str, Any]]:
         """Enhanced workflow listing with additional filters and metadata."""
+        await self._ensure_init()
         import sqlite3
         import sys
 
