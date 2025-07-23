@@ -40,6 +40,8 @@ jobs:
 
       - name: Run E2E test against live API
         env:
+          CI: "true"
+          FLUJO_TEST_MODE: "1"
           OPENAI_API_KEY: ${{ secrets.E2E_OPENAI_API_KEY }}
           CI_E2E_RUN: "true"
         run: |
@@ -47,6 +49,8 @@ jobs:
 
       - name: Run comprehensive golden transcript tests
         env:
+          CI: "true"
+          FLUJO_TEST_MODE: "1"
           OPENAI_API_KEY: ${{ secrets.E2E_OPENAI_API_KEY }}
           CI_E2E_RUN: "true"
         run: |
