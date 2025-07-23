@@ -61,18 +61,11 @@ def list_runs(
 ) -> None:
     """List stored runs."""
     backend = load_backend_from_config()
-    import sys
-
-    print(f"[DEBUG] Using backend: {backend}", file=sys.stderr)
     try:
         runs = asyncio.run(backend.list_workflows(status=status, pipeline_id=pipeline, limit=limit))
-        print(f"[DEBUG] runs returned from backend: {runs}", file=sys.stderr)
     except Exception as e:
-        import traceback
-
-        print(f"[DEBUG] Exception in list_runs: {e}", file=sys.stderr)
-        traceback.print_exc(file=sys.stderr)
-        raise
+        typer.echo(f"Error accessing backend: {e}", err=True)
+        raise typer.Exit(1)
 
     table = Table("run_id", "pipeline", "status", "created_at")
     for r in runs:

@@ -42,7 +42,7 @@ def main():
         subprocess.run(["sqlite3", db_path, insert_sql], check=True)
 
     env = os.environ.copy()
-    env["FLUJO_STATE_URI"] = f"sqlite:////{os.path.abspath(db_path)}"
+    env["FLUJO_STATE_URI"] = f"sqlite:///{os.path.abspath(db_path)}"
     output = run_cli("flujo lens list", env=env)
     for i in range(5):
         assert f"run_{i}" in output, f"run_{i} not found in CLI output"
