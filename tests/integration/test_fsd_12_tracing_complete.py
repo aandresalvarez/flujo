@@ -34,8 +34,8 @@ async def simple_step(input_data: str, context: PipelineContext) -> str:
 async def loop_step(input_data: str, context: PipelineContext) -> list[str]:
     """A step that processes data in a loop."""
     results = []
-    for i in range(2):
-        result = f"loop_{input_data}_{i}"
+    for iteration in range(2):
+        result = f"loop_{input_data}_{iteration}"
         results.append(result)
     return results
 
@@ -50,8 +50,10 @@ class TestFSD12TracingComplete:
             db_path = Path(f.name)
         yield db_path
         # Cleanup
-        if db_path.exists():
+        try:
             db_path.unlink()
+        except FileNotFoundError:
+            pass
 
     @pytest.fixture
     def state_backend(self, temp_db_path):
@@ -99,19 +101,20 @@ class TestFSD12TracingComplete:
         )
 
         # Run the pipeline
+        final_result = None
         async for result in flujo.run_async("test_input"):
-            pass
+            final_result = result
 
         # Verify trace tree was generated
-        assert result.trace_tree is not None
-        assert result.trace_tree.name == "pipeline_root"
-        assert result.trace_tree.status == "completed"
+        assert final_result.trace_tree is not None
+        assert final_result.trace_tree.name == "pipeline_root"
+        assert final_result.trace_tree.status == "completed"
 
         # Verify trace has children (the steps)
-        assert len(result.trace_tree.children) > 0
+        assert len(final_result.trace_tree.children) > 0
 
         # Verify trace was persisted to database
-        run_id = result.final_pipeline_context.run_id
+        run_id = final_result.final_pipeline_context.run_id
         trace = await state_backend.get_trace(run_id)
         assert trace is not None
         assert trace["name"] == "pipeline_root"
@@ -127,11 +130,12 @@ class TestFSD12TracingComplete:
             state_backend=state_backend,
         )
 
+        final_result = None
         async for result in flujo.run_async("test_input"):
-            pass
+            final_result = result
 
         # Verify root span
-        root_span = result.trace_tree
+        root_span = final_result.trace_tree
         assert root_span.name == "pipeline_root"
 
         # Verify step spans exist
@@ -161,14 +165,15 @@ class TestFSD12TracingComplete:
             state_backend=state_backend,
         )
 
+        final_result = None
         async for result in flujo.run_async("test_input"):
-            pass
+            final_result = result
 
         # Verify step history is captured
-        assert len(result.step_history) > 0
+        assert len(final_result.step_history) > 0
 
         # Verify each step has proper metadata
-        for step_result in result.step_history:
+        for step_result in final_result.step_history:
             assert step_result.name is not None
             assert step_result.success is not None
             assert step_result.attempts >= 0
@@ -184,10 +189,11 @@ class TestFSD12TracingComplete:
         )
 
         # Run pipeline and get run_id
+        final_result = None
         async for result in flujo.run_async("test_input"):
-            pass
+            final_result = result
 
-        run_id = result.final_pipeline_context.run_id
+        run_id = final_result.final_pipeline_context.run_id
 
         # Create new backend instance to simulate restart
         new_backend = SQLiteBackend(state_backend.db_path)
@@ -225,7 +231,7 @@ class TestFSD12TracingComplete:
 
         start_time = asyncio.get_event_loop().time()
         async for result in flujo_no_trace.run_async("test_input"):
-            pass
+            pass  # We only need timing, not the result
         no_trace_time = asyncio.get_event_loop().time() - start_time
 
         # Test with tracing
@@ -237,7 +243,7 @@ class TestFSD12TracingComplete:
 
         start_time = asyncio.get_event_loop().time()
         async for result in flujo_with_trace.run_async("test_input"):
-            pass
+            pass  # We only need timing, not the result
         with_trace_time = asyncio.get_event_loop().time() - start_time
 
         # Verify tracing overhead is reasonable (less than 50% increase)
@@ -265,16 +271,17 @@ class TestFSD12TracingComplete:
         )
 
         # Run the pipeline (should fail)
+        final_result = None
         async for result in flujo.run_async("test_input"):
-            pass
+            final_result = result
 
         # Verify trace tree was still generated
-        assert result.trace_tree is not None
-        assert result.trace_tree.name == "pipeline_root"
+        assert final_result.trace_tree is not None
+        assert final_result.trace_tree.name == "pipeline_root"
 
         # Verify failed step is marked as failed
         failed_step = None
-        for child in result.trace_tree.children:
+        for child in final_result.trace_tree.children:
             if child.name == "failing_step":
                 failed_step = child
                 break
@@ -287,8 +294,8 @@ class TestFSD12TracingComplete:
         """Test tracing with a larger pipeline to verify scalability."""
         # Create a larger pipeline with many steps
         steps = []
-        for i in range(10):
-            steps.append(Step.from_callable(simple_step, name=f"step_{i}"))
+        for step_index in range(10):
+            steps.append(Step.from_callable(simple_step, name=f"step_{step_index}"))
 
         large_pipeline = Pipeline(steps=steps)
 
@@ -298,16 +305,17 @@ class TestFSD12TracingComplete:
             state_backend=state_backend,
         )
 
+        final_result = None
         async for result in flujo.run_async("test_input"):
-            pass
+            final_result = result
 
         # Verify trace tree was generated
-        assert result.trace_tree is not None
+        assert final_result.trace_tree is not None
 
         # Verify all steps are captured
-        assert len(result.step_history) == 10
+        assert len(final_result.step_history) == 10
 
         # Verify trace can be persisted and retrieved
-        run_id = result.final_pipeline_context.run_id
+        run_id = final_result.final_pipeline_context.run_id
         trace = await state_backend.get_trace(run_id)
         assert trace is not None

@@ -40,10 +40,10 @@ async def loop_step(input_data: str, context: PipelineContext) -> list[str]:
     """A step that processes data in a loop."""
     print(f"   🔄 Executing loop_step with input: {input_data}")
     results = []
-    for i in range(2):
-        result = f"loop_{input_data}_{i}"
+    for iteration in range(2):
+        result = f"loop_{input_data}_{iteration}"
         results.append(result)
-        print(f"     📝 Loop iteration {i}: {result}")
+        print(f"     📝 Loop iteration {iteration}: {result}")
     return results
 
 
@@ -112,29 +112,30 @@ async def demo_tracing_functionality():
         print("🔄 Running pipeline...")
 
         # Run the pipeline
+        final_result = None
         async for result in flujo.run_async("demo_input"):
-            pass
+            final_result = result
 
         print("✅ Pipeline completed successfully!")
         print()
 
         # Access trace information
         print("🌳 Trace Information:")
-        print(f"   📊 Trace generated: {result.trace_tree is not None}")
-        print(f"   🏷️  Root span name: {result.trace_tree.name}")
-        print(f"   📈 Status: {result.trace_tree.status}")
-        print(f"   ⏱️  Duration: {result.trace_tree.end_time - result.trace_tree.start_time:.3f}s")
-        print(f"   📝 Total steps: {len(result.step_history)}")
-        print(f"   🌿 Child spans: {len(result.trace_tree.children)}")
+        print(f"   📊 Trace generated: {final_result.trace_tree is not None}")
+        print(f"   🏷️  Root span name: {final_result.trace_tree.name}")
+        print(f"   📈 Status: {final_result.trace_tree.status}")
+        print(f"   ⏱️  Duration: {final_result.trace_tree.end_time - final_result.trace_tree.start_time:.3f}s")
+        print(f"   📝 Total steps: {len(final_result.step_history)}")
+        print(f"   🌿 Child spans: {len(final_result.trace_tree.children)}")
 
         # Show step history
         print("\n📋 Step History:")
-        for i, step_result in enumerate(result.step_history):
+        for i, step_result in enumerate(final_result.step_history):
             status = "success" if step_result.success else "failed"
             print(f"   {i+1}. {step_result.name}: {status} ({step_result.latency_s:.3f}s)")
 
         # Access trace from database
-        run_id = result.final_pipeline_context.run_id
+        run_id = final_result.final_pipeline_context.run_id
         print(f"\n💾 Trace persisted to database with run_id: {run_id}")
 
         # Get spans from database
@@ -186,21 +187,22 @@ async def demo_error_handling():
         print("🔄 Running pipeline (will fail)...")
 
         # Run the pipeline (will fail)
+        final_result = None
         async for result in flujo.run_async("demo_input"):
-            pass
+            final_result = result
 
         print("❌ Pipeline failed as expected!")
         print()
 
         # Access trace information
         print("🌳 Error Trace Information:")
-        print(f"   📊 Trace generated: {result.trace_tree is not None}")
-        print(f"   🏷️  Root span name: {result.trace_tree.name}")
-        print(f"   📈 Status: {result.trace_tree.status}")
+        print(f"   📊 Trace generated: {final_result.trace_tree is not None}")
+        print(f"   🏷️  Root span name: {final_result.trace_tree.name}")
+        print(f"   📈 Status: {final_result.trace_tree.status}")
 
         # Find failed step
         failed_step = None
-        for child in result.trace_tree.children:
+        for child in final_result.trace_tree.children:
             if child.name == "failing_step":
                 failed_step = child
                 break
@@ -212,12 +214,12 @@ async def demo_error_handling():
 
         # Show step history
         print("\n📋 Step History (including failed step):")
-        for i, step_result in enumerate(result.step_history):
+        for i, step_result in enumerate(final_result.step_history):
             status_icon = "❌" if not step_result.success else "✅"
             status = "failed" if not step_result.success else "success"
             print(f"   {i+1}. {status_icon} {step_result.name}: {status} ({step_result.latency_s:.3f}s)")
 
-        run_id = result.final_pipeline_context.run_id
+        run_id = final_result.final_pipeline_context.run_id
         print(f"\n💾 Error trace persisted to database with run_id: {run_id}")
 
     finally:
