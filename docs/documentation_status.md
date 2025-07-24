@@ -1,18 +1,18 @@
 # Documentation Status (Aligned with Flujo v0.6.x)
 This file tracks documentation coverage across modules.
 
-*Generated: June 2025*
+*Generated: July 2025*
 *Project Version: 0.6.0*
 
 ## Overview
 
-This report provides a comprehensive review of the `flujo` documentation status and updates made to align with the current codebase (v0.6.x).
+This report provides a comprehensive review of the `flujo` documentation status and updates made to align with the current codebase (v0.6.x), including the newly implemented FSD-12 tracing features.
 
 ## Documentation Review Summary
 
 ### ✅ Current Status: UPDATED AND ALIGNED
 
-The documentation has been systematically reviewed and updated to reflect the current project implementation. All major discrepancies have been resolved.
+The documentation has been systematically reviewed and updated to reflect the current project implementation. All major discrepancies have been resolved, including the new FSD-12 tracing and visualization capabilities.
 
 ## Key Updates Made
 
@@ -24,6 +24,8 @@ The documentation has been systematically reviewed and updated to reflect the cu
 - ✅ **UPDATED**: Added CLI command examples
 - ✅ **UPDATED**: Improved navigation structure for different user types
 - ✅ **UPDATED**: Added community and support links
+- ✅ **NEW**: Added FSD-12 tracing features to key features list
+- ✅ **NEW**: Added link to Rich Tracing & Debugging guide
 
 #### `docs/quickstart.md` - Getting Started Guide
 - ✅ **UPDATED**: Fixed CLI command syntax (removed incorrect `--prompt` flag)
@@ -38,6 +40,15 @@ The documentation has been systematically reviewed and updated to reflect the cu
   - `flujo add-eval-case`
 - ✅ **UPDATED**: Fixed orchestrator instantiation to include reflection agent
 - ✅ **UPDATED**: Corrected internal links to API reference
+- ✅ **NEW**: Added trace information access in examples
+- ✅ **NEW**: Added debugging with tracing section
+
+#### `docs/usage.md` - Usage Guide
+- ✅ **UPDATED**: Added comprehensive debugging and observability section
+- ✅ **NEW**: Added CLI tracing commands documentation
+- ✅ **NEW**: Added trace information access examples
+- ✅ **NEW**: Updated pipeline DSL examples with tracing
+- ✅ **NEW**: Added performance analysis examples
 
 #### `docs/installation.md` - Installation Guide
 - ✅ **UPDATED**: Added OpenTelemetry extras documentation
@@ -65,6 +76,25 @@ The documentation has been systematically reviewed and updated to reflect the cu
 - ✅ **UPDATED**: Updated configuration section
 - ✅ **UPDATED**: Enhanced best practices
 
+### 2. New FSD-12 Documentation
+
+#### `docs/FSD-12_IMPLEMENTATION_RESULTS.md` - Implementation Results
+- ✅ **NEW**: Comprehensive implementation documentation
+- ✅ **NEW**: Technical details and architecture
+- ✅ **NEW**: Performance characteristics and validation
+- ✅ **NEW**: User experience improvements
+- ✅ **NEW**: Compliance matrix with requirements
+- ✅ **NEW**: Impact assessment and next steps
+
+#### `docs/guides/tracing_guide.md` - Tracing and Debugging Guide
+- ✅ **NEW**: Complete tracing system overview
+- ✅ **NEW**: Step-by-step usage instructions
+- ✅ **NEW**: CLI debugging tools documentation
+- ✅ **NEW**: Advanced usage patterns
+- ✅ **NEW**: Best practices and troubleshooting
+- ✅ **NEW**: Integration with other tools
+- ✅ **NEW**: Performance monitoring guidelines
+
 ## Verified Components
 
 ### ✅ Project Structure Alignment
@@ -72,6 +102,7 @@ The documentation has been systematically reviewed and updated to reflect the cu
 - **Examples**: All 9 example files confirmed present and referenced correctly
 - **CLI Module**: `flujo/cli/main.py` - Confirmed with all documented commands
 - **Core Models**: All documented data models exist in `domain/models.py`
+- **Tracing System**: `flujo/tracing/manager.py` - Confirmed present and functional
 
 ### ✅ Version Information
 - **Project Version**: 0.6.0 (confirmed in `pyproject.toml`)
@@ -95,12 +126,23 @@ All documented CLI commands verified in `flujo/cli/main.py`:
 | `explain` | ✅ Verified | Explain pipeline structure |
 | `add-eval-case` | ✅ Verified | Add evaluation cases |
 
+### ✅ FSD-12 Tracing Commands Verification
+All tracing CLI commands verified in `flujo/cli/lens.py`:
+
+| Command | Status | Description |
+|---------|--------|-------------|
+| `lens list` | ✅ Verified | List all pipeline runs |
+| `lens show` | ✅ Verified | Show detailed run information |
+| `lens trace` | ✅ Verified | View hierarchical execution trace |
+| `lens spans` | ✅ Verified | List individual spans with filtering |
+| `lens stats` | ✅ Verified | Show aggregated span statistics |
+
 ### ✅ Core API Components Verified
 - **Default Recipe Class**: ✅ Confirmed with correct signature including reflection agent
 - **Pipeline DSL**: ✅ All documented step types and constructs verified
-- **Data Models**: ✅ Task, Candidate, Checklist, ChecklistItem all confirmed
-- **Agents**: ✅ All four default agents confirmed (review, solution, validator, reflection)
-- **Self-Improvement**: ✅ All documented classes and functions verified
+- **TraceManager**: ✅ Confirmed present and functional
+- **SQLiteBackend**: ✅ Confirmed with spans table and trace methods
+- **Span Data Structure**: ✅ Confirmed with hierarchical trace support
 
 ## Remaining Documentation Structure
 
