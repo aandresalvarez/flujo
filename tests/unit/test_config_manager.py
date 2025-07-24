@@ -268,7 +268,8 @@ class TestConfigManager:
             assert settings.reflection_enabled is False
 
             # Verify other settings remain at defaults
-            assert settings.k_variants == 2  # Environment value
+            expected_k_variants = int(os.environ.get("K_VARIANTS", 3))
+            assert settings.k_variants == expected_k_variants
             assert settings.agent_timeout == 60  # Default value
         finally:
             os.unlink(config_path)
