@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Union, cast
+import os
 
 try:
     import tomllib
@@ -100,13 +101,22 @@ class ConfigManager:
 
     def _find_config_file(self, config_path: Optional[Union[str, Path]]) -> Optional[Path]:
         """Find the configuration file to use."""
+        # 1. Check explicit argument
         if config_path:
             path = Path(config_path)
             if path.exists():
                 return path
             raise ConfigurationError(f"Configuration file not found: {config_path}")
 
-        # Search for flujo.toml in current directory and parent directories
+        # 2. Check environment variable
+        env_path = os.environ.get("FLUJO_CONFIG_PATH")
+        if env_path:
+            path = Path(env_path)
+            if path.exists():
+                return path
+            raise ConfigurationError(f"Configuration file not found: {env_path}")
+
+        # 3. Fallback: search for flujo.toml in CWD and parents
         current = Path.cwd()
         while current != current.parent:
             config_file = current / "flujo.toml"
@@ -220,24 +230,28 @@ class ConfigManager:
 _thread_local_config_manager = threading.local()
 
 
-def get_config_manager() -> ConfigManager:
-    """Get the thread-local configuration manager instance."""
-    if not hasattr(_thread_local_config_manager, "config_manager"):
+def get_config_manager(force_reload: bool = False) -> ConfigManager:
+    """Get the thread-local configuration manager instance. If force_reload is True, reset the instance."""
+    if force_reload or not hasattr(_thread_local_config_manager, "config_manager"):
         _thread_local_config_manager.config_manager = ConfigManager()
-
+    else:
+        # Also clear cached config/settings if present
+        cm = _thread_local_config_manager.config_manager
+        cm._config = None
+        cm._settings = None
     return cast(ConfigManager, _thread_local_config_manager.config_manager)
 
 
-def load_settings() -> Any:
-    """Load settings with configuration file overrides."""
-    return get_config_manager().get_settings()
+def load_settings(force_reload: bool = False) -> Any:
+    """Load settings with configuration file overrides. If force_reload is True, reload config/settings."""
+    return get_config_manager(force_reload=force_reload).get_settings()
 
 
-def get_cli_defaults(command: str) -> Dict[str, Any]:
-    """Get CLI defaults for a specific command."""
-    return get_config_manager().get_cli_defaults(command)
+def get_cli_defaults(command: str, force_reload: bool = False) -> Dict[str, Any]:
+    """Get CLI defaults for a specific command. If force_reload is True, reload config/settings."""
+    return get_config_manager(force_reload=force_reload).get_cli_defaults(command)
 
 
-def get_state_uri() -> Optional[str]:
-    """Get the state URI from configuration."""
-    return get_config_manager().get_state_uri()
+def get_state_uri(force_reload: bool = False) -> Optional[str]:
+    """Get the state URI from configuration. If force_reload is True, reload config/settings."""
+    return get_config_manager(force_reload=force_reload).get_state_uri()

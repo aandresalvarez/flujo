@@ -1,54 +1,11 @@
-from __future__ import annotations
-
 import typer
 import asyncio
-from typing import Dict, Any, Optional
+from typing import Optional
 from rich.table import Table
 from rich.console import Console
-from rich.tree import Tree
-
 from .config import load_backend_from_config
-
-
-def _format_node_label(node: Dict[str, Any]) -> str:
-    """Format the label for a tree node.
-
-    Args:
-        node: Dictionary containing span data with name, status, start_time, end_time, and attributes.
-
-    Returns:
-        Formatted string for display in the tree.
-    """
-    name = node.get("name", "(unknown)")
-    status = node.get("status", "unknown")
-    start = node.get("start_time")
-    end = node.get("end_time")
-
-    # Calculate duration
-    duration = None
-    if start is not None and end is not None:
-        try:
-            duration = float(end) - float(start)
-        except Exception:
-            duration = None
-
-    # Create status icon
-    status_icon = "✅" if status == "completed" else ("❌" if status == "failed" else "⏳")
-    label = f"{status_icon} [bold]{name}[/bold]"
-
-    # Add duration if available
-    if duration is not None:
-        label += f" [dim](duration: {duration:.2f}s)[/dim]"
-
-    # Add attributes
-    attrs = node.get("attributes", {})
-    if attrs:
-        attr_str = ", ".join(f"{k}={v}" for k, v in attrs.items() if v is not None)
-        if attr_str:
-            label += f" [dim]{attr_str}[/dim]"
-
-    return label
-
+from .lens_show import show_run
+from .lens_trace import trace_command
 
 lens_app = typer.Typer(help="Operational inspection commands")
 
@@ -87,65 +44,27 @@ def list_runs(
 
 
 @lens_app.command("show")
-def show_run(run_id: str) -> None:
-    """Show detailed information about a run."""
-    backend = load_backend_from_config()
-    try:
-        details = asyncio.run(backend.get_run_details(run_id))
-        steps = asyncio.run(backend.list_run_steps(run_id))
-    except NotImplementedError:
-        typer.echo("Backend does not support run inspection", err=True)
-        raise typer.Exit(1)
-
-    if details is None:
-        typer.echo("Run not found", err=True)
-        raise typer.Exit(1)
-    assert details is not None
-
-    table = Table("index", "step", "status")
-    for s in steps:
-        table.add_row(str(s.get("step_index")), s.get("step_name", "-"), s.get("status", "-"))
-
-    Console().print(f"Run {run_id} - {details['status']}")
-    Console().print(table)
+def show_command(
+    run_id: str,
+    show_output: bool = typer.Option(False, "--show-output", help="Show step outputs."),
+    show_input: bool = typer.Option(False, "--show-input", help="Show step inputs."),
+    show_error: bool = typer.Option(False, "--show-error", help="Show step errors."),
+    verbose: bool = typer.Option(
+        False, "--verbose", "-v", help="Show input, output, and error for each step."
+    ),
+) -> None:
+    show_run(
+        run_id,
+        show_output=show_output,
+        show_input=show_input,
+        show_error=show_error,
+        verbose=verbose,
+    )
 
 
 @lens_app.command("trace")
-def show_trace(run_id: str) -> None:
-    """Show the hierarchical execution trace for a run as a tree."""
-    backend = load_backend_from_config()
-    try:
-        trace = asyncio.run(backend.get_trace(run_id))
-    except NotImplementedError:
-        typer.echo(
-            f"The configured '{type(backend).__name__}' backend does not support trace inspection.",
-            err=True,
-        )
-        raise typer.Exit(1)
-    except Exception as e:
-        typer.echo(f"Error accessing backend: {e}", err=True)
-        raise typer.Exit(1)
-
-    if not trace:
-        typer.echo(f"No trace found for run_id: {run_id}", err=True)
-        typer.echo("This could mean:", err=True)
-        typer.echo("  - The run_id doesn't exist", err=True)
-        typer.echo("  - The run completed without trace data", err=True)
-        typer.echo("  - The backend doesn't support trace storage", err=True)
-        raise typer.Exit(1)
-
-    def _render_trace_tree(node: Dict[str, Any], parent: Optional[Tree] = None) -> Tree:
-        """Render a trace tree node and its children."""
-        label = _format_node_label(node)
-        tree = Tree(label) if parent is None else parent.add(label)
-
-        for child in node.get("children", []):
-            _render_trace_tree(child, tree)
-
-        return tree
-
-    tree = _render_trace_tree(trace)
-    Console().print(tree)
+def trace_command_cli(run_id: str) -> None:
+    trace_command(run_id)
 
 
 @lens_app.command("spans")

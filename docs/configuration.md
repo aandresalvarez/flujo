@@ -280,3 +280,35 @@ tool = Tool(
 - Read the [Usage Guide](usage.md) for examples
 - Explore [Advanced Topics](extending.md)
 - Check out [Use Cases](use_cases.md)
+
+## Robust Path Handling for SQLite State Backends
+
+Flujo supports robust, standards-compliant path handling for all SQLite state backends, ensuring correct behavior in both CLI and programmatic usage.
+
+### How `state_uri` is Resolved
+- **Absolute paths** (e.g., `sqlite:////abs/path/to/flujo_ops.db`) are used as-is.
+- **Relative paths** (e.g., `sqlite:///./flujo_ops.db` or `sqlite:///flujo_ops.db`) are always resolved relative to the current working directory of the process (not the config file location), following [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986#section-3).
+- The path normalization logic ensures that URIs like `sqlite:///./foo.db` are interpreted as `./foo.db` (relative), while `sqlite:////foo.db` is `/foo.db` (absolute).
+
+### How the CLI and Scripts Find the Config File
+- The CLI and all Flujo scripts search for `flujo.toml` in the current directory and parent directories, unless the `FLUJO_CONFIG_PATH` environment variable is set.
+- The `state_uri` in the config is then resolved as described above.
+- This guarantees that both CLI and scripts use the same database file, regardless of where they are run from, as long as the working directory and config are consistent.
+
+### Best Practices for Multi-Directory Projects and CI
+- Always use **relative paths** in `state_uri` for portable, environment-agnostic workflows.
+- In CI or multi-directory setups, set the working directory to the location where you want the database file to be created/accessed, or use an absolute path if you need a fixed location.
+- Use the `FLUJO_CONFIG_PATH` environment variable to explicitly specify the config file if running from outside the project root.
+
+### Example URIs and Their Effects
+- `sqlite:///./flujo_ops.db` → `./flujo_ops.db` (relative to CWD)
+- `sqlite:///flujo_ops.db` → `flujo_ops.db` (relative to CWD)
+- `sqlite:////tmp/flujo_ops.db` → `/tmp/flujo_ops.db` (absolute)
+- `sqlite:///../data/ops.db` → `../data/ops.db` (relative to CWD)
+
+### Design Principles
+- **Separation of concerns:** Path normalization and config loading are handled in dedicated, testable functions.
+- **No hardcoded paths:** All logic is parameterized and standards-compliant; no magic values are used.
+- **Single responsibility:** Each function does one thing—parsing, normalization, or backend instantiation.
+
+This approach guarantees robust, predictable, and portable state management for all Flujo workflows.

@@ -303,3 +303,60 @@ def test_lens_commands_with_environment_configuration(tmp_path: Path) -> None:
     result = runner.invoke(app, ["lens", "list"])
     assert result.exit_code == 0
     assert "env_test_run" in result.stdout
+
+
+def test_lens_cli_relative_path_resolution(tmp_path: Path, monkeypatch):
+    """Regression test: CLI resolves relative sqlite paths in state_uri correctly regardless of CWD."""
+    # Setup: create a subdir and a flujo.toml with relative state_uri
+    test_dir = tmp_path / "manual_testing"
+    test_dir.mkdir()
+    db_path = test_dir / "ops.db"
+    flujo_toml = test_dir / "flujo.toml"
+    flujo_toml.write_text('state_uri = "sqlite:///./ops.db"\n')
+
+    # Write a run to the db using the backend
+    backend = SQLiteBackend(db_path)
+    run_id = "relpath_run"
+    import asyncio
+    from datetime import datetime
+
+    asyncio.run(
+        backend.save_run_start(
+            {
+                "run_id": run_id,
+                "pipeline_id": "test-pid-relpath",
+                "pipeline_name": "relpath_pipeline",
+                "pipeline_version": "1.0",
+                "status": "running",
+                "created_at": datetime.utcnow().isoformat(),
+                "updated_at": datetime.utcnow().isoformat(),
+            }
+        )
+    )
+    asyncio.run(
+        backend.save_run_end(
+            run_id,
+            {
+                "status": "completed",
+                "end_time": datetime.utcnow(),
+                "total_cost": 0.0,
+                "final_context": {},
+            },
+        )
+    )
+
+    # Change CWD to the test_dir (where flujo.toml and db are)
+    old_cwd = os.getcwd()
+    os.chdir(test_dir)
+    try:
+        # The CLI should find the flujo.toml in CWD and resolve the relative path correctly
+        env = {
+            **os.environ,
+            "FLUJO_CONFIG_PATH": str(flujo_toml),
+            "FLUJO_STATE_URI": f"sqlite:///{db_path}",
+        }
+        result = runner.invoke(app, ["lens", "list"], env=env)
+        assert result.exit_code == 0, result.stdout + result.stderr
+        assert run_id in result.stdout
+    finally:
+        os.chdir(old_cwd)
