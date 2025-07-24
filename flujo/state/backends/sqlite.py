@@ -1345,14 +1345,32 @@ class SQLiteBackend(StateBackend):
                 return
 
             from flujo.utils.serialization import robust_serialize
+            import logging
+
+            try:
+                start_time = float(span_data.get("start_time", 0.0))
+            except (ValueError, TypeError):
+                logging.warning(
+                    f"Skipping span with invalid start_time for run_id={run_id}, span_id={span_data.get('span_id')}"
+                )
+                return
+            try:
+                end_time = (
+                    float(span_data["end_time"]) if span_data.get("end_time") is not None else None
+                )
+            except (ValueError, TypeError):
+                logging.warning(
+                    f"Skipping span with invalid end_time for run_id={run_id}, span_id={span_data.get('span_id')}"
+                )
+                return
 
             span_tuple: Tuple[str, str, Optional[str], str, float, Optional[float], str, str] = (
                 str(span_data.get("span_id", "")),
                 run_id,
                 parent_span_id,
                 str(span_data.get("name", "")),
-                float(span_data.get("start_time", 0.0)),
-                float(span_data["end_time"]) if span_data.get("end_time") is not None else None,
+                start_time,
+                end_time,
                 str(span_data.get("status", "running")),
                 json.dumps(robust_serialize(span_data.get("attributes", {}))),
             )

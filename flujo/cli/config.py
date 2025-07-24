@@ -18,14 +18,20 @@ def _normalize_sqlite_path(uri: str, cwd: Path) -> Path:
     - If the path is relative (e.g., sqlite:///./foo.db or sqlite:///foo.db),
       resolve relative to cwd.
     - Handles all RFC 3986-compliant forms.
+    - Special handling: sqlite:///foo.db (parsed.path == '/foo.db') is relative, not absolute.
     """
     parsed = urlparse(uri)
     path_str = parsed.path
-    # Remove leading slash for relative paths (sqlite:///./foo.db -> /./foo.db)
+    # RFC 3986: single leading slash after scheme is relative, double is absolute
+    # sqlite:///foo.db -> /foo.db (should be relative)
+    # sqlite:////abs/path.db -> //abs/path.db (should be /abs/path.db, absolute)
     if path_str.startswith("/./"):
         path_str = path_str[1:]  # becomes ./foo.db
     elif path_str.startswith("//"):
         # sqlite:////abs/path.db -> //abs/path.db (should be /abs/path.db)
+        path_str = path_str[1:]
+    elif path_str.startswith("/") and not path_str.startswith("//"):
+        # sqlite:///foo.db -> /foo.db (should be relative: foo.db)
         path_str = path_str[1:]
     # Now, if path_str is absolute, return as is; else, resolve relative to cwd
     path = Path(path_str)

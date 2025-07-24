@@ -91,20 +91,13 @@ def trace_command(run_id: str) -> None:
 
         duration = None
         try:
-            if start and end:
-                start_ts = (
-                    float(start)
-                    if isinstance(start, (int, float, str))
-                    and str(start).replace(".", "", 1).isdigit()
-                    else None
-                )
-                end_ts = (
-                    float(end)
-                    if isinstance(end, (int, float, str)) and str(end).replace(".", "", 1).isdigit()
-                    else None
-                )
-                if start_ts and end_ts:
+            if start is not None and end is not None:
+                try:
+                    start_ts = float(start)
+                    end_ts = float(end)
                     duration = f"{end_ts - start_ts:.2f}s"
+                except (ValueError, TypeError):
+                    duration = None
         except (ValueError, TypeError):
             duration = None
         status_color = {"completed": "green", "failed": "red", "running": "yellow"}.get(

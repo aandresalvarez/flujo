@@ -458,6 +458,86 @@ def test_lens_trace_command(tmp_path: Path) -> None:
     assert result.exit_code in [0, 1]
 
 
+def test_lens_trace_command_regression_timestamps(tmp_path: Path) -> None:
+    """Regression: test lens trace command with various timestamp formats for duration parsing."""
+    backend = SQLiteBackend(tmp_path / "trace_ops_regression.db")
+
+    def create_run(run_id, pipeline_name="pipeline"):
+        asyncio.run(
+            backend.save_run_start(
+                {
+                    "run_id": run_id,
+                    "pipeline_id": f"test-pid-{run_id}",
+                    "pipeline_name": pipeline_name,
+                    "pipeline_version": "1.0",
+                    "status": "running",
+                    "created_at": datetime.utcnow().isoformat(),
+                    "updated_at": datetime.utcnow().isoformat(),
+                }
+            )
+        )
+
+    def run_and_check(run_id, trace_data, expected_in_output):
+        create_run(run_id, pipeline_name=trace_data.get("name", "pipeline"))
+        if hasattr(backend, "save_trace"):
+            asyncio.run(backend.save_trace(run_id, trace_data))
+        os.environ["FLUJO_STATE_URI"] = f"sqlite:///{tmp_path}/trace_ops_regression.db"
+        result = runner.invoke(app, ["lens", "trace", run_id])
+        assert result.exit_code in [0, 1]
+        for expected in expected_in_output:
+            assert expected in result.stdout, (
+                f"Expected '{expected}' in output. Got: {result.stdout}"
+            )
+
+    # 1. Normal float timestamps
+    run_id1 = "trace_regression_1"
+    trace_data1 = {
+        "span_id": "root1",
+        "run_id": run_id1,
+        "name": "pipeline",
+        "status": "completed",
+        "start_time": 1000.0,
+        "end_time": 1005.5,
+        "children": [],
+    }
+    run_and_check(run_id1, trace_data1, ["(duration: 5.50s)"])
+
+    # 2. Negative timestamps
+    run_id2 = "trace_regression_2"
+    trace_data2 = dict(trace_data1)
+    trace_data2.update(
+        {"span_id": "root2", "run_id": run_id2, "start_time": -100.0, "end_time": -90.0}
+    )
+    run_and_check(run_id2, trace_data2, ["(duration: 10.00s)"])
+
+    # 3. Scientific notation
+    run_id3 = "trace_regression_3"
+    trace_data3 = dict(trace_data1)
+    trace_data3.update(
+        {"span_id": "root3", "run_id": run_id3, "start_time": 1e3, "end_time": 1.5e3}
+    )
+    run_and_check(run_id3, trace_data3, ["(duration: 500.00s)"])
+
+    # 4. Invalid (non-numeric) timestamps
+    run_id4 = "trace_regression_4"
+    trace_data4 = dict(trace_data1)
+    trace_data4.update(
+        {
+            "span_id": "root4",
+            "run_id": run_id4,
+            "start_time": "not_a_number",
+            "end_time": "also_bad",
+        }
+    )
+    create_run(run_id4, pipeline_name=trace_data4.get("name", "pipeline"))
+    if hasattr(backend, "save_trace"):
+        asyncio.run(backend.save_trace(run_id4, trace_data4))
+    os.environ["FLUJO_STATE_URI"] = f"sqlite:///{tmp_path}/trace_ops_regression.db"
+    result = runner.invoke(app, ["lens", "trace", run_id4])
+    assert result.exit_code in [0, 1]
+    assert "(duration:" not in result.stdout
+
+
 def test_lens_commands_error_handling(tmp_path: Path) -> None:
     """Test lens commands with various error conditions."""
     db_path = tmp_path / "error_ops.db"
