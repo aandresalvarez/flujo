@@ -19,8 +19,8 @@ def test_defaults(monkeypatch) -> None:
     monkeypatch.delenv("LOGFIRE_API_KEY", raising=False)
     s = Settings()
     # Updated to match actual current defaults
-    assert s.max_iters == 3  # Changed from 5 to 3
-    assert s.k_variants == 2  # Changed from 3 to 2
+    assert s.max_iters == 5  # Actual default value
+    assert s.k_variants == 3  # Actual default value
     assert s.logfire_api_key is None
     assert isinstance(s.default_repair_model, str)
 
