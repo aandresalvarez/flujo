@@ -14,6 +14,7 @@ __all__ = [
     "_get_validation_flags",
     "_apply_validation_metadata",
     "_types_compatible",
+    "_should_pass_context",
 ]
 
 _accepts_param_cache_weak: weakref.WeakKeyDictionary[
@@ -59,7 +60,17 @@ def _accepts_param(func: Callable[..., Any], param: str) -> Optional[bool]:
         if param in sig.parameters:
             result = True
         elif any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
-            result = True
+            # Check if the **kwargs parameter is typed as 'Never' (doesn't accept any kwargs)
+            for p in sig.parameters.values():
+                if p.kind == inspect.Parameter.VAR_KEYWORD:
+                    # If the **kwargs parameter is annotated as 'Never', it doesn't accept any parameters
+                    if str(p.annotation) == "Never":
+                        result = False
+                    else:
+                        result = True
+                    break
+            else:
+                result = True
         else:
             result = False
     except (TypeError, ValueError):
@@ -81,6 +92,23 @@ def _extract_missing_fields(cause: Any) -> list[str]:
                     if isinstance(field, str):
                         missing_fields.append(field)
     return missing_fields
+
+
+def _should_pass_context(spec: Any, context: Optional[Any], func: Callable[..., Any]) -> bool:
+    """Determine if context should be passed to a function based on signature analysis.
+
+    Args:
+        spec: Signature analysis result from analyze_signature()
+        context: The context object to potentially pass
+        func: The function to analyze
+
+    Returns:
+        True if context should be passed to the function, False otherwise
+    """
+    # Check if function accepts context parameter (either explicitly or via **kwargs)
+    # This is different from spec.needs_context which only checks if context is required
+    accepts_context = _accepts_param(func, "context")
+    return spec.needs_context or (context is not None and bool(accepts_context))
 
 
 def _types_compatible(a: Any, b: Any) -> bool:

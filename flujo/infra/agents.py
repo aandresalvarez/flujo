@@ -196,9 +196,21 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
             arg.model_dump() if isinstance(arg, PydanticBaseModel) else arg
             for arg in processed_args
         ]
+        # Filter kwargs before processing to avoid passing unwanted parameters
+        from flujo.application.context_manager import _accepts_param
+
+        filtered_kwargs = {}
+        for key, value in kwargs.items():
+            if key in ["context", "pipeline_context"]:
+                # Only pass context if the underlying agent accepts it
+                if _accepts_param(self._agent.run, "context"):
+                    filtered_kwargs[key] = value
+            else:
+                filtered_kwargs[key] = value
+
         processed_kwargs = {
             key: value.model_dump() if isinstance(value, PydanticBaseModel) else value
-            for key, value in kwargs.items()
+            for key, value in filtered_kwargs.items()
         }
 
         retryer = AsyncRetrying(

@@ -1352,11 +1352,8 @@ async def _run_step_logic(
             func = cast(Callable[..., Any], func)
             spec = analyze_signature(func)
 
-            if spec.needs_context:
-                if context is None:
-                    raise TypeError(
-                        f"Component in step '{step.name}' requires a context, but no context model was provided to the Flujo runner."
-                    )
+            # FR-35a & FR-35b: Use signature-aware context injection
+            if _should_pass_context(spec, context, func):
                 agent_kwargs["context"] = context
 
             if resources is not None:
@@ -1609,7 +1606,10 @@ async def _run_step_logic(
     if accumulated_feedbacks:
         result.feedback = "\n".join(accumulated_feedbacks).strip()
     else:
-        result.feedback = str(last_exception)
+        # FR-36: Populate feedback with the actual error type and message
+        result.feedback = (
+            f"Agent execution failed with {type(last_exception).__name__}: {last_exception}"
+        )
     result.attempts = step.config.max_retries
     result.latency_s = 0.0
 
