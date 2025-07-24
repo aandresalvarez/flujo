@@ -56,6 +56,14 @@ pipeline = make_agentic_loop_pipeline(
 # Run the pipeline
 result = await run_agentic_loop_pipeline(pipeline, "What is Python?")
 print(result)
+
+# Access trace information (FSD-12 feature)
+if result.trace_tree:
+    print(f"\n🌳 Execution Trace:")
+    print(f"   Root span: {result.trace_tree.name}")
+    print(f"   Status: {result.trace_tree.status}")
+    print(f"   Duration: {result.trace_tree.end_time - result.trace_tree.start_time:.3f}s")
+    print(f"   Steps: {len(result.step_history)}")
 ```
 
 ## 4. Run Your First Loop
@@ -64,8 +72,23 @@ print(result)
 python hello_agentic.py
 ```
 
-You should see a short transcript of the planner running the search tool and finishing with an answer.
+You should see a short transcript of the planner running the search tool and finishing with an answer, plus trace information.
 
-## 5. Next Steps
+## 5. Debug with Tracing
+
+After running your pipeline, you can inspect the execution trace:
+
+```bash
+# List recent runs
+flujo lens list
+
+# View trace for the most recent run (replace with actual run_id)
+flujo lens trace <run_id>
+
+# Show step details
+flujo lens spans <run_id>
+```
+
+## 6. Next Steps
 
 Now that you've seen the basics, explore the [Tutorial](tutorial.md) and [Concepts](concepts.md) pages for a deeper dive.

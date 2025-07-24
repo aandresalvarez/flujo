@@ -13,6 +13,27 @@ flujo add-eval-case -d my_evals.py -n new_case -i "input"
 flujo --profile
 ```
 
+### Debugging and Observability
+
+Flujo provides rich tracing and debugging capabilities:
+
+```bash
+# List all pipeline runs
+flujo lens list
+
+# Show detailed information about a specific run
+flujo lens show <run_id>
+
+# View hierarchical execution trace
+flujo lens trace <run_id>
+
+# List individual spans with filtering
+flujo lens spans <run_id> --status completed
+
+# Show aggregated span statistics
+flujo lens stats
+```
+
 Use `flujo improve --improvement-model MODEL` to override the model powering the
 self-improvement agent when generating suggestions.
 
@@ -45,9 +66,15 @@ pipeline = make_default_pipeline(
     validator_agent=make_validator_agent(),
 )
 
-# Run the pipeline
+# Run the pipeline with tracing enabled
 result = await run_default_pipeline(pipeline, Task(prompt="Write a poem."))
 print(result)
+
+# Access trace information
+if result.trace_tree:
+    print(f"Pipeline trace: {result.trace_tree.name}")
+    print(f"Status: {result.trace_tree.status}")
+    print(f"Duration: {result.trace_tree.end_time - result.trace_tree.start_time:.3f}s")
 ```
 
 The `make_default_pipeline` factory creates a Review → Solution → Validate pipeline. It does
@@ -57,7 +84,7 @@ reflection logic, use the `Step` API with the `Flujo` engine.
 
 Call `init_telemetry()` once at startup to configure logging and tracing for your application.
 
-### Pipeline DSL
+### Pipeline DSL with Tracing
 
 You can define custom workflows using the `Step` class and execute them with `Flujo`:
 
@@ -69,7 +96,16 @@ from flujo.testing.utils import StubAgent
 solution_step = Step.solution(StubAgent(["SELECT FROM"]))
 validate_step = Step.validate(StubAgent([None]), plugins=[SQLSyntaxValidator()])
 pipeline = solution_step >> validate_step
-result = Flujo(pipeline).run("SELECT FROM")
+
+# Run with tracing enabled
+flujo = Flujo(pipeline, enable_tracing=True)
+result = flujo.run("SELECT FROM")
+
+# Analyze execution trace
+if result.trace_tree:
+    print(f"Steps executed: {len(result.step_history)}")
+    for step in result.step_history:
+        print(f"  {step.name}: {'✅' if step.success else '❌'} ({step.latency_s:.3f}s)")
 ```
 
 ## Environment Variables
