@@ -1353,6 +1353,12 @@ async def _run_step_logic(
             spec = analyze_signature(func)
 
             # FR-35a & FR-35b: Use signature-aware context injection
+            # First check if the agent requires context but none is provided
+            if spec.needs_context and context is None:
+                raise TypeError(
+                    f"Component in step '{step.name}' requires a context, but no context model was provided to the Flujo runner."
+                )
+            # Then check if we should pass context based on signature analysis
             if _should_pass_context(spec, context, func):
                 agent_kwargs["context"] = context
 

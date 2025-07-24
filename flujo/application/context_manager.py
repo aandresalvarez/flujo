@@ -64,11 +64,16 @@ def _accepts_param(func: Callable[..., Any], param: str) -> Optional[bool]:
             for p in sig.parameters.values():
                 if p.kind == inspect.Parameter.VAR_KEYWORD:
                     # If the **kwargs parameter is annotated as 'Never', it doesn't accept any parameters
-                    if str(p.annotation) == "Never":
+                    # Use direct comparison instead of string comparison for robustness
+                    from typing import Never
+
+                    if p.annotation is Never:
                         result = False
                     else:
                         result = True
                     break
+            # If we didn't find a VAR_KEYWORD parameter, this should never happen
+            # since we already checked for it in the elif condition
             else:
                 result = True
         else:
@@ -107,6 +112,10 @@ def _should_pass_context(spec: Any, context: Optional[Any], func: Callable[..., 
     """
     # Check if function accepts context parameter (either explicitly or via **kwargs)
     # This is different from spec.needs_context which only checks if context is required
+    # Compile-time check: spec.needs_context indicates whether the function explicitly requires
+    # a `context` parameter based on signature analysis.
+    # Runtime check: context is not None ensures that a context object is available, and
+    # bool(accepts_context) verifies if the function can dynamically accept the context parameter.
     accepts_context = _accepts_param(func, "context")
     return spec.needs_context or (context is not None and bool(accepts_context))
 

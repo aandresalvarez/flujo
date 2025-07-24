@@ -8,7 +8,7 @@ import pytest
 from unittest.mock import AsyncMock
 from flujo.domain.dsl import Pipeline, Step, StepConfig
 from flujo.domain.models import PipelineContext
-from flujo.infra.agents import make_agent_async
+
 from tests.conftest import create_test_flujo
 
 
@@ -64,16 +64,27 @@ class FailingAgent:
 
 @pytest.mark.asyncio
 async def test_stateless_agent_no_context_injection():
-    """Test Case 1: Stateless Agent (make_agent_async)
+    """Test Case 1: Stateless Agent (make_agent_async wrapper)
 
     Given: A pipeline with a Step using an agent created via make_agent_async that is stateless.
     When: The pipeline is executed by the Flujo runner with a context model configured.
     Then: The pipeline completes successfully, and no TypeError is raised. The context is NOT passed to the agent.
     """
-    # Create a stateless agent using make_agent_async
-    stateless_agent = make_agent_async(
-        model="openai:gpt-4o", system_prompt="You are a helpful assistant.", output_type=str
-    )
+
+    # Create a stateless agent using a mock that simulates make_agent_async behavior
+    # This avoids the need for a real API key in tests
+    class MockAsyncAgentWrapper:
+        """Mock agent that simulates the behavior of make_agent_async wrapper"""
+
+        def __init__(self):
+            self.run_mock = AsyncMock(return_value="mock response")
+
+        async def run(self, data: str) -> str:
+            """Run method that does NOT accept context parameter - simulates stateless agent"""
+            await self.run_mock(data)
+            return f"Mock response to: {data}"
+
+    stateless_agent = MockAsyncAgentWrapper()
 
     step = Step.model_validate(
         {
@@ -96,6 +107,11 @@ async def test_stateless_agent_no_context_injection():
     step_result = get_step_result(result)
     assert step_result.success
     assert step_result.feedback is None
+
+    # Verify the agent was called without context parameter
+    stateless_agent.run_mock.assert_called_once()
+    call_args = stateless_agent.run_mock.call_args
+    assert "context" not in call_args[1]  # No context parameter passed
 
 
 @pytest.mark.asyncio
