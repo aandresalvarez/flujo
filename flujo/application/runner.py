@@ -4,6 +4,7 @@ import asyncio
 import inspect
 import weakref
 import copy
+import os
 from datetime import datetime
 from typing import (
     Any,
@@ -213,7 +214,6 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         self.registry = registry
         if pipeline_name is None:
             from datetime import datetime
-            import os
 
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             pipeline_name = f"unnamed_{timestamp}"

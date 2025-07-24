@@ -1,8 +1,7 @@
 # manual_testing/cohort_pipeline.py
 
-import asyncio
 from flujo import Step, Pipeline
-from flujo.infra.agents import make_agent
+from flujo.infra.agents import make_agent_async
 from flujo.infra.settings import settings as flujo_settings
 
 # Define the AI agent that will assess the cohort definition
@@ -12,29 +11,34 @@ If the definition is clear, re-state it and add the marker '[CLARITY_CONFIRMED]'
 If the definition is unclear, ask a concise question to clarify it.
 """
 
-# Create the agent directly without the async wrapper
-ClarificationAgent, _ = make_agent(
-    model=flujo_settings.default_solution_model,
-    system_prompt=CLARIFICATION_AGENT_SYSTEM_PROMPT,
-    output_type=str,
-)
+# Create a simple mock agent to test signature inspection
+class MockAgent:
+    """A simple agent that doesn't accept context parameter"""
+    def __init__(self, name="MockAgent"):
+        self.name = name
 
-# Create a simple wrapper that removes context parameter
-class SimpleAgentWrapper:
-    def __init__(self, agent):
-        self.agent = agent
+    async def run(self, data: str) -> str:
+        """This method does NOT accept a context parameter - this is the bug case"""
+        return f"Mock response to: {data}"
 
-    async def run(self, data, **kwargs):
-        # Remove context and other unwanted parameters
-        clean_kwargs = {k: v for k, v in kwargs.items()
-                       if k not in ['context', 'pipeline_context', 'resources']}
-        return await self.agent.run(data, **clean_kwargs)
+# Create a context-aware mock agent for comparison
+class ContextAwareMockAgent:
+    """A context-aware agent that accepts context parameter"""
+    def __init__(self, name="ContextAwareMockAgent"):
+        self.name = name
 
-# Create a single step that uses our wrapped agent
+    async def run(self, data: str, context=None) -> str:
+        """This method DOES accept a context parameter - this should work"""
+        context_info = f" (context: {type(context).__name__})" if context else ""
+        return f"Context-aware response to: {data}{context_info}"
+
+# Use the context-aware mock agent for testing
+ClarificationAgent = ContextAwareMockAgent("TestContextAwareAgent")
+
+# Create a single step that uses our agent
 assess_clarity_step = Step(
     name="AssessClarity",
-    agent=SimpleAgentWrapper(ClarificationAgent),
-    persist_feedback_to_context=None,  # Disable context persistence
+    agent=ClarificationAgent,
 )
 
 # The pipeline consists of just this one step
