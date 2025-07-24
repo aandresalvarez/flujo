@@ -286,10 +286,14 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                         return validated
                     except (ValidationError, ValueError, TypeError):
                         logfire.warn("LLM repair failed.")
-                        raise last_exc
+                        # Raise OrchestratorError for validation failures
+                        raise OrchestratorError(
+                            f"Agent validation failed: invalid JSON - {last_exc}"
+                        )
                 except Exception:
                     logfire.warn("Repair agent failed.")
-                    raise last_exc
+                    # Raise OrchestratorError for repair failures
+                    raise OrchestratorError(f"Agent validation failed: invalid JSON - {last_exc}")
             else:
                 # FR-36: Enhanced error reporting with actual error type and message
                 error_type = type(last_exc).__name__
@@ -297,9 +301,15 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                 logfire.error(
                     f"Agent '{self._model_name}' failed after {self._max_retries} attempts. Last error: {error_type}({error_message})"
                 )
-                raise OrchestratorError(
-                    f"Agent '{self._model_name}' failed after {self._max_retries} attempts. Last error: {error_type}({error_message})"
-                )
+                # For timeout and retry scenarios, raise OrchestratorRetryError
+                if isinstance(last_exc, (TimeoutError, asyncio.TimeoutError)):
+                    raise OrchestratorRetryError(
+                        f"Agent timed out after {self._max_retries} attempts"
+                    )
+                else:
+                    raise OrchestratorRetryError(
+                        f"Agent failed after {self._max_retries} attempts. Last error: {error_type}({error_message})"
+                    )
         except Exception as e:
             # FR-36: Enhanced error reporting for non-retry errors
             error_type = type(e).__name__
@@ -307,9 +317,13 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
             logfire.error(
                 f"Agent '{self._model_name}' execution failed: {error_type}({error_message})"
             )
-            raise OrchestratorError(
-                f"Agent '{self._model_name}' execution failed: {error_type}({error_message})"
-            )
+            # For timeout scenarios, raise OrchestratorRetryError
+            if isinstance(e, (TimeoutError, asyncio.TimeoutError)):
+                raise OrchestratorRetryError(f"Agent timed out: {error_message}")
+            else:
+                raise OrchestratorError(
+                    f"Agent '{self._model_name}' execution failed: {error_type}({error_message})"
+                )
 
     async def run_async(self, *args: Any, **kwargs: Any) -> Any:
         return await self._run_with_retry(*args, **kwargs)
