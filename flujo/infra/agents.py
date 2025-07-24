@@ -279,21 +279,34 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                     prompt = _format_repair_prompt(prompt_data)
                     repaired_str = await get_repair_agent().run(prompt)
                     try:
+                        # First, try to parse the repair agent's response as JSON
+                        repair_response = json.loads(repaired_str)
+
+                        # Check if the repair agent explicitly signaled it cannot fix the output
+                        if (
+                            isinstance(repair_response, dict)
+                            and repair_response.get("repair_error") is True
+                        ):
+                            reasoning = repair_response.get("reasoning", "No reasoning provided")
+                            logfire.warn(f"Repair agent cannot fix output: {reasoning}")
+                            raise OrchestratorError(f"Repair agent cannot fix output: {reasoning}")
+
+                        # If not a repair error, validate against the target type
                         validated = TypeAdapter(
                             _unwrap_type_adapter(self.target_output_type)
                         ).validate_json(repaired_str)
                         logfire.info("LLM repair successful.")
                         return validated
-                    except (ValidationError, ValueError, TypeError):
-                        logfire.warn("LLM repair failed.")
-                        # Raise OrchestratorError for validation failures
+                    except (ValidationError, ValueError, TypeError) as repair_exc:
+                        logfire.warn(f"LLM repair failed: {repair_exc}")
+                        # Raise OrchestratorError for validation failures with the actual repair error
                         raise OrchestratorError(
-                            f"Agent validation failed: invalid JSON - {last_exc}"
+                            f"Agent validation failed: invalid JSON - {repair_exc}"
                         )
-                except Exception:
-                    logfire.warn("Repair agent failed.")
-                    # Raise OrchestratorError for repair failures
-                    raise OrchestratorError(f"Agent validation failed: invalid JSON - {last_exc}")
+                except Exception as repair_agent_exc:
+                    logfire.warn(f"Repair agent failed: {repair_agent_exc}")
+                    # Raise OrchestratorError for repair agent failures
+                    raise OrchestratorError(f"Repair agent execution failed: {repair_agent_exc}")
             else:
                 # FR-36: Enhanced error reporting with actual error type and message
                 error_type = type(last_exc).__name__
