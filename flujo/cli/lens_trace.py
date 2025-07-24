@@ -8,8 +8,6 @@ from rich.text import Text
 from typing import Dict, Any, Optional
 from .config import load_backend_from_config
 
-print(f"[DEBUG] Loading lens_trace.py: __name__={__name__}, __file__={__file__}")
-
 
 def trace_command(run_id: str) -> None:
     """Show the hierarchical execution trace for a run as a tree, with a summary."""
@@ -49,7 +47,7 @@ def trace_command(run_id: str) -> None:
         if start is not None and end is not None:
             try:
                 duration = float(end) - float(start)
-            except Exception:
+            except (ValueError, TypeError):
                 duration = None
         status_icon = "✅" if status == "completed" else ("❌" if status == "failed" else "⏳")
         label = f"{status_icon} [bold]{name}[/bold]"
@@ -89,7 +87,7 @@ def trace_command(run_id: str) -> None:
                 if isinstance(val, (int, float)):
                     return datetime.datetime.fromtimestamp(float(val)).isoformat()
                 return str(val)
-            except Exception:
+            except (ValueError, TypeError):
                 return str(val)
 
         duration = None
@@ -108,7 +106,7 @@ def trace_command(run_id: str) -> None:
                 )
                 if start_ts and end_ts:
                     duration = f"{end_ts - start_ts:.2f}s"
-        except Exception:
+        except (ValueError, TypeError):
             duration = None
         status_color = {"completed": "green", "failed": "red", "running": "yellow"}.get(
             str(status).lower(), "white"

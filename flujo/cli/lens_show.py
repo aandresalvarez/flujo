@@ -7,8 +7,6 @@ from rich.panel import Panel
 import json
 from .config import load_backend_from_config
 
-print(f"[DEBUG] Loading lens_show.py: __name__={__name__}, __file__={__file__}")
-
 
 def show_run(
     run_id: str,
@@ -24,6 +22,9 @@ def show_run(
         steps = asyncio.run(backend.list_run_steps(run_id))
     except NotImplementedError:
         typer.echo("Backend does not support run inspection", err=True)
+        raise typer.Exit(1)
+    except Exception as e:
+        typer.echo(f"Error accessing backend: {e}", err=True)
         raise typer.Exit(1)
 
     if details is None:
@@ -52,19 +53,19 @@ def show_run(
             if show_input and s.get("input") is not None:
                 try:
                     pretty = json.dumps(s["input"], indent=2, ensure_ascii=False)
-                except Exception:
+                except (TypeError, ValueError):
                     pretty = str(s["input"])
                 lines.append(f"[bold]Input:[/bold]\n{pretty}")
             if show_output and s.get("output") is not None:
                 try:
                     pretty = json.dumps(s["output"], indent=2, ensure_ascii=False)
-                except Exception:
+                except (TypeError, ValueError):
                     pretty = str(s["output"])
                 lines.append(f"[bold]Output:[/bold]\n{pretty}")
             if show_error and s.get("error") is not None:
                 try:
                     pretty = json.dumps(s["error"], indent=2, ensure_ascii=False)
-                except Exception:
+                except (TypeError, ValueError):
                     pretty = str(s["error"])
                 lines.append(f"[bold]Error:[/bold]\n{pretty}")
             if lines:

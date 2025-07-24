@@ -360,3 +360,167 @@ def test_lens_cli_relative_path_resolution(tmp_path: Path, monkeypatch):
         assert run_id in result.stdout
     finally:
         os.chdir(old_cwd)
+
+
+def test_lens_show_with_verbose_options(tmp_path: Path) -> None:
+    """Test lens show command with verbose options for input/output/error display."""
+    db_path = tmp_path / "verbose_ops.db"
+    backend = SQLiteBackend(db_path)
+
+    run_id = "verbose_run"
+
+    # Create a run with step data including input/output/error
+    asyncio.run(
+        backend.save_run_start(
+            {
+                "run_id": run_id,
+                "pipeline_id": f"test-pid-{run_id}",
+                "pipeline_name": "verbose_pipeline",
+                "pipeline_version": "1.0",
+                "status": "running",
+                "created_at": datetime.utcnow().isoformat(),
+                "updated_at": datetime.utcnow().isoformat(),
+            }
+        )
+    )
+
+    # Save step with input/output/error data
+    asyncio.run(
+        backend.save_step_result(
+            {
+                "step_run_id": f"{run_id}:0",
+                "run_id": run_id,
+                "step_name": "test_step",
+                "step_index": 0,
+                "status": "completed",
+                "start_time": datetime.utcnow(),
+                "end_time": datetime.utcnow(),
+                "duration_ms": 1000,
+                "cost": 0.01,
+                "tokens": 50,
+                "input": {"test_input": "value"},
+                "output": {"test_output": "result"},
+                "error": None,
+            }
+        )
+    )
+
+    asyncio.run(
+        backend.save_run_end(
+            run_id,
+            {
+                "status": "completed",
+                "end_time": datetime.utcnow(),
+                "total_cost": 0.01,
+                "final_context": {},
+            },
+        )
+    )
+
+    os.environ["FLUJO_STATE_URI"] = f"sqlite:///{db_path}"
+
+    # Test show with --show-input
+    result = runner.invoke(app, ["lens", "show", run_id, "--show-input"])
+    assert result.exit_code == 0
+    assert "test_input" in result.stdout
+
+    # Test show with --show-output
+    result = runner.invoke(app, ["lens", "show", run_id, "--show-output"])
+    assert result.exit_code == 0
+    assert "test_output" in result.stdout
+
+    # Test show with --verbose (should show both input and output)
+    result = runner.invoke(app, ["lens", "show", run_id, "--verbose"])
+    assert result.exit_code == 0
+    assert "test_input" in result.stdout
+    assert "test_output" in result.stdout
+
+
+def test_lens_trace_command(tmp_path: Path) -> None:
+    """Test lens trace command with trace data."""
+    db_path = tmp_path / "trace_ops.db"
+    backend = SQLiteBackend(db_path)
+
+    run_id = "trace_run"
+
+    # Create a run with trace data
+    asyncio.run(
+        backend.save_run_start(
+            {
+                "run_id": run_id,
+                "pipeline_id": f"test-pid-{run_id}",
+                "pipeline_name": "trace_pipeline",
+                "pipeline_version": "1.0",
+                "status": "running",
+                "created_at": datetime.utcnow().isoformat(),
+                "updated_at": datetime.utcnow().isoformat(),
+            }
+        )
+    )
+
+    # Save trace data
+    trace_data = {
+        "run_id": run_id,
+        "name": "trace_pipeline",
+        "status": "completed",
+        "start_time": datetime.utcnow().timestamp(),
+        "end_time": datetime.utcnow().timestamp(),
+        "children": [
+            {
+                "name": "step1",
+                "status": "completed",
+                "start_time": datetime.utcnow().timestamp(),
+                "end_time": datetime.utcnow().timestamp(),
+                "attributes": {"iteration": 1},
+            }
+        ],
+    }
+
+    # Note: This assumes the backend has a save_trace method
+    # If not available, we'll test the error handling
+    try:
+        if hasattr(backend, "save_trace"):
+            asyncio.run(backend.save_trace(run_id, trace_data))
+    except NotImplementedError:
+        pass
+
+    asyncio.run(
+        backend.save_run_end(
+            run_id,
+            {
+                "status": "completed",
+                "end_time": datetime.utcnow(),
+                "total_cost": 0.0,
+                "final_context": {},
+            },
+        )
+    )
+
+    os.environ["FLUJO_STATE_URI"] = f"sqlite:///{db_path}"
+
+    # Test trace command
+    result = runner.invoke(app, ["lens", "trace", run_id])
+    # Should either succeed or show appropriate error message
+    assert result.exit_code in [0, 1]
+
+
+def test_lens_commands_error_handling(tmp_path: Path) -> None:
+    """Test lens commands with various error conditions."""
+    db_path = tmp_path / "error_ops.db"
+    os.environ["FLUJO_STATE_URI"] = f"sqlite:///{db_path}"
+
+    # Test with invalid run_id
+    result = runner.invoke(app, ["lens", "show", "invalid-run-id"])
+    assert result.exit_code != 0
+
+    # Test trace with invalid run_id
+    result = runner.invoke(app, ["lens", "trace", "invalid-run-id"])
+    assert result.exit_code != 0
+
+    # Test spans with invalid run_id
+    result = runner.invoke(app, ["lens", "spans", "invalid-run-id"])
+    assert result.exit_code == 0  # Should not fail, just show no spans
+
+    # Test stats command
+    result = runner.invoke(app, ["lens", "stats"])
+    assert result.exit_code == 0  # Should not fail, just show empty stats

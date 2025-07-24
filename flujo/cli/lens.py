@@ -31,6 +31,9 @@ def list_runs(
     except NotImplementedError:
         typer.echo("Backend does not support listing runs", err=True)
         raise typer.Exit(1)
+    except Exception as e:
+        typer.echo(f"Error accessing backend: {e}", err=True)
+        raise typer.Exit(1)
 
     table = Table("run_id", "pipeline", "status", "created_at")
     for r in runs:
@@ -80,6 +83,9 @@ def list_spans(
     except NotImplementedError:
         typer.echo("Backend does not support span-level querying", err=True)
         raise typer.Exit(1)
+    except Exception as e:
+        typer.echo(f"Error accessing backend: {e}", err=True)
+        raise typer.Exit(1)
 
     if not spans:
         typer.echo(f"No spans found for run_id: {run_id}")
@@ -93,7 +99,7 @@ def list_spans(
         if start_time is not None and end_time is not None:
             try:
                 duration = f"{float(end_time) - float(start_time):.2f}s"
-            except Exception:
+            except (ValueError, TypeError):
                 duration = "N/A"
         else:
             duration = "N/A"
@@ -131,6 +137,9 @@ def show_statistics(
         )
     except NotImplementedError:
         typer.echo("Backend does not support span statistics", err=True)
+        raise typer.Exit(1)
+    except Exception as e:
+        typer.echo(f"Error accessing backend: {e}", err=True)
         raise typer.Exit(1)
 
     console = Console()

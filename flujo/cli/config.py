@@ -13,8 +13,10 @@ from ..infra.config_manager import get_state_uri
 def _normalize_sqlite_path(uri: str, cwd: Path) -> Path:
     """
     Normalize a SQLite URI path to an absolute or relative Path.
+
     - If the path is absolute (e.g., sqlite:////abs/path.db), return as is.
-    - If the path is relative (e.g., sqlite:///./foo.db or sqlite:///foo.db), resolve relative to cwd.
+    - If the path is relative (e.g., sqlite:///./foo.db or sqlite:///foo.db),
+      resolve relative to cwd.
     - Handles all RFC 3986-compliant forms.
     """
     from urllib.parse import urlparse
