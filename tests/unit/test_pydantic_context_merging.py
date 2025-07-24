@@ -22,7 +22,7 @@ from flujo.utils.context import (
 )
 
 
-class TestContextWithComputedFields(BaseModel):
+class _TestContextWithComputedFields(BaseModel):
     """Test context with computed fields and validators."""
 
     base_value: int = Field(default=0)
@@ -48,7 +48,7 @@ class TestContextWithComputedFields(BaseModel):
         self.validation_count += 1
 
 
-class TestContextWithComplexEquality(BaseModel):
+class _TestContextWithComplexEquality(BaseModel):
     """Test context with complex objects that may fail equality comparison."""
 
     simple_field: str = "default"
@@ -56,7 +56,7 @@ class TestContextWithComplexEquality(BaseModel):
 
     def __eq__(self, other):
         """Custom equality that may raise exceptions."""
-        if not isinstance(other, TestContextWithComplexEquality):
+        if not isinstance(other, _TestContextWithComplexEquality):
             return False
         try:
             # This could fail for complex nested structures
@@ -70,7 +70,7 @@ class TestContextWithComplexEquality(BaseModel):
             return False
 
 
-class TestContextWithPrivateFields(BaseModel):
+class _TestContextWithPrivateFields(BaseModel):
     """Test context with private fields that should be ignored."""
 
     public_field: str = "public"
@@ -83,19 +83,19 @@ class TestContextWithPrivateFields(BaseModel):
 @pytest.fixture
 def source_context():
     """Create a source context with updates."""
-    return TestContextWithComputedFields(base_value=10, computed_value=20, validation_count=1)
+    return _TestContextWithComputedFields(base_value=10, computed_value=20, validation_count=1)
 
 
 @pytest.fixture
 def target_context():
     """Create a target context to merge into."""
-    return TestContextWithComputedFields(base_value=5, computed_value=10, validation_count=0)
+    return _TestContextWithComputedFields(base_value=5, computed_value=10, validation_count=0)
 
 
 def test_safe_merge_context_updates_basic():
     """Test basic context merging functionality."""
-    source = TestContextWithComputedFields(base_value=10, computed_value=20)
-    target = TestContextWithComputedFields(base_value=5, computed_value=10)
+    source = _TestContextWithComputedFields(base_value=10, computed_value=20)
+    target = _TestContextWithComputedFields(base_value=5, computed_value=10)
 
     # Perform merge
     success = safe_merge_context_updates(target, source)
@@ -108,8 +108,8 @@ def test_safe_merge_context_updates_basic():
 
 def test_safe_merge_context_updates_preserves_computed_fields():
     """Test that computed fields are preserved during merging."""
-    source = TestContextWithComputedFields(base_value=10)
-    target = TestContextWithComputedFields(base_value=5)
+    source = _TestContextWithComputedFields(base_value=10)
+    target = _TestContextWithComputedFields(base_value=5)
 
     # Perform merge
     success = safe_merge_context_updates(target, source)
@@ -122,8 +122,8 @@ def test_safe_merge_context_updates_preserves_computed_fields():
 
 def test_safe_merge_context_updates_triggers_validators():
     """Test that validators are triggered during merging."""
-    source = TestContextWithComputedFields(base_value=10)
-    target = TestContextWithComputedFields(base_value=5)
+    source = _TestContextWithComputedFields(base_value=10)
+    target = _TestContextWithComputedFields(base_value=5)
 
     # Reset validation count to track new validations
     target.validation_count = 0
@@ -138,7 +138,7 @@ def test_safe_merge_context_updates_triggers_validators():
 def test_safe_merge_context_updates_handles_invalid_values():
     """Test that invalid values are handled gracefully."""
     # Create target with valid value first, then try to set invalid value
-    target = TestContextWithComputedFields(base_value=5)
+    target = _TestContextWithComputedFields(base_value=5)
 
     # Try to set invalid value directly on target
     # Note: Pydantic v2 field validators are not automatically called on attribute assignment
@@ -152,10 +152,10 @@ def test_safe_merge_context_updates_handles_invalid_values():
 
 def test_safe_merge_context_updates_handles_complex_equality():
     """Test that complex equality failures are handled gracefully."""
-    source = TestContextWithComplexEquality(
+    source = _TestContextWithComplexEquality(
         simple_field="source", complex_field=[{"nested": "data"}]
     )
-    target = TestContextWithComplexEquality(simple_field="target", complex_field=[])
+    target = _TestContextWithComplexEquality(simple_field="target", complex_field=[])
 
     # This should work even if equality comparison is complex
     success = safe_merge_context_updates(target, source)
@@ -166,10 +166,10 @@ def test_safe_merge_context_updates_handles_complex_equality():
 
 def test_safe_merge_context_updates_ignores_private_fields():
     """Test that private fields are ignored during merging."""
-    source = TestContextWithPrivateFields(
+    source = _TestContextWithPrivateFields(
         public_field="source_public", _private_field="source_private"
     )
-    target = TestContextWithPrivateFields(
+    target = _TestContextWithPrivateFields(
         public_field="target_public", _private_field="target_private"
     )
 
@@ -185,7 +185,7 @@ def test_safe_merge_context_updates_ignores_private_fields():
 
 def test_safe_context_field_update():
     """Test safe field update functionality."""
-    context = TestContextWithComputedFields(base_value=5)
+    context = _TestContextWithComputedFields(base_value=5)
 
     # Update a valid field
     success = safe_context_field_update(context, "base_value", 10)
@@ -199,7 +199,7 @@ def test_safe_context_field_update():
 
 def test_safe_context_field_update_triggers_validation():
     """Test that field updates trigger validation."""
-    context = TestContextWithComputedFields(base_value=5)
+    context = _TestContextWithComputedFields(base_value=5)
 
     # Reset validation count to track new validations
     context.validation_count = 0
@@ -215,7 +215,7 @@ def test_safe_context_field_update_triggers_validation():
 
 def test_safe_context_field_update_handles_invalid_values():
     """Test that invalid field values are handled gracefully."""
-    context = TestContextWithComputedFields(base_value=5)
+    context = _TestContextWithComputedFields(base_value=5)
 
     # Try to set invalid value
     # Note: Pydantic v2 field validators are not automatically called on attribute assignment
@@ -229,7 +229,7 @@ def test_safe_context_field_update_handles_invalid_values():
 
 def test_get_context_field_safely():
     """Test safe field access functionality."""
-    context = TestContextWithComputedFields(base_value=10)
+    context = _TestContextWithComputedFields(base_value=10)
 
     # Get existing field
     value = get_context_field_safely(context, "base_value")
@@ -242,7 +242,7 @@ def test_get_context_field_safely():
 
 def test_has_context_field():
     """Test field existence checking."""
-    context = TestContextWithComputedFields(base_value=10)
+    context = _TestContextWithComputedFields(base_value=10)
 
     # Check existing field
     assert has_context_field(context, "base_value") is True
@@ -254,18 +254,18 @@ def test_has_context_field():
 def test_merge_with_none_contexts():
     """Test that None contexts are handled gracefully."""
     # Test with None target
-    success = safe_merge_context_updates(None, TestContextWithComputedFields())
+    success = safe_merge_context_updates(None, _TestContextWithComputedFields())
     assert success is False
 
     # Test with None source
-    success = safe_merge_context_updates(TestContextWithComputedFields(), None)
+    success = safe_merge_context_updates(_TestContextWithComputedFields(), None)
     assert success is False
 
 
 def test_merge_with_different_types():
     """Test that different context types are handled gracefully."""
-    source = TestContextWithComputedFields(base_value=10)
-    target = TestContextWithComplexEquality(simple_field="target")
+    source = _TestContextWithComputedFields(base_value=10)
+    target = _TestContextWithComplexEquality(simple_field="target")
 
     # This should work even with different types
     success = safe_merge_context_updates(target, source)

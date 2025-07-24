@@ -69,4 +69,3 @@ router = Step.dynamic_parallel_branch(
 ```
 
 The executed branch names are stored in `StepResult.metadata_["executed_branches"]`.
- 

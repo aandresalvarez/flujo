@@ -16,8 +16,11 @@ def ensure_api_key():
             "Please set it in your .env file or environment."
         )
     # Mask the API key for security - show only last 4 characters
-    masked_key = f"{'*' * (len(api_key) - 4)}{api_key[-4:]}"
-    print(f"✅ Using API key: {masked_key}")
+    if len(api_key) < 4:
+        masked_key = '*' * len(api_key)
+    else:
+        masked_key = f"{'*' * (len(api_key) - 4)}{api_key[-4:]}"
+    print(f"\u2705 Using API key: {masked_key}")
 
 async def main():
     # Ensure the correct API key is set

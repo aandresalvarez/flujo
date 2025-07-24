@@ -16,7 +16,7 @@ from flujo.testing.utils import gather_result
 from tests.conftest import create_test_flujo
 
 
-class TestContext(PipelineContext):
+class DynamicRouterTestContext(PipelineContext):
     """Context for testing the bug fix."""
 
     initial_prompt: str = Field(default="test")
@@ -28,7 +28,7 @@ class TestContext(PipelineContext):
 class SimpleRouterAgent:
     """Simple router agent that requires context."""
 
-    async def run(self, data: str, *, context: TestContext) -> List[str]:
+    async def run(self, data: str, *, context: DynamicRouterTestContext) -> List[str]:
         context.router_called = True
         context.context_updates.append("router_executed")
         if "billing" in data.lower():
@@ -39,7 +39,7 @@ class SimpleRouterAgent:
 class BillingAgent:
     """Agent for billing branch."""
 
-    async def run(self, data: str, *, context: TestContext) -> Dict[str, Any]:
+    async def run(self, data: str, *, context: DynamicRouterTestContext) -> Dict[str, Any]:
         context.branch_results["billing"] = f"billing:{data}"
         context.context_updates.append("billing_processed")
         return {"billing_result": f"billing:{data}"}
@@ -48,7 +48,7 @@ class BillingAgent:
 class SupportAgent:
     """Agent for support branch."""
 
-    async def run(self, data: str, *, context: TestContext) -> Dict[str, Any]:
+    async def run(self, data: str, *, context: DynamicRouterTestContext) -> Dict[str, Any]:
         context.branch_results["support"] = f"support:{data}"
         context.context_updates.append("support_processed")
         return {"support_result": f"support:{data}"}
@@ -69,7 +69,7 @@ async def test_dynamic_router_context_parameter_fix():
         merge_strategy=MergeStrategy.CONTEXT_UPDATE,
     )
 
-    runner = create_test_flujo(router, context_model=TestContext)
+    runner = create_test_flujo(router, context_model=DynamicRouterTestContext)
     result = await gather_result(runner, "Need billing info")
 
     # Verify the bug is fixed - router agent should receive context
@@ -91,7 +91,7 @@ async def test_dynamic_router_multiple_branches_context_fix():
 
     # Create a router agent that selects both branches
     class MultiBranchRouterAgent:
-        async def run(self, data: str, *, context: TestContext) -> List[str]:
+        async def run(self, data: str, *, context: DynamicRouterTestContext) -> List[str]:
             context.router_called = True
             context.context_updates.append("router_executed")
             return ["billing", "support"]  # Always return both
@@ -106,7 +106,7 @@ async def test_dynamic_router_multiple_branches_context_fix():
         merge_strategy=MergeStrategy.CONTEXT_UPDATE,
     )
 
-    runner = create_test_flujo(router, context_model=TestContext)
+    runner = create_test_flujo(router, context_model=DynamicRouterTestContext)
     result = await gather_result(runner, "Need both billing and support")
 
     # Verify router agent received context
@@ -126,7 +126,7 @@ async def test_dynamic_router_empty_selection_context_fix():
 
     # Create a router agent that returns empty selection
     class EmptySelectionRouterAgent:
-        async def run(self, data: str, *, context: TestContext) -> List[str]:
+        async def run(self, data: str, *, context: DynamicRouterTestContext) -> List[str]:
             context.router_called = True
             context.context_updates.append("router_executed")
             return []  # Empty selection
@@ -141,7 +141,7 @@ async def test_dynamic_router_empty_selection_context_fix():
         merge_strategy=MergeStrategy.CONTEXT_UPDATE,
     )
 
-    runner = create_test_flujo(router, context_model=TestContext)
+    runner = create_test_flujo(router, context_model=DynamicRouterTestContext)
     result = await gather_result(runner, "No branches needed")
 
     # Verify router agent received context
@@ -164,7 +164,7 @@ async def test_dynamic_router_context_preservation_on_failure():
 
     # Create a router agent that fails but updates context
     class FailingRouterAgent:
-        async def run(self, data: str, *, context: TestContext) -> List[str]:
+        async def run(self, data: str, *, context: DynamicRouterTestContext) -> List[str]:
             context.router_called = True
             context.context_updates.append("router_executed")
             raise ValueError("Router agent failed")
@@ -178,7 +178,7 @@ async def test_dynamic_router_context_preservation_on_failure():
         merge_strategy=MergeStrategy.CONTEXT_UPDATE,
     )
 
-    runner = create_test_flujo(router, context_model=TestContext)
+    runner = create_test_flujo(router, context_model=DynamicRouterTestContext)
     result = await gather_result(runner, "test")
 
     # Verify router agent received context and updated it
@@ -228,7 +228,7 @@ async def test_dynamic_router_no_context_requirement():
         merge_strategy=MergeStrategy.CONTEXT_UPDATE,
     )
 
-    runner = create_test_flujo(router, context_model=TestContext)
+    runner = create_test_flujo(router, context_model=DynamicRouterTestContext)
     result = await gather_result(runner, "Need billing info")
 
     # Verify the step executed successfully without context requirements

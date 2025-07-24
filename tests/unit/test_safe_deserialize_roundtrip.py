@@ -37,9 +37,9 @@ def clear_registry() -> None:
 
 def test_default_behavior_returns_serialized_data() -> None:
     obj = DataExample(1, "x")
-    ser = safe_serialize(obj)
-    assert isinstance(ser, dict)
-    assert safe_deserialize(ser) == ser
+    set = safe_serialize(obj)
+    assert isinstance(set, dict)
+    assert safe_deserialize(set) == set
 
 
 def test_custom_type_roundtrip_with_registry() -> None:

@@ -16,9 +16,10 @@ from flujo.infra.agents import make_agent_async
 from flujo.domain.models import PipelineContext
 from tests.conftest import create_test_flujo
 from flujo.testing.utils import gather_result
+from tests.unit.conftest import MockStatelessAgent
 
 
-class TestContext(BaseModel):
+class FSD11TestContext(BaseModel):
     """Test context model for the pipeline."""
 
     user_id: str
@@ -26,11 +27,43 @@ class TestContext(BaseModel):
     metadata: dict[str, Any] = {}
 
 
-class TestOutput(BaseModel):
+class FSD11TestOutput(BaseModel):
     """Test output model for the agent."""
 
     message: str
     confidence: float
+
+
+class ContextAwareAgent:
+    def __init__(self, wrapped_agent):
+        self._agent = wrapped_agent
+
+    async def run(
+        self, data: str, context: Optional[FSD11TestContext] = None, **kwargs: Any
+    ) -> FSD11TestOutput:
+        user_id = context.user_id if context else "unknown"
+        response = await self._agent.run(f"User {user_id}: {data}")
+        return FSD11TestOutput(message=response, confidence=0.9)
+
+
+class KwargsContextAgent:
+    def __init__(self, wrapped_agent):
+        self._agent = wrapped_agent
+
+    async def run(self, data: str, **kwargs: Any) -> FSD11TestOutput:
+        context = kwargs.get("context")
+        user_id = context.user_id if context else "unknown"
+        response = await self._agent.run(f"User {user_id}: {data}")
+        return FSD11TestOutput(message=response, confidence=0.9)
+
+
+class MockUnderlyingAgent:
+    def __init__(self):
+        self.run_mock = AsyncMock(return_value="Personalized response")
+
+    async def run(self, data: str) -> str:
+        await self.run_mock(data)
+        return f"Mock response to: {data}"
 
 
 @pytest.mark.asyncio
@@ -42,16 +75,6 @@ async def test_fsd11_stateless_agent_make_agent_async():
     that don't accept a context parameter. The framework should NOT pass context
     to the underlying pydantic-ai agent.
     """
-
-    # Create a mock agent that simulates make_agent_async behavior
-    class MockStatelessAgent:
-        def __init__(self):
-            self.run_mock = AsyncMock(return_value="Hello! I'm here to help.")
-
-        async def run(self, data: str) -> str:
-            """Run method that does NOT accept context parameter - simulates stateless agent"""
-            await self.run_mock(data)
-            return f"Mock response to: {data}"
 
     stateless_agent = MockStatelessAgent()
 
@@ -70,7 +93,7 @@ async def test_fsd11_stateless_agent_make_agent_async():
     # Create runner with context
     runner = create_test_flujo(
         pipeline,
-        context_model=TestContext,
+        context_model=FSD11TestContext,
         initial_context_data={"user_id": "test_user", "session_id": "test_session"},
     )
 
@@ -98,29 +121,7 @@ async def test_fsd11_context_aware_agent_explicit():
     This test verifies that agents with explicit context parameters work correctly.
     """
 
-    # Create a mock agent that simulates the underlying pydantic-ai agent
-    class MockUnderlyingAgent:
-        def __init__(self):
-            self.run_mock = AsyncMock(return_value="Personalized response")
-
-        async def run(self, data: str) -> str:
-            await self.run_mock(data)
-            return f"Mock response to: {data}"
-
     # Create a context-aware agent wrapper
-    class ContextAwareAgent:
-        def __init__(self, wrapped_agent):
-            self._agent = wrapped_agent
-
-        async def run(
-            self, data: str, context: Optional[TestContext] = None, **kwargs: Any
-        ) -> TestOutput:
-            # Use context to personalize the response
-            user_id = context.user_id if context else "unknown"
-            response = await self._agent.run(f"User {user_id}: {data}")
-            return TestOutput(message=response, confidence=0.9)
-
-    # Wrap the agent
     context_aware_agent = ContextAwareAgent(MockUnderlyingAgent())
 
     # Create a pipeline with context
@@ -138,7 +139,7 @@ async def test_fsd11_context_aware_agent_explicit():
     # Create runner with context
     runner = create_test_flujo(
         pipeline,
-        context_model=TestContext,
+        context_model=FSD11TestContext,
         initial_context_data={"user_id": "test_user", "session_id": "test_session"},
     )
 
@@ -150,7 +151,7 @@ async def test_fsd11_context_aware_agent_explicit():
     step_result = result.step_history[0]
     assert step_result.success
     assert step_result.output is not None
-    assert isinstance(step_result.output, TestOutput)
+    assert isinstance(step_result.output, FSD11TestOutput)
     assert step_result.output.message is not None
     assert step_result.output.confidence > 0
 
@@ -163,28 +164,7 @@ async def test_fsd11_context_aware_agent_kwargs():
     This test verifies that agents with **kwargs work correctly with context.
     """
 
-    # Create a mock agent that simulates the underlying pydantic-ai agent
-    class MockUnderlyingAgent:
-        def __init__(self):
-            self.run_mock = AsyncMock(return_value="Personalized response")
-
-        async def run(self, data: str) -> str:
-            await self.run_mock(data)
-            return f"Mock response to: {data}"
-
     # Create a custom agent that accepts context via **kwargs
-    class KwargsContextAgent:
-        def __init__(self, wrapped_agent):
-            self._agent = wrapped_agent
-
-        async def run(self, data: str, **kwargs: Any) -> TestOutput:
-            # Extract context from kwargs
-            context = kwargs.get("context")
-            user_id = context.user_id if context else "unknown"
-            response = await self._agent.run(f"User {user_id}: {data}")
-            return TestOutput(message=response, confidence=0.9)
-
-    # Wrap the agent
     kwargs_context_agent = KwargsContextAgent(MockUnderlyingAgent())
 
     # Create a pipeline with context
@@ -202,7 +182,7 @@ async def test_fsd11_context_aware_agent_kwargs():
     # Create runner with context
     runner = create_test_flujo(
         pipeline,
-        context_model=TestContext,
+        context_model=FSD11TestContext,
         initial_context_data={"user_id": "test_user", "session_id": "test_session"},
     )
 
@@ -214,7 +194,7 @@ async def test_fsd11_context_aware_agent_kwargs():
     step_result = result.step_history[0]
     assert step_result.success
     assert step_result.output is not None
-    assert isinstance(step_result.output, TestOutput)
+    assert isinstance(step_result.output, FSD11TestOutput)
     assert step_result.output.message is not None
     assert step_result.output.confidence > 0
 
@@ -248,7 +228,7 @@ async def test_fsd11_error_propagation():
     # Create runner with context
     runner = create_test_flujo(
         pipeline,
-        context_model=TestContext,
+        context_model=FSD11TestContext,
         initial_context_data={"user_id": "test_user", "session_id": "test_session"},
     )
 
@@ -272,16 +252,6 @@ async def test_fsd11_no_context_passed_to_stateless():
     This test ensures that the framework correctly identifies when NOT to pass
     context to underlying agents.
     """
-
-    # Create a mock stateless agent
-    class MockStatelessAgent:
-        def __init__(self):
-            self.run_mock = AsyncMock(return_value="Hello! I'm here to help.")
-
-        async def run(self, data: str) -> str:
-            """Run method that does NOT accept context parameter"""
-            await self.run_mock(data)
-            return f"Mock response to: {data}"
 
     stateless_agent = MockStatelessAgent()
 
@@ -395,7 +365,7 @@ async def test_fsd11_signature_analysis_fix():
     # Create runner with context
     runner = create_test_flujo(
         pipeline,
-        context_model=TestContext,
+        context_model=FSD11TestContext,
         initial_context_data={"user_id": "test_user", "session_id": "test_session"},
     )
 
@@ -472,7 +442,7 @@ async def test_fsd11_context_filtering_works():
         # Create runner with context
         runner = create_test_flujo(
             pipeline,
-            context_model=TestContext,
+            context_model=FSD11TestContext,
             initial_context_data={"user_id": "test_user", "session_id": "test_session"},
         )
 

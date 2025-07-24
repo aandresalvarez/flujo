@@ -17,7 +17,7 @@ from flujo.domain.models import PipelineContext
 from flujo.state.backends.sqlite import SQLiteBackend
 
 
-class TestContext(PipelineContext):
+class FSD12TracingTestContext(PipelineContext):
     """Test context for tracing tests."""
 
     counter: int = 0

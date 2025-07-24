@@ -294,14 +294,20 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                         # If not a repair error, validate against the target type
                         validated = TypeAdapter(
                             _unwrap_type_adapter(self.target_output_type)
-                        ).validate_json(repaired_str)
+                        ).validate_python(repair_response)
                         logfire.info("LLM repair successful.")
                         return validated
-                    except (ValidationError, ValueError, TypeError) as repair_exc:
-                        logfire.warn(f"LLM repair failed: {repair_exc}")
-                        # Raise OrchestratorError for validation failures with the actual repair error
+                    except json.JSONDecodeError as decode_exc:
+                        logfire.error(
+                            f"LLM repair failed: Invalid JSON returned by repair agent: {decode_exc}\nRaw output: {repaired_str}"
+                        )
                         raise OrchestratorError(
-                            f"Agent validation failed: invalid JSON - {repair_exc}"
+                            f"Agent validation failed: repair agent returned invalid JSON: {decode_exc}\nRaw output: {repaired_str}"
+                        )
+                    except (ValidationError, ValueError, TypeError) as repair_exc:
+                        logfire.warn(f"LLM repair failed: {repair_exc}\nRaw output: {repaired_str}")
+                        raise OrchestratorError(
+                            f"Agent validation failed: schema validation error: {repair_exc}\nRaw output: {repaired_str}"
                         )
                 except Exception as repair_agent_exc:
                     logfire.warn(f"Repair agent failed: {repair_agent_exc}")
