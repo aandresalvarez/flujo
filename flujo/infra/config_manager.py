@@ -231,12 +231,8 @@ _thread_local_config_manager = threading.local()
 
 
 def get_config_manager(force_reload: bool = False) -> ConfigManager:
-    """Get the thread-local configuration manager instance. If force_reload is True, reset the instance."""
     if force_reload or not hasattr(_thread_local_config_manager, "config_manager"):
         _thread_local_config_manager.config_manager = ConfigManager()
-    else:
-        # Only clear cached config/settings if force_reload is True
-        pass  # No action needed; keep cache if not reloading
     return cast(ConfigManager, _thread_local_config_manager.config_manager)
 
 

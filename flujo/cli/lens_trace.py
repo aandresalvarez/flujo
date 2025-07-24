@@ -6,6 +6,7 @@ from rich.tree import Tree
 from rich.panel import Panel
 from rich.text import Text
 from typing import Dict, Any, Optional
+import datetime
 from .config import load_backend_from_config
 
 
@@ -70,8 +71,6 @@ def trace_command(run_id: str) -> None:
     def _print_trace_summary(
         trace: Dict[str, Any], run_details: Optional[Dict[str, Any]] = None
     ) -> None:
-        import datetime
-
         console = Console()
         run_id = run_details.get("run_id") if run_details else trace.get("run_id")
         pipeline = run_details.get("pipeline_name") if run_details else trace.get("name")

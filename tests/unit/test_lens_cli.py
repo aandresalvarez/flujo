@@ -1,14 +1,45 @@
 import os
-from pathlib import Path
-
-from typer.testing import CliRunner
-
-from flujo.cli.main import app
-from datetime import datetime
-from flujo.state.backends.sqlite import SQLiteBackend
 import asyncio
+from datetime import datetime
+from pathlib import Path
+from typer.testing import CliRunner
+from flujo.cli.main import app
+from flujo.state.backends.sqlite import SQLiteBackend
 
 runner = CliRunner()
+
+
+def create_run_with_steps(backend, run_id, steps=None, status="completed", final_context=None):
+    if steps is None:
+        steps = []
+    if final_context is None:
+        final_context = {}
+    asyncio.run(
+        backend.save_run_start(
+            {
+                "run_id": run_id,
+                "pipeline_id": f"test-pid-{run_id}",
+                "pipeline_name": f"pipeline_{run_id}",
+                "pipeline_version": "1.0",
+                "status": "running",
+                "created_at": datetime.utcnow().isoformat(),
+                "updated_at": datetime.utcnow().isoformat(),
+            }
+        )
+    )
+    for step in steps:
+        asyncio.run(backend.save_step_result(step))
+    asyncio.run(
+        backend.save_run_end(
+            run_id,
+            {
+                "status": status,
+                "end_time": datetime.utcnow(),
+                "total_cost": 0.01,
+                "final_context": final_context,
+            },
+        )
+    )
 
 
 def test_lens_commands(tmp_path: Path, monkeypatch) -> None:
@@ -307,129 +338,52 @@ def test_lens_commands_with_environment_configuration(tmp_path: Path) -> None:
 
 def test_lens_cli_relative_path_resolution(tmp_path: Path, monkeypatch):
     """Regression test: CLI resolves relative sqlite paths in state_uri correctly regardless of CWD."""
-    # Setup: create a subdir and a flujo.toml with relative state_uri
     test_dir = tmp_path / "manual_testing"
     test_dir.mkdir()
     db_path = test_dir / "ops.db"
     flujo_toml = test_dir / "flujo.toml"
     flujo_toml.write_text('state_uri = "sqlite:///./ops.db"\n')
-
-    # Write a run to the db using the backend
     backend = SQLiteBackend(db_path)
     run_id = "relpath_run"
-    import asyncio
-    from datetime import datetime
-
-    asyncio.run(
-        backend.save_run_start(
-            {
-                "run_id": run_id,
-                "pipeline_id": "test-pid-relpath",
-                "pipeline_name": "relpath_pipeline",
-                "pipeline_version": "1.0",
-                "status": "running",
-                "created_at": datetime.utcnow().isoformat(),
-                "updated_at": datetime.utcnow().isoformat(),
-            }
-        )
-    )
-    asyncio.run(
-        backend.save_run_end(
-            run_id,
-            {
-                "status": "completed",
-                "end_time": datetime.utcnow(),
-                "total_cost": 0.0,
-                "final_context": {},
-            },
-        )
-    )
-
-    # Change CWD to the test_dir (where flujo.toml and db are)
-    old_cwd = os.getcwd()
-    os.chdir(test_dir)
-    try:
-        # The CLI should find the flujo.toml in CWD and resolve the relative path correctly
-        env = {
-            **os.environ,
-            "FLUJO_CONFIG_PATH": str(flujo_toml),
-            "FLUJO_STATE_URI": f"sqlite:///{db_path}",
-        }
-        result = runner.invoke(app, ["lens", "list"], env=env)
-        assert result.exit_code == 0, result.stdout + result.stderr
-        assert run_id in result.stdout
-    finally:
-        os.chdir(old_cwd)
+    create_run_with_steps(backend, run_id)
+    monkeypatch.chdir(test_dir)
+    env = {
+        **os.environ,
+        "FLUJO_CONFIG_PATH": str(flujo_toml),
+        "FLUJO_STATE_URI": f"sqlite:///{db_path}",
+    }
+    result = runner.invoke(app, ["lens", "list"], env=env)
+    assert result.exit_code == 0, result.stdout + result.stderr
+    assert run_id in result.stdout
 
 
 def test_lens_show_with_verbose_options(tmp_path: Path) -> None:
-    """Test lens show command with verbose options for input/output/error display."""
     db_path = tmp_path / "verbose_ops.db"
     backend = SQLiteBackend(db_path)
-
     run_id = "verbose_run"
-
-    # Create a run with step data including input/output/error
-    asyncio.run(
-        backend.save_run_start(
-            {
-                "run_id": run_id,
-                "pipeline_id": f"test-pid-{run_id}",
-                "pipeline_name": "verbose_pipeline",
-                "pipeline_version": "1.0",
-                "status": "running",
-                "created_at": datetime.utcnow().isoformat(),
-                "updated_at": datetime.utcnow().isoformat(),
-            }
-        )
-    )
-
-    # Save step with input/output/error data
-    asyncio.run(
-        backend.save_step_result(
-            {
-                "step_run_id": f"{run_id}:0",
-                "run_id": run_id,
-                "step_name": "test_step",
-                "step_index": 0,
-                "status": "completed",
-                "start_time": datetime.utcnow(),
-                "end_time": datetime.utcnow(),
-                "duration_ms": 1000,
-                "cost": 0.01,
-                "tokens": 50,
-                "input": {"test_input": "value"},
-                "output": {"test_output": "result"},
-                "error": None,
-            }
-        )
-    )
-
-    asyncio.run(
-        backend.save_run_end(
-            run_id,
-            {
-                "status": "completed",
-                "end_time": datetime.utcnow(),
-                "total_cost": 0.01,
-                "final_context": {},
-            },
-        )
-    )
-
+    step = {
+        "step_run_id": f"{run_id}:0",
+        "run_id": run_id,
+        "step_name": "test_step",
+        "step_index": 0,
+        "status": "completed",
+        "start_time": datetime.utcnow(),
+        "end_time": datetime.utcnow(),
+        "duration_ms": 1000,
+        "cost": 0.01,
+        "tokens": 50,
+        "input": {"test_input": "value"},
+        "output": {"test_output": "result"},
+        "error": None,
+    }
+    create_run_with_steps(backend, run_id, steps=[step])
     os.environ["FLUJO_STATE_URI"] = f"sqlite:///{db_path}"
-
-    # Test show with --show-input
     result = runner.invoke(app, ["lens", "show", run_id, "--show-input"])
     assert result.exit_code == 0
     assert "test_input" in result.stdout
-
-    # Test show with --show-output
     result = runner.invoke(app, ["lens", "show", run_id, "--show-output"])
     assert result.exit_code == 0
     assert "test_output" in result.stdout
-
-    # Test show with --verbose (should show both input and output)
     result = runner.invoke(app, ["lens", "show", run_id, "--verbose"])
     assert result.exit_code == 0
     assert "test_input" in result.stdout

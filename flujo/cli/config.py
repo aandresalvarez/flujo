@@ -19,8 +19,6 @@ def _normalize_sqlite_path(uri: str, cwd: Path) -> Path:
       resolve relative to cwd.
     - Handles all RFC 3986-compliant forms.
     """
-    from urllib.parse import urlparse
-
     parsed = urlparse(uri)
     path_str = parsed.path
     # Remove leading slash for relative paths (sqlite:///./foo.db -> /./foo.db)
