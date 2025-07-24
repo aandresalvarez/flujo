@@ -15,7 +15,9 @@ def ensure_api_key():
             "OPENAI_API_KEY environment variable is not set. "
             "Please set it in your .env file or environment."
         )
-    print(f"✅ Using API key: {api_key[:20]}...")
+    # Mask the API key for security - show only last 4 characters
+    masked_key = f"{'*' * (len(api_key) - 4)}{api_key[-4:]}"
+    print(f"✅ Using API key: {masked_key}")
 
 async def main():
     # Ensure the correct API key is set
