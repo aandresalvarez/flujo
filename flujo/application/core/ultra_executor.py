@@ -380,19 +380,29 @@ class UltraStepExecutor(Generic[TContext]):
                 start_time = time.perf_counter()  # Track execution time
                 last_exception: Exception = Exception("Unknown error")
                 for attempt in range(1, step.config.max_retries + 1):
-                    # Build agent kwargs
-                    kwargs = {}
-                    if context is not None:
-                        kwargs["context"] = context
-                    if resources is not None:
-                        kwargs["resources"] = resources
-                    if step.config.temperature is not None:
-                        kwargs["temperature"] = step.config.temperature
-                    if breach_event is not None:
-                        kwargs["breach_event"] = breach_event
-
                     run_func = getattr(agent, "run", None)
                     is_mock = isinstance(run_func, (Mock, MagicMock, AsyncMock))
+
+                    # Build filtered kwargs based on what the function accepts
+                    def build_filtered_kwargs(func: Any) -> dict[str, Any]:
+                        filtered_kwargs: dict[str, Any] = {}
+                        if func is not None:
+                            from ..context_manager import _accepts_param
+                            from ...signature_tools import analyze_signature
+                            from ..context_manager import _should_pass_context
+
+                            spec = analyze_signature(func)
+                            if _should_pass_context(spec, context, func):
+                                filtered_kwargs["context"] = context
+                            if resources is not None and _accepts_param(func, "resources"):
+                                filtered_kwargs["resources"] = resources
+                            if step.config.temperature is not None and _accepts_param(
+                                func, "temperature"
+                            ):
+                                filtered_kwargs["temperature"] = step.config.temperature
+                            if breach_event is not None and _accepts_param(func, "breach_event"):
+                                filtered_kwargs["breach_event"] = breach_event
+                        return filtered_kwargs
 
                     try:
                         # Process input data through prompt processors
@@ -430,7 +440,10 @@ class UltraStepExecutor(Generic[TContext]):
                         try:
                             if stream and hasattr(agent, "stream"):
                                 chunks = []
-                                async for chunk in agent.stream(processed_data, **kwargs):
+                                stream_kwargs = build_filtered_kwargs(
+                                    getattr(agent, "stream", None)
+                                )
+                                async for chunk in agent.stream(processed_data, **stream_kwargs):
                                     if on_chunk:
                                         await on_chunk(chunk)
                                     chunks.append(chunk)
@@ -445,41 +458,20 @@ class UltraStepExecutor(Generic[TContext]):
                                 if is_mock:
                                     if run_func is None:
                                         raise RuntimeError("Agent has no run method")
-                                    raw = await run_func(processed_data, **kwargs)
+                                    mock_kwargs = build_filtered_kwargs(run_func)
+                                    raw = await run_func(processed_data, **mock_kwargs)
                                 else:
                                     try:
                                         if run_func is not None:
-                                            # Use proper parameter detection like step_logic.py
-                                            from ..context_manager import _accepts_param
-
-                                            # Build kwargs based on what the function accepts
-                                            filtered_kwargs = {}
-                                            if context is not None and _accepts_param(
-                                                run_func, "context"
-                                            ):
-                                                filtered_kwargs["context"] = context
-                                            if resources is not None and _accepts_param(
-                                                run_func, "resources"
-                                            ):
-                                                filtered_kwargs["resources"] = resources
-                                            if (
-                                                step.config.temperature is not None
-                                                and _accepts_param(run_func, "temperature")
-                                            ):
-                                                filtered_kwargs["temperature"] = (
-                                                    step.config.temperature
-                                                )
-                                            if breach_event is not None and _accepts_param(
-                                                run_func, "breach_event"
-                                            ):
-                                                filtered_kwargs["breach_event"] = breach_event
-
+                                            filtered_kwargs = build_filtered_kwargs(run_func)
                                             raw = await run_func(processed_data, **filtered_kwargs)
                                         else:
                                             raise RuntimeError("Agent has no run method")
                                     except Exception:
                                         if run_func is not None:
-                                            raw = await run_func(processed_data, **kwargs)
+                                            # Fallback to filtered kwargs for backward compatibility
+                                            fallback_kwargs = build_filtered_kwargs(run_func)
+                                            raw = await run_func(processed_data, **fallback_kwargs)
                                         else:
                                             raise RuntimeError("Agent has no run method")
                         except Exception:
@@ -594,7 +586,7 @@ class UltraStepExecutor(Generic[TContext]):
                         output=None,
                         success=False,
                         attempts=attempt,
-                        feedback=str(last_exception),
+                        feedback=f"Agent execution failed with {type(last_exception).__name__}: {last_exception}",
                         latency_s=0.0,
                     )
                 else:

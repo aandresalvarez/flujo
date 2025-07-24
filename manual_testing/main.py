@@ -1,14 +1,21 @@
 # manual_testing/main.py
 import traceback
 from flujo import Flujo
+from flujo.domain.models import PipelineContext # Import this for the runner
 from manual_testing.cohort_pipeline import COHORT_CLARIFICATION_PIPELINE
 
 def main():
     print("Step 1: Running a single AI assessment step.\n" + "="*50)
 
-    # The Flujo runner executes our pipeline
-    # Note: We don't need context for this simple pipeline
-    runner = Flujo(COHORT_CLARIFICATION_PIPELINE, context_model=None)
+    # The Flujo runner executes our pipeline.
+    # CRITICAL: We pass a context_model to trigger the bug.
+    # The runner will try to pass a context even if the agent doesn't want it.
+    runner = Flujo(
+        COHORT_CLARIFICATION_PIPELINE,
+        context_model=PipelineContext, # This will trigger the context injection
+        pipeline_name="test_bug_run",
+        initial_context_data={"initial_prompt": "Test prompt"}  # Provide required field
+    )
 
     initial_definition = input("Enter the clinical cohort definition: ")
 
@@ -18,16 +25,6 @@ def main():
 
         print("\n--- Agent Response ---")
         if result and result.step_history:
-            # Check each step for success/failure
-            for i, step in enumerate(result.step_history):
-                print(f"Step {i}: {step.name}")
-                if step.success:
-                    print(f"  Success: {step.output}")
-                else:
-                    print(f"  Failed: {step.feedback}")
-                    print(f"  Attempts: {step.attempts}")
-
-            # The final output is the output of the last step
             final_step = result.step_history[-1]
             if final_step.success:
                 print(f"\nFinal Output: {final_step.output}")
@@ -40,5 +37,4 @@ def main():
         traceback.print_exc()
 
 if __name__ == "__main__":
-    # Ensure you have OPENAI_API_KEY (or other) set in your .env file
     main()
