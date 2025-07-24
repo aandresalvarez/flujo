@@ -235,10 +235,8 @@ def get_config_manager(force_reload: bool = False) -> ConfigManager:
     if force_reload or not hasattr(_thread_local_config_manager, "config_manager"):
         _thread_local_config_manager.config_manager = ConfigManager()
     else:
-        # Also clear cached config/settings if present
-        cm = _thread_local_config_manager.config_manager
-        cm._config = None
-        cm._settings = None
+        # Only clear cached config/settings if force_reload is True
+        pass  # No action needed; keep cache if not reloading
     return cast(ConfigManager, _thread_local_config_manager.config_manager)
 
 
