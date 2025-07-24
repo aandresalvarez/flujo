@@ -18,7 +18,7 @@ async def build_input(data: str) -> ComplexInput:
 
 @step
 async def summarize(inp: ComplexInput) -> str:
-    return inp.text[:3]
+    return inp.text[:4]
 
 pipeline = build_input >> summarize
 runner = Flujo(pipeline)
