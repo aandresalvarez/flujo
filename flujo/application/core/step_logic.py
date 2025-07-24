@@ -1345,6 +1345,8 @@ async def _run_step_logic(
                     data = processed
             from ...signature_tools import analyze_signature
 
+            # FR-35.1: Properly inspect the underlying agent's signature for AsyncAgentWrapper
+            # The decision to inject context must be based on the ultimate target agent's signature
             target = getattr(current_agent, "_agent", current_agent)
             func = getattr(target, "_step_callable", None)
             if func is None:

@@ -17,7 +17,6 @@ from pydantic import ValidationError
 from pydantic_ai import Agent, ModelRetry
 from pydantic import BaseModel as PydanticBaseModel, TypeAdapter
 import os
-import traceback
 from tenacity import AsyncRetrying, RetryError, stop_after_attempt, wait_exponential
 
 from ..domain.agent_protocol import AsyncAgentProtocol, AgentInT, AgentOutT
@@ -196,15 +195,20 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
             arg.model_dump() if isinstance(arg, PydanticBaseModel) else arg
             for arg in processed_args
         ]
-        # Filter kwargs before processing to avoid passing unwanted parameters
+
+        # FR-35.2: Filter kwargs before processing to avoid passing unwanted parameters
+        # This is the core fix for FSD-11 - only pass context if the underlying agent accepts it
         from flujo.application.context_manager import _accepts_param
 
         filtered_kwargs = {}
         for key, value in kwargs.items():
             if key in ["context", "pipeline_context"]:
-                # Only pass context if the underlying agent accepts it
-                if _accepts_param(self._agent.run, "context"):
+                # Only pass context if the underlying agent's run method accepts it
+                accepts_context = _accepts_param(self._agent.run, "context")
+                if accepts_context:
                     filtered_kwargs[key] = value
+                # Note: We don't pass context to the underlying agent if it doesn't accept it
+                # This prevents the TypeError: run() got an unexpected keyword argument 'context'
             else:
                 filtered_kwargs[key] = value
 
@@ -275,34 +279,70 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                     prompt = _format_repair_prompt(prompt_data)
                     repaired_str = await get_repair_agent().run(prompt)
                     try:
-                        feedback = json.loads(repaired_str)
-                    except json.JSONDecodeError as parse_err:
-                        raise OrchestratorError("Repair agent returned invalid JSON") from parse_err
-                    if isinstance(feedback, dict) and feedback.get("repair_error"):
-                        reason = feedback.get("reasoning", "No reasoning provided.")
-                        raise OrchestratorError(
-                            f"Repair agent could not fix output. Reasoning: {reason}"
+                        # First, try to parse the repair agent's response as JSON
+                        repair_response = json.loads(repaired_str)
+
+                        # Check if the repair agent explicitly signaled it cannot fix the output
+                        if (
+                            isinstance(repair_response, dict)
+                            and repair_response.get("repair_error") is True
+                        ):
+                            reasoning = repair_response.get("reasoning", "No reasoning provided")
+                            logfire.warn(f"Repair agent cannot fix output: {reasoning}")
+                            raise OrchestratorError(f"Repair agent cannot fix output: {reasoning}")
+
+                        # If not a repair error, validate against the target type
+                        validated = TypeAdapter(
+                            _unwrap_type_adapter(self.target_output_type)
+                        ).validate_python(repair_response)
+                        logfire.info("LLM repair successful.")
+                        return validated
+                    except json.JSONDecodeError as decode_exc:
+                        logfire.error(
+                            f"LLM repair failed: Invalid JSON returned by repair agent: {decode_exc}\nRaw output: {repaired_str}"
                         )
-                    final_obj = TypeAdapter(
-                        _unwrap_type_adapter(self.target_output_type)
-                    ).validate_python(feedback)
-                    logfire.info("LLM-based repair successful.")
-                    return final_obj
-                except OrchestratorError:
-                    raise
-                except (ValidationError, ValueError, json.JSONDecodeError) as repair_err:
-                    raise OrchestratorError(
-                        "Agent validation failed and auto-repair also failed."
-                    ) from repair_err
-            raise OrchestratorRetryError(
-                f"Agent '{self._model_name}' failed after {self._max_retries} attempts. Last error: {type(last_exc).__name__}({last_exc})"
-            ) from last_exc
+                        raise OrchestratorError(
+                            f"Agent validation failed: repair agent returned invalid JSON: {decode_exc}\nRaw output: {repaired_str}"
+                        )
+                    except (ValidationError, ValueError, TypeError) as repair_exc:
+                        logfire.warn(f"LLM repair failed: {repair_exc}\nRaw output: {repaired_str}")
+                        raise OrchestratorError(
+                            f"Agent validation failed: schema validation error: {repair_exc}\nRaw output: {repaired_str}"
+                        )
+                except Exception as repair_agent_exc:
+                    logfire.warn(f"Repair agent failed: {repair_agent_exc}")
+                    # Raise OrchestratorError for repair agent failures
+                    raise OrchestratorError(f"Repair agent execution failed: {repair_agent_exc}")
+            else:
+                # FR-36: Enhanced error reporting with actual error type and message
+                error_type = type(last_exc).__name__
+                error_message = str(last_exc)
+                logfire.error(
+                    f"Agent '{self._model_name}' failed after {self._max_retries} attempts. Last error: {error_type}({error_message})"
+                )
+                # For timeout and retry scenarios, raise OrchestratorRetryError
+                if isinstance(last_exc, (TimeoutError, asyncio.TimeoutError)):
+                    raise OrchestratorRetryError(
+                        f"Agent timed out after {self._max_retries} attempts"
+                    )
+                else:
+                    raise OrchestratorRetryError(
+                        f"Agent failed after {self._max_retries} attempts. Last error: {error_type}({error_message})"
+                    )
         except Exception as e:
-            tb = traceback.format_exc()
+            # FR-36: Enhanced error reporting for non-retry errors
+            error_type = type(e).__name__
+            error_message = str(e)
             logfire.error(
-                f"Agent '{self._model_name}' call failed on attempt {attempt.retry_state.attempt_number} with exception: {type(e).__name__}({e})\nTraceback:\n{tb}"
+                f"Agent '{self._model_name}' execution failed: {error_type}({error_message})"
             )
-            raise
+            # For timeout scenarios, raise OrchestratorRetryError
+            if isinstance(e, (TimeoutError, asyncio.TimeoutError)):
+                raise OrchestratorRetryError(f"Agent timed out: {error_message}")
+            else:
+                raise OrchestratorError(
+                    f"Agent '{self._model_name}' execution failed: {error_type}({error_message})"
+                )
 
     async def run_async(self, *args: Any, **kwargs: Any) -> Any:
         return await self._run_with_retry(*args, **kwargs)

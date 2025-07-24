@@ -11,29 +11,13 @@ If the definition is clear, re-state it and add the marker '[CLARITY_CONFIRMED]'
 If the definition is unclear, ask a concise question to clarify it.
 """
 
-# Create a simple mock agent to test signature inspection
-class MockAgent:
-    """A simple agent that doesn't accept context parameter"""
-    def __init__(self, name="MockAgent"):
-        self.name = name
-
-    async def run(self, data: str) -> str:
-        """This method does NOT accept a context parameter - this is the bug case"""
-        return f"Mock response to: {data}"
-
-# Create a context-aware mock agent for comparison
-class ContextAwareMockAgent:
-    """A context-aware agent that accepts context parameter"""
-    def __init__(self, name="ContextAwareMockAgent"):
-        self.name = name
-
-    async def run(self, data: str, context=None) -> str:
-        """This method DOES accept a context parameter - this should work"""
-        context_info = f" (context: {type(context).__name__})" if context else ""
-        return f"Context-aware response to: {data}{context_info}"
-
-# Use the context-aware mock agent for testing
-ClarificationAgent = ContextAwareMockAgent("TestContextAwareAgent")
+# With FSD-11 fixed, make_agent_async is the simple, correct way to create
+# a stateless agent. It will work perfectly.
+ClarificationAgent = make_agent_async(
+    model=flujo_settings.default_solution_model,
+    system_prompt=CLARIFICATION_AGENT_SYSTEM_PROMPT,
+    output_type=str,
+)
 
 # Create a single step that uses our agent
 assess_clarity_step = Step(

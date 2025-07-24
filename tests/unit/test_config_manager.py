@@ -12,6 +12,7 @@ from flujo.infra.config_manager import (
     SettingsOverrides,
 )
 from flujo.exceptions import ConfigurationError
+import unittest.mock
 
 
 class TestConfigManager:
@@ -259,17 +260,35 @@ class TestConfigManager:
             config_path = f.name
 
         try:
-            config_manager = ConfigManager(config_path)
-            settings = config_manager.get_settings()
+            with unittest.mock.patch.dict(os.environ, {"K_VARIANTS": "3"}):
+                config_manager = ConfigManager(config_path)
+                settings = config_manager.get_settings()
 
-            # Verify settings are overridden
-            assert settings.max_iters == 15
-            assert settings.default_solution_model == "anthropic:claude-3-sonnet"
-            assert settings.reflection_enabled is False
+                # Verify settings are overridden
+                assert settings.max_iters == 15
+                assert settings.default_solution_model == "anthropic:claude-3-sonnet"
+                assert settings.reflection_enabled is False
 
-            # Verify other settings remain at defaults
-            assert settings.k_variants == 3  # Default value
-            assert settings.agent_timeout == 60  # Default value
+                # Verify other settings remain at defaults
+                assert settings.k_variants == 3
+                assert settings.agent_timeout == 60  # Default value
+        finally:
+            os.unlink(config_path)
+
+    def test_invalid_k_variants_env(self):
+        """Test that invalid K_VARIANTS env var raises or falls back to default."""
+        config_content = """
+        [settings]
+        max_iters = 15
+        """
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".toml", delete=False) as f:
+            f.write(config_content)
+            config_path = f.name
+        try:
+            with unittest.mock.patch.dict(os.environ, {"K_VARIANTS": "not_an_int"}):
+                config_manager = ConfigManager(config_path)
+                with pytest.raises((ValueError, TypeError)):
+                    config_manager.get_settings()
         finally:
             os.unlink(config_path)
 

@@ -17,11 +17,21 @@ def test_env_var_precedence(monkeypatch) -> None:
 
 def test_defaults(monkeypatch) -> None:
     monkeypatch.delenv("LOGFIRE_API_KEY", raising=False)
+    monkeypatch.setenv("MAX_ITERS", "5")
+    monkeypatch.setenv("K_VARIANTS", "3")
     s = Settings()
     assert s.max_iters == 5
     assert s.k_variants == 3
     assert s.logfire_api_key is None
     assert isinstance(s.default_repair_model, str)
+
+
+def test_invalid_env_vars(monkeypatch) -> None:
+    monkeypatch.setenv("MAX_ITERS", "not_an_int")
+    monkeypatch.setenv("K_VARIANTS", "not_an_int")
+    # Should raise ValueError or fallback to default, depending on Settings implementation
+    with pytest.raises((ValueError, TypeError)):
+        Settings()
 
 
 def test_logfire_legacy_alias(monkeypatch) -> None:

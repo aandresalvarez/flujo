@@ -1,40 +1,76 @@
 # manual_testing/main.py
-import traceback
+import os
+import asyncio
+from typing import Optional
 from flujo import Flujo
-from flujo.domain.models import PipelineContext # Import this for the runner
+from flujo.domain.models import PipelineResult, PipelineContext
 from manual_testing.cohort_pipeline import COHORT_CLARIFICATION_PIPELINE
 
-def main():
+# Ensure the API key is loaded from environment
+def ensure_api_key():
+    """Ensure the API key is loaded from environment variables."""
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise ValueError(
+            "OPENAI_API_KEY environment variable is not set. "
+            "Please set it in your .env file or environment."
+        )
+    # Mask the API key for security - show only last 4 characters
+    if len(api_key) < 4:
+        masked_key = '*' * len(api_key)
+    else:
+        masked_key = f"{'*' * (len(api_key) - 4)}{api_key[-4:]}"
+    print(f"\u2705 Using API key: {masked_key}")
+
+async def main():
+    # Ensure the correct API key is set
+    ensure_api_key()
+
     print("Step 1: Running a single AI assessment step.\n" + "="*50)
 
     # The Flujo runner executes our pipeline.
-    # CRITICAL: We pass a context_model to trigger the bug.
-    # The runner will try to pass a context even if the agent doesn't want it.
+    # We provide a pipeline_name and context_model to demonstrate that even
+    # with a context present, the stateless agent works perfectly (FSD-11 fix).
     runner = Flujo(
         COHORT_CLARIFICATION_PIPELINE,
-        context_model=PipelineContext, # This will trigger the context injection
-        pipeline_name="test_bug_run",
-        initial_context_data={"initial_prompt": "Test prompt"}  # Provide required field
+        pipeline_name="cohort_clarification_v1",
+        context_model=PipelineContext
     )
 
     initial_definition = input("Enter the clinical cohort definition: ")
 
-    try:
-        # The run() method executes the pipeline from start to finish
-        result = runner.run(initial_definition)
+    # Because main() is an `async` function, we must use `run_async`.
+    # It returns an async iterator; the last item is the final result.
+    result: Optional[PipelineResult] = None
+    async for item in runner.run_async(
+        initial_definition,
+        initial_context_data={"initial_prompt": initial_definition}
+    ):
+        result = item
 
-        print("\n--- Agent Response ---")
+    print("\n--- Agent Response ---")
+    if result and result.step_history and result.step_history[-1].success:
+        final_output = result.step_history[-1].output
+        print(final_output)
+    else:
+        print("Pipeline execution failed.")
         if result and result.step_history:
-            final_step = result.step_history[-1]
-            if final_step.success:
-                print(f"\nFinal Output: {final_step.output}")
-            else:
-                print(f"\nPipeline failed: {final_step.feedback}")
-        else:
-            print("Pipeline execution failed - no step history.")
-    except Exception as e:
-        print(f"Pipeline execution failed with exception: {e}")
-        traceback.print_exc()
+            print(f"Feedback: {result.step_history[-1].feedback}")
+        return # Exit if the run failed
+
+    # --- FSD-12: TRACING DEMONSTRATION ---
+    print("\n" + "="*50)
+    print("✨ OBSERVABILITY (FSD-12) ✨")
+    if result.final_pipeline_context and result.final_pipeline_context.run_id:
+        run_id = result.final_pipeline_context.run_id
+        print(f"Pipeline run completed with ID: {run_id}")
+        print("A trace has been saved to the local `flujo_ops.db` file.")
+        print("\nTo inspect the trace, run this command in your terminal:")
+        print(f"\n  flujo lens trace {run_id}\n")
+    else:
+        print("Could not retrieve run_id for tracing.")
+
 
 if __name__ == "__main__":
-    main()
+    # Ensure you have OPENAI_API_KEY (or other) set in your .env file
+    asyncio.run(main())
