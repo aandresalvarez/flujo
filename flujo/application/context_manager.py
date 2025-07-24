@@ -64,10 +64,11 @@ def _accepts_param(func: Callable[..., Any], param: str) -> Optional[bool]:
             for p in sig.parameters.values():
                 if p.kind == inspect.Parameter.VAR_KEYWORD:
                     # If the **kwargs parameter is annotated as 'Never', it doesn't accept any parameters
-                    # Use direct comparison instead of string comparison for robustness
+                    # Handle both direct type comparison and string comparison for robustness
                     from typing import Never
 
-                    if p.annotation is Never:
+                    # Check if the annotation is Never (either as type or string)
+                    if p.annotation is Never or str(p.annotation) == "Never":
                         result = False
                     else:
                         result = True
