@@ -6,6 +6,8 @@ import asyncio
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
+import platform
+import subprocess
 
 from flujo.state.backends.sqlite import SQLiteBackend
 from typer.testing import CliRunner
@@ -388,15 +390,30 @@ class TestCLIPerformanceEdgeCases:
 class TestCLIErrorHandling:
     """Test CLI error handling and edge cases."""
 
+    @pytest.mark.skipif(platform.system() == "Windows", reason="Path permissions test is Unix-only")
     def test_cli_with_invalid_database_path(self):
         """Test CLI behavior with invalid database path."""
-        os.environ["FLUJO_STATE_URI"] = "sqlite:///nonexistent/path/database.db"
+        # Use a path that is guaranteed to be unwritable for non-root users
+        unwritable_path = "/root/forbidden.db"
+        if os.geteuid() == 0:
+            pytest.skip("Test not valid when running as root")
+        os.environ["FLUJO_STATE_URI"] = f"sqlite://{unwritable_path}"
 
-        runner = CliRunner()
+        result = subprocess.run(
+            ["python", "-m", "flujo.cli.main", "lens", "show"],
+            capture_output=True,
+            text=True,
+            env=os.environ.copy(),
+        )
 
-        # Should handle gracefully
-        result = runner.invoke(app, ["lens", "list"])
-        assert result.exit_code != 0, "Should fail with invalid database path"
+        # CLI should fail with non-zero exit code
+        assert result.returncode != 0, "Should fail with invalid database path"
+        # Error message should be in stderr, not stdout
+        assert (
+            "not writable" in result.stderr
+            or "Error" in result.stderr
+            or "Permission denied" in result.stderr
+        )
 
     def test_cli_with_malformed_environment_variable(self):
         """Test CLI behavior with malformed environment variable."""
@@ -410,11 +427,18 @@ class TestCLIErrorHandling:
 
     def test_cli_with_missing_environment_variable(self):
         """Test CLI behavior with missing environment variable."""
-        if "FLUJO_STATE_URI" in os.environ:
-            del os.environ["FLUJO_STATE_URI"]
+        # Remove the environment variable
+        env = os.environ.copy()
+        env.pop("FLUJO_STATE_URI", None)
 
-        runner = CliRunner()
+        result = subprocess.run(
+            ["python", "-m", "flujo.cli.main", "lens", "show"],
+            capture_output=True,
+            text=True,
+            env=env,
+        )
 
-        # Should handle gracefully
-        result = runner.invoke(app, ["lens", "list"])
-        assert result.exit_code != 0, "Should fail with missing environment variable"
+        # CLI should fail with non-zero exit code
+        assert result.returncode != 0, "Should fail with missing environment variable"
+        # Error message should be in stderr, not stdout
+        assert "not writable" in result.stderr or "Error" in result.stderr

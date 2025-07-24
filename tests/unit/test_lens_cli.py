@@ -1,7 +1,8 @@
-import os
 import asyncio
+import os
 from datetime import datetime
 from pathlib import Path
+
 from typer.testing import CliRunner
 from flujo.cli.main import app
 from flujo.state.backends.sqlite import SQLiteBackend
@@ -305,7 +306,8 @@ def test_lens_commands_with_environment_configuration(tmp_path: Path) -> None:
     """Test lens commands with different environment configurations."""
     db_path = tmp_path / "env_ops.db"
     backend = SQLiteBackend(db_path)
-
+    # Ensure parent directory exists
+    db_path.parent.mkdir(parents=True, exist_ok=True)
     # Create test data
     asyncio.run(
         backend.save_run_start(
@@ -320,17 +322,13 @@ def test_lens_commands_with_environment_configuration(tmp_path: Path) -> None:
             }
         )
     )
-
     # Test with FLUJO_STATE_URI environment variable
     os.environ["FLUJO_STATE_URI"] = f"sqlite:///{db_path}"
-
     result = runner.invoke(app, ["lens", "list"])
     assert result.exit_code == 0
     assert "env_test_run" in result.stdout
-
     # Test with different URI format
     os.environ["FLUJO_STATE_URI"] = f"sqlite://{db_path}"
-
     result = runner.invoke(app, ["lens", "list"])
     assert result.exit_code == 0
     assert "env_test_run" in result.stdout
