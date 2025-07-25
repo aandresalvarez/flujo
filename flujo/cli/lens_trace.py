@@ -10,6 +10,14 @@ import datetime
 from .config import load_backend_from_config
 
 
+def _convert_to_timestamp(val: Any) -> Optional[float]:
+    """Convert a value to a timestamp, handling exceptions."""
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return None
+
+
 def trace_command(run_id: str) -> None:
     """Show the hierarchical execution trace for a run as a tree, with a summary."""
     backend = load_backend_from_config()
@@ -90,16 +98,10 @@ def trace_command(run_id: str) -> None:
                 return str(val)
 
         duration = None
-        try:
-            if start is not None and end is not None:
-                try:
-                    start_ts = float(start)
-                    end_ts = float(end)
-                    duration = f"{end_ts - start_ts:.2f}s"
-                except (ValueError, TypeError):
-                    duration = None
-        except (ValueError, TypeError):
-            duration = None
+        start_ts = _convert_to_timestamp(start)
+        end_ts = _convert_to_timestamp(end)
+        if start_ts is not None and end_ts is not None:
+            duration = f"{end_ts - start_ts:.2f}s"
         status_color = {"completed": "green", "failed": "red", "running": "yellow"}.get(
             str(status).lower(), "white"
         )

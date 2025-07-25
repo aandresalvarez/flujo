@@ -24,13 +24,13 @@ def test_normalize_sqlite_path_relative(uri, expected_rel):
         result = _normalize_sqlite_path(uri, cwd)
         if expected_rel.startswith("/"):
             # Absolute path
-            assert result == Path(expected_rel), (
-                f"Expected absolute path {expected_rel}, got {result}"
+            assert result.resolve() == Path(expected_rel).resolve(), (
+                f"Expected absolute path {Path(expected_rel).resolve()}, got {result.resolve()}"
             )
         else:
             # Relative path
-            assert result == cwd / Path(expected_rel), (
-                f"Expected {cwd / Path(expected_rel)}, got {result}"
+            assert result.resolve() == (cwd / Path(expected_rel)).resolve(), (
+                f"Expected {(cwd / Path(expected_rel)).resolve()}, got {result.resolve()}"
             )
 
 
@@ -42,7 +42,9 @@ def test_normalize_sqlite_path_absolute():
     with tempfile.TemporaryDirectory() as tmpdir:
         cwd = Path(tmpdir)
         result = _normalize_sqlite_path(uri, cwd)
-        assert result == Path("/tmp/abs.db"), f"Expected /tmp/abs.db, got {result}"
+        assert result.resolve() == Path("/tmp/abs.db").resolve(), (
+            f"Expected {Path('/tmp/abs.db').resolve()}, got {result.resolve()}"
+        )
 
 
 def test_normalize_sqlite_path_edge_cases():
@@ -54,16 +56,16 @@ def test_normalize_sqlite_path_edge_cases():
         # sqlite:///./foo.db -> ./foo.db
         uri = "sqlite:///./foo.db"
         result = _normalize_sqlite_path(uri, cwd)
-        assert result == cwd / "./foo.db"
+        assert result.resolve() == (cwd / "./foo.db").resolve()
         # sqlite:////foo.db -> /foo.db
         uri = "sqlite:////foo.db"
         result = _normalize_sqlite_path(uri, cwd)
-        assert result == Path("/foo.db")
+        assert result.resolve() == Path("/foo.db").resolve()
         # sqlite:///foo.db -> foo.db
         uri = "sqlite:///foo.db"
         result = _normalize_sqlite_path(uri, cwd)
-        assert result == cwd / "foo.db"
+        assert result.resolve() == (cwd / "foo.db").resolve()
         # sqlite:///../foo.db -> ../foo.db
         uri = "sqlite:///../foo.db"
         result = _normalize_sqlite_path(uri, cwd)
-        assert result == cwd / "../foo.db"
+        assert result.resolve() == (cwd / "../foo.db").resolve()

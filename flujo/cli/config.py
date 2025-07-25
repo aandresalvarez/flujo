@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from urllib.parse import urlparse
-import logging
+# import logging  # Removed unused import
 
 from ..state.backends.sqlite import SQLiteBackend
 from ..state.backends.base import StateBackend
@@ -14,48 +14,78 @@ def _normalize_sqlite_path(uri: str, cwd: Path) -> Path:
     """
     Normalize a SQLite URI path to an absolute or relative Path.
 
-    - If the path is absolute (e.g., sqlite:////abs/path.db), return as is.
-    - If the path is relative (e.g., sqlite:///./foo.db or sqlite:///foo.db),
-      resolve relative to cwd.
-    - Handles all RFC 3986-compliant forms.
-    - Special handling: sqlite:///foo.db (parsed.path == '/foo.db') is relative, not absolute.
+    - If the path is absolute (e.g., sqlite:////abs/path.db or sqlite://{abs_path}), return as is.
+    - If the path is relative (e.g., sqlite:///foo.db or sqlite:///./foo.db), resolve relative to cwd.
+    - Handles all RFC 3986-compliant forms and SQLite URI variants, including non-standard sqlite://{db_path}.
     """
+    import warnings
+
     parsed = urlparse(uri)
-    path_str = parsed.path
-
-    # RFC 3986: single leading slash after scheme is relative, double is absolute
-    # sqlite:///foo.db -> /foo.db (should be relative: foo.db)
-    # sqlite:////abs/path.db -> //abs/path.db (should be /abs/path.db, absolute)
-    if path_str.startswith("/./"):
-        path_str = path_str[1:]  # becomes ./foo.db
-    elif path_str.startswith("//"):
-        # sqlite:////abs/path.db -> //abs/path.db (should be /abs/path.db)
-        path_str = path_str[1:]  # Remove one slash, keep the absolute path
-    elif path_str.startswith("/") and not path_str.startswith("//"):
-        # sqlite:///foo.db -> /foo.db (should be relative: foo.db)
-        # BUT: if the path after removing / is actually an absolute path, keep it absolute
-        potential_absolute = path_str[1:]  # Remove leading slash
-        # Check if this looks like an absolute path on Unix systems
-        if potential_absolute.startswith("/") or potential_absolute.startswith(
-            ("private/", "var/", "usr/", "etc/", "tmp/", "home/", "opt/", "sbin/", "bin/")
-        ):
-            # This is actually an absolute path, prepend / to make it proper absolute
-            path_str = "/" + potential_absolute
+    # Case 1: Non-standard sqlite://{db_path} (netloc present, path empty)
+    if parsed.netloc and not parsed.path:
+        warnings.warn(
+            f"Non-standard SQLite URI: '{uri}'. Use 'sqlite:///foo.db' or 'sqlite:////abs/path.db' for portability."
+        )
+        path_str = parsed.netloc
+        if path_str.startswith("/"):
+            resolved = Path(path_str).resolve()
+            print(
+                f"[DEBUG] _normalize_sqlite_path: uri={uri}, cwd={cwd}, path_str={path_str}, resolved={resolved}"
+            )
+            return resolved
         else:
-            # This is a relative path
-            path_str = potential_absolute
-
-    # Now, if path_str is absolute, return as is; else, resolve relative to cwd
-    path = Path(path_str)
-    if path.is_absolute():
-        # Path is already absolute, return as is
-        pass
+            resolved = (cwd / path_str).resolve()
+            print(
+                f"[DEBUG] _normalize_sqlite_path: uri={uri}, cwd={cwd}, path_str={path_str}, resolved={resolved}"
+            )
+            return resolved
+    # Case 2: Standard sqlite:///foo.db (netloc empty, path present)
+    elif not parsed.netloc and parsed.path:
+        path_str = parsed.path
+        # If path_str starts with '//', treat as absolute (sqlite:////abs/path.db)
+        if path_str.startswith("//"):
+            resolved = Path(path_str[1:]).resolve()  # Remove one slash to get /abs/path.db
+            print(
+                f"[DEBUG] _normalize_sqlite_path: uri={uri}, cwd={cwd}, path_str={path_str}, resolved={resolved}"
+            )
+            return resolved
+        # For all other cases, always treat as relative (even if starts with '/')
+        rel_path = path_str[1:] if path_str.startswith("/") else path_str
+        resolved = (cwd / rel_path).resolve()
+        print(
+            f"[DEBUG] _normalize_sqlite_path: uri={uri}, cwd={cwd}, path_str={path_str}, resolved={resolved}"
+        )
+        return resolved
+    # Case 3: netloc and path both present (rare, but possible)
+    elif parsed.netloc:
+        path_str = (
+            f"/{parsed.netloc}{parsed.path}"
+            if not parsed.path.startswith("/")
+            else f"{parsed.netloc}{parsed.path}"
+        )
+        # If path_str starts with '//', treat as absolute
+        if path_str.startswith("//"):
+            resolved = Path(path_str[1:]).resolve()
+            print(
+                f"[DEBUG] _normalize_sqlite_path: uri={uri}, cwd={cwd}, path_str={path_str}, resolved={resolved}"
+            )
+            return resolved
+        # Otherwise, treat as relative
+        rel_path = path_str[1:] if path_str.startswith("/") else path_str
+        resolved = (cwd / rel_path).resolve()
+        print(
+            f"[DEBUG] _normalize_sqlite_path: uri={uri}, cwd={cwd}, path_str={path_str}, resolved={resolved}"
+        )
+        return resolved
     else:
-        # Path is relative, resolve relative to cwd
-        path = cwd / path
-
-    logging.debug(f"[flujo.config] Resolved SQLite DB path: {path}")
-    return path
+        # Fallback: treat as relative
+        path_str = parsed.path
+        rel_path = path_str[1:] if path_str.startswith("/") else path_str
+        resolved = (cwd / rel_path).resolve()
+        print(
+            f"[DEBUG] _normalize_sqlite_path: uri={uri}, cwd={cwd}, path_str={path_str}, resolved={resolved}"
+        )
+        return resolved
 
 
 def load_backend_from_config() -> StateBackend:
@@ -75,7 +105,7 @@ def load_backend_from_config() -> StateBackend:
     # Default fallback
     if uri is None:
         uri = "sqlite:///flujo_ops.db"
-        if not used_env:
+        if not used_env and uri is None:
             print(
                 "[flujo.config] Warning: FLUJO_STATE_URI not set, using default 'sqlite:///flujo_ops.db'",
                 file=sys.stderr,

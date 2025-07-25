@@ -395,8 +395,11 @@ class TestCLIErrorHandling:
         """Test CLI behavior with invalid database path."""
         # Use a path that is guaranteed to be unwritable for non-root users
         unwritable_path = "/root/forbidden.db"
-        if os.geteuid() == 0:
-            pytest.skip("Test not valid when running as root")
+        try:
+            if os.geteuid() == 0:
+                pytest.skip("Test not valid when running as root")
+        except AttributeError:
+            pytest.skip("os.geteuid() is not available on this platform")
         os.environ["FLUJO_STATE_URI"] = f"sqlite://{unwritable_path}"
 
         result = subprocess.run(

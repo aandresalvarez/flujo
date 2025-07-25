@@ -304,11 +304,11 @@ def test_lens_commands_with_failed_run(tmp_path: Path) -> None:
 
 def test_lens_commands_with_environment_configuration(tmp_path: Path) -> None:
     """Test lens commands with different environment configurations."""
+    import os
+
     db_path = tmp_path / "env_ops.db"
     backend = SQLiteBackend(db_path)
-    # Ensure parent directory exists
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    # Create test data
     asyncio.run(
         backend.save_run_start(
             {
@@ -318,20 +318,29 @@ def test_lens_commands_with_environment_configuration(tmp_path: Path) -> None:
                 "pipeline_version": "1.0",
                 "status": "running",
                 "created_at": datetime.utcnow().isoformat(),
-                "updated_at": datetime.utcnow().isoformat(),
             }
         )
     )
-    # Test with FLUJO_STATE_URI environment variable
-    os.environ["FLUJO_STATE_URI"] = f"sqlite:///{db_path}"
-    result = runner.invoke(app, ["lens", "list"])
-    assert result.exit_code == 0
-    assert "env_test_run" in result.stdout
-    # Test with different URI format
-    os.environ["FLUJO_STATE_URI"] = f"sqlite://{db_path}"
-    result = runner.invoke(app, ["lens", "list"])
-    assert result.exit_code == 0
-    assert "env_test_run" in result.stdout
+    runner = CliRunner()
+    orig_cwd = os.getcwd()
+    os.chdir(tmp_path)
+    try:
+        # Standards-compliant absolute path: sqlite:////abs/path.db (4 slashes)
+        abs_uri = f"sqlite:////{db_path.as_posix().lstrip('/')}"
+        result = runner.invoke(app, ["lens", "list"], env={"FLUJO_STATE_URI": abs_uri})
+        print(f"STDOUT (sqlite:////{{db_path}}): {result.stdout}")
+        print(f"STDERR (sqlite:////{{db_path}}): {result.stderr}")
+        assert result.exit_code == 0
+        assert "env_test_run" in result.stdout
+        # Relative path: sqlite:///env_ops.db (should resolve to cwd/env_ops.db)
+        rel_uri = "sqlite:///env_ops.db"
+        result = runner.invoke(app, ["lens", "list"], env={"FLUJO_STATE_URI": rel_uri})
+        print(f"STDOUT (sqlite:///env_ops.db): {result.stdout}")
+        print(f"STDERR (sqlite:///env_ops.db): {result.stderr}")
+        assert result.exit_code == 0
+        assert "env_test_run" in result.stdout
+    finally:
+        os.chdir(orig_cwd)
 
 
 def test_lens_cli_relative_path_resolution(tmp_path: Path, monkeypatch):
