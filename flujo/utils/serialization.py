@@ -400,9 +400,6 @@ def safe_serialize(
             if math.isinf(obj):
                 return "inf" if obj > 0 else "-inf"
             return obj
-        custom_serializer = lookup_custom_serializer(obj)
-        if custom_serializer:
-            return safe_serialize(custom_serializer(obj), default_serializer, _seen)
         if isinstance(obj, (datetime, date, time)):
             return obj.isoformat()
         if isinstance(obj, (bytes, memoryview)):
@@ -452,7 +449,7 @@ def safe_serialize(
     finally:
         if not isinstance(obj, PRIMITIVE_TYPES):
             _seen.discard(id(obj))
-        if _seen is not None and len(_seen) == 0:
+        if _seen is not None and not _seen:
             _seen.clear()
 
 

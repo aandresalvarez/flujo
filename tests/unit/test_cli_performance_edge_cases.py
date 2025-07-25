@@ -390,58 +390,58 @@ class TestCLIPerformanceEdgeCases:
 class TestCLIErrorHandling:
     """Test CLI error handling and edge cases."""
 
-    @pytest.mark.skipif(platform.system() == "Windows", reason="Path permissions test is Unix-only")
-    def test_cli_with_invalid_database_path(self):
-        """Test CLI behavior with invalid database path."""
-        # Use a path that is guaranteed to be unwritable for non-root users
-        unwritable_path = "/root/forbidden.db"
-        try:
-            if os.geteuid() == 0:
-                pytest.skip("Test not valid when running as root")
-        except AttributeError:
-            pytest.skip("os.geteuid() is not available on this platform")
-        os.environ["FLUJO_STATE_URI"] = f"sqlite://{unwritable_path}"
+    @pytest.fixture
+    def unwritable_db_path(self):
+        """Fixture for a path that is guaranteed to be unwritable for non-root users on Unix."""
+        return "/root/forbidden.db"
 
+    @pytest.mark.skipif(platform.system() == "Windows", reason="Path permissions test is Unix-only")
+    def test_cli_fails_with_unwritable_path_unix(self, unwritable_db_path):
+        """Fails gracefully when database path is unwritable (not root, Unix)."""
+        if hasattr(os, "geteuid") and os.geteuid() == 0:
+            pytest.skip("Test not valid when running as root")
+        os.environ["FLUJO_STATE_URI"] = f"sqlite://{unwritable_db_path}"
         result = subprocess.run(
             ["python", "-m", "flujo.cli.main", "lens", "show"],
             capture_output=True,
             text=True,
             env=os.environ.copy(),
         )
-
-        # CLI should fail with non-zero exit code
         assert result.returncode != 0, "Should fail with invalid database path"
-        # Error message should be in stderr, not stdout
         assert (
             "not writable" in result.stderr
             or "Error" in result.stderr
             or "Permission denied" in result.stderr
         )
 
+    @pytest.mark.skipif(platform.system() != "Windows", reason="Windows-specific test")
+    def test_cli_skipped_on_windows(self):
+        """Test is skipped on Windows as path permissions are not applicable."""
+        pytest.skip("Path permissions test is Unix-only")
+
+    @pytest.mark.skipif(not hasattr(os, "geteuid"), reason="geteuid not available on this platform")
+    def test_cli_skipped_as_root(self, unwritable_db_path):
+        """Test is skipped if running as root (Unix)."""
+        if os.geteuid() == 0:
+            os.environ["FLUJO_STATE_URI"] = f"sqlite://{unwritable_db_path}"
+            pytest.skip("Test not valid when running as root")
+
     def test_cli_with_malformed_environment_variable(self):
         """Test CLI behavior with malformed environment variable."""
         os.environ["FLUJO_STATE_URI"] = "invalid://uri"
-
         runner = CliRunner()
-
-        # Should handle gracefully
         result = runner.invoke(app, ["lens", "list"])
         assert result.exit_code != 0, "Should fail with malformed URI"
 
     def test_cli_with_missing_environment_variable(self):
         """Test CLI behavior with missing environment variable."""
-        # Remove the environment variable
         env = os.environ.copy()
         env.pop("FLUJO_STATE_URI", None)
-
         result = subprocess.run(
             ["python", "-m", "flujo.cli.main", "lens", "show"],
             capture_output=True,
             text=True,
             env=env,
         )
-
-        # CLI should fail with non-zero exit code
         assert result.returncode != 0, "Should fail with missing environment variable"
-        # Error message should be in stderr, not stdout
         assert "not writable" in result.stderr or "Error" in result.stderr
