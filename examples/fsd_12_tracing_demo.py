@@ -143,7 +143,7 @@ async def demo_tracing_functionality():
         print(f"   📊 Trace spans: {len(spans)}")
 
         print("\n🔍 CLI Commands to inspect this trace:")
-        print(f"   flujo lens list                    # List all runs")
+        print("   flujo lens list                    # List all runs")
         print(f"   flujo lens show {run_id}          # Show run details")
         print(f"   flujo lens trace {run_id}         # View trace tree")
         print(f"   flujo lens spans {run_id}         # List all spans")

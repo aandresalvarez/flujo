@@ -100,7 +100,7 @@ class TestCISerializationCompatibility:
         data["self"] = data
 
         # Should handle without stack overflow
-        result = robust_serialize(data)
+        result = robust_serialize(data, circular_ref_placeholder=None)
         assert isinstance(result, dict)
         assert result["self"] is None  # Circular ref should be None
 

@@ -5,7 +5,6 @@ make_agentic_loop_pipeline factory function.
 """
 
 import asyncio
-from typing import Any
 
 from flujo.recipes.factories import make_agentic_loop_pipeline, run_agentic_loop_pipeline
 from flujo.infra.agents import make_agent_async

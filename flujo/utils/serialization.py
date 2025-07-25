@@ -206,20 +206,33 @@ def _serialize_for_key(
 
     This function is used internally by safe_serialize when serializing
     dictionary keys, ensuring they are always strings for JSON compatibility.
-
-    Args:
-        obj: The object to serialize for use as a key
-        _seen: Internal set for circular reference detection (do not use directly)
-        default_serializer: Optional custom serializer for unknown types
-
-    Returns:
-        A string representation of the object suitable for JSON object keys
+    Handles circular references robustly and always uses custom serializers for keys.
     """
-    # For keys, we need to ensure the result is a string for JSON compatibility
-    serialized = safe_serialize(obj, default_serializer=default_serializer, _seen=_seen)
-
-    # Convert to string to guarantee JSON-compatible keys
-    return str(serialized)
+    PRIMITIVE_TYPES = (str, int, float, bool, type(None))
+    if _seen is None:
+        _seen = set()
+    if isinstance(obj, PRIMITIVE_TYPES):
+        return str(obj)
+    obj_id = id(obj)
+    custom_serializer = lookup_custom_serializer(obj)
+    try:
+        # Always use the custom serializer for keys, even if circular
+        if custom_serializer:
+            serialized = custom_serializer(obj)
+            return str(serialized)
+        # If no custom serializer, check for circularity
+        if obj_id in _seen:
+            return "<circular-key>"
+        _seen.add(obj_id)
+        serialized = safe_serialize(
+            obj, default_serializer=default_serializer, _seen=_seen, _is_top_level=False
+        )
+        return str(serialized)
+    except Exception:
+        return "<circular-key>"
+    finally:
+        if not custom_serializer:
+            _seen.discard(obj_id)
 
 
 def safe_deserialize(
@@ -373,23 +386,28 @@ def safe_serialize(
     obj: Any,
     default_serializer: Optional[Callable[[Any], Any]] = None,
     _seen: Optional[Set[int]] = None,
+    _is_top_level: bool = True,
+    circular_ref_placeholder: Any = "<circular-ref>",
 ) -> Any:
     """
     Safely serialize an object with intelligent fallback handling.
+    Handles circular references robustly by only clearing the _seen set at the top-level call.
+    The circular_ref_placeholder controls what is returned for circular references (default '<circular-ref>').
     """
-    # Only track object IDs for non-primitive, non-immutable types
     PRIMITIVE_TYPES = (str, int, float, bool, type(None))
     if _seen is None:
         _seen = set()
     if not isinstance(obj, PRIMITIVE_TYPES):
         obj_id = id(obj)
         if obj_id in _seen:
-            return None  # Circular reference detected
+            return circular_ref_placeholder
         _seen.add(obj_id)
     try:
         custom_serializer = lookup_custom_serializer(obj)
         if custom_serializer:
-            return safe_serialize(custom_serializer(obj), default_serializer, _seen)
+            return safe_serialize(
+                custom_serializer(obj), default_serializer, _seen, False, circular_ref_placeholder
+            )
         if obj is None:
             return None
         if isinstance(obj, (str, int, bool)):
@@ -417,27 +435,35 @@ def safe_serialize(
                 return repr(obj)
         if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
             return {
-                k: safe_serialize(v, default_serializer, _seen)
+                k: safe_serialize(v, default_serializer, _seen, False, circular_ref_placeholder)
                 for k, v in dataclasses.asdict(obj).items()
             }
         if isinstance(obj, Enum):
             return obj.value
         if hasattr(obj, "model_dump"):
-            return safe_serialize(obj.model_dump(), default_serializer, _seen)
+            return safe_serialize(
+                obj.model_dump(), default_serializer, _seen, False, circular_ref_placeholder
+            )
         if HAS_PYDANTIC and isinstance(obj, BaseModel):
-            return safe_serialize(obj.dict(), default_serializer, _seen)
+            return safe_serialize(
+                obj.dict(), default_serializer, _seen, False, circular_ref_placeholder
+            )
         if isinstance(obj, dict):
             return {
                 str(_serialize_for_key(k, _seen, default_serializer)): safe_serialize(
-                    v, default_serializer, _seen
+                    v, default_serializer, _seen, False, circular_ref_placeholder
                 )
                 for k, v in obj.items()
             }
         if isinstance(obj, (list, tuple)):
-            return [safe_serialize(item, default_serializer, _seen) for item in obj]
+            return [
+                safe_serialize(item, default_serializer, _seen, False, circular_ref_placeholder)
+                for item in obj
+            ]
         if isinstance(obj, (set, frozenset)):
             return [
-                safe_serialize(item, default_serializer, _seen) for item in sorted(obj, key=str)
+                safe_serialize(item, default_serializer, _seen, False, circular_ref_placeholder)
+                for item in sorted(obj, key=str)
             ]
         if default_serializer:
             return default_serializer(obj)
@@ -449,11 +475,11 @@ def safe_serialize(
     finally:
         if not isinstance(obj, PRIMITIVE_TYPES):
             _seen.discard(id(obj))
-        if _seen is not None and not _seen:
+        if _is_top_level:
             _seen.clear()
 
 
-def robust_serialize(obj: Any) -> Any:
+def robust_serialize(obj: Any, circular_ref_placeholder: Any = "<circular-ref>") -> Any:
     """
     Robust serialization that handles all common Python types.
 
@@ -462,6 +488,7 @@ def robust_serialize(obj: Any) -> Any:
 
     Args:
         obj: The object to serialize
+        circular_ref_placeholder: What to use for circular references (default '<circular-ref>')
 
     Returns:
         JSON-serializable representation of the object
@@ -471,7 +498,11 @@ def robust_serialize(obj: Any) -> Any:
         return f"<unserializable: {type(obj).__name__}>"
 
     try:
-        return safe_serialize(obj, default_serializer=fallback_serializer)
+        return safe_serialize(
+            obj,
+            default_serializer=fallback_serializer,
+            circular_ref_placeholder=circular_ref_placeholder,
+        )
     except Exception:
         return f"<unserializable: {type(obj).__name__}>"
 

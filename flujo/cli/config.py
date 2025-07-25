@@ -24,12 +24,11 @@ def _normalize_sqlite_path(uri: str, cwd: Path) -> Path:
     - If the path is relative (e.g., sqlite:///foo.db or sqlite:///./foo.db), resolve relative to cwd.
     - Handles all RFC 3986-compliant forms and SQLite URI variants, including non-standard sqlite://{db_path}.
     """
-    import warnings
 
     parsed = urlparse(uri)
     # Case 1: Non-standard sqlite://{db_path} (netloc present, path empty)
     if parsed.netloc and not parsed.path:
-        warnings.warn(
+        logging.warning(
             f"Non-standard SQLite URI: '{uri}'. Use 'sqlite:///foo.db' or 'sqlite:////abs/path.db' for portability."
         )
         path_str = parsed.netloc

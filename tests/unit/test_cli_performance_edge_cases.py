@@ -391,9 +391,19 @@ class TestCLIErrorHandling:
     """Test CLI error handling and edge cases."""
 
     @pytest.fixture
-    def unwritable_db_path(self):
+    def unwritable_db_path(self, tmp_path):
         """Fixture for a path that is guaranteed to be unwritable for non-root users on Unix."""
-        return "/root/forbidden.db"
+        import stat
+
+        # Create a temporary directory and remove write permissions
+        unwritable_dir = tmp_path / "unwritable"
+        unwritable_dir.mkdir()
+        unwritable_db = unwritable_dir / "forbidden.db"
+        # Remove write permissions from the directory
+        unwritable_dir.chmod(stat.S_IREAD | stat.S_IEXEC)
+        yield str(unwritable_db)
+        # Restore permissions so pytest can clean up
+        unwritable_dir.chmod(stat.S_IWUSR | stat.S_IREAD | stat.S_IEXEC)
 
     @pytest.mark.skipif(platform.system() == "Windows", reason="Path permissions test is Unix-only")
     def test_cli_fails_with_unwritable_path_unix(self, unwritable_db_path):
