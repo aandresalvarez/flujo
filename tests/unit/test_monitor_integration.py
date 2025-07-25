@@ -195,6 +195,13 @@ class TestInMemoryMonitorUsage:
 class TestMonitorIntegrationWithCaplog:
     """Test In-Memory Monitor integration with caplog for comprehensive testing."""
 
+    @pytest.fixture(autouse=True)
+    def clear_monitor(self):
+        """Clear monitor before each test to ensure isolation."""
+        global_monitor.calls.clear()
+        yield
+        global_monitor.calls.clear()
+
     @pytest.mark.asyncio
     async def test_monitor_with_caplog(self, caplog):
         """Test that In-Memory Monitor works with caplog for log message assertions."""

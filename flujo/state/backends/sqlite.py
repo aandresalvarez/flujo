@@ -16,6 +16,7 @@ from ...utils.serialization import safe_deserialize, robust_serialize
 from ...infra import telemetry
 
 import re
+import logging  # Ensure logging is imported at the top for performance and style
 
 
 if TYPE_CHECKING:
@@ -1345,7 +1346,6 @@ class SQLiteBackend(StateBackend):
                 return
 
             from flujo.utils.serialization import robust_serialize
-            import logging
 
             try:
                 start_time = float(span_data.get("start_time", 0.0))

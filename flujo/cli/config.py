@@ -111,6 +111,21 @@ def load_backend_from_config() -> StateBackend:
                 f"[red]Error: Database directory '{parent_dir}' is not writable[/red]", err=True
             )
             raise typer.Exit(1)
+        # Ensure the database file exists with secure permissions (read/write for owner only)
+        # This avoids issues with default umask or inherited permissions from 'open' in append mode.
+        if not db_path.exists():
+            try:
+                fd = os.open(db_path, os.O_CREAT | os.O_WRONLY, 0o600)
+                os.close(fd)
+            except Exception as e:
+                typer.echo(
+                    f"[red]Error: Cannot create database file '{db_path}' with secure permissions due to {type(e).__name__}: {e}[/red]",
+                    err=True,
+                )
+                raise typer.Exit(1)
+        elif not os.access(db_path, os.W_OK):
+            typer.echo(f"[red]Error: Database file '{db_path}' is not writable[/red]", err=True)
+            raise typer.Exit(1)
         # Try to open the file for writing (touch)
         try:
             with open(db_path, "a"):

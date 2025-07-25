@@ -53,11 +53,11 @@ def trace_command(run_id: str) -> None:
         start = node.get("start_time")
         end = node.get("end_time")
         duration = None
-        if start is not None and end is not None:
-            try:
-                duration = float(end) - float(start)
-            except (ValueError, TypeError):
-                duration = None
+        # Use robust timestamp conversion to handle string, int, float, or None
+        start_timestamp = _convert_to_timestamp(start)
+        end_timestamp = _convert_to_timestamp(end)
+        if start_timestamp is not None and end_timestamp is not None:
+            duration = end_timestamp - start_timestamp
         status_icon = "✅" if status == "completed" else ("❌" if status == "failed" else "⏳")
         label = f"{status_icon} [bold]{name}[/bold]"
         if duration is not None:

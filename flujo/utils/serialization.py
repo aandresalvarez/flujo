@@ -200,6 +200,7 @@ def _serialize_for_key(
     obj: Any,
     _seen: Optional[Set[int]] = None,
     default_serializer: Optional[Callable[[Any], Any]] = None,
+    _recursion_depth: int = 0,
 ) -> str:
     """
     Serialize an object for use as a dictionary key.
@@ -219,13 +220,13 @@ def _serialize_for_key(
         # Always use the custom serializer for keys, even if circular
         if custom_serializer:
             serialized = custom_serializer(obj)
-            # If the custom serializer returns a non-primitive, serialize it with _is_top_level=False
+            # If the custom serializer returns a non-primitive, serialize it with increased recursion depth
             if not isinstance(serialized, PRIMITIVE_TYPES):
                 serialized = safe_serialize(
                     serialized,
                     default_serializer=default_serializer,
                     _seen=_seen,
-                    _is_top_level=False,
+                    _recursion_depth=_recursion_depth + 1,
                 )
             return str(serialized)
         # If no custom serializer, check for circularity
@@ -233,7 +234,10 @@ def _serialize_for_key(
             return "<circular-key>"
         _seen.add(obj_id)
         serialized = safe_serialize(
-            obj, default_serializer=default_serializer, _seen=_seen, _is_top_level=False
+            obj,
+            default_serializer=default_serializer,
+            _seen=_seen,
+            _recursion_depth=_recursion_depth + 1,
         )
         return str(serialized)
     except Exception:
@@ -394,7 +398,7 @@ def safe_serialize(
     obj: Any,
     default_serializer: Optional[Callable[[Any], Any]] = None,
     _seen: Optional[Set[int]] = None,
-    _is_top_level: bool = True,
+    _recursion_depth: int = 0,
     circular_ref_placeholder: Any = "<circular-ref>",
 ) -> Any:
     """
@@ -414,7 +418,11 @@ def safe_serialize(
         custom_serializer = lookup_custom_serializer(obj)
         if custom_serializer:
             return safe_serialize(
-                custom_serializer(obj), default_serializer, _seen, False, circular_ref_placeholder
+                custom_serializer(obj),
+                default_serializer,
+                _seen,
+                _recursion_depth + 1,
+                circular_ref_placeholder,
             )
         if obj is None:
             return None
@@ -443,34 +451,50 @@ def safe_serialize(
                 return repr(obj)
         if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
             return {
-                k: safe_serialize(v, default_serializer, _seen, False, circular_ref_placeholder)
+                k: safe_serialize(
+                    v, default_serializer, _seen, _recursion_depth + 1, circular_ref_placeholder
+                )
                 for k, v in dataclasses.asdict(obj).items()
             }
         if isinstance(obj, Enum):
             return obj.value
         if hasattr(obj, "model_dump"):
             return safe_serialize(
-                obj.model_dump(), default_serializer, _seen, False, circular_ref_placeholder
+                obj.model_dump(),
+                default_serializer,
+                _seen,
+                _recursion_depth + 1,
+                circular_ref_placeholder,
             )
         if HAS_PYDANTIC and isinstance(obj, BaseModel):
             return safe_serialize(
-                obj.dict(), default_serializer, _seen, False, circular_ref_placeholder
+                obj.dict(),
+                default_serializer,
+                _seen,
+                _recursion_depth + 1,
+                circular_ref_placeholder,
             )
         if isinstance(obj, dict):
             return {
-                str(_serialize_for_key(k, _seen, default_serializer)): safe_serialize(
-                    v, default_serializer, _seen, False, circular_ref_placeholder
+                str(
+                    _serialize_for_key(k, _seen, default_serializer, _recursion_depth + 1)
+                ): safe_serialize(
+                    v, default_serializer, _seen, _recursion_depth + 1, circular_ref_placeholder
                 )
                 for k, v in obj.items()
             }
         if isinstance(obj, (list, tuple)):
             return [
-                safe_serialize(item, default_serializer, _seen, False, circular_ref_placeholder)
+                safe_serialize(
+                    item, default_serializer, _seen, _recursion_depth + 1, circular_ref_placeholder
+                )
                 for item in obj
             ]
         if isinstance(obj, (set, frozenset)):
             return [
-                safe_serialize(item, default_serializer, _seen, False, circular_ref_placeholder)
+                safe_serialize(
+                    item, default_serializer, _seen, _recursion_depth + 1, circular_ref_placeholder
+                )
                 for item in sorted(obj, key=str)
             ]
         if default_serializer:
@@ -483,7 +507,7 @@ def safe_serialize(
     finally:
         if not isinstance(obj, PRIMITIVE_TYPES):
             _seen.discard(id(obj))
-        if _is_top_level:
+        if _recursion_depth == 0:
             _seen.clear()
 
 
