@@ -6,7 +6,6 @@ This script creates a simple pipeline to demonstrate the hierarchical trace visu
 """
 
 import asyncio
-from typing import Dict, Any
 from flujo.domain.dsl import Pipeline, Step
 from flujo.application.runner import Flujo
 from flujo.domain.models import PipelineContext
@@ -48,7 +47,7 @@ async def main():
         # Get the final result
         pass
 
-    print(f"\n✅ Pipeline completed!")
+    print("\n✅ Pipeline completed!")
 
     # Get the final output from the last step result
     if result.step_history:

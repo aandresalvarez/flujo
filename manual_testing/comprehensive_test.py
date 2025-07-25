@@ -75,7 +75,7 @@ async def test_agent(agent, agent_name, context_model=None):
                     print(f"❌ FAILED: {final_step.feedback}")
                     return False
             else:
-                print(f"❌ FAILED: No step history")
+                print("❌ FAILED: No step history")
                 return False
 
     except Exception as e:

@@ -16,6 +16,7 @@ from ...utils.serialization import safe_deserialize, robust_serialize
 from ...infra import telemetry
 
 import re
+import logging  # Ensure logging is imported at the top for performance and style
 
 
 if TYPE_CHECKING:
@@ -228,7 +229,7 @@ class SQLiteBackend(StateBackend):
 
     def __init__(self, db_path: Path) -> None:
         self.db_path = Path(db_path)
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)  # Ensure parent directories exist
         self._lock = asyncio.Lock()
         self._initialized = False
         self._connection_pool: Optional[aiosqlite.Connection] = None
@@ -1346,13 +1347,30 @@ class SQLiteBackend(StateBackend):
 
             from flujo.utils.serialization import robust_serialize
 
+            try:
+                start_time = float(span_data.get("start_time", 0.0))
+            except (ValueError, TypeError):
+                logging.warning(
+                    f"Skipping span with invalid start_time for run_id={run_id}, span_id={span_data.get('span_id')}"
+                )
+                return
+            try:
+                end_time = (
+                    float(span_data["end_time"]) if span_data.get("end_time") is not None else None
+                )
+            except (ValueError, TypeError):
+                logging.warning(
+                    f"Skipping span with invalid end_time for run_id={run_id}, span_id={span_data.get('span_id')}"
+                )
+                return
+
             span_tuple: Tuple[str, str, Optional[str], str, float, Optional[float], str, str] = (
                 str(span_data.get("span_id", "")),
                 run_id,
                 parent_span_id,
                 str(span_data.get("name", "")),
-                float(span_data.get("start_time", 0.0)),
-                float(span_data["end_time"]) if span_data.get("end_time") is not None else None,
+                start_time,
+                end_time,
                 str(span_data.get("status", "running")),
                 json.dumps(robust_serialize(span_data.get("attributes", {}))),
             )

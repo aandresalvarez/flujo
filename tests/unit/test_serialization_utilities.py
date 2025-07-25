@@ -294,6 +294,25 @@ class TestSafeSerialize:
         assert isinstance(result["dict"], dict)
         assert isinstance(result["set"], list)
 
+    def test_safe_serialize_deep_circular_reference(self):
+        """Test that deep nested circular references are handled and _seen is only cleared at the top level."""
+        # Create a deeply nested structure with a circular reference
+        a = {}
+        b = {"child": a}
+        a["parent"] = b  # Circular reference
+        a["self"] = a  # Self-reference
+        # Should not raise RecursionError or leak _seen state
+        result = safe_serialize(a)
+        assert isinstance(result, dict)
+        assert "parent" in result
+        assert "self" in result
+        # The circular reference should be handled (should be None or similar for the cycle)
+        assert result["parent"]["child"] is not None
+        # Serializing again should not be affected by previous call
+        result2 = safe_serialize(a)
+        assert isinstance(result2, dict)
+        assert result2["parent"]["child"] is not None
+
 
 class TestSafeDeserialize:
     """Test safe_deserialize function."""
