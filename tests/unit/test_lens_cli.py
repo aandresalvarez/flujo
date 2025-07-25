@@ -75,7 +75,7 @@ def test_lens_commands(tmp_path: Path, monkeypatch) -> None:
     )
 
     # Test list command
-    os.environ["FLUJO_STATE_URI"] = f"sqlite:///{db_path}"
+    os.environ["FLUJO_STATE_URI"] = f"sqlite:////{db_path}"
     result = runner.invoke(app, ["lens", "list"])
     assert result.exit_code == 0
     assert "r1" in result.stdout
@@ -121,7 +121,7 @@ def test_lens_commands_with_filters(tmp_path: Path) -> None:
             )
         )
 
-    os.environ["FLUJO_STATE_URI"] = f"sqlite:///{db_path}"
+    os.environ["FLUJO_STATE_URI"] = f"sqlite:////{db_path}"
 
     # Test list with status filter
     result = runner.invoke(app, ["lens", "list", "--status", "completed"])
@@ -192,7 +192,7 @@ def test_lens_show_detailed_run(tmp_path: Path) -> None:
         )
     )
 
-    os.environ["FLUJO_STATE_URI"] = f"sqlite:///{db_path}"
+    os.environ["FLUJO_STATE_URI"] = f"sqlite:////{db_path}"
 
     # Test show command
     result = runner.invoke(app, ["lens", "show", run_id])
@@ -207,7 +207,7 @@ def test_lens_show_detailed_run(tmp_path: Path) -> None:
 def test_lens_show_nonexistent_run(tmp_path: Path) -> None:
     """Test lens show command with nonexistent run."""
     db_path = tmp_path / "ops.db"
-    os.environ["FLUJO_STATE_URI"] = f"sqlite:///{db_path}"
+    os.environ["FLUJO_STATE_URI"] = f"sqlite:////{db_path}"
 
     # Test show with nonexistent run
     result = runner.invoke(app, ["lens", "show", "nonexistent_run"])
@@ -218,7 +218,7 @@ def test_lens_show_nonexistent_run(tmp_path: Path) -> None:
 def test_lens_commands_with_empty_database(tmp_path: Path) -> None:
     """Test lens commands with empty database."""
     db_path = tmp_path / "empty_ops.db"
-    os.environ["FLUJO_STATE_URI"] = f"sqlite:///{db_path}"
+    os.environ["FLUJO_STATE_URI"] = f"sqlite:////{db_path}"
 
     # Test list with empty database
     result = runner.invoke(app, ["lens", "list"])
@@ -286,7 +286,7 @@ def test_lens_commands_with_failed_run(tmp_path: Path) -> None:
         )
     )
 
-    os.environ["FLUJO_STATE_URI"] = f"sqlite:///{db_path}"
+    os.environ["FLUJO_STATE_URI"] = f"sqlite:////{db_path}"
 
     # Test list shows failed run
     result = runner.invoke(app, ["lens", "list"])
@@ -357,7 +357,7 @@ def test_lens_cli_relative_path_resolution(tmp_path: Path, monkeypatch):
     env = {
         **os.environ,
         "FLUJO_CONFIG_PATH": str(flujo_toml),
-        "FLUJO_STATE_URI": f"sqlite:///{db_path}",
+        "FLUJO_STATE_URI": f"sqlite:////{db_path}",
     }
     result = runner.invoke(app, ["lens", "list"], env=env)
     assert result.exit_code == 0, result.stdout + result.stderr
@@ -384,7 +384,7 @@ def test_lens_show_with_verbose_options(tmp_path: Path) -> None:
         "error": None,
     }
     create_run_with_steps(backend, run_id, steps=[step])
-    os.environ["FLUJO_STATE_URI"] = f"sqlite:///{db_path}"
+    os.environ["FLUJO_STATE_URI"] = f"sqlite:////{db_path}"
     result = runner.invoke(app, ["lens", "show", run_id, "--show-input"])
     assert result.exit_code == 0
     assert "test_input" in result.stdout
@@ -457,7 +457,7 @@ def test_lens_trace_command(tmp_path: Path) -> None:
         )
     )
 
-    os.environ["FLUJO_STATE_URI"] = f"sqlite:///{db_path}"
+    os.environ["FLUJO_STATE_URI"] = f"sqlite:////{db_path}"
 
     # Test trace command
     result = runner.invoke(app, ["lens", "trace", run_id])
@@ -488,7 +488,7 @@ def test_lens_trace_command_regression_timestamps(tmp_path: Path) -> None:
         create_run(run_id, pipeline_name=trace_data.get("name", "pipeline"))
         if hasattr(backend, "save_trace"):
             asyncio.run(backend.save_trace(run_id, trace_data))
-        os.environ["FLUJO_STATE_URI"] = f"sqlite:///{tmp_path}/trace_ops_regression.db"
+        os.environ["FLUJO_STATE_URI"] = f"sqlite:////{tmp_path}/trace_ops_regression.db"
         result = runner.invoke(app, ["lens", "trace", run_id])
         assert result.exit_code in [0, 1]
         for expected in expected_in_output:
@@ -539,7 +539,7 @@ def test_lens_trace_command_regression_timestamps(tmp_path: Path) -> None:
     create_run(run_id4, pipeline_name=trace_data4.get("name", "pipeline"))
     if hasattr(backend, "save_trace"):
         asyncio.run(backend.save_trace(run_id4, trace_data4))
-    os.environ["FLUJO_STATE_URI"] = f"sqlite:///{tmp_path}/trace_ops_regression.db"
+    os.environ["FLUJO_STATE_URI"] = f"sqlite:////{tmp_path}/trace_ops_regression.db"
     result = runner.invoke(app, ["lens", "trace", run_id4])
     assert result.exit_code in [0, 1]
     assert "(duration:" not in result.stdout
@@ -548,7 +548,7 @@ def test_lens_trace_command_regression_timestamps(tmp_path: Path) -> None:
 def test_lens_commands_error_handling(tmp_path: Path) -> None:
     """Test lens commands with various error conditions."""
     db_path = tmp_path / "error_ops.db"
-    os.environ["FLUJO_STATE_URI"] = f"sqlite:///{db_path}"
+    os.environ["FLUJO_STATE_URI"] = f"sqlite:////{db_path}"
 
     # Test with invalid run_id
     result = runner.invoke(app, ["lens", "show", "invalid-run-id"])

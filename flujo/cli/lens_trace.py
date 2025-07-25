@@ -92,6 +92,8 @@ def trace_command(run_id: str) -> None:
                 return "-"
             try:
                 if isinstance(val, (int, float)):
+                    if float(val) < 0:
+                        return "<invalid-timestamp>"
                     return datetime.datetime.fromtimestamp(float(val)).isoformat()
                 return str(val)
             except (ValueError, TypeError):

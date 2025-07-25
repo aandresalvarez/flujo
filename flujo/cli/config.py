@@ -115,8 +115,12 @@ def load_backend_from_config() -> StateBackend:
         # This avoids issues with default umask or inherited permissions from 'open' in append mode.
         if not db_path.exists():
             try:
-                fd = os.open(db_path, os.O_CREAT | os.O_WRONLY, 0o600)
+                # Use O_CREAT | O_EXCL | O_WRONLY to avoid truncating existing files
+                fd = os.open(db_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
                 os.close(fd)
+            except FileExistsError:
+                # File was created between the exists() check and os.open; continue
+                pass
             except Exception as e:
                 typer.echo(
                     f"[red]Error: Cannot create database file '{db_path}' with secure permissions due to {type(e).__name__}: {e}[/red]",

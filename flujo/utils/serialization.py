@@ -216,6 +216,7 @@ def _serialize_for_key(
         return str(obj)
     obj_id = id(obj)
     custom_serializer = lookup_custom_serializer(obj)
+    added_to_seen = False  # Track if we added obj_id to _seen in this call
     try:
         # Always use the custom serializer for keys, even if circular
         if custom_serializer:
@@ -233,6 +234,7 @@ def _serialize_for_key(
         if obj_id in _seen:
             return "<circular-key>"
         _seen.add(obj_id)
+        added_to_seen = True
         serialized = safe_serialize(
             obj,
             default_serializer=default_serializer,
@@ -243,7 +245,7 @@ def _serialize_for_key(
     except Exception:
         return "<circular-key>"
     finally:
-        if not custom_serializer:
+        if not custom_serializer and added_to_seen:
             _seen.discard(obj_id)
 
 
@@ -507,7 +509,8 @@ def safe_serialize(
     finally:
         if not isinstance(obj, PRIMITIVE_TYPES):
             _seen.discard(id(obj))
-        if _recursion_depth == 0:
+        # Only clear _seen at the top-level call if it is non-empty (efficiency improvement)
+        if _recursion_depth == 0 and _seen:
             _seen.clear()
 
 
