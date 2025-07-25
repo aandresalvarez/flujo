@@ -117,7 +117,8 @@ def load_backend_from_config() -> StateBackend:
                 pass
         except Exception as e:
             typer.echo(
-                f"[red]Error: Cannot write to database file '{db_path}': {e}[/red]", err=True
+                f"[red]Error: Cannot write to database file '{db_path}' due to {type(e).__name__}: {e}[/red]",
+                err=True,
             )
             raise typer.Exit(1)
         return SQLiteBackend(db_path)

@@ -326,7 +326,7 @@ def test_lens_commands_with_environment_configuration(tmp_path: Path) -> None:
     os.chdir(tmp_path)
     try:
         # Standards-compliant absolute path: sqlite:////abs/path.db (4 slashes)
-        abs_uri = f"sqlite:////{db_path.as_posix().lstrip('/')}"
+        abs_uri = f"sqlite:////{db_path.as_posix()}"
         result = runner.invoke(app, ["lens", "list"], env={"FLUJO_STATE_URI": abs_uri})
         print(f"STDOUT (sqlite:////{{db_path}}): {result.stdout}")
         print(f"STDERR (sqlite:////{{db_path}}): {result.stderr}")

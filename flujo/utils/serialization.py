@@ -219,6 +219,14 @@ def _serialize_for_key(
         # Always use the custom serializer for keys, even if circular
         if custom_serializer:
             serialized = custom_serializer(obj)
+            # If the custom serializer returns a non-primitive, serialize it with _is_top_level=False
+            if not isinstance(serialized, PRIMITIVE_TYPES):
+                serialized = safe_serialize(
+                    serialized,
+                    default_serializer=default_serializer,
+                    _seen=_seen,
+                    _is_top_level=False,
+                )
             return str(serialized)
         # If no custom serializer, check for circularity
         if obj_id in _seen:

@@ -228,8 +228,7 @@ class SQLiteBackend(StateBackend):
 
     def __init__(self, db_path: Path) -> None:
         self.db_path = Path(db_path)
-        # Ensure parent directories exist
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)  # Ensure parent directories exist
         self._lock = asyncio.Lock()
         self._initialized = False
         self._connection_pool: Optional[aiosqlite.Connection] = None
