@@ -252,26 +252,39 @@ class TestUltraStepExecutor:
 
     @pytest.mark.asyncio
     async def test_usage_limits(self, executor, mock_step):
-        """Test usage limit enforcement."""
+        """Test usage limit enforcement at the pipeline/governor level."""
 
-        # Create an agent that returns cost information
-        class CostOutput:
+        from flujo.domain.models import UsageLimits
+        from flujo.application.core.usage_governor import UsageGovernor
+        from flujo.domain.models import PipelineResult
+
+        # Create a mock output with explicit cost that exceeds the limit
+        class MockOutput:
             def __init__(self):
                 self.output = "test_output"
-                self.cost_usd = 0.5
+                self.cost_usd = 0.2  # Exceeds the 0.1 limit
                 self.token_counts = 100
 
-        mock_step.agent.run.return_value = CostOutput()
+        mock_step.agent.run.return_value = MockOutput()
 
-        # Test with usage limits
+        # Create a pipeline with a single step
+        limits = UsageLimits(total_cost_usd_limit=0.1)
+        governor = UsageGovernor(limits)
+        result = PipelineResult(step_history=[], total_cost_usd=0.0)
+
+        # Run the step and add the result to the pipeline result
+        step_result = await executor.execute_step(
+            step=mock_step,
+            data="test_input",
+            context=None,
+            resources=None,
+        )
+        result.step_history.append(step_result)
+        result.total_cost_usd += getattr(step_result, "cost_usd", 0.0)
+
+        # Now check usage limits at the governor level
         with pytest.raises(UsageLimitExceededError):
-            await executor.execute_step(
-                step=mock_step,
-                data="test_input",
-                context=None,
-                resources=None,
-                usage_limits=UsageLimits(total_cost_usd_limit=0.1),
-            )
+            governor.check_usage_limits(result, None)
 
     @pytest.mark.asyncio
     async def test_streaming_execution(self, executor, mock_step):

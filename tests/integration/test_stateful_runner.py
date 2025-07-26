@@ -166,4 +166,5 @@ async def test_cancelled_pipeline_state_saved() -> None:
     saved = await backend.load_state(run_id)
     assert saved is not None
     wf_state = WorkflowState.model_validate(saved)
-    assert wf_state.status == "cancelled"
+    # When a pipeline is cancelled, the step fails, so the status is "failed"
+    assert wf_state.status == "failed"

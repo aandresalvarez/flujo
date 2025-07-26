@@ -1,0 +1,1052 @@
+"""Unit tests for cost tracking functionality."""
+
+import pytest
+from flujo.cost import CostCalculator, extract_usage_metrics
+from flujo.infra.config import get_provider_pricing, ProviderPricing, CostConfig
+from flujo.exceptions import PricingNotConfiguredError
+
+
+class TestExtractUsageMetrics:
+    """Test the shared extract_usage_metrics function."""
+
+    def test_extract_usage_metrics_with_usage_info(self):
+        """Test extraction of usage metrics from pydantic-ai response."""
+
+        # Create a mock response with usage information
+        class MockResponse:
+            def __init__(self):
+                self.output = "test response"
+
+            def usage(self):
+                class MockUsage:
+                    def __init__(self):
+                        self.request_tokens = 100
+                        self.response_tokens = 50
+
+                return MockUsage()
+
+        # Create a mock agent with model_id
+        class MockAgent:
+            def __init__(self):
+                self.model_id = "openai:gpt-4o"
+
+        raw_output = MockResponse()
+        agent = MockAgent()
+
+        prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
+            raw_output, agent, "test_step"
+        )
+
+        assert prompt_tokens == 100
+        assert completion_tokens == 50
+        assert cost_usd > 0.0  # Should calculate cost based on pricing
+
+    def test_extract_usage_metrics_without_usage_info(self):
+        """Test extraction when no usage information is available."""
+
+        # Create a mock response without usage information
+        class MockResponse:
+            def __init__(self):
+                self.output = "test response"
+
+        # Create a mock agent
+        class MockAgent:
+            def __init__(self):
+                self.model_id = "openai:gpt-4o"
+
+        raw_output = MockResponse()
+        agent = MockAgent()
+
+        prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
+            raw_output, agent, "test_step"
+        )
+
+        assert prompt_tokens == 0
+        assert completion_tokens == 0
+        assert cost_usd == 0.0
+
+    def test_extract_usage_metrics_with_exception(self):
+        """Test extraction when usage() method raises an exception."""
+
+        # Create a mock response that raises an exception
+        class MockResponse:
+            def __init__(self):
+                self.output = "test response"
+
+            def usage(self):
+                raise ValueError("Usage method failed")
+
+        # Create a mock agent
+        class MockAgent:
+            def __init__(self):
+                self.model_id = "openai:gpt-4o"
+
+        raw_output = MockResponse()
+        agent = MockAgent()
+
+        # Should not raise an exception, should return 0 values
+        prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
+            raw_output, agent, "test_step"
+        )
+
+        assert prompt_tokens == 0
+        assert completion_tokens == 0
+        assert cost_usd == 0.0
+
+    def test_extract_usage_metrics_with_different_agent_types(self):
+        """Test extraction with different agent types and model ID access patterns."""
+
+        # Test with AsyncAgentWrapper (public model_id)
+        class AsyncAgentWrapper:
+            def __init__(self):
+                self.model_id = "openai:gpt-4o"
+
+        # Test with agent that has _model_name (private attribute)
+        class AgentWithPrivateModel:
+            def __init__(self):
+                self._model_name = "openai:gpt-4o"
+
+        # Test with agent that has model attribute
+        class AgentWithModel:
+            def __init__(self):
+                self.model = "openai:gpt-4o"
+
+        # Create a mock response with usage information
+        class MockResponse:
+            def __init__(self):
+                self.output = "test response"
+
+            def usage(self):
+                class MockUsage:
+                    def __init__(self):
+                        self.request_tokens = 100
+                        self.response_tokens = 50
+
+                return MockUsage()
+
+        raw_output = MockResponse()
+
+        # Test AsyncAgentWrapper
+        agent1 = AsyncAgentWrapper()
+        prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
+            raw_output, agent1, "test_step"
+        )
+        assert prompt_tokens == 100
+        assert completion_tokens == 50
+        assert cost_usd > 0.0
+
+        # Test AgentWithPrivateModel (fallback)
+        agent2 = AgentWithPrivateModel()
+        prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
+            raw_output, agent2, "test_step"
+        )
+        assert prompt_tokens == 100
+        assert completion_tokens == 50
+        assert cost_usd > 0.0
+
+        # Test AgentWithModel (fallback)
+        agent3 = AgentWithModel()
+        prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
+            raw_output, agent3, "test_step"
+        )
+        assert prompt_tokens == 100
+        assert completion_tokens == 50
+        assert cost_usd > 0.0
+
+    def test_extract_usage_metrics_with_explicit_metrics(self):
+        """Test extraction when explicit cost_usd and token_counts are provided."""
+
+        # Create a mock response with explicit metrics
+        class MockResponse:
+            def __init__(self):
+                self.output = "test response"
+                self.cost_usd = 0.05
+                self.token_counts = 150
+
+        # Create a mock agent
+        class MockAgent:
+            def __init__(self):
+                self.model_id = "openai:gpt-4o"
+
+        raw_output = MockResponse()
+        agent = MockAgent()
+
+        prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
+            raw_output, agent, "test_step"
+        )
+
+        # Should use explicit cost and not attempt token calculation
+        assert cost_usd == 0.05
+        assert prompt_tokens == 0  # Cannot be determined reliably
+        assert completion_tokens == 150  # Preserved total for usage limits
+
+    def test_extract_usage_metrics_with_model_id_parsing(self):
+        """Test extraction with different model_id formats."""
+
+        # Test with provider:model format
+        class MockAgent1:
+            def __init__(self):
+                self.model_id = "openai:gpt-4o"
+
+        # Test with just model name (no provider)
+        class MockAgent2:
+            def __init__(self):
+                self.model_id = "gpt-4o"
+
+        # Create a mock response with usage information
+        class MockResponse:
+            def __init__(self):
+                self.output = "test response"
+
+            def usage(self):
+                class MockUsage:
+                    def __init__(self):
+                        self.request_tokens = 100
+                        self.response_tokens = 50
+
+                return MockUsage()
+
+        raw_output = MockResponse()
+
+        # Test with provider:model format
+        agent1 = MockAgent1()
+        prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
+            raw_output, agent1, "test_step"
+        )
+        assert prompt_tokens == 100
+        assert completion_tokens == 50
+        assert cost_usd > 0.0
+
+        # Test with just model name
+        agent2 = MockAgent2()
+        prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
+            raw_output, agent2, "test_step"
+        )
+        assert prompt_tokens == 100
+        assert completion_tokens == 50
+        assert cost_usd > 0.0
+
+    def test_extract_usage_metrics_warning_for_missing_model(self):
+        """Test that a strong warning is logged when model_id is not found."""
+
+        # Create a mock response with usage information
+        class MockResponse:
+            def __init__(self):
+                self.output = "test response"
+
+            def usage(self):
+                class MockUsage:
+                    def __init__(self):
+                        self.request_tokens = 100
+                        self.response_tokens = 50
+
+                return MockUsage()
+
+        # Create a mock agent without model_id
+        class MockAgent:
+            def __init__(self):
+                pass  # No model_id attribute
+
+        raw_output = MockResponse()
+        agent = MockAgent()
+
+        # Capture the warning message
+        from flujo.infra import telemetry
+
+        # Create a custom handler to capture warning messages
+        warning_messages = []
+        original_warning = telemetry.logfire.warning
+
+        def capture_warning(message, *args, **kwargs):
+            warning_messages.append(message)
+            original_warning(message, *args, **kwargs)
+
+        telemetry.logfire.warning = capture_warning
+
+        try:
+            prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
+                raw_output, agent, "test_step"
+            )
+
+            # Verify that a warning was logged
+            assert len(warning_messages) > 0
+            warning_message = warning_messages[0]
+            assert "CRITICAL" in warning_message
+            assert "Could not determine model" in warning_message
+            assert "model_id'" in warning_message
+
+            # Verify that cost calculation returns 0.0 for safety
+            assert prompt_tokens == 100
+            assert completion_tokens == 50
+            assert cost_usd == 0.0  # Safer to return 0.0 than guess
+
+        finally:
+            # Restore original warning method
+            telemetry.logfire.warning = original_warning
+
+    def test_extract_usage_metrics_no_model_info_available(self):
+        """Test that the system handles cases where no model information is available."""
+
+        # Create a mock response with usage information
+        class MockResponse:
+            def __init__(self):
+                self.output = "test response"
+
+            def usage(self):
+                class MockUsage:
+                    def __init__(self):
+                        self.request_tokens = 100
+                        self.response_tokens = 50
+
+                return MockUsage()
+
+        # Create a mock agent with no model information
+        class MockAgent:
+            def __init__(self):
+                pass  # No model_id, _model_name, or model attributes
+
+        raw_output = MockResponse()
+        agent = MockAgent()
+
+        # Capture warning messages
+        from flujo.infra import telemetry
+
+        warning_messages = []
+        original_warning = telemetry.logfire.warning
+
+        def capture_warning(message, *args, **kwargs):
+            warning_messages.append(message)
+            original_warning(message, *args, **kwargs)
+
+        telemetry.logfire.warning = capture_warning
+
+        try:
+            prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
+                raw_output, agent, "test_step"
+            )
+
+            # Verify that a critical warning was logged about using 0.0 cost
+            assert len(warning_messages) > 0
+            warning_message = warning_messages[0]
+            assert "CRITICAL" in warning_message
+            assert "Could not determine model" in warning_message
+
+            # Verify that the system returns 0.0 for safety
+            assert prompt_tokens == 100
+            assert completion_tokens == 50
+            assert cost_usd == 0.0  # Safer to return 0.0 than guess
+
+        finally:
+            # Restore original warning method
+            telemetry.logfire.warning = original_warning
+
+    def test_extract_usage_metrics_graceful_fallback(self):
+        """Test that the system gracefully falls back when usage information is incomplete."""
+
+        # Test with missing usage information
+        class MockResponse:
+            def __init__(self):
+                self.output = "test response"
+
+        class MockAgent:
+            def __init__(self):
+                self.model_id = "openai:gpt-4o"
+
+        raw_output = MockResponse()
+        agent = MockAgent()
+
+        # Should not raise an exception, should return 0 values
+        prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
+            raw_output, agent, "test_step"
+        )
+
+        assert prompt_tokens == 0
+        assert completion_tokens == 0
+        assert cost_usd == 0.0
+
+        # Test with partial usage information
+        class MockResponseWithPartialUsage:
+            def __init__(self):
+                self.output = "test response"
+
+            def usage(self):
+                class MockUsage:
+                    def __init__(self):
+                        self.request_tokens = 100
+                        # Missing response_tokens
+
+                return MockUsage()
+
+        raw_output = MockResponseWithPartialUsage()
+        prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
+            raw_output, agent, "test_step"
+        )
+
+        assert prompt_tokens == 100
+        assert completion_tokens == 0  # Should default to 0
+        assert cost_usd > 0.0  # Should still calculate cost
+
+
+class TestCostCalculator:
+    """Test the CostCalculator class."""
+
+    def test_calculate_cost_with_pricing(self):
+        """Test cost calculation with valid pricing information."""
+        calculator = CostCalculator()
+
+        # Mock the get_provider_pricing function
+        mock_pricing = ProviderPricing(prompt_tokens_per_1k=0.005, completion_tokens_per_1k=0.015)
+
+        with pytest.MonkeyPatch().context() as m:
+            m.setattr(
+                "flujo.infra.config.get_provider_pricing", lambda provider, model: mock_pricing
+            )
+
+            cost = calculator.calculate(
+                model_name="gpt-4o", prompt_tokens=1000, completion_tokens=500, provider="openai"
+            )
+
+            # Expected: (1000/1000 * 0.005) + (500/1000 * 0.015) = 0.005 + 0.0075 = 0.0125
+            assert cost == 0.0125
+
+    def test_calculate_cost_no_pricing(self):
+        """Test cost calculation when no pricing is configured."""
+        calculator = CostCalculator()
+
+        with pytest.MonkeyPatch().context() as m:
+            m.setattr("flujo.infra.config.get_provider_pricing", lambda provider, model: None)
+            # Patch the warning method directly on the logfire object
+            from flujo.infra import telemetry
+
+            telemetry.logfire.warning = lambda msg: None
+
+            cost = calculator.calculate(
+                model_name="unknown-model", prompt_tokens=1000, completion_tokens=500
+            )
+
+            # Should return 0.0 when no pricing is configured
+            assert cost == 0.0
+
+    def test_calculate_cost_with_provider_inference(self):
+        """Test cost calculation with automatic provider inference."""
+        calculator = CostCalculator()
+
+        # Mock the get_provider_pricing function
+        mock_pricing = ProviderPricing(prompt_tokens_per_1k=0.005, completion_tokens_per_1k=0.015)
+
+        with pytest.MonkeyPatch().context() as m:
+            m.setattr(
+                "flujo.infra.config.get_provider_pricing", lambda provider, model: mock_pricing
+            )
+
+            # Test with OpenAI model (should infer provider)
+            cost = calculator.calculate(
+                model_name="gpt-4o", prompt_tokens=1000, completion_tokens=500
+            )
+            assert cost == 0.0125
+
+            # Test with Anthropic model (should infer provider)
+            cost = calculator.calculate(
+                model_name="claude-3-sonnet", prompt_tokens=1000, completion_tokens=500
+            )
+            assert cost > 0.0
+
+    def test_calculate_cost_unknown_provider_returns_zero(self):
+        """Test that unknown providers return 0.0 cost to avoid breaking pipelines."""
+        calculator = CostCalculator()
+
+        with pytest.MonkeyPatch().context() as m:
+            m.setattr("flujo.infra.config.get_provider_pricing", lambda provider, model: None)
+
+            # Test with unknown model that can't be inferred
+            # Should return 0.0 instead of raising an error to avoid breaking pipelines
+            cost = calculator.calculate(
+                model_name="unknown-model", prompt_tokens=1000, completion_tokens=500
+            )
+            assert cost == 0.0
+
+    def test_infer_provider_from_model(self):
+        """Test provider inference from model names."""
+        calculator = CostCalculator()
+
+        # Test OpenAI models
+        assert calculator._infer_provider_from_model("gpt-4o") == "openai"
+        assert calculator._infer_provider_from_model("text-davinci-003") == "openai"
+
+        # Test Anthropic models
+        assert calculator._infer_provider_from_model("claude-3-sonnet") == "anthropic"
+        assert calculator._infer_provider_from_model("claude-3-haiku") == "anthropic"
+
+        # Test Google models
+        assert calculator._infer_provider_from_model("gemini-1.5-pro") == "google"
+
+        # Test unknown model (should return None instead of defaulting to openai)
+        assert calculator._infer_provider_from_model("unknown-model") is None
+
+    def test_infer_provider_from_model_edge_cases(self):
+        """Test provider inference with edge cases."""
+        calculator = CostCalculator()
+
+        # Test various model name patterns
+        assert calculator._infer_provider_from_model("gpt-4") == "openai"
+        assert calculator._infer_provider_from_model("text-embedding-ada-002") == "openai"
+        assert calculator._infer_provider_from_model("dall-e-3") == "openai"
+
+        assert calculator._infer_provider_from_model("claude-3-opus") == "anthropic"
+        assert calculator._infer_provider_from_model("haiku") == "anthropic"
+        assert calculator._infer_provider_from_model("sonnet") == "anthropic"
+
+        assert calculator._infer_provider_from_model("gemini-1.5-flash") == "google"
+        assert calculator._infer_provider_from_model("text-bison") == "google"
+
+        # Ambiguous models that could belong to multiple providers - should return None
+        assert calculator._infer_provider_from_model("llama-2-7b") is None
+        assert calculator._infer_provider_from_model("codellama-7b") is None
+
+        assert calculator._infer_provider_from_model("mistral-7b") is None
+        assert calculator._infer_provider_from_model("mixtral-8x7b") is None
+
+        # Ambiguous models that could belong to multiple providers - should return None
+        assert calculator._infer_provider_from_model("groq-llama2-70b") is None
+        assert calculator._infer_provider_from_model("gemma2-2b") is None
+
+    def test_cost_calculation_edge_cases(self):
+        """Test cost calculation with edge cases."""
+        calculator = CostCalculator()
+
+        # Test with zero tokens
+        cost = calculator.calculate(
+            model_name="gpt-4o", prompt_tokens=0, completion_tokens=0, provider="openai"
+        )
+        assert cost == 0.0
+
+        # Test with very large token counts
+        cost = calculator.calculate(
+            model_name="gpt-4o", prompt_tokens=1000000, completion_tokens=500000, provider="openai"
+        )
+        assert cost > 0.0
+
+        # Test with negative tokens (should handle gracefully)
+        cost = calculator.calculate(
+            model_name="gpt-4o", prompt_tokens=-100, completion_tokens=-50, provider="openai"
+        )
+        # Should still calculate cost (negative tokens would result in negative cost)
+        assert isinstance(cost, float)
+
+    def test_provider_inference_comprehensive(self):
+        """Test comprehensive provider inference for various model patterns."""
+        calculator = CostCalculator()
+
+        # Test all known provider patterns
+        test_cases = [
+            ("gpt-4o", "openai"),
+            ("gpt-3.5-turbo", "openai"),
+            ("text-davinci-003", "openai"),
+            ("dall-e-3", "openai"),
+            ("claude-3-sonnet", "anthropic"),
+            ("claude-3-haiku", "anthropic"),
+            ("claude-3-opus", "anthropic"),
+            ("gemini-1.5-pro", "google"),
+            ("gemini-1.5-flash", "google"),
+            ("text-bison", "google"),
+            ("chat-bison", "google"),
+            # Ambiguous models that could belong to multiple providers
+            ("llama-2-7b", None),
+            ("codellama-7b", None),
+            ("mistral-7b", None),
+            ("mixtral-8x7b", None),
+            # Ambiguous models that could belong to multiple providers
+            ("groq-llama2-70b", None),
+            ("gemma2-2b", None),
+        ]
+
+        for model_name, expected_provider in test_cases:
+            inferred_provider = calculator._infer_provider_from_model(model_name)
+            assert inferred_provider == expected_provider, (
+                f"Failed for {model_name}: expected {expected_provider}, got {inferred_provider}"
+            )
+
+        # Test unknown models
+        unknown_models = ["unknown-model", "custom-model", "test-model"]
+        for model_name in unknown_models:
+            inferred_provider = calculator._infer_provider_from_model(model_name)
+            assert inferred_provider is None, f"Should return None for unknown model {model_name}"
+
+    def test_cost_calculation_precision(self):
+        """Test that cost calculations are precise and consistent."""
+        calculator = CostCalculator()
+
+        # Test with exact token counts that should give precise results
+        cost = calculator.calculate(
+            model_name="gpt-4o", prompt_tokens=1000, completion_tokens=1000, provider="openai"
+        )
+        # Expected: (1000/1000 * 0.005) + (1000/1000 * 0.015) = 0.005 + 0.015 = 0.02
+        assert cost == 0.02
+
+        # Test with different token ratios
+        cost = calculator.calculate(
+            model_name="gpt-4o", prompt_tokens=2000, completion_tokens=500, provider="openai"
+        )
+        # Expected: (2000/1000 * 0.005) + (500/1000 * 0.015) = 0.01 + 0.0075 = 0.0175
+        assert cost == 0.0175
+
+    def test_error_handling_robustness(self):
+        """Test that the system handles errors gracefully without breaking pipelines."""
+        calculator = CostCalculator()
+
+        # Test with invalid model names
+        cost = calculator.calculate(model_name="", prompt_tokens=100, completion_tokens=50)
+        assert cost == 0.0
+
+        # Test with None values - should handle gracefully
+        try:
+            cost = calculator.calculate(model_name=None, prompt_tokens=100, completion_tokens=50)
+            assert cost == 0.0
+        except (TypeError, AttributeError):
+            # It's acceptable for this to raise an error since None is not a valid model name
+            pass
+
+        # Test with invalid token counts - should handle gracefully
+        try:
+            cost = calculator.calculate(
+                model_name="gpt-4o",
+                prompt_tokens="invalid",
+                completion_tokens="invalid",
+                provider="openai",
+            )
+            # Should handle gracefully (though this might raise a TypeError in practice)
+            assert isinstance(cost, float)
+        except (TypeError, ValueError):
+            # It's acceptable for this to raise an error since invalid types are passed
+            pass
+
+    def test_integration_with_real_pricing_config(self):
+        """Test integration with real pricing configuration."""
+        from flujo.infra.config import get_provider_pricing
+
+        # Test that we can get pricing for known models
+        pricing = get_provider_pricing("openai", "gpt-4o")
+        assert pricing is not None
+        assert pricing.prompt_tokens_per_1k == 0.005
+        assert pricing.completion_tokens_per_1k == 0.015
+
+        # Test that unknown models return None
+        pricing = get_provider_pricing("unknown", "unknown-model")
+        assert pricing is None
+
+        # Test that we can calculate costs with real pricing
+        calculator = CostCalculator()
+        cost = calculator.calculate(
+            model_name="gpt-4o", prompt_tokens=1000, completion_tokens=500, provider="openai"
+        )
+        assert cost > 0.0
+
+    def test_backward_compatibility(self):
+        """Test that the system maintains backward compatibility."""
+
+        # Test that old agent patterns still work
+        class OldStyleAgent:
+            def __init__(self):
+                self._model_name = "openai:gpt-4o"  # Old private attribute
+
+        class NewStyleAgent:
+            def __init__(self):
+                self.model_id = "openai:gpt-4o"  # New public attribute
+
+        # Create a mock response
+        class MockResponse:
+            def __init__(self):
+                self.output = "test response"
+
+            def usage(self):
+                class MockUsage:
+                    def __init__(self):
+                        self.request_tokens = 100
+                        self.response_tokens = 50
+
+                return MockUsage()
+
+        raw_output = MockResponse()
+
+        # Test old style agent
+        old_agent = OldStyleAgent()
+        prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
+            raw_output, old_agent, "test_step"
+        )
+        assert prompt_tokens == 100
+        assert completion_tokens == 50
+        assert cost_usd > 0.0
+
+        # Test new style agent
+        new_agent = NewStyleAgent()
+        prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
+            raw_output, new_agent, "test_step"
+        )
+        assert prompt_tokens == 100
+        assert completion_tokens == 50
+        assert cost_usd > 0.0
+
+
+class TestProviderPricing:
+    """Test the ProviderPricing model."""
+
+    def test_provider_pricing_creation(self):
+        """Test creating a ProviderPricing instance."""
+        pricing = ProviderPricing(prompt_tokens_per_1k=0.005, completion_tokens_per_1k=0.015)
+
+        assert pricing.prompt_tokens_per_1k == 0.005
+        assert pricing.completion_tokens_per_1k == 0.015
+
+    def test_provider_pricing_validation(self):
+        """Test that ProviderPricing validates required fields."""
+        with pytest.raises(ValueError):
+            ProviderPricing()  # Missing required fields
+
+
+class TestCostConfig:
+    """Test the cost configuration functionality."""
+
+    def test_get_provider_pricing_with_valid_data(self):
+        """Test getting provider pricing with valid configuration."""
+        # This test would require mocking the config loading
+        # For now, we'll test the function signature
+        pricing = get_provider_pricing("openai", "unknown-model")
+        # Should return None if no config is loaded and no default pricing exists
+        assert pricing is None
+
+    def test_get_provider_pricing_with_default_pricing(self):
+        """Test getting provider pricing with default pricing fallback."""
+        # Test with a known model that has default pricing
+        pricing = get_provider_pricing("openai", "gpt-4o")
+        # Should return default pricing for known models
+        assert pricing is not None
+        assert pricing.prompt_tokens_per_1k == 0.005
+        assert pricing.completion_tokens_per_1k == 0.015
+
+
+class TestStrictPricingMode:
+    """Test the strict pricing mode functionality."""
+
+    def test_strict_mode_off_default_behavior(self):
+        """Test that strict mode off (default) maintains backward compatibility."""
+        # Mock the config to have strict=False (default)
+        with pytest.MonkeyPatch().context() as m:
+
+            def mock_get_cost_config():
+                class MockCostConfig:
+                    def __init__(self):
+                        self.providers = {}
+                        self.strict = False
+
+                return MockCostConfig()
+
+            m.setattr("flujo.infra.config.get_cost_config", mock_get_cost_config)
+
+            # Test that get_provider_pricing returns None when no config exists
+            pricing = get_provider_pricing("openai", "unknown-model")
+            assert pricing is None
+
+    def test_strict_mode_off_with_default_pricing(self):
+        """Test that strict mode off allows fallback to hardcoded defaults."""
+        # Mock the config to have strict=False and no user config
+        with pytest.MonkeyPatch().context() as m:
+
+            def mock_get_cost_config():
+                class MockCostConfig:
+                    def __init__(self):
+                        self.providers = {}
+                        self.strict = False
+
+                return MockCostConfig()
+
+            m.setattr("flujo.infra.config.get_cost_config", mock_get_cost_config)
+
+            # Test that get_provider_pricing returns default pricing for known models
+            pricing = get_provider_pricing("openai", "gpt-4o")
+            assert pricing is not None
+            assert pricing.prompt_tokens_per_1k == 0.005
+            assert pricing.completion_tokens_per_1k == 0.015
+
+    def test_strict_mode_on_with_user_config(self):
+        """Test that strict mode on works correctly when user config is available."""
+        # Mock the config to have strict=True and user config
+        with pytest.MonkeyPatch().context() as m:
+
+            def mock_get_cost_config():
+                class MockCostConfig:
+                    def __init__(self):
+                        self.providers = {
+                            "openai": {
+                                "gpt-4o": ProviderPricing(
+                                    prompt_tokens_per_1k=0.005, completion_tokens_per_1k=0.015
+                                )
+                            }
+                        }
+                        self.strict = True
+
+                return MockCostConfig()
+
+            m.setattr("flujo.infra.config.get_cost_config", mock_get_cost_config)
+
+            # Test that get_provider_pricing returns user-configured pricing
+            pricing = get_provider_pricing("openai", "gpt-4o")
+            assert pricing is not None
+            assert pricing.prompt_tokens_per_1k == 0.005
+            assert pricing.completion_tokens_per_1k == 0.015
+
+    def test_strict_mode_on_without_user_config_raises_error(self):
+        """Test that strict mode on raises PricingNotConfiguredError when no user config exists."""
+        # Mock the config to have strict=True but no user config
+        with pytest.MonkeyPatch().context() as m:
+
+            def mock_get_cost_config():
+                class MockCostConfig:
+                    def __init__(self):
+                        self.providers = {}
+                        self.strict = True
+
+                return MockCostConfig()
+
+            m.setattr("flujo.infra.config.get_cost_config", mock_get_cost_config)
+
+            # Test that get_provider_pricing raises PricingNotConfiguredError
+            with pytest.raises(PricingNotConfiguredError) as exc_info:
+                get_provider_pricing("openai", "gpt-4o")
+
+            assert exc_info.value.provider == "openai"
+            assert exc_info.value.model == "gpt-4o"
+            assert "Strict pricing is enabled" in str(exc_info.value)
+
+    def test_strict_mode_on_with_unknown_model_raises_error(self):
+        """Test that strict mode on raises PricingNotConfiguredError for unknown models."""
+        # Mock the config to have strict=True and some user config but not for the requested model
+        with pytest.MonkeyPatch().context() as m:
+
+            def mock_get_cost_config():
+                class MockCostConfig:
+                    def __init__(self):
+                        self.providers = {
+                            "openai": {
+                                "gpt-3.5-turbo": ProviderPricing(
+                                    prompt_tokens_per_1k=0.0015, completion_tokens_per_1k=0.002
+                                )
+                            }
+                        }
+                        self.strict = True
+
+                return MockCostConfig()
+
+            m.setattr("flujo.infra.config.get_cost_config", mock_get_cost_config)
+
+            # Test that get_provider_pricing raises PricingNotConfiguredError for unknown model
+            with pytest.raises(PricingNotConfiguredError) as exc_info:
+                get_provider_pricing("openai", "gpt-4o")
+
+            assert exc_info.value.provider == "openai"
+            assert exc_info.value.model == "gpt-4o"
+
+    def test_strict_mode_on_with_unknown_provider_raises_error(self):
+        """Test that strict mode on raises PricingNotConfiguredError for unknown providers."""
+        # Mock the config to have strict=True and some user config but not for the requested provider
+        with pytest.MonkeyPatch().context() as m:
+
+            def mock_get_cost_config():
+                class MockCostConfig:
+                    def __init__(self):
+                        self.providers = {
+                            "anthropic": {
+                                "claude-3-sonnet": ProviderPricing(
+                                    prompt_tokens_per_1k=0.003, completion_tokens_per_1k=0.015
+                                )
+                            }
+                        }
+                        self.strict = True
+
+                return MockCostConfig()
+
+            m.setattr("flujo.infra.config.get_cost_config", mock_get_cost_config)
+
+            # Test that get_provider_pricing raises PricingNotConfiguredError for unknown provider
+            with pytest.raises(PricingNotConfiguredError) as exc_info:
+                get_provider_pricing("openai", "gpt-4o")
+
+            assert exc_info.value.provider == "openai"
+            assert exc_info.value.model == "gpt-4o"
+
+    def test_strict_mode_on_with_none_provider_raises_error(self):
+        """Test that strict mode on raises PricingNotConfiguredError when provider is None."""
+        # Mock the config to have strict=True but no user config
+        with pytest.MonkeyPatch().context() as m:
+
+            def mock_get_cost_config():
+                class MockCostConfig:
+                    def __init__(self):
+                        self.providers = {}
+                        self.strict = True
+
+                return MockCostConfig()
+
+            m.setattr("flujo.infra.config.get_cost_config", mock_get_cost_config)
+
+            # Test that get_provider_pricing raises PricingNotConfiguredError when provider is None
+            with pytest.raises(PricingNotConfiguredError) as exc_info:
+                get_provider_pricing(None, "unknown-model")
+
+            assert exc_info.value.provider is None
+            assert exc_info.value.model == "unknown-model"
+
+    def test_strict_mode_does_not_fallback_to_hardcoded_defaults(self):
+        """Test that strict mode does not fall back to hardcoded defaults."""
+        # Mock the config to have strict=True but no user config
+        with pytest.MonkeyPatch().context() as m:
+
+            def mock_get_cost_config():
+                class MockCostConfig:
+                    def __init__(self):
+                        self.providers = {}
+                        self.strict = True
+
+                return MockCostConfig()
+
+            m.setattr("flujo.infra.config.get_cost_config", mock_get_cost_config)
+
+            # Test that get_provider_pricing raises PricingNotConfiguredError even for models with hardcoded defaults
+            with pytest.raises(PricingNotConfiguredError):
+                get_provider_pricing("openai", "gpt-4o")  # This model has hardcoded defaults
+
+    def test_cost_config_strict_field_default(self):
+        """Test that CostConfig.strict defaults to False for backward compatibility."""
+        # Test that the default value is False
+        config = CostConfig()
+        assert config.strict is False
+
+    def test_cost_config_strict_field_explicit(self):
+        """Test that CostConfig.strict can be set explicitly."""
+        # Test that the field can be set to True
+        config = CostConfig(strict=True)
+        assert config.strict is True
+
+        # Test that the field can be set to False
+        config = CostConfig(strict=False)
+        assert config.strict is False
+
+
+class TestBugFixes:
+    """Test the specific bug fixes implemented."""
+
+    def test_bug_1_silent_failure_fixed(self):
+        """Test that Bug #1 (silent failure in provider inference) is fixed."""
+        calculator = CostCalculator()
+
+        # Test that unknown models no longer default to "openai"
+        assert calculator._infer_provider_from_model("unknown-model") is None
+
+        # Test that this returns 0.0 instead of raising an error to avoid breaking pipelines
+        cost = calculator.calculate(
+            model_name="unknown-model", prompt_tokens=1000, completion_tokens=500
+        )
+        assert cost == 0.0
+
+    def test_bug_2_model_id_extraction_improved(self):
+        """Test that Bug #2 (brittle model ID extraction) is improved."""
+
+        # Test with AsyncAgentWrapper that has public model_id
+        class AsyncAgentWrapper:
+            def __init__(self):
+                self.model_id = "openai:gpt-4o"
+
+        # Test with agent that has private _model_name (fallback)
+        class AgentWithPrivateModel:
+            def __init__(self):
+                self._model_name = "openai:gpt-4o"
+
+        # Create a mock response with usage information
+        class MockResponse:
+            def __init__(self):
+                self.output = "test response"
+
+            def usage(self):
+                class MockUsage:
+                    def __init__(self):
+                        self.request_tokens = 100
+                        self.response_tokens = 50
+
+                return MockUsage()
+
+        raw_output = MockResponse()
+
+        # Test AsyncAgentWrapper (preferred public interface)
+        agent1 = AsyncAgentWrapper()
+        prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
+            raw_output, agent1, "test_step"
+        )
+        assert prompt_tokens == 100
+        assert completion_tokens == 50
+        assert cost_usd > 0.0
+
+        # Test AgentWithPrivateModel (fallback for backward compatibility)
+        agent2 = AgentWithPrivateModel()
+        prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
+            raw_output, agent2, "test_step"
+        )
+        assert prompt_tokens == 100
+        assert completion_tokens == 50
+        assert cost_usd > 0.0
+
+    def test_bug_3_redundant_metric_calculation_removed(self):
+        """Test that Bug #3 (redundant metric calculation) is addressed."""
+        # This is tested by ensuring that extract_usage_metrics is the single source of truth
+        # and that the step logic doesn't add metrics again
+        calculator = CostCalculator()
+
+        # Mock pricing
+        mock_pricing = ProviderPricing(prompt_tokens_per_1k=0.005, completion_tokens_per_1k=0.015)
+
+        with pytest.MonkeyPatch().context() as m:
+            m.setattr(
+                "flujo.infra.config.get_provider_pricing", lambda provider, model: mock_pricing
+            )
+
+            # Test that cost calculation is deterministic
+            cost1 = calculator.calculate(
+                model_name="gpt-4o", prompt_tokens=1000, completion_tokens=500, provider="openai"
+            )
+            cost2 = calculator.calculate(
+                model_name="gpt-4o", prompt_tokens=1000, completion_tokens=500, provider="openai"
+            )
+            assert cost1 == cost2  # Should be deterministic
+
+    def test_bug_4_code_duplication_addressed(self):
+        """Test that Bug #4 (code duplication) is addressed."""
+        # This is tested by ensuring that both step_logic.py and ultra_executor.py
+        # use the same extract_usage_metrics function
+        from flujo.cost import extract_usage_metrics
+
+        # Test that the function exists and is callable
+        assert callable(extract_usage_metrics)
+
+        # Test that it returns the expected tuple
+        class MockResponse:
+            def __init__(self):
+                self.output = "test response"
+
+        class MockAgent:
+            def __init__(self):
+                self.model_id = "openai:gpt-4o"
+
+        result = extract_usage_metrics(MockResponse(), MockAgent(), "test_step")
+        assert isinstance(result, tuple)
+        assert len(result) == 3
+        assert all(isinstance(x, (int, float)) for x in result)
+
+    def test_bug_5_hardcoded_prices_warning(self):
+        """Test that Bug #5 (hardcoded prices fragility) is addressed with warnings."""
+        # This is tested by ensuring that warnings are logged when using hardcoded defaults
+        # The actual warning logging is tested in the config module
+        from flujo.infra.config import get_provider_pricing
+
+        # Test that we can get default pricing for known models
+        pricing = get_provider_pricing("openai", "gpt-4o")
+        assert pricing is not None
+        assert pricing.prompt_tokens_per_1k == 0.005
+        assert pricing.completion_tokens_per_1k == 0.015

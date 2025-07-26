@@ -35,6 +35,7 @@ from ..exceptions import (
     PausedException,
     MissingAgentError,
     TypeMismatchError,
+    PricingNotConfiguredError,
 )
 from ..domain.dsl.step import Step
 from ..domain.dsl.pipeline import Pipeline
@@ -380,6 +381,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         if stream:
             q = asyncio.Queue()
             task = asyncio.create_task(self.backend.execute_step(request))
+            result = None  # Initialize result variable
             while True:
                 if not q.empty():
                     yield q.get_nowait()
@@ -391,6 +393,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                         result = task.result()
                     except (
                         UsageLimitExceededError,
+                        PricingNotConfiguredError,
                         InfiniteFallbackError,
                         InfiniteRedirectError,
                         PausedException,
@@ -419,6 +422,18 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     yield item
                 except asyncio.TimeoutError:
                     continue
+                except asyncio.CancelledError:
+                    # Handle cancellation gracefully during test cleanup
+                    telemetry.logfire.info(f"Step '{step.name}' streaming cancelled")
+                    # Create a result for cancelled execution
+                    result = StepResult(
+                        name=step.name,
+                        output=None,
+                        success=False,
+                        attempts=1,
+                        feedback="Step execution was cancelled",
+                    )
+                    break
         else:
             result = await self.backend.execute_step(request)
         if getattr(step, "updates_context", False):
@@ -663,11 +678,16 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         except asyncio.CancelledError:
             telemetry.logfire.info("Pipeline cancelled")
             cancelled = True
-            yield pipeline_result_obj
+            # Ensure we don't try to persist state during cancellation
+            try:
+                yield pipeline_result_obj
+            except Exception:
+                # Ignore any errors during yield on cancellation
+                pass
             return
         except PipelineAbortSignal as e:
             telemetry.logfire.info(str(e))
-        except UsageLimitExceededError:
+        except (UsageLimitExceededError, PricingNotConfiguredError):
             if current_context_instance is not None:
                 assert self.pipeline is not None
                 execution_manager: ExecutionManager[ContextT] = ExecutionManager[ContextT](
@@ -714,18 +734,25 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     current_context_instance.scratchpad["status"] = final_status
 
                 # Use execution manager to persist final state
-                execution_manager = ExecutionManager[ContextT](
-                    self.pipeline,
-                    state_manager=state_manager,
-                )
-                await execution_manager.persist_final_state(
-                    run_id=state_manager.get_run_id_from_context(current_context_instance),
-                    context=current_context_instance,
-                    result=pipeline_result_obj,
-                    start_idx=start_idx,
-                    state_created_at=state_created_at,
-                    final_status=final_status,
-                )
+                try:
+                    execution_manager = ExecutionManager[ContextT](
+                        self.pipeline,
+                        state_manager=state_manager,
+                    )
+                    await execution_manager.persist_final_state(
+                        run_id=state_manager.get_run_id_from_context(current_context_instance),
+                        context=current_context_instance,
+                        result=pipeline_result_obj,
+                        start_idx=start_idx,
+                        state_created_at=state_created_at,
+                        final_status=final_status,
+                    )
+                except asyncio.CancelledError:
+                    # Don't persist state if we're being cancelled
+                    telemetry.logfire.info("Skipping state persistence due to cancellation")
+                except Exception as e:
+                    # Log but don't fail the pipeline for persistence errors
+                    telemetry.logfire.error(f"Failed to persist final state: {e}")
 
                 # Delete state if delete_on_completion is True and pipeline completed successfully
                 if (
@@ -743,6 +770,9 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     context=current_context_instance,
                     resources=self.resources,
                 )
+            except asyncio.CancelledError:
+                # Don't execute hooks if we're being cancelled
+                telemetry.logfire.info("Skipping post_run hook due to cancellation")
             except PipelineAbortSignal as e:
                 telemetry.logfire.info(str(e))
 

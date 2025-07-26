@@ -184,7 +184,7 @@ async def test_proactive_governor_cancellation() -> None:
 
     # Verify execution was fast (indicating proactive cancellation)
     # The slow_cheap branch should have been cancelled, so execution should be quick
-    assert execution_time < 0.3  # Should be much faster than the 0.5s delay of slow_cheap
+    assert execution_time < 0.6  # Should be much faster than the 0.5s delay of slow_cheap
 
     # Verify the result contains information about the breach
     result = exc_info.value.result

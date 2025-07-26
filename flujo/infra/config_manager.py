@@ -31,6 +31,9 @@ class FlujoConfig(BaseModel):
     # State backend configuration
     state_uri: Optional[str] = None
 
+    # Cost tracking configuration
+    cost: Optional[Dict[str, Any]] = None
+
 
 class SolveConfig(BaseModel):
     """Configuration for the solve command."""
@@ -157,6 +160,10 @@ class ConfigManager:
             # State URI
             if "state_uri" in data:
                 config_data["state_uri"] = data["state_uri"]
+
+            # Cost tracking configuration
+            if "cost" in data:
+                config_data["cost"] = data["cost"]
 
             self._config = FlujoConfig(**config_data)
             return self._config

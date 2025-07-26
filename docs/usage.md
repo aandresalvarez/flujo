@@ -121,6 +121,202 @@ if result.trace_tree:
 - `OTLP_EXPORT_ENABLED` (default: false)
 - `OTLP_ENDPOINT` (optional, e.g. https://otlp.example.com)
 
+## Cost Tracking and Usage Limits
+
+Flujo provides integrated cost and token usage tracking to help you monitor and control spending on LLM operations.
+
+### Basic Cost Tracking
+
+Once you've configured pricing in your `flujo.toml` file, cost tracking is automatically enabled:
+
+```python
+from flujo import Step, Flujo
+from flujo.infra.agents import make_agent_async
+
+# Create agents
+solution_agent = make_agent_async("openai:gpt-4o", "You are a helpful assistant.", str)
+validator_agent = make_agent_async("openai:gpt-4o", "You are a validator.", str)
+
+# Create pipeline
+pipeline = Step.solution(solution_agent) >> Step.validate(validator_agent)
+runner = Flujo(pipeline)
+
+# Run and access cost information
+result = runner.run("Write a short story about a robot.")
+
+# Print cost details for each step
+total_cost = 0
+total_tokens = 0
+
+for step_result in result.step_history:
+    cost = step_result.cost_usd
+    tokens = step_result.token_counts
+    total_cost += cost
+    total_tokens += tokens
+
+    print(f"{step_result.name}:")
+    print(f"  Cost: ${cost:.4f}")
+    print(f"  Tokens: {tokens}")
+    print(f"  Success: {step_result.success}")
+
+print(f"\nTotal cost: ${total_cost:.4f}")
+print(f"Total tokens: {total_tokens}")
+```
+
+### Setting Usage Limits
+
+Prevent excessive spending by setting cost and token limits:
+
+```python
+from flujo import Flujo, Step, UsageLimits
+
+# Define limits
+limits = UsageLimits(
+    total_cost_usd_limit=0.50,  # Maximum $0.50 total cost
+    total_tokens_limit=2000     # Maximum 2,000 tokens
+)
+
+# Apply limits to pipeline
+runner = Flujo(pipeline, usage_limits=limits)
+
+try:
+    result = runner.run("Write a comprehensive analysis.")
+    print("Pipeline completed successfully!")
+except UsageLimitExceededError as e:
+    print(f"Pipeline stopped due to usage limits: {e}")
+    # Access partial results
+    partial_result = e.partial_result
+    print(f"Completed {len(partial_result.step_history)} steps before stopping")
+```
+
+### Step-Level Limits
+
+Set limits on individual steps for fine-grained control:
+
+```python
+from flujo import Step, UsageLimits
+
+# Set limits for specific steps
+solution_limits = UsageLimits(
+    total_cost_usd_limit=0.20,  # Maximum $0.20 for solution step
+    total_tokens_limit=800       # Maximum 800 tokens for solution step
+)
+
+validation_limits = UsageLimits(
+    total_cost_usd_limit=0.10,  # Maximum $0.10 for validation step
+    total_tokens_limit=400       # Maximum 400 tokens for validation step
+)
+
+pipeline = (
+    Step.solution(solution_agent, usage_limits=solution_limits)
+    >> Step.validate(validator_agent, usage_limits=validation_limits)
+)
+```
+
+### Parallel Execution with Limits
+
+When using parallel steps, Flujo can cancel sibling branches when limits are exceeded:
+
+```python
+from flujo import Step, Pipeline, UsageLimits
+
+# Create parallel branches
+expensive_branch = Pipeline.from_step(Step("expensive", costly_agent))
+cheap_branch = Pipeline.from_step(Step("cheap", cheap_agent))
+
+parallel = Step.parallel_branch(expensive_branch, cheap_branch)
+
+# If expensive_branch exceeds limits, cheap_branch will be cancelled
+limits = UsageLimits(total_cost_usd_limit=0.10)
+runner = Flujo(parallel, usage_limits=limits)
+
+try:
+    result = runner.run("Process this data.")
+except UsageLimitExceededError as e:
+    print("One or more branches exceeded limits")
+```
+
+### Monitoring Costs in Production
+
+Log cost information for analysis and monitoring:
+
+```python
+import logging
+from flujo import Flujo, Step
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+def log_costs(result):
+    """Log cost information for monitoring."""
+    total_cost = sum(step.cost_usd for step in result.step_history)
+    total_tokens = sum(step.token_counts for step in result.step_history)
+
+    logger.info(f"Pipeline completed - Cost: ${total_cost:.4f}, Tokens: {total_tokens}")
+
+    # Log per-step details
+    for step in result.step_history:
+        logger.info(f"  {step.name}: ${step.cost_usd:.4f} ({step.token_counts} tokens)")
+
+# Run pipeline with cost logging
+pipeline = Step.solution(my_agent) >> Step.validate(validator_agent)
+runner = Flujo(pipeline)
+
+result = runner.run("Your prompt")
+log_costs(result)
+```
+
+### Cost-Effective Pipeline Design
+
+Design pipelines with cost efficiency in mind:
+
+```python
+from flujo import Step, Flujo, UsageLimits
+
+# Use cheaper models for simple tasks
+simple_agent = make_agent_async("openai:gpt-3.5-turbo", "Simple task agent.", str)
+complex_agent = make_agent_async("openai:gpt-4o", "Complex task agent.", str)
+
+# Design pipeline with cost considerations
+pipeline = (
+    Step.solution(simple_agent, usage_limits=UsageLimits(total_cost_usd_limit=0.05))
+    >> Step.validate(complex_agent, usage_limits=UsageLimits(total_cost_usd_limit=0.15))
+)
+
+# Set overall pipeline limits
+runner = Flujo(pipeline, usage_limits=UsageLimits(total_cost_usd_limit=0.25))
+```
+
+### Troubleshooting Cost Tracking
+
+If cost tracking isn't working as expected:
+
+1. **Check your `flujo.toml` configuration**:
+   ```toml
+   [cost.providers.openai.gpt-4o]
+   prompt_tokens_per_1k = 0.005
+   completion_tokens_per_1k = 0.015
+   ```
+
+2. **Enable debug logging**:
+   ```python
+   import logging
+   logging.getLogger("flujo.cost").setLevel(logging.DEBUG)
+   ```
+
+3. **Verify agent usage information**:
+   ```python
+   # Check if your agent returns usage information
+   result = my_agent.run("test")
+   if hasattr(result, 'usage'):
+       usage = result.usage()
+       print(f"Prompt tokens: {usage.prompt_tokens}")
+       print(f"Completion tokens: {usage.completion_tokens}")
+   ```
+
+For more detailed configuration information, see the [Configuration Guide](configuration.md#cost-tracking-configuration).
+
 ## OTLP Exporter (Tracing/Telemetry)
 
 If you want to export traces to an OTLP-compatible backend (such as OpenTelemetry Collector, Honeycomb, or Datadog), set the following environment variables:
