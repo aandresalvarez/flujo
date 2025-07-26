@@ -9,6 +9,12 @@ import flujo.infra.config
 _model_cache: dict[str, tuple[Optional[str], str]] = {}
 
 
+def clear_cost_cache() -> None:
+    """Clear the cost calculation cache. Useful for testing to ensure isolation."""
+    global _model_cache
+    _model_cache.clear()
+
+
 @runtime_checkable
 class ExplicitCostReporter(Protocol):
     """A protocol for objects that can report their own pre-calculated cost.
