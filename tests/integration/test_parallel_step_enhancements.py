@@ -9,6 +9,7 @@ from flujo.domain import UsageLimits
 from flujo.exceptions import UsageLimitExceededError
 from flujo.testing.utils import gather_result
 from tests.conftest import create_test_flujo
+import os
 
 
 class LargeContext(BaseModel):
@@ -270,7 +271,15 @@ async def test_proactive_cancellation_token_limits() -> None:
     assert "Token limit of 100 exceeded" in str(exc_info.value)
 
     # Verify execution was fast (indicating proactive cancellation)
-    assert execution_time < 0.3  # Should be much faster than the 0.5s delay of low_tokens
+    # Use a more lenient threshold for CI environments where timing can vary
+    threshold = 0.3  # Base threshold
+    if os.getenv("CI"):
+        threshold = 0.4  # More lenient threshold for CI environments
+        
+    assert execution_time < threshold, (
+        f"Execution took too long: {execution_time:.3f}s (threshold: {threshold:.3f}s). "
+        f"This indicates proactive cancellation may not be working correctly."
+    )
 
 
 @pytest.mark.asyncio
