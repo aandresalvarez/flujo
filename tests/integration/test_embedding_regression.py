@@ -241,6 +241,28 @@ completion_tokens_per_1k = 0.00013
 
             m.setattr("flujo.infra.config_manager.get_config_manager", mock_get_config_manager)
 
+            # Also mock get_cost_config to ensure it uses our mocked config
+            def mock_get_cost_config():
+                class MockCostConfig:
+                    def __init__(self):
+                        self.strict = True
+                        self.providers = {
+                            "openai": {
+                                "gpt-4o": {
+                                    "prompt_tokens_per_1k": 0.005,
+                                    "completion_tokens_per_1k": 0.015,
+                                },
+                                "text-embedding-3-large": {
+                                    "prompt_tokens_per_1k": 0.00013,
+                                    "completion_tokens_per_1k": 0.00013,
+                                },
+                            }
+                        }
+
+                return MockCostConfig()
+
+            m.setattr("flujo.infra.config.get_cost_config", mock_get_cost_config)
+
             # Create a mock chat agent with unconfigured model
             class MockChatAgent:
                 def __init__(self):

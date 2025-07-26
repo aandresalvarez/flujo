@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 from pydantic import BaseModel, Field
 
 from ..exceptions import PricingNotConfiguredError
@@ -54,7 +54,10 @@ def get_provider_pricing(provider: Optional[str], model: str) -> Optional[Provid
     # 2. If not found, check if strict mode is enabled.
     if cost_config.strict:
         # In CI environments, allow fallback to defaults ONLY when no config file exists
-        if _is_ci_environment() and _no_config_file_found():
+        from .config_manager import get_config_manager
+
+        config_manager = get_config_manager()
+        if _is_ci_environment() and _no_config_file_found(config_manager):
             default_pricing = _get_default_pricing(provider, model)
             if default_pricing:
                 import logging
@@ -129,12 +132,14 @@ def _is_ci_environment() -> bool:
     return os.environ.get("CI", "").lower() in ("true", "1", "yes")
 
 
-def _no_config_file_found() -> bool:
+def _no_config_file_found(config_manager: Optional[Any] = None) -> bool:
     """Check if no configuration file was found."""
-    from .config_manager import get_config_manager
+    if config_manager is None:
+        from .config_manager import get_config_manager
+
+        config_manager = get_config_manager()
 
     try:
-        config_manager = get_config_manager()
         # If the config manager has no config path, it means no file was found
         if config_manager.config_path is None:
             return True
