@@ -53,14 +53,12 @@ class TestPersistencePerformanceOverhead:
 
         # Create unique database files for isolation
         test_id = uuid.uuid4().hex[:8]
-        no_backend_db_path = tmp_path / f"no_backend_{test_id}.db"
         with_backend_db_path = tmp_path / f"with_backend_{test_id}.db"
 
         # Test without backend (baseline)
         runner_no_backend = create_test_flujo(pipeline, state_backend=None)
 
         # Test with isolated backend using unique database file
-
         isolated_backend = SQLiteBackend(with_backend_db_path)
         runner_with_backend = create_test_flujo(pipeline, state_backend=isolated_backend)
 
@@ -107,8 +105,6 @@ class TestPersistencePerformanceOverhead:
         finally:
             # Clean up database files to prevent resource contention
             try:
-                if no_backend_db_path.exists():
-                    no_backend_db_path.unlink()
                 if with_backend_db_path.exists():
                     with_backend_db_path.unlink()
             except Exception as e:
@@ -127,7 +123,6 @@ class TestPersistencePerformanceOverhead:
 
         # Create unique database files for isolation
         test_id = uuid.uuid4().hex[:8]
-        no_backend_db_path = tmp_path / f"no_backend_{test_id}.db"
         with_backend_db_path = tmp_path / f"with_backend_{test_id}.db"
 
         # Test without backend
@@ -136,7 +131,6 @@ class TestPersistencePerformanceOverhead:
         )
 
         # Test with isolated backend using unique database file
-
         isolated_backend = SQLiteBackend(with_backend_db_path)
         runner_with_backend = create_test_flujo(
             pipeline, context_model=LargeContext, state_backend=isolated_backend
@@ -189,8 +183,6 @@ class TestPersistencePerformanceOverhead:
         finally:
             # Clean up database files to prevent resource contention
             try:
-                if no_backend_db_path.exists():
-                    no_backend_db_path.unlink()
                 if with_backend_db_path.exists():
                     with_backend_db_path.unlink()
             except Exception as e:

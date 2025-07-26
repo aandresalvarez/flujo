@@ -43,6 +43,8 @@ class MockStatelessAgent:
             @property
             def call_args(self):
                 """Return the arguments of the last call in the expected format (args, kwargs)."""
+                if self.parent.call_count == 0:
+                    raise AssertionError("call_args accessed but no calls have been made yet.")
                 return (self.parent._call_args, self.parent._call_kwargs)
 
         return MockInterface(self)

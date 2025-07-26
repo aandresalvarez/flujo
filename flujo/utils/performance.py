@@ -18,6 +18,9 @@ logger = logging.getLogger(__name__)
 # Type variable for generic functions
 T = TypeVar("T")
 
+# Performance constants
+DEFAULT_BUFFER_SIZE = 4096  # 4KB initial size
+
 # Thread-local storage for scratch buffers to avoid race conditions
 _thread_local = threading.local()
 
@@ -25,7 +28,7 @@ _thread_local = threading.local()
 def _get_thread_scratch_buffer() -> bytearray:
     """Get thread-local scratch buffer, creating it if necessary."""
     if not hasattr(_thread_local, "scratch_buffer"):
-        _thread_local.scratch_buffer = bytearray(4096)  # 4KB initial size
+        _thread_local.scratch_buffer = bytearray(DEFAULT_BUFFER_SIZE)  # 4KB initial size
     return _thread_local.scratch_buffer  # type: ignore[no-any-return]
 
 

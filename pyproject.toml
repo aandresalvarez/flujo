@@ -10,7 +10,6 @@ name = "flujo"
 version = "0.4.36"  # Performance optimizations with uvloop, orjson, and blake3
 description = "A modern, type-safe framework for building AI-powered applications with structured outputs and robust error handling."
 readme = "README.md"
-# Note: The license was changed from AGPL-3.0 to MIT. This change allows for more permissive use and distribution of the code.
 license = {text = "MIT"}
 requires-python = ">=3.11"
 keywords = ["ai", "llm", "pipeline", "workflow", "agent", "async", "type-safe"]

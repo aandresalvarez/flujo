@@ -33,8 +33,7 @@ try:
     import uvloop
     import asyncio
 
-    if hasattr(asyncio, "set_event_loop_policy"):
-        asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 except ImportError:
     # uvloop not available (likely on Windows), fall back to standard asyncio
     pass
