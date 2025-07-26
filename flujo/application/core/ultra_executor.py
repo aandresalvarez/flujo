@@ -43,21 +43,17 @@ if TYPE_CHECKING:
 # --------------------------------------------------------------------------- #
 
 # Import performance utilities
-from ...utils.performance import clear_scratch_buffer, time_perf_ns, time_perf_ns_to_seconds
+from ...utils.performance import time_perf_ns, time_perf_ns_to_seconds
 
 try:  # ➊ 9× faster JSON
     import orjson
 
     def _dumps(obj: Any) -> bytes:  # noqa: D401 – returns *bytes*
-        # Use scratch buffer for better performance
-        clear_scratch_buffer()
         return orjson.dumps(obj, option=orjson.OPT_SORT_KEYS)
 except ModuleNotFoundError:
     import json
 
     def _dumps(obj: Any) -> bytes:
-        # Use scratch buffer for better performance
-        clear_scratch_buffer()
         s = json.dumps(obj, sort_keys=True, separators=(",", ":"))
         b = s.encode("utf-8") if isinstance(s, str) else bytes(s)
         return b

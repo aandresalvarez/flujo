@@ -7,25 +7,33 @@ and minimize memory usage.
 """
 
 import time
+import threading
 from typing import Any, Callable, TypeVar, Awaitable
 from functools import wraps
 
 # Type variable for generic functions
 T = TypeVar("T")
 
-# Module-level scratch buffer for performance optimization
-# This reduces memory allocations by reusing a single bytearray
-_SCRATCH_BUFFER = bytearray(4096)  # 4KB initial size
+# Thread-local storage for scratch buffers to avoid race conditions
+_thread_local = threading.local()
+
+
+def _get_thread_scratch_buffer() -> bytearray:
+    """Get thread-local scratch buffer, creating it if necessary."""
+    if not hasattr(_thread_local, 'scratch_buffer'):
+        _thread_local.scratch_buffer = bytearray(4096)  # 4KB initial size
+    return _thread_local.scratch_buffer
 
 
 def clear_scratch_buffer() -> None:
-    """Clear the scratch buffer for reuse."""
-    _SCRATCH_BUFFER.clear()
+    """Clear the thread-local scratch buffer for reuse."""
+    buffer = _get_thread_scratch_buffer()
+    buffer.clear()
 
 
 def get_scratch_buffer() -> bytearray:
-    """Get the scratch buffer for temporary operations."""
-    return _SCRATCH_BUFFER
+    """Get the thread-local scratch buffer for temporary operations."""
+    return _get_thread_scratch_buffer()
 
 
 def time_perf_ns() -> int:
