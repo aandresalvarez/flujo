@@ -23,13 +23,26 @@ DEFAULT_BUFFER_SIZE = 4096  # 4KB initial size
 
 # Thread-local storage for scratch buffers to avoid race conditions
 _thread_local = threading.local()
+# Lock for thread-safe buffer creation
+_buffer_lock = threading.Lock()
 
 
 def _get_thread_scratch_buffer() -> bytearray:
-    """Get thread-local scratch buffer, creating it if necessary."""
-    if not hasattr(_thread_local, "scratch_buffer"):
-        _thread_local.scratch_buffer = bytearray(DEFAULT_BUFFER_SIZE)  # 4KB initial size
-    return _thread_local.scratch_buffer  # type: ignore[no-any-return]
+    """Get thread-local scratch buffer, creating it if necessary.
+    
+    This function is thread-safe and prevents race conditions when multiple
+    threads simultaneously access the scratch buffer for the first time.
+    """
+    # First check without lock for performance
+    if hasattr(_thread_local, "scratch_buffer"):
+        return _thread_local.scratch_buffer  # type: ignore[no-any-return]
+    
+    # Use lock only when creating the buffer to prevent race conditions
+    with _buffer_lock:
+        # Double-check pattern to ensure thread safety
+        if not hasattr(_thread_local, "scratch_buffer"):
+            _thread_local.scratch_buffer = bytearray(DEFAULT_BUFFER_SIZE)
+        return _thread_local.scratch_buffer  # type: ignore[no-any-return]
 
 
 def clear_scratch_buffer() -> None:
