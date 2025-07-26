@@ -32,6 +32,7 @@ class SimpleAgent:
 
 
 @pytest.mark.asyncio
+@pytest.mark.benchmark
 async def test_context_copying_performance_benchmark() -> None:
     """Benchmark the performance difference between full and selective context copying."""
 
@@ -99,6 +100,7 @@ async def test_context_copying_performance_benchmark() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.benchmark
 async def test_proactive_cancellation_performance_benchmark() -> None:
     """Benchmark the performance improvement from proactive cancellation."""
 

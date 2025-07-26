@@ -27,6 +27,123 @@ if not _fallback_logger.handlers:
     _fallback_logger.addHandler(error_handler)
 
 
+def _safe_log(logger: logging.Logger, level: int, message: str, *args: Any, **kwargs: Any) -> None:
+    """Safely log a message, handling I/O errors gracefully during cleanup."""
+    try:
+        logger.log(level, message, *args, **kwargs)
+    except (ValueError, OSError, RuntimeError) as e:
+        # During test cleanup, logging handlers may be closed
+        # We don't want to raise exceptions for logging failures
+        if "I/O operation on closed file" in str(e) or "closed" in str(e).lower():
+            # Silently ignore logging errors during cleanup
+            pass
+        else:
+            # Re-raise unexpected errors
+            raise
+
+
+class _SafeLogfireWrapper:
+    """Wrapper for real logfire library that handles I/O errors gracefully."""
+
+    def __init__(self, real_logfire: Any):
+        self._real_logfire = real_logfire
+
+    def info(self, message: str, *args: Any, **kwargs: Any) -> None:
+        try:
+            self._real_logfire.info(message, *args, **kwargs)
+        except (ValueError, OSError, RuntimeError) as e:
+            if "I/O operation on closed file" in str(e) or "closed" in str(e).lower():
+                pass  # Silently ignore during cleanup
+            else:
+                raise
+
+    def warn(self, message: str, *args: Any, **kwargs: Any) -> None:
+        try:
+            self._real_logfire.warn(message, *args, **kwargs)
+        except (ValueError, OSError, RuntimeError) as e:
+            if "I/O operation on closed file" in str(e) or "closed" in str(e).lower():
+                pass  # Silently ignore during cleanup
+            else:
+                raise
+
+    def warning(self, message: str, *args: Any, **kwargs: Any) -> None:
+        try:
+            self._real_logfire.warning(message, *args, **kwargs)
+        except (ValueError, OSError, RuntimeError) as e:
+            if "I/O operation on closed file" in str(e) or "closed" in str(e).lower():
+                pass  # Silently ignore during cleanup
+            else:
+                raise
+
+    def error(self, message: str, *args: Any, **kwargs: Any) -> None:
+        try:
+            self._real_logfire.error(message, *args, **kwargs)
+        except (ValueError, OSError, RuntimeError) as e:
+            if "I/O operation on closed file" in str(e) or "closed" in str(e).lower():
+                pass  # Silently ignore during cleanup
+            else:
+                raise
+
+    def debug(self, message: str, *args: Any, **kwargs: Any) -> None:
+        try:
+            self._real_logfire.debug(message, *args, **kwargs)
+        except (ValueError, OSError, RuntimeError) as e:
+            if "I/O operation on closed file" in str(e) or "closed" in str(e).lower():
+                pass  # Silently ignore during cleanup
+            else:
+                raise
+
+    def configure(self, *args: Any, **kwargs: Any) -> None:
+        try:
+            self._real_logfire.configure(*args, **kwargs)
+        except (ValueError, OSError, RuntimeError) as e:
+            if "I/O operation on closed file" in str(e) or "closed" in str(e).lower():
+                pass  # Silently ignore during cleanup
+            else:
+                raise
+
+    def instrument(self, name: str, *args: Any, **kwargs: Any) -> Callable[[Any], Any]:
+        try:
+            result = self._real_logfire.instrument(name, *args, **kwargs)
+            # Ensure the result is a callable
+            if callable(result):
+                return result  # type: ignore
+            else:
+                # Fallback to no-op decorator if result is not callable
+                def decorator(func: Callable[[Any], Any]) -> Callable[[Any], Any]:
+                    return func
+
+                return decorator
+        except (ValueError, OSError, RuntimeError) as e:
+            if "I/O operation on closed file" in str(e) or "closed" in str(e).lower():
+                # Return a no-op decorator during cleanup
+                def decorator(func: Callable[[Any], Any]) -> Callable[[Any], Any]:
+                    return func
+
+                return decorator
+            else:
+                raise
+
+    def span(self, name: str, *args: Any, **kwargs: Any) -> Any:
+        try:
+            return self._real_logfire.span(name, *args, **kwargs)
+        except (ValueError, OSError, RuntimeError) as e:
+            if "I/O operation on closed file" in str(e) or "closed" in str(e).lower():
+                # Return a mock span during cleanup
+                return _MockLogfireSpan()
+            else:
+                raise
+
+    def enable_stdout_viewer(self) -> None:
+        try:
+            self._real_logfire.enable_stdout_viewer()
+        except (ValueError, OSError, RuntimeError) as e:
+            if "I/O operation on closed file" in str(e) or "closed" in str(e).lower():
+                pass  # Silently ignore during cleanup
+            else:
+                raise
+
+
 class _MockLogfireSpan:
     def __enter__(self) -> "_MockLogfireSpan":
         return self
@@ -43,20 +160,25 @@ class _MockLogfire:
         self._logger = logger
 
     def info(self, message: str, *args: Any, **kwargs: Any) -> None:
-        self._logger.info(message, *args, **kwargs)
+        _safe_log(self._logger, logging.INFO, message, *args, **kwargs)
 
     def warn(self, message: str, *args: Any, **kwargs: Any) -> None:
-        self._logger.warning(message, *args, **kwargs)
+        _safe_log(self._logger, logging.WARNING, message, *args, **kwargs)
+
+    def warning(self, message: str, *args: Any, **kwargs: Any) -> None:
+        _safe_log(self._logger, logging.WARNING, message, *args, **kwargs)
 
     def error(self, message: str, *args: Any, **kwargs: Any) -> None:
-        self._logger.error(message, *args, **kwargs)
+        _safe_log(self._logger, logging.ERROR, message, *args, **kwargs)
 
     def debug(self, message: str, *args: Any, **kwargs: Any) -> None:
-        self._logger.debug(message, *args, **kwargs)
+        _safe_log(self._logger, logging.DEBUG, message, *args, **kwargs)
 
     def configure(self, *args: Any, **kwargs: Any) -> None:
-        self._logger.info(
-            "Logfire.configure called, but Logfire is mocked. Using standard Python logging."
+        _safe_log(
+            self._logger,
+            logging.INFO,
+            "Logfire.configure called, but Logfire is mocked. Using standard Python logging.",
         )
 
     def instrument(self, name: str, *args: Any, **kwargs: Any) -> Callable[[Any], Any]:
@@ -69,7 +191,11 @@ class _MockLogfire:
         return _MockLogfireSpan()
 
     def enable_stdout_viewer(self) -> None:
-        self._logger.info("Logfire.enable_stdout_viewer called, but Logfire is mocked.")
+        _safe_log(
+            self._logger,
+            logging.INFO,
+            "Logfire.enable_stdout_viewer called, but Logfire is mocked.",
+        )
 
 
 # We initially set `logfire` to a mocked implementation. Once
@@ -99,7 +225,8 @@ def init_telemetry(settings_obj: Optional["TelemetrySettings"] = None) -> None:
         try:
             import logfire as _actual_logfire
 
-            logfire = _actual_logfire
+            # Wrap the real logfire with our safe wrapper
+            logfire = _SafeLogfireWrapper(_actual_logfire)
 
             additional_processors: List["SpanProcessor"] = []
             if settings_to_use.otlp_export_enabled:
@@ -126,20 +253,43 @@ def init_telemetry(settings_obj: Optional["TelemetrySettings"] = None) -> None:
                     else None
                 ),
             )
-            _fallback_logger.info("Logfire initialized successfully (actual Logfire).")
+            _safe_log(
+                _fallback_logger, logging.INFO, "Logfire initialized successfully (actual Logfire)."
+            )
             _initialized = True
             return
         except ImportError:
-            _fallback_logger.warning(
-                "Logfire library not installed. Falling back to standard Python logging."
+            _safe_log(
+                _fallback_logger,
+                logging.WARNING,
+                "Logfire library not installed. Falling back to standard Python logging.",
             )
         except Exception as e:
-            _fallback_logger.error(
-                f"Failed to configure Logfire: {e}. Falling back to standard Python logging."
+            _safe_log(
+                _fallback_logger,
+                logging.ERROR,
+                f"Failed to configure Logfire: {e}. Falling back to standard Python logging.",
             )
 
-    _fallback_logger.info(
-        "Logfire telemetry is disabled or failed to initialize. Using standard Python logging."
+    _safe_log(
+        _fallback_logger,
+        logging.INFO,
+        "Logfire telemetry is disabled or failed to initialize. Using standard Python logging.",
     )
     logfire = _MockLogfire(_fallback_logger)
     _initialized = True
+
+
+# Auto-initialize telemetry with default settings when module is imported
+# This ensures telemetry is always available, even in tests
+# Only auto-initialize if not already initialized and if we're not in a test environment
+if not _initialized:
+    try:
+        # Check if we're in a test environment by looking for pytest markers
+        import sys
+
+        if "pytest" not in sys.modules and "test" not in sys.modules:
+            init_telemetry()
+    except Exception:
+        # If auto-initialization fails, we still have the mock logfire available
+        pass

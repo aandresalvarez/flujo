@@ -11,6 +11,7 @@ Go beyond static prompts. Flujo provides the structure, state, and observability
 - Centralized prompt management
 - **Enhanced serialization with global custom serializer registry**
 - **Rich internal tracing and visualization (FSD-12)**
+- **Integrated cost and token usage tracking**
 
 ## Getting Started
 
@@ -25,5 +26,6 @@ Go beyond static prompts. Flujo provides the structure, state, and observability
 - [SQLite Backend](guides/sqlite_backend_guide.md) - Production-ready persistence with observability
 - [Migration Guide](migration/v0.7.0.md) - Upgrade to the latest serialization features
 - **[Rich Tracing & Debugging](FSD-12_IMPLEMENTATION_RESULTS.md)** - Debug and analyze pipeline execution with hierarchical traces
+- **[Cost Tracking Guide](cost_tracking_guide.md)** - Monitor and control spending on LLM operations
 
 Use the navigation on the left to explore the guides, examples, and API reference.

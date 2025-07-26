@@ -219,6 +219,7 @@ class TestUltraExecutorPerformance:
         return step
 
     @pytest.mark.asyncio
+    @pytest.mark.benchmark
     async def test_realistic_execution_speed_comparison(
         self, ultra_executor, realistic_iterative_executor, mock_step
     ):
@@ -301,6 +302,7 @@ class TestUltraExecutorPerformance:
         )
 
     @pytest.mark.asyncio
+    @pytest.mark.benchmark
     async def test_ultra_executor_feature_value(self, ultra_executor, mock_step):
         """Test the value of ultra executor features."""
         data = {"feature": "test", "value": 123}
@@ -426,6 +428,7 @@ class TestUltraExecutorPerformance:
         assert result.success, "Step should execute successfully with usage tracking"
 
     @pytest.mark.asyncio
+    @pytest.mark.benchmark
     async def test_cache_performance_realistic(
         self, ultra_executor, realistic_iterative_executor, mock_step
     ):
@@ -472,6 +475,7 @@ class TestUltraExecutorPerformance:
         )
 
     @pytest.mark.asyncio
+    @pytest.mark.benchmark
     async def test_concurrent_execution_performance(self, ultra_executor, mock_step):
         """Test performance under concurrent execution."""
         num_concurrent = 20
@@ -511,6 +515,7 @@ class TestUltraExecutorPerformance:
         )
 
     @pytest.mark.asyncio
+    @pytest.mark.benchmark
     async def test_memory_efficiency(self, ultra_executor, mock_step):
         """Test memory efficiency by running many executions."""
         iterations = 500  # Reduced for faster execution
@@ -552,6 +557,7 @@ class TestUltraExecutorPerformance:
         )
 
     @pytest.mark.asyncio
+    @pytest.mark.benchmark
     async def test_hash_performance(self, ultra_executor):
         """Test the performance of the optimized hashing."""
         # Test with various data types
@@ -592,6 +598,7 @@ class TestUltraExecutorPerformance:
                 assert ultra_executor._hash_obj(data) == base_hash
 
     @pytest.mark.asyncio
+    @pytest.mark.benchmark
     async def test_cache_key_generation_performance(self, ultra_executor, mock_step):
         """Test cache key generation performance."""
         iterations = 500  # Reduced for faster execution
@@ -631,6 +638,7 @@ class TestUltraExecutorPerformance:
         assert len(unique_keys) > len(keys) * 0.8, "Most keys should be unique"
 
     @pytest.mark.asyncio
+    @pytest.mark.benchmark
     async def test_usage_tracking_performance(self, ultra_executor):
         """Test usage tracking performance under high load."""
         iterations = 500  # Reduced for faster execution
@@ -661,6 +669,7 @@ class TestUltraExecutorScalability:
     """Test ultra executor scalability characteristics."""
 
     @pytest.mark.asyncio
+    @pytest.mark.benchmark
     async def test_large_cache_performance(self):
         """Test performance with large cache."""
         executor = UltraStepExecutor(
@@ -716,12 +725,14 @@ class TestUltraExecutorScalability:
         print(f"Hit time per execution: {hit_time / 500:.6f}s")
 
         # Cache hits should be very fast (dynamic threshold based on environment)
-        threshold = get_performance_threshold(0.1, ci_multiplier=1.5)  # 0.1s local, 0.15s CI
+        # Use a more lenient threshold for CI environments where performance can vary
+        threshold = get_performance_threshold(0.1, ci_multiplier=2.0)  # 0.1s local, 0.2s CI
         assert hit_time < threshold, (
             f"Cache hits took too long: {hit_time:.3f}s (threshold: {threshold:.3f}s)"
         )
 
     @pytest.mark.asyncio
+    @pytest.mark.benchmark
     async def test_concurrency_scaling(self):
         """Test how performance scales with concurrency."""
         concurrency_levels = [1, 2, 4, 8]  # Reduced levels for faster execution

@@ -35,6 +35,7 @@ from ...exceptions import (
     InfiniteRedirectError,
     InfiniteFallbackError,
     PausedException,
+    PricingNotConfiguredError,
 )
 from ...infra import telemetry
 from ...domain.resources import AppResources
@@ -714,7 +715,8 @@ async def _execute_loop_step_logic(
 
                 if usage_limits is not None:
                     if (
-                        usage_limits.total_cost_usd_limit is not None
+                        usage_limits is not None
+                        and usage_limits.total_cost_usd_limit is not None
                         and loop_overall_result.cost_usd > usage_limits.total_cost_usd_limit
                     ):
                         telemetry.logfire.warn(
@@ -731,7 +733,8 @@ async def _execute_loop_step_logic(
                         context_setter(pr, context)
                         raise UsageLimitExceededError(loop_overall_result.feedback, pr)
                     if (
-                        usage_limits.total_tokens_limit is not None
+                        usage_limits is not None
+                        and usage_limits.total_tokens_limit is not None
                         and loop_overall_result.token_counts > usage_limits.total_tokens_limit
                     ):
                         telemetry.logfire.warn(
@@ -1261,6 +1264,9 @@ async def _run_step_logic(
     on_chunk: Callable[[Any], Awaitable[None]] | None = None,
 ) -> StepResult:
     """Core logic for executing a single step without engine coupling."""
+    from ...infra import telemetry
+
+    telemetry.logfire.info(f"Starting _run_step_logic for step: {step.name}")
     if context_setter is None:
         context_setter = _default_set_final_context
 
@@ -1396,38 +1402,30 @@ async def _run_step_logic(
                 raw_output = await current_agent.run(data, **agent_kwargs)
                 result.latency_s += time.monotonic() - start
 
+            # Extract usage metrics using shared helper function
+            from ...cost import extract_usage_metrics
+
+            prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
+                raw_output, current_agent, step.name
+            )
+
+            # Update result with usage metrics
+            result.token_counts = prompt_tokens + completion_tokens
+            result.cost_usd = cost_usd
+
             # Check for Mock objects and usage limits
             if isinstance(raw_output, Mock):
                 raise TypeError("Mock object as output")
 
-            # Check usage limits
-            if usage_limits is not None:
-                cost_usd = getattr(raw_output, "cost_usd", 0.0)
-                token_counts = getattr(raw_output, "token_counts", 0)
-
-                if (
-                    usage_limits.total_cost_usd_limit is not None
-                    and cost_usd > (usage_limits.total_cost_usd_limit or 0.0)
-                ) or (
-                    usage_limits.total_tokens_limit is not None
-                    and token_counts > (usage_limits.total_tokens_limit or 0)
-                ):
-                    from ...domain.models import PipelineResult
-
-                    error_msg = (
-                        f"Cost limit exceeded: {cost_usd} > {usage_limits.total_cost_usd_limit}"
-                        if cost_usd > (usage_limits.total_cost_usd_limit or 0.0)
-                        else f"Token limit exceeded: {token_counts} > {usage_limits.total_tokens_limit}"
-                    )
-                    raise UsageLimitExceededError(
-                        error_msg,
-                        PipelineResult(step_history=[], total_cost_usd=cost_usd),
-                    )
-        except (TypeError, UsageLimitExceededError) as e:
+            # Usage limits are checked by the UsageGovernor at the pipeline level
+            # No need to check them here as it would interfere with cumulative tracking
+        except (TypeError, UsageLimitExceededError, PricingNotConfiguredError) as e:
             # Re-raise critical exceptions immediately
             if isinstance(e, TypeError) and "Mock object as output" in str(e):
                 raise
             if isinstance(e, UsageLimitExceededError):
+                raise
+            if isinstance(e, PricingNotConfiguredError):
                 raise
             # For other TypeErrors, continue retrying
             last_exception = e
@@ -1452,7 +1450,7 @@ async def _run_step_logic(
                     processed = await proc.process(processed, context)
                 except Exception as e:  # pragma: no cover - defensive
                     telemetry.logfire.error(f"Processor {proc.name} failed: {e}")
-                unpacked_output = processed
+            unpacked_output = processed
         last_unpacked_output = unpacked_output
 
         success = not stream_failed
@@ -1565,9 +1563,7 @@ async def _run_step_logic(
             result.output = unpacked_output
             result.success = True
             result.feedback = feedback
-            # Add metrics for successful attempts immediately
-            result.token_counts += getattr(raw_output, "token_counts", 0)
-            result.cost_usd += getattr(raw_output, "cost_usd", 0.0)
+            # Metrics are already calculated above in extract_usage_metrics
             _apply_validation_metadata(
                 result,
                 validation_failed=validation_failed,
@@ -1705,21 +1701,8 @@ async def _run_step_logic(
             )
             return result
     else:
-        # No fallback, add metrics from the last attempt
-        metrics_source = (
-            raw_output
-            if "raw_output" in locals() and raw_output is not None
-            else last_unpacked_output
-        )
-        if metrics_source is not None:
-            # Robust default: 1 token for string outputs, else use token_counts attribute or 0
-            if hasattr(metrics_source, "token_counts"):
-                result.token_counts += metrics_source.token_counts
-            elif isinstance(metrics_source, str):
-                result.token_counts += 1
-            else:
-                result.token_counts += 0
-            result.cost_usd += getattr(metrics_source, "cost_usd", 0.0)
+        # No fallback - metrics are already calculated above
+        pass
 
     if not result.success and step.persist_feedback_to_context:
         if context is not None and hasattr(context, step.persist_feedback_to_context):

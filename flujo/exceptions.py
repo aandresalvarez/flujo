@@ -44,6 +44,20 @@ class ConfigurationError(SettingsError):
     pass
 
 
+class PricingNotConfiguredError(ConfigurationError):
+    """Raised when strict pricing mode is enabled but pricing is not configured for a model."""
+
+    def __init__(self, provider: str | None, model: str) -> None:
+        provider_str = f"'{provider}'" if provider else "None"
+        message = (
+            f"Strict pricing is enabled, but no configuration was found for "
+            f"provider={provider_str}, model='{model}' in flujo.toml."
+        )
+        super().__init__(message)
+        self.provider = provider
+        self.model = model
+
+
 class InfiniteRedirectError(OrchestratorError):
     """Raised when a redirect loop is detected in pipeline execution."""
 

@@ -9,6 +9,7 @@ import time
 
 @pytest.mark.asyncio
 @pytest.mark.slow
+@pytest.mark.benchmark
 async def test_sqlite_backend_large_dataset_performance(tmp_path: Path):
     """Test that SQLiteBackend can handle a large number of workflows efficiently."""
     backend = SQLiteBackend(tmp_path / "state.db")
@@ -59,6 +60,7 @@ async def test_sqlite_backend_large_dataset_performance(tmp_path: Path):
 
 @pytest.mark.asyncio
 @pytest.mark.slow
+@pytest.mark.benchmark
 async def test_sqlite_backend_high_concurrency(tmp_path: Path):
     """Test SQLiteBackend under high concurrent load (writers and readers)."""
     backend = SQLiteBackend(tmp_path / "state.db")
@@ -104,6 +106,7 @@ async def test_sqlite_backend_high_concurrency(tmp_path: Path):
 
 @pytest.mark.asyncio
 @pytest.mark.slow
+@pytest.mark.benchmark
 async def test_sqlite_backend_query_pagination_and_filtering(tmp_path: Path):
     """Test query performance and correctness for pagination and filtering edge cases."""
     backend = SQLiteBackend(tmp_path / "state.db")

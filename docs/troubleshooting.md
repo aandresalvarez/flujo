@@ -229,13 +229,72 @@ This guide helps you resolve common issues when using `flujo`.
 
 **Symptoms:**
 - Pipeline stops with `UsageLimitExceededError`
+- Unexpected cost or token limits being hit
+- Inconsistent cost calculations
 
 **Solutions:**
-1. Increase or remove the limits:
+
+1. **Increase or remove the limits:**
    ```python
+   # Remove all limits
    runner = Flujo(pipeline, usage_limits=None)
+
+   # Increase limits
+   limits = UsageLimits(
+       total_cost_usd_limit=5.0,    # Increase from $1.0 to $5.0
+       total_tokens_limit=10000     # Increase from 5000 to 10000
+   )
+   runner = Flujo(pipeline, usage_limits=limits)
    ```
-2. Reduce cost by using cheaper models or fewer iterations.
+
+2. **Check your cost configuration:**
+   ```toml
+   # flujo.toml - Verify pricing is correct
+   [cost.providers.openai.gpt-4o]
+   prompt_tokens_per_1k = 0.005
+   completion_tokens_per_1k = 0.015
+   ```
+
+3. **Debug cost calculations:**
+   ```python
+   import logging
+   logging.getLogger("flujo.cost").setLevel(logging.DEBUG)
+
+   # Run pipeline to see detailed cost calculation logs
+   result = runner.run("Your prompt")
+   ```
+
+4. **Reduce costs by using cheaper models:**
+   ```python
+   # Use cheaper models for cost-sensitive operations
+   cheap_agent = make_agent_async("openai:gpt-3.5-turbo", "Simple task", str)
+   expensive_agent = make_agent_async("openai:gpt-4o", "Complex task", str)
+
+   # Use cheap agent for simple tasks
+   pipeline = Step.solution(cheap_agent) >> Step.validate(expensive_agent)
+   ```
+
+5. **Set step-level limits for fine control:**
+   ```python
+   # Set different limits for different steps
+   solution_limits = UsageLimits(total_cost_usd_limit=0.10)
+   validation_limits = UsageLimits(total_cost_usd_limit=0.05)
+
+   pipeline = (
+       Step.solution(agent, usage_limits=solution_limits)
+       >> Step.validate(validator, usage_limits=validation_limits)
+   )
+   ```
+
+6. **Monitor costs in real-time:**
+   ```python
+   def log_step_costs(step_result):
+       print(f"{step_result.name}: ${step_result.cost_usd:.4f} ({step_result.token_counts} tokens)")
+
+   # Add logging to track costs as they occur
+   for step_result in result.step_history:
+       log_step_costs(step_result)
+   ```
 
 ## Telemetry Issues
 

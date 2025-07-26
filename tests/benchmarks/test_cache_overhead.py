@@ -10,6 +10,7 @@ pytest.importorskip("pytest_benchmark")
 
 
 @pytest.mark.asyncio
+@pytest.mark.benchmark
 async def test_cache_overhead_vs_plain_step() -> None:
     agent_plain = StubAgent(["ok"] * 5)
     plain = Step.solution(agent_plain)

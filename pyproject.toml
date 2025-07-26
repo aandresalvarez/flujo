@@ -35,15 +35,16 @@ classifiers = [
 # Runtime dependencies
 dependencies = [
   "pydantic>=2.11.7,<2.13", # Allow patch updates and minor upgrades within v2, ensures TypeAdapter and v2 features
-  "pydantic-ai>=0.4.2",
+  "pydantic-ai>=0.4.7", # Updated for compatibility with logfire 4.0.0
   "pydantic-settings",
   "python-dotenv>=1.0",
   "pyyaml>=6.0",
   "tenacity>=8.2",
   "typer>=0.12",
   "rich>=13.7",
-  "pydantic-evals>=0.0.47", # Added for Intelligent Evals
+  "pydantic-evals>=0.4.7", # Updated for compatibility with pydantic-ai 0.4.7
   "aiosqlite>=0.21.0",
+  "numpy>=1.24.0,<2.4.0", # Required for CLI bench command statistical calculations
 ]
 
 # Optional dependency groups (install with: `pip install .[dev]`, etc.)
@@ -64,7 +65,7 @@ dev = [
   "bandit>=1.7.5",
   "cyclonedx-python-lib>=5.2.0,<9",
   "cyclonedx-py",  # Added for CycloneDX CLI support
-  "logfire>=0.3",
+  "logfire>=4.0.0", # Updated for compatibility with pydantic-graph 0.4.7
   "sqlvalidator>=0.0.8",
   "psutil>=5.9.0",  # Added for performance and memory tests
   "prometheus-client>=0.22.1,<0.23.0",  # Required for prometheus tests
@@ -82,10 +83,9 @@ lens = [
   "prometheus-client>=0.22.1,<0.23.0",
 ]
 bench = [
-    "numpy>=1.24.0,<2.4.0",
     "pytest-benchmark>=4.0.0",
 ]
-logfire = ["logfire>=0.3"]
+logfire = ["logfire>=4.0.0"] # Updated for compatibility with pydantic-graph 0.4.7
 sql = ["sqlvalidator>=0.0.8"]
 
 # Prometheus-related dependencies (install with: `pip install .[prometheus]`)

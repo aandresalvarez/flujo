@@ -153,6 +153,10 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
             timeout if timeout is not None else current_settings.agent_timeout
         )
         self._model_name: str | None = model_name or getattr(agent, "model", "unknown_model")
+        # Use centralized model ID extraction for consistency
+        from ..utils.model_utils import extract_model_id
+
+        self.model_id: str | None = model_name or extract_model_id(agent, "AsyncAgentWrapper")
         self.processors: AgentProcessors = processors or AgentProcessors()
         self.auto_repair = auto_repair
         self.target_output_type = getattr(agent, "output_type", Any)
@@ -240,6 +244,12 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                     ):
                         raise OrchestratorRetryError(raw_agent_response)
 
+                    # Store the original AgentRunResult for usage tracking
+                    agent_usage_info = None
+                    if hasattr(raw_agent_response, "usage"):
+                        agent_usage_info = raw_agent_response.usage()
+
+                    # Get the actual output content to be processed
                     unpacked_output = getattr(raw_agent_response, "output", raw_agent_response)
 
                     if self.processors.output_processors:
@@ -248,7 +258,32 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                             processed = await proc.process(processed, context_obj)
                         unpacked_output = processed
 
-                    return unpacked_output
+                    # Return a tuple with both the processed output and usage info
+                    # This ensures the usage information is preserved even after processing
+                    if agent_usage_info is not None:
+                        # Create a wrapper that preserves both the processed output and usage info
+                        # This is a clean abstraction that maintains the contract expected by cost tracking
+                        # while allowing output processors to work on the actual content
+                        class ProcessedOutputWithUsage:
+                            """
+                            Wrapper that preserves both processed output and usage information.
+
+                            This ensures that cost tracking can extract usage metrics even after
+                            output processors have modified the content. The wrapper maintains
+                            the same interface as the original AgentRunResult for usage extraction.
+                            """
+
+                            def __init__(self, output: Any, usage_info: Any) -> None:
+                                self.output = output
+                                self._usage_info = usage_info
+
+                            def usage(self) -> Any:
+                                """Return the original usage information from the agent response."""
+                                return self._usage_info
+
+                        return ProcessedOutputWithUsage(unpacked_output, agent_usage_info)
+                    else:
+                        return unpacked_output
         except RetryError as e:
             last_exc = e.last_attempt.exception()
             if isinstance(last_exc, (ValidationError, ModelRetry)) and self.auto_repair:

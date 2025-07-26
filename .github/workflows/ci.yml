@@ -76,6 +76,9 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras
 
+      - name: Set dummy OpenAI API key for tests
+        run: echo "OPENAI_API_KEY=dummy-key" >> $GITHUB_ENV
+
       - name: Run fast tests with coverage
         run: |
           # Run fast tests in parallel with coverage
@@ -119,6 +122,9 @@ jobs:
 
       - name: Install dependencies
         run: uv sync --all-extras
+
+      - name: Set dummy OpenAI API key for tests
+        run: echo "OPENAI_API_KEY=dummy-key" >> $GITHUB_ENV
 
       - name: Run slow tests with coverage
         run: |
@@ -166,6 +172,9 @@ jobs:
 
       - name: Install dependencies
         run: uv sync --all-extras
+
+      - name: Set dummy OpenAI API key for tests
+        run: echo "OPENAI_API_KEY=dummy-key" >> $GITHUB_ENV
 
       - name: Run all tests with coverage
         run: |
@@ -257,6 +266,9 @@ jobs:
 
       - name: Install dependencies
         run: uv sync --all-extras
+
+      - name: Set dummy OpenAI API key for tests
+        run: echo "OPENAI_API_KEY=dummy-key" >> $GITHUB_ENV
 
       - name: Run performance analysis
         run: make test-perf

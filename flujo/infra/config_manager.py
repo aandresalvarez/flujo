@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import threading
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Union, cast
 import os
@@ -30,6 +29,9 @@ class FlujoConfig(BaseModel):
 
     # State backend configuration
     state_uri: Optional[str] = None
+
+    # Cost tracking configuration
+    cost: Optional[Dict[str, Any]] = None
 
 
 class SolveConfig(BaseModel):
@@ -96,8 +98,6 @@ class ConfigManager:
             config_path: Path to the configuration file. If None, will search for flujo.toml
         """
         self.config_path = self._find_config_file(config_path)
-        self._config: Optional[FlujoConfig] = None
-        self._settings: Optional[Any] = None
 
     def _find_config_file(self, config_path: Optional[Union[str, Path]]) -> Optional[Path]:
         """Find the configuration file to use."""
@@ -128,12 +128,8 @@ class ConfigManager:
 
     def load_config(self) -> FlujoConfig:
         """Load configuration from flujo.toml file."""
-        if self._config is not None:
-            return self._config
-
         if self.config_path is None:
-            self._config = FlujoConfig()
-            return self._config
+            return FlujoConfig()
 
         try:
             with open(self.config_path, "rb") as f:
@@ -158,8 +154,11 @@ class ConfigManager:
             if "state_uri" in data:
                 config_data["state_uri"] = data["state_uri"]
 
-            self._config = FlujoConfig(**config_data)
-            return self._config
+            # Cost tracking configuration
+            if "cost" in data:
+                config_data["cost"] = data["cost"]
+
+            return FlujoConfig(**config_data)
 
         except FileNotFoundError as e:
             raise ConfigurationError(f"Configuration file not found at {self.config_path}: {e}")
@@ -187,9 +186,6 @@ class ConfigManager:
 
     def get_settings(self) -> Any:
         """Get settings with configuration file overrides applied."""
-        if self._settings is not None:
-            return self._settings
-
         # Start with the default settings using the proper constructor
         # BaseSettings handles the initialization automatically
         from .settings import Settings
@@ -204,8 +200,7 @@ class ConfigManager:
                 if hasattr(settings, field_name):
                     setattr(settings, field_name, value)
 
-        self._settings = settings
-        return self._settings
+        return settings
 
     def get_cli_defaults(self, command: str) -> Dict[str, Any]:
         """Get CLI defaults for a specific command."""
@@ -226,14 +221,12 @@ class ConfigManager:
         return config.state_uri
 
 
-# Thread-local configuration manager instance to ensure thread safety
-_thread_local_config_manager = threading.local()
-
-
+# Configuration manager instance - stateless approach for multiprocessing safety
 def get_config_manager(force_reload: bool = False) -> ConfigManager:
-    if force_reload or not hasattr(_thread_local_config_manager, "config_manager"):
-        _thread_local_config_manager.config_manager = ConfigManager()
-    return cast(ConfigManager, _thread_local_config_manager.config_manager)
+    """Get a config manager instance. Always creates a new instance for multiprocessing safety."""
+    # Always create a new instance to avoid multiprocessing issues
+    # This ensures each process gets its own config manager
+    return ConfigManager()
 
 
 def load_settings(force_reload: bool = False) -> Any:

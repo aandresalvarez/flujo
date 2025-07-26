@@ -20,16 +20,22 @@ class TestConfigManager:
 
     def test_empty_config(self):
         """Test that empty configuration works correctly."""
-        with tempfile.TemporaryDirectory():
-            config_manager = ConfigManager()
-            config = config_manager.load_config()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Change to temp directory to avoid finding flujo.toml in parent directories
+            original_cwd = os.getcwd()
+            os.chdir(temp_dir)
+            try:
+                config_manager = ConfigManager()
+                config = config_manager.load_config()
 
-            assert isinstance(config, FlujoConfig)
-            assert config.solve is None
-            assert config.bench is None
-            assert config.run is None
-            assert config.settings is None
-            assert config.state_uri is None
+                assert isinstance(config, FlujoConfig)
+                assert config.solve is None
+                assert config.bench is None
+                assert config.run is None
+                assert config.settings is None
+                assert config.state_uri is None
+            finally:
+                os.chdir(original_cwd)
 
     def test_basic_config_loading(self):
         """Test loading a basic configuration file."""

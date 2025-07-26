@@ -26,7 +26,7 @@ import contextvars
 import inspect
 from enum import Enum
 
-from flujo.domain.models import BaseModel, RefinementCheck  # noqa: F401
+from flujo.domain.models import BaseModel, RefinementCheck, UsageLimits  # noqa: F401
 from flujo.domain.resources import AppResources
 from pydantic import Field, ConfigDict
 from ..agent_protocol import AsyncAgentProtocol
@@ -116,6 +116,10 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
     failure_handlers: List[Callable[[], None]] = Field(default_factory=list)
     processors: "AgentProcessors" = Field(default_factory=AgentProcessors)
     fallback_step: Optional[Any] = Field(default=None, exclude=True)
+    usage_limits: Optional[UsageLimits] = Field(
+        default=None,
+        description="Usage limits for this step (cost and token limits).",
+    )
     persist_feedback_to_context: Optional[str] = Field(
         default=None,
         description=("If step fails, append feedback to this context attribute (must be a list)."),

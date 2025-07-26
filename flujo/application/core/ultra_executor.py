@@ -34,6 +34,9 @@ from typing import (
     cast,
 )
 
+if TYPE_CHECKING:
+    from ...domain.models import PipelineResult
+
 
 # --------------------------------------------------------------------------- #
 # ★ Fast (de)serialisation & hashing helpers
@@ -76,6 +79,7 @@ from ...exceptions import (
     PausedException,
     InfiniteFallbackError,
     InfiniteRedirectError,
+    PricingNotConfiguredError,
 )
 
 # Optional telemetry (no-op if absent)
@@ -84,7 +88,11 @@ try:
 
     def trace(name: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
-            return telemetry.logfire.instrument(name)(func)
+            try:
+                return telemetry.logfire.instrument(name)(func)
+            except Exception:
+                # Fallback if telemetry is not available
+                return func
 
         return decorator
 except Exception:  # pragma: no cover – swallow import errors silently
@@ -137,6 +145,9 @@ class _Frame(Generic[TContext]):
     usage_limits: Optional[UsageLimits] = None
     stream: bool = False
     on_chunk: Optional[Callable[[Any], Awaitable[None]]] = None
+    # Add cumulative usage tracking for proper limit enforcement
+    cumulative_cost: float = 0.0
+    cumulative_tokens: int = 0
 
 
 @dataclass(slots=True)
@@ -176,31 +187,54 @@ class _LRUCache:
 
 @dataclass(slots=True)
 class _UsageTracker:
+    """Thread-safe cumulative usage tracker for proper limit enforcement."""
+
     total_cost: float = 0.0
     total_tokens: int = 0
     _lock: asyncio.Lock = field(init=False, default_factory=asyncio.Lock)
 
     async def add(self, cost: float, tokens: int) -> None:
+        """Add usage metrics to cumulative totals."""
         async with self._lock:
             self.total_cost += cost
             self.total_tokens += tokens
 
-    async def guard(self, lim: UsageLimits) -> None:
+    async def get_current_totals(self) -> tuple[float, int]:
+        """Get current cumulative totals safely."""
         async with self._lock:
-            if lim.total_cost_usd_limit and self.total_cost > lim.total_cost_usd_limit:
+            return self.total_cost, self.total_tokens
+
+    async def guard(self, lim: UsageLimits, result: Optional["PipelineResult[Any]"] = None) -> None:
+        """Check if current usage exceeds configured limits.
+
+        Raises:
+            UsageLimitExceededError: If any limit is exceeded
+        """
+        # Use approximate comparison for floating point precision
+        if (
+            lim.total_cost_usd_limit is not None
+            and self.total_cost > lim.total_cost_usd_limit + 1e-10
+        ):
+            # Create a minimal result if none provided
+            if result is None:
                 from ...domain.models import PipelineResult
 
-                raise UsageLimitExceededError(
-                    f"Cost limit of ${lim.total_cost_usd_limit} exceeded",
-                    PipelineResult(step_history=[], total_cost_usd=self.total_cost),
-                )
-            if lim.total_tokens_limit and self.total_tokens > lim.total_tokens_limit:
+                result = PipelineResult(step_history=[], total_cost_usd=self.total_cost)
+            raise UsageLimitExceededError(
+                f"Cost limit of ${lim.total_cost_usd_limit} exceeded (current: ${self.total_cost})",
+                result,
+            )
+
+        if lim.total_tokens_limit is not None and self.total_tokens > lim.total_tokens_limit:
+            # Create a minimal result if none provided
+            if result is None:
                 from ...domain.models import PipelineResult
 
-                raise UsageLimitExceededError(
-                    f"Token limit of {lim.total_tokens_limit} exceeded",
-                    PipelineResult(step_history=[], total_cost_usd=self.total_cost),
-                )
+                result = PipelineResult(step_history=[], total_cost_usd=self.total_cost)
+            raise UsageLimitExceededError(
+                f"Token limit of {lim.total_tokens_limit} exceeded (current: {self.total_tokens})",
+                result,
+            )
 
 
 # --------------------------------------------------------------------------- #
@@ -347,8 +381,14 @@ class UltraStepExecutor(Generic[TContext]):
         stream: bool = False,
         on_chunk: Optional[Callable[[Any], Awaitable[None]]] = None,
         breach_event: Optional[Any] = None,
+        result: Optional[Any] = None,  # <-- new argument
     ) -> StepResult:
-        """Execute a single step with ultra-fast path for trivial agent steps."""
+        """Execute a single step with ultra-fast path for trivial agent steps.
+
+        Note: Usage limits are enforced at the pipeline/governor level only.
+        This method does not check usage limits directly to ensure step history
+        is always complete and logic is not duplicated.
+        """
 
         import inspect
         from unittest.mock import Mock, MagicMock, AsyncMock
@@ -429,11 +469,15 @@ class UltraStepExecutor(Generic[TContext]):
                                         except TypeError:
                                             processed_data = fn(processed_data)
                                 except Exception as e:  # pragma: no cover - defensive
-                                    from flujo.infra import telemetry
+                                    try:
+                                        from flujo.infra import telemetry
 
-                                    telemetry.logfire.error(
-                                        f"Processor {getattr(proc, 'name', type(proc).__name__)} failed: {e}"
-                                    )
+                                        telemetry.logfire.error(
+                                            f"Processor {getattr(proc, 'name', type(proc).__name__)} failed: {e}"
+                                        )
+                                    except Exception:
+                                        # Fallback if telemetry is not available
+                                        pass
                                     processed_data = data  # Use original data on processor failure
 
                         # Use processed_data as input to agent
@@ -493,34 +537,22 @@ class UltraStepExecutor(Generic[TContext]):
                         # Calculate latency
                         latency = time.perf_counter() - start_time
 
-                        # Minimal usage limit checking
-                        if usage_limits is not None:
-                            cost_usd = getattr(raw, "cost_usd", 0.0)
-                            token_counts = getattr(raw, "token_counts", 0)
+                        # Extract usage metrics using shared helper function
+                        from ...cost import extract_usage_metrics
 
-                            cost_limit_breached = (
-                                usage_limits.total_cost_usd_limit is not None
-                                and cost_usd > usage_limits.total_cost_usd_limit
-                            )
-                            token_limit_breached = (
-                                usage_limits.total_tokens_limit is not None
-                                and token_counts > usage_limits.total_tokens_limit
-                            )
+                        prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
+                            raw, agent, step.name
+                        )
 
-                            if cost_limit_breached or token_limit_breached:
-                                from ...domain.models import PipelineResult
+                        # Calculate total token count
+                        token_counts = prompt_tokens + completion_tokens
 
-                                error_msg = (
-                                    f"Cost limit of ${usage_limits.total_cost_usd_limit} exceeded"
-                                    if cost_limit_breached
-                                    else f"Token limit of {usage_limits.total_tokens_limit} exceeded"
-                                )
-                                raise UsageLimitExceededError(
-                                    error_msg,
-                                    PipelineResult(step_history=[], total_cost_usd=cost_usd),
-                                )
+                        # Track usage
+                        await self._usage.add(cost_usd, token_counts)
 
-                        # Minimal output processing
+                        # Remove any usage limit checking logic here. Only track usage, do not enforce limits.
+
+                        # Minimal output processing first
                         processed_output = raw
                         processors = getattr(step, "processors", None)
                         if (
@@ -545,11 +577,15 @@ class UltraStepExecutor(Generic[TContext]):
                                             processed_output = fn(processed_output)
                                 except Exception as e:  # pragma: no cover - defensive
                                     # Log error but continue with original output
-                                    from flujo.infra import telemetry
+                                    try:
+                                        from flujo.infra import telemetry
 
-                                    telemetry.logfire.error(
-                                        f"Processor {getattr(proc, 'name', type(proc).__name__)} failed: {e}"
-                                    )
+                                        telemetry.logfire.error(
+                                            f"Processor {getattr(proc, 'name', type(proc).__name__)} failed: {e}"
+                                        )
+                                    except Exception:
+                                        # Fallback if telemetry is not available
+                                        pass
                                     processed_output = (
                                         raw  # Use original output on processor failure
                                     )
@@ -561,14 +597,16 @@ class UltraStepExecutor(Generic[TContext]):
                             success=True,
                             attempts=attempt,
                             latency_s=latency,  # Use calculated latency
-                            cost_usd=getattr(raw, "cost_usd", 0.0),
-                            token_counts=getattr(raw, "token_counts", 0),
+                            cost_usd=cost_usd,
+                            token_counts=token_counts,
                         )
-                    except (TypeError, UsageLimitExceededError) as e:
+                    except (TypeError, UsageLimitExceededError, PricingNotConfiguredError) as e:
                         # Re-raise critical exceptions immediately
                         if isinstance(e, TypeError) and "returned a Mock object" in str(e):
                             raise
                         if isinstance(e, UsageLimitExceededError):
+                            raise
+                        if isinstance(e, PricingNotConfiguredError):
                             raise
                         # For other TypeErrors, continue retrying
                         last_exception = e

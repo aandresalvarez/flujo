@@ -51,37 +51,55 @@ json_output = false
 
 # Cost tracking configuration
 [cost]
-[cost.providers]
+strict = true  # Enforce strict pricing for all tests and CI
+
 [cost.providers.openai]
 # OpenAI Models (Pricing: https://openai.com/pricing)
 [cost.providers.openai.gpt-4o]
 prompt_tokens_per_1k = 0.005
 completion_tokens_per_1k = 0.015
 
+[cost.providers.openai.gpt-4]
+prompt_tokens_per_1k = 0.03
+completion_tokens_per_1k = 0.06
+
 [cost.providers.openai.gpt-4o-mini]
 prompt_tokens_per_1k = 0.00015
 completion_tokens_per_1k = 0.0006
 
-[cost.providers.openai.gpt-3.5-turbo]
+[cost.providers.openai."gpt-3.5-turbo"]
 prompt_tokens_per_1k = 0.0005
 completion_tokens_per_1k = 0.0015
 
+# OpenAI embedding models
+[cost.providers.openai."text-embedding-3-large"]
+prompt_tokens_per_1k = 0.00013
+completion_tokens_per_1k = 0.00013
+
+[cost.providers.openai."text-embedding-3-small"]
+prompt_tokens_per_1k = 0.00002
+completion_tokens_per_1k = 0.00002
+
+[cost.providers.openai."text-embedding-ada-002"]
+prompt_tokens_per_1k = 0.0001
+completion_tokens_per_1k = 0.0001
+
 [cost.providers.anthropic]
 # Anthropic Models (Pricing: https://www.anthropic.com/pricing)
-[cost.providers.anthropic.claude-3-sonnet]
+[cost.providers.anthropic."claude-3-sonnet"]
 prompt_tokens_per_1k = 0.003
 completion_tokens_per_1k = 0.015
 
-[cost.providers.anthropic.claude-3-haiku]
+[cost.providers.anthropic."claude-3-haiku"]
 prompt_tokens_per_1k = 0.00025
 completion_tokens_per_1k = 0.00125
 
 [cost.providers.google]
 # Google Models (Pricing: https://ai.google.dev/pricing)
-[cost.providers.google.gemini-1.5-pro]
+[cost.providers.google."gemini-1.5-pro"]
 prompt_tokens_per_1k = 0.0035
 completion_tokens_per_1k = 0.0105
 
-[cost.providers.google.gemini-1.5-flash]
+[cost.providers.google."gemini-1.5-flash"]
 prompt_tokens_per_1k = 0.000075
 completion_tokens_per_1k = 0.0003
