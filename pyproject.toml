@@ -44,6 +44,7 @@ dependencies = [
   "rich>=13.7",
   "pydantic-evals>=0.4.7", # Updated for compatibility with pydantic-ai 0.4.7
   "aiosqlite>=0.21.0",
+  "numpy>=1.24.0,<2.4.0", # Required for CLI bench command statistical calculations
 ]
 
 # Optional dependency groups (install with: `pip install .[dev]`, etc.)
@@ -82,7 +83,6 @@ lens = [
   "prometheus-client>=0.22.1,<0.23.0",
 ]
 bench = [
-    "numpy>=1.24.0,<2.4.0",
     "pytest-benchmark>=4.0.0",
 ]
 logfire = ["logfire>=4.0.0"] # Updated for compatibility with pydantic-graph 0.4.7
