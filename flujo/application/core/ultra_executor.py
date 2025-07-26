@@ -42,15 +42,22 @@ if TYPE_CHECKING:
 # ★ Fast (de)serialisation & hashing helpers
 # --------------------------------------------------------------------------- #
 
+# Import performance utilities
+from ...utils.performance import clear_scratch_buffer, time_perf_ns, time_perf_ns_to_seconds
+
 try:  # ➊ 9× faster JSON
     import orjson
 
     def _dumps(obj: Any) -> bytes:  # noqa: D401 – returns *bytes*
+        # Use scratch buffer for better performance
+        clear_scratch_buffer()
         return orjson.dumps(obj, option=orjson.OPT_SORT_KEYS)
 except ModuleNotFoundError:
     import json
 
     def _dumps(obj: Any) -> bytes:
+        # Use scratch buffer for better performance
+        clear_scratch_buffer()
         s = json.dumps(obj, sort_keys=True, separators=(",", ":"))
         b = s.encode("utf-8") if isinstance(s, str) else bytes(s)
         return b
@@ -417,7 +424,7 @@ class UltraStepExecutor(Generic[TContext]):
         # Only handle pure agent steps directly (not callable steps)
         if agent and not (has_plugins or has_validators or has_fallback or is_callable_step):
             async with self._concurrency:  # concurrency guard
-                start_time = time.perf_counter()  # Track execution time
+                start_time = time_perf_ns()  # Track execution time with nanosecond precision
                 last_exception: Exception = Exception("Unknown error")
                 for attempt in range(1, step.config.max_retries + 1):
                     run_func = getattr(agent, "run", None)
@@ -534,8 +541,8 @@ class UltraStepExecutor(Generic[TContext]):
                         if isinstance(raw, PausedException):
                             raise raw
 
-                        # Calculate latency
-                        latency = time.perf_counter() - start_time
+                        # Calculate latency with nanosecond precision
+                        latency = time_perf_ns_to_seconds(time_perf_ns() - start_time)
 
                         # Extract usage metrics using shared helper function
                         from ...cost import extract_usage_metrics

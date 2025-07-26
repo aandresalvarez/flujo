@@ -72,14 +72,14 @@ class TestPersistencePerformanceOverhead:
 
             for _ in range(iterations):
                 # Test without backend
-                start = time.perf_counter()
+                start = time.perf_counter_ns()
                 await gather_result(runner_no_backend, "test")
-                no_backend_times.append(time.perf_counter() - start)
+                no_backend_times.append((time.perf_counter_ns() - start) / 1_000_000_000.0)
 
                 # Test with isolated backend
-                start = time.perf_counter()
+                start = time.perf_counter_ns()
                 await gather_result(runner_with_backend, "test")
-                with_backend_times.append(time.perf_counter() - start)
+                with_backend_times.append((time.perf_counter_ns() - start) / 1_000_000_000.0)
 
             # Calculate averages
             avg_no_backend = sum(no_backend_times) / len(no_backend_times)
@@ -154,14 +154,14 @@ class TestPersistencePerformanceOverhead:
 
             for _ in range(iterations):
                 # Test without backend
-                start = time.perf_counter()
+                start = time.perf_counter_ns()
                 await gather_result(runner_no_backend, "test", initial_context_data=large_context_data)
-                no_backend_times.append(time.perf_counter() - start)
+                no_backend_times.append((time.perf_counter_ns() - start) / 1_000_000_000.0)
 
                 # Test with isolated backend
-                start = time.perf_counter()
+                start = time.perf_counter_ns()
                 await gather_result(runner_with_backend, "test", initial_context_data=large_context_data)
-                with_backend_times.append(time.perf_counter() - start)
+                with_backend_times.append((time.perf_counter_ns() - start) / 1_000_000_000.0)
 
             # Calculate averages for more stable measurements
             avg_no_backend = sum(no_backend_times) / len(no_backend_times)
