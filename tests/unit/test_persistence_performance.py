@@ -3,6 +3,7 @@
 import logging
 import os
 import time
+import uuid
 import pytest
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -51,8 +52,6 @@ class TestPersistencePerformanceOverhead:
         pipeline = Step.solution(agent)
 
         # Create unique database files for isolation
-        import uuid
-
         test_id = uuid.uuid4().hex[:8]
         no_backend_db_path = tmp_path / f"no_backend_{test_id}.db"
         with_backend_db_path = tmp_path / f"with_backend_{test_id}.db"
@@ -61,7 +60,6 @@ class TestPersistencePerformanceOverhead:
         runner_no_backend = create_test_flujo(pipeline, state_backend=None)
 
         # Test with isolated backend using unique database file
-        from flujo.state.backends.sqlite import SQLiteBackend
 
         isolated_backend = SQLiteBackend(with_backend_db_path)
         runner_with_backend = create_test_flujo(pipeline, state_backend=isolated_backend)
@@ -128,8 +126,6 @@ class TestPersistencePerformanceOverhead:
         pipeline = Step.solution(agent)
 
         # Create unique database files for isolation
-        import uuid
-
         test_id = uuid.uuid4().hex[:8]
         no_backend_db_path = tmp_path / f"no_backend_{test_id}.db"
         with_backend_db_path = tmp_path / f"with_backend_{test_id}.db"
@@ -140,7 +136,6 @@ class TestPersistencePerformanceOverhead:
         )
 
         # Test with isolated backend using unique database file
-        from flujo.state.backends.sqlite import SQLiteBackend
 
         isolated_backend = SQLiteBackend(with_backend_db_path)
         runner_with_backend = create_test_flujo(
@@ -235,7 +230,7 @@ class TestCLIPerformance:
         # Create runs with concurrent operations for better performance
         now = datetime.utcnow()
 
-        async def create_database():
+        async def create_database() -> None:
             # Prepare all run start operations
             run_start_tasks = []
             for i in range(db_size):

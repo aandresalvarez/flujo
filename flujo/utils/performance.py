@@ -6,10 +6,14 @@ applied throughout the Flujo codebase to improve throughput, reduce latency,
 and minimize memory usage.
 """
 
+import logging
 import time
 import threading
 from typing import Any, Callable, TypeVar, Awaitable
 from functools import wraps
+
+# Configure logger for the module
+logger = logging.getLogger(__name__)
 
 # Type variable for generic functions
 T = TypeVar("T")
@@ -20,9 +24,9 @@ _thread_local = threading.local()
 
 def _get_thread_scratch_buffer() -> bytearray:
     """Get thread-local scratch buffer, creating it if necessary."""
-    if not hasattr(_thread_local, 'scratch_buffer'):
+    if not hasattr(_thread_local, "scratch_buffer"):
         _thread_local.scratch_buffer = bytearray(4096)  # 4KB initial size
-    return _thread_local.scratch_buffer
+    return _thread_local.scratch_buffer  # type: ignore[no-any-return]
 
 
 def clear_scratch_buffer() -> None:
@@ -69,7 +73,7 @@ def measure_time(func: Callable[..., T]) -> Callable[..., T]:
             end_ns = time_perf_ns()
             duration_ns = end_ns - start_ns
             duration_s = time_perf_ns_to_seconds(duration_ns)
-            print(f"{func.__name__}: {duration_s:.6f}s ({duration_ns}ns)")
+            logger.info(f"{func.__name__}: {duration_s:.6f}s ({duration_ns}ns)")
 
     return wrapper
 
@@ -97,7 +101,7 @@ def measure_time_async(func: Callable[..., Awaitable[T]]) -> Callable[..., Await
             end_ns = time_perf_ns()
             duration_ns = end_ns - start_ns
             duration_s = time_perf_ns_to_seconds(duration_ns)
-            print(f"{func.__name__}: {duration_s:.6f}s ({duration_ns}ns)")
+            logger.info(f"{func.__name__}: {duration_s:.6f}s ({duration_ns}ns)")
 
     return wrapper
 
@@ -115,13 +119,13 @@ def optimize_event_loop() -> None:
 
         if hasattr(asyncio, "set_event_loop_policy"):
             asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
-            print("✅ Using uvloop for enhanced async performance")
+            logger.info("✅ Using uvloop for enhanced async performance")
         else:
-            print("⚠️  uvloop available but set_event_loop_policy not found")
+            logger.warning("⚠️  uvloop available but set_event_loop_policy not found")
     except ImportError:
-        print("ℹ️  uvloop not available, using standard asyncio event loop")
+        logger.info("ℹ️  uvloop not available, using standard asyncio event loop")
     except Exception as e:
-        print(f"⚠️  Failed to initialize uvloop: {e}")
+        logger.error(f"⚠️  Failed to initialize uvloop: {e}")
 
 
 # Initialize optimizations when module is imported
