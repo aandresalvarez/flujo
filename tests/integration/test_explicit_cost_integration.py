@@ -1,7 +1,10 @@
 """Integration tests for ExplicitCostReporter protocol functionality."""
 
 import pytest
-from flujo.domain.models import Step, UsageLimits
+from flujo import Flujo
+from flujo.domain.dsl.step import Step
+from flujo.domain.dsl.pipeline import Pipeline
+from flujo.domain.models import UsageLimits
 from flujo.exceptions import UsageLimitExceededError
 
 
@@ -31,8 +34,6 @@ class TestExplicitCostIntegration:
 
     def test_end_to_end_success_case(self):
         """Test end-to-end pipeline execution with ExplicitCostReporter."""
-        from flujo.application.runner import PipelineRunner
-        from flujo.domain.models import Pipeline
 
         # Create a step with an agent that returns ExplicitCostReporter
         step = Step(
@@ -43,12 +44,12 @@ class TestExplicitCostIntegration:
         pipeline = Pipeline(name="test_explicit_cost_pipeline", steps=[step])
 
         # Run the pipeline
-        runner = PipelineRunner()
-        result = runner.run(pipeline)
+        runner = Flujo(pipeline)
+        result = runner.run("test input")
 
         # Verify the step result has the correct cost
-        assert len(result.step_results) == 1
-        step_result = result.step_results[0]
+        assert len(result.step_history) == 1
+        step_result = result.step_history[0]
         assert step_result.name == "image_generation"
         assert step_result.cost_usd == 0.04
         assert step_result.token_counts == 0
@@ -58,8 +59,6 @@ class TestExplicitCostIntegration:
 
     def test_explicit_cost_with_usage_limits(self):
         """Test that explicit costs are correctly integrated into usage limits."""
-        from flujo.application.runner import PipelineRunner
-        from flujo.domain.models import Pipeline
 
         # Create a step with an agent that returns ExplicitCostReporter
         step = Step(
@@ -73,18 +72,16 @@ class TestExplicitCostIntegration:
         usage_limits = UsageLimits(total_cost_usd_limit=0.01)
 
         # Run the pipeline - should fail due to usage limits
-        runner = PipelineRunner()
+        runner = Flujo(pipeline, usage_limits=usage_limits)
 
         with pytest.raises(UsageLimitExceededError) as exc_info:
-            runner.run(pipeline, usage_limits=usage_limits)
+            runner.run("test input")
 
         # Verify the error message indicates cost limit exceeded
         assert "cost" in str(exc_info.value).lower()
 
     def test_explicit_cost_with_token_counts(self):
         """Test ExplicitCostReporter with token counts."""
-        from flujo.application.runner import PipelineRunner
-        from flujo.domain.models import Pipeline
 
         # Create a step with an agent that returns ExplicitCostReporter with tokens
         step = Step(
@@ -95,12 +92,12 @@ class TestExplicitCostIntegration:
         pipeline = Pipeline(name="test_explicit_cost_with_tokens", steps=[step])
 
         # Run the pipeline
-        runner = PipelineRunner()
-        result = runner.run(pipeline)
+        runner = Flujo(pipeline)
+        result = runner.run("test input")
 
         # Verify the step result has the correct cost and tokens
-        assert len(result.step_results) == 1
-        step_result = result.step_results[0]
+        assert len(result.step_history) == 1
+        step_result = result.step_history[0]
         assert step_result.name == "custom_agent"
         assert step_result.cost_usd == 0.25
         assert step_result.token_counts == 1000
@@ -110,8 +107,6 @@ class TestExplicitCostIntegration:
 
     def test_explicit_cost_with_zero_cost(self):
         """Test ExplicitCostReporter with zero cost."""
-        from flujo.application.runner import PipelineRunner
-        from flujo.domain.models import Pipeline
 
         # Create a step with an agent that returns ExplicitCostReporter with zero cost
         step = Step(
@@ -122,12 +117,12 @@ class TestExplicitCostIntegration:
         pipeline = Pipeline(name="test_explicit_cost_zero", steps=[step])
 
         # Run the pipeline
-        runner = PipelineRunner()
-        result = runner.run(pipeline)
+        runner = Flujo(pipeline)
+        result = runner.run("test input")
 
         # Verify the step result has zero cost but preserves tokens
-        assert len(result.step_results) == 1
-        step_result = result.step_results[0]
+        assert len(result.step_history) == 1
+        step_result = result.step_history[0]
         assert step_result.name == "free_operation"
         assert step_result.cost_usd == 0.0
         assert step_result.token_counts == 500
@@ -137,8 +132,6 @@ class TestExplicitCostIntegration:
 
     def test_explicit_cost_with_negative_cost(self):
         """Test ExplicitCostReporter with negative cost (edge case)."""
-        from flujo.application.runner import PipelineRunner
-        from flujo.domain.models import Pipeline
 
         # Create a step with an agent that returns ExplicitCostReporter with negative cost
         step = Step(
@@ -150,12 +143,12 @@ class TestExplicitCostIntegration:
         pipeline = Pipeline(name="test_explicit_cost_negative", steps=[step])
 
         # Run the pipeline
-        runner = PipelineRunner()
-        result = runner.run(pipeline)
+        runner = Flujo(pipeline)
+        result = runner.run("test input")
 
         # Verify the step result preserves the negative cost
-        assert len(result.step_results) == 1
-        step_result = result.step_results[0]
+        assert len(result.step_history) == 1
+        step_result = result.step_history[0]
         assert step_result.name == "credit_operation"
         assert step_result.cost_usd == -0.10
         assert step_result.token_counts == 100
@@ -165,8 +158,6 @@ class TestExplicitCostIntegration:
 
     def test_explicit_cost_with_multiple_steps(self):
         """Test ExplicitCostReporter with multiple steps in a pipeline."""
-        from flujo.application.runner import PipelineRunner
-        from flujo.domain.models import Pipeline
 
         # Create multiple steps with different explicit costs
         step1 = Step(
@@ -185,26 +176,26 @@ class TestExplicitCostIntegration:
         pipeline = Pipeline(name="test_explicit_cost_multiple", steps=[step1, step2, step3])
 
         # Run the pipeline
-        runner = PipelineRunner()
-        result = runner.run(pipeline)
+        runner = Flujo(pipeline)
+        result = runner.run("test input")
 
         # Verify all step results have correct costs
-        assert len(result.step_results) == 3
+        assert len(result.step_history) == 3
 
         # Check first step
-        assert result.step_results[0].name == "image_generation"
-        assert result.step_results[0].cost_usd == 0.04
-        assert result.step_results[0].token_counts == 0
+        assert result.step_history[0].name == "image_generation"
+        assert result.step_history[0].cost_usd == 0.04
+        assert result.step_history[0].token_counts == 0
 
         # Check second step
-        assert result.step_results[1].name == "text_processing"
-        assert result.step_results[1].cost_usd == 0.15
-        assert result.step_results[1].token_counts == 800
+        assert result.step_history[1].name == "text_processing"
+        assert result.step_history[1].cost_usd == 0.15
+        assert result.step_history[1].token_counts == 800
 
         # Check third step
-        assert result.step_results[2].name == "data_analysis"
-        assert result.step_results[2].cost_usd == 0.08
-        assert result.step_results[2].token_counts == 200
+        assert result.step_history[2].name == "data_analysis"
+        assert result.step_history[2].cost_usd == 0.08
+        assert result.step_history[2].token_counts == 200
 
         # Verify the total cost is the sum of all steps
         expected_total = 0.04 + 0.15 + 0.08
@@ -212,8 +203,6 @@ class TestExplicitCostIntegration:
 
     def test_explicit_cost_protocol_priority_over_usage_method(self):
         """Test that ExplicitCostReporter protocol takes priority over .usage() method."""
-        from flujo.application.runner import PipelineRunner
-        from flujo.domain.models import Pipeline
 
         # Create a mock agent that returns an object with BOTH ExplicitCostReporter and .usage()
         class MockAgentWithBoth:
@@ -243,12 +232,12 @@ class TestExplicitCostIntegration:
         pipeline = Pipeline(name="test_protocol_priority", steps=[step])
 
         # Run the pipeline
-        runner = PipelineRunner()
-        result = runner.run(pipeline)
+        runner = Flujo(pipeline)
+        result = runner.run("test input")
 
         # Verify that the protocol cost is used, not the .usage() method cost
-        assert len(result.step_results) == 1
-        step_result = result.step_results[0]
+        assert len(result.step_history) == 1
+        step_result = result.step_history[0]
         assert step_result.name == "mixed_cost_agent"
         assert step_result.cost_usd == 1.23  # Should use protocol cost
         assert step_result.token_counts == 200  # Should use protocol tokens
@@ -258,8 +247,6 @@ class TestExplicitCostIntegration:
 
     def test_explicit_cost_with_none_values(self):
         """Test ExplicitCostReporter with None values (edge case)."""
-        from flujo.application.runner import PipelineRunner
-        from flujo.domain.models import Pipeline
 
         # Create a mock agent that returns an object with None values
         class MockAgentWithNoneValues:
@@ -281,12 +268,12 @@ class TestExplicitCostIntegration:
         pipeline = Pipeline(name="test_none_values", steps=[step])
 
         # Run the pipeline
-        runner = PipelineRunner()
-        result = runner.run(pipeline)
+        runner = Flujo(pipeline)
+        result = runner.run("test input")
 
         # Verify that None values are handled gracefully
-        assert len(result.step_results) == 1
-        step_result = result.step_results[0]
+        assert len(result.step_history) == 1
+        step_result = result.step_history[0]
         assert step_result.name == "none_values_agent"
         assert step_result.cost_usd == 0.0  # Should default to 0.0
         assert step_result.token_counts == 0  # Should default to 0
@@ -296,8 +283,6 @@ class TestExplicitCostIntegration:
 
     def test_explicit_cost_regression_with_usage_method(self):
         """Test that existing .usage() method functionality is not broken."""
-        from flujo.application.runner import PipelineRunner
-        from flujo.domain.models import Pipeline
 
         # Create a mock agent that returns an object with only .usage() method
         class MockAgentWithUsageOnly:
@@ -326,12 +311,12 @@ class TestExplicitCostIntegration:
         pipeline = Pipeline(name="test_usage_method_regression", steps=[step])
 
         # Run the pipeline
-        runner = PipelineRunner()
-        result = runner.run(pipeline)
+        runner = Flujo(pipeline)
+        result = runner.run("test input")
 
         # Verify that the .usage() method still works correctly
-        assert len(result.step_results) == 1
-        step_result = result.step_results[0]
+        assert len(result.step_history) == 1
+        step_result = result.step_history[0]
         assert step_result.name == "usage_only_agent"
         assert step_result.cost_usd > 0.0  # Should calculate cost from tokens
         assert step_result.token_counts > 0  # Should have token counts
