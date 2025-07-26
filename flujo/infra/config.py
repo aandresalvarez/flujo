@@ -53,8 +53,8 @@ def get_provider_pricing(provider: Optional[str], model: str) -> Optional[Provid
 
     # 2. If not found, check if strict mode is enabled.
     if cost_config.strict:
-        # In CI environments, allow fallback to defaults for known models
-        if _is_ci_environment():
+        # In CI environments, allow fallback to defaults ONLY when no config file exists
+        if _is_ci_environment() and _no_config_file_found():
             default_pricing = _get_default_pricing(provider, model)
             if default_pricing:
                 import logging
