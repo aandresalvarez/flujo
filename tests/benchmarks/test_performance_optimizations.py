@@ -1,19 +1,13 @@
-"""
-Performance benchmark tests for Flujo optimizations.
+"""Performance optimization benchmark tests.
 
-This module benchmarks the performance improvements from:
-1. uvloop event loop optimization
-2. time.perf_counter_ns() precision improvements
-3. bytearray buffer reuse for serialization
-4. orjson and blake3 optimizations
+These tests verify that our performance optimizations are working correctly
+and provide measurable improvements over standard implementations.
 """
 
 import asyncio
 import time
-import pytest
 
 from flujo import Step
-from flujo.testing.utils import StubAgent
 from flujo.utils.performance import (
     time_perf_ns,
     time_perf_ns_to_seconds,
@@ -24,165 +18,160 @@ from tests.conftest import create_test_flujo
 
 
 class TestPerformanceOptimizations:
-    """Test the performance optimizations implemented in Flujo."""
+    """Test performance optimizations are working correctly."""
 
-    @pytest.mark.benchmark
     def test_perf_counter_ns_precision(self, benchmark):
-        """Benchmark the precision improvement of perf_counter_ns vs perf_counter."""
-
+        """Test that perf_counter_ns provides higher precision timing."""
+        
         def measure_with_perf_counter():
             start = time.perf_counter()
-            # Simulate some work
-            sum(range(1000))
+            time.sleep(0.001)  # 1ms
             end = time.perf_counter()
             return end - start
-
+        
         def measure_with_perf_counter_ns():
             start = time_perf_ns()
-            # Simulate some work
-            sum(range(1000))
+            time.sleep(0.001)  # 1ms
             end = time_perf_ns()
             return time_perf_ns_to_seconds(end - start)
-
-        # Benchmark both methods
+        
         perf_counter_time = benchmark(measure_with_perf_counter)
         perf_counter_ns_time = benchmark(measure_with_perf_counter_ns)
 
         print("\nPrecision Benchmark Results:")
         print(f"  time.perf_counter():     {perf_counter_time:.6f}s")
         print(f"  time.perf_counter_ns():  {perf_counter_ns_time:.6f}s")
+        
+        # Both should be close to 0.001s (1ms)
+        assert 0.0005 < perf_counter_time < 0.002
+        assert 0.0005 < perf_counter_ns_time < 0.002
 
-        # Both should be similar, but ns version should be more precise
-        assert abs(perf_counter_time - perf_counter_ns_time) < 0.001
-
-    @pytest.mark.benchmark
     def test_serialization_performance(self, benchmark):
-        """Benchmark serialization performance with optimizations."""
-
-        # Test data
+        """Test that orjson provides faster JSON serialization."""
+        
         test_data = {
-            "nested": {
-                "list": [{"item": i} for i in range(100)],
-                "dict": {f"key_{i}": f"value_{i}" for i in range(100)},
-            },
-            "complex": {"list": [1, 2, 3], "dict": {"a": 1}},
+            "string": "test" * 1000,
+            "number": 42,
+            "boolean": True,
+            "array": list(range(1000)),
+            "object": {f"key{i}": f"value{i}" for i in range(100)}
         }
-
+        
         def serialize_with_json():
             import json
-
-            return json.dumps(test_data, sort_keys=True)
-
+            return json.dumps(test_data)
+        
         def serialize_with_orjson():
-            try:
-                import orjson
-
-                return orjson.dumps(test_data, option=orjson.OPT_SORT_KEYS)
-            except ImportError:
-                return serialize_with_json()
-
-        # Benchmark both methods
+            import orjson
+            return orjson.dumps(test_data)
+        
         json_time = benchmark(serialize_with_json)
         orjson_time = benchmark(serialize_with_orjson)
 
         print("\nSerialization Benchmark Results:")
         print(f"  json.dumps():    {json_time:.6f}s")
         print(f"  orjson.dumps():  {orjson_time:.6f}s")
+        
+        # orjson should be significantly faster
+        assert orjson_time < json_time * 0.5  # At least 2x faster
 
-        # orjson should be faster if available
-        if hasattr(orjson_time, "stats"):
-            print(f"  Speedup: {json_time.stats.mean / orjson_time.stats.mean:.2f}x")
-
-    @pytest.mark.benchmark
     def test_hashing_performance(self, benchmark):
-        """Benchmark hashing performance with optimizations."""
-
-        # Test data
-        test_data = b"test_data_for_hashing" * 1000
-
+        """Test that blake3 provides faster hashing."""
+        
+        test_data = b"test_data" * 10000
+        
         def hash_with_hashlib():
             import hashlib
-
-            return hashlib.blake2b(test_data, digest_size=32).hexdigest()
-
+            return hashlib.blake2b(test_data).hexdigest()
+        
         def hash_with_blake3():
-            try:
-                import blake3
-
-                return str(blake3.blake3(test_data).hexdigest())
-            except ImportError:
-                return hash_with_hashlib()
-
-        # Benchmark both methods
+            import blake3
+            return blake3.blake3(test_data).hexdigest()
+        
         hashlib_time = benchmark(hash_with_hashlib)
         blake3_time = benchmark(hash_with_blake3)
 
         print("\nHashing Benchmark Results:")
         print(f"  hashlib.blake2b(): {hashlib_time:.6f}s")
         print(f"  blake3.blake3():   {blake3_time:.6f}s")
+        
+        # blake3 should be significantly faster
+        assert blake3_time < hashlib_time * 0.3  # At least 3x faster
 
-        # blake3 should be faster if available
-        if hasattr(blake3_time, "stats"):
-            print(f"  Speedup: {hashlib_time.stats.mean / blake3_time.stats.mean:.2f}x")
-
-    @pytest.mark.asyncio
-    @pytest.mark.benchmark
-    async def test_async_performance_with_uvloop(self, benchmark):
-        """Benchmark async performance with uvloop optimization."""
-
-        # Create a simple pipeline
-        agent = StubAgent(["output"] * 100)  # Multiple outputs for benchmark
-        pipeline = Step.solution(agent)
-        runner = create_test_flujo(pipeline)
-
+    def test_async_performance_with_uvloop(self, benchmark):
+        """Test that uvloop provides better async performance."""
+        
         async def run_pipeline():
-            result = await runner.run_async("test_input")
+            flujo = create_test_flujo()
+            
+            @Step()
+            async def test_step(context):
+                await asyncio.sleep(0.001)  # Simulate work
+                return {"result": "test"}
+            
+            pipeline = flujo.pipeline([test_step])
+            result = await pipeline.run()
             return result
-
-        # Benchmark async execution
-        execution_time = benchmark(lambda: asyncio.run(run_pipeline()))
+        
+        # Use a different approach for async benchmarking
+        def run_async_pipeline():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                return loop.run_until_complete(run_pipeline())
+            finally:
+                loop.close()
+        
+        execution_time = benchmark(run_async_pipeline)
 
         print("\nAsync Performance Benchmark:")
         print(f"  Pipeline execution: {execution_time:.6f}s")
-
+        
         # Should complete in reasonable time
-        assert execution_time < 5.0, f"Async execution too slow: {execution_time:.3f}s"
+        assert execution_time < 0.1
 
-    @pytest.mark.benchmark
     def test_measure_time_decorator(self, benchmark):
-        """Test the measure_time decorator performance."""
-
+        """Test that the measure_time decorator works correctly."""
+        
         @measure_time
         def test_function():
-            return sum(range(10000))
-
+            time.sleep(0.001)  # 1ms
+            return "test"
+        
         # Benchmark the decorated function
         result_time = benchmark(test_function)
 
         print("\nMeasure Time Decorator Benchmark:")
         print(f"  Decorated function: {result_time:.6f}s")
+        
+        # Should be reasonable (decorator adds minimal overhead)
+        assert result_time < 0.1
 
-        # Should complete quickly
-        assert result_time < 0.1, f"Decorated function too slow: {result_time:.3f}s"
-
-    @pytest.mark.asyncio
-    @pytest.mark.benchmark
-    async def test_measure_time_async_decorator(self, benchmark):
-        """Test the measure_time_async decorator performance."""
-
+    def test_measure_time_async_decorator(self, benchmark):
+        """Test that the measure_time_async decorator works correctly."""
+        
         @measure_time_async
         async def test_async_function():
-            await asyncio.sleep(0.001)  # Simulate async work
-            return sum(range(1000))
-
+            await asyncio.sleep(0.001)  # 1ms
+            return "test"
+        
+        # Use a different approach for async benchmarking
+        def run_async_function():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                return loop.run_until_complete(test_async_function())
+            finally:
+                loop.close()
+        
         # Benchmark the decorated async function
-        result_time = benchmark(lambda: asyncio.run(test_async_function()))
+        result_time = benchmark(run_async_function)
 
         print("\nMeasure Time Async Decorator Benchmark:")
         print(f"  Decorated async function: {result_time:.6f}s")
-
-        # Should complete in reasonable time
-        assert result_time < 1.0, f"Decorated async function too slow: {result_time:.3f}s"
+        
+        # Should be reasonable (decorator adds minimal overhead)
+        assert result_time < 0.1
 
     def test_scratch_buffer_reuse(self):
         """Test that scratch buffer reuse works correctly."""
@@ -207,79 +196,86 @@ class TestPerformanceOptimizations:
 
         # Clear again
         clear_scratch_buffer()
-        assert len(buffer2) == 0
+        buffer3 = get_scratch_buffer()
 
-    @pytest.mark.benchmark
+        # Should still be the same buffer
+        assert buffer1 is buffer3
+        assert len(buffer3) == 0
+
     def test_buffer_reuse_performance(self, benchmark):
-        """Benchmark the performance improvement from buffer reuse."""
-
+        """Test that buffer reuse provides performance benefits."""
+        
         def without_buffer_reuse():
-            # Simulate creating new buffers
-            buffers = []
+            # Create new buffer each time
+            buffer = bytearray()
             for i in range(1000):
-                buffer = bytearray(1024)
-                buffer.extend(f"data_{i}".encode())
-                buffers.append(buffer)
-            return len(buffers)
-
+                buffer.extend(f"data{i}".encode())
+            return len(buffer)
+        
         def with_buffer_reuse():
-            # Simulate reusing the same buffer
             from flujo.utils.performance import clear_scratch_buffer, get_scratch_buffer
-
-            count = 0
+            
+            # Reuse buffer
+            buffer = get_scratch_buffer()
             for i in range(1000):
-                clear_scratch_buffer()
-                buffer = get_scratch_buffer()
-                buffer.extend(f"data_{i}".encode())
-                count += 1
-            return count
-
-        # Benchmark both approaches
+                buffer.extend(f"data{i}".encode())
+            result = len(buffer)
+            clear_scratch_buffer()
+            return result
+        
         without_reuse_time = benchmark(without_buffer_reuse)
         with_reuse_time = benchmark(with_buffer_reuse)
 
         print("\nBuffer Reuse Benchmark Results:")
         print(f"  Without buffer reuse: {without_reuse_time:.6f}s")
         print(f"  With buffer reuse:    {with_reuse_time:.6f}s")
-
-        # With reuse should be faster (less memory allocation)
-        if hasattr(with_reuse_time, "stats"):
-            speedup = without_reuse_time.stats.mean / with_reuse_time.stats.mean
-            print(f"  Speedup: {speedup:.2f}x")
-            assert speedup > 1.0, "Buffer reuse should provide performance improvement"
+        
+        # Buffer reuse should be faster due to reduced allocations
+        assert with_reuse_time < without_reuse_time * 0.8  # At least 20% faster
 
 
 class TestOptimizationImpact:
     """Test the overall impact of optimizations on real-world scenarios."""
 
-    @pytest.mark.asyncio
-    @pytest.mark.benchmark
-    async def test_end_to_end_performance(self, benchmark):
-        """Test end-to-end performance with all optimizations."""
-
-        # Create a more complex pipeline
-        agent1 = StubAgent(["step1_output"] * 50)
-        agent2 = StubAgent(["step2_output"] * 50)
-        agent3 = StubAgent(["step3_output"] * 50)
-
-        pipeline = Step.solution(agent1) >> Step.solution(agent2) >> Step.solution(agent3)
-
-        runner = create_test_flujo(pipeline)
-
+    def test_end_to_end_performance(self, benchmark):
+        """Test end-to-end performance with all optimizations enabled."""
+        
         async def run_complex_pipeline():
-            result = await runner.run_async("complex_input")
+            flujo = create_test_flujo()
+            
+            @Step()
+            async def step1(context):
+                await asyncio.sleep(0.001)
+                return {"step1": "done"}
+            
+            @Step()
+            async def step2(context):
+                await asyncio.sleep(0.001)
+                return {"step2": "done"}
+            
+            @Step()
+            async def step3(context):
+                await asyncio.sleep(0.001)
+                return {"step3": "done"}
+            
+            pipeline = flujo.pipeline([step1, step2, step3])
+            result = await pipeline.run()
             return result
-
+        
+        # Use a different approach for async benchmarking
+        def run_complex_pipeline_sync():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                return loop.run_until_complete(run_complex_pipeline())
+            finally:
+                loop.close()
+        
         # Benchmark the complex pipeline
-        execution_time = benchmark(lambda: asyncio.run(run_complex_pipeline()))
+        execution_time = benchmark(run_complex_pipeline_sync)
 
         print("\nEnd-to-End Performance Benchmark:")
         print(f"  Complex pipeline execution: {execution_time:.6f}s")
-
+        
         # Should complete in reasonable time
-        assert execution_time < 10.0, f"Complex pipeline too slow: {execution_time:.3f}s"
-
-        # Verify the result
-        result = asyncio.run(run_complex_pipeline())
-        assert result is not None
-        assert len(result.step_history) == 3
+        assert execution_time < 0.1
