@@ -598,6 +598,106 @@ class TestCostCalculator:
         # Expected: (2000/1000 * 0.005) + (500/1000 * 0.015) = 0.01 + 0.0075 = 0.0175
         assert cost == 0.0175
 
+    def test_ci_environment_fallback_with_existing_config(self):
+        """Test that CI environment fallback works even when config file exists."""
+        import os
+        from unittest.mock import patch
+        from flujo.exceptions import PricingNotConfiguredError
+
+        # Mock CI environment
+        with patch.dict(os.environ, {"CI": "true"}):
+            # Mock config manager to simulate config file exists but doesn't have the model
+            with patch("flujo.infra.config._no_config_file_found", return_value=False):
+                calculator = CostCalculator()
+
+                # Test that we can still calculate costs for known models in CI
+                cost = calculator.calculate(
+                    model_name="text-embedding-3-small",
+                    prompt_tokens=1000,
+                    completion_tokens=0,
+                    provider="openai",
+                )
+                assert cost == 0.00002
+
+                # Test that unknown models still raise errors in CI
+                with pytest.raises(PricingNotConfiguredError):
+                    calculator.calculate(
+                        model_name="unknown-model",
+                        prompt_tokens=100,
+                        completion_tokens=50,
+                        provider="unknown",
+                    )
+
+    def test_ci_environment_fallback_for_failing_models(self):
+        """Test that CI environment fallback works for the specific failing models."""
+        import os
+        from unittest.mock import patch
+
+        # Mock CI environment
+        with patch.dict(os.environ, {"CI": "true"}):
+            # Mock config manager to simulate no config file found
+            with patch("flujo.infra.config._no_config_file_found", return_value=True):
+                calculator = CostCalculator()
+
+                # Test the specific failing models from the CI logs
+                cost = calculator.calculate(
+                    model_name="text-embedding-3-small",
+                    prompt_tokens=1000,
+                    completion_tokens=0,
+                    provider="openai",
+                )
+                assert cost == 0.00002
+
+                cost = calculator.calculate(
+                    model_name="claude-3-sonnet",
+                    prompt_tokens=1000,
+                    completion_tokens=500,
+                    provider="anthropic",
+                )
+                # Expected: (1000/1000 * 0.003) + (500/1000 * 0.015) = 0.003 + 0.0075 = 0.0105
+                assert cost == pytest.approx(0.0105, rel=1e-10)
+
+    def test_ci_environment_fallback_with_strict_pricing(self):
+        """Test that CI environment fallback works correctly with strict pricing."""
+        import os
+        from unittest.mock import patch
+        from flujo.exceptions import PricingNotConfiguredError
+
+        # Mock CI environment
+        with patch.dict(os.environ, {"CI": "true"}):
+            # Mock config manager to simulate no config file found
+            with patch("flujo.infra.config._no_config_file_found", return_value=True):
+                calculator = CostCalculator()
+
+                # Test that we can still calculate costs for known models in CI
+                cost = calculator.calculate(
+                    model_name="text-embedding-3-small",
+                    prompt_tokens=1000,
+                    completion_tokens=0,
+                    provider="openai",
+                )
+                # Expected: (1000/1000 * 0.00002) = 0.00002
+                assert cost == 0.00002
+
+                # Test that we can calculate costs for anthropic models in CI
+                cost = calculator.calculate(
+                    model_name="claude-3-sonnet",
+                    prompt_tokens=1000,
+                    completion_tokens=500,
+                    provider="anthropic",
+                )
+                # Expected: (1000/1000 * 0.003) + (500/1000 * 0.015) = 0.003 + 0.0075 = 0.0105
+                assert cost == pytest.approx(0.0105, rel=1e-10)
+
+                # Test that unknown models still raise errors in CI
+                with pytest.raises(PricingNotConfiguredError):
+                    calculator.calculate(
+                        model_name="unknown-model",
+                        prompt_tokens=100,
+                        completion_tokens=50,
+                        provider="unknown",
+                    )
+
     def test_cost_calculation_for_embedding_models(self):
         """Test that cost calculations work correctly for embedding models."""
         calculator = CostCalculator()

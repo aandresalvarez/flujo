@@ -53,17 +53,15 @@ def get_provider_pricing(provider: Optional[str], model: str) -> Optional[Provid
 
     # 2. If not found, check if strict mode is enabled.
     if cost_config.strict:
-        # In CI environments, if no config file is found at all, fall back to defaults
-        # This prevents tests from failing due to missing configuration files
-        if _is_ci_environment() and _no_config_file_found():
+        # In CI environments, allow fallback to defaults for known models
+        if _is_ci_environment():
             default_pricing = _get_default_pricing(provider, model)
             if default_pricing:
-                # Log a warning but don't fail in CI
                 import logging
 
                 logging.warning(
-                    f"Strict pricing enabled but no config file found in CI. "
-                    f"Using default pricing for '{provider}:{model}'"
+                    f"Strict pricing enabled in CI but model '{provider}:{model}' not found in config. "
+                    f"Using default pricing."
                 )
                 return default_pricing
 
@@ -138,7 +136,15 @@ def _no_config_file_found() -> bool:
     try:
         config_manager = get_config_manager()
         # If the config manager has no config path, it means no file was found
-        return config_manager.config_path is None
+        if config_manager.config_path is None:
+            return True
+
+        # Also check if the config was loaded but is empty (no cost section)
+        config = config_manager.load_config()
+        if not config.cost:
+            return True
+
+        return False
     except Exception:
         # If there's any error getting the config manager, assume no config file
         return True

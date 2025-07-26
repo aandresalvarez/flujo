@@ -275,7 +275,7 @@ async def test_proactive_cancellation_token_limits() -> None:
     threshold = 0.3  # Base threshold
     if os.getenv("CI"):
         threshold = 0.4  # More lenient threshold for CI environments
-        
+
     assert execution_time < threshold, (
         f"Execution took too long: {execution_time:.3f}s (threshold: {threshold:.3f}s). "
         f"This indicates proactive cancellation may not be working correctly."
