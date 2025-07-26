@@ -102,15 +102,14 @@ class TestPerformanceOptimizations:
         """Test that uvloop provides better async performance."""
         
         async def run_pipeline():
-            flujo = create_test_flujo()
-            
             @Step()
             async def test_step(context):
                 await asyncio.sleep(0.001)  # Simulate work
                 return {"result": "test"}
             
-            pipeline = flujo.pipeline([test_step])
-            result = await pipeline.run()
+            pipeline = test_step
+            flujo = create_test_flujo(pipeline)
+            result = await flujo.run_async("test")
             return result
         
         # Use a different approach for async benchmarking
@@ -241,8 +240,6 @@ class TestOptimizationImpact:
         """Test end-to-end performance with all optimizations enabled."""
         
         async def run_complex_pipeline():
-            flujo = create_test_flujo()
-            
             @Step()
             async def step1(context):
                 await asyncio.sleep(0.001)
@@ -258,8 +255,9 @@ class TestOptimizationImpact:
                 await asyncio.sleep(0.001)
                 return {"step3": "done"}
             
-            pipeline = flujo.pipeline([step1, step2, step3])
-            result = await pipeline.run()
+            pipeline = step1 >> step2 >> step3
+            flujo = create_test_flujo(pipeline)
+            result = await flujo.run_async("test")
             return result
         
         # Use a different approach for async benchmarking
