@@ -165,7 +165,8 @@ markers = [
   "fast: marks tests that are fast and can be run in parallel",
 ]
 filterwarnings = [
-  "ignore:coroutine 'AsyncMockMixin._execute_mock_call' was never awaited:RuntimeWarning"
+  "ignore:coroutine 'AsyncMockMixin._execute_mock_call' was never awaited:RuntimeWarning",
+  "ignore::pytest.PytestUnraisableExceptionWarning"
 ]
 # Parallel testing configuration
 addopts = [

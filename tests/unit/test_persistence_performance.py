@@ -52,6 +52,7 @@ class TestPersistencePerformanceOverhead:
 
         # Create unique database files for isolation
         import uuid
+
         test_id = uuid.uuid4().hex[:8]
         no_backend_db_path = tmp_path / f"no_backend_{test_id}.db"
         with_backend_db_path = tmp_path / f"with_backend_{test_id}.db"
@@ -61,6 +62,7 @@ class TestPersistencePerformanceOverhead:
 
         # Test with isolated backend using unique database file
         from flujo.state.backends.sqlite import SQLiteBackend
+
         isolated_backend = SQLiteBackend(with_backend_db_path)
         runner_with_backend = create_test_flujo(pipeline, state_backend=isolated_backend)
 
@@ -127,6 +129,7 @@ class TestPersistencePerformanceOverhead:
 
         # Create unique database files for isolation
         import uuid
+
         test_id = uuid.uuid4().hex[:8]
         no_backend_db_path = tmp_path / f"no_backend_{test_id}.db"
         with_backend_db_path = tmp_path / f"with_backend_{test_id}.db"
@@ -138,6 +141,7 @@ class TestPersistencePerformanceOverhead:
 
         # Test with isolated backend using unique database file
         from flujo.state.backends.sqlite import SQLiteBackend
+
         isolated_backend = SQLiteBackend(with_backend_db_path)
         runner_with_backend = create_test_flujo(
             pipeline, context_model=LargeContext, state_backend=isolated_backend
@@ -155,12 +159,16 @@ class TestPersistencePerformanceOverhead:
             for _ in range(iterations):
                 # Test without backend
                 start = time.perf_counter_ns()
-                await gather_result(runner_no_backend, "test", initial_context_data=large_context_data)
+                await gather_result(
+                    runner_no_backend, "test", initial_context_data=large_context_data
+                )
                 no_backend_times.append((time.perf_counter_ns() - start) / 1_000_000_000.0)
 
                 # Test with isolated backend
                 start = time.perf_counter_ns()
-                await gather_result(runner_with_backend, "test", initial_context_data=large_context_data)
+                await gather_result(
+                    runner_with_backend, "test", initial_context_data=large_context_data
+                )
                 with_backend_times.append((time.perf_counter_ns() - start) / 1_000_000_000.0)
 
             # Calculate averages for more stable measurements
