@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
-from typing import Optional, Tuple, Any
+from typing import Optional, Tuple, Any, Protocol, runtime_checkable
 import flujo.infra.config
 
 # Cache for model information to reduce repeated extraction overhead
 _model_cache: dict[str, tuple[Optional[str], str]] = {}
+
+
+@runtime_checkable
+class ExplicitCostReporter(Protocol):
+    """A protocol for objects that can report their own pre-calculated cost."""
+
+    cost_usd: float
+    token_counts: int = 0  # Defaults to 0 for non-token operations
 
 
 def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[int, int, float]:
@@ -36,7 +44,21 @@ def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[
 
     from .infra import telemetry
 
-    # Check for explicit cost first - if cost is provided, trust it and don't attempt token calculation
+    # 1. HIGHEST PRIORITY: Check if the output object reports its own cost.
+    if isinstance(raw_output, ExplicitCostReporter):
+        cost_usd = getattr(raw_output, "cost_usd", 0.0) or 0.0
+        # For explicit costs, we don't try to split tokens.
+        # We take the total token count if provided, otherwise it's 0.
+        total_tokens = getattr(raw_output, "token_counts", 0) or 0
+
+        telemetry.logfire.info(
+            f"Using explicit cost from '{type(raw_output).__name__}' for step '{step_name}': cost=${cost_usd}, tokens={total_tokens}"
+        )
+
+        # Return prompt_tokens as 0 since it cannot be determined reliably here.
+        return 0, total_tokens, cost_usd
+
+    # 2. Check for explicit cost first - if cost is provided, trust it and don't attempt token calculation
     if hasattr(raw_output, "cost_usd"):
         cost_usd = raw_output.cost_usd or 0.0
         # If token_counts is also present, extract it. Otherwise, default to 0.
@@ -60,7 +82,7 @@ def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[
         # Return immediately, bypassing all other calculation logic.
         return prompt_tokens, completion_tokens, cost_usd
 
-    # If explicit metrics are not fully present, proceed with usage() extraction
+    # 3. If explicit metrics are not fully present, proceed with usage() extraction
     if hasattr(raw_output, "usage"):
         try:
             usage_info = raw_output.usage()

@@ -386,6 +386,196 @@ class TestExtractUsageMetrics:
         assert completion_tokens == 0  # Should default to 0
         assert cost_usd > 0.0  # Should still calculate cost
 
+    def test_explicit_cost_reporter_protocol_priority(self):
+        """Test that ExplicitCostReporter protocol takes highest priority over usage() method."""
+
+        # Create a mock object that implements BOTH ExplicitCostReporter and has a .usage() method
+        class MockResponseWithBoth:
+            def __init__(self):
+                self.cost_usd = 1.23
+                self.token_counts = 200
+
+            def usage(self):
+                class MockUsage:
+                    def __init__(self):
+                        self.request_tokens = 100
+                        self.response_tokens = 50
+
+                return MockUsage()
+
+        # Create a mock agent
+        class MockAgent:
+            def __init__(self):
+                self.model_id = "openai:gpt-4o"
+
+        raw_output = MockResponseWithBoth()
+        agent = MockAgent()
+
+        prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
+            raw_output, agent, "test_step"
+        )
+
+        # Should use the protocol cost (1.23) and ignore the .usage() method completely
+        assert cost_usd == 1.23
+        assert prompt_tokens == 0  # Cannot be determined reliably
+        assert completion_tokens == 200  # From protocol
+
+    def test_explicit_cost_reporter_protocol_with_only_cost(self):
+        """Test ExplicitCostReporter protocol with only cost_usd attribute."""
+
+        # Create a mock object that implements ExplicitCostReporter with only cost_usd
+        class MockResponseWithOnlyCost:
+            def __init__(self):
+                self.cost_usd = 0.75
+                # No token_counts attribute
+
+        # Create a mock agent
+        class MockAgent:
+            def __init__(self):
+                self.model_id = "openai:gpt-4o"
+
+        raw_output = MockResponseWithOnlyCost()
+        agent = MockAgent()
+
+        prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
+            raw_output, agent, "test_step"
+        )
+
+        # Should use the protocol cost and default token_counts to 0
+        assert cost_usd == 0.75
+        assert prompt_tokens == 0  # Cannot be determined reliably
+        assert completion_tokens == 0  # Defaults to 0
+
+    def test_explicit_cost_reporter_protocol_with_cost_and_tokens(self):
+        """Test ExplicitCostReporter protocol with both cost_usd and token_counts."""
+
+        # Create a mock object that implements ExplicitCostReporter with both attributes
+        class MockResponseWithCostAndTokens:
+            def __init__(self):
+                self.cost_usd = 0.25
+                self.token_counts = 1000
+
+        # Create a mock agent
+        class MockAgent:
+            def __init__(self):
+                self.model_id = "openai:gpt-4o"
+
+        raw_output = MockResponseWithCostAndTokens()
+        agent = MockAgent()
+
+        prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
+            raw_output, agent, "test_step"
+        )
+
+        # Should use the protocol cost and token counts
+        assert cost_usd == 0.25
+        assert prompt_tokens == 0  # Cannot be determined reliably
+        assert completion_tokens == 1000  # From protocol
+
+    def test_explicit_cost_reporter_protocol_with_zero_cost(self):
+        """Test ExplicitCostReporter protocol with zero cost."""
+
+        # Create a mock object that implements ExplicitCostReporter with zero cost
+        class MockResponseWithZeroCost:
+            def __init__(self):
+                self.cost_usd = 0.0
+                self.token_counts = 500
+
+        # Create a mock agent
+        class MockAgent:
+            def __init__(self):
+                self.model_id = "openai:gpt-4o"
+
+        raw_output = MockResponseWithZeroCost()
+        agent = MockAgent()
+
+        prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
+            raw_output, agent, "test_step"
+        )
+
+        # Should use the protocol values even if cost is zero
+        assert cost_usd == 0.0
+        assert prompt_tokens == 0  # Cannot be determined reliably
+        assert completion_tokens == 500  # From protocol
+
+    def test_explicit_cost_reporter_protocol_with_negative_cost(self):
+        """Test ExplicitCostReporter protocol with negative cost (edge case)."""
+
+        # Create a mock object that implements ExplicitCostReporter with negative cost
+        class MockResponseWithNegativeCost:
+            def __init__(self):
+                self.cost_usd = -0.10
+                self.token_counts = 100
+
+        # Create a mock agent
+        class MockAgent:
+            def __init__(self):
+                self.model_id = "openai:gpt-4o"
+
+        raw_output = MockResponseWithNegativeCost()
+        agent = MockAgent()
+
+        prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
+            raw_output, agent, "test_step"
+        )
+
+        # Should use the protocol values even if cost is negative
+        assert cost_usd == -0.10
+        assert prompt_tokens == 0  # Cannot be determined reliably
+        assert completion_tokens == 100  # From protocol
+
+    def test_explicit_cost_reporter_protocol_with_none_cost(self):
+        """Test ExplicitCostReporter protocol with None cost (edge case)."""
+
+        # Create a mock object that implements ExplicitCostReporter with None cost
+        class MockResponseWithNoneCost:
+            def __init__(self):
+                self.cost_usd = None
+                self.token_counts = 200
+
+        # Create a mock agent
+        class MockAgent:
+            def __init__(self):
+                self.model_id = "openai:gpt-4o"
+
+        raw_output = MockResponseWithNoneCost()
+        agent = MockAgent()
+
+        prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
+            raw_output, agent, "test_step"
+        )
+
+        # Should handle None cost gracefully
+        assert cost_usd == 0.0  # Should default to 0.0
+        assert prompt_tokens == 0  # Cannot be determined reliably
+        assert completion_tokens == 200  # From protocol
+
+    def test_explicit_cost_reporter_protocol_with_none_tokens(self):
+        """Test ExplicitCostReporter protocol with None token_counts (edge case)."""
+
+        # Create a mock object that implements ExplicitCostReporter with None token_counts
+        class MockResponseWithNoneTokens:
+            def __init__(self):
+                self.cost_usd = 0.50
+                self.token_counts = None
+
+        # Create a mock agent
+        class MockAgent:
+            def __init__(self):
+                self.model_id = "openai:gpt-4o"
+
+        raw_output = MockResponseWithNoneTokens()
+        agent = MockAgent()
+
+        prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
+            raw_output, agent, "test_step"
+        )
+
+        # Should handle None token_counts gracefully
+        assert cost_usd == 0.50
+        assert prompt_tokens == 0  # Cannot be determined reliably
+        assert completion_tokens == 0  # Should default to 0
+
 
 class TestCostCalculator:
     """Test the CostCalculator class."""
