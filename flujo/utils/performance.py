@@ -120,11 +120,8 @@ def optimize_event_loop() -> None:
         import uvloop
         import asyncio
 
-        if hasattr(asyncio, "set_event_loop_policy"):
-            asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
-            logger.info("✅ Using uvloop for enhanced async performance")
-        else:
-            logger.warning("⚠️  uvloop available but set_event_loop_policy not found")
+        asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+        logger.info("✅ Using uvloop for enhanced async performance")
     except ImportError:
         logger.info("ℹ️  uvloop not available, using standard asyncio event loop")
     except Exception as e:

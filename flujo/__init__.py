@@ -28,15 +28,7 @@ Quick Start:
     print(result.output)
 """
 
-# Performance optimization: Use uvloop on Unix systems for better async performance
-try:
-    import uvloop
-    import asyncio
-
-    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
-except ImportError:
-    # uvloop not available (likely on Windows), fall back to standard asyncio
-    pass
+# Performance optimizations are handled by flujo.utils.performance module
 
 from .application.runner import Flujo
 from .domain.dsl import Pipeline, Step
