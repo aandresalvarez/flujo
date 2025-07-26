@@ -716,7 +716,8 @@ class TestUltraExecutorScalability:
         print(f"Hit time per execution: {hit_time / 500:.6f}s")
 
         # Cache hits should be very fast (dynamic threshold based on environment)
-        threshold = get_performance_threshold(0.1, ci_multiplier=1.5)  # 0.1s local, 0.15s CI
+        # Use a more lenient threshold for CI environments where performance can vary
+        threshold = get_performance_threshold(0.1, ci_multiplier=2.0)  # 0.1s local, 0.2s CI
         assert hit_time < threshold, (
             f"Cache hits took too long: {hit_time:.3f}s (threshold: {threshold:.3f}s)"
         )

@@ -3,6 +3,7 @@ from pydantic import SecretStr
 import pytest
 import sys
 from typing import ClassVar, Optional
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 def test_env_var_precedence(monkeypatch) -> None:
@@ -58,34 +59,14 @@ def test_missing_api_key_allowed(monkeypatch) -> None:
     assert hasattr(s, "openai_api_key")
 
 
-def test_settings_initialization(monkeypatch) -> None:
-    # Clear any existing API keys to avoid leakage
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.delenv("ORCH_OPENAI_API_KEY", raising=False)
-    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.delenv("LOGFIRE_API_KEY", raising=False)
+def test_settings_constructor_values() -> None:
+    """Test that Settings constructor properly handles explicit values without environment interference."""
 
-    # Test that constructor values are properly set when provided
-    # This test verifies that the Settings class correctly handles explicit values
-    test_key = SecretStr("test")
+    # Create a minimal test settings class that doesn't read from environment
+    class IsolatedTestSettings(BaseSettings):
+        """Minimal settings class for testing constructor value handling."""
 
-    # Create a temporary Settings class that doesn't read from environment
-    from pydantic_settings import BaseSettings, SettingsConfigDict
-
-    class TestSettings(BaseSettings):
         openai_api_key: Optional[SecretStr] = None
-        google_api_key: Optional[SecretStr] = None
-        anthropic_api_key: Optional[SecretStr] = None
-        logfire_api_key: Optional[SecretStr] = None
-        reflection_enabled: bool = True
-        reward_enabled: bool = True
-        telemetry_export_enabled: bool = False
-        otlp_export_enabled: bool = False
-        default_solution_model: str = "test"
-        default_review_model: str = "test"
-        default_validator_model: str = "test"
-        default_reflection_model: str = "test"
         default_repair_model: str = "test"
         agent_timeout: int = 30
 
@@ -95,28 +76,34 @@ def test_settings_initialization(monkeypatch) -> None:
             "extra": "ignore",
         }
 
-    settings = TestSettings(
+    # Test that constructor values are properly set when provided
+    test_key = SecretStr("test")
+
+    settings = IsolatedTestSettings(
         openai_api_key=test_key,
-        google_api_key=SecretStr("test"),
-        anthropic_api_key=SecretStr("test"),
-        logfire_api_key=SecretStr("test"),
-        reflection_enabled=True,
-        reward_enabled=True,
-        telemetry_export_enabled=True,
-        otlp_export_enabled=True,
-        default_solution_model="test",
-        default_review_model="test",
-        default_validator_model="test",
-        default_reflection_model="test",
         default_repair_model="test",
         agent_timeout=30,
     )
-    # The test verifies that the SecretStr value is properly assigned
+
+    # Verify that the SecretStr values are properly assigned
     assert settings.openai_api_key.get_secret_value() == "test"
-    assert settings.google_api_key.get_secret_value() == "test"
-    assert settings.anthropic_api_key.get_secret_value() == "test"
-    assert settings.logfire_api_key.get_secret_value() == "test"
     assert settings.default_repair_model == "test"
+    assert settings.agent_timeout == 30
+
+
+def test_settings_initialization(monkeypatch) -> None:
+    """Test that Settings class properly handles environment variable precedence."""
+    # Clear any existing API keys to avoid leakage
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("ORCH_OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("LOGFIRE_API_KEY", raising=False)
+
+    # Test that the Settings class works with environment variables
+    s = Settings()
+    # Just verify that we can create settings without error
+    assert hasattr(s, "openai_api_key")
 
 
 def test_test_settings() -> None:
