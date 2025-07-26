@@ -17,9 +17,17 @@ The `ExplicitCostReporter` protocol is defined in `flujo/cost.py`:
 ```python
 @runtime_checkable
 class ExplicitCostReporter(Protocol):
-    """A protocol for objects that can report their own pre-calculated cost."""
+    """A protocol for objects that can report their own pre-calculated cost.
+
+    Attributes
+    ----------
+    cost_usd : float
+        The explicit cost in USD for the operation.
+    token_counts : int, optional
+        The total token count for the operation, if applicable. If not present, will be treated as 0 by extraction logic.
+    """
     cost_usd: float
-    token_counts: int = 0  # Defaults to 0 for non-token operations
+    token_counts: int  # Optional; if missing, treated as 0
 ```
 
 ### Key Features
@@ -51,13 +59,22 @@ The `extract_usage_metrics` function now follows this priority order:
 # In flujo/cost.py
 @runtime_checkable
 class ExplicitCostReporter(Protocol):
-    """A protocol for objects that can report their own pre-calculated cost."""
+    """A protocol for objects that can report their own pre-calculated cost.
+
+    Attributes
+    ----------
+    cost_usd : float
+        The explicit cost in USD for the operation.
+    token_counts : int, optional
+        The total token count for the operation, if applicable. If not present, will be treated as 0 by extraction logic.
+    """
     cost_usd: float
-    token_counts: int = 0  # Defaults to 0 for non-token operations
+    token_counts: int  # Optional; if missing, treated as 0
 
 def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[int, int, float]:
     # 1. HIGHEST PRIORITY: Check if the output object reports its own cost.
-    if isinstance(raw_output, ExplicitCostReporter):
+    # We check for the protocol attributes manually since token_counts is optional
+    if hasattr(raw_output, "cost_usd"):
         cost_usd = getattr(raw_output, 'cost_usd', 0.0) or 0.0
         total_tokens = getattr(raw_output, 'token_counts', 0) or 0
 
@@ -65,6 +82,7 @@ def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[
 
         # Return prompt_tokens as 0 since it cannot be determined reliably here.
         return 0, total_tokens, cost_usd
+```
 
     # 2. Check for explicit cost first - if cost is provided, trust it and don't attempt token calculation
     if hasattr(raw_output, "cost_usd"):
