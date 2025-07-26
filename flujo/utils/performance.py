@@ -8,8 +8,8 @@ and minimize memory usage.
 
 import logging
 import time
-import threading
-from typing import Any, Callable, TypeVar, Awaitable
+import contextvars
+from typing import Any, Callable, TypeVar, Awaitable, Optional
 from functools import wraps
 
 # Configure logger for the module
@@ -21,25 +21,27 @@ T = TypeVar("T")
 # Performance constants
 DEFAULT_BUFFER_SIZE = 4096  # 4KB initial size
 
-# Thread-local storage for scratch buffers to avoid race conditions
-_thread_local = threading.local()
+# Task-local storage for scratch buffers to avoid race conditions in async contexts
+_scratch_buffer_var: contextvars.ContextVar[Optional[bytearray]] = contextvars.ContextVar("scratch_buffer", default=None)
 
 
 def _get_thread_scratch_buffer() -> bytearray:
-    """Get thread-local scratch buffer, creating it if necessary."""
-    if not hasattr(_thread_local, "scratch_buffer"):
-        _thread_local.scratch_buffer = bytearray(DEFAULT_BUFFER_SIZE)  # 4KB initial size
-    return _thread_local.scratch_buffer  # type: ignore[no-any-return]
+    """Get task-local scratch buffer, creating it if necessary."""
+    buffer = _scratch_buffer_var.get()
+    if buffer is None:
+        buffer = bytearray(DEFAULT_BUFFER_SIZE)  # 4KB initial size
+        _scratch_buffer_var.set(buffer)
+    return buffer
 
 
 def clear_scratch_buffer() -> None:
-    """Clear the thread-local scratch buffer for reuse."""
+    """Clear the task-local scratch buffer for reuse."""
     buffer = _get_thread_scratch_buffer()
     buffer.clear()
 
 
 def get_scratch_buffer() -> bytearray:
-    """Get the thread-local scratch buffer for temporary operations."""
+    """Get the task-local scratch buffer for temporary operations."""
     return _get_thread_scratch_buffer()
 
 
@@ -115,11 +117,18 @@ def optimize_event_loop() -> None:
     This function attempts to use uvloop on Unix systems for significantly
     better async performance. On Windows or when uvloop is not available,
     it falls back to the standard asyncio event loop.
+    
+    Note: This function must be called explicitly to enable uvloop.
     """
     try:
         import uvloop
         import asyncio
-
+        
+        current_policy = asyncio.get_event_loop_policy()
+        if isinstance(current_policy, uvloop.EventLoopPolicy):
+            logger.info("ℹ️  uvloop is already set as the event loop policy")
+            return
+            
         asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
         logger.info("✅ Using uvloop for enhanced async performance")
     except ImportError:
