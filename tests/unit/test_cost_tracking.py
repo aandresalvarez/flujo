@@ -1419,3 +1419,79 @@ class TestBugFixes:
         assert pricing is not None
         assert pricing.prompt_tokens_per_1k == 0.005
         assert pricing.completion_tokens_per_1k == 0.015
+
+    def test_ci_environment_detection_logic(self):
+        """Test that CI environment detection correctly handles truthy values only."""
+        from flujo.infra.config import _is_ci_environment
+
+        # Test that only truthy values are considered CI
+        test_cases = [
+            # Truthy values that should indicate CI
+            ("true", True),
+            ("TRUE", True),
+            ("True", True),
+            ("1", True),
+            ("yes", True),
+            ("YES", True),
+            ("Yes", True),
+            ("on", True),
+            ("ON", True),
+            ("On", True),
+            # Falsy values that should NOT indicate CI
+            ("false", False),
+            ("FALSE", False),
+            ("False", False),
+            ("0", False),
+            ("no", False),
+            ("NO", False),
+            ("No", False),
+            ("off", False),
+            ("OFF", False),
+            ("Off", False),
+            ("", False),
+            (None, False),
+        ]
+
+        for value, expected in test_cases:
+            with pytest.MonkeyPatch().context() as m:
+                # Set CI environment variable
+                if value is None:
+                    m.delenv("CI", raising=False)
+                else:
+                    m.setenv("CI", value)
+
+                # Clear other CI variables to isolate the test
+                for var in ["GITHUB_ACTIONS", "GITLAB_CI", "CIRCLECI", "TRAVIS"]:
+                    m.delenv(var, raising=False)
+
+                result = _is_ci_environment()
+                assert result == expected, f"Expected {expected} for CI='{value}', got {result}"
+
+    def test_ci_environment_detection_multiple_variables(self):
+        """Test that CI environment detection works with multiple CI variables."""
+        from flujo.infra.config import _is_ci_environment
+
+        # Test that any truthy CI variable indicates CI environment
+        ci_vars = ["CI", "GITHUB_ACTIONS", "GITLAB_CI", "CIRCLECI", "TRAVIS"]
+
+        for var in ci_vars:
+            with pytest.MonkeyPatch().context() as m:
+                # Set one CI variable to truthy value
+                m.setenv(var, "true")
+
+                # Clear other CI variables
+                for other_var in ci_vars:
+                    if other_var != var:
+                        m.delenv(other_var, raising=False)
+
+                result = _is_ci_environment()
+                assert result is True, f"Expected True for {var}='true', got {result}"
+
+        # Test that all falsy values result in no CI detection
+        with pytest.MonkeyPatch().context() as m:
+            # Set all CI variables to falsy values
+            for var in ci_vars:
+                m.setenv(var, "false")
+
+            result = _is_ci_environment()
+            assert result is False, f"Expected False for all falsy values, got {result}"

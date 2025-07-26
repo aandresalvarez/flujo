@@ -175,7 +175,14 @@ def _is_ci_environment() -> bool:
     import os
 
     CI_VARS = ("CI", "GITHUB_ACTIONS", "GITLAB_CI", "CIRCLECI", "TRAVIS")
-    return any(os.getenv(var) for var in CI_VARS)
+
+    def is_truthy(value: Optional[str]) -> bool:
+        """Check if a string value represents a truthy value."""
+        if value is None:
+            return False
+        return value.lower() in ("true", "1", "yes", "on")
+
+    return any(is_truthy(os.getenv(var)) for var in CI_VARS)
 
 
 def _no_config_file_found(config_manager: Optional[Any] = None) -> bool:
