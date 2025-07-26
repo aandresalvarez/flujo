@@ -200,17 +200,40 @@ class CostCalculator:
             )
             return 0.0
 
-        # Calculate costs
-        prompt_cost = (prompt_tokens / 1000.0) * pricing.prompt_tokens_per_1k
-        completion_cost = (completion_tokens / 1000.0) * pricing.completion_tokens_per_1k
+        # Check if this is a text model or image model
+        if pricing.is_text_model():
+            # Calculate costs for text models using token-based pricing
+            if pricing.prompt_tokens_per_1k is None or pricing.completion_tokens_per_1k is None:
+                telemetry.logfire.warning(
+                    f"Incomplete token pricing for provider={provider}, model={model_name}. "
+                    f"Cost will be reported as 0.0."
+                )
+                return 0.0
 
-        total_cost = prompt_cost + completion_cost
+            prompt_cost = (prompt_tokens / 1000.0) * pricing.prompt_tokens_per_1k
+            completion_cost = (completion_tokens / 1000.0) * pricing.completion_tokens_per_1k
+            total_cost = prompt_cost + completion_cost
 
-        telemetry.logfire.info(
-            f"Cost calculation: prompt_cost={prompt_cost}, completion_cost={completion_cost}, total={total_cost}"
-        )
-
-        return total_cost
+            telemetry.logfire.info(
+                f"Cost calculation (text model): prompt_cost={prompt_cost}, completion_cost={completion_cost}, total={total_cost}"
+            )
+            return total_cost
+        elif pricing.is_image_model():
+            # For image models, we can't calculate cost from tokens alone
+            # Image cost should be calculated by the image client based on size/quality
+            telemetry.logfire.warning(
+                f"Attempting to calculate cost for image model '{model_name}' using token-based method. "
+                f"This is not supported. Image costs should be calculated by the image client. "
+                f"Cost will be reported as 0.0."
+            )
+            return 0.0
+        else:
+            # Neither text nor image model pricing found
+            telemetry.logfire.warning(
+                f"No valid pricing found for provider={provider}, model={model_name}. "
+                f"Cost will be reported as 0.0."
+            )
+            return 0.0
 
     def _infer_provider_from_model(self, model_name: str) -> Optional[str]:
         """

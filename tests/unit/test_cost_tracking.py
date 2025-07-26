@@ -1033,9 +1033,13 @@ class TestProviderPricing:
         assert pricing.completion_tokens_per_1k == 0.015
 
     def test_provider_pricing_validation(self):
-        """Test that ProviderPricing validates required fields."""
-        with pytest.raises(ValueError):
-            ProviderPricing()  # Missing required fields
+        """Test that ProviderPricing allows optional fields for mixed model types."""
+        # With the new design supporting both text and image models, fields are optional
+        pricing = ProviderPricing()  # All fields are now optional
+        assert pricing.prompt_tokens_per_1k is None
+        assert pricing.completion_tokens_per_1k is None
+        assert pricing.is_text_model() is False
+        assert pricing.is_image_model() is False
 
 
 class TestCostConfig:

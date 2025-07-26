@@ -103,3 +103,8 @@ completion_tokens_per_1k = 0.0105
 [cost.providers.google."gemini-1.5-flash"]
 prompt_tokens_per_1k = 0.000075
 completion_tokens_per_1k = 0.0003
+
+[cost.providers.openai.dall-e-3]
+price_per_image_standard_1024x1024 = 0.040
+price_per_image_standard_1024x1792 = 0.080
+price_per_image_hd_1024x1024 = 0.080

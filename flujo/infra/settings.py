@@ -2,7 +2,7 @@
 
 import os
 import threading
-from typing import Callable, ClassVar, Dict, Literal, Optional, cast
+from typing import Any, Callable, ClassVar, Dict, Literal, Optional, cast
 
 import dotenv
 from pydantic import (
@@ -95,6 +95,21 @@ class Settings(BaseSettings):
         "populate_by_name": True,
         "extra": "ignore",
     }
+
+    @property
+    def model_cost_providers(self) -> dict[str, Any]:
+        """Return the [cost.providers] section from config, or empty dict if not present."""
+        # Try to get from config manager if available
+        try:
+            from .config_manager import get_config_manager
+
+            config_manager = get_config_manager()
+            config = config_manager.load_config()
+            if config.cost and "providers" in config.cost:
+                return config.cost["providers"]
+        except Exception:
+            pass
+        return {}  # type: ignore[return-value]
 
     @model_validator(mode="after")
     def load_dynamic_api_keys(self) -> "Settings":

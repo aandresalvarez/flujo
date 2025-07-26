@@ -451,12 +451,15 @@ class TestEmbeddingModelPricing:
         assert pricing.completion_tokens_per_1k == 0.00013
 
     def test_embedding_model_pricing_validation(self):
-        """Test that ProviderPricing validates required fields for embedding models."""
+        """Test that ProviderPricing allows optional fields for mixed model types."""
         from flujo.infra.config import ProviderPricing
 
-        with pytest.raises(ValueError):
-            # Should raise error when required fields are missing
-            ProviderPricing()
+        # With the new design supporting both text and image models, fields are optional
+        pricing = ProviderPricing()  # All fields are now optional
+        assert pricing.prompt_tokens_per_1k is None
+        assert pricing.completion_tokens_per_1k is None
+        assert pricing.is_text_model() is False
+        assert pricing.is_image_model() is False
 
     def test_embedding_model_pricing_different_values(self):
         """Test that embedding models can have different prompt and completion pricing."""

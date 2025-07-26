@@ -11,8 +11,45 @@ from ..exceptions import PricingNotConfiguredError
 class ProviderPricing(BaseModel):
     """Pricing information for a specific provider and model."""
 
-    prompt_tokens_per_1k: float = Field(..., description="Cost per 1K prompt tokens in USD")
-    completion_tokens_per_1k: float = Field(..., description="Cost per 1K completion tokens in USD")
+    # Text model pricing (optional for image models)
+    prompt_tokens_per_1k: Optional[float] = Field(
+        default=None, description="Cost per 1K prompt tokens in USD"
+    )
+    completion_tokens_per_1k: Optional[float] = Field(
+        default=None, description="Cost per 1K completion tokens in USD"
+    )
+
+    # Image model pricing (optional for text models)
+    price_per_image_standard_1024x1024: Optional[float] = Field(
+        default=None, description="Cost per standard 1024x1024 image in USD"
+    )
+    price_per_image_standard_1024x1792: Optional[float] = Field(
+        default=None, description="Cost per standard 1024x1792 image in USD"
+    )
+    price_per_image_hd_1024x1024: Optional[float] = Field(
+        default=None, description="Cost per HD 1024x1024 image in USD"
+    )
+    price_per_image_hd_1024x1792: Optional[float] = Field(
+        default=None, description="Cost per HD 1024x1792 image in USD"
+    )
+
+    # Allow additional pricing fields for future models
+    model_config = {"extra": "allow"}
+
+    def is_text_model(self) -> bool:
+        """Check if this pricing is for a text model (has token pricing)."""
+        return self.prompt_tokens_per_1k is not None or self.completion_tokens_per_1k is not None
+
+    def is_image_model(self) -> bool:
+        """Check if this pricing is for an image model (has image pricing)."""
+        return any(
+            [
+                self.price_per_image_standard_1024x1024 is not None,
+                self.price_per_image_standard_1024x1792 is not None,
+                self.price_per_image_hd_1024x1024 is not None,
+                self.price_per_image_hd_1024x1792 is not None,
+            ]
+        )
 
 
 class CostConfig(BaseModel):
@@ -112,6 +149,14 @@ def _get_default_pricing(provider: Optional[str], model: str) -> Optional[Provid
             return ProviderPricing(prompt_tokens_per_1k=0.00002, completion_tokens_per_1k=0.00002)
         elif model == "text-embedding-ada-002":
             return ProviderPricing(prompt_tokens_per_1k=0.0001, completion_tokens_per_1k=0.0001)
+        # OpenAI image models
+        elif model == "dall-e-3":
+            return ProviderPricing(
+                price_per_image_standard_1024x1024=0.040,
+                price_per_image_standard_1024x1792=0.080,
+                price_per_image_hd_1024x1024=0.080,
+                price_per_image_hd_1024x1792=0.120,
+            )
 
     # Anthropic pricing (as of 2024)
     elif provider == "anthropic":
@@ -129,27 +174,23 @@ def _is_ci_environment() -> bool:
     """Check if we're running in a CI environment."""
     import os
 
-    return os.environ.get("CI", "").lower() in ("true", "1", "yes")
+    return any(
+        os.getenv(var) for var in ["CI", "GITHUB_ACTIONS", "GITLAB_CI", "CIRCLECI", "TRAVIS"]
+    )
 
 
 def _no_config_file_found(config_manager: Optional[Any] = None) -> bool:
-    """Check if no configuration file was found."""
+    """Check if no config file was found."""
     if config_manager is None:
         from .config_manager import get_config_manager
 
         config_manager = get_config_manager()
 
+    # Check if the config manager has a config file
     try:
-        # If the config manager has no config path, it means no file was found
-        if config_manager.config_path is None:
-            return True
-
-        # Also check if the config was loaded but is empty (no cost section)
-        config = config_manager.load_config()
-        if not config.cost:
-            return True
-
+        config_manager.load_config()
+        # If we can load a config, then a config file exists
         return False
     except Exception:
-        # If there's any error getting the config manager, assume no config file
+        # If loading fails, assume no config file
         return True
