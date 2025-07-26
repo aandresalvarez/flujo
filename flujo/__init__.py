@@ -16,13 +16,13 @@ Key Features:
 Quick Start:
     from flujo import Step, Pipeline
     from flujo.infra.agents import make_agent_async
-    
+
     # Create an agent
     agent = make_agent_async("openai:gpt-4o", "You are a helpful assistant.", str)
-    
+
     # Create a pipeline
     pipeline = Step.solution(agent)
-    
+
     # Run the pipeline
     result = await pipeline.run("Hello, world!")
     print(result.output)
@@ -32,7 +32,8 @@ Quick Start:
 try:
     import uvloop
     import asyncio
-    if hasattr(asyncio, 'set_event_loop_policy'):
+
+    if hasattr(asyncio, "set_event_loop_policy"):
         asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 except ImportError:
     # uvloop not available (likely on Windows), fall back to standard asyncio
@@ -40,8 +41,10 @@ except ImportError:
 
 from .application.runner import Flujo
 from .domain.dsl import Pipeline, Step
+from .domain.dsl.step import step  # Add back the step decorator
 from .domain.models import PipelineResult
 from .infra import init_telemetry
+from .infra.agents import make_agent_async  # Add back the agent factory
 from .recipes.factories import (
     make_agentic_loop_pipeline,
     make_default_pipeline,
@@ -55,7 +58,9 @@ __all__ = [
     "Flujo",
     "Pipeline",
     "Step",
+    "step",  # Add step decorator
     "PipelineResult",
+    "make_agent_async",  # Add agent factory
     "init_telemetry",
     "make_agentic_loop_pipeline",
     "make_default_pipeline",
