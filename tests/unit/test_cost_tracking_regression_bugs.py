@@ -553,6 +553,185 @@ class TestBug5RobustProviderInference:
         assert cost == 0.0
 
 
+class TestExplicitCostReportingValidation:
+    def test_missing_token_counts_warns(self, caplog):
+        from flujo.cost import extract_usage_metrics
+
+        class Output:
+            cost_usd = 1.23
+
+        agent = type("Agent", (), {"model_id": "openai:gpt-4o"})()
+        with caplog.at_level("WARNING"):
+            prompt, tokens, cost = extract_usage_metrics(Output(), agent, "test_step")
+            assert tokens == 0
+            assert cost == 1.23
+            assert any(
+                "provides cost_usd but not token_counts" in r for r in caplog.text.splitlines()
+            )
+
+    def test_missing_cost_usd_warns(self, caplog):
+        from flujo.cost import extract_usage_metrics
+
+        class Output:
+            token_counts = 42
+
+        agent = type("Agent", (), {"model_id": "openai:gpt-4o"})()
+        with caplog.at_level("WARNING"):
+            prompt, tokens, cost = extract_usage_metrics(Output(), agent, "test_step")
+            assert tokens == 42
+            assert cost == 0.0
+            assert any(
+                "provides token_counts but not cost_usd" in r for r in caplog.text.splitlines()
+            )
+
+    def test_strict_mode_raises_on_missing_token_counts(self, monkeypatch):
+        from flujo.cost import extract_usage_metrics
+
+        class Output:
+            cost_usd = 1.23
+
+        agent = type("Agent", (), {"model_id": "openai:gpt-4o"})()
+        monkeypatch.setenv("FLUJO_STRICT_COST_TRACKING", "1")
+        try:
+            try:
+                extract_usage_metrics(Output(), agent, "test_step")
+            except ValueError as e:
+                assert "provides cost_usd but not token_counts" in str(e)
+            else:
+                assert False, "Should have raised ValueError"
+        finally:
+            monkeypatch.delenv("FLUJO_STRICT_COST_TRACKING", raising=False)
+
+    def test_strict_mode_raises_on_missing_cost_usd(self, monkeypatch):
+        from flujo.cost import extract_usage_metrics
+
+        class Output:
+            token_counts = 42
+
+        agent = type("Agent", (), {"model_id": "openai:gpt-4o"})()
+        monkeypatch.setenv("FLUJO_STRICT_COST_TRACKING", "1")
+        try:
+            try:
+                extract_usage_metrics(Output(), agent, "test_step")
+            except ValueError as e:
+                assert "provides token_counts but not cost_usd" in str(e)
+            else:
+                assert False, "Should have raised ValueError"
+        finally:
+            monkeypatch.delenv("FLUJO_STRICT_COST_TRACKING", raising=False)
+
+    def test_negative_values_warn(self, caplog):
+        from flujo.cost import extract_usage_metrics
+
+        class Output:
+            cost_usd = -1.0
+            token_counts = -10
+
+        agent = type("Agent", (), {"model_id": "openai:gpt-4o"})()
+        with caplog.at_level("WARNING"):
+            prompt, tokens, cost = extract_usage_metrics(Output(), agent, "test_step")
+            assert tokens == -10
+            assert cost == -1.0
+            assert any("Negative values detected" in r for r in caplog.text.splitlines())
+
+    def test_implausible_values_warn(self, caplog):
+        from flujo.cost import extract_usage_metrics
+
+        class Output:
+            cost_usd = 1e7
+            token_counts = int(1e10)
+
+        agent = type("Agent", (), {"model_id": "openai:gpt-4o"})()
+        with caplog.at_level("WARNING"):
+            prompt, tokens, cost = extract_usage_metrics(Output(), agent, "test_step")
+            assert tokens == int(1e10)
+            assert cost == 1e7
+            assert any("Implausibly large values detected" in r for r in caplog.text.splitlines())
+
+    def test_negative_values_strict(self, monkeypatch):
+        from flujo.cost import extract_usage_metrics
+
+        class Output:
+            cost_usd = -1.0
+            token_counts = -10
+
+        agent = type("Agent", (), {"model_id": "openai:gpt-4o"})()
+        monkeypatch.setenv("FLUJO_STRICT_COST_TRACKING", "1")
+        try:
+            try:
+                extract_usage_metrics(Output(), agent, "test_step")
+            except ValueError as e:
+                assert "Negative values detected" in str(e)
+            else:
+                assert False, "Should have raised ValueError"
+        finally:
+            monkeypatch.delenv("FLUJO_STRICT_COST_TRACKING", raising=False)
+
+    def test_implausible_values_strict(self, monkeypatch):
+        from flujo.cost import extract_usage_metrics
+
+        class Output:
+            cost_usd = 1e7
+            token_counts = int(1e10)
+
+        agent = type("Agent", (), {"model_id": "openai:gpt-4o"})()
+        monkeypatch.setenv("FLUJO_STRICT_COST_TRACKING", "1")
+        try:
+            try:
+                extract_usage_metrics(Output(), agent, "test_step")
+            except ValueError as e:
+                assert "Implausibly large values detected" in str(e)
+            else:
+                assert False, "Should have raised ValueError"
+        finally:
+            monkeypatch.delenv("FLUJO_STRICT_COST_TRACKING", raising=False)
+
+    def test_mixed_reporting_modes_warn(self, caplog):
+        from flujo.cost import extract_usage_metrics
+
+        class Output:
+            cost_usd = 1.0
+            token_counts = 10
+
+            def usage(self):
+                class Usage:
+                    request_tokens = 5
+                    response_tokens = 5
+
+                return Usage()
+
+        agent = type("Agent", (), {"model_id": "openai:gpt-4o"})()
+        with caplog.at_level("WARNING"):
+            prompt, tokens, cost = extract_usage_metrics(Output(), agent, "test_step")
+            assert any("Mixed reporting modes detected" in r for r in caplog.text.splitlines())
+
+    def test_mixed_reporting_modes_strict(self, monkeypatch):
+        from flujo.cost import extract_usage_metrics
+
+        class Output:
+            cost_usd = 1.0
+            token_counts = 10
+
+            def usage(self):
+                class Usage:
+                    request_tokens = 5
+                    response_tokens = 5
+
+                return Usage()
+
+        agent = type("Agent", (), {"model_id": "openai:gpt-4o"})()
+        monkeypatch.setenv("FLUJO_STRICT_COST_TRACKING", "1")
+        try:
+            try:
+                extract_usage_metrics(Output(), agent, "test_step")
+            except ValueError as e:
+                assert "Mixed reporting modes detected" in str(e)
+            else:
+                assert False, "Should have raised ValueError"
+        finally:
+            monkeypatch.delenv("FLUJO_STRICT_COST_TRACKING", raising=False)
+
+
 class TestIntegrationRegressionTests:
     """Integration tests to ensure the fixes work together correctly."""
 

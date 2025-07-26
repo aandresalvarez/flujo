@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import patch
 from flujo.images.clients.openai_client import OpenAIImageClient, PricingNotConfiguredError
 from flujo.images.models import ImageGenerationResult
+from flujo.images import get_image_client
 
 
 @pytest.fixture
@@ -39,3 +40,8 @@ def test_strict_mode_price_missing(mock_pricing):
     with patch("openai.images.generate"):
         with pytest.raises(PricingNotConfiguredError):
             client.generate("a horse", size="512x512", quality="standard")
+
+
+def test_get_image_client_invalid_model_id():
+    with pytest.raises(ValueError, match="model_id must be in 'provider:model' format"):
+        get_image_client("dall-e-3")

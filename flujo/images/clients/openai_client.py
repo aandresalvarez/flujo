@@ -16,9 +16,7 @@ class OpenAIImageClient:
         # Example: price_per_image_standard_1024x1024
         return f"price_per_image_{quality}_{size}"
 
-    def generate(
-        self, prompt: str, size: str = "1024x1024", quality: str = "standard", **kwargs: Any
-    ) -> ImageGenerationResult:
+    def _get_pricing_for_request(self, size: str, quality: str) -> float:
         price_key = self._get_price_key(size, quality)
         price = self.pricing_data.get(price_key)
         if price is None:
@@ -27,6 +25,12 @@ class OpenAIImageClient:
                     f"Price for key '{price_key}' not configured in flujo.toml."
                 )
             price = 0.0
+        return price
+
+    def generate(
+        self, prompt: str, size: str = "1024x1024", quality: str = "standard", **kwargs: Any
+    ) -> ImageGenerationResult:
+        price = self._get_pricing_for_request(size, quality)
         # --- Call OpenAI API ---
         import openai
 

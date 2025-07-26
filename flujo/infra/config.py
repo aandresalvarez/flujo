@@ -37,8 +37,8 @@ class ProviderPricing(BaseModel):
     model_config = {"extra": "allow"}
 
     def is_text_model(self) -> bool:
-        """Check if this pricing is for a text model (has token pricing)."""
-        return self.prompt_tokens_per_1k is not None or self.completion_tokens_per_1k is not None
+        """Check if this pricing is for a text model (has token pricing for both prompt and completion)."""
+        return self.prompt_tokens_per_1k is not None and self.completion_tokens_per_1k is not None
 
     def is_image_model(self) -> bool:
         """Check if this pricing is for an image model (has image pricing)."""
@@ -174,9 +174,8 @@ def _is_ci_environment() -> bool:
     """Check if we're running in a CI environment."""
     import os
 
-    return any(
-        os.getenv(var) for var in ["CI", "GITHUB_ACTIONS", "GITLAB_CI", "CIRCLECI", "TRAVIS"]
-    )
+    CI_VARS = ("CI", "GITHUB_ACTIONS", "GITLAB_CI", "CIRCLECI", "TRAVIS")
+    return any(os.getenv(var) for var in CI_VARS)
 
 
 def _no_config_file_found(config_manager: Optional[Any] = None) -> bool:

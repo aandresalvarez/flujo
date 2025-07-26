@@ -545,4 +545,41 @@ completion_tokens_per_1k = 0.002
 agent = make_agent_async("custom:my-model", system_prompt, output_type)
 ```
 
+### Robust Cost/Token Validation and Strict Mode
+
+Flujo includes robust validation for all cost and token reporting:
+
+- **Negative or Implausible Values:**
+  If a step output reports negative or implausibly large values for `cost_usd` or `token_counts`, a warning is logged (or an error is raised in strict mode).
+- **Mixed Reporting Modes:**
+  If a step output provides both explicit cost/token attributes and a `usage()` method, this is detected as a mixed reporting mode and will trigger a warning (or error in strict mode), as it may cause inconsistent reporting.
+- **Missing Attributes:**
+  If only one of `cost_usd` or `token_counts` is present, a warning (or error in strict mode) is triggered to prevent under-reporting.
+
+#### Enabling Runtime Strict Mode
+
+For maximum safety, you can enable runtime strict mode for cost/token validation by setting the environment variable:
+
+```bash
+export FLUJO_STRICT_COST_TRACKING=1
+```
+
+When enabled, **any validation failure (negative/implausible values, missing attributes, or mixed reporting modes) will immediately raise an error and halt the pipeline**. This is recommended for production and billing-critical environments.
+
+#### Example: Strict Mode Error
+
+```python
+import os
+os.environ['FLUJO_STRICT_COST_TRACKING'] = '1'
+
+# If a step output has cost_usd but not token_counts, or vice versa,
+# or if negative/implausible values are reported, a ValueError is raised.
+```
+
+#### Best Practices
+
+- Always provide both `cost_usd` and `token_counts` for custom outputs.
+- Avoid mixing explicit cost/token attributes and a `usage()` method in the same output.
+- Use strict mode in production to catch all reporting issues early.
+
 This comprehensive guide covers all aspects of Flujo's cost tracking system, from basic usage to advanced features like strict pricing mode. The system is designed to be both powerful and safe, providing accurate cost tracking while preventing pipeline failures due to missing pricing information.

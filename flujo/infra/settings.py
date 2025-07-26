@@ -106,10 +106,10 @@ class Settings(BaseSettings):
             config_manager = get_config_manager()
             config = config_manager.load_config()
             if config.cost and "providers" in config.cost:
-                return config.cost["providers"]
+                return cast(dict[str, Any], config.cost["providers"])
         except Exception:
             pass
-        return {}  # type: ignore[return-value]
+        return cast(dict[str, Any], {})
 
     @model_validator(mode="after")
     def load_dynamic_api_keys(self) -> "Settings":

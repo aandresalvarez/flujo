@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Optional, Tuple, Any, Protocol, runtime_checkable
 import flujo.infra.config
+import os
 
 # Cache for model information to reduce repeated extraction overhead
 _model_cache: dict[str, tuple[Optional[str], str]] = {}
@@ -46,55 +47,103 @@ def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[
     Tuple[int, int, float]
         (prompt_tokens, completion_tokens, cost_usd)
     """
+    # Strict mode must be checked at runtime to support test monkeypatching
+    STRICT_COST_TRACKING = os.environ.get("FLUJO_STRICT_COST_TRACKING", "0") == "1"
     prompt_tokens = 0
     completion_tokens = 0
     cost_usd = 0.0
 
     from .infra import telemetry
 
-    # 1. HIGHEST PRIORITY: Check if the output object reports its own cost.
-    # We check for the protocol attributes manually since token_counts is optional
-    if hasattr(raw_output, "cost_usd"):
-        cost_usd = getattr(raw_output, "cost_usd", 0.0) or 0.0
-        # For explicit costs, we don't try to split tokens.
-        # We take the total token count if provided, otherwise it's 0.
-        total_tokens = getattr(raw_output, "token_counts", 0) or 0
+    # Detect mixed reporting modes: both explicit and usage() present
+    has_cost = hasattr(raw_output, "cost_usd")
+    has_tokens = hasattr(raw_output, "token_counts")
+    has_usage = hasattr(raw_output, "usage")
+    if (has_cost or has_tokens) and has_usage:
+        msg = f"Mixed reporting modes detected for step '{step_name}': both explicit cost/token attributes and usage() method present. This may cause inconsistent reporting."
+        if STRICT_COST_TRACKING:
+            telemetry.logfire.error(msg)
+            raise ValueError(msg)
+        else:
+            telemetry.logfire.warning(msg)
 
+    # 1. HIGHEST PRIORITY: Check if the output object reports its own cost.
+    if has_cost or has_tokens:
+        # Do not fetch values until after strict mode check
+        if has_cost and not has_tokens:
+            msg = f"Output for step '{step_name}' provides cost_usd but not token_counts. This may cause token usage to be under-reported."
+            if STRICT_COST_TRACKING:
+                telemetry.logfire.error(msg)
+                raise ValueError(msg)
+            else:
+                telemetry.logfire.warning(msg)
+            cost_usd = getattr(raw_output, "cost_usd", 0.0) or 0.0
+            total_tokens = 0
+        elif has_tokens and not has_cost:
+            msg = f"Output for step '{step_name}' provides token_counts but not cost_usd. This may cause cost to be under-reported."
+            if STRICT_COST_TRACKING:
+                telemetry.logfire.error(msg)
+                raise ValueError(msg)
+            else:
+                telemetry.logfire.warning(msg)
+            cost_usd = 0.0
+            total_tokens = getattr(raw_output, "token_counts", 0) or 0
+        elif not has_cost and not has_tokens:
+            # Should not reach here, but fallback
+            cost_usd = 0.0
+            total_tokens = 0
+        else:
+            # Both present
+            cost_usd = getattr(raw_output, "cost_usd", 0.0) or 0.0
+            total_tokens = getattr(raw_output, "token_counts", 0) or 0
+        # Validate for negative or implausible values
+        if cost_usd < 0 or total_tokens < 0:
+            msg = f"Negative values detected in output for step '{step_name}': cost_usd={cost_usd}, token_counts={total_tokens}."
+            if STRICT_COST_TRACKING:
+                telemetry.logfire.error(msg)
+                raise ValueError(msg)
+            else:
+                telemetry.logfire.warning(msg)
+        if cost_usd > 1e6 or total_tokens > 1e9:
+            msg = f"Implausibly large values detected in output for step '{step_name}': cost_usd={cost_usd}, token_counts={total_tokens}."
+            if STRICT_COST_TRACKING:
+                telemetry.logfire.error(msg)
+                raise ValueError(msg)
+            else:
+                telemetry.logfire.warning(msg)
         telemetry.logfire.info(
             f"Using explicit cost from '{type(raw_output).__name__}' for step '{step_name}': cost=${cost_usd}, tokens={total_tokens}"
         )
-
-        # Return prompt_tokens as 0 since it cannot be determined reliably here.
         return 0, total_tokens, cost_usd
-
     # 2. If explicit metrics are not fully present, proceed with usage() extraction
-    if hasattr(raw_output, "usage"):
+    if has_usage:
         try:
             usage_info = raw_output.usage()
             prompt_tokens = getattr(usage_info, "request_tokens", 0) or 0
             completion_tokens = getattr(usage_info, "response_tokens", 0) or 0
-
+            # Mixed reporting mode detection: if both explicit and usage() are present
+            if has_cost or has_tokens:
+                msg = f"Mixed reporting modes detected for step '{step_name}': both explicit cost/token attributes and usage() method present. This may cause inconsistent reporting."
+                if STRICT_COST_TRACKING:
+                    telemetry.logfire.error(msg)
+                    raise ValueError(msg)
+                else:
+                    telemetry.logfire.warning(msg)
             # Only log if we have meaningful token counts
             if prompt_tokens > 0 or completion_tokens > 0:
                 telemetry.logfire.info(
                     f"Extracted tokens for step '{step_name}': prompt={prompt_tokens}, completion={completion_tokens}"
                 )
-
             # Calculate cost if we have token information
             if prompt_tokens > 0 or completion_tokens > 0:
-                # Get the model information from the agent using centralized extraction
                 from .utils.model_utils import extract_model_id, extract_provider_and_model
 
                 model_id = extract_model_id(agent, step_name)
-
                 if model_id:
-                    # Use cached model information to reduce repeated parsing
                     cache_key = f"{agent.__class__.__name__}:{model_id}"
                     if cache_key not in _model_cache:
                         _model_cache[cache_key] = extract_provider_and_model(model_id)
-
                     provider, model_name = _model_cache[cache_key]
-
                     cost_calculator = CostCalculator()
                     cost_usd = cost_calculator.calculate(
                         model_name=model_name,
@@ -102,33 +151,34 @@ def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[
                         completion_tokens=completion_tokens,
                         provider=provider,
                     )
-
-                    # Only log if cost is significant
                     if cost_usd > 0.0:
                         telemetry.logfire.info(
                             f"Calculated cost for step '{step_name}': {cost_usd} USD for model {model_name}"
                         )
                 else:
-                    # FIXED: Return 0.0 cost for agents without model_id instead of guessing OpenAI pricing
-                    telemetry.logfire.warning(
+                    msg = (
                         f"CRITICAL: Could not determine model for step '{step_name}'. "
                         f"Cost will be reported as 0.0. "
                         f"To fix: ensure your agent has a 'model_id' attribute (e.g., 'openai:gpt-4o') "
                         f"or use make_agent_async() with explicit model parameter."
                     )
-                    cost_usd = 0.0  # Return 0, which is safer than an incorrect guess.
+                    if STRICT_COST_TRACKING:
+                        telemetry.logfire.error(msg)
+                        raise ValueError(msg)
+                    else:
+                        telemetry.logfire.warning(msg)
+                    cost_usd = 0.0
         except Exception as e:
-            # For PricingNotConfiguredError in strict mode, re-raise it
             from .exceptions import PricingNotConfiguredError
 
             if isinstance(e, PricingNotConfiguredError):
                 raise
-
-            # For other exceptions, log warning but don't crash the pipeline
-            telemetry.logfire.warning(
-                f"Could not extract usage metrics for step '{step_name}': {e}"
-            )
-
+            msg = f"Could not extract usage metrics for step '{step_name}': {e}"
+            if STRICT_COST_TRACKING:
+                telemetry.logfire.error(msg)
+                raise
+            else:
+                telemetry.logfire.warning(msg)
     return prompt_tokens, completion_tokens, cost_usd
 
 
@@ -203,12 +253,9 @@ class CostCalculator:
         # Check if this is a text model or image model
         if pricing.is_text_model():
             # Calculate costs for text models using token-based pricing
-            if pricing.prompt_tokens_per_1k is None or pricing.completion_tokens_per_1k is None:
-                telemetry.logfire.warning(
-                    f"Incomplete token pricing for provider={provider}, model={model_name}. "
-                    f"Cost will be reported as 0.0."
-                )
-                return 0.0
+            # We already checked is_text_model() which ensures both values are not None
+            assert pricing.prompt_tokens_per_1k is not None
+            assert pricing.completion_tokens_per_1k is not None
 
             prompt_cost = (prompt_tokens / 1000.0) * pricing.prompt_tokens_per_1k
             completion_cost = (completion_tokens / 1000.0) * pricing.completion_tokens_per_1k

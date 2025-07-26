@@ -1041,6 +1041,35 @@ class TestProviderPricing:
         assert pricing.is_text_model() is False
         assert pricing.is_image_model() is False
 
+    def test_is_text_model_and_logic(self):
+        """Test is_text_model returns True only if both prompt and completion pricing are present."""
+        # Only prompt
+        pricing = ProviderPricing(prompt_tokens_per_1k=0.005)
+        assert pricing.is_text_model() is False
+        # Only completion
+        pricing = ProviderPricing(completion_tokens_per_1k=0.015)
+        assert pricing.is_text_model() is False
+        # Both present
+        pricing = ProviderPricing(prompt_tokens_per_1k=0.005, completion_tokens_per_1k=0.015)
+        assert pricing.is_text_model() is True
+        # Neither present
+        pricing = ProviderPricing()
+        assert pricing.is_text_model() is False
+
+    def test_is_image_model_logic(self):
+        """Test is_image_model returns True if any image pricing field is present."""
+        pricing = ProviderPricing(price_per_image_standard_1024x1024=0.02)
+        assert pricing.is_image_model() is True
+        pricing = ProviderPricing(price_per_image_standard_1024x1792=0.03)
+        assert pricing.is_image_model() is True
+        pricing = ProviderPricing(price_per_image_hd_1024x1024=0.04)
+        assert pricing.is_image_model() is True
+        pricing = ProviderPricing(price_per_image_hd_1024x1792=0.05)
+        assert pricing.is_image_model() is True
+        # None present
+        pricing = ProviderPricing()
+        assert pricing.is_image_model() is False
+
 
 class TestCostConfig:
     """Test the cost configuration functionality."""
