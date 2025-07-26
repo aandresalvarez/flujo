@@ -43,59 +43,80 @@ class TestPersistencePerformanceOverhead:
             return DEFAULT_OVERHEAD_LIMIT
 
     @pytest.mark.asyncio
-    async def test_default_backend_performance_overhead(self) -> None:
-        """Test that default SQLiteBackend doesn't add >5% overhead to pipeline runs."""
+    async def test_default_backend_performance_overhead(self, tmp_path: Path) -> None:
+        """Test that default SQLiteBackend doesn't add >5% overhead to pipeline runs with improved isolation."""
 
         # Create a simple pipeline with compatible types
         agent = StubAgent(["output"])
         pipeline = Step.solution(agent)
 
+        # Create unique database files for isolation
+        import uuid
+        test_id = uuid.uuid4().hex[:8]
+        no_backend_db_path = tmp_path / f"no_backend_{test_id}.db"
+        with_backend_db_path = tmp_path / f"with_backend_{test_id}.db"
+
         # Test without backend (baseline)
         runner_no_backend = create_test_flujo(pipeline, state_backend=None)
 
-        # Test with default backend
-        runner_with_backend = create_test_flujo(pipeline)  # Uses default SQLiteBackend
+        # Test with isolated backend using unique database file
+        from flujo.state.backends.sqlite import SQLiteBackend
+        isolated_backend = SQLiteBackend(with_backend_db_path)
+        runner_with_backend = create_test_flujo(pipeline, state_backend=isolated_backend)
 
-        # Run multiple iterations to get stable measurements
-        iterations = 10
-        no_backend_times = []
-        with_backend_times = []
+        try:
+            # Run multiple iterations to get stable measurements
+            iterations = 10
+            no_backend_times = []
+            with_backend_times = []
 
-        for _ in range(iterations):
-            # Test without backend
-            start = time.perf_counter()
-            await gather_result(runner_no_backend, "test")
-            no_backend_times.append(time.perf_counter() - start)
+            for _ in range(iterations):
+                # Test without backend
+                start = time.perf_counter()
+                await gather_result(runner_no_backend, "test")
+                no_backend_times.append(time.perf_counter() - start)
 
-            # Test with default backend
-            start = time.perf_counter()
-            await gather_result(runner_with_backend, "test")
-            with_backend_times.append(time.perf_counter() - start)
+                # Test with isolated backend
+                start = time.perf_counter()
+                await gather_result(runner_with_backend, "test")
+                with_backend_times.append(time.perf_counter() - start)
 
-        # Calculate averages
-        avg_no_backend = sum(no_backend_times) / len(no_backend_times)
-        avg_with_backend = sum(with_backend_times) / len(with_backend_times)
+            # Calculate averages
+            avg_no_backend = sum(no_backend_times) / len(no_backend_times)
+            avg_with_backend = sum(with_backend_times) / len(with_backend_times)
 
-        # Calculate overhead percentage
-        overhead_percentage = ((avg_with_backend - avg_no_backend) / avg_no_backend) * 100
+            # Calculate overhead percentage
+            overhead_percentage = ((avg_with_backend - avg_no_backend) / avg_no_backend) * 100
 
-        # Log performance results for debugging
-        logger.debug("Performance Overhead Test Results:")
-        logger.debug(f"Average time without backend: {avg_no_backend:.4f}s")
-        logger.debug(f"Average time with default backend: {avg_with_backend:.4f}s")
-        logger.debug(f"Overhead: {overhead_percentage:.2f}%")
+            # Log performance results for debugging
+            logger.debug("Performance Overhead Test Results (Isolated):")
+            logger.debug(f"Average time without backend: {avg_no_backend:.4f}s")
+            logger.debug(f"Average time with isolated backend: {avg_with_backend:.4f}s")
+            logger.debug(f"Overhead: {overhead_percentage:.2f}%")
+            logger.debug(f"Individual measurements - No backend: {no_backend_times}")
+            logger.debug(f"Individual measurements - With backend: {with_backend_times}")
 
-        # NFR-9: Must not exceed overhead limit (relaxed for CI environments)
-        # The SQLite backend adds some overhead due to file I/O, which is acceptable
-        # for the durability benefits it provides
-        overhead_limit = self.get_default_overhead_limit()
-        assert overhead_percentage <= overhead_limit, (
-            f"Default persistence overhead ({overhead_percentage:.2f}%) exceeds {overhead_limit}% limit"
-        )
+            # NFR-9: Must not exceed overhead limit (relaxed for CI environments)
+            # The SQLite backend adds some overhead due to file I/O, which is acceptable
+            # for the durability benefits it provides
+            overhead_limit = self.get_default_overhead_limit()
+            assert overhead_percentage <= overhead_limit, (
+                f"Default persistence overhead ({overhead_percentage:.2f}%) exceeds {overhead_limit}% limit"
+            )
+
+        finally:
+            # Clean up database files to prevent resource contention
+            try:
+                if no_backend_db_path.exists():
+                    no_backend_db_path.unlink()
+                if with_backend_db_path.exists():
+                    with_backend_db_path.unlink()
+            except Exception as e:
+                logger.warning(f"Failed to clean up test database files: {e}")
 
     @pytest.mark.asyncio
-    async def test_persistence_overhead_with_large_context(self) -> None:
-        """Test performance overhead with large context data."""
+    async def test_persistence_overhead_with_large_context(self, tmp_path: Path) -> None:
+        """Test performance overhead with large context data with improved isolation."""
 
         # Create context with substantial data
         class LargeContext(PipelineContext):
@@ -104,39 +125,73 @@ class TestPersistencePerformanceOverhead:
         agent = StubAgent(["output"])
         pipeline = Step.solution(agent)
 
+        # Create unique database files for isolation
+        import uuid
+        test_id = uuid.uuid4().hex[:8]
+        no_backend_db_path = tmp_path / f"no_backend_{test_id}.db"
+        with_backend_db_path = tmp_path / f"with_backend_{test_id}.db"
+
         # Test without backend
         runner_no_backend = create_test_flujo(
             pipeline, context_model=LargeContext, state_backend=None
         )
 
-        # Test with default backend
-        runner_with_backend = create_test_flujo(pipeline, context_model=LargeContext)
+        # Test with isolated backend using unique database file
+        from flujo.state.backends.sqlite import SQLiteBackend
+        isolated_backend = SQLiteBackend(with_backend_db_path)
+        runner_with_backend = create_test_flujo(
+            pipeline, context_model=LargeContext, state_backend=isolated_backend
+        )
 
         # Run with large context (include required initial_prompt field)
         large_context_data = {"initial_prompt": "test", "large_data": "y" * 10000}
 
-        # Measure performance
-        start = time.perf_counter()
-        await gather_result(runner_no_backend, "test", initial_context_data=large_context_data)
-        no_backend_time = time.perf_counter() - start
+        try:
+            # Measure performance with multiple iterations for stability
+            iterations = 3
+            no_backend_times = []
+            with_backend_times = []
 
-        start = time.perf_counter()
-        await gather_result(runner_with_backend, "test", initial_context_data=large_context_data)
-        with_backend_time = time.perf_counter() - start
+            for _ in range(iterations):
+                # Test without backend
+                start = time.perf_counter()
+                await gather_result(runner_no_backend, "test", initial_context_data=large_context_data)
+                no_backend_times.append(time.perf_counter() - start)
 
-        overhead_percentage = ((with_backend_time - no_backend_time) / no_backend_time) * 100
+                # Test with isolated backend
+                start = time.perf_counter()
+                await gather_result(runner_with_backend, "test", initial_context_data=large_context_data)
+                with_backend_times.append(time.perf_counter() - start)
 
-        # Log performance results for debugging (consistent logging approach)
-        logger.debug("Large Context Performance Test:")
-        logger.debug(f"Time without backend: {no_backend_time:.4f}s")
-        logger.debug(f"Time with backend: {with_backend_time:.4f}s")
-        logger.debug(f"Overhead: {overhead_percentage:.2f}%")
+            # Calculate averages for more stable measurements
+            avg_no_backend = sum(no_backend_times) / len(no_backend_times)
+            avg_with_backend = sum(with_backend_times) / len(with_backend_times)
 
-        # Get configurable overhead limit (higher in CI environments)
-        overhead_limit = self.get_default_overhead_limit()
-        assert overhead_percentage <= overhead_limit, (
-            f"Persistence overhead with large context ({overhead_percentage:.2f}%) exceeds {overhead_limit}%"
-        )
+            overhead_percentage = ((avg_with_backend - avg_no_backend) / avg_no_backend) * 100
+
+            # Log performance results for debugging (consistent logging approach)
+            logger.debug("Large Context Performance Test (Isolated):")
+            logger.debug(f"Average time without backend: {avg_no_backend:.4f}s")
+            logger.debug(f"Average time with backend: {avg_with_backend:.4f}s")
+            logger.debug(f"Overhead: {overhead_percentage:.2f}%")
+            logger.debug(f"Individual measurements - No backend: {no_backend_times}")
+            logger.debug(f"Individual measurements - With backend: {with_backend_times}")
+
+            # Get configurable overhead limit (higher in CI environments)
+            overhead_limit = self.get_default_overhead_limit()
+            assert overhead_percentage <= overhead_limit, (
+                f"Persistence overhead with large context ({overhead_percentage:.2f}%) exceeds {overhead_limit}%"
+            )
+
+        finally:
+            # Clean up database files to prevent resource contention
+            try:
+                if no_backend_db_path.exists():
+                    no_backend_db_path.unlink()
+                if with_backend_db_path.exists():
+                    with_backend_db_path.unlink()
+            except Exception as e:
+                logger.warning(f"Failed to clean up test database files: {e}")
 
 
 class TestCLIPerformance:
