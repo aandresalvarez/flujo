@@ -249,6 +249,168 @@ class TestBufferReuse:
         assert buffer1 is buffer3
         assert len(buffer3) == 0
 
+    def test_buffer_pooling_functionality(self):
+        """Test buffer pooling functionality when enabled."""
+        from flujo.utils.performance import (
+            enable_buffer_pooling,
+            disable_buffer_pooling,
+            get_buffer_pool_stats,
+            clear_scratch_buffer,
+            get_scratch_buffer,
+        )
+
+        # Start with pooling disabled (default)
+        stats = get_buffer_pool_stats()
+        assert not stats["enabled"]
+
+        # Enable pooling
+        enable_buffer_pooling()
+        stats = get_buffer_pool_stats()
+        assert stats["enabled"]
+        assert stats["pool_size"] == 0
+
+        # Get a buffer and clear it to add to pool
+        buffer1 = get_scratch_buffer()
+        buffer1.extend(b"test_data")
+        clear_scratch_buffer()
+
+        # Check pool stats
+        stats = get_buffer_pool_stats()
+        assert stats["pool_size"] == 1
+        assert stats["utilization"] == 1.0 / 100.0  # 1/100
+
+        # Get another buffer - should come from pool
+        buffer2 = get_scratch_buffer()
+        assert buffer1 is buffer2  # Should be the same buffer from pool
+
+        # Disable pooling and return to default behavior
+        disable_buffer_pooling()
+
+    def test_buffer_pooling_concurrent_access(self):
+        """Test buffer pooling under concurrent access."""
+        import asyncio
+        from flujo.utils.performance import (
+            enable_buffer_pooling,
+            disable_buffer_pooling,
+            get_scratch_buffer,
+            clear_scratch_buffer,
+        )
+
+        # Enable pooling
+        enable_buffer_pooling()
+
+        async def worker(worker_id: int):
+            """Worker that uses scratch buffers concurrently."""
+            buffer = get_scratch_buffer()
+            buffer.extend(f"worker_{worker_id}_data".encode())
+            await asyncio.sleep(0.001)  # Simulate some work
+            clear_scratch_buffer()
+            return len(buffer)
+
+        # Run multiple workers concurrently
+        async def run_concurrent_test():
+            tasks = [worker(i) for i in range(10)]
+            results = await asyncio.gather(*tasks)
+            return results
+
+        # Run the test
+        results = asyncio.run(run_concurrent_test())
+
+        # All workers should complete successfully
+        assert len(results) == 10
+        assert all(isinstance(r, int) for r in results)
+
+        # Disable pooling
+        disable_buffer_pooling()
+
+    def test_buffer_pooling_memory_efficiency(self):
+        """Test that buffer pooling reduces memory usage."""
+        import asyncio
+        from flujo.utils.performance import (
+            enable_buffer_pooling,
+            disable_buffer_pooling,
+            get_scratch_buffer,
+            clear_scratch_buffer,
+            get_buffer_pool_stats,
+        )
+
+        # Test with pooling disabled
+        disable_buffer_pooling()
+
+        async def create_buffers_without_pooling():
+            buffers = []
+            for i in range(50):
+                buffer = get_scratch_buffer()
+                buffer.extend(f"data_{i}".encode())
+                buffers.append(buffer)
+            return len(buffers)
+
+        # Test with pooling enabled
+        enable_buffer_pooling()
+
+        async def create_buffers_with_pooling():
+            buffers = []
+            for i in range(50):
+                buffer = get_scratch_buffer()
+                buffer.extend(f"data_{i}".encode())
+                clear_scratch_buffer()  # Return to pool
+                buffers.append(buffer)
+            return len(buffers)
+
+        # Run both tests
+        result_without = asyncio.run(create_buffers_without_pooling())
+        result_with = asyncio.run(create_buffers_with_pooling())
+
+        # Both should complete successfully
+        assert result_without == 50
+        assert result_with == 50
+
+        # Check pool utilization
+        stats = get_buffer_pool_stats()
+        assert stats["enabled"]
+        assert stats["pool_size"] > 0  # Should have some buffers in pool
+
+        # Disable pooling
+        disable_buffer_pooling()
+
+    def test_buffer_pooling_edge_cases(self):
+        """Test buffer pooling edge cases and error handling."""
+        from flujo.utils.performance import (
+            enable_buffer_pooling,
+            disable_buffer_pooling,
+            get_scratch_buffer,
+            clear_scratch_buffer,
+            get_buffer_pool_stats,
+        )
+
+        # Test with pooling disabled (default state)
+        disable_buffer_pooling()
+        stats = get_buffer_pool_stats()
+        assert not stats["enabled"]
+        assert stats["pool_size"] == 0
+
+        # Test enabling/disabling multiple times
+        enable_buffer_pooling()
+        disable_buffer_pooling()
+        enable_buffer_pooling()
+        disable_buffer_pooling()
+
+        # Test buffer operations with pooling disabled
+        buffer = get_scratch_buffer()
+        buffer.extend(b"test")
+        clear_scratch_buffer()
+        assert len(buffer) == 0
+
+        # Test buffer operations with pooling enabled
+        enable_buffer_pooling()
+        buffer = get_scratch_buffer()
+        buffer.extend(b"test")
+        clear_scratch_buffer()
+        assert len(buffer) == 0
+
+        # Clean up
+        disable_buffer_pooling()
+
     def test_buffer_reuse_without_reuse(self, benchmark):
         """Test buffer performance without reuse."""
 
