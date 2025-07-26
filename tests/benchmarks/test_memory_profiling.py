@@ -24,6 +24,7 @@ class LargeModelAgent:
 
 
 @pytest.mark.asyncio
+@pytest.mark.benchmark
 async def test_loop_step_memory_stability() -> None:
     """Ensure LoopStep does not leak memory across many iterations."""
 
