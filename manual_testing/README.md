@@ -11,31 +11,67 @@ This is the simplest possible pipeline that demonstrates:
 - Running the pipeline with `Flujo` using correct async patterns
 - **FSD-12 Tracing**: Automatic observability with `flujo lens`
 
-## How to Run
+## 📁 Organized Structure
 
-### Option 1: Using Environment Variables
-1. Make sure you have your API key set in your environment:
-   ```bash
-   export OPENAI_API_KEY="your-api-key-here"
-   ```
+The manual testing directory is now organized into clear folders:
 
-2. Run the pipeline:
-   ```bash
-   # From the project root directory
-   python -m manual_testing.main
-   ```
+```
+manual_testing/
+├── 📋 tests/
+│   ├── 🤖 automated/     # Automated test suites
+│   └── 🧪 manual/        # Manual tests with real API
+├── 📚 docs/              # Documentation and summaries
+├── 🔧 examples/          # Example implementations
+├── 📄 README.md          # This file
+├── ⚙️  flujo.toml        # Configuration
+└── 🚀 run_tests.py       # Main test runner
+```
 
-### Option 2: Using Configuration File (Recommended)
-1. The `manual_testing/` directory includes a `flujo.toml` configuration file that will be automatically recognized by Flujo.
+## 🚀 Quick Start
 
-2. The `.env` file in the `manual_testing/` directory already contains your API key (secure and gitignored).
+### Option 1: Interactive Test Runner (Recommended)
+```bash
+cd manual_testing
+python3 run_tests.py
+```
 
-3. Run the pipeline from the `manual_testing/` directory to use the local configuration:
-   ```bash
-   # From the manual_testing directory
-   cd manual_testing
-   python -m main
-   ```
+This provides a menu-driven interface to run all tests and view documentation.
+
+### Option 2: Direct Test Execution
+```bash
+cd manual_testing
+
+# Automated tests
+python3 -m tests.automated.run_step1_test
+python3 -m tests.automated.test_bug_demonstration
+python3 -m tests.automated.test_config
+
+# Manual tests (Real API)
+python3 -m tests.manual.manual_test_step1
+python3 -m tests.manual.manual_test_step1_challenging
+python3 -m tests.manual.interactive_test_step1
+
+# Examples
+python3 -m examples.main
+```
+
+### Option 3: Individual Test Files
+```bash
+cd manual_testing
+
+# Automated tests
+python3 tests/automated/run_step1_test.py
+python3 tests/automated/test_bug_demonstration.py
+python3 tests/automated/test_config.py
+
+# Manual tests
+python3 tests/manual/manual_test_step1.py
+python3 tests/manual/manual_test_step1_challenging.py
+python3 tests/manual/interactive_test_step1.py
+
+# Examples
+python3 examples/main.py
+```
 
 **Security Note**: The API key is loaded from the `.env` file (which is gitignored) and never hardcoded in the source code.
 
@@ -66,6 +102,7 @@ The pipeline is now working correctly with the latest Flujo features:
 - ✅ **FSD-12 Tracing**: Automatic observability with local `flujo_ops.db`
 - ✅ **Correct Async Patterns**: Using `run_async()` for proper execution
 - ✅ **Clean Architecture**: No mock agents or workarounds needed
+- ✅ **Comprehensive Testing**: Full test suite validates all core concepts
 
 ## Technical Details
 
@@ -103,15 +140,54 @@ Run the suggested command to see detailed execution traces, step-by-step executi
 
 ## Test Results
 
-### Test Case 1: Unclear Definition
-**Input**: "patients with diabetes"
-**Output**: "Is the cohort limited to a specific type of diabetes (e.g., Type 1, Type 2, gestational) or any diagnosis of diabetes?"
-**Status**: ✅ Working correctly - agent asks for clarification
+### Manual Testing Results
 
-### Test Case 2: Clear Definition
-**Input**: "adult patients with Type 2 diabetes diagnosed in the last 5 years"
-**Output**: "Adult patients who have been diagnosed with Type 2 diabetes within the last 5 years. [CLARITY_CONFIRMED]"
-**Status**: ✅ Working correctly - agent confirms clarity
+**Challenging Test Results:**
+
+**Test Case 1: Very Vague Definition**
+- **Input**: "sick people"
+- **Output**: "Which specific illness or condition defines the 'sick people' cohort?"
+- **Status**: ✅ Working correctly - agent asks for clarification
+
+**Test Case 2: Incomplete Definition**
+- **Input**: "cancer patients"
+- **Output**: "The clinical cohort is defined as 'cancer patients.' Could you specify the type of cancer or any additional criteria such as stage, treatment status, or demographic information? This will help clarify the cohort definition."
+- **Status**: ✅ Working correctly - agent asks for clarification
+
+**Test Case 3: Ambiguous Definition**
+- **Input**: "patients with heart problems"
+- **Output**: "Could you clarify what specific types of heart problems are included in this cohort definition? For example, is it meant to include conditions such as heart failure, myocardial infarction, arrhythmia, or all heart-related conditions?"
+- **Status**: ✅ Working correctly - agent asks for clarification
+
+**Test Case 4: Complete Definition**
+- **Input**: "adult patients aged 18-65 with confirmed Type 2 diabetes diagnosed between 2020-2024, currently prescribed metformin at a dose of 500-2000mg daily, with HbA1c levels between 7.0-10.0%"
+- **Output**: "Adult patients aged 18-65 with confirmed Type 2 diabetes diagnosed between 2020-2024, currently prescribed metformin at a dose of 500-2000mg daily, with HbA1c levels between 7.0-10.0%. [CLARITY_CONFIRMED]"
+- **Status**: ✅ Working correctly - agent confirms clarity
+
+### Automated Testing
+The comprehensive test suite (`test_step1_core_agentic.py`) validates:
+
+**Core Functionality Tests:**
+- ✅ Agent creation with `make_agent_async()`
+- ✅ Step creation and configuration
+- ✅ Pipeline structure and composition
+- ✅ Pipeline execution with mock agents
+- ✅ Error handling and edge cases
+
+**FSD-11 Tests:**
+- ✅ Signature-aware context injection
+- ✅ Stateless agents work with context present
+- ✅ Context-aware agents work correctly
+
+**FSD-12 Tests:**
+- ✅ Automatic tracing and observability
+- ✅ Run ID generation and tracking
+- ✅ Step history and metadata capture
+
+**Integration Tests:**
+- ✅ Real agent integration (when API key available)
+- ✅ API key validation
+- ✅ Configuration loading
 
 ## Next Steps
 

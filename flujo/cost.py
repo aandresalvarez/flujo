@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Optional, Tuple, Any, Protocol, runtime_checkable
+from typing import Optional, Tuple, Any, Protocol, runtime_checkable, Dict
 import flujo.infra.config
+from flujo.exceptions import PricingNotConfiguredError
 
 # Cache for model information to reduce repeated extraction overhead
 _model_cache: dict[str, tuple[Optional[str], str]] = {}
@@ -80,6 +81,15 @@ def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[
             prompt_tokens = getattr(usage_info, "request_tokens", 0) or 0
             completion_tokens = getattr(usage_info, "response_tokens", 0) or 0
 
+            # Check if cost was set by a post-processor (e.g., image cost post-processor)
+            usage_cost = getattr(usage_info, "cost_usd", None)
+            if usage_cost is not None:
+                cost_usd = usage_cost
+                telemetry.logfire.info(
+                    f"Using cost from usage object for step '{step_name}': cost=${cost_usd}"
+                )
+                return prompt_tokens, completion_tokens, cost_usd
+
             # Only log if we have meaningful token counts
             if prompt_tokens > 0 or completion_tokens > 0:
                 telemetry.logfire.info(
@@ -125,22 +135,30 @@ def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[
                     cost_usd = 0.0  # Return 0, which is safer than an incorrect guess.
 
         except Exception as e:
-            telemetry.logfire.warning(
-                f"Failed to extract usage metrics for step '{step_name}': {e}"
-            )
-            cost_usd = 0.0
+            # Check if this is a PricingNotConfiguredError that should be re-raised
+            if isinstance(e, PricingNotConfiguredError):
+                # Re-raise the exception for strict mode failures
+                raise
+            else:
+                # For other exceptions, log a warning and return 0.0
+                telemetry.logfire.warning(
+                    f"Failed to extract usage metrics for step '{step_name}': {e}"
+                )
+                cost_usd = 0.0
 
     return prompt_tokens, completion_tokens, cost_usd
 
 
-def _image_cost_post_processor(run_result: Any, pricing_data: dict, **kwargs) -> Any:
+def _image_cost_post_processor(
+    run_result: Any, pricing_data: Dict[str, Optional[float]], **kwargs: Any
+) -> Any:
     """
     A pydantic-ai post-processor that calculates and injects image generation cost.
-    
+
     This function is designed to be attached to a pydantic-ai Agent's post_processors list.
     It receives the AgentRunResult after an API call and calculates the cost based on
     the number of images generated and the pricing configuration.
-    
+
     Parameters
     ----------
     run_result : Any
@@ -149,53 +167,59 @@ def _image_cost_post_processor(run_result: Any, pricing_data: dict, **kwargs) ->
         Dictionary containing pricing information for different image configurations
     **kwargs : Any
         Additional keyword arguments that may contain size and quality information
-        
+
     Returns
     -------
     Any
         The modified run_result with cost_usd added to the usage object
     """
     from .infra import telemetry
-    
+
     # Check if the run_result has usage information
-    if not hasattr(run_result, 'usage') or not run_result.usage:
+    if not hasattr(run_result, "usage") or not run_result.usage:
         telemetry.logfire.warning("Image cost post-processor: No usage information found")
         return run_result
-    
+
+    # Get the usage object - it might be a method that needs to be called
+    if callable(run_result.usage):
+        usage_obj = run_result.usage()
+    else:
+        usage_obj = run_result.usage
+
     # Check if this is an image generation response
-    if not hasattr(run_result.usage, 'details') or not run_result.usage.details:
+    if not hasattr(usage_obj, "details") or not usage_obj.details:
         return run_result
-    
-    image_count = run_result.usage.details.get("images", 0)
+
+    image_count = usage_obj.details.get("images", 0)
     if image_count == 0:
         return run_result
-    
+
     # Determine price key from agent call parameters (e.g., size, quality)
     # Default to standard 1024x1024 if not specified
     size = kwargs.get("size", "1024x1024")
     quality = kwargs.get("quality", "standard")
     price_key = f"price_per_image_{quality}_{size}"
-    
+
     price_per_image = pricing_data.get(price_key)
-    
+
     if price_per_image is None:
         # Handle missing price - log warning and set cost to 0.0
         telemetry.logfire.warning(
             f"Image cost post-processor: No pricing found for key '{price_key}'. "
             f"Setting cost to 0.0. Available keys: {list(pricing_data.keys())}"
         )
-        run_result.usage.cost_usd = 0.0
+        usage_obj.cost_usd = 0.0
     else:
         # Calculate and set the cost
         total_cost = image_count * price_per_image
-        run_result.usage.cost_usd = total_cost
-        
+        usage_obj.cost_usd = total_cost
+
         telemetry.logfire.info(
             f"Image cost post-processor: Calculated cost ${total_cost} "
             f"for {image_count} image(s) at ${price_per_image} each "
             f"(quality: {quality}, size: {size})"
         )
-    
+
     return run_result
 
 
@@ -231,6 +255,11 @@ class CostCalculator:
         -------
         float
             The calculated cost in USD
+
+        Raises
+        ------
+        PricingNotConfiguredError
+            When strict pricing mode is enabled but no pricing configuration is found
         """
         # Import telemetry at the start to ensure it's available throughout the method
         from .infra import telemetry
@@ -250,6 +279,7 @@ class CostCalculator:
                 return 0.0
 
         # Get pricing information for this provider and model
+        # This may raise PricingNotConfiguredError if strict mode is enabled
         pricing = flujo.infra.config.get_provider_pricing(provider, model_name)
 
         # Debug logging

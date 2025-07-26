@@ -14,12 +14,24 @@ class ProviderPricing(BaseModel):
     prompt_tokens_per_1k: float = Field(..., description="Cost per 1K prompt tokens in USD")
     completion_tokens_per_1k: float = Field(..., description="Cost per 1K completion tokens in USD")
     # Image generation pricing (optional)
-    price_per_image_standard_1024x1024: Optional[float] = Field(None, description="Cost per image for standard quality 1024x1024")
-    price_per_image_hd_1024x1024: Optional[float] = Field(None, description="Cost per image for HD quality 1024x1024")
-    price_per_image_standard_1792x1024: Optional[float] = Field(None, description="Cost per image for standard quality 1792x1024")
-    price_per_image_hd_1792x1024: Optional[float] = Field(None, description="Cost per image for HD quality 1792x1024")
-    price_per_image_standard_1024x1792: Optional[float] = Field(None, description="Cost per image for standard quality 1024x1792")
-    price_per_image_hd_1024x1792: Optional[float] = Field(None, description="Cost per image for HD quality 1024x1792")
+    price_per_image_standard_1024x1024: Optional[float] = Field(
+        None, description="Cost per image for standard quality 1024x1024"
+    )
+    price_per_image_hd_1024x1024: Optional[float] = Field(
+        None, description="Cost per image for HD quality 1024x1024"
+    )
+    price_per_image_standard_1792x1024: Optional[float] = Field(
+        None, description="Cost per image for standard quality 1792x1024"
+    )
+    price_per_image_hd_1792x1024: Optional[float] = Field(
+        None, description="Cost per image for HD quality 1792x1024"
+    )
+    price_per_image_standard_1024x1792: Optional[float] = Field(
+        None, description="Cost per image for standard quality 1024x1792"
+    )
+    price_per_image_hd_1024x1792: Optional[float] = Field(
+        None, description="Cost per image for HD quality 1024x1792"
+    )
 
 
 class CostConfig(BaseModel):
@@ -105,29 +117,119 @@ def _get_default_pricing(provider: Optional[str], model: str) -> Optional[Provid
     # OpenAI pricing (as of 2024)
     if provider == "openai":
         if model == "gpt-4o":
-            return ProviderPricing(prompt_tokens_per_1k=0.005, completion_tokens_per_1k=0.015)
+            return ProviderPricing(
+                prompt_tokens_per_1k=0.005,
+                completion_tokens_per_1k=0.015,
+                price_per_image_standard_1024x1024=None,
+                price_per_image_hd_1024x1024=None,
+                price_per_image_standard_1792x1024=None,
+                price_per_image_hd_1792x1024=None,
+                price_per_image_standard_1024x1792=None,
+                price_per_image_hd_1024x1792=None,
+            )
         elif model == "gpt-4o-mini":
-            return ProviderPricing(prompt_tokens_per_1k=0.00015, completion_tokens_per_1k=0.0006)
+            return ProviderPricing(
+                prompt_tokens_per_1k=0.00015,
+                completion_tokens_per_1k=0.0006,
+                price_per_image_standard_1024x1024=None,
+                price_per_image_hd_1024x1024=None,
+                price_per_image_standard_1792x1024=None,
+                price_per_image_hd_1792x1024=None,
+                price_per_image_standard_1024x1792=None,
+                price_per_image_hd_1024x1792=None,
+            )
         elif model == "gpt-4":
-            return ProviderPricing(prompt_tokens_per_1k=0.03, completion_tokens_per_1k=0.06)
+            return ProviderPricing(
+                prompt_tokens_per_1k=0.03,
+                completion_tokens_per_1k=0.06,
+                price_per_image_standard_1024x1024=None,
+                price_per_image_hd_1024x1024=None,
+                price_per_image_standard_1792x1024=None,
+                price_per_image_hd_1792x1024=None,
+                price_per_image_standard_1024x1792=None,
+                price_per_image_hd_1024x1792=None,
+            )
         elif model == "gpt-3.5-turbo":
-            return ProviderPricing(prompt_tokens_per_1k=0.0015, completion_tokens_per_1k=0.002)
+            return ProviderPricing(
+                prompt_tokens_per_1k=0.0015,
+                completion_tokens_per_1k=0.002,
+                price_per_image_standard_1024x1024=None,
+                price_per_image_hd_1024x1024=None,
+                price_per_image_standard_1792x1024=None,
+                price_per_image_hd_1792x1024=None,
+                price_per_image_standard_1024x1792=None,
+                price_per_image_hd_1024x1792=None,
+            )
         # OpenAI embedding models
         elif model == "text-embedding-3-large":
-            return ProviderPricing(prompt_tokens_per_1k=0.00013, completion_tokens_per_1k=0.00013)
+            return ProviderPricing(
+                prompt_tokens_per_1k=0.00013,
+                completion_tokens_per_1k=0.00013,
+                price_per_image_standard_1024x1024=None,
+                price_per_image_hd_1024x1024=None,
+                price_per_image_standard_1792x1024=None,
+                price_per_image_hd_1792x1024=None,
+                price_per_image_standard_1024x1792=None,
+                price_per_image_hd_1024x1792=None,
+            )
         elif model == "text-embedding-3-small":
-            return ProviderPricing(prompt_tokens_per_1k=0.00002, completion_tokens_per_1k=0.00002)
+            return ProviderPricing(
+                prompt_tokens_per_1k=0.00002,
+                completion_tokens_per_1k=0.00002,
+                price_per_image_standard_1024x1024=None,
+                price_per_image_hd_1024x1024=None,
+                price_per_image_standard_1792x1024=None,
+                price_per_image_hd_1792x1024=None,
+                price_per_image_standard_1024x1792=None,
+                price_per_image_hd_1024x1792=None,
+            )
         elif model == "text-embedding-ada-002":
-            return ProviderPricing(prompt_tokens_per_1k=0.0001, completion_tokens_per_1k=0.0001)
+            return ProviderPricing(
+                prompt_tokens_per_1k=0.0001,
+                completion_tokens_per_1k=0.0001,
+                price_per_image_standard_1024x1024=None,
+                price_per_image_hd_1024x1024=None,
+                price_per_image_standard_1792x1024=None,
+                price_per_image_hd_1792x1024=None,
+                price_per_image_standard_1024x1792=None,
+                price_per_image_hd_1024x1792=None,
+            )
 
     # Anthropic pricing (as of 2024)
     elif provider == "anthropic":
         if model == "claude-3-opus":
-            return ProviderPricing(prompt_tokens_per_1k=0.015, completion_tokens_per_1k=0.075)
+            return ProviderPricing(
+                prompt_tokens_per_1k=0.015,
+                completion_tokens_per_1k=0.075,
+                price_per_image_standard_1024x1024=None,
+                price_per_image_hd_1024x1024=None,
+                price_per_image_standard_1792x1024=None,
+                price_per_image_hd_1792x1024=None,
+                price_per_image_standard_1024x1792=None,
+                price_per_image_hd_1024x1792=None,
+            )
         elif model == "claude-3-sonnet":
-            return ProviderPricing(prompt_tokens_per_1k=0.003, completion_tokens_per_1k=0.015)
+            return ProviderPricing(
+                prompt_tokens_per_1k=0.003,
+                completion_tokens_per_1k=0.015,
+                price_per_image_standard_1024x1024=None,
+                price_per_image_hd_1024x1024=None,
+                price_per_image_standard_1792x1024=None,
+                price_per_image_hd_1792x1024=None,
+                price_per_image_standard_1024x1792=None,
+                price_per_image_hd_1024x1792=None,
+            )
         elif model == "claude-3-haiku":
-            return ProviderPricing(prompt_tokens_per_1k=0.00025, completion_tokens_per_1k=0.00125)
+            return ProviderPricing(
+                prompt_tokens_per_1k=0.00025,
+                completion_tokens_per_1k=0.00125,
+                price_per_image_standard_1024x1024=None,
+                price_per_image_hd_1024x1024=None,
+                price_per_image_standard_1792x1024=None,
+                price_per_image_hd_1792x1024=None,
+                price_per_image_standard_1024x1792=None,
+                price_per_image_hd_1024x1792=None,
+            )
 
     return None
 

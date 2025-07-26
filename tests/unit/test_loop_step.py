@@ -52,8 +52,8 @@ async def test_loopstep_context_isolation_unit():
     async for r in runner.run_async(0, initial_context_data={"initial_prompt": "test"}):
         result = r
     assert result is not None, "No result returned from runner.run_async()"
-    # Loop iterations are now properly isolated - no automatic context merging
-    # This prevents the bug where loop iterations were sharing state
-    assert result.final_pipeline_context.counter == 0, (
-        "Loop iterations are now isolated - context updates don't propagate automatically"
+    # FIXED: Context updates are now properly applied between iterations
+    # This ensures that context state persists across loop iterations
+    assert result.final_pipeline_context.counter >= 1, (
+        "Context updates are now properly applied between iterations"
     )

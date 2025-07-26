@@ -145,15 +145,19 @@ def clear_scratch_buffer() -> None:
     global pool for reuse by other tasks.
     """
     if ENABLE_BUFFER_POOLING:
-        # Get current buffer and return it to pool
-        buffer = _get_thread_scratch_buffer()
-        buffer.clear()
-        pool = _get_buffer_pool()
-        try:
-            pool.put_nowait(buffer)
-        except Exception:
-            # Pool is full, discard the buffer
-            pass
+        # Get current buffer from task-local storage
+        task_buffer: Optional[bytearray] = _scratch_buffer_var.get()
+        if task_buffer is not None:
+            # Clear the buffer and return it to pool
+            task_buffer.clear()
+            pool = _get_buffer_pool()
+            try:
+                pool.put_nowait(task_buffer)
+            except Exception:
+                # Pool is full, discard the buffer
+                pass
+            # Clear the task-local reference
+            _scratch_buffer_var.set(None)
     else:
         # Standard behavior: clear the task-local buffer
         buffer = _get_thread_scratch_buffer()

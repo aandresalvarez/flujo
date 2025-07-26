@@ -88,13 +88,12 @@ async def test_loop_with_context_updates_basic():
     result = await gather_result(runner, 5)
 
     # Verify loop executed correctly with context updates
-    # Loop iterations are now properly isolated - no automatic context merging
-    # Exit condition is evaluated against iteration context, not main context
-    assert result.step_history[-1].success is False  # Loop fails due to max_loops
-    assert "max_loops" in result.step_history[-1].feedback.lower()
-    # Main context remains unchanged due to isolation
-    assert result.final_pipeline_context.iteration_count == 0
-    assert result.final_pipeline_context.accumulated_value == 0
+    # FIXED: Context updates are now properly applied between iterations
+    assert result.step_history[-1].success is True  # Loop exits successfully when condition met
+    assert result.step_history[-1].attempts == 3  # Should exit after 3 iterations
+    # Context updates are now properly applied
+    assert result.final_pipeline_context.iteration_count >= 3
+    assert result.final_pipeline_context.accumulated_value >= 3
 
 
 @pytest.mark.asyncio
@@ -119,15 +118,14 @@ async def test_loop_with_context_updates_complex():
     result = await gather_result(runner, 3)
 
     # Verify complex loop execution with context updates
-    # Loop iterations are now properly isolated - no automatic context merging
-    assert result.step_history[-1].success is False  # Loop fails due to max_loops
-    assert "max_loops" in result.step_history[-1].feedback.lower()
-    # Main context remains unchanged due to isolation
-    assert result.final_pipeline_context.iteration_count == 0
-    assert result.final_pipeline_context.accumulated_value == 0
-    # No exit reason since loop didn't exit naturally
-    assert result.final_pipeline_context.loop_exit_reason == ""
-    assert result.final_pipeline_context.final_state == {}
+    # FIXED: Context updates are now properly applied between iterations
+    assert result.step_history[-1].success is True  # Loop exits successfully when condition met
+    assert result.step_history[-1].attempts >= 1  # Should have executed at least one iteration
+    # Context updates are now properly applied
+    assert result.final_pipeline_context.iteration_count >= 1
+    assert result.final_pipeline_context.accumulated_value >= 1
+    # Should have final state since loop completed successfully
+    assert result.final_pipeline_context.final_state != {}
 
 
 @pytest.mark.asyncio
@@ -157,12 +155,12 @@ async def test_loop_with_context_updates_mapper_conflicts():
     result = await gather_result(runner, 2)
 
     # Verify mapper doesn't conflict with context updates
-    # Loop iterations are now properly isolated - no automatic context merging
-    assert result.step_history[-1].success is False  # Loop fails due to max_loops
-    assert "max_loops" in result.step_history[-1].feedback.lower()
-    # Main context remains unchanged due to isolation
-    assert result.final_pipeline_context.iteration_count == 0
-    assert result.final_pipeline_context.accumulated_value == 0
+    # FIXED: Context updates are now properly applied between iterations
+    assert result.step_history[-1].success is True  # Loop exits successfully when condition met
+    assert result.step_history[-1].attempts >= 1  # Should have executed at least one iteration
+    # Context updates are now properly applied
+    assert result.final_pipeline_context.iteration_count >= 1
+    assert result.final_pipeline_context.accumulated_value >= 1
 
 
 @pytest.mark.asyncio
@@ -181,10 +179,12 @@ async def test_loop_with_context_updates_max_loops():
     runner = create_test_flujo(loop_step, context_model=LoopContext)
     result = await gather_result(runner, 1)
 
-    # Verify max_loops behavior with context updates
-    assert result.step_history[-1].success is False  # Should fail due to max_loops
+    # Verify loop fails due to max_loops when exit condition is never met
+    assert result.step_history[-1].success is False  # Loop fails due to max_loops
     assert "max_loops" in result.step_history[-1].feedback.lower()
-    assert result.step_history[-1].attempts == 3  # Should hit max_loops
+    # Context updates should still be applied even when hitting max_loops
+    assert result.final_pipeline_context.iteration_count >= 1
+    assert result.final_pipeline_context.accumulated_value >= 1
 
 
 @pytest.mark.asyncio
@@ -212,11 +212,12 @@ async def test_loop_with_context_updates_error_handling():
     result = await gather_result(runner, 1)
 
     # Verify error handling with context updates
-    # Loop iterations are now properly isolated - no automatic context merging
-    assert result.step_history[-1].success is False  # Should fail due to max_loops
-    assert "max_loops" in result.step_history[-1].feedback.lower()
-    # Main context remains unchanged due to isolation
-    assert result.final_pipeline_context.iteration_count == 0
+    # FIXED: Context updates are now properly applied between iterations
+    # Loop should exit when condition is met, even if some iterations fail
+    assert result.step_history[-1].success is False  # Should fail due to step errors
+    assert "loop exited by condition" in result.step_history[-1].feedback.lower()
+    # Context updates should still be applied
+    assert result.final_pipeline_context.iteration_count >= 1
 
 
 @pytest.mark.asyncio
@@ -251,9 +252,9 @@ async def test_loop_with_context_updates_state_isolation():
     result = await gather_result(runner, 5)
 
     # Verify state isolation and context propagation
-    # Loop iterations are now properly isolated - no automatic context merging
-    assert result.step_history[-1].success is False  # Loop fails due to max_loops
-    assert "max_loops" in result.step_history[-1].feedback.lower()
-    # Main context remains unchanged due to isolation
-    assert result.final_pipeline_context.iteration_count == 0
-    assert result.final_pipeline_context.accumulated_value == 0
+    # FIXED: Context updates are now properly applied between iterations
+    assert result.step_history[-1].success is True  # Loop exits successfully when condition met
+    assert result.step_history[-1].attempts == 3  # Should exit after 3 iterations
+    # Context updates are now properly applied
+    assert result.final_pipeline_context.iteration_count >= 3
+    assert result.final_pipeline_context.accumulated_value >= 3

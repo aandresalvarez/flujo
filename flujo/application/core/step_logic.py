@@ -814,6 +814,31 @@ async def _execute_loop_step_logic(
                         telemetry.logfire.error(
                             f"Failed to merge context updates in {loop_step.name} iteration {i}: {e}"
                         )
+            else:
+                # FIXED: Add context merging for regular LoopStep with @step(updates_context=True)
+                # This ensures context updates from loop body steps are properly applied
+                if context is not None and iteration_context is not None:
+                    try:
+                        merge_success = safe_merge_context_updates(
+                            target_context=context,
+                            source_context=iteration_context,
+                            excluded_fields=set(),
+                        )
+                        if merge_success:
+                            telemetry.logfire.debug(
+                                f"Successfully merged context updates in LoopStep '{loop_step.name}' iteration {i}"
+                            )
+                        else:
+                            telemetry.logfire.warn(
+                                f"Context merge failed in LoopStep '{loop_step.name}' iteration {i} "
+                                f"(context fields: {list(context.__dict__.keys()) if context else 'None'}, "
+                                f"iteration context fields: {list(iteration_context.__dict__.keys()) if iteration_context else 'None'}), "
+                                "but continuing execution"
+                            )
+                    except Exception as e:
+                        telemetry.logfire.error(
+                            f"Failed to merge context updates in LoopStep '{loop_step.name}' iteration {i}: {e}"
+                        )
         # Regular LoopStep: ensure iterations remain isolated to prevent unintended
         # side effects between iterations. Isolation ensures that each iteration operates
         # independently, maintaining the integrity of the loop's logic and results.
