@@ -5,6 +5,9 @@ from __future__ import annotations
 from typing import Optional, Tuple, Any
 import flujo.infra.config
 
+# Cache for model information to reduce repeated extraction overhead
+_model_cache: dict[str, tuple[Optional[str], str]] = {}
+
 
 def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[int, int, float]:
     """
@@ -49,9 +52,11 @@ def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[
         else:
             prompt_tokens, completion_tokens = 0, 0
 
-        telemetry.logfire.info(
-            f"Using explicit cost from custom output for step '{step_name}': cost={cost_usd} USD, total_tokens={completion_tokens}"
-        )
+        # Reduced logging frequency for performance
+        if cost_usd > 0.0:
+            telemetry.logfire.info(
+                f"Using explicit cost from custom output for step '{step_name}': cost={cost_usd} USD, total_tokens={completion_tokens}"
+            )
         # Return immediately, bypassing all other calculation logic.
         return prompt_tokens, completion_tokens, cost_usd
 
@@ -62,9 +67,11 @@ def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[
             prompt_tokens = getattr(usage_info, "request_tokens", 0) or 0
             completion_tokens = getattr(usage_info, "response_tokens", 0) or 0
 
-            telemetry.logfire.info(
-                f"Extracted tokens for step '{step_name}': prompt={prompt_tokens}, completion={completion_tokens}"
-            )
+            # Only log if we have meaningful token counts
+            if prompt_tokens > 0 or completion_tokens > 0:
+                telemetry.logfire.info(
+                    f"Extracted tokens for step '{step_name}': prompt={prompt_tokens}, completion={completion_tokens}"
+                )
 
             # Calculate cost if we have token information
             if prompt_tokens > 0 or completion_tokens > 0:
@@ -74,8 +81,12 @@ def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[
                 model_id = extract_model_id(agent, step_name)
 
                 if model_id:
-                    # Extract provider and model name using centralized logic
-                    provider, model_name = extract_provider_and_model(model_id)
+                    # Use cached model information to reduce repeated parsing
+                    cache_key = f"{agent.__class__.__name__}:{model_id}"
+                    if cache_key not in _model_cache:
+                        _model_cache[cache_key] = extract_provider_and_model(model_id)
+
+                    provider, model_name = _model_cache[cache_key]
 
                     cost_calculator = CostCalculator()
                     cost_usd = cost_calculator.calculate(
@@ -84,13 +95,16 @@ def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[
                         completion_tokens=completion_tokens,
                         provider=provider,
                     )
-                    telemetry.logfire.info(
-                        f"Calculated cost for step '{step_name}': {cost_usd} USD for model {model_name}"
-                    )
+
+                    # Only log if cost is significant
+                    if cost_usd > 0.0:
+                        telemetry.logfire.info(
+                            f"Calculated cost for step '{step_name}': {cost_usd} USD for model {model_name}"
+                        )
                 else:
                     # FIXED: Return 0.0 cost for agents without model_id instead of guessing OpenAI pricing
                     telemetry.logfire.warning(
-                        f"Could not determine model for step '{step_name}'. "
+                        f"CRITICAL: Could not determine model for step '{step_name}'. "
                         f"Cost will be reported as 0.0. "
                         f"To fix: ensure your agent has a 'model_id' attribute (e.g., 'openai:gpt-4o') "
                         f"or use make_agent_async() with explicit model parameter."

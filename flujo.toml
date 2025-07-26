@@ -51,13 +51,17 @@ json_output = false
 
 # Cost tracking configuration
 [cost]
-strict = false  # Allow fallback to hardcoded defaults for testing
+strict = true  # Enforce strict pricing for all tests and CI
 
 [cost.providers.openai]
 # OpenAI Models (Pricing: https://openai.com/pricing)
 [cost.providers.openai.gpt-4o]
 prompt_tokens_per_1k = 0.005
 completion_tokens_per_1k = 0.015
+
+[cost.providers.openai.gpt-4]
+prompt_tokens_per_1k = 0.03
+completion_tokens_per_1k = 0.06
 
 [cost.providers.openai.gpt-4o-mini]
 prompt_tokens_per_1k = 0.00015
@@ -90,13 +94,12 @@ completion_tokens_per_1k = 0.015
 prompt_tokens_per_1k = 0.00025
 completion_tokens_per_1k = 0.00125
 
-# Note: Google models are not configured to match test expectations
-# [cost.providers.google]
+[cost.providers.google]
 # Google Models (Pricing: https://ai.google.dev/pricing)
-# [cost.providers.google."gemini-1.5-pro"]
-# prompt_tokens_per_1k = 0.0035
-# completion_tokens_per_1k = 0.0105
+[cost.providers.google."gemini-1.5-pro"]
+prompt_tokens_per_1k = 0.0035
+completion_tokens_per_1k = 0.0105
 
-# [cost.providers.google."gemini-1.5-flash"]
-# prompt_tokens_per_1k = 0.000075
-# completion_tokens_per_1k = 0.0003
+[cost.providers.google."gemini-1.5-flash"]
+prompt_tokens_per_1k = 0.000075
+completion_tokens_per_1k = 0.0003

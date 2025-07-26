@@ -5,6 +5,12 @@ from __future__ import annotations
 from typing import Optional, Any
 from ..infra import telemetry
 
+# Cache for model ID extraction to reduce repeated overhead
+_model_id_cache: dict[str, Optional[str]] = {}
+
+# Cache for warning flags to avoid duplicate warnings
+_warning_cache: dict[str, bool] = {}
+
 
 def extract_model_id(agent: Any, step_name: str = "unknown") -> Optional[str]:
     """
@@ -41,6 +47,11 @@ def extract_model_id(agent: Any, step_name: str = "unknown") -> Optional[str]:
         telemetry.logfire.warning(f"Agent is None for step '{step_name}'")
         return None
 
+    # Use caching to reduce repeated extraction overhead
+    agent_key = f"{agent.__class__.__name__}:{id(agent)}"
+    if agent_key in _model_id_cache:
+        return _model_id_cache[agent_key]
+
     # Search order: most specific to least specific
     search_attributes = [
         "model_id",  # Most specific - explicit model ID
@@ -54,19 +65,30 @@ def extract_model_id(agent: Any, step_name: str = "unknown") -> Optional[str]:
         if hasattr(agent, attr_name):
             model_id = getattr(agent, attr_name)
             if model_id is not None:
-                telemetry.logfire.info(
-                    f"Extracted model ID for step '{step_name}' from '{attr_name}': {model_id}"
-                )
+                # Cache the result
+                _model_id_cache[agent_key] = str(model_id)
+
+                # Only log for significant model IDs to reduce noise
+                if str(model_id).strip():
+                    telemetry.logfire.info(
+                        f"Extracted model ID for step '{step_name}' from '{attr_name}': {model_id}"
+                    )
                 return str(model_id)
 
-    # If no model ID found, log a detailed warning with suggestions
-    telemetry.logfire.warning(
-        f"CRITICAL: Could not determine model for step '{step_name}'. "
-        f"Agent type: {type(agent).__name__}. "
-        f"Available attributes: {[attr for attr in dir(agent) if not attr.startswith('_') or attr in ['_model_name']]}. "
-        f"To fix: ensure the agent has a 'model_id', 'model', or '_model_name' attribute, "
-        f"or use explicit provider:model format (e.g., 'openai:gpt-4o')."
-    )
+    # Cache None result to avoid repeated searches
+    _model_id_cache[agent_key] = None
+
+    # If no model ID found, log a detailed warning with suggestions (but only once per agent type)
+    agent_type_key = f"warning:{agent.__class__.__name__}"
+    if agent_type_key not in _warning_cache:
+        _warning_cache[agent_type_key] = True  # Mark as warned
+        telemetry.logfire.warning(
+            f"CRITICAL: Could not determine model for step '{step_name}'. "
+            f"Agent type: {type(agent).__name__}. "
+            f"Available attributes: {[attr for attr in dir(agent) if not attr.startswith('_') or attr in ['_model_name']]}. "
+            f"To fix: ensure the agent has a 'model_id', 'model', or '_model_name' attribute, "
+            f"or use explicit provider:model format (e.g., 'openai:gpt-4o')."
+        )
     return None
 
 

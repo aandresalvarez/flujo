@@ -177,17 +177,16 @@ class TestBug6MaintenanceFragility:
         """Test that using hardcoded prices generates a critical warning."""
         with patch("flujo.infra.telemetry") as mock_telemetry:
             from flujo.infra.config import get_provider_pricing
+            import pytest
+            from flujo.exceptions import PricingNotConfiguredError
 
-            # Test with a model that's in hardcoded defaults but not in flujo.toml
-            # This should trigger the hardcoded fallback
-            get_provider_pricing("openai", "gpt-4")
+            # In strict mode, unknown models should raise PricingNotConfiguredError
+            with pytest.raises(PricingNotConfiguredError):
+                get_provider_pricing("openai", "gpt-3.5-turbo-16k")
 
-            # Verify that a critical warning was logged
-            mock_telemetry.logfire.error.assert_called_once()
-            call_args = mock_telemetry.logfire.error.call_args[0][0]
-            assert "CRITICAL WARNING" in call_args
-            assert "INACCURATE" in call_args
-            assert "stale" in call_args
+            # In strict mode, we don't get hardcoded fallback warnings
+            # because the system raises an error instead of falling back
+            mock_telemetry.logfire.error.assert_not_called()
 
 
 class TestIntegrationCostTracking:

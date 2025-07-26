@@ -672,9 +672,12 @@ class TestCostCalculator:
         assert pricing.prompt_tokens_per_1k == 0.005
         assert pricing.completion_tokens_per_1k == 0.015
 
-        # Test that unknown models return None
-        pricing = get_provider_pricing("unknown", "unknown-model")
-        assert pricing is None
+        # Test that unknown models raise PricingNotConfiguredError in strict mode
+        import pytest
+        from flujo.exceptions import PricingNotConfiguredError
+
+        with pytest.raises(PricingNotConfiguredError):
+            get_provider_pricing("unknown", "unknown-model")
 
         # Test that we can calculate costs with real pricing
         calculator = CostCalculator()
@@ -750,11 +753,12 @@ class TestCostConfig:
 
     def test_get_provider_pricing_with_valid_data(self):
         """Test getting provider pricing with valid configuration."""
-        # This test would require mocking the config loading
-        # For now, we'll test the function signature
-        pricing = get_provider_pricing("openai", "unknown-model")
-        # Should return None if no config is loaded and no default pricing exists
-        assert pricing is None
+        # In strict mode, unknown models should raise PricingNotConfiguredError
+        import pytest
+        from flujo.exceptions import PricingNotConfiguredError
+
+        with pytest.raises(PricingNotConfiguredError):
+            get_provider_pricing("openai", "unknown-model")
 
     def test_get_provider_pricing_with_default_pricing(self):
         """Test getting provider pricing with default pricing fallback."""

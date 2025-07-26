@@ -508,20 +508,20 @@ class TestBug5RobustProviderInference:
         assert provider == "meta", "llama-2 should be inferred as meta"
 
     def test_known_provider_with_unknown_model_should_return_zero_cost(self):
-        """Test that known providers with unknown models return 0.0 cost."""
+        """Test that known providers with unknown models raise PricingNotConfiguredError in strict mode."""
 
         cost_calculator = CostCalculator()
+        import pytest
+        from flujo.exceptions import PricingNotConfiguredError
 
         # Test with known provider but unknown model
-        cost = cost_calculator.calculate(
-            model_name="gpt-999",  # Unknown model
-            prompt_tokens=100,
-            completion_tokens=50,
-            provider="openai",
-        )
-
-        # Should return 0.0 for safety
-        assert cost == 0.0
+        with pytest.raises(PricingNotConfiguredError):
+            cost_calculator.calculate(
+                model_name="gpt-999",  # Unknown model
+                prompt_tokens=100,
+                completion_tokens=50,
+                provider="openai",
+            )
 
     def test_empty_model_name_should_return_zero_cost(self):
         """Test that empty model names return 0.0 cost."""
@@ -735,15 +735,11 @@ class TestEdgeCasesAndRobustness:
             prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
                 raw_output, agent, "test_step"
             )
-
             # Should extract tokens correctly
             assert prompt_tokens == 300
             assert completion_tokens == 150
-            # Cost should be calculated for models with pricing, 0 for unknown models
-            if expected_provider == "google":
-                assert cost_usd == 0.0  # No pricing configured for Google models
-            else:
-                assert cost_usd > 0.0  # Should have pricing for OpenAI and Anthropic
+            # Cost should be calculated for models with pricing
+            assert cost_usd > 0.0  # Should have pricing for all configured models
 
     def test_usage_limit_precedence_with_falsy_values(self):
         """Test usage limit precedence with falsy values."""
