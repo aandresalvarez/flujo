@@ -12,6 +12,13 @@ _model_id_cache: dict[str, Optional[str]] = {}
 _warning_cache: dict[str, bool] = {}
 
 
+def clear_model_id_cache() -> None:
+    """Clear the model ID cache. Useful for testing to ensure isolation."""
+    global _model_id_cache, _warning_cache
+    _model_id_cache.clear()
+    _warning_cache.clear()
+
+
 def extract_model_id(agent: Any, step_name: str = "unknown") -> Optional[str]:
     """
     Extract model ID from an agent using a comprehensive search strategy.

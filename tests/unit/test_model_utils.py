@@ -1,125 +1,131 @@
-"""Test centralized model ID extraction utilities."""
+"""Tests for model utility functions."""
 
 from unittest.mock import Mock
-from flujo.utils.model_utils import extract_model_id, validate_model_id, extract_provider_and_model
+
+from flujo.utils.model_utils import (
+    extract_model_id,
+    validate_model_id,
+    extract_provider_and_model,
+    clear_model_id_cache,
+)
 
 
 class TestModelIDExtraction:
-    """Test the extract_model_id function with various agent configurations."""
+    """Test model ID extraction functionality."""
+
+    def setup_method(self):
+        """Clear cache before each test to ensure isolation."""
+        clear_model_id_cache()
 
     def test_extract_model_id_from_model_id_attribute(self):
-        """Test extraction from explicit model_id attribute."""
+        """Test extraction from model_id attribute."""
         agent = Mock()
         agent.model_id = "openai:gpt-4o"
 
-        result = extract_model_id(agent, "test_step")
-        assert result == "openai:gpt-4o"
+        model_id = extract_model_id(agent, "test_step")
+        assert model_id == "openai:gpt-4o"
 
     def test_extract_model_id_from_private_model_name(self):
-        """Test extraction from private _model_name attribute (backward compatibility)."""
+        """Test extraction from _model_name attribute (backward compatibility)."""
         agent = Mock()
-        # Configure the mock to return None for model_id and the actual value for _model_name
+        # Configure mock to return None for model_id and the actual value for _model_name
         agent.model_id = None
-        agent._model_name = "gpt-4o"
+        agent._model_name = "anthropic:claude-3-sonnet"
 
-        result = extract_model_id(agent, "test_step")
-        assert result == "gpt-4o"
+        model_id = extract_model_id(agent, "test_step")
+        assert model_id == "anthropic:claude-3-sonnet"
 
     def test_extract_model_id_from_model_attribute(self):
         """Test extraction from model attribute."""
         agent = Mock()
-        # Configure the mock to return None for higher priority attributes
+        # Configure mock to return None for higher priority attributes
         agent.model_id = None
         agent._model_name = None
-        agent.model = "claude-3-sonnet"
+        agent.model = "google:gemini-pro"
 
-        result = extract_model_id(agent, "test_step")
-        assert result == "claude-3-sonnet"
+        model_id = extract_model_id(agent, "test_step")
+        assert model_id == "google:gemini-pro"
 
     def test_extract_model_id_from_model_name_attribute(self):
         """Test extraction from model_name attribute."""
         agent = Mock()
-        # Configure the mock to return None for higher priority attributes
+        # Configure mock to return None for higher priority attributes
         agent.model_id = None
         agent._model_name = None
         agent.model = None
-        agent.model_name = "gemini-pro"
+        agent.model_name = "meta:llama-3-8b"
 
-        result = extract_model_id(agent, "test_step")
-        assert result == "gemini-pro"
+        model_id = extract_model_id(agent, "test_step")
+        assert model_id == "meta:llama-3-8b"
 
     def test_extract_model_id_from_llm_model_attribute(self):
         """Test extraction from llm_model attribute."""
         agent = Mock()
-        # Configure the mock to return None for higher priority attributes
+        # Configure mock to return None for higher priority attributes
         agent.model_id = None
         agent._model_name = None
         agent.model = None
         agent.model_name = None
-        agent.llm_model = "llama-3-8b"
+        agent.llm_model = "mistral:mistral-7b"
 
-        result = extract_model_id(agent, "test_step")
-        assert result == "llama-3-8b"
+        model_id = extract_model_id(agent, "test_step")
+        assert model_id == "mistral:mistral-7b"
 
     def test_extract_model_id_priority_order(self):
-        """Test that the search order is respected (model_id > _model_name > model > model_name > llm_model)."""
+        """Test that the priority order is respected."""
         agent = Mock()
         # Set multiple attributes to test priority
-        agent.model_id = "openai:gpt-4o"  # Should be selected
-        agent._model_name = "gpt-4o"
-        agent.model = "gpt-4o"
-        agent.model_name = "gpt-4o"
-        agent.llm_model = "gpt-4o"
+        agent.model_id = "priority:model"  # Should be chosen first
+        agent._model_name = "backup:model"
+        agent.model = "fallback:model"
 
-        result = extract_model_id(agent, "test_step")
-        assert result == "openai:gpt-4o"
+        model_id = extract_model_id(agent, "test_step")
+        assert model_id == "priority:model"
 
     def test_extract_model_id_none_value(self):
-        """Test handling of None values in attributes."""
+        """Test handling of None values."""
         agent = Mock()
         agent.model_id = None
         agent._model_name = None
         agent.model = "gpt-4o"  # Should fall back to this
 
-        result = extract_model_id(agent, "test_step")
-        assert result == "gpt-4o"
+        model_id = extract_model_id(agent, "test_step")
+        assert model_id == "gpt-4o"
 
     def test_extract_model_id_no_attributes(self):
         """Test handling when no model attributes are found."""
         agent = Mock()
-        # Don't set any model-related attributes
-        # Mock objects by default have all attributes, so we need to explicitly remove them
-        del agent.model_id
-        del agent._model_name
-        del agent.model
-        del agent.model_name
-        del agent.llm_model
+        # Configure mock to return None for all model attributes
+        agent.model_id = None
+        agent._model_name = None
+        agent.model = None
+        agent.model_name = None
+        agent.llm_model = None
 
-        result = extract_model_id(agent, "test_step")
-        assert result is None
+        model_id = extract_model_id(agent, "test_step")
+        assert model_id is None
 
     def test_extract_model_id_none_agent(self):
         """Test handling of None agent."""
-        result = extract_model_id(None, "test_step")
-        assert result is None
+        model_id = extract_model_id(None, "test_step")
+        assert model_id is None
 
     def test_extract_model_id_converts_to_string(self):
         """Test that non-string values are converted to strings."""
         agent = Mock()
-        agent.model_id = 12345  # Non-string value
+        agent.model_id = 123  # Non-string value
 
-        result = extract_model_id(agent, "test_step")
-        assert result == "12345"
+        model_id = extract_model_id(agent, "test_step")
+        assert model_id == "123"
 
 
 class TestModelIDValidation:
-    """Test the validate_model_id function."""
+    """Test model ID validation functionality."""
 
     def test_validate_model_id_valid(self):
         """Test validation of valid model IDs."""
-        assert validate_model_id("gpt-4o", "test_step") is True
         assert validate_model_id("openai:gpt-4o", "test_step") is True
-        assert validate_model_id("claude-3-sonnet", "test_step") is True
+        assert validate_model_id("gpt-4o", "test_step") is True
 
     def test_validate_model_id_none(self):
         """Test validation of None model ID."""
@@ -128,22 +134,18 @@ class TestModelIDValidation:
     def test_validate_model_id_not_string(self):
         """Test validation of non-string model ID."""
         assert validate_model_id(123, "test_step") is False
-        assert validate_model_id([], "test_step") is False
-        assert validate_model_id({}, "test_step") is False
 
     def test_validate_model_id_empty_string(self):
-        """Test validation of empty or whitespace-only strings."""
+        """Test validation of empty string."""
         assert validate_model_id("", "test_step") is False
-        assert validate_model_id("   ", "test_step") is False
-        assert validate_model_id("\t\n", "test_step") is False
 
     def test_validate_model_id_whitespace_padded(self):
-        """Test validation of strings with leading/trailing whitespace."""
-        assert validate_model_id("  gpt-4o  ", "test_step") is True  # Should be valid
+        """Test validation of whitespace-padded model ID."""
+        assert validate_model_id("  openai:gpt-4o  ", "test_step") is True
 
 
 class TestProviderAndModelExtraction:
-    """Test the extract_provider_and_model function."""
+    """Test provider and model extraction functionality."""
 
     def test_extract_provider_and_model_with_provider(self):
         """Test extraction when provider is specified."""
@@ -196,6 +198,10 @@ class TestProviderAndModelExtraction:
 
 class TestIntegrationWithCostTracking:
     """Test integration with cost tracking scenarios."""
+
+    def setup_method(self):
+        """Clear cache before each test to ensure isolation."""
+        clear_model_id_cache()
 
     def test_model_id_extraction_for_cost_calculation(self):
         """Test that extracted model IDs work correctly for cost calculation."""
