@@ -1386,3 +1386,414 @@ class TestBugFixes:
         assert pricing is not None
         assert pricing.prompt_tokens_per_1k == 0.005
         assert pricing.completion_tokens_per_1k == 0.015
+
+
+class TestImageCostPostProcessor:
+    """Test the image cost post-processor functionality."""
+
+    def test_image_cost_post_processor_with_valid_pricing(self):
+        """Test image cost post-processor with valid pricing data."""
+        from flujo.cost import _image_cost_post_processor
+
+        # Create a mock run result with image usage
+        class MockUsage:
+            def __init__(self):
+                self.details = {"images": 2}
+                self.cost_usd = None
+
+        class MockRunResult:
+            def __init__(self):
+                self.usage = MockUsage()
+
+        run_result = MockRunResult()
+
+        # Create pricing data
+        pricing_data = {
+            "price_per_image_standard_1024x1024": 0.040,
+            "price_per_image_hd_1024x1024": 0.080,
+        }
+
+        # Test with standard quality and default size
+        result = _image_cost_post_processor(run_result, pricing_data, quality="standard", size="1024x1024")
+
+        # Should calculate 2 images * $0.040 = $0.080
+        assert result.usage.cost_usd == 0.080
+
+    def test_image_cost_post_processor_with_hd_quality(self):
+        """Test image cost post-processor with HD quality."""
+        from flujo.cost import _image_cost_post_processor
+
+        # Create a mock run result with image usage
+        class MockUsage:
+            def __init__(self):
+                self.details = {"images": 1}
+                self.cost_usd = None
+
+        class MockRunResult:
+            def __init__(self):
+                self.usage = MockUsage()
+
+        run_result = MockRunResult()
+
+        # Create pricing data
+        pricing_data = {
+            "price_per_image_standard_1024x1024": 0.040,
+            "price_per_image_hd_1024x1024": 0.080,
+        }
+
+        # Test with HD quality
+        result = _image_cost_post_processor(run_result, pricing_data, quality="hd", size="1024x1024")
+
+        # Should calculate 1 image * $0.080 = $0.080
+        assert result.usage.cost_usd == 0.080
+
+    def test_image_cost_post_processor_with_missing_pricing(self):
+        """Test image cost post-processor with missing pricing data."""
+        from flujo.cost import _image_cost_post_processor
+
+        # Create a mock run result with image usage
+        class MockUsage:
+            def __init__(self):
+                self.details = {"images": 1}
+                self.cost_usd = None
+
+        class MockRunResult:
+            def __init__(self):
+                self.usage = MockUsage()
+
+        run_result = MockRunResult()
+
+        # Create pricing data without the required key
+        pricing_data = {
+            "price_per_image_standard_1024x1024": 0.040,
+            # Missing HD pricing
+        }
+
+        # Test with HD quality (missing pricing)
+        result = _image_cost_post_processor(run_result, pricing_data, quality="hd", size="1024x1024")
+
+        # Should set cost to 0.0 when pricing is missing
+        assert result.usage.cost_usd == 0.0
+
+    def test_image_cost_post_processor_with_no_images(self):
+        """Test image cost post-processor when no images are generated."""
+        from flujo.cost import _image_cost_post_processor
+
+        # Create a mock run result with no image usage
+        class MockUsage:
+            def __init__(self):
+                self.details = {"images": 0}
+                self.cost_usd = None
+
+        class MockRunResult:
+            def __init__(self):
+                self.usage = MockUsage()
+
+        run_result = MockRunResult()
+
+        # Create pricing data
+        pricing_data = {
+            "price_per_image_standard_1024x1024": 0.040,
+        }
+
+        # Test with no images
+        result = _image_cost_post_processor(run_result, pricing_data, quality="standard", size="1024x1024")
+
+        # Should return the original result unchanged
+        assert result.usage.cost_usd is None
+
+    def test_image_cost_post_processor_with_no_usage_details(self):
+        """Test image cost post-processor when usage has no details."""
+        from flujo.cost import _image_cost_post_processor
+
+        # Create a mock run result with no usage details
+        class MockUsage:
+            def __init__(self):
+                self.details = None
+                self.cost_usd = None
+
+        class MockRunResult:
+            def __init__(self):
+                self.usage = MockUsage()
+
+        run_result = MockRunResult()
+
+        # Create pricing data
+        pricing_data = {
+            "price_per_image_standard_1024x1024": 0.040,
+        }
+
+        # Test with no usage details
+        result = _image_cost_post_processor(run_result, pricing_data, quality="standard", size="1024x1024")
+
+        # Should return the original result unchanged
+        assert result.usage.cost_usd is None
+
+    def test_image_cost_post_processor_with_no_usage(self):
+        """Test image cost post-processor when run_result has no usage."""
+        from flujo.cost import _image_cost_post_processor
+
+        # Create a mock run result with no usage
+        class MockRunResult:
+            def __init__(self):
+                self.usage = None
+
+        run_result = MockRunResult()
+
+        # Create pricing data
+        pricing_data = {
+            "price_per_image_standard_1024x1024": 0.040,
+        }
+
+        # Test with no usage
+        result = _image_cost_post_processor(run_result, pricing_data, quality="standard", size="1024x1024")
+
+        # Should return the original result unchanged
+        assert result.usage is None
+
+    def test_image_cost_post_processor_with_different_sizes(self):
+        """Test image cost post-processor with different image sizes."""
+        from flujo.cost import _image_cost_post_processor
+
+        # Create a mock run result with image usage
+        class MockUsage:
+            def __init__(self):
+                self.details = {"images": 1}
+                self.cost_usd = None
+
+        class MockRunResult:
+            def __init__(self):
+                self.usage = MockUsage()
+
+        run_result = MockRunResult()
+
+        # Create pricing data with different sizes
+        pricing_data = {
+            "price_per_image_standard_1024x1024": 0.040,
+            "price_per_image_standard_1792x1024": 0.080,
+            "price_per_image_standard_1024x1792": 0.080,
+        }
+
+        # Test with 1792x1024 size
+        result = _image_cost_post_processor(run_result, pricing_data, quality="standard", size="1792x1024")
+
+        # Should calculate 1 image * $0.080 = $0.080
+        assert result.usage.cost_usd == 0.080
+
+        # Test with 1024x1792 size
+        run_result.usage.cost_usd = None  # Reset
+        result = _image_cost_post_processor(run_result, pricing_data, quality="standard", size="1024x1792")
+
+        # Should calculate 1 image * $0.080 = $0.080
+        assert result.usage.cost_usd == 0.080
+
+
+class TestImageModelDetection:
+    """Test the image model detection functionality."""
+
+    def test_is_image_generation_model_with_dall_e(self):
+        """Test detection of DALL-E models."""
+        from flujo.infra.agents import _is_image_generation_model
+        
+        # Test various DALL-E model formats
+        assert _is_image_generation_model("openai:dall-e-3") is True
+        assert _is_image_generation_model("openai:dall-e-2") is True
+        assert _is_image_generation_model("dall-e-3") is True
+        assert _is_image_generation_model("DALL-E-3") is True
+
+    def test_is_image_generation_model_with_other_image_models(self):
+        """Test detection of other image generation models."""
+        from flujo.infra.agents import _is_image_generation_model
+        
+        # Test other image models
+        assert _is_image_generation_model("midjourney:v6") is True
+        assert _is_image_generation_model("stable-diffusion:xl") is True
+        assert _is_image_generation_model("google:imagen-2") is True
+
+    def test_is_image_generation_model_with_chat_models(self):
+        """Test that chat models are not detected as image models."""
+        from flujo.infra.agents import _is_image_generation_model
+        
+        # Test chat models (should return False)
+        assert _is_image_generation_model("openai:gpt-4o") is False
+        assert _is_image_generation_model("anthropic:claude-3-sonnet") is False
+        assert _is_image_generation_model("google:gemini-1.5-pro") is False
+        assert _is_image_generation_model("gpt-4o") is False
+
+    def test_is_image_generation_model_with_edge_cases(self):
+        """Test image model detection with edge cases."""
+        from flujo.infra.agents import _is_image_generation_model
+        
+        # Test edge cases
+        assert _is_image_generation_model("") is False
+        assert _is_image_generation_model("openai:") is False
+        assert _is_image_generation_model("dall-e") is True  # Partial match
+        assert _is_image_generation_model("text-dall-e") is True  # Contains pattern
+
+
+class TestImageCostPostProcessorAttachment:
+    """Test the image cost post-processor attachment functionality."""
+
+    def test_attach_image_cost_post_processor_with_valid_pricing(self):
+        """Test attaching post-processor with valid pricing configuration."""
+        from flujo.infra.agents import _attach_image_cost_post_processor
+        from unittest.mock import patch
+        
+        # Create a mock agent
+        class MockAgent:
+            def __init__(self):
+                self.post_processors = []
+        
+        agent = MockAgent()
+        model = "openai:dall-e-3"
+        
+        # Mock the pricing configuration
+        with patch("flujo.infra.config.get_provider_pricing") as mock_get_pricing:
+            from flujo.infra.config import ProviderPricing
+            
+            mock_pricing = ProviderPricing(
+                prompt_tokens_per_1k=0.0,
+                completion_tokens_per_1k=0.0,
+                price_per_image_standard_1024x1024=0.040,
+                price_per_image_hd_1024x1024=0.080,
+            )
+            mock_get_pricing.return_value = mock_pricing
+            
+            # Attach the post-processor
+            _attach_image_cost_post_processor(agent, model)
+            
+            # Verify that a post-processor was attached
+            assert len(agent.post_processors) == 1
+            assert callable(agent.post_processors[0])
+
+    def test_attach_image_cost_post_processor_with_missing_pricing(self):
+        """Test attaching post-processor when pricing is not configured."""
+        from flujo.infra.agents import _attach_image_cost_post_processor
+        from unittest.mock import patch
+        
+        # Create a mock agent
+        class MockAgent:
+            def __init__(self):
+                self.post_processors = []
+        
+        agent = MockAgent()
+        model = "openai:dall-e-3"
+        
+        # Mock the pricing configuration to return None
+        with patch("flujo.infra.config.get_provider_pricing") as mock_get_pricing:
+            mock_get_pricing.return_value = None
+            
+            # Attach the post-processor
+            _attach_image_cost_post_processor(agent, model)
+            
+            # Verify that no post-processor was attached
+            assert len(agent.post_processors) == 0
+
+    def test_attach_image_cost_post_processor_with_no_image_pricing(self):
+        """Test attaching post-processor when no image pricing is configured."""
+        from flujo.infra.agents import _attach_image_cost_post_processor
+        from unittest.mock import patch
+        
+        # Create a mock agent
+        class MockAgent:
+            def __init__(self):
+                self.post_processors = []
+        
+        agent = MockAgent()
+        model = "openai:dall-e-3"
+        
+        # Mock the pricing configuration with no image pricing
+        with patch("flujo.infra.config.get_provider_pricing") as mock_get_pricing:
+            from flujo.infra.config import ProviderPricing
+            
+            mock_pricing = ProviderPricing(
+                prompt_tokens_per_1k=0.0,
+                completion_tokens_per_1k=0.0,
+                # No image pricing fields
+            )
+            mock_get_pricing.return_value = mock_pricing
+            
+            # Attach the post-processor
+            _attach_image_cost_post_processor(agent, model)
+            
+            # Verify that no post-processor was attached
+            assert len(agent.post_processors) == 0
+
+    def test_attach_image_cost_post_processor_with_invalid_provider(self):
+        """Test attaching post-processor with invalid provider."""
+        from flujo.infra.agents import _attach_image_cost_post_processor
+        from unittest.mock import patch
+        
+        # Create a mock agent
+        class MockAgent:
+            def __init__(self):
+                self.post_processors = []
+        
+        agent = MockAgent()
+        model = "invalid:dall-e-3"
+        
+        # Mock the provider extraction to return None
+        with patch("flujo.utils.model_utils.extract_provider_and_model") as mock_extract:
+            mock_extract.return_value = (None, "dall-e-3")
+            
+            # Attach the post-processor
+            _attach_image_cost_post_processor(agent, model)
+            
+            # Verify that no post-processor was attached
+            assert len(agent.post_processors) == 0
+
+    def test_make_agent_async_with_image_model(self):
+        """Test that make_agent_async attaches post-processor for image models."""
+        from flujo.infra.agents import make_agent_async
+        from unittest.mock import patch
+        
+        # Mock the make_agent function
+        with patch("flujo.infra.agents.make_agent") as mock_make_agent:
+            # Create a mock agent
+            class MockAgent:
+                def __init__(self):
+                    self.post_processors = []
+            
+            mock_agent = MockAgent()
+            mock_processors = Mock()
+            mock_make_agent.return_value = (mock_agent, mock_processors)
+            
+            # Mock the post-processor attachment
+            with patch("flujo.infra.agents._attach_image_cost_post_processor") as mock_attach:
+                # Create an agent with an image model
+                agent_wrapper = make_agent_async(
+                    model="openai:dall-e-3",
+                    system_prompt="Generate images",
+                    output_type=str,
+                )
+                
+                # Verify that the post-processor attachment was called
+                mock_attach.assert_called_once_with(mock_agent, "openai:dall-e-3")
+
+    def test_make_agent_async_with_chat_model(self):
+        """Test that make_agent_async doesn't attach post-processor for chat models."""
+        from flujo.infra.agents import make_agent_async
+        from unittest.mock import patch
+        
+        # Mock the make_agent function
+        with patch("flujo.infra.agents.make_agent") as mock_make_agent:
+            # Create a mock agent
+            class MockAgent:
+                def __init__(self):
+                    self.post_processors = []
+            
+            mock_agent = MockAgent()
+            mock_processors = Mock()
+            mock_make_agent.return_value = (mock_agent, mock_processors)
+            
+            # Mock the post-processor attachment
+            with patch("flujo.infra.agents._attach_image_cost_post_processor") as mock_attach:
+                # Create an agent with a chat model
+                agent_wrapper = make_agent_async(
+                    model="openai:gpt-4o",
+                    system_prompt="You are a helpful assistant",
+                    output_type=str,
+                )
+                
+                # Verify that the post-processor attachment was NOT called
+                mock_attach.assert_not_called()

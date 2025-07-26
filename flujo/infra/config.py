@@ -13,6 +13,13 @@ class ProviderPricing(BaseModel):
 
     prompt_tokens_per_1k: float = Field(..., description="Cost per 1K prompt tokens in USD")
     completion_tokens_per_1k: float = Field(..., description="Cost per 1K completion tokens in USD")
+    # Image generation pricing (optional)
+    price_per_image_standard_1024x1024: Optional[float] = Field(None, description="Cost per image for standard quality 1024x1024")
+    price_per_image_hd_1024x1024: Optional[float] = Field(None, description="Cost per image for HD quality 1024x1024")
+    price_per_image_standard_1792x1024: Optional[float] = Field(None, description="Cost per image for standard quality 1792x1024")
+    price_per_image_hd_1792x1024: Optional[float] = Field(None, description="Cost per image for HD quality 1792x1024")
+    price_per_image_standard_1024x1792: Optional[float] = Field(None, description="Cost per image for standard quality 1024x1792")
+    price_per_image_hd_1024x1792: Optional[float] = Field(None, description="Cost per image for HD quality 1024x1792")
 
 
 class CostConfig(BaseModel):

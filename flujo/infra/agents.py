@@ -419,6 +419,9 @@ def make_agent_async(
         Additional arguments to pass to the underlying pydantic_ai.Agent
         (e.g., temperature, model_settings, max_tokens, etc.)
     """
+    # Check if this is an image generation model
+    is_image_model = _is_image_generation_model(model)
+    
     agent, final_processors = make_agent(
         model,
         system_prompt,
@@ -426,6 +429,11 @@ def make_agent_async(
         processors=processors,
         **kwargs,
     )
+    
+    # If this is an image model, attach the image cost post-processor
+    if is_image_model:
+        _attach_image_cost_post_processor(agent, model)
+    
     return AsyncAgentWrapper(
         agent,
         max_retries=max_retries,
@@ -434,6 +442,108 @@ def make_agent_async(
         processors=final_processors,
         auto_repair=auto_repair,
     )
+
+
+def _is_image_generation_model(model: str) -> bool:
+    """
+    Check if the model is an image generation model.
+    
+    Parameters
+    ----------
+    model : str
+        The model identifier (e.g., "openai:dall-e-3")
+        
+    Returns
+    -------
+    bool
+        True if the model is an image generation model
+    """
+    # Extract the model name from the provider:model format
+    if ":" in model:
+        model_name = model.split(":", 1)[1].lower()
+    else:
+        model_name = model.lower()
+    
+    # Check for common image generation model patterns
+    image_model_patterns = [
+        "dall-e",  # OpenAI DALL-E models
+        "midjourney",  # Midjourney models
+        "stable-diffusion",  # Stable Diffusion models
+        "imagen",  # Google Imagen models
+    ]
+    
+    return any(pattern in model_name for pattern in image_model_patterns)
+
+
+def _attach_image_cost_post_processor(agent: Any, model: str) -> None:
+    """
+    Attach the image cost post-processor to an agent.
+    
+    Parameters
+    ----------
+    agent : Any
+        The pydantic-ai Agent to attach the post-processor to
+    model : str
+        The model identifier for loading pricing configuration
+    """
+    from ..cost import _image_cost_post_processor
+    from ..infra.config import get_provider_pricing
+    from ..utils.model_utils import extract_provider_and_model
+    from ..infra import telemetry
+    
+    try:
+        # Extract provider and model name
+        provider, model_name = extract_provider_and_model(model)
+        
+        if provider is None:
+            telemetry.logfire.warning(
+                f"Could not determine provider for model '{model}'. "
+                f"Image cost post-processor will not be attached."
+            )
+            return
+        
+        # Get pricing configuration
+        pricing = get_provider_pricing(provider, model_name)
+        
+        if pricing is None:
+            telemetry.logfire.warning(
+                f"No pricing configuration found for '{provider}:{model_name}'. "
+                f"Image cost post-processor will not be attached."
+            )
+            return
+        
+        # Extract image pricing data from the pricing object
+        pricing_data = {}
+        for field_name, field_value in pricing.model_dump().items():
+            if field_name.startswith("price_per_image_") and field_value is not None:
+                pricing_data[field_name] = field_value
+        
+        if not pricing_data:
+            telemetry.logfire.warning(
+                f"No image pricing found for '{provider}:{model_name}'. "
+                f"Image cost post-processor will not be attached."
+            )
+            return
+        
+        # Create a partial function with the pricing data bound
+        from functools import partial
+        post_processor = partial(_image_cost_post_processor, pricing_data=pricing_data)
+        
+        # Attach the post-processor to the agent
+        if not hasattr(agent, 'post_processors'):
+            agent.post_processors = []
+        
+        agent.post_processors.append(post_processor)
+        
+        telemetry.logfire.info(
+            f"Attached image cost post-processor to '{model}' "
+            f"with pricing keys: {list(pricing_data.keys())}"
+        )
+        
+    except Exception as e:
+        telemetry.logfire.warning(
+            f"Failed to attach image cost post-processor to '{model}': {e}"
+        )
 
 
 class NoOpReflectionAgent(AsyncAgentProtocol[Any, str]):

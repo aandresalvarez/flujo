@@ -84,6 +84,17 @@ completion_tokens_per_1k = 0.00002
 prompt_tokens_per_1k = 0.0001
 completion_tokens_per_1k = 0.0001
 
+# OpenAI image generation models
+[cost.providers.openai."dall-e-3"]
+prompt_tokens_per_1k = 0.0  # No token costs for image generation
+completion_tokens_per_1k = 0.0  # No token costs for image generation
+price_per_image_standard_1024x1024 = 0.040
+price_per_image_hd_1024x1024 = 0.080
+price_per_image_standard_1792x1024 = 0.080
+price_per_image_hd_1792x1024 = 0.120
+price_per_image_standard_1024x1792 = 0.080
+price_per_image_hd_1024x1792 = 0.120
+
 [cost.providers.anthropic]
 # Anthropic Models (Pricing: https://www.anthropic.com/pricing)
 [cost.providers.anthropic."claude-3-sonnet"]
