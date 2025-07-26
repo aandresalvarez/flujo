@@ -27,7 +27,7 @@ install: .uv ## Install dependencies into a virtual environment
 .PHONY: install-robust
 install-robust: .uv ## Install dependencies with robust verification
 	@echo "🔧 Installing dependencies with robust verification..."
-	@python scripts/install_dependencies.py dev
+	@python3 scripts/install_dependencies.py dev
 
 .PHONY: sync
 sync: .uv ## Update dependencies based on pyproject.toml
@@ -130,7 +130,7 @@ test-perf: .uv ## Run test performance analysis
 .PHONY: package
 package: .uv ## Build package distribution files
 	@echo "📦 Building package distribution..."
-	@uv run python -m build
+	@uv run python3 -m build
 	@echo "\n✅ Package built in dist/ directory."
 
 

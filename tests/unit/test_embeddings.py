@@ -384,8 +384,13 @@ class TestEmbeddingIntegrationWithCostTracking:
     @pytest.mark.asyncio
     async def test_embedding_result_without_model_id(self):
         """Test that EmbeddingResult works when agent has no model_id."""
-        from flujo.cost import extract_usage_metrics
+        from flujo.cost import extract_usage_metrics, clear_cost_cache
+        from flujo.utils.model_utils import clear_model_id_cache
         from pydantic_ai.usage import Usage
+
+        # Clear caches to ensure test isolation
+        clear_cost_cache()
+        clear_model_id_cache()
 
         # Create an embedding result
         usage_info = Usage(request_tokens=100, total_tokens=100)

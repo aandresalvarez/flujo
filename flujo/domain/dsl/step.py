@@ -35,7 +35,7 @@ from ..validation import Validator
 
 from ..processors import AgentProcessors
 from flujo.caching import CacheBackend
-from flujo.exceptions import StepInvocationError
+from ...exceptions import StepInvocationError
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover

@@ -1,93 +1,60 @@
 """
-Flujo: A powerful Python library for orchestrating AI workflows.
+Flujo - A modern, type-safe framework for building AI-powered applications.
+
+Flujo provides a robust foundation for creating AI agents, pipelines, and workflows
+with structured outputs, comprehensive error handling, and excellent developer experience.
+
+Key Features:
+- Type-safe AI agent orchestration
+- Structured output validation
+- Comprehensive error handling and retry logic
+- Async-first design with high performance
+- Built-in caching and state management
+- Extensive testing and debugging tools
+- Production-ready telemetry and observability
+
+Quick Start:
+    from flujo import Step, Pipeline
+    from flujo.infra.agents import make_agent_async
+
+    # Create an agent
+    agent = make_agent_async("openai:gpt-4o", "You are a helpful assistant.", str)
+
+    # Create a pipeline
+    pipeline = Step.solution(agent)
+
+    # Run the pipeline
+    result = await pipeline.run("Hello, world!")
+    print(result.output)
 """
 
-# Get version
-try:
-    from importlib.metadata import version
+# Performance optimizations are handled by flujo.utils.performance module
 
-    __version__ = version("flujo")
-except Exception:
-    __version__ = "0.0.0"
-
-# 1. Import and expose sub-modules for a curated API
-from . import recipes
-from . import testing
-from . import plugins
-from . import processors
-from . import models
-from . import utils
-from . import domain
-from . import application
-from . import infra
-from . import caching
-
-# 2. Expose the most essential core components at the top level for convenience.
-# These are the symbols users will interact with 90% of the time.
 from .application.runner import Flujo
-from .registry import PipelineRegistry
-from .domain.dsl.step import Step, step
-from .domain.dsl.pipeline import Pipeline
-from .domain.models import Task, Candidate
-from .infra.agents import make_agent_async
-from .infra.settings import settings
-from .infra.telemetry import init_telemetry
-from .telemetry import (
-    OpenTelemetryHook,
-    PrometheusCollector,
-    start_prometheus_server,
+from .domain.dsl import Pipeline, Step
+from .domain.dsl.step import step  # Add back the step decorator
+from .domain.models import PipelineResult
+from .infra import init_telemetry
+from .infra.agents import make_agent_async  # Add back the agent factory
+from .recipes.factories import (
+    make_agentic_loop_pipeline,
+    make_default_pipeline,
+    run_agentic_loop_pipeline,
+    run_default_pipeline,
 )
-from .agents import validated_agent, monitored_agent
-from .monitor import global_monitor, FlujoMonitor, FailureType
 
-# 3. Define __all__ to control `from flujo import *` behavior and document the public API.
+__version__ = "0.4.36"  # Performance optimizations with uvloop, orjson, and blake3
+
 __all__ = [
-    # Core Components
     "Flujo",
-    "PipelineRegistry",
-    "Step",
-    "step",
     "Pipeline",
-    "Task",
-    "Candidate",
-    "make_agent_async",
-    "validated_agent",
-    "monitored_agent",
-    "global_monitor",
-    "FlujoMonitor",
-    "FailureType",
-    # Global Singletons & Initializers
-    "settings",
+    "Step",
+    "step",  # Add step decorator
+    "PipelineResult",
+    "make_agent_async",  # Add agent factory
     "init_telemetry",
-    # Sub-modules
-    "recipes",
-    "testing",
-    "plugins",
-    "processors",
-    "models",
-    "utils",
-    "domain",
-    "application",
-    "infra",
-    "caching",
-    "OpenTelemetryHook",
-    "PrometheusCollector",
-    "start_prometheus_server",
+    "make_agentic_loop_pipeline",
+    "make_default_pipeline",
+    "run_agentic_loop_pipeline",
+    "run_default_pipeline",
 ]
-
-# ---------------------------------------------------------------------------
-# Hypothesis configuration
-# ---------------------------------------------------------------------------
-# Some property-based tests (e.g. `test_random_linear_pipeline`) can exhibit
-# wide latency variance on the first invocation due to JIT, disk caches, etc.
-# To avoid flaky `DeadlineExceeded` failures we globally disable the timing
-# deadline unless the user overrides it via the HYPOTHESIS_PROFILE env var.
-
-try:
-    from hypothesis import settings as _hyp_settings
-
-    # Register and load a profile with no execution deadline.
-    _hyp_settings.register_profile("flujo", deadline=None)
-    _hyp_settings.load_profile("flujo")
-except Exception:  # pragma: no cover – Hypothesis not installed in minimal envs
-    pass
