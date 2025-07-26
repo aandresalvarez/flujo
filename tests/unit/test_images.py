@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import patch
-from flujo.images.clients.openai_client import OpenAIImageClient, PricingNotConfiguredError
+from flujo.images.clients.openai_client import OpenAIImageClient
+from flujo.exceptions import PricingNotConfiguredError
 from flujo.images.models import ImageGenerationResult
 from flujo.images import get_image_client
 
@@ -45,3 +46,22 @@ def test_strict_mode_price_missing(mock_pricing):
 def test_get_image_client_invalid_model_id():
     with pytest.raises(ValueError, match="model_id must be in 'provider:model' format"):
         get_image_client("dall-e-3")
+
+
+def test_pricing_not_configured_error_signature():
+    """Test that PricingNotConfiguredError uses the canonical signature."""
+    client = OpenAIImageClient(pricing_data={}, model="dall-e-3", strict=True)
+
+    with patch("openai.images.generate"):
+        with pytest.raises(PricingNotConfiguredError) as exc_info:
+            client.generate("a horse", size="512x512", quality="standard")
+
+        # Verify the exception has the expected attributes from the canonical version
+        assert hasattr(exc_info.value, "provider")
+        assert hasattr(exc_info.value, "model")
+        assert exc_info.value.provider == "openai"
+        assert exc_info.value.model == "dall-e-3"
+
+        # Verify the message format matches the canonical version
+        expected_message = "Strict pricing is enabled, but no configuration was found for provider='openai', model='dall-e-3' in flujo.toml."
+        assert str(exc_info.value) == expected_message

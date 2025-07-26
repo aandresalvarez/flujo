@@ -1,9 +1,6 @@
 from typing import Any, Dict
 from flujo.images.models import ImageGenerationResult
-
-
-class PricingNotConfiguredError(Exception):
-    pass
+from flujo.exceptions import PricingNotConfiguredError
 
 
 class OpenAIImageClient:
@@ -21,8 +18,11 @@ class OpenAIImageClient:
         price = self.pricing_data.get(price_key)
         if price is None:
             if self.strict:
+                # For image models, we use the model name as both provider and model
+                # since the pricing is specific to the image model
                 raise PricingNotConfiguredError(
-                    f"Price for key '{price_key}' not configured in flujo.toml."
+                    provider="openai",  # Assuming OpenAI for image models
+                    model=self.model,
                 )
             price = 0.0
         return price
