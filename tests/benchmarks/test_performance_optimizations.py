@@ -7,7 +7,7 @@ and provide measurable improvements over standard implementations.
 import asyncio
 import time
 
-from flujo import Step
+from flujo import step
 from flujo.utils.performance import (
     time_perf_ns,
     time_perf_ns_to_seconds,
@@ -140,15 +140,19 @@ class TestAsyncPerformance:
         """Test that uvloop provides better async performance."""
         
         async def run_pipeline():
-            @Step()
+            @step(name="test_step")
             async def test_step(context):
                 await asyncio.sleep(0.001)  # Simulate work
                 return {"result": "test"}
             
             pipeline = test_step
             flujo = create_test_flujo(pipeline)
-            result = await flujo.run_async("test")
-            return result
+            
+            # Use async for to iterate over the async generator
+            final_result = None
+            async for result in flujo.run_async("test"):
+                final_result = result
+            return final_result
         
         # Use a different approach for async benchmarking
         def run_async_pipeline():
@@ -241,8 +245,8 @@ class TestBufferReuse:
         assert buffer1 is buffer3
         assert len(buffer3) == 0
 
-    def test_buffer_reuse_performance(self, benchmark):
-        """Test that buffer reuse provides performance benefits."""
+    def test_buffer_reuse_without_reuse(self, benchmark):
+        """Test buffer performance without reuse."""
         
         def without_buffer_reuse():
             # Create new buffer each time
@@ -250,6 +254,15 @@ class TestBufferReuse:
             for i in range(1000):
                 buffer.extend(f"data{i}".encode())
             return len(buffer)
+        
+        result = benchmark(without_buffer_reuse)
+        print(f"\nBuffer Reuse - Without: {result}")
+        
+        # Verify the test completes successfully
+        assert result is not None
+
+    def test_buffer_reuse_with_reuse(self, benchmark):
+        """Test buffer performance with reuse."""
         
         def with_buffer_reuse():
             from flujo.utils.performance import clear_scratch_buffer, get_scratch_buffer
@@ -262,15 +275,11 @@ class TestBufferReuse:
             clear_scratch_buffer()
             return result
         
-        without_reuse_result = benchmark(without_buffer_reuse)
-        with_reuse_result = benchmark(with_buffer_reuse)
-
-        print(f"\nBuffer Reuse - Without: {without_reuse_result}")
-        print(f"Buffer Reuse - With:    {with_reuse_result}")
+        result = benchmark(with_buffer_reuse)
+        print(f"\nBuffer Reuse - With: {result}")
         
-        # Verify both tests complete successfully
-        assert without_reuse_result is not None
-        assert with_reuse_result is not None
+        # Verify the test completes successfully
+        assert result is not None
 
 
 class TestEndToEndPerformance:
@@ -280,25 +289,29 @@ class TestEndToEndPerformance:
         """Test end-to-end performance with all optimizations enabled."""
         
         async def run_complex_pipeline():
-            @Step()
+            @step(name="step1")
             async def step1(context):
                 await asyncio.sleep(0.001)
                 return {"step1": "done"}
             
-            @Step()
+            @step(name="step2")
             async def step2(context):
                 await asyncio.sleep(0.001)
                 return {"step2": "done"}
             
-            @Step()
+            @step(name="step3")
             async def step3(context):
                 await asyncio.sleep(0.001)
                 return {"step3": "done"}
             
             pipeline = step1 >> step2 >> step3
             flujo = create_test_flujo(pipeline)
-            result = await flujo.run_async("test")
-            return result
+            
+            # Use async for to iterate over the async generator
+            final_result = None
+            async for result in flujo.run_async("test"):
+                final_result = result
+            return final_result
         
         # Use a different approach for async benchmarking
         def run_complex_pipeline_sync():
