@@ -2,11 +2,27 @@
 
 from __future__ import annotations
 
-from typing import Optional, Tuple, Any
+from typing import Optional, Tuple, Any, Protocol, runtime_checkable
 import flujo.infra.config
 
 # Cache for model information to reduce repeated extraction overhead
 _model_cache: dict[str, tuple[Optional[str], str]] = {}
+
+
+@runtime_checkable
+class ExplicitCostReporter(Protocol):
+    """A protocol for objects that can report their own pre-calculated cost.
+
+    Attributes
+    ----------
+    cost_usd : float
+        The explicit cost in USD for the operation.
+    token_counts : int, optional
+        The total token count for the operation, if applicable. If not present, will be treated as 0 by extraction logic.
+    """
+
+    cost_usd: float
+    token_counts: int  # Optional; if missing, treated as 0
 
 
 def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[int, int, float]:
@@ -36,31 +52,22 @@ def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[
 
     from .infra import telemetry
 
-    # Check for explicit cost first - if cost is provided, trust it and don't attempt token calculation
+    # 1. HIGHEST PRIORITY: Check if the output object reports its own cost.
+    # We check for the protocol attributes manually since token_counts is optional
     if hasattr(raw_output, "cost_usd"):
-        cost_usd = raw_output.cost_usd or 0.0
-        # If token_counts is also present, extract it. Otherwise, default to 0.
-        # We cannot reliably split total_tokens, so we return the total as completion_tokens
-        # to preserve the token count for usage limits and reporting.
-        if hasattr(raw_output, "token_counts"):
-            total_tokens = raw_output.token_counts or 0
-            # For custom outputs with explicit cost, we cannot reliably split the tokens
-            # because prompt and completion tokens have different costs. So we return the
-            # total as completion_tokens to preserve the count for usage limits.
-            prompt_tokens = 0  # Cannot be determined reliably
-            completion_tokens = total_tokens  # Preserve total for usage limits
-        else:
-            prompt_tokens, completion_tokens = 0, 0
+        cost_usd = getattr(raw_output, "cost_usd", 0.0) or 0.0
+        # For explicit costs, we don't try to split tokens.
+        # We take the total token count if provided, otherwise it's 0.
+        total_tokens = getattr(raw_output, "token_counts", 0) or 0
 
-        # Reduced logging frequency for performance
-        if cost_usd > 0.0:
-            telemetry.logfire.info(
-                f"Using explicit cost from custom output for step '{step_name}': cost={cost_usd} USD, total_tokens={completion_tokens}"
-            )
-        # Return immediately, bypassing all other calculation logic.
-        return prompt_tokens, completion_tokens, cost_usd
+        telemetry.logfire.info(
+            f"Using explicit cost from '{type(raw_output).__name__}' for step '{step_name}': cost=${cost_usd}, tokens={total_tokens}"
+        )
 
-    # If explicit metrics are not fully present, proceed with usage() extraction
+        # Return prompt_tokens as 0 since it cannot be determined reliably here.
+        return 0, total_tokens, cost_usd
+
+    # 2. If explicit metrics are not fully present, proceed with usage() extraction
     if hasattr(raw_output, "usage"):
         try:
             usage_info = raw_output.usage()
