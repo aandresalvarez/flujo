@@ -759,6 +759,12 @@ def test_apply_cli_defaults_helper(monkeypatch):
     """Test the apply_cli_defaults helper function."""
     from flujo.cli.main import apply_cli_defaults
 
+    # Mock the get_cli_defaults to return no defaults for the first test
+    def mock_get_defaults_empty(command):
+        return {}
+
+    monkeypatch.setattr("flujo.cli.main.get_cli_defaults", mock_get_defaults_empty)
+
     # Test with no defaults (should return original values)
     result = apply_cli_defaults("solve", max_iters=None, k=5)
     assert result["max_iters"] is None

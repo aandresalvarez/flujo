@@ -90,6 +90,13 @@ def _get_default_pricing(provider: Optional[str], model: str) -> Optional[Provid
             return ProviderPricing(prompt_tokens_per_1k=0.03, completion_tokens_per_1k=0.06)
         elif model == "gpt-3.5-turbo":
             return ProviderPricing(prompt_tokens_per_1k=0.0015, completion_tokens_per_1k=0.002)
+        # OpenAI embedding models
+        elif model == "text-embedding-3-large":
+            return ProviderPricing(prompt_tokens_per_1k=0.00013, completion_tokens_per_1k=0.00013)
+        elif model == "text-embedding-3-small":
+            return ProviderPricing(prompt_tokens_per_1k=0.00002, completion_tokens_per_1k=0.00002)
+        elif model == "text-embedding-ada-002":
+            return ProviderPricing(prompt_tokens_per_1k=0.0001, completion_tokens_per_1k=0.0001)
 
     # Anthropic pricing (as of 2024)
     elif provider == "anthropic":

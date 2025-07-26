@@ -161,15 +161,22 @@ class TestConfigurationIntegration:
     def test_backward_compatibility(self):
         """Test that the system maintains backward compatibility."""
         # Test that the system works without a configuration file
-        config_manager = ConfigManager()
-        config = config_manager.load_config()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Change to temp directory to avoid finding flujo.toml in parent directories
+            original_cwd = os.getcwd()
+            os.chdir(temp_dir)
+            try:
+                config_manager = ConfigManager()
+                config = config_manager.load_config()
 
-        # Should return empty config when no file is found
-        assert config.solve is None
-        assert config.bench is None
-        assert config.run is None
-        assert config.settings is None
-        assert config.state_uri is None
+                # Should return empty config when no file is found
+                assert config.solve is None
+                assert config.bench is None
+                assert config.run is None
+                assert config.settings is None
+                assert config.state_uri is None
+            finally:
+                os.chdir(original_cwd)
 
     def test_error_handling(self):
         """Test that configuration errors are handled gracefully."""

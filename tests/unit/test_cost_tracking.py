@@ -473,6 +473,11 @@ class TestCostCalculator:
         assert calculator._infer_provider_from_model("gpt-4o") == "openai"
         assert calculator._infer_provider_from_model("text-davinci-003") == "openai"
 
+        # Test OpenAI embedding models
+        assert calculator._infer_provider_from_model("text-embedding-3-large") == "openai"
+        assert calculator._infer_provider_from_model("text-embedding-3-small") == "openai"
+        assert calculator._infer_provider_from_model("text-embedding-ada-002") == "openai"
+
         # Test Anthropic models
         assert calculator._infer_provider_from_model("claude-3-sonnet") == "anthropic"
         assert calculator._infer_provider_from_model("claude-3-haiku") == "anthropic"
@@ -543,6 +548,9 @@ class TestCostCalculator:
             ("gpt-3.5-turbo", "openai"),
             ("text-davinci-003", "openai"),
             ("dall-e-3", "openai"),
+            ("text-embedding-3-large", "openai"),
+            ("text-embedding-3-small", "openai"),
+            ("text-embedding-ada-002", "openai"),
             ("claude-3-sonnet", "anthropic"),
             ("claude-3-haiku", "anthropic"),
             ("claude-3-opus", "anthropic"),
@@ -589,6 +597,40 @@ class TestCostCalculator:
         )
         # Expected: (2000/1000 * 0.005) + (500/1000 * 0.015) = 0.01 + 0.0075 = 0.0175
         assert cost == 0.0175
+
+    def test_cost_calculation_for_embedding_models(self):
+        """Test that cost calculations work correctly for embedding models."""
+        calculator = CostCalculator()
+
+        # Test with embedding model pricing
+        cost = calculator.calculate(
+            model_name="text-embedding-3-large",
+            prompt_tokens=1000,
+            completion_tokens=0,
+            provider="openai",
+        )
+        # Expected: (1000/1000 * 0.00013) = 0.00013
+        assert cost == 0.00013
+
+        # Test with embedding model and completion tokens (should be treated the same)
+        cost = calculator.calculate(
+            model_name="text-embedding-3-large",
+            prompt_tokens=500,
+            completion_tokens=500,
+            provider="openai",
+        )
+        # Expected: (500/1000 * 0.00013) + (500/1000 * 0.00013) = 0.000065 + 0.000065 = 0.00013
+        assert cost == 0.00013
+
+        # Test with different embedding model
+        cost = calculator.calculate(
+            model_name="text-embedding-3-small",
+            prompt_tokens=1000,
+            completion_tokens=0,
+            provider="openai",
+        )
+        # Expected: (1000/1000 * 0.00002) = 0.00002
+        assert cost == 0.00002
 
     def test_error_handling_robustness(self):
         """Test that the system handles errors gracefully without breaking pipelines."""

@@ -178,8 +178,9 @@ class TestBug6MaintenanceFragility:
         with patch("flujo.infra.telemetry") as mock_telemetry:
             from flujo.infra.config import get_provider_pricing
 
+            # Test with a model that's in hardcoded defaults but not in flujo.toml
             # This should trigger the hardcoded fallback
-            get_provider_pricing("openai", "gpt-4o")
+            get_provider_pricing("openai", "gpt-4")
 
             # Verify that a critical warning was logged
             mock_telemetry.logfire.error.assert_called_once()
