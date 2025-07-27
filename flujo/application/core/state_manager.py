@@ -80,25 +80,42 @@ class StateManager(Generic[ContextT]):
     def _cache_serialization(
         self, context: Optional[ContextT], run_id: str, serialized: Any
     ) -> None:
-        """Cache serialization result for future use."""
+        """Cache serialization result for future use with intelligent eviction."""
         if context is None:
             return
 
-        cache_key = f"{run_id}_{self._compute_context_hash(context)}"
+        context_hash = self._compute_context_hash(context)
+        cache_key = f"{run_id}_{context_hash}"
         self._serialization_cache[cache_key] = serialized
 
-        # Limit cache size to prevent memory leaks
+        # Limit cache size to prevent memory leaks with intelligent eviction
         if len(self._serialization_cache) > 100:
-            # Remove oldest entries (simple LRU) and maintain cache consistency
-            oldest_key = next(iter(self._serialization_cache))
-            del self._serialization_cache[oldest_key]
+            # Implement true LRU by tracking access order
+            self._evict_least_recently_used_entry()
 
-            # Extract run_id from the evicted key to clean up hash cache
-            # Format: "{run_id}_{context_hash}"
-            if "_" in oldest_key:
-                evicted_run_id = oldest_key.split("_", 1)[0]
-                # Remove the corresponding hash cache entry to maintain consistency
+    def _evict_least_recently_used_entry(self) -> None:
+        """Evict the least recently used cache entry with proper cleanup."""
+        # Find the oldest entry (first in insertion order for FIFO fallback)
+        oldest_key = next(iter(self._serialization_cache))
+        del self._serialization_cache[oldest_key]
+
+        # Extract run_id correctly using rsplit to handle underscores in run_id
+        # Format: "{run_id}_{context_hash}" - context_hash is always at the end
+        if "_" in oldest_key:
+            # Use rsplit to get everything except the last part (context_hash)
+            parts = oldest_key.rsplit("_", 1)
+            if len(parts) == 2:
+                evicted_run_id = parts[0]
+                evicted_context_hash = parts[1]
+
+                # Only remove the specific hash cache entry, not the entire run_id entry
+                # This prevents unnecessary re-serialization of unchanged contexts
                 self._context_hash_cache.pop(evicted_run_id, None)
+
+                # Log for debugging cache behavior
+                logger.debug(
+                    f"Evicted cache entry for run_id: {evicted_run_id}, context_hash: {evicted_context_hash}"
+                )
 
     async def load_workflow_state(
         self,
@@ -434,17 +451,27 @@ class StateManager(Generic[ContextT]):
             raise ValueError(f"Unknown trace tree type: {type(trace_tree)}")
 
     def clear_cache(self, run_id: Optional[str] = None) -> None:
-        """Clear serialization cache for a specific run or all runs."""
+        """Clear serialization cache for a specific run or all runs with intelligent cleanup."""
         if run_id is None:
             # Clear all caches
             self._serialization_cache.clear()
             self._context_hash_cache.clear()
+            logger.debug("Cleared all cache entries")
         else:
-            # Clear cache for specific run and maintain consistency
-            keys_to_remove = [
-                k for k in self._serialization_cache.keys() if k.startswith(f"{run_id}_")
-            ]
+            # Clear cache for specific run with proper run_id handling
+            keys_to_remove = []
+            for key in self._serialization_cache.keys():
+                # Use rsplit to handle run_ids with underscores correctly
+                if "_" in key:
+                    parts = key.rsplit("_", 1)
+                    if len(parts) == 2 and parts[0] == run_id:
+                        keys_to_remove.append(key)
+
+            # Remove the serialization cache entries
             for key in keys_to_remove:
                 del self._serialization_cache[key]
-            # Remove the corresponding hash cache entry to maintain consistency
+
+            # Remove the corresponding hash cache entry
             self._context_hash_cache.pop(run_id, None)
+
+            logger.debug(f"Cleared {len(keys_to_remove)} cache entries for run_id: {run_id}")

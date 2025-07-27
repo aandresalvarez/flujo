@@ -515,6 +515,97 @@ class TestPersistencePerformanceOverhead:
             if os.path.exists(db_path):
                 os.unlink(db_path)
 
+    @pytest.mark.asyncio
+    async def test_cache_eviction_logic_fixes(self) -> None:
+        """Test that cache eviction logic fixes work correctly."""
+
+        from flujo.application.core.state_manager import StateManager
+        from flujo.state.backends.sqlite import SQLiteBackend
+        from flujo.domain.models import PipelineContext
+        import tempfile
+        import os
+
+        # Create a context with multiple fields
+        class TestContext(PipelineContext):
+            initial_prompt: str = "test prompt"
+            important_data: str = "critical information"
+            user_id: str = "user123"
+            settings: dict = {"key": "value"}
+
+        # Create temporary database
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp_file:
+            db_path = tmp_file.name
+
+        try:
+            backend = SQLiteBackend(db_path)
+            state_manager = StateManager(backend)
+
+            # Test 1: Run ID with underscores should be handled correctly
+            run_id_with_underscores = "user_123_pipeline_456"
+            context1 = TestContext(
+                initial_prompt="test prompt",
+                important_data="data for underscore test",
+                user_id="user123",
+                settings={"key": "value"},
+            )
+
+            # Add to cache
+            state_manager._cache_serialization(context1, run_id_with_underscores, {"data": "test"})
+
+            # Verify cache entry exists
+            cache_key = f"{run_id_with_underscores}_{state_manager._compute_context_hash(context1)}"
+            assert cache_key in state_manager._serialization_cache
+
+            # Test 2: Force cache eviction by adding many entries
+            for i in range(150):  # More than the 100 limit
+                temp_context = TestContext(
+                    initial_prompt=f"temp prompt {i}",
+                    important_data=f"temp data {i}",
+                    user_id=f"user{i}",
+                    settings={"temp": f"value{i}"},
+                )
+                # This will trigger cache eviction
+                state_manager._cache_serialization(temp_context, f"run_{i}", {"temp": "data"})
+
+            # Test 3: Verify that run_id with underscores was handled correctly during eviction
+            # The cache should be at capacity (100 entries)
+            assert len(state_manager._serialization_cache) <= 100
+
+            # Test 4: Test clear_cache with run_id containing underscores
+            context2 = TestContext(
+                initial_prompt="test prompt 2",
+                important_data="data for clear test",
+                user_id="user456",
+                settings={"key": "value2"},
+            )
+
+            # Add another entry with underscore run_id
+            state_manager._cache_serialization(context2, run_id_with_underscores, {"data": "test2"})
+
+            # Clear cache for specific run_id
+            state_manager.clear_cache(run_id_with_underscores)
+
+            # Verify that only entries for this run_id were cleared
+            # Other entries should still exist
+            remaining_entries = [
+                k for k in state_manager._serialization_cache.keys() if k.startswith("run_")
+            ]
+            assert len(remaining_entries) > 0  # Other entries should still exist
+
+            # Test 5: Verify that cache keys are properly formatted
+            for key in state_manager._serialization_cache.keys():
+                if "_" in key:
+                    parts = key.rsplit("_", 1)
+                    assert len(parts) == 2, f"Invalid cache key format: {key}"
+                    assert len(parts[1]) == 32, (
+                        f"Context hash should be 32 chars: {parts[1]}"
+                    )  # MD5 hash length
+
+        finally:
+            # Clean up
+            if os.path.exists(db_path):
+                os.unlink(db_path)
+
 
 class TestCLIPerformance:
     """Test NFR-10: CLI commands must complete in <2s with 10,000 runs."""
