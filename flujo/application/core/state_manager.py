@@ -96,18 +96,19 @@ class StateManager(Generic[ContextT]):
     def _cache_serialization(
         self, context: Optional[ContextT], run_id: str, serialized: Any
     ) -> None:
-        """Cache serialization result for future use with intelligent eviction."""
+        """Cache serialized context to avoid redundant serialization."""
         if context is None:
             return
 
         context_hash = self._compute_context_hash(context)
         cache_key = self._create_cache_key(run_id, context_hash)
-        self._serialization_cache[cache_key] = serialized
 
         # Limit cache size to prevent memory leaks with intelligent eviction
-        if len(self._serialization_cache) > 100:
-            # Implement true LRU by tracking access order
+        if len(self._serialization_cache) >= 100:
+            # Evict the least recently used entry before adding a new item
             self._evict_least_recently_used_entry()
+
+        self._serialization_cache[cache_key] = serialized
 
     def _evict_least_recently_used_entry(self) -> None:
         """Evict the least recently used cache entry with proper cleanup."""

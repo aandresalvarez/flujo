@@ -419,7 +419,7 @@ def optimize_event_loop() -> None:
 
             # Shutdown existing executor if it exists to prevent resource leaks
             if hasattr(loop, "_default_executor") and loop._default_executor is not None:
-                loop._default_executor.shutdown(wait=False)
+                loop._default_executor.shutdown(wait=True)
 
             executor = concurrent.futures.ThreadPoolExecutor(
                 max_workers=min(32, (os.cpu_count() or 1) * 4)
