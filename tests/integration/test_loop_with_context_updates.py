@@ -46,8 +46,8 @@ class LoopContext(PipelineContext):
     """Context for testing loop steps with context updates."""
 
     initial_prompt: str = "test"
-    iteration_count: int
-    accumulated_value: int
+    iteration_count: int = 0
+    accumulated_value: int = 0
     loop_exit_reason: str = ""
     final_state: dict = {}
 
