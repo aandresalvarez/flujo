@@ -74,8 +74,24 @@ class StateManager(Generic[ContextT]):
         if context is None:
             return None
 
-        cache_key = f"{run_id}_{self._compute_context_hash(context)}"
+        context_hash = self._compute_context_hash(context)
+        cache_key = self._create_cache_key(run_id, context_hash)
         return self._serialization_cache.get(cache_key)
+
+    def _create_cache_key(self, run_id: str, context_hash: str) -> str:
+        """Create a cache key that safely handles run_ids with underscores."""
+        # Use a separator that's unlikely to appear in run_ids or context hashes
+        # This prevents ambiguity when parsing cache keys
+        return f"{run_id}|{context_hash}"
+
+    def _parse_cache_key(self, cache_key: str) -> tuple[str, str]:
+        """Parse a cache key to extract run_id and context_hash."""
+        # Split on the separator to get run_id and context_hash
+        # Use rsplit to handle run_ids that might contain pipe characters
+        parts = cache_key.rsplit("|", 1)
+        if len(parts) != 2:
+            raise ValueError(f"Invalid cache key format: {cache_key}")
+        return parts[0], parts[1]
 
     def _cache_serialization(
         self, context: Optional[ContextT], run_id: str, serialized: Any
@@ -85,7 +101,7 @@ class StateManager(Generic[ContextT]):
             return
 
         context_hash = self._compute_context_hash(context)
-        cache_key = f"{run_id}_{context_hash}"
+        cache_key = self._create_cache_key(run_id, context_hash)
         self._serialization_cache[cache_key] = serialized
 
         # Limit cache size to prevent memory leaks with intelligent eviction
@@ -99,23 +115,23 @@ class StateManager(Generic[ContextT]):
         oldest_key = next(iter(self._serialization_cache))
         del self._serialization_cache[oldest_key]
 
-        # Extract run_id correctly using rsplit to handle underscores in run_id
-        # Format: "{run_id}_{context_hash}" - context_hash is always at the end
-        if "_" in oldest_key:
-            # Use rsplit to get everything except the last part (context_hash)
-            parts = oldest_key.rsplit("_", 1)
-            if len(parts) == 2:
-                evicted_run_id = parts[0]
-                evicted_context_hash = parts[1]
+        # Parse the cache key to extract run_id and context_hash
+        try:
+            evicted_run_id, evicted_context_hash = self._parse_cache_key(oldest_key)
 
-                # Only remove the specific hash cache entry, not the entire run_id entry
-                # This prevents unnecessary re-serialization of unchanged contexts
-                self._context_hash_cache.pop(evicted_run_id, None)
+            # Only remove the specific hash cache entry, not the entire run_id entry
+            # This prevents unnecessary re-serialization of unchanged contexts
+            self._context_hash_cache.pop(evicted_run_id, None)
 
-                # Log for debugging cache behavior
-                logger.debug(
-                    f"Evicted cache entry for run_id: {evicted_run_id}, context_hash: {evicted_context_hash}"
-                )
+            # Log for debugging cache behavior
+            logger.debug(
+                f"Evicted cache entry for run_id: {evicted_run_id}, context_hash: {evicted_context_hash}"
+            )
+        except ValueError:
+            # Handle legacy cache keys that might still use the old format
+            logger.warning(f"Found legacy cache key format: {oldest_key}")
+            # For legacy keys, we can't safely extract run_id, so we skip hash cache cleanup
+            # This is safe as the cache will eventually be cleared anyway
 
     async def load_workflow_state(
         self,
@@ -461,11 +477,16 @@ class StateManager(Generic[ContextT]):
             # Clear cache for specific run with proper run_id handling
             keys_to_remove = []
             for key in self._serialization_cache.keys():
-                # Use rsplit to handle run_ids with underscores correctly
-                if "_" in key:
-                    parts = key.rsplit("_", 1)
-                    if len(parts) == 2 and parts[0] == run_id:
+                try:
+                    # Parse the cache key to extract run_id
+                    key_run_id, _ = self._parse_cache_key(key)
+                    if key_run_id == run_id:
                         keys_to_remove.append(key)
+                except ValueError:
+                    # Handle legacy cache keys that might still use the old format
+                    # For legacy keys, we can't safely extract run_id, so we skip them
+                    # This is safe as the cache will eventually be cleared anyway
+                    continue
 
             # Remove the serialization cache entries
             for key in keys_to_remove:
