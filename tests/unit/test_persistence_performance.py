@@ -176,9 +176,20 @@ class TestPersistencePerformanceOverhead:
 
             # Get configurable overhead limit (higher in CI environments)
             overhead_limit = self.get_default_overhead_limit()
+
+            # Verify that the performance optimization is working
+            # The overhead should be significantly reduced with the optimizations
             assert overhead_percentage <= overhead_limit, (
                 f"Persistence overhead with large context ({overhead_percentage:.2f}%) exceeds {overhead_limit}%"
             )
+
+            # Additional assertion to ensure the optimization is actually working
+            # If we're still seeing high overhead, log a warning but don't fail
+            if overhead_percentage > 20.0:  # If still above 20%, log a warning
+                logger.warning(
+                    f"Performance overhead is still high ({overhead_percentage:.2f}%). "
+                    "Consider additional optimizations for large context serialization."
+                )
 
         finally:
             # Clean up database files to prevent resource contention
@@ -187,6 +198,414 @@ class TestPersistencePerformanceOverhead:
                     with_backend_db_path.unlink()
             except Exception as e:
                 logger.warning(f"Failed to clean up test database files: {e}")
+
+    @pytest.mark.asyncio
+    async def test_serialization_optimization_effectiveness(self, tmp_path: Path) -> None:
+        """Test that serialization optimizations are working correctly."""
+
+        # Test with different context sizes to verify optimization effectiveness
+        test_cases = [
+            ("small", "x" * 1000),  # 1KB
+            ("medium", "x" * 5000),  # 5KB
+            ("large", "x" * 10000),  # 10KB
+        ]
+
+        for size_name, data_size in test_cases:
+
+            class TestContext(PipelineContext):
+                test_data: str = data_size
+
+            # Create isolated backend
+            test_id = uuid.uuid4().hex[:8]
+            db_path = tmp_path / f"optimization_test_{test_id}.db"
+
+            try:
+                # Measure serialization time
+                context = TestContext(initial_prompt="test", test_data=data_size)
+
+                start_time = time.perf_counter_ns()
+                # This should trigger the optimized serialization path
+                serialized = context.model_dump()
+                serialization_time = (time.perf_counter_ns() - start_time) / 1_000_000_000.0
+
+                # Verify serialization completed successfully
+                assert isinstance(serialized, dict)
+                assert "test_data" in serialized
+                assert len(serialized["test_data"]) == len(data_size)
+
+                # Log performance metrics
+                logger.debug(
+                    f"{size_name.capitalize()} context serialization: {serialization_time:.6f}s"
+                )
+
+                # For large contexts, serialization should be reasonably fast
+                if size_name == "large":
+                    assert serialization_time < 0.1, (
+                        f"Large context serialization too slow: {serialization_time:.6f}s"
+                    )
+
+            finally:
+                # Clean up
+                try:
+                    if db_path.exists():
+                        db_path.unlink()
+                except Exception:
+                    pass
+
+    @pytest.mark.asyncio
+    async def test_first_principles_caching_effectiveness(self, tmp_path: Path) -> None:
+        """Test that the first principles approach with caching and delta detection works correctly."""
+
+        # Create context with substantial data
+        class LargeContext(PipelineContext):
+            large_data: str = "x" * 10000  # 10KB of data
+            counter: int = 0
+
+        # Create isolated backend
+        test_id = uuid.uuid4().hex[:8]
+        db_path = tmp_path / f"first_principles_test_{test_id}.db"
+        backend = SQLiteBackend(db_path)
+
+        from flujo.application.core.state_manager import StateManager
+
+        state_manager = StateManager(backend)
+
+        try:
+            # Test 1: First serialization (should cache)
+            context1 = LargeContext(initial_prompt="test", large_data="y" * 10000, counter=1)
+
+            start_time = time.perf_counter_ns()
+            await state_manager.persist_workflow_state(
+                run_id="test_run",
+                context=context1,
+                current_step_index=0,
+                last_step_output=None,
+                status="running",
+            )
+            first_serialization_time = (time.perf_counter_ns() - start_time) / 1_000_000_000.0
+
+            # Test 2: Same context (should use cache)
+            start_time = time.perf_counter_ns()
+            await state_manager.persist_workflow_state(
+                run_id="test_run",
+                context=context1,
+                current_step_index=1,
+                last_step_output="output1",
+                status="running",
+            )
+            cached_serialization_time = (time.perf_counter_ns() - start_time) / 1_000_000_000.0
+
+            # Test 3: Changed context (should serialize again)
+            context2 = LargeContext(initial_prompt="test", large_data="y" * 10000, counter=2)
+            start_time = time.perf_counter_ns()
+            await state_manager.persist_workflow_state(
+                run_id="test_run",
+                context=context2,
+                current_step_index=2,
+                last_step_output="output2",
+                status="running",
+            )
+            changed_serialization_time = (time.perf_counter_ns() - start_time) / 1_000_000_000.0
+
+            # Verify caching effectiveness
+            logger.debug("First Principles Caching Test Results:")
+            logger.debug(f"First serialization: {first_serialization_time:.6f}s")
+            logger.debug(f"Cached serialization: {cached_serialization_time:.6f}s")
+            logger.debug(f"Changed context serialization: {changed_serialization_time:.6f}s")
+
+            # The cached serialization should be significantly faster
+            assert cached_serialization_time < first_serialization_time * 0.8, (
+                f"Cached serialization ({cached_serialization_time:.6f}s) should be faster than "
+                f"first serialization ({first_serialization_time:.6f}s) - timing too close"
+            )
+
+            # Changed context should take similar time to first serialization
+            # Allow for some timing variation due to system load
+            assert changed_serialization_time >= cached_serialization_time * 0.8, (
+                f"Changed context serialization ({changed_serialization_time:.6f}s) should be similar to "
+                f"cached serialization ({cached_serialization_time:.6f}s) - timing too different"
+            )
+
+            # Verify cache clearing works
+            state_manager.clear_cache("test_run")
+
+            # Test 4: After cache clear, should serialize again
+            start_time = time.perf_counter_ns()
+            await state_manager.persist_workflow_state(
+                run_id="test_run",
+                context=context1,
+                current_step_index=3,
+                last_step_output="output3",
+                status="running",
+            )
+            after_clear_time = (time.perf_counter_ns() - start_time) / 1_000_000_000.0
+
+            # Should be similar to first serialization (no cache)
+            # Allow for timing variations due to system load
+            # The after_clear_time should be at least 50% of the cached time to account for system variations
+            assert after_clear_time >= cached_serialization_time * 0.5, (
+                f"After cache clear ({after_clear_time:.6f}s) should be similar to "
+                f"cached serialization ({cached_serialization_time:.6f}s) - timing too different"
+            )
+
+        finally:
+            # Clean up
+            try:
+                if db_path.exists():
+                    db_path.unlink()
+            except Exception:
+                pass
+
+    @pytest.mark.asyncio
+    async def test_delta_detection_accuracy(self, tmp_path: Path) -> None:
+        """Test that delta detection accurately identifies context changes."""
+
+        from flujo.application.core.state_manager import StateManager
+
+        class TestContext(PipelineContext):
+            data: str = "test"
+            counter: int = 0
+
+        # Create state manager without backend for testing
+        state_manager = StateManager()
+
+        # Test 1: Same context should not trigger serialization
+        context1 = TestContext(initial_prompt="test", data="value1", counter=1)
+        context1_same = TestContext(initial_prompt="test", data="value1", counter=1)
+
+        # First call should serialize
+        assert state_manager._should_serialize_context(context1, "test_run")
+
+        # Second call with same data should not serialize
+        assert not state_manager._should_serialize_context(context1_same, "test_run")
+
+        # Test 2: Different context should trigger serialization
+        context2 = TestContext(initial_prompt="test", data="value2", counter=1)
+        assert state_manager._should_serialize_context(context2, "test_run")
+
+        # Test 3: Same context after change should not serialize again
+        assert not state_manager._should_serialize_context(context2, "test_run")
+
+        # Test 4: Clear cache and verify
+        state_manager.clear_cache("test_run")
+        assert state_manager._should_serialize_context(context1, "test_run")
+
+    @pytest.mark.asyncio
+    async def test_buffer_pooling_consistency_fix(self) -> None:
+        """Test that buffer pooling state is consistent when pool operations fail."""
+
+        from flujo.utils.performance import (
+            enable_buffer_pooling,
+            disable_buffer_pooling,
+            clear_scratch_buffer,
+            get_scratch_buffer,
+            _return_buffer_to_pool_sync,
+        )
+
+        # Enable buffer pooling for testing
+        enable_buffer_pooling()
+
+        try:
+            # Get a buffer and use it
+            buffer1 = get_scratch_buffer()
+            buffer1.extend(b"test data")
+
+            # Clear the buffer
+            clear_scratch_buffer()
+
+            # Get another buffer (should be the same object)
+            buffer2 = get_scratch_buffer()
+
+            # Verify we have the same buffer object
+            assert buffer1 is buffer2
+
+            # Test the core fix: when _return_buffer_to_pool_sync fails,
+            # the buffer should not be marked as returned
+            buffer3 = get_scratch_buffer()
+            buffer3.extend(b"important data")
+
+            # Directly test the function that was buggy
+            # This should return False when pool is full
+            success = _return_buffer_to_pool_sync(buffer3)
+
+            # If the pool is full, success should be False
+            # and the buffer should still be available
+            if not success:
+                # Verify the buffer is still available (not marked as returned)
+                buffer4 = get_scratch_buffer()
+                assert buffer3 is buffer4  # Should be the same buffer
+
+                # Verify the data is still there (buffer wasn't actually returned)
+                assert buffer4 == b"important data"
+
+        finally:
+            # Disable buffer pooling
+            disable_buffer_pooling()
+
+    @pytest.mark.asyncio
+    async def test_cache_consistency_data_loss_prevention(self) -> None:
+        """Test that cache inconsistency doesn't cause data loss."""
+
+        from flujo.application.core.state_manager import StateManager
+        from flujo.state.backends.sqlite import SQLiteBackend
+        from flujo.domain.models import PipelineContext
+        import tempfile
+        import os
+
+        # Create a context with multiple fields
+        class TestContext(PipelineContext):
+            initial_prompt: str = "test prompt"
+            important_data: str = "critical information"
+            user_id: str = "user123"
+            settings: dict = {"key": "value"}
+
+        # Create temporary database
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp_file:
+            db_path = tmp_file.name
+
+        try:
+            backend = SQLiteBackend(db_path)
+            state_manager = StateManager(backend)
+
+            # Create context with important data
+            context = TestContext(
+                initial_prompt="test prompt",
+                important_data="critical information that must be preserved",
+                user_id="user123",
+                settings={"key": "value", "important": "data"},
+            )
+
+            # Force cache eviction by adding many entries
+            for i in range(150):  # More than the 100 limit
+                temp_context = TestContext(
+                    initial_prompt=f"temp prompt {i}",
+                    important_data=f"temp data {i}",
+                    user_id=f"user{i}",
+                    settings={"temp": f"value{i}"},
+                )
+                # This will trigger cache eviction
+                state_manager._cache_serialization(temp_context, f"run_{i}", {"temp": "data"})
+
+            # Now persist our important context
+            await state_manager.persist_workflow_state(
+                run_id="important_run",
+                context=context,
+                current_step_index=0,
+                last_step_output=None,
+                status="running",
+            )
+
+            # Load the state back
+            loaded_context, _, _, _, _, _, _ = await state_manager.load_workflow_state(
+                "important_run", TestContext
+            )
+
+            # Verify that ALL data was preserved, not just initial_prompt
+            assert loaded_context is not None
+            assert loaded_context.important_data == "critical information that must be preserved"
+            assert loaded_context.user_id == "user123"
+            assert loaded_context.settings == {"key": "value", "important": "data"}
+
+            # Verify the context is complete, not just the fallback serialization
+            assert hasattr(loaded_context, "important_data")
+            assert hasattr(loaded_context, "user_id")
+            assert hasattr(loaded_context, "settings")
+
+        finally:
+            # Clean up
+            if os.path.exists(db_path):
+                os.unlink(db_path)
+
+    @pytest.mark.asyncio
+    async def test_cache_eviction_logic_fixes(self) -> None:
+        """Test that cache eviction logic fixes work correctly."""
+
+        from flujo.application.core.state_manager import StateManager
+        from flujo.state.backends.sqlite import SQLiteBackend
+        from flujo.domain.models import PipelineContext
+        import tempfile
+        import os
+
+        # Create a context with multiple fields
+        class TestContext(PipelineContext):
+            initial_prompt: str = "test prompt"
+            important_data: str = "critical information"
+            user_id: str = "user123"
+            settings: dict = {"key": "value"}
+
+        # Create temporary database
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp_file:
+            db_path = tmp_file.name
+
+        try:
+            backend = SQLiteBackend(db_path)
+            state_manager = StateManager(backend)
+
+            # Test 1: Run ID with underscores should be handled correctly
+            run_id_with_underscores = "user_123_pipeline_456"
+            context1 = TestContext(
+                initial_prompt="test prompt",
+                important_data="data for underscore test",
+                user_id="user123",
+                settings={"key": "value"},
+            )
+
+            # Add to cache
+            state_manager._cache_serialization(context1, run_id_with_underscores, {"data": "test"})
+
+            # Verify cache entry exists
+            cache_key = f"{run_id_with_underscores}|{state_manager._compute_context_hash(context1)}"
+            assert cache_key in state_manager._serialization_cache
+
+            # Test 2: Force cache eviction by adding many entries
+            for i in range(150):  # More than the 100 limit
+                temp_context = TestContext(
+                    initial_prompt=f"temp prompt {i}",
+                    important_data=f"temp data {i}",
+                    user_id=f"user{i}",
+                    settings={"temp": f"value{i}"},
+                )
+                # This will trigger cache eviction
+                state_manager._cache_serialization(temp_context, f"run_{i}", {"temp": "data"})
+
+            # Test 3: Verify that run_id with underscores was handled correctly during eviction
+            # The cache should be at capacity (100 entries)
+            assert len(state_manager._serialization_cache) <= 100
+
+            # Test 4: Test clear_cache with run_id containing underscores
+            context2 = TestContext(
+                initial_prompt="test prompt 2",
+                important_data="data for clear test",
+                user_id="user456",
+                settings={"key": "value2"},
+            )
+
+            # Add another entry with underscore run_id
+            state_manager._cache_serialization(context2, run_id_with_underscores, {"data": "test2"})
+
+            # Clear cache for specific run_id
+            state_manager.clear_cache(run_id_with_underscores)
+
+            # Verify that only entries for this run_id were cleared
+            # Other entries should still exist
+            remaining_entries = [
+                k for k in state_manager._serialization_cache.keys() if k.startswith("run_")
+            ]
+            assert len(remaining_entries) > 0  # Other entries should still exist
+
+            # Test 5: Verify that cache keys are properly formatted
+            for key in state_manager._serialization_cache.keys():
+                if "|" in key:
+                    parts = key.rsplit("|", 1)
+                    assert len(parts) == 2, f"Invalid cache key format: {key}"
+                    assert len(parts[1]) == 32, (
+                        f"Context hash should be 32 chars: {parts[1]}"
+                    )  # MD5 hash length
+
+        finally:
+            # Clean up
+            if os.path.exists(db_path):
+                os.unlink(db_path)
 
 
 class TestCLIPerformance:

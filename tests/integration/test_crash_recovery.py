@@ -70,6 +70,7 @@ async def main():
 
 asyncio.run(main())
 """
+    # Use sys.executable to ensure we use the same Python interpreter as the test
     result = subprocess.run([sys.executable, "-"], input=script, text=True)
     return result.returncode
 

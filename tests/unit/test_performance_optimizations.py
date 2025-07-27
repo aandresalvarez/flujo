@@ -14,6 +14,22 @@ from flujo.utils.performance import (
 from flujo.cost import resolve_callable
 
 
+class TestModuleImportSafety:
+    """Test that the performance module can be imported safely without an active event loop."""
+
+    def test_import_without_event_loop(self):
+        """Test that importing the performance module doesn't require an active event loop."""
+        # This test verifies that the module can be imported without causing
+        # RuntimeError when no asyncio event loop is running
+        import flujo.utils.performance
+
+        # Verify that the module was imported successfully
+        assert hasattr(flujo.utils.performance, "get_scratch_buffer")
+        assert hasattr(flujo.utils.performance, "clear_scratch_buffer")
+        assert hasattr(flujo.utils.performance, "enable_buffer_pooling")
+        assert hasattr(flujo.utils.performance, "disable_buffer_pooling")
+
+
 class TestScratchBufferOptimizations:
     """Test the scratch buffer optimization that reduces redundant context variable lookups."""
 

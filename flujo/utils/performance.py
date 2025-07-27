@@ -63,20 +63,20 @@ with performance, offering both task-local safety and optional pooling for
 high-concurrency scenarios.
 """
 
+import contextvars
 import logging
 import time
-import contextvars
-from typing import Any, Callable, TypeVar, Awaitable, Optional
 from functools import wraps
 from queue import Queue
+from typing import Any, Awaitable, Callable, Optional, TypeVar
 
-# Configure logger for the module
+# Configure logging
 logger = logging.getLogger(__name__)
 
 # Type variable for generic functions
 T = TypeVar("T")
 
-# Performance constants
+# Buffer pooling configuration
 DEFAULT_BUFFER_SIZE = 4096  # 4KB initial size
 MAX_POOL_SIZE = 100  # Maximum number of buffers in the pool
 ENABLE_BUFFER_POOLING = False  # Can be enabled for high-concurrency scenarios
@@ -87,7 +87,7 @@ _buffer_pool: Optional[Queue[bytearray]] = None
 
 
 def _get_buffer_pool() -> Queue[bytearray]:
-    """Get or create the buffer pool."""
+    """Get or create the buffer pool with proper initialization."""
     global _buffer_pool
     if _buffer_pool is None:
         _buffer_pool = Queue(maxsize=MAX_POOL_SIZE)
@@ -97,6 +97,10 @@ def _get_buffer_pool() -> Queue[bytearray]:
 # Task-local storage for scratch buffers to avoid race conditions in async contexts
 _scratch_buffer_var: contextvars.ContextVar[Optional[bytearray]] = contextvars.ContextVar(
     "scratch_buffer", default=None
+)
+# Task-local flag to track if buffer has been returned to pool
+_buffer_returned_to_pool_var: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "buffer_returned_to_pool", default=False
 )
 
 
@@ -117,7 +121,9 @@ def _get_thread_scratch_buffer() -> bytearray:
     """
     # Always check task-local storage first for consistency
     task_buffer: Optional[bytearray] = _scratch_buffer_var.get()
-    if task_buffer is not None:
+    buffer_returned_to_pool: bool = _buffer_returned_to_pool_var.get()
+
+    if task_buffer is not None and not buffer_returned_to_pool:
         return task_buffer
 
     if ENABLE_BUFFER_POOLING:
@@ -129,6 +135,7 @@ def _get_thread_scratch_buffer() -> bytearray:
             pooled_buffer.clear()
             # Store the pooled buffer in task-local storage to prevent leaks
             _scratch_buffer_var.set(pooled_buffer)
+            _buffer_returned_to_pool_var.set(False)  # Mark as not returned to pool
             return pooled_buffer
         except Exception:
             # Pool is empty or not available, create new buffer
@@ -138,7 +145,37 @@ def _get_thread_scratch_buffer() -> bytearray:
     # Create an empty bytearray that can grow efficiently
     new_buffer = bytearray()  # Start empty, will grow as needed
     _scratch_buffer_var.set(new_buffer)
+    _buffer_returned_to_pool_var.set(False)  # Mark as not returned to pool
     return new_buffer
+
+
+def _return_buffer_to_pool_sync(buffer: bytearray) -> bool:
+    """Return a buffer to the pool synchronously with proper error handling.
+
+    Returns:
+        True if the buffer was successfully returned to the pool, False otherwise
+    """
+    if not ENABLE_BUFFER_POOLING:
+        return False
+
+    pool = _get_buffer_pool()
+    if pool.full():
+        # Pool is full, discard the buffer
+        logger.debug("Buffer pool is full, discarding buffer")
+        return False
+
+    try:
+        # Clear the buffer before returning to pool
+        buffer.clear()
+        # Use put_nowait to avoid blocking
+        pool.put_nowait(buffer)
+        # Mark that this buffer has been returned to the pool
+        _buffer_returned_to_pool_var.set(True)
+        return True
+    except Exception as e:
+        # Pool is full or another error occurred, discard the buffer
+        logger.debug("Failed to return buffer to pool: %s", e, exc_info=True)
+        return False
 
 
 def clear_scratch_buffer() -> None:
@@ -148,27 +185,34 @@ def clear_scratch_buffer() -> None:
     making it ready for reuse. The buffer object itself is preserved to
     avoid allocation overhead.
 
+    When buffer pooling is enabled, this function will clear the buffer contents
+    but keep the buffer in task-local storage for immediate reuse within the same
+    task. This maintains buffer identity while still enabling efficient memory usage.
+
     Behavior is consistent regardless of pooling mode:
     - Always clears the buffer contents
-    - Always maintains the buffer in task-local storage for reuse
-    - When pooling is enabled, the buffer will be returned to the pool
-      when the task context is cleaned up (implicitly or explicitly)
+    - Always maintains buffer identity within the same task
+    - When pooling is enabled, buffers can be explicitly released to the pool
 
     This ensures consistent API semantics and prevents buffer leaks.
     """
-    # Get current buffer from task-local storage (cached result from _get_thread_scratch_buffer)
+    # Get current buffer from task-local storage
     task_buffer: Optional[bytearray] = _scratch_buffer_var.get()
 
     if task_buffer is None:
         # No buffer exists, create one and clear it for consistency
-        # Use the optimized path by calling _get_thread_scratch_buffer directly
         buffer = _get_thread_scratch_buffer()
         buffer.clear()
         return
 
     # Clear the buffer contents
     task_buffer.clear()
-    # Buffer remains in task-local storage for reuse, ensuring consistent behavior
+
+    # When pooling is enabled, we keep the buffer in task-local storage
+    # for immediate reuse within the same task. This maintains buffer identity
+    # while still allowing cross-task pooling when explicitly released.
+    # The buffer will only be returned to the pool when release_scratch_buffer()
+    # is explicitly called.
 
 
 def get_scratch_buffer() -> bytearray:
@@ -208,28 +252,17 @@ def release_scratch_buffer() -> None:
         return
 
     task_buffer: Optional[bytearray] = _scratch_buffer_var.get()
-    if task_buffer is None:
-        # No buffer to release
+    buffer_returned_to_pool: bool = _buffer_returned_to_pool_var.get()
+
+    if task_buffer is None or buffer_returned_to_pool:
+        # No buffer to release or buffer already returned
         return
 
-    # Clear the buffer before returning to pool
-    task_buffer.clear()
-
     # Return buffer to pool
-    pool = _get_buffer_pool()
-    if not pool.full():
-        try:
-            pool.put_nowait(task_buffer)
-            # Clear the task-local reference
-            _scratch_buffer_var.set(None)
-        except Exception as e:
-            # Pool is full or another error occurred, discard the buffer
-            logger.debug("Failed to return buffer to pool: %s", e, exc_info=True)
-            _scratch_buffer_var.set(None)
-    else:
-        # Pool is full, discard the buffer
-        logger.debug("Buffer pool is full, discarding buffer")
+    if _return_buffer_to_pool_sync(task_buffer):
+        # Clear the task-local reference and mark as returned
         _scratch_buffer_var.set(None)
+        _buffer_returned_to_pool_var.set(True)
 
 
 def enable_buffer_pooling() -> None:
@@ -350,30 +383,53 @@ def measure_time_async(func: Callable[..., Awaitable[T]]) -> Callable[..., Await
 
 
 def optimize_event_loop() -> None:
-    """Optimize the asyncio event loop for better performance.
+    """Optimize the event loop for better performance.
 
-    This function attempts to use uvloop on Unix systems for significantly
-    better async performance. On Windows or when uvloop is not available,
-    it falls back to the standard asyncio event loop.
+    This function applies various optimizations to the current event loop
+    to improve performance for async operations. It should be called
+    early in the application lifecycle, before any async operations begin.
 
-    Note: This function must be called explicitly to enable uvloop.
+    Optimizations include:
+    - Enabling uvloop if available (significant performance improvement)
+    - Configuring the event loop for better throughput
+    - Setting appropriate limits for concurrent operations
     """
     try:
         import uvloop
         import asyncio
 
-        current_policy = asyncio.get_event_loop_policy()
-        if isinstance(current_policy, uvloop.EventLoopPolicy):
-            logger.info("ℹ️  uvloop is already set as the event loop policy")
-            return
-
+        # uvloop provides significant performance improvements over the default event loop
         asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
         logger.info("✅ Using uvloop for enhanced async performance")
     except ImportError:
-        logger.info("ℹ️  uvloop not available, using standard asyncio event loop")
+        # uvloop not available, use default event loop
+        logger.info("ℹ️ uvloop not available, using default event loop")
+        pass
+
+    # Configure the event loop for better performance
+    try:
+        import asyncio
+
+        # Use get_running_loop() to avoid RuntimeError when no loop is active
+        loop = asyncio.get_running_loop()
+
+        # Set a reasonable limit for concurrent operations
+        # This prevents resource exhaustion in high-concurrency scenarios
+        if hasattr(loop, "set_default_executor"):
+            import concurrent.futures
+            import os
+
+            # Shutdown existing executor if it exists to prevent resource leaks
+            if hasattr(loop, "_default_executor") and loop._default_executor is not None:
+                loop._default_executor.shutdown(wait=True)
+
+            executor = concurrent.futures.ThreadPoolExecutor(
+                max_workers=min(32, (os.cpu_count() or 1) * 4)
+            )
+            loop.set_default_executor(executor)
+            logger.info("✅ Configured thread pool executor for better performance")
+    except RuntimeError:
+        # No event loop is running, which is fine for early initialization
+        logger.info("ℹ️ No event loop running, optimizations will be applied when loop starts")
     except Exception as e:
-        logger.error(f"⚠️  Failed to initialize uvloop: {e}")
-
-
-# Initialize optimizations when module is imported
-optimize_event_loop()
+        logger.warning(f"⚠️ Failed to optimize event loop: {e}")

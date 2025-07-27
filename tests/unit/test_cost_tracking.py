@@ -14,6 +14,13 @@ class TestExtractUsageMetrics:
     def test_extract_usage_metrics_with_usage_info(self):
         """Test extraction of usage metrics from pydantic-ai response."""
 
+        # Clear caches to ensure test isolation in parallel execution
+        from flujo.cost import clear_cost_cache
+        from flujo.utils.model_utils import clear_model_id_cache
+
+        clear_cost_cache()
+        clear_model_id_cache()
+
         # Create a mock response with usage information
         class MockResponse:
             def __init__(self):
@@ -344,6 +351,13 @@ class TestExtractUsageMetrics:
 
     def test_extract_usage_metrics_graceful_fallback(self):
         """Test that the system gracefully falls back when usage information is incomplete."""
+
+        # Clear caches to ensure test isolation in parallel execution
+        from flujo.cost import clear_cost_cache
+        from flujo.utils.model_utils import clear_model_id_cache
+
+        clear_cost_cache()
+        clear_model_id_cache()
 
         # Test with missing usage information
         class MockResponse:
