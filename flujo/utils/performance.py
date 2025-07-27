@@ -150,16 +150,20 @@ def _get_thread_scratch_buffer() -> bytearray:
     return new_buffer
 
 
-def _return_buffer_to_pool_sync(buffer: bytearray) -> None:
-    """Return a buffer to the pool synchronously with proper error handling."""
+def _return_buffer_to_pool_sync(buffer: bytearray) -> bool:
+    """Return a buffer to the pool synchronously with proper error handling.
+
+    Returns:
+        True if the buffer was successfully returned to the pool, False otherwise
+    """
     if not ENABLE_BUFFER_POOLING:
-        return
+        return False
 
     pool = _get_buffer_pool()
     if pool.full():
         # Pool is full, discard the buffer
         logger.debug("Buffer pool is full, discarding buffer")
-        return
+        return False
 
     try:
         # Clear the buffer before returning to pool
@@ -168,9 +172,11 @@ def _return_buffer_to_pool_sync(buffer: bytearray) -> None:
         pool.put_nowait(buffer)
         # Mark that this buffer has been returned to the pool
         _buffer_returned_to_pool_var.set(True)
+        return True
     except Exception as e:
         # Pool is full or another error occurred, discard the buffer
         logger.debug("Failed to return buffer to pool: %s", e, exc_info=True)
+        return False
 
 
 def clear_scratch_buffer() -> None:
@@ -254,10 +260,10 @@ def release_scratch_buffer() -> None:
         return
 
     # Return buffer to pool
-    _return_buffer_to_pool_sync(task_buffer)
-    # Clear the task-local reference and mark as returned
-    _scratch_buffer_var.set(None)
-    _buffer_returned_to_pool_var.set(True)
+    if _return_buffer_to_pool_sync(task_buffer):
+        # Clear the task-local reference and mark as returned
+        _scratch_buffer_var.set(None)
+        _buffer_returned_to_pool_var.set(True)
 
 
 def enable_buffer_pooling() -> None:

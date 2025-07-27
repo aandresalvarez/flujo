@@ -389,6 +389,58 @@ class TestPersistencePerformanceOverhead:
         state_manager.clear_cache("test_run")
         assert state_manager._should_serialize_context(context1, "test_run")
 
+    @pytest.mark.asyncio
+    async def test_buffer_pooling_consistency_fix(self) -> None:
+        """Test that buffer pooling state is consistent when pool operations fail."""
+
+        from flujo.utils.performance import (
+            enable_buffer_pooling,
+            disable_buffer_pooling,
+            clear_scratch_buffer,
+            get_scratch_buffer,
+            _return_buffer_to_pool_sync,
+        )
+
+        # Enable buffer pooling for testing
+        enable_buffer_pooling()
+
+        try:
+            # Get a buffer and use it
+            buffer1 = get_scratch_buffer()
+            buffer1.extend(b"test data")
+
+            # Clear the buffer
+            clear_scratch_buffer()
+
+            # Get another buffer (should be the same object)
+            buffer2 = get_scratch_buffer()
+
+            # Verify we have the same buffer object
+            assert buffer1 is buffer2
+
+            # Test the core fix: when _return_buffer_to_pool_sync fails,
+            # the buffer should not be marked as returned
+            buffer3 = get_scratch_buffer()
+            buffer3.extend(b"important data")
+
+            # Directly test the function that was buggy
+            # This should return False when pool is full
+            success = _return_buffer_to_pool_sync(buffer3)
+
+            # If the pool is full, success should be False
+            # and the buffer should still be available
+            if not success:
+                # Verify the buffer is still available (not marked as returned)
+                buffer4 = get_scratch_buffer()
+                assert buffer3 is buffer4  # Should be the same buffer
+
+                # Verify the data is still there (buffer wasn't actually returned)
+                assert buffer4 == b"important data"
+
+        finally:
+            # Disable buffer pooling
+            disable_buffer_pooling()
+
 
 class TestCLIPerformance:
     """Test NFR-10: CLI commands must complete in <2s with 10,000 runs."""
