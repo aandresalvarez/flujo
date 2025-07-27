@@ -115,23 +115,27 @@ def _get_thread_scratch_buffer() -> bytearray:
     Returns:
         A bytearray buffer of DEFAULT_BUFFER_SIZE (4KB) for temporary operations
     """
+    # Always check task-local storage first for consistency
+    task_buffer: Optional[bytearray] = _scratch_buffer_var.get()
+    if task_buffer is not None:
+        return task_buffer
+
     if ENABLE_BUFFER_POOLING:
         # Try to get a buffer from the pool first
         pool = _get_buffer_pool()
         try:
             pooled_buffer = pool.get_nowait()
+            # Store the pooled buffer in task-local storage to prevent leaks
+            _scratch_buffer_var.set(pooled_buffer)
             return pooled_buffer
         except Exception:
             # Pool is empty or not available, create new buffer
             pass
 
-    # Use task-local storage (default behavior)
-    task_buffer: Optional[bytearray] = _scratch_buffer_var.get()
-    if task_buffer is None:
-        new_buffer = bytearray(DEFAULT_BUFFER_SIZE)  # 4KB initial size
-        _scratch_buffer_var.set(new_buffer)
-        return new_buffer
-    return task_buffer
+    # Create new buffer and store in task-local storage
+    new_buffer = bytearray(DEFAULT_BUFFER_SIZE)  # 4KB initial size
+    _scratch_buffer_var.set(new_buffer)
+    return new_buffer
 
 
 def clear_scratch_buffer() -> None:
@@ -143,25 +147,35 @@ def clear_scratch_buffer() -> None:
 
     When ENABLE_BUFFER_POOLING is True, the buffer is returned to the
     global pool for reuse by other tasks.
+
+    Behavior is consistent regardless of pooling mode:
+    - Always clears the buffer contents
+    - When pooling is enabled, returns buffer to pool and clears task-local reference
+    - When pooling is disabled, keeps buffer in task-local storage for reuse
     """
-    if ENABLE_BUFFER_POOLING:
-        # Get current buffer from task-local storage
-        task_buffer: Optional[bytearray] = _scratch_buffer_var.get()
-        if task_buffer is not None:
-            # Clear the buffer and return it to pool
-            task_buffer.clear()
-            pool = _get_buffer_pool()
-            try:
-                pool.put_nowait(task_buffer)
-            except Exception:
-                # Pool is full, discard the buffer
-                pass
-            # Clear the task-local reference
-            _scratch_buffer_var.set(None)
-    else:
-        # Standard behavior: clear the task-local buffer
+    # Get current buffer from task-local storage
+    task_buffer: Optional[bytearray] = _scratch_buffer_var.get()
+
+    if task_buffer is None:
+        # No buffer exists, create one and clear it for consistency
         buffer = _get_thread_scratch_buffer()
         buffer.clear()
+        return
+
+    # Clear the buffer contents
+    task_buffer.clear()
+
+    if ENABLE_BUFFER_POOLING:
+        # Return buffer to pool and clear task-local reference
+        pool = _get_buffer_pool()
+        try:
+            pool.put_nowait(task_buffer)
+        except Exception:
+            # Pool is full, discard the buffer
+            pass
+        # Clear the task-local reference
+        _scratch_buffer_var.set(None)
+    # When pooling is disabled, buffer remains in task-local storage for reuse
 
 
 def get_scratch_buffer() -> bytearray:
