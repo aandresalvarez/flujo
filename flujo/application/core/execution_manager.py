@@ -29,7 +29,12 @@ ContextT = TypeVar("ContextT", bound=BaseModel)
 
 
 class ExecutionManager(Generic[ContextT]):
-    """Main execution manager that orchestrates all execution components."""
+    """Main execution manager that orchestrates all execution components.
+
+    This class coordinates step execution, state management, usage governance,
+    and type validation for pipeline execution. It can be configured to run
+    inside loop steps to provide proper context isolation and state management.
+    """
 
     def __init__(
         self,
@@ -39,8 +44,21 @@ class ExecutionManager(Generic[ContextT]):
         usage_governor: Optional[UsageGovernor[ContextT]] = None,
         step_coordinator: Optional[StepCoordinator[ContextT]] = None,
         type_validator: Optional[TypeValidator] = None,
-        inside_loop_step: bool = False,  # Track if we're inside a loop step
+        inside_loop_step: bool = False,
     ) -> None:
+        """Initialize the execution manager.
+
+        Args:
+            pipeline: The pipeline to execute
+            state_manager: Optional state manager for persistence
+            usage_governor: Optional usage governor for limits
+            step_coordinator: Optional step coordinator for execution
+            type_validator: Optional type validator for compatibility
+            inside_loop_step: Whether this manager is running inside a loop step.
+                When True, enables proper context isolation and state management
+                for loop iterations to prevent unintended side effects between
+                iterations and ensure each iteration operates independently.
+        """
         self.pipeline = pipeline
         self.state_manager = state_manager or StateManager()
         self.usage_governor = usage_governor or UsageGovernor()

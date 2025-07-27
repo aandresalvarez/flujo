@@ -826,13 +826,12 @@ async def _execute_loop_step_logic(
                     try:
                         # First, apply any context updates from the step execution to the iteration context
                         # This ensures that the iteration context has the latest updates before merging
-                        if hasattr(final_body_output_of_last_iteration, "__dict__"):
+                        if isinstance(final_body_output_of_last_iteration, dict):
                             # If the output is a dict-like object, apply it to the iteration context
                             update_data = final_body_output_of_last_iteration
-                            if isinstance(update_data, dict):
-                                for key, value in update_data.items():
-                                    if hasattr(iteration_context, key):
-                                        setattr(iteration_context, key, value)
+                            for key, value in update_data.items():
+                                if hasattr(iteration_context, key):
+                                    setattr(iteration_context, key, value)
 
                         merge_success = safe_merge_context_updates(
                             target_context=context,
@@ -883,11 +882,11 @@ async def _execute_loop_step_logic(
                     f"Failed to perform universal context merge in LoopStep '{loop_step.name}' iteration {i}: {e}"
                 )
 
-        # Now check the exit condition on the iteration context to maintain proper loop behavior
-        # The exit condition should evaluate based on the iteration's context, not the main context
+        # Now check the exit condition on the main context after merging updates
+        # The exit condition should evaluate based on the updated main context
         try:
             should_exit = loop_step.exit_condition_callable(
-                final_body_output_of_last_iteration, iteration_context
+                final_body_output_of_last_iteration, context
             )
         except Exception as e:
             telemetry.logfire.error(
