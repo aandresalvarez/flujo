@@ -17,6 +17,7 @@ class TestExtractUsageMetrics:
         # Clear caches to ensure test isolation in parallel execution
         from flujo.cost import clear_cost_cache
         from flujo.utils.model_utils import clear_model_id_cache
+
         clear_cost_cache()
         clear_model_id_cache()
 
@@ -354,6 +355,7 @@ class TestExtractUsageMetrics:
         # Clear caches to ensure test isolation in parallel execution
         from flujo.cost import clear_cost_cache
         from flujo.utils.model_utils import clear_model_id_cache
+
         clear_cost_cache()
         clear_model_id_cache()
 
