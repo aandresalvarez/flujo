@@ -826,12 +826,21 @@ async def _execute_loop_step_logic(
                     try:
                         # First, apply any context updates from the step execution to the iteration context
                         # This ensures that the iteration context has the latest updates before merging
+                        # CRITICAL FIX: Only apply context updates if the step is configured for it
+                        # This prevents treating regular step outputs as context updates
                         if isinstance(final_body_output_of_last_iteration, dict):
-                            # If the output is a dict-like object, apply it to the iteration context
-                            update_data = final_body_output_of_last_iteration
-                            for key, value in update_data.items():
-                                if hasattr(iteration_context, key):
-                                    setattr(iteration_context, key, value)
+                            # Check if any step in the loop body is configured for context updates
+                            has_context_updating_step = any(
+                                hasattr(body_s, "updates_context") and body_s.updates_context
+                                for body_s in loop_step.loop_body_pipeline.steps
+                            )
+
+                            if has_context_updating_step:
+                                # Only apply dictionary output as context updates if step is configured for it
+                                update_data = final_body_output_of_last_iteration
+                                for key, value in update_data.items():
+                                    if hasattr(iteration_context, key):
+                                        setattr(iteration_context, key, value)
 
                         merge_success = safe_merge_context_updates(
                             target_context=context,
