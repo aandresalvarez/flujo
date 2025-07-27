@@ -107,6 +107,69 @@ def get_provider_pricing(provider: Optional[str], model: str) -> Optional[Provid
     return None
 
 
+# Default pricing configuration for common models
+DEFAULT_PRICING_CONFIG = {
+    "openai": {
+        "gpt-4o": {
+            "prompt_tokens_per_1k": 0.005,
+            "completion_tokens_per_1k": 0.015,
+        },
+        "gpt-4o-mini": {
+            "prompt_tokens_per_1k": 0.00015,
+            "completion_tokens_per_1k": 0.0006,
+        },
+        "gpt-4": {
+            "prompt_tokens_per_1k": 0.03,
+            "completion_tokens_per_1k": 0.06,
+        },
+        "gpt-3.5-turbo": {
+            "prompt_tokens_per_1k": 0.0015,
+            "completion_tokens_per_1k": 0.002,
+        },
+        "text-embedding-3-large": {
+            "prompt_tokens_per_1k": 0.00013,
+            "completion_tokens_per_1k": 0.00013,
+        },
+        "text-embedding-3-small": {
+            "prompt_tokens_per_1k": 0.00002,
+            "completion_tokens_per_1k": 0.00002,
+        },
+        "text-embedding-ada-002": {
+            "prompt_tokens_per_1k": 0.0001,
+            "completion_tokens_per_1k": 0.0001,
+        },
+    },
+    "anthropic": {
+        "claude-3-opus": {
+            "prompt_tokens_per_1k": 0.015,
+            "completion_tokens_per_1k": 0.075,
+        },
+        "claude-3-sonnet": {
+            "prompt_tokens_per_1k": 0.003,
+            "completion_tokens_per_1k": 0.015,
+        },
+        "claude-3-haiku": {
+            "prompt_tokens_per_1k": 0.00025,
+            "completion_tokens_per_1k": 0.00125,
+        },
+    },
+}
+
+
+def _create_provider_pricing_from_config(config: Dict[str, float]) -> ProviderPricing:
+    """Create a ProviderPricing object from a configuration dictionary."""
+    return ProviderPricing(
+        prompt_tokens_per_1k=config["prompt_tokens_per_1k"],
+        completion_tokens_per_1k=config["completion_tokens_per_1k"],
+        price_per_image_standard_1024x1024=None,
+        price_per_image_hd_1024x1024=None,
+        price_per_image_standard_1792x1024=None,
+        price_per_image_hd_1792x1024=None,
+        price_per_image_standard_1024x1792=None,
+        price_per_image_hd_1024x1792=None,
+    )
+
+
 def _get_default_pricing(provider: Optional[str], model: str) -> Optional[ProviderPricing]:
     """Get default pricing for common models when not configured."""
 
@@ -114,122 +177,10 @@ def _get_default_pricing(provider: Optional[str], model: str) -> Optional[Provid
     if provider is None:
         return None
 
-    # OpenAI pricing (as of 2024)
-    if provider == "openai":
-        if model == "gpt-4o":
-            return ProviderPricing(
-                prompt_tokens_per_1k=0.005,
-                completion_tokens_per_1k=0.015,
-                price_per_image_standard_1024x1024=None,
-                price_per_image_hd_1024x1024=None,
-                price_per_image_standard_1792x1024=None,
-                price_per_image_hd_1792x1024=None,
-                price_per_image_standard_1024x1792=None,
-                price_per_image_hd_1024x1792=None,
-            )
-        elif model == "gpt-4o-mini":
-            return ProviderPricing(
-                prompt_tokens_per_1k=0.00015,
-                completion_tokens_per_1k=0.0006,
-                price_per_image_standard_1024x1024=None,
-                price_per_image_hd_1024x1024=None,
-                price_per_image_standard_1792x1024=None,
-                price_per_image_hd_1792x1024=None,
-                price_per_image_standard_1024x1792=None,
-                price_per_image_hd_1024x1792=None,
-            )
-        elif model == "gpt-4":
-            return ProviderPricing(
-                prompt_tokens_per_1k=0.03,
-                completion_tokens_per_1k=0.06,
-                price_per_image_standard_1024x1024=None,
-                price_per_image_hd_1024x1024=None,
-                price_per_image_standard_1792x1024=None,
-                price_per_image_hd_1792x1024=None,
-                price_per_image_standard_1024x1792=None,
-                price_per_image_hd_1024x1792=None,
-            )
-        elif model == "gpt-3.5-turbo":
-            return ProviderPricing(
-                prompt_tokens_per_1k=0.0015,
-                completion_tokens_per_1k=0.002,
-                price_per_image_standard_1024x1024=None,
-                price_per_image_hd_1024x1024=None,
-                price_per_image_standard_1792x1024=None,
-                price_per_image_hd_1792x1024=None,
-                price_per_image_standard_1024x1792=None,
-                price_per_image_hd_1024x1792=None,
-            )
-        # OpenAI embedding models
-        elif model == "text-embedding-3-large":
-            return ProviderPricing(
-                prompt_tokens_per_1k=0.00013,
-                completion_tokens_per_1k=0.00013,
-                price_per_image_standard_1024x1024=None,
-                price_per_image_hd_1024x1024=None,
-                price_per_image_standard_1792x1024=None,
-                price_per_image_hd_1792x1024=None,
-                price_per_image_standard_1024x1792=None,
-                price_per_image_hd_1024x1792=None,
-            )
-        elif model == "text-embedding-3-small":
-            return ProviderPricing(
-                prompt_tokens_per_1k=0.00002,
-                completion_tokens_per_1k=0.00002,
-                price_per_image_standard_1024x1024=None,
-                price_per_image_hd_1024x1024=None,
-                price_per_image_standard_1792x1024=None,
-                price_per_image_hd_1792x1024=None,
-                price_per_image_standard_1024x1792=None,
-                price_per_image_hd_1024x1792=None,
-            )
-        elif model == "text-embedding-ada-002":
-            return ProviderPricing(
-                prompt_tokens_per_1k=0.0001,
-                completion_tokens_per_1k=0.0001,
-                price_per_image_standard_1024x1024=None,
-                price_per_image_hd_1024x1024=None,
-                price_per_image_standard_1792x1024=None,
-                price_per_image_hd_1792x1024=None,
-                price_per_image_standard_1024x1792=None,
-                price_per_image_hd_1024x1792=None,
-            )
-
-    # Anthropic pricing (as of 2024)
-    elif provider == "anthropic":
-        if model == "claude-3-opus":
-            return ProviderPricing(
-                prompt_tokens_per_1k=0.015,
-                completion_tokens_per_1k=0.075,
-                price_per_image_standard_1024x1024=None,
-                price_per_image_hd_1024x1024=None,
-                price_per_image_standard_1792x1024=None,
-                price_per_image_hd_1792x1024=None,
-                price_per_image_standard_1024x1792=None,
-                price_per_image_hd_1024x1792=None,
-            )
-        elif model == "claude-3-sonnet":
-            return ProviderPricing(
-                prompt_tokens_per_1k=0.003,
-                completion_tokens_per_1k=0.015,
-                price_per_image_standard_1024x1024=None,
-                price_per_image_hd_1024x1024=None,
-                price_per_image_standard_1792x1024=None,
-                price_per_image_hd_1792x1024=None,
-                price_per_image_standard_1024x1792=None,
-                price_per_image_hd_1024x1792=None,
-            )
-        elif model == "claude-3-haiku":
-            return ProviderPricing(
-                prompt_tokens_per_1k=0.00025,
-                completion_tokens_per_1k=0.00125,
-                price_per_image_standard_1024x1024=None,
-                price_per_image_hd_1024x1024=None,
-                price_per_image_standard_1792x1024=None,
-                price_per_image_hd_1792x1024=None,
-                price_per_image_standard_1024x1792=None,
-                price_per_image_hd_1024x1792=None,
-            )
+    # Check if we have pricing configuration for this provider and model
+    if provider in DEFAULT_PRICING_CONFIG and model in DEFAULT_PRICING_CONFIG[provider]:
+        config = DEFAULT_PRICING_CONFIG[provider][model]
+        return _create_provider_pricing_from_config(config)
 
     return None
 

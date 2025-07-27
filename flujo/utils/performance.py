@@ -113,7 +113,7 @@ def _get_thread_scratch_buffer() -> bytearray:
     synchronization overhead.
 
     Returns:
-        A bytearray buffer of DEFAULT_BUFFER_SIZE (4KB) for temporary operations
+        A bytearray buffer ready for temporary operations
     """
     # Always check task-local storage first for consistency
     task_buffer: Optional[bytearray] = _scratch_buffer_var.get()
@@ -125,6 +125,8 @@ def _get_thread_scratch_buffer() -> bytearray:
         pool = _get_buffer_pool()
         try:
             pooled_buffer = pool.get_nowait()
+            # Clear the pooled buffer before use
+            pooled_buffer.clear()
             # Store the pooled buffer in task-local storage to prevent leaks
             _scratch_buffer_var.set(pooled_buffer)
             return pooled_buffer
@@ -133,7 +135,8 @@ def _get_thread_scratch_buffer() -> bytearray:
             pass
 
     # Create new buffer and store in task-local storage
-    new_buffer = bytearray(DEFAULT_BUFFER_SIZE)  # 4KB initial size
+    # Create an empty bytearray that can grow efficiently
+    new_buffer = bytearray()  # Start empty, will grow as needed
     _scratch_buffer_var.set(new_buffer)
     return new_buffer
 
@@ -145,13 +148,13 @@ def clear_scratch_buffer() -> None:
     making it ready for reuse. The buffer object itself is preserved to
     avoid allocation overhead.
 
-    When ENABLE_BUFFER_POOLING is True, the buffer is returned to the
-    global pool for reuse by other tasks.
-
     Behavior is consistent regardless of pooling mode:
     - Always clears the buffer contents
-    - When pooling is enabled, returns buffer to pool and clears task-local reference
-    - When pooling is disabled, keeps buffer in task-local storage for reuse
+    - Always maintains the buffer in task-local storage for reuse
+    - When pooling is enabled, the buffer will be returned to the pool
+      when the task context is cleaned up (implicitly or explicitly)
+
+    This ensures consistent API semantics and prevents buffer leaks.
     """
     # Get current buffer from task-local storage
     task_buffer: Optional[bytearray] = _scratch_buffer_var.get()
@@ -164,18 +167,7 @@ def clear_scratch_buffer() -> None:
 
     # Clear the buffer contents
     task_buffer.clear()
-
-    if ENABLE_BUFFER_POOLING:
-        # Return buffer to pool and clear task-local reference
-        pool = _get_buffer_pool()
-        try:
-            pool.put_nowait(task_buffer)
-        except Exception:
-            # Pool is full, discard the buffer
-            pass
-        # Clear the task-local reference
-        _scratch_buffer_var.set(None)
-    # When pooling is disabled, buffer remains in task-local storage for reuse
+    # Buffer remains in task-local storage for reuse, ensuring consistent behavior
 
 
 def get_scratch_buffer() -> bytearray:
@@ -185,13 +177,53 @@ def get_scratch_buffer() -> bytearray:
     is guaranteed to be thread-safe and task-local, meaning each async task
     will get its own buffer to avoid race conditions.
 
-    The buffer is pre-allocated to DEFAULT_BUFFER_SIZE (4KB) to minimize
-    allocation overhead during performance-critical operations.
+    The buffer starts empty and can grow as needed to minimize allocation overhead
+    during performance-critical operations.
 
     Returns:
         A bytearray buffer ready for temporary operations
     """
     return _get_thread_scratch_buffer()
+
+
+def release_scratch_buffer() -> None:
+    """Release the task-local scratch buffer back to the pool (when pooling is enabled).
+
+    This function explicitly releases the current task's scratch buffer back to
+    the global pool when buffer pooling is enabled. This is useful for:
+    - Explicitly managing buffer lifecycle
+    - Ensuring buffers are returned to the pool before task completion
+    - Optimizing memory usage in high-concurrency scenarios
+
+    When buffer pooling is disabled, this function is a no-op since buffers
+    are managed entirely within task-local storage.
+
+    Note: This function is optional - buffers will be automatically cleaned up
+    when the task context is destroyed, but explicit release can be beneficial
+    for memory optimization in long-running tasks.
+    """
+    if not ENABLE_BUFFER_POOLING:
+        # No-op when pooling is disabled
+        return
+
+    task_buffer: Optional[bytearray] = _scratch_buffer_var.get()
+    if task_buffer is None:
+        # No buffer to release
+        return
+
+    # Clear the buffer before returning to pool
+    task_buffer.clear()
+
+    # Return buffer to pool
+    pool = _get_buffer_pool()
+    try:
+        pool.put_nowait(task_buffer)
+        # Clear the task-local reference
+        _scratch_buffer_var.set(None)
+    except Exception as e:
+        # Pool is full or another error occurred, discard the buffer
+        logger.debug("Failed to return buffer to pool: %s", e, exc_info=True)
+        _scratch_buffer_var.set(None)
 
 
 def enable_buffer_pooling() -> None:

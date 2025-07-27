@@ -149,6 +149,47 @@ def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[
     return prompt_tokens, completion_tokens, cost_usd
 
 
+def _validate_usage_object(run_result: Any, telemetry: Any) -> Optional[Any]:
+    """Validate and extract the usage object from run_result."""
+    if not hasattr(run_result, "usage") or not run_result.usage:
+        telemetry.logfire.warning("Image cost post-processor: No usage information found")
+        return None
+
+    usage_obj = run_result.usage() if callable(run_result.usage) else run_result.usage
+
+    if not hasattr(usage_obj, "details") or not usage_obj.details:
+        return None
+
+    return usage_obj
+
+
+def _calculate_image_cost(
+    image_count: int,
+    pricing_data: Dict[str, Optional[float]],
+    price_key: str,
+    quality: str,
+    size: str,
+    telemetry: Any,
+) -> float:
+    """Calculate the total cost for image generation."""
+    price_per_image = pricing_data.get(price_key)
+
+    if price_per_image is None:
+        telemetry.logfire.warning(
+            f"Image cost post-processor: No pricing found for key '{price_key}'. "
+            f"Setting cost to 0.0. Available keys: {list(pricing_data.keys())}"
+        )
+        return 0.0
+
+    total_cost = image_count * price_per_image
+    telemetry.logfire.info(
+        f"Image cost post-processor: Calculated cost ${total_cost} "
+        f"for {image_count} image(s) at ${price_per_image} each "
+        f"(quality: {quality}, size: {size})"
+    )
+    return total_cost
+
+
 def _image_cost_post_processor(
     run_result: Any, pricing_data: Dict[str, Optional[float]], **kwargs: Any
 ) -> Any:
@@ -175,50 +216,25 @@ def _image_cost_post_processor(
     """
     from .infra import telemetry
 
-    # Check if the run_result has usage information
-    if not hasattr(run_result, "usage") or not run_result.usage:
-        telemetry.logfire.warning("Image cost post-processor: No usage information found")
+    # Validate and extract the usage object
+    usage_obj = _validate_usage_object(run_result, telemetry)
+    if not usage_obj:
         return run_result
 
-    # Get the usage object - it might be a method that needs to be called
-    if callable(run_result.usage):
-        usage_obj = run_result.usage()
-    else:
-        usage_obj = run_result.usage
-
-    # Check if this is an image generation response
-    if not hasattr(usage_obj, "details") or not usage_obj.details:
-        return run_result
-
+    # Extract image count
     image_count = usage_obj.details.get("images", 0)
     if image_count == 0:
         return run_result
 
     # Determine price key from agent call parameters (e.g., size, quality)
-    # Default to standard 1024x1024 if not specified
     size = kwargs.get("size", "1024x1024")
     quality = kwargs.get("quality", "standard")
     price_key = f"price_per_image_{quality}_{size}"
 
-    price_per_image = pricing_data.get(price_key)
-
-    if price_per_image is None:
-        # Handle missing price - log warning and set cost to 0.0
-        telemetry.logfire.warning(
-            f"Image cost post-processor: No pricing found for key '{price_key}'. "
-            f"Setting cost to 0.0. Available keys: {list(pricing_data.keys())}"
-        )
-        usage_obj.cost_usd = 0.0
-    else:
-        # Calculate and set the cost
-        total_cost = image_count * price_per_image
-        usage_obj.cost_usd = total_cost
-
-        telemetry.logfire.info(
-            f"Image cost post-processor: Calculated cost ${total_cost} "
-            f"for {image_count} image(s) at ${price_per_image} each "
-            f"(quality: {quality}, size: {size})"
-        )
+    # Calculate the cost
+    usage_obj.cost_usd = _calculate_image_cost(
+        image_count, pricing_data, price_key, quality, size, telemetry
+    )
 
     return run_result
 

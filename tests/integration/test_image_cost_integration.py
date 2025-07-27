@@ -7,7 +7,22 @@ from flujo.exceptions import UsageLimitExceededError
 
 
 class MockImageGenerationAgent:
-    """A mock agent that simulates DALL-E 3 image generation."""
+    """
+    A mock agent that simulates DALL-E 3 image generation.
+
+    This class is used in tests to simulate the behavior of an image generation agent,
+    including tracking usage and applying post-processors for cost calculation.
+
+    Attributes:
+        image_count (int): The number of images to generate. Default is 1.
+        quality (str): The quality of the generated images (e.g., "standard", "high"). Default is "standard".
+        size (str): The size of the generated images (e.g., "1024x1024"). Default is "1024x1024".
+        model_id (str): The identifier for the DALL-E 3 model.
+        post_processors (list): A list of post-processors to apply to the agent's response.
+
+    Methods:
+        run(data: str): Simulates a DALL-E 3 image generation response with usage information.
+    """
 
     def __init__(self, image_count: int = 1, quality: str = "standard", size: str = "1024x1024"):
         self.image_count = image_count

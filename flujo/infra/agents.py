@@ -444,9 +444,49 @@ def make_agent_async(
     )
 
 
+# Model registry for image generation models
+IMAGE_GENERATION_MODEL_PATTERNS = {
+    "openai": [
+        "dall-e",
+        "dall-e-2",
+        "dall-e-3",
+    ],
+    "midjourney": [
+        "midjourney",
+        "mj",
+    ],
+    "stability": [
+        "stable-diffusion",
+        "sd",
+    ],
+    "stable-diffusion": [
+        "stable-diffusion",
+        "sd",
+        "xl",
+    ],
+    "google": [
+        "imagen",
+        "imagen-2",
+    ],
+    "anthropic": [
+        "claude-3-haiku-image",
+        "claude-3-sonnet-image",
+        "claude-3-opus-image",
+    ],
+    "meta": [
+        "emma",
+        "emma-2",
+    ],
+}
+
+
 def _is_image_generation_model(model: str) -> bool:
     """
     Check if the model is an image generation model.
+
+    This function examines the model identifier to determine if it's an image
+    generation model using a configuration-based approach for better maintainability
+    and extensibility.
 
     Parameters
     ----------
@@ -458,24 +498,35 @@ def _is_image_generation_model(model: str) -> bool:
     bool
         True if the model is an image generation model
     """
+    # Handle edge cases
+    if not model:
+        return False
+
     # Extract the provider and model name from the provider:model format
     if ":" in model:
         provider = model.split(":", 1)[0].lower()
         model_name = model.split(":", 1)[1].lower()
+
+        # Handle case where model name is empty (e.g., "openai:")
+        if not model_name:
+            return False
     else:
         provider = ""
         model_name = model.lower()
 
-    # Check for common image generation model patterns in both provider and model name
-    image_model_patterns = [
-        "dall-e",  # OpenAI DALL-E models
-        "midjourney",  # Midjourney models
-        "stable-diffusion",  # Stable Diffusion models
-        "imagen",  # Google Imagen models
-    ]
+    # Check against the model registry
+    for provider_patterns in IMAGE_GENERATION_MODEL_PATTERNS.values():
+        for pattern in provider_patterns:
+            if pattern in model_name:
+                return True
 
-    # Check if any pattern matches either the provider or model name
-    return any(pattern in provider or pattern in model_name for pattern in image_model_patterns)
+    # Only check provider if it's specifically an image generation provider
+    # (not just any provider that has image models)
+    image_only_providers = {"midjourney", "stability", "stable-diffusion"}
+    if provider in image_only_providers:
+        return True
+
+    return False
 
 
 def _attach_image_cost_post_processor(agent: Any, model: str) -> None:
