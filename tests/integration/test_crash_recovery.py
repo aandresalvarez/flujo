@@ -2,6 +2,7 @@ import json
 import os
 import sqlite3
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -69,8 +70,8 @@ async def main():
 
 asyncio.run(main())
 """
-    # Use 'python' instead of sys.executable to avoid path issues
-    result = subprocess.run(["python", "-"], input=script, text=True)
+    # Use sys.executable to ensure we use the same Python interpreter as the test
+    result = subprocess.run([sys.executable, "-"], input=script, text=True)
     return result.returncode
 
 
