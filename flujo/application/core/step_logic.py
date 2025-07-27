@@ -818,7 +818,20 @@ async def _execute_loop_step_logic(
                 # FIXED: Add context merging for regular LoopStep with @step(updates_context=True)
                 # This ensures context updates from loop body steps are properly applied
                 if context is not None and iteration_context is not None:
+                    telemetry.logfire.debug(
+                        f"Attempting context merge for LoopStep '{loop_step.name}' iteration {i}"
+                    )
                     try:
+                        # First, apply any context updates from the step execution to the iteration context
+                        # This ensures that the iteration context has the latest updates before merging
+                        if hasattr(final_body_output_of_last_iteration, "__dict__"):
+                            # If the output is a dict-like object, apply it to the iteration context
+                            update_data = final_body_output_of_last_iteration
+                            if isinstance(update_data, dict):
+                                for key, value in update_data.items():
+                                    if hasattr(iteration_context, key):
+                                        setattr(iteration_context, key, value)
+
                         merge_success = safe_merge_context_updates(
                             target_context=context,
                             source_context=iteration_context,
@@ -828,6 +841,12 @@ async def _execute_loop_step_logic(
                             telemetry.logfire.debug(
                                 f"Successfully merged context updates in LoopStep '{loop_step.name}' iteration {i}"
                             )
+                            # Add debug logging to see what was merged
+                            if context and iteration_context:
+                                telemetry.logfire.debug(
+                                    f"Context merge details - Main context: {dict(context.__dict__)}, "
+                                    f"Iteration context: {dict(iteration_context.__dict__)}"
+                                )
                         else:
                             telemetry.logfire.warn(
                                 f"Context merge failed in LoopStep '{loop_step.name}' iteration {i} "
@@ -844,8 +863,15 @@ async def _execute_loop_step_logic(
         # independently, maintaining the integrity of the loop's logic and results.
 
         try:
+            # Apply context updates from the step output to the main context
+            # This ensures the exit condition sees the updated context
+            if isinstance(final_body_output_of_last_iteration, dict) and context is not None:
+                for key, value in final_body_output_of_last_iteration.items():
+                    if hasattr(context, key):
+                        setattr(context, key, value)
+
             should_exit = loop_step.exit_condition_callable(
-                final_body_output_of_last_iteration, iteration_context
+                final_body_output_of_last_iteration, context
             )
         except Exception as e:
             telemetry.logfire.error(
