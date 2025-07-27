@@ -2,12 +2,31 @@
 
 from __future__ import annotations
 
-from typing import Optional, Tuple, Any, Protocol, runtime_checkable, Dict
+from typing import Optional, Tuple, Any, Protocol, runtime_checkable, Dict, TypeVar, Callable
 import flujo.infra.config
 from flujo.exceptions import PricingNotConfiguredError
 
 # Cache for model information to reduce repeated extraction overhead
 _model_cache: dict[str, tuple[Optional[str], str]] = {}
+
+# Type variable for generic callable resolution
+T = TypeVar("T")
+
+
+def resolve_callable(value: T | Callable[[], T]) -> T:
+    """Resolve a value that might be a callable or the value itself.
+
+    This utility function handles the common pattern where an attribute
+    might be either a callable that returns a value, or the value itself.
+    This reduces code duplication and improves maintainability.
+
+    Args:
+        value: Either a callable that returns T, or T directly
+
+    Returns:
+        The resolved value of type T
+    """
+    return value() if callable(value) else value
 
 
 def clear_cost_cache() -> None:
@@ -155,7 +174,7 @@ def _validate_usage_object(run_result: Any, telemetry: Any) -> Optional[Any]:
         telemetry.logfire.warning("Image cost post-processor: No usage information found")
         return None
 
-    usage_obj = run_result.usage() if callable(run_result.usage) else run_result.usage
+    usage_obj = resolve_callable(run_result.usage)
 
     if not hasattr(usage_obj, "details") or not usage_obj.details:
         return None

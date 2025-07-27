@@ -156,11 +156,12 @@ def clear_scratch_buffer() -> None:
 
     This ensures consistent API semantics and prevents buffer leaks.
     """
-    # Get current buffer from task-local storage
+    # Get current buffer from task-local storage (cached result from _get_thread_scratch_buffer)
     task_buffer: Optional[bytearray] = _scratch_buffer_var.get()
 
     if task_buffer is None:
         # No buffer exists, create one and clear it for consistency
+        # Use the optimized path by calling _get_thread_scratch_buffer directly
         buffer = _get_thread_scratch_buffer()
         buffer.clear()
         return
