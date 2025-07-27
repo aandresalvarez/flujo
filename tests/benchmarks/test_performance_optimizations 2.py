@@ -250,29 +250,27 @@ class TestBufferReuse:
         assert len(buffer3) == 0
 
     def test_buffer_pooling_functionality(self):
-        """Test buffer pooling functionality when enabled."""
+        """Test buffer pooling functionality."""
         from flujo.utils.performance import (
             enable_buffer_pooling,
             disable_buffer_pooling,
-            get_buffer_pool_stats,
-            clear_scratch_buffer,
             get_scratch_buffer,
+            release_scratch_buffer,
+            get_buffer_pool_stats,
         )
-
-        # Start with pooling disabled (default)
-        stats = get_buffer_pool_stats()
-        assert not stats["enabled"]
 
         # Enable pooling
         enable_buffer_pooling()
+
+        # Check initial pool state
         stats = get_buffer_pool_stats()
-        assert stats["enabled"]
+        assert stats["enabled"] is True
         assert stats["pool_size"] == 0
 
-        # Get a buffer and clear it to add to pool
+        # Get a buffer and release it to add to pool
         buffer1 = get_scratch_buffer()
         buffer1.extend(b"test_data")
-        clear_scratch_buffer()
+        release_scratch_buffer()
 
         # Check pool stats
         stats = get_buffer_pool_stats()
@@ -294,6 +292,7 @@ class TestBufferReuse:
             disable_buffer_pooling,
             get_scratch_buffer,
             clear_scratch_buffer,
+            release_scratch_buffer,
         )
 
         # Enable pooling
@@ -304,7 +303,8 @@ class TestBufferReuse:
             buffer = get_scratch_buffer()
             buffer.extend(f"worker_{worker_id}_data".encode())
             await asyncio.sleep(0.001)  # Simulate some work
-            clear_scratch_buffer()
+            clear_scratch_buffer()  # Clear for reuse within same task
+            release_scratch_buffer()  # Release to pool for other tasks
             return len(buffer)
 
         # Run multiple workers concurrently
@@ -331,6 +331,7 @@ class TestBufferReuse:
             disable_buffer_pooling,
             get_scratch_buffer,
             clear_scratch_buffer,
+            release_scratch_buffer,
             get_buffer_pool_stats,
         )
 
@@ -353,7 +354,8 @@ class TestBufferReuse:
             for i in range(50):
                 buffer = get_scratch_buffer()
                 buffer.extend(f"data_{i}".encode())
-                clear_scratch_buffer()  # Return to pool
+                clear_scratch_buffer()  # Clear for reuse within same task
+                release_scratch_buffer()  # Release to pool for other tasks
                 buffers.append(buffer)
             return len(buffers)
 

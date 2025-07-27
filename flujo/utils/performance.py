@@ -70,7 +70,6 @@ import time
 from functools import wraps
 from queue import Queue
 from typing import Any, Awaitable, Callable, Optional, TypeVar
-import os
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -86,7 +85,6 @@ ENABLE_BUFFER_POOLING = False  # Can be enabled for high-concurrency scenarios
 # Thread-safe pool for reusable scratch buffers to minimize memory usage
 # Only used when ENABLE_BUFFER_POOLING is True
 _buffer_pool: Optional[Queue[bytearray]] = None
-_pool_lock = asyncio.Lock()  # Async lock for pool operations
 
 
 def _get_buffer_pool() -> Queue[bytearray]:
@@ -100,6 +98,10 @@ def _get_buffer_pool() -> Queue[bytearray]:
 # Task-local storage for scratch buffers to avoid race conditions in async contexts
 _scratch_buffer_var: contextvars.ContextVar[Optional[bytearray]] = contextvars.ContextVar(
     "scratch_buffer", default=None
+)
+# Task-local flag to track if buffer has been returned to pool
+_buffer_returned_to_pool_var: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "buffer_returned_to_pool", default=False
 )
 
 
@@ -120,7 +122,9 @@ def _get_thread_scratch_buffer() -> bytearray:
     """
     # Always check task-local storage first for consistency
     task_buffer: Optional[bytearray] = _scratch_buffer_var.get()
-    if task_buffer is not None:
+    buffer_returned_to_pool: bool = _buffer_returned_to_pool_var.get()
+
+    if task_buffer is not None and not buffer_returned_to_pool:
         return task_buffer
 
     if ENABLE_BUFFER_POOLING:
@@ -132,6 +136,7 @@ def _get_thread_scratch_buffer() -> bytearray:
             pooled_buffer.clear()
             # Store the pooled buffer in task-local storage to prevent leaks
             _scratch_buffer_var.set(pooled_buffer)
+            _buffer_returned_to_pool_var.set(False)  # Mark as not returned to pool
             return pooled_buffer
         except Exception:
             # Pool is empty or not available, create new buffer
@@ -141,28 +146,8 @@ def _get_thread_scratch_buffer() -> bytearray:
     # Create an empty bytearray that can grow efficiently
     new_buffer = bytearray()  # Start empty, will grow as needed
     _scratch_buffer_var.set(new_buffer)
+    _buffer_returned_to_pool_var.set(False)  # Mark as not returned to pool
     return new_buffer
-
-
-async def _return_buffer_to_pool_async(buffer: bytearray) -> None:
-    """Return a buffer to the pool asynchronously with proper error handling."""
-    if not ENABLE_BUFFER_POOLING:
-        return
-
-    pool = _get_buffer_pool()
-    if pool.full():
-        # Pool is full, discard the buffer
-        logger.debug("Buffer pool is full, discarding buffer")
-        return
-
-    try:
-        # Clear the buffer before returning to pool
-        buffer.clear()
-        # Use put_nowait to avoid blocking
-        pool.put_nowait(buffer)
-    except Exception as e:
-        # Pool is full or another error occurred, discard the buffer
-        logger.debug("Failed to return buffer to pool: %s", e, exc_info=True)
 
 
 def _return_buffer_to_pool_sync(buffer: bytearray) -> None:
@@ -181,6 +166,8 @@ def _return_buffer_to_pool_sync(buffer: bytearray) -> None:
         buffer.clear()
         # Use put_nowait to avoid blocking
         pool.put_nowait(buffer)
+        # Mark that this buffer has been returned to the pool
+        _buffer_returned_to_pool_var.set(True)
     except Exception as e:
         # Pool is full or another error occurred, discard the buffer
         logger.debug("Failed to return buffer to pool: %s", e, exc_info=True)
@@ -193,14 +180,14 @@ def clear_scratch_buffer() -> None:
     making it ready for reuse. The buffer object itself is preserved to
     avoid allocation overhead.
 
-    When buffer pooling is enabled, this function will automatically return
-    the buffer to the pool after clearing it, ensuring proper memory management
-    and enabling buffer reuse across different async contexts.
+    When buffer pooling is enabled, this function will clear the buffer contents
+    but keep the buffer in task-local storage for immediate reuse within the same
+    task. This maintains buffer identity while still enabling efficient memory usage.
 
     Behavior is consistent regardless of pooling mode:
     - Always clears the buffer contents
-    - When pooling is enabled, automatically returns buffer to pool
-    - When pooling is disabled, maintains buffer in task-local storage for reuse
+    - Always maintains buffer identity within the same task
+    - When pooling is enabled, buffers can be explicitly released to the pool
 
     This ensures consistent API semantics and prevents buffer leaks.
     """
@@ -216,14 +203,11 @@ def clear_scratch_buffer() -> None:
     # Clear the buffer contents
     task_buffer.clear()
 
-    # When pooling is enabled, return the buffer to the pool
-    # but keep a reference in task-local storage for immediate reuse
-    if ENABLE_BUFFER_POOLING:
-        # Try to return buffer to pool (non-blocking)
-        _return_buffer_to_pool_sync(task_buffer)
-        # Keep the buffer in task-local storage for immediate reuse
-        # This maintains buffer identity while still enabling pooling
-    # When pooling is disabled, buffer remains in task-local storage for reuse
+    # When pooling is enabled, we keep the buffer in task-local storage
+    # for immediate reuse within the same task. This maintains buffer identity
+    # while still allowing cross-task pooling when explicitly released.
+    # The buffer will only be returned to the pool when release_scratch_buffer()
+    # is explicitly called.
 
 
 def get_scratch_buffer() -> bytearray:
@@ -263,14 +247,17 @@ def release_scratch_buffer() -> None:
         return
 
     task_buffer: Optional[bytearray] = _scratch_buffer_var.get()
-    if task_buffer is None:
-        # No buffer to release
+    buffer_returned_to_pool: bool = _buffer_returned_to_pool_var.get()
+
+    if task_buffer is None or buffer_returned_to_pool:
+        # No buffer to release or buffer already returned
         return
 
     # Return buffer to pool
     _return_buffer_to_pool_sync(task_buffer)
-    # Clear the task-local reference
+    # Clear the task-local reference and mark as returned
     _scratch_buffer_var.set(None)
+    _buffer_returned_to_pool_var.set(True)
 
 
 def enable_buffer_pooling() -> None:
@@ -414,14 +401,27 @@ def optimize_event_loop() -> None:
         pass
 
     # Configure the event loop for better performance
-    loop = asyncio.get_event_loop()
+    try:
+        # Use get_running_loop() to avoid RuntimeError when no loop is active
+        loop = asyncio.get_running_loop()
 
-    # Set a reasonable limit for concurrent operations
-    # This prevents resource exhaustion in high-concurrency scenarios
-    if hasattr(loop, "set_default_executor"):
-        import concurrent.futures
+        # Set a reasonable limit for concurrent operations
+        # This prevents resource exhaustion in high-concurrency scenarios
+        if hasattr(loop, "set_default_executor"):
+            import concurrent.futures
+            import os
 
-        executor = concurrent.futures.ThreadPoolExecutor(
-            max_workers=min(32, (os.cpu_count() or 1) * 4)
-        )
-        loop.set_default_executor(executor)
+            # Shutdown existing executor if it exists to prevent resource leaks
+            if hasattr(loop, "_default_executor") and loop._default_executor is not None:
+                loop._default_executor.shutdown(wait=False)
+
+            executor = concurrent.futures.ThreadPoolExecutor(
+                max_workers=min(32, (os.cpu_count() or 1) * 4)
+            )
+            loop.set_default_executor(executor)
+            logger.info("✅ Configured thread pool executor for better performance")
+    except RuntimeError:
+        # No event loop is running, which is fine for early initialization
+        logger.info("ℹ️ No event loop running, optimizations will be applied when loop starts")
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to optimize event loop: {e}")
