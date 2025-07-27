@@ -2,11 +2,31 @@
 
 from __future__ import annotations
 
-from typing import Optional, Tuple, Any, Protocol, runtime_checkable
+from typing import Optional, Tuple, Any, Protocol, runtime_checkable, Dict, TypeVar, Callable
 import flujo.infra.config
+from flujo.exceptions import PricingNotConfiguredError
 
 # Cache for model information to reduce repeated extraction overhead
 _model_cache: dict[str, tuple[Optional[str], str]] = {}
+
+# Type variable for generic callable resolution
+T = TypeVar("T")
+
+
+def resolve_callable(value: T | Callable[[], T]) -> T:
+    """Resolve a value that might be a callable or the value itself.
+
+    This utility function handles the common pattern where an attribute
+    might be either a callable that returns a value, or the value itself.
+    This reduces code duplication and improves maintainability.
+
+    Args:
+        value: Either a callable that returns T, or T directly
+
+    Returns:
+        The resolved value of type T
+    """
+    return value() if callable(value) else value
 
 
 def clear_cost_cache() -> None:
@@ -80,6 +100,15 @@ def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[
             prompt_tokens = getattr(usage_info, "request_tokens", 0) or 0
             completion_tokens = getattr(usage_info, "response_tokens", 0) or 0
 
+            # Check if cost was set by a post-processor (e.g., image cost post-processor)
+            usage_cost = getattr(usage_info, "cost_usd", None)
+            if usage_cost is not None:
+                cost_usd = usage_cost
+                telemetry.logfire.info(
+                    f"Using cost from usage object for step '{step_name}': cost=${cost_usd}"
+                )
+                return prompt_tokens, completion_tokens, cost_usd
+
             # Only log if we have meaningful token counts
             if prompt_tokens > 0 or completion_tokens > 0:
                 telemetry.logfire.info(
@@ -123,19 +152,110 @@ def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[
                         f"or use make_agent_async() with explicit model parameter."
                     )
                     cost_usd = 0.0  # Return 0, which is safer than an incorrect guess.
+
         except Exception as e:
-            # For PricingNotConfiguredError in strict mode, re-raise it
-            from .exceptions import PricingNotConfiguredError
-
+            # Check if this is a PricingNotConfiguredError that should be re-raised
             if isinstance(e, PricingNotConfiguredError):
+                # Re-raise the exception for strict mode failures
                 raise
-
-            # For other exceptions, log warning but don't crash the pipeline
-            telemetry.logfire.warning(
-                f"Could not extract usage metrics for step '{step_name}': {e}"
-            )
+            else:
+                # For other exceptions, log a warning and return 0.0
+                telemetry.logfire.warning(
+                    f"Failed to extract usage metrics for step '{step_name}': {e}"
+                )
+                cost_usd = 0.0
 
     return prompt_tokens, completion_tokens, cost_usd
+
+
+def _validate_usage_object(run_result: Any, telemetry: Any) -> Optional[Any]:
+    """Validate and extract the usage object from run_result."""
+    if not hasattr(run_result, "usage") or not run_result.usage:
+        telemetry.logfire.warning("Image cost post-processor: No usage information found")
+        return None
+
+    usage_obj = resolve_callable(run_result.usage)
+
+    if not hasattr(usage_obj, "details") or not usage_obj.details:
+        return None
+
+    return usage_obj
+
+
+def _calculate_image_cost(
+    image_count: int,
+    pricing_data: Dict[str, Optional[float]],
+    price_key: str,
+    quality: str,
+    size: str,
+    telemetry: Any,
+) -> float:
+    """Calculate the total cost for image generation."""
+    price_per_image = pricing_data.get(price_key)
+
+    if price_per_image is None:
+        telemetry.logfire.warning(
+            f"Image cost post-processor: No pricing found for key '{price_key}'. "
+            f"Setting cost to 0.0. Available keys: {list(pricing_data.keys())}"
+        )
+        return 0.0
+
+    total_cost = image_count * price_per_image
+    telemetry.logfire.info(
+        f"Image cost post-processor: Calculated cost ${total_cost} "
+        f"for {image_count} image(s) at ${price_per_image} each "
+        f"(quality: {quality}, size: {size})"
+    )
+    return total_cost
+
+
+def _image_cost_post_processor(
+    run_result: Any, pricing_data: Dict[str, Optional[float]], **kwargs: Any
+) -> Any:
+    """
+    A pydantic-ai post-processor that calculates and injects image generation cost.
+
+    This function is designed to be attached to a pydantic-ai Agent's post_processors list.
+    It receives the AgentRunResult after an API call and calculates the cost based on
+    the number of images generated and the pricing configuration.
+
+    Parameters
+    ----------
+    run_result : Any
+        The AgentRunResult from the pydantic-ai agent
+    pricing_data : dict
+        Dictionary containing pricing information for different image configurations
+    **kwargs : Any
+        Additional keyword arguments that may contain size and quality information
+
+    Returns
+    -------
+    Any
+        The modified run_result with cost_usd added to the usage object
+    """
+    from .infra import telemetry
+
+    # Validate and extract the usage object
+    usage_obj = _validate_usage_object(run_result, telemetry)
+    if not usage_obj:
+        return run_result
+
+    # Extract image count
+    image_count = usage_obj.details.get("images", 0)
+    if image_count == 0:
+        return run_result
+
+    # Determine price key from agent call parameters (e.g., size, quality)
+    size = kwargs.get("size", "1024x1024")
+    quality = kwargs.get("quality", "standard")
+    price_key = f"price_per_image_{quality}_{size}"
+
+    # Calculate the cost
+    usage_obj.cost_usd = _calculate_image_cost(
+        image_count, pricing_data, price_key, quality, size, telemetry
+    )
+
+    return run_result
 
 
 class CostCalculator:
@@ -170,6 +290,11 @@ class CostCalculator:
         -------
         float
             The calculated cost in USD
+
+        Raises
+        ------
+        PricingNotConfiguredError
+            When strict pricing mode is enabled but no pricing configuration is found
         """
         # Import telemetry at the start to ensure it's available throughout the method
         from .infra import telemetry
@@ -189,6 +314,7 @@ class CostCalculator:
                 return 0.0
 
         # Get pricing information for this provider and model
+        # This may raise PricingNotConfiguredError if strict mode is enabled
         pricing = flujo.infra.config.get_provider_pricing(provider, model_name)
 
         # Debug logging

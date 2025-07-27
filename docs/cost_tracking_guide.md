@@ -91,6 +91,83 @@ cost = (prompt_tokens / 1000) * prompt_tokens_per_1k +
 
 **Note**: The pricing units use `_per_1k` (per 1,000 tokens) rather than `_per_million_tokens` to align with common provider pricing pages and provide more intuitive configuration values.
 
+## Image Generation Cost Tracking
+
+Flujo supports automatic cost tracking for image generation models like DALL-E 3. The system automatically detects image models and attaches cost calculation post-processors.
+
+### Image Model Configuration
+
+Configure image generation pricing in your `flujo.toml`:
+
+```toml
+# OpenAI image generation models
+[cost.providers.openai."dall-e-3"]
+prompt_tokens_per_1k = 0.0  # No token costs for image generation
+completion_tokens_per_1k = 0.0  # No token costs for image generation
+price_per_image_standard_1024x1024 = 0.040
+price_per_image_hd_1024x1024 = 0.080
+price_per_image_standard_1792x1024 = 0.080
+price_per_image_hd_1792x1024 = 0.120
+price_per_image_standard_1024x1792 = 0.080
+price_per_image_hd_1024x1792 = 0.120
+```
+
+### Supported Image Models
+
+Flujo automatically detects and configures cost tracking for these image generation models:
+
+- **OpenAI DALL-E**: `dall-e-2`, `dall-e-3`
+- **Midjourney**: `midjourney:v6`
+- **Stable Diffusion**: `stable-diffusion:xl`
+- **Google Imagen**: `imagen-2`
+
+### Image Cost Calculation
+
+Image costs are calculated based on:
+- **Quality**: `standard` or `hd`
+- **Size**: `1024x1024`, `1792x1024`, `1024x1792`
+- **Number of images**: Reported in the usage details
+
+The cost formula is:
+```
+cost = number_of_images * price_per_image_{quality}_{size}
+```
+
+### Using Image Models
+
+Image models work seamlessly with the existing Flujo API:
+
+```python
+from flujo import Step, Flujo
+from flujo.infra.agents import make_agent_async
+
+# Create a DALL-E 3 agent
+dalle_agent = make_agent_async(
+    model="openai:dall-e-3",
+    system_prompt="Generate beautiful images",
+    output_type=str,
+)
+
+# Create a pipeline
+pipeline = Step.solution(dalle_agent)
+runner = Flujo(pipeline)
+
+# Run the pipeline
+result = runner.run("Generate a landscape")
+
+# Access cost information
+for step in result.step_history:
+    print(f"{step.name}: ${step.cost_usd:.4f}")
+```
+
+### Image Model Features
+
+- **Automatic Detection**: Image models are automatically detected and configured
+- **Quality Support**: Different pricing for standard and HD quality
+- **Size Support**: Different pricing for various image sizes
+- **Usage Limits**: Image costs integrate with existing usage limits
+- **Backward Compatibility**: Chat models continue to work normally
+
 ## Strict Pricing Mode
 
 For production environments where cost accuracy is critical, Flujo provides a **Strict Pricing Mode** that ensures all cost calculations are based on your explicit configuration.
@@ -130,6 +207,11 @@ completion_tokens_per_1k = 0.015
 [cost.providers.openai.gpt-3.5-turbo]
 prompt_tokens_per_1k = 0.0005
 completion_tokens_per_1k = 0.0015
+
+[cost.providers.openai."dall-e-3"]
+prompt_tokens_per_1k = 0.0
+completion_tokens_per_1k = 0.0
+price_per_image_standard_1024x1024 = 0.040
 ```
 
 ```python
@@ -137,14 +219,14 @@ from flujo import Step, Flujo
 from flujo.infra.agents import make_agent_async
 
 # These agents will work with strict mode
-agent1 = make_agent_async("openai:gpt-4o", "You are a helpful assistant.", str)
-agent2 = make_agent_async("openai:gpt-3.5-turbo", "You are a validator.", str)
+chat_agent = make_agent_async("openai:gpt-4o", "You are helpful", str)
+image_agent = make_agent_async("openai:dall-e-3", "Generate images", str)
 
-pipeline = Step.solution(agent1) >> Step.validate(agent2)
+pipeline = Step.solution(chat_agent) >> Step.validate(image_agent)
 runner = Flujo(pipeline)
 
-# This will succeed because both models are explicitly configured
-result = runner.run("Your prompt")
+# This will work because all models have explicit pricing
+result = runner.run("Generate a response and an image")
 ```
 
 ### Example: Strict Mode Failure
@@ -157,392 +239,175 @@ strict = true
 [cost.providers.openai.gpt-4o]
 prompt_tokens_per_1k = 0.005
 completion_tokens_per_1k = 0.015
-# Missing gpt-3.5-turbo configuration
+
+# Missing pricing for dall-e-3
 ```
 
 ```python
 from flujo import Step, Flujo
-from flujo.exceptions import PricingNotConfiguredError
 from flujo.infra.agents import make_agent_async
+from flujo.exceptions import PricingNotConfiguredError
 
-agent1 = make_agent_async("openai:gpt-4o", "You are a helpful assistant.", str)
-agent2 = make_agent_async("openai:gpt-3.5-turbo", "You are a validator.", str)  # Not configured!
-
-pipeline = Step.solution(agent1) >> Step.validate(agent2)
+# This will fail because dall-e-3 has no pricing
+image_agent = make_agent_async("openai:dall-e-3", "Generate images", str)
+pipeline = Step.solution(image_agent)
 runner = Flujo(pipeline)
 
-# This will raise PricingNotConfiguredError
 try:
-    result = runner.run("Your prompt")
+    result = runner.run("Generate an image")
 except PricingNotConfiguredError as e:
     print(f"Pipeline failed: {e}")
-    # Error: "Strict pricing is enabled, but no configuration was found for provider='openai', model='gpt-3.5-turbo' in flujo.toml."
+    # Output: Pipeline failed: Pricing not configured for provider=openai, model=dall-e-3
 ```
 
-### When to Use Strict Mode
+## Using Cost Tracking in Pipelines
 
-**Use strict mode when:**
-- You're in a production environment
-- Cost accuracy is critical for billing
-- You want to prevent silent inaccuracies from hardcoded defaults
-- You want to ensure all models are explicitly configured
+Once configured, cost tracking is automatically enabled for all pipeline steps that use LLM agents.
 
-**Don't use strict mode when:**
-- You're in development/testing
-- You want to use hardcoded defaults for convenience
-- You're experimenting with new models
+### Accessing Cost Information
 
-### Default Behavior (Strict Mode Off)
-
-When `strict = false` (default) or when the flag is not specified:
-
-1. **User Configuration First**: Uses your explicit pricing from `flujo.toml`
-2. **Hardcoded Defaults**: Falls back to hardcoded defaults for common models
-3. **Warning Logged**: Logs a critical warning when using hardcoded defaults
-4. **Graceful Degradation**: Returns `0.0` cost if no pricing is available
-
-## Robust Error Handling and Best Practices
-
-### Provider Inference
-
-Flujo automatically infers the provider from model names for common patterns:
-
-- **OpenAI**: Models starting with `gpt-`, `dall-e`, or `text-` (excluding `text-bison`)
-- **Anthropic**: Models starting with `claude-`, `haiku`, `sonnet`, or `opus`
-- **Google**: Models starting with `gemini-`, `text-bison`, or `chat-bison`
-
-**Important**: For ambiguous models (e.g., `llama-2-7b`, `mistral-7b`), Flujo will **not** attempt to infer the provider and will return `0.0` cost for safety. Use explicit provider format:
-
-```python
-# ✅ Recommended - explicit provider
-agent = make_agent_async("groq:llama-2-7b", system_prompt, output_type)
-
-# ❌ Avoid - ambiguous model
-agent = make_agent_async("llama-2-7b", system_prompt, output_type)  # Cost will be 0.0
-```
-
-### Model ID Requirements
-
-For accurate cost tracking, ensure your agents have a `model_id` attribute:
-
-```python
-# ✅ Good - explicit model_id
-class MyAgent:
-    def __init__(self):
-        self.model_id = "openai:gpt-4o"
-
-    async def run(self, data):
-        # ... implementation
-
-# ✅ Good - model attribute
-class MyAgent:
-    def __init__(self):
-        self.model = "anthropic:claude-3-sonnet"
-
-    async def run(self, data):
-        # ... implementation
-
-# ❌ Avoid - no model identification
-class MyAgent:
-    async def run(self, data):
-        # ... implementation (cost will be 0.0)
-```
-
-### Error Handling
-
-Flujo implements robust error handling to prevent pipeline failures:
-
-1. **Unknown Providers/Models**: Returns `0.0` cost with warning logs
-2. **Missing Model IDs**: Returns `0.0` cost with detailed error messages
-3. **Configuration Errors**: Falls back to `0.0` cost rather than crashing
-
-### Hardcoded Default Pricing
-
-⚠️ **CRITICAL WARNING**: Flujo includes hardcoded default pricing for development/testing only. These prices are **not suitable for production billing** and may be outdated.
-
-**For production use, always configure explicit pricing in `flujo.toml`.**
-
-The system will log critical warnings when using hardcoded defaults:
-```
-🚨 CRITICAL WARNING: Using stale, hardcoded default price for 'openai:gpt-4o'.
-This cost calculation is likely INACCURATE and may be outdated.
-These prices are for development/testing only and should NOT be used for production billing.
-Configure explicit pricing in flujo.toml for production use.
-```
-
-## Usage Examples
-
-### Basic Cost Tracking
+Cost and token information is available in pipeline results:
 
 ```python
 from flujo import Step, Flujo
-from flujo.infra.agents import make_agent_async
 
-# Create agents
-solution_agent = make_agent_async("openai:gpt-4o", "You are a helpful assistant.", str)
-validator_agent = make_agent_async("openai:gpt-4o", "You are a validator.", str)
-
-# Create pipeline
-pipeline = Step.solution(solution_agent) >> Step.validate(validator_agent)
+# Create a pipeline with cost tracking
+pipeline = Step.solution(my_agent) >> Step.validate(validator_agent)
 runner = Flujo(pipeline)
 
-# Run pipeline
-result = runner.run("Write a short story about a robot.")
+# Run the pipeline
+result = runner.run("Your prompt")
 
 # Access cost information
-total_cost = 0
-total_tokens = 0
-
 for step_result in result.step_history:
-    cost = step_result.cost_usd
-    tokens = step_result.token_counts
-    total_cost += cost
-    total_tokens += tokens
-
-    print(f"{step_result.name}:")
-    print(f"  Cost: ${cost:.4f}")
-    print(f"  Tokens: {tokens}")
+    print(f"Step: {step_result.name}")
+    print(f"  Cost: ${step_result.cost_usd:.4f}")
+    print(f"  Tokens: {step_result.token_counts}")
     print(f"  Success: {step_result.success}")
-
-print(f"\nTotal cost: ${total_cost:.4f}")
-print(f"Total tokens: {total_tokens}")
 ```
 
 ### Setting Usage Limits
 
-Prevent excessive spending by setting cost and token limits:
+You can set cost and token limits to prevent excessive spending:
 
 ```python
 from flujo import Flujo, Step, UsageLimits
 
-# Define limits
+# Define usage limits
 limits = UsageLimits(
-    total_cost_usd_limit=0.50,  # Maximum $0.50 total cost
-    total_tokens_limit=2000     # Maximum 2,000 tokens
+    total_cost_usd_limit=1.0,    # Maximum $1.00 total cost
+    total_tokens_limit=5000       # Maximum 5,000 tokens
 )
 
 # Apply limits to pipeline
 runner = Flujo(pipeline, usage_limits=limits)
 
 try:
-    result = runner.run("Write a comprehensive analysis.")
-    print("Pipeline completed successfully!")
+    result = runner.run("Your prompt")
 except UsageLimitExceededError as e:
-    print(f"Pipeline stopped due to usage limits: {e}")
-    # Access partial results
-    partial_result = e.partial_result
-    print(f"Completed {len(partial_result.step_history)} steps before stopping")
+    print(f"Pipeline failed due to usage limits: {e}")
 ```
 
-### Step-Level Limits
+### Cost Tracking with Different Model Types
 
-Set limits on individual steps for fine-grained control:
+Flujo automatically handles different types of models:
+
+#### Chat Models (Token-based)
+```python
+# GPT-4, Claude, etc. - cost calculated from tokens
+chat_agent = make_agent_async("openai:gpt-4o", "You are helpful", str)
+```
+
+#### Image Models (Unit-based)
+```python
+# DALL-E 3 - cost calculated per image
+image_agent = make_agent_async("openai:dall-e-3", "Generate images", str)
+```
+
+#### Embedding Models (Token-based)
+```python
+# Text embeddings - cost calculated from tokens
+embedding_agent = make_agent_async("openai:text-embedding-3-large", "Embed text", str)
+```
+
+## Advanced Features
+
+### Explicit Cost Reporting
+
+For custom operations, you can implement the `ExplicitCostReporter` protocol:
+
+```python
+class CustomImageResult:
+    def __init__(self, cost_usd: float, token_counts: int = 0):
+        self.cost_usd = cost_usd
+        self.token_counts = token_counts
+
+# This object will automatically be recognized for cost tracking
+result = CustomImageResult(cost_usd=0.25, token_counts=0)
+```
+
+### Cost Tracking in Complex Pipelines
+
+Cost tracking works seamlessly in complex pipeline scenarios:
 
 ```python
 from flujo import Step, Flujo, UsageLimits
 
-# Set limits for specific steps
-step_limits = UsageLimits(
-    total_cost_usd_limit=0.10,   # Maximum $0.10 for this step
-    total_tokens_limit=1000       # Maximum 1,000 tokens for this step
-)
+# Create agents for different tasks
+chat_agent = make_agent_async("openai:gpt-4o", "You are helpful", str)
+image_agent = make_agent_async("openai:dall-e-3", "Generate images", str)
+validator_agent = make_agent_async("openai:gpt-4o", "Validate responses", str)
 
+# Create a complex pipeline
 pipeline = (
-    Step.solution(my_agent, usage_limits=step_limits)
-    >> Step.validate(validator_agent)
-)
-```
-
-### Parallel Execution Limits
-
-When using parallel steps, Flujo can proactively cancel sibling branches when limits are exceeded:
-
-```python
-from flujo import Step, Pipeline, UsageLimits
-
-# Create parallel branches
-fast_expensive = Pipeline.from_step(Step("expensive", costly_agent))
-slow_cheap = Pipeline.from_step(Step("cheap", cheap_agent))
-
-parallel = Step.parallel_branch(fast_expensive, slow_cheap)
-
-# If fast_expensive breaches the limit, slow_cheap will be cancelled immediately
-limits = UsageLimits(total_cost_usd_limit=0.10)
-runner = Flujo(parallel, usage_limits=limits)
-```
-
-### Monitoring and Logging
-
-```python
-import logging
-from flujo import Flujo, Step
-
-# Set up logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-def log_costs(result):
-    """Log cost information for monitoring."""
-    total_cost = sum(step.cost_usd for step in result.step_history)
-    total_tokens = sum(step.token_counts for step in result.step_history)
-
-    logger.info(f"Pipeline completed - Cost: ${total_cost:.4f}, Tokens: {total_tokens}")
-
-    # Log per-step details
-    for step in result.step_history:
-        logger.info(f"  {step.name}: ${step.cost_usd:.4f} ({step.token_counts} tokens)")
-
-# Run pipeline with monitoring
-pipeline = Step.solution(my_agent) >> Step.validate(validator_agent)
-runner = Flujo(pipeline)
-
-result = runner.run("Your prompt")
-log_costs(result)
-```
-
-### Cost-Efficient Pipeline Design
-
-```python
-from flujo import Step, Flujo, UsageLimits
-
-# Use cheaper models for simple tasks
-simple_agent = make_agent_async("openai:gpt-3.5-turbo", "Simple task agent.", str)
-complex_agent = make_agent_async("openai:gpt-4o", "Complex task agent.", str)
-
-# Design pipeline with cost considerations
-pipeline = (
-    Step.solution(simple_agent, usage_limits=UsageLimits(total_cost_usd_limit=0.05))
-    >> Step.validate(complex_agent, usage_limits=UsageLimits(total_cost_usd_limit=0.15))
+    Step.solution(chat_agent) >> 
+    Step.validate(validator_agent) >> 
+    Step.reflect(image_agent)
 )
 
-# Set overall pipeline limits
-runner = Flujo(pipeline, usage_limits=UsageLimits(total_cost_usd_limit=0.25))
+# Set usage limits
+limits = UsageLimits(total_cost_usd_limit=2.0, total_tokens_limit=10000)
+runner = Flujo(pipeline, usage_limits=limits)
+
+# Run the pipeline
+result = runner.run("Complex task with multiple model types")
+
+# Analyze costs
+total_cost = sum(step.cost_usd for step in result.step_history)
+total_tokens = sum(step.token_counts for step in result.step_history)
+
+print(f"Total cost: ${total_cost:.4f}")
+print(f"Total tokens: {total_tokens}")
 ```
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **No cost calculated**
-   - Check that pricing is configured for your model in `flujo.toml`
-   - Verify the model name matches exactly
-   - Ensure your agent returns usage information
+1. **No Cost Reported**: Check that your model has pricing configured in `flujo.toml`
+2. **Incorrect Costs**: Verify pricing values match the current provider rates
+3. **Missing Image Costs**: Ensure image models have the correct pricing fields configured
+4. **Strict Mode Failures**: Add explicit pricing for all models used in your pipeline
 
-2. **Incorrect costs**
-   - Verify pricing values in `flujo.toml`
-   - Check that token counts are being extracted correctly
-   - Enable debug logging to see calculation details
+### Debugging Cost Calculation
 
-3. **Missing token counts**
-   - Ensure your agent returns usage information via `AgentRunResult.usage()`
-   - Check that the agent is properly configured
-   - Verify the model supports token counting
-
-4. **PricingNotConfiguredError in strict mode**
-   - Add explicit pricing for the model in `flujo.toml`
-   - Check that the provider and model names match exactly
-   - Consider disabling strict mode for development/testing
-
-### Debugging
-
-Enable debug logging to troubleshoot cost tracking:
+Enable debug logging to see cost calculation details:
 
 ```python
 import logging
-logging.getLogger("flujo.cost").setLevel(logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 
-# Run pipeline to see detailed cost calculation logs
-result = runner.run("Your prompt")
+# Run your pipeline and check the logs for cost calculation details
 ```
 
-### Verification
+### Testing Cost Configuration
 
-Check if your agent returns usage information:
+Use the provided examples to test your cost configuration:
 
-```python
-# Test agent usage information
-result = my_agent.run("test")
-if hasattr(result, 'usage'):
-    usage = result.usage()
-    print(f"Prompt tokens: {usage.prompt_tokens}")
-    print(f"Completion tokens: {usage.completion_tokens}")
-else:
-    print("Agent does not return usage information")
+```bash
+# Test basic cost tracking
+python examples/cost_tracking_demo.py
+
+# Test image cost tracking
+python examples/image_cost_tracking_demo.py
 ```
-
-## Best Practices
-
-### 1. Regular Price Updates
-
-- Monitor provider pricing changes
-- Update `flujo.toml` when prices change
-- Use provider-specific pricing for accuracy
-
-### 2. Appropriate Limits
-
-- Start with conservative limits
-- Monitor actual usage patterns
-- Adjust limits based on your budget
-
-### 3. Cost Monitoring
-
-- Log cost information for analysis
-- Set up alerts for high-cost runs
-- Track cost trends over time
-
-### 4. Model Selection
-
-- Use cheaper models for simple tasks
-- Reserve expensive models for complex work
-- Consider token efficiency
-
-### 5. Pipeline Design
-
-- Design pipelines with cost efficiency in mind
-- Use step-level limits for fine control
-- Consider parallel execution for cost optimization
-
-### 6. Production Readiness
-
-- Use strict pricing mode in production
-- Configure explicit pricing for all models
-- Monitor cost accuracy regularly
-
-## Advanced Features
-
-### Custom Cost Calculators
-
-You can implement custom cost calculation logic:
-
-```python
-from flujo.cost import CostCalculator
-
-class CustomCostCalculator(CostCalculator):
-    def calculate(self, model_name, prompt_tokens, completion_tokens, provider=None):
-        # Implement custom cost calculation logic
-        # For example, apply discounts for high-volume usage
-        base_cost = super().calculate(model_name, prompt_tokens, completion_tokens, provider)
-
-        if prompt_tokens + completion_tokens > 10000:
-            return base_cost * 0.9  # 10% discount for high volume
-
-        return base_cost
-```
-
-### Cost Tracking with Custom Models
-
-For custom or proprietary models, you can configure pricing:
-
-```toml
-# flujo.toml
-[cost.providers.custom.my-model]
-prompt_tokens_per_1k = 0.001
-completion_tokens_per_1k = 0.002
-```
-
-```python
-# Use with explicit provider
-agent = make_agent_async("custom:my-model", system_prompt, output_type)
-```
-
-This comprehensive guide covers all aspects of Flujo's cost tracking system, from basic usage to advanced features like strict pricing mode. The system is designed to be both powerful and safe, providing accurate cost tracking while preventing pipeline failures due to missing pricing information.
