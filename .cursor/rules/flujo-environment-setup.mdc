@@ -1,0 +1,67 @@
+---
+alwaysApply: false
+---
+# Flujo Environment Setup and Testing Guide
+
+## Environment Setup
+
+Always use the proper environment setup for Flujo development:
+
+1. **Install Dependencies**: Use `make install` to install all dependencies
+2. **Activate Environment**: Ensure the virtual environment is activated before running tests
+3. **Python Version**: Use Python 3.11+ as specified in [pyproject.toml](mdc:pyproject.toml)
+
+## Testing Procedures
+
+### Running Tests
+- Use `make test` to run all tests
+- For specific test files: `python3.11 -m pytest tests/unit/test_file.py -v`
+- For performance tests: `python3.11 -m pytest tests/benchmarks/ -v`
+
+### Environment Activation
+```bash
+# Activate virtual environment (if using venv)
+source venv/bin/activate
+
+# Or use conda environment
+conda activate flujo
+
+# Then run tests
+make test
+```
+
+### Common Issues
+- **Python Version**: Ensure Python 3.11+ is used (check with `python3.11 --version`)
+- **Dependencies**: Run `make install` if encountering import errors
+- **Pytest Configuration**: Some pytest options may need adjustment for older versions
+
+## Project Structure
+
+Key files for testing:
+- [pyproject.toml](mdc:pyproject.toml) - Project configuration and dependencies
+- [Makefile](mdc:Makefile) - Build and test commands
+- [tests/](mdc:tests/) - Test suite directory
+- [flujo/](mdc:flujo/) - Main package directory
+
+## Performance Testing
+
+For performance-related changes:
+1. Run benchmarks: `python3.11 -m pytest tests/benchmarks/ -v`
+2. Check memory usage: `python3.11 -m pytest tests/unit/test_performance_utils.py -v`
+3. Verify thread safety: Run concurrent tests multiple times
+
+## Code Quality
+
+Before committing:
+1. Run tests: `make test`
+2. Check linting: `make lint`
+3. Type checking: `make typecheck`
+4. Security audit: `make security`
+
+## Troubleshooting
+
+If tests fail:
+1. Ensure Python 3.11+ is being used
+2. Run `make install` to update dependencies
+3. Clear pytest cache: `python3.11 -m pytest --cache-clear`
+4. Check for environment conflicts
