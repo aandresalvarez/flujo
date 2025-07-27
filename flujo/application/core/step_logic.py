@@ -862,16 +862,32 @@ async def _execute_loop_step_logic(
 
         # --- FIRST PRINCIPLES GUARANTEE ---
         # After each iteration, always merge all updates from iteration_context into context.
+        # This ensures that all loop types (LoopStep, MapStep, etc.) have their context updates preserved.
         # No code path (deepcopy, serialization, etc.) can reset or shadow updated fields between merge and exit condition.
         if context is not None and iteration_context is not None:
-            # Note: Context merging is already handled in the else block above for LoopSteps with updates_context=True
-            # This section is kept for completeness but the actual merging happens earlier
-            pass
+            try:
+                merge_success = safe_merge_context_updates(
+                    target_context=context,
+                    source_context=iteration_context,
+                    excluded_fields=set(),
+                )
+                if not merge_success:
+                    telemetry.logfire.warn(
+                        f"Universal context merge failed in LoopStep '{loop_step.name}' iteration {i} "
+                        f"(context fields: {list(context.__dict__.keys()) if context else 'None'}, "
+                        f"iteration context fields: {list(iteration_context.__dict__.keys()) if iteration_context else 'None'}), "
+                        "but continuing execution"
+                    )
+            except Exception as e:
+                telemetry.logfire.error(
+                    f"Failed to perform universal context merge in LoopStep '{loop_step.name}' iteration {i}: {e}"
+                )
 
-        # Now check the exit condition on the up-to-date context
+        # Now check the exit condition on the iteration context to maintain proper loop behavior
+        # The exit condition should evaluate based on the iteration's context, not the main context
         try:
             should_exit = loop_step.exit_condition_callable(
-                final_body_output_of_last_iteration, context
+                final_body_output_of_last_iteration, iteration_context
             )
         except Exception as e:
             telemetry.logfire.error(
