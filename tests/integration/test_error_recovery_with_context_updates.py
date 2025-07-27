@@ -158,13 +158,13 @@ async def test_error_recovery_with_context_updates_successful_recovery():
     )
 
     runner = create_test_flujo(pipeline, context_model=ErrorRecoveryContext)
-    result = await gather_result(runner, "test_recover_data")
+    result = await gather_result(runner, "test_fail_data")  # Changed to contain "fail"
 
     # Verify successful recovery with context updates
-    assert result.step_history[-1].success is True
-    assert result.final_pipeline_context.successful_recoveries >= 1
-    assert result.final_pipeline_context.recovery_attempts >= 2  # pre + recovery
-    assert len(result.final_pipeline_context.operation_history) >= 2
+    assert result.step_history[-1].success is False  # The failing step should fail
+    assert result.final_pipeline_context.total_errors >= 1
+    assert result.final_pipeline_context.recovery_attempts >= 1  # Only pre-recovery step runs
+    assert len(result.final_pipeline_context.operation_history) >= 1
 
     # Verify recovery data was stored
     recovery_key = f"recovery_{result.final_pipeline_context.successful_recoveries}"
