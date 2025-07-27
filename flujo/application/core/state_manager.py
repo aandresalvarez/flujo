@@ -247,15 +247,36 @@ class StateManager(Generic[ContextT]):
                     if cached is not None:
                         pipeline_context = cached
                     else:
-                        # Fallback to minimal serialization
+                        # Fallback to comprehensive serialization to prevent data loss
                         pipeline_context = {
-                            "initial_prompt": getattr(context, "initial_prompt", "")
+                            "initial_prompt": getattr(context, "initial_prompt", ""),
+                            "pipeline_id": getattr(context, "pipeline_id", "unknown"),
+                            "pipeline_name": getattr(context, "pipeline_name", "unknown"),
+                            "pipeline_version": getattr(context, "pipeline_version", "latest"),
+                            "total_steps": getattr(context, "total_steps", 0),
+                            "error_message": getattr(context, "error_message", None),
+                            "run_id": getattr(context, "run_id", ""),
+                            "created_at": getattr(context, "created_at", None),
+                            "updated_at": getattr(context, "updated_at", None),
                         }
+                        # Include any additional fields that might be present
+                        for field_name in ["status", "current_step", "last_error", "metadata"]:
+                            if hasattr(context, field_name):
+                                pipeline_context[field_name] = getattr(context, field_name, None)
                     logger.debug(f"Skipped context serialization for unchanged run {run_id}")
 
             except Exception as e:
                 logger.warning(f"Failed to serialize context for run {run_id}: {e}")
-                pipeline_context = {"error": f"Failed to serialize context: {e}"}
+                # Comprehensive fallback to prevent data loss even in error cases
+                pipeline_context = {
+                    "error": f"Failed to serialize context: {e}",
+                    "initial_prompt": getattr(context, "initial_prompt", ""),
+                    "pipeline_id": getattr(context, "pipeline_id", "unknown"),
+                    "pipeline_name": getattr(context, "pipeline_name", "unknown"),
+                    "pipeline_version": getattr(context, "pipeline_version", "latest"),
+                    "total_steps": getattr(context, "total_steps", 0),
+                    "run_id": getattr(context, "run_id", ""),
+                }
 
         # Serialize step history with error handling
         serialized_step_history = []
