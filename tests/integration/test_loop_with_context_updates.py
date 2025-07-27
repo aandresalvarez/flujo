@@ -6,22 +6,48 @@ decorated functions in the loop body. This combination was identified as potenti
 problematic due to context state management across iterations.
 """
 
-import pytest
-from typing import Any
+from __future__ import annotations
 
-from flujo.domain import Step, Pipeline
+import pytest
+from typing import Any, Dict, Optional
+
+from flujo import Step, Pipeline, step
 from flujo.domain.models import PipelineContext
-from flujo.domain.dsl import step
 from flujo.testing.utils import gather_result
 from tests.conftest import create_test_flujo
+from flujo.state.backends.base import StateBackend
+
+
+class NoOpStateBackend(StateBackend):
+    """A state backend that does nothing - used to disable state persistence."""
+
+    async def save_state(self, run_id: str, state: Dict[str, Any]) -> None:
+        # Do nothing - no state persistence
+        pass
+
+    async def load_state(self, run_id: str) -> Optional[Dict[str, Any]]:
+        # Return None - no state to load
+        return None
+
+    async def delete_state(self, run_id: str) -> None:
+        # Do nothing
+        pass
+
+    async def get_trace(self, run_id: str) -> Any:
+        # Return None - no trace data
+        return None
+
+    async def save_trace(self, run_id: str, trace: Any) -> None:
+        # Do nothing - no trace persistence
+        pass
 
 
 class LoopContext(PipelineContext):
     """Context for testing loop steps with context updates."""
 
     initial_prompt: str = "test"
-    iteration_count: int = 0
-    accumulated_value: int = 0
+    iteration_count: int
+    accumulated_value: int
     loop_exit_reason: str = ""
     final_state: dict = {}
 
@@ -248,8 +274,17 @@ async def test_loop_with_context_updates_state_isolation():
         max_loops=5,
     )
 
-    runner = create_test_flujo(loop_step, context_model=LoopContext)
-    result = await gather_result(runner, 5)
+    runner = create_test_flujo(
+        loop_step, context_model=LoopContext, state_backend=NoOpStateBackend()
+    )
+    result = await gather_result(
+        runner,
+        5,
+        initial_context_data={
+            "iteration_count": 0,
+            "accumulated_value": 0,
+        },
+    )
 
     # Verify state isolation and context propagation
     # FIXED: Context updates are now properly applied between iterations

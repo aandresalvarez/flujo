@@ -6,7 +6,13 @@ from datetime import datetime
 from typing import Any, AsyncIterator, Optional, TypeVar, Generic
 
 from ...domain.dsl.pipeline import Pipeline
-from ...domain.models import BaseModel, PipelineResult, StepResult
+from ...domain.dsl.loop import LoopStep
+from ...domain.models import (
+    BaseModel,
+    PipelineResult,
+    StepResult,
+)
+from ...infra import telemetry
 
 from ...exceptions import (
     PausedException,
@@ -14,8 +20,6 @@ from ...exceptions import (
     UsageLimitExceededError,
     PipelineContextInitializationError,
 )
-from ...infra import telemetry
-
 from .state_manager import StateManager
 from .usage_governor import UsageGovernor
 from .step_coordinator import StepCoordinator
@@ -35,12 +39,14 @@ class ExecutionManager(Generic[ContextT]):
         usage_governor: Optional[UsageGovernor[ContextT]] = None,
         step_coordinator: Optional[StepCoordinator[ContextT]] = None,
         type_validator: Optional[TypeValidator] = None,
+        inside_loop_step: bool = False,  # Track if we're inside a loop step
     ) -> None:
         self.pipeline = pipeline
         self.state_manager = state_manager or StateManager()
         self.usage_governor = usage_governor or UsageGovernor()
         self.step_coordinator = step_coordinator or StepCoordinator()
         self.type_validator = type_validator or TypeValidator()
+        self.inside_loop_step = inside_loop_step  # Track if we're inside a loop step
 
     async def execute_steps(
         self,
@@ -148,7 +154,12 @@ class ExecutionManager(Generic[ContextT]):
                     self.step_coordinator.update_pipeline_result(result, step_result)
 
                     # Persist state after every step for robust crash recovery
-                    if run_id is not None:
+                    # Skip persistence for loop steps to avoid context serialization issues
+                    if (
+                        run_id is not None
+                        and not isinstance(step, LoopStep)
+                        and not self.inside_loop_step
+                    ):
                         await self.state_manager.persist_workflow_state(
                             run_id=run_id,
                             context=context,
@@ -160,6 +171,14 @@ class ExecutionManager(Generic[ContextT]):
                         )
                         # Always record step result for observability
                         await self.state_manager.record_step_result(run_id, step_result, idx)
+                    elif run_id is not None and (
+                        isinstance(step, LoopStep) or self.inside_loop_step
+                    ):
+                        # For loop steps, only record step result for observability, skip state persistence
+                        await self.state_manager.record_step_result(run_id, step_result, idx)
+                        telemetry.logfire.debug(
+                            f"Skipped state persistence for {'LoopStep' if isinstance(step, LoopStep) else 'inner step'} '{step.name}' to avoid context serialization issues"
+                        )
 
                     # Check usage limits after step result is added to pipeline result
                     with telemetry.logfire.span(step.name) as span:

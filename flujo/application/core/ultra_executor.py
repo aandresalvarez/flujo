@@ -676,6 +676,30 @@ class UltraStepExecutor(Generic[TContext]):
         ) -> StepResult:
             return await self.execute_step(s, d, c, r, usage_limits, stream, on_chunk, breach_event)
 
+        # Create a special step executor for loop steps that bypasses state persistence
+        async def loop_step_executor(
+            s: Step[Any, Any],
+            d: Any,
+            c: Optional[Any],
+            r: Optional[Any],
+            breach_event: Optional[Any] = None,
+        ) -> StepResult:
+            # For loop steps, call step logic directly to avoid state persistence
+            from .step_logic import _run_step_logic
+
+            return await _run_step_logic(
+                step=s,
+                data=d,
+                context=c,
+                resources=r,
+                step_executor=self._execute_complex_step,  # Use self for recursion
+                context_model_defined=True,
+                usage_limits=usage_limits,
+                context_setter=lambda result, ctx: None,  # No-op context setter
+                stream=stream,
+                on_chunk=on_chunk,
+            )
+
         # Handle different step types
         if isinstance(step, CacheStep):
             return await _handle_cache_step(step, data, context, resources, step_executor)
@@ -685,7 +709,7 @@ class UltraStepExecutor(Generic[TContext]):
                 data,
                 context,
                 resources,
-                step_executor,
+                loop_step_executor,  # Use special executor for loop steps
                 context_model_defined=True,
                 usage_limits=usage_limits,
                 context_setter=lambda result, ctx: None,
