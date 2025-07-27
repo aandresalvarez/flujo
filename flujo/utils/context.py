@@ -166,32 +166,32 @@ def safe_merge_context_updates(
         updated_count = 0
         validation_errors = []
 
-        logger.info(f"Starting field comparison - source_fields: {list(source_fields.keys())}")
+        logger.debug(f"Starting field comparison - source_fields: {list(source_fields.keys())}")
 
         for field_name, source_value in source_fields.items():
             try:
-                logger.info(f"Processing field: {field_name}")
+                logger.debug(f"Processing field: {field_name}")
 
                 # Skip private fields
                 if field_name.startswith("_"):
-                    logger.info(f"Skipping private field: {field_name}")
+                    logger.debug(f"Skipping private field: {field_name}")
                     continue
 
                 # Skip excluded fields to prevent duplication during loop merging
                 if field_name in excluded_fields:
-                    logger.info(f"Skipping excluded field: {field_name}")
+                    logger.debug(f"Skipping excluded field: {field_name}")
                     continue
 
                 # Check if field exists in target
                 if not hasattr(target_context, field_name):
-                    logger.info(f"Field {field_name} not found in target context")
+                    logger.debug(f"Field {field_name} not found in target context")
                     continue
 
                 # Always get the actual value from the source context for merging
                 actual_source_value = getattr(source_context, field_name)
                 current_value = getattr(target_context, field_name)
 
-                logger.info(
+                logger.debug(
                     f"Field {field_name}: current={current_value}, source={actual_source_value}"
                 )
 
@@ -201,16 +201,16 @@ def safe_merge_context_updates(
                         # Use setattr to trigger Pydantic validation
                         setattr(target_context, field_name, actual_source_value)
                         updated_count += 1
-                        logger.info(
+                        logger.debug(
                             f"Updated field '{field_name}' from {current_value} to {actual_source_value}"
                         )
                         # Debug: Check if the update actually took effect
                         actual_value_after_setattr = getattr(target_context, field_name)
-                        logger.info(
+                        logger.debug(
                             f"After setattr - field '{field_name}': {actual_value_after_setattr}"
                         )
                     else:
-                        logger.info(
+                        logger.debug(
                             f"Field '{field_name}' unchanged: {current_value} == {actual_source_value}"
                         )
                 except (TypeError, ValueError, AttributeError, ValidationError) as e:

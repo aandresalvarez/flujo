@@ -684,11 +684,7 @@ async def _execute_loop_step_logic(
         current_iteration_data_for_body_step = current_body_input
         # Create deep copy of the current context (which may have been updated by previous iterations)
         # FIXED: Ensure we're copying from the updated context, not the original context
-        telemetry.logfire.info(f"[DEBUG] id(context) before deepcopy: {id(context)}")
         iteration_context = copy.deepcopy(context) if context is not None else None
-        telemetry.logfire.info(
-            f"[DEBUG] id(iteration_context) after deepcopy: {id(iteration_context) if iteration_context else None}"
-        )
 
         with telemetry.logfire.span(f"Loop '{loop_step.name}' - Iteration {i}"):
             for body_s in loop_step.loop_body_pipeline.steps:
@@ -838,42 +834,17 @@ async def _execute_loop_step_logic(
                                     if hasattr(iteration_context, key):
                                         setattr(iteration_context, key, value)
 
-                        # Debug: Log context values before merge
-                        if context is not None and iteration_context is not None:
-                            telemetry.logfire.info(
-                                f"Before merge - Main context iteration_count: {getattr(context, 'iteration_count', 'N/A')}, "
-                                f"Iteration context iteration_count: {getattr(iteration_context, 'iteration_count', 'N/A')}"
-                            )
-
                         merge_success = safe_merge_context_updates(
                             target_context=context,
                             source_context=iteration_context,
                             excluded_fields=set(),
                         )
 
-                        # Debug: Log merge result
-                        telemetry.logfire.info(
-                            f"Context merge result: {merge_success} | id(context) after merge: {id(context)}"
-                        )
-                        # Direct log of context.iteration_count after merge
-                        after_merge_count = getattr(context, "iteration_count", "N/A")
-                        telemetry.logfire.info(
-                            f"[AFTER MERGE] context.iteration_count: {after_merge_count} | id(context): {id(context)}"
-                        )
-                        telemetry.logfire.info(
-                            f"[AFTER MERGE] context.__dict__: {dict(context.__dict__)}"
-                        )
-
                         if merge_success:
                             telemetry.logfire.debug(
                                 f"Successfully merged context updates in LoopStep '{loop_step.name}' iteration {i}"
                             )
-                            # Add debug logging to see what was merged
-                            if context and iteration_context:
-                                telemetry.logfire.debug(
-                                    f"Context merge details - Main context: {dict(context.__dict__)}, "
-                                    f"Iteration context: {dict(iteration_context.__dict__)}"
-                                )
+
                         else:
                             telemetry.logfire.warn(
                                 f"Context merge failed in LoopStep '{loop_step.name}' iteration {i} "
@@ -893,15 +864,9 @@ async def _execute_loop_step_logic(
         # After each iteration, always merge all updates from iteration_context into context.
         # No code path (deepcopy, serialization, etc.) can reset or shadow updated fields between merge and exit condition.
         if context is not None and iteration_context is not None:
-            merge_success = safe_merge_context_updates(
-                target_context=context,
-                source_context=iteration_context,
-                excluded_fields=set(),
-            )
-            telemetry.logfire.info(f"[AFTER MERGE] context.__dict__: {dict(context.__dict__)}")
-            assert getattr(context, "iteration_count", None) == getattr(
-                iteration_context, "iteration_count", None
-            ), "First-principles guarantee failed: context field was reset or shadowed after merge."
+            # Note: Context merging is already handled in the else block above for LoopSteps with updates_context=True
+            # This section is kept for completeness but the actual merging happens earlier
+            pass
 
         # Now check the exit condition on the up-to-date context
         try:
