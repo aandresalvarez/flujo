@@ -54,6 +54,10 @@ async def test_loopstep_context_isolation_unit():
     assert result is not None, "No result returned from runner.run_async()"
     # FIXED: Context updates are now properly applied between iterations
     # This ensures that context state persists across loop iterations
-    assert result.final_pipeline_context.counter >= 1, (
-        "Context updates are now properly applied between iterations"
+    # The counter should be incremented exactly twice (once per iteration)
+    # since the exit condition is out >= 2 and we start with 0
+    assert result.final_pipeline_context.counter == 2, (
+        f"Expected counter to be exactly 2 (one increment per iteration), "
+        f"but got {result.final_pipeline_context.counter}. "
+        f"Context updates should be properly applied between iterations."
     )

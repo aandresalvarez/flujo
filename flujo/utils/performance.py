@@ -217,13 +217,18 @@ def release_scratch_buffer() -> None:
 
     # Return buffer to pool
     pool = _get_buffer_pool()
-    try:
-        pool.put_nowait(task_buffer)
-        # Clear the task-local reference
-        _scratch_buffer_var.set(None)
-    except Exception as e:
-        # Pool is full or another error occurred, discard the buffer
-        logger.debug("Failed to return buffer to pool: %s", e, exc_info=True)
+    if not pool.full():
+        try:
+            pool.put_nowait(task_buffer)
+            # Clear the task-local reference
+            _scratch_buffer_var.set(None)
+        except Exception as e:
+            # Pool is full or another error occurred, discard the buffer
+            logger.debug("Failed to return buffer to pool: %s", e, exc_info=True)
+            _scratch_buffer_var.set(None)
+    else:
+        # Pool is full, discard the buffer
+        logger.debug("Buffer pool is full, discarding buffer")
         _scratch_buffer_var.set(None)
 
 

@@ -269,7 +269,7 @@ def safe_context_field_update(context: Any, field_name: str, new_value: Any) -> 
             return True
 
     except (AttributeError, TypeError, ValidationError) as e:
-        logger.error(f"Failed to update field '{field_name}': {e}")
+        logger.error("Failed to update field '" + field_name + "': " + str(e))
         return False
 
 
