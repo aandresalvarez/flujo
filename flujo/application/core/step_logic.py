@@ -814,10 +814,16 @@ async def _execute_loop_step_logic(
                     source_context=iteration_context,
                     excluded_fields=set(),
                 )
-                assert merge_success, (
-                    f"Context merge failed in LoopStep '{loop_step.name}' iteration {i}. "
-                    f"This violates the first-principles guarantee that context updates must always be applied."
-                )
+                if not merge_success:
+                    context_fields = list(context.__dict__.keys()) if context else "None"
+                    iteration_fields = (
+                        list(iteration_context.__dict__.keys()) if iteration_context else "None"
+                    )
+                    raise AssertionError(
+                        f"Context merge failed in LoopStep '{loop_step.name}' iteration {i}. "
+                        f"This violates the first-principles guarantee that context updates must always be applied. "
+                        f"(context fields: {context_fields}, iteration context fields: {iteration_fields})"
+                    )
             # Context merging for MapStep, RefineUntil, AgenticLoop: must happen after body step execution
             if isinstance(loop_step, MapStep):  # Replace hasattr with type check
                 if context is not None and iteration_context is not None:
@@ -873,18 +879,9 @@ async def _execute_loop_step_logic(
                         # CRITICAL FIX: Only apply context updates if the step is configured for it
                         # This prevents treating regular step outputs as context updates
                         if isinstance(final_body_output_of_last_iteration, dict):
-                            # Check if any step in the loop body is configured for context updates
-                            has_context_updating_step = any(
-                                hasattr(body_s, "updates_context") and body_s.updates_context
-                                for body_s in loop_step.loop_body_pipeline.steps
-                            )
-
-                            if has_context_updating_step:
-                                # Only apply dictionary output as context updates if step is configured for it
-                                update_data = final_body_output_of_last_iteration
-                                for key, value in update_data.items():
-                                    if hasattr(iteration_context, key):
-                                        setattr(iteration_context, key, value)
+                            # Context updates are handled by safe_merge_context_updates below
+                            # No manual setattr operations needed - merge function handles all updates
+                            pass
 
                         merge_success = safe_merge_context_updates(
                             target_context=context,
@@ -945,8 +942,8 @@ async def _execute_loop_step_logic(
                                 f"iteration context fields: {list(iteration_context.__dict__.keys()) if iteration_context else 'None'}), "
                                 "but continuing execution"
                             )
-                        # CRITICAL: Update context reference for next iteration
-                        # context = iteration_context # This line is removed
+                        # CRITICAL: Context updates are merged directly to main context
+                        # No need to reassign context reference - updates are preserved
                     except Exception as e:
                         telemetry.logfire.error(
                             f"Failed to perform universal context merge in LoopStep '{loop_step.name}' iteration {i}: {e}"
