@@ -441,6 +441,80 @@ class TestPersistencePerformanceOverhead:
             # Disable buffer pooling
             disable_buffer_pooling()
 
+    @pytest.mark.asyncio
+    async def test_cache_consistency_data_loss_prevention(self) -> None:
+        """Test that cache inconsistency doesn't cause data loss."""
+
+        from flujo.application.core.state_manager import StateManager
+        from flujo.state.backends.sqlite import SQLiteBackend
+        from flujo.domain.models import PipelineContext
+        import tempfile
+        import os
+
+        # Create a context with multiple fields
+        class TestContext(PipelineContext):
+            initial_prompt: str = "test prompt"
+            important_data: str = "critical information"
+            user_id: str = "user123"
+            settings: dict = {"key": "value"}
+
+        # Create temporary database
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp_file:
+            db_path = tmp_file.name
+
+        try:
+            backend = SQLiteBackend(db_path)
+            state_manager = StateManager(backend)
+
+            # Create context with important data
+            context = TestContext(
+                initial_prompt="test prompt",
+                important_data="critical information that must be preserved",
+                user_id="user123",
+                settings={"key": "value", "important": "data"},
+            )
+
+            # Force cache eviction by adding many entries
+            for i in range(150):  # More than the 100 limit
+                temp_context = TestContext(
+                    initial_prompt=f"temp prompt {i}",
+                    important_data=f"temp data {i}",
+                    user_id=f"user{i}",
+                    settings={"temp": f"value{i}"},
+                )
+                # This will trigger cache eviction
+                state_manager._cache_serialization(temp_context, f"run_{i}", {"temp": "data"})
+
+            # Now persist our important context
+            await state_manager.persist_workflow_state(
+                run_id="important_run",
+                context=context,
+                current_step_index=0,
+                last_step_output=None,
+                status="running",
+            )
+
+            # Load the state back
+            loaded_context, _, _, _, _, _, _ = await state_manager.load_workflow_state(
+                "important_run", TestContext
+            )
+
+            # Verify that ALL data was preserved, not just initial_prompt
+            assert loaded_context is not None
+            assert loaded_context.important_data == "critical information that must be preserved"
+            assert loaded_context.user_id == "user123"
+            assert loaded_context.settings == {"key": "value", "important": "data"}
+
+            # Verify the context is complete, not just the fallback serialization
+            assert hasattr(loaded_context, "important_data")
+            assert hasattr(loaded_context, "user_id")
+            assert hasattr(loaded_context, "settings")
+
+        finally:
+            # Clean up
+            if os.path.exists(db_path):
+                os.unlink(db_path)
+
 
 class TestCLIPerformance:
     """Test NFR-10: CLI commands must complete in <2s with 10,000 runs."""

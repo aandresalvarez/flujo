@@ -89,9 +89,16 @@ class StateManager(Generic[ContextT]):
 
         # Limit cache size to prevent memory leaks
         if len(self._serialization_cache) > 100:
-            # Remove oldest entries (simple LRU)
+            # Remove oldest entries (simple LRU) and maintain cache consistency
             oldest_key = next(iter(self._serialization_cache))
             del self._serialization_cache[oldest_key]
+
+            # Extract run_id from the evicted key to clean up hash cache
+            # Format: "{run_id}_{context_hash}"
+            if "_" in oldest_key:
+                evicted_run_id = oldest_key.split("_", 1)[0]
+                # Remove the corresponding hash cache entry to maintain consistency
+                self._context_hash_cache.pop(evicted_run_id, None)
 
     async def load_workflow_state(
         self,
@@ -433,10 +440,11 @@ class StateManager(Generic[ContextT]):
             self._serialization_cache.clear()
             self._context_hash_cache.clear()
         else:
-            # Clear cache for specific run
+            # Clear cache for specific run and maintain consistency
             keys_to_remove = [
                 k for k in self._serialization_cache.keys() if k.startswith(f"{run_id}_")
             ]
             for key in keys_to_remove:
                 del self._serialization_cache[key]
+            # Remove the corresponding hash cache entry to maintain consistency
             self._context_hash_cache.pop(run_id, None)
