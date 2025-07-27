@@ -70,7 +70,8 @@ async def main():
 
 asyncio.run(main())
 """
-    result = subprocess.run([sys.executable, "-"], input=script, text=True)
+    # Use 'python' instead of sys.executable to avoid path issues
+    result = subprocess.run(["python", "-"], input=script, text=True)
     return result.returncode
 
 
