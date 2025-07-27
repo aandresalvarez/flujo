@@ -1,22 +1,36 @@
+"""SQLite-backed persistent storage for workflow state with optimized schema."""
+
 from __future__ import annotations
 
 import asyncio
 import json
+import logging
+import re
+import sqlite3
 import time
+import weakref
 from datetime import datetime
 from pathlib import Path
-from typing import Awaitable, Callable, Any, Dict, List, Optional, cast, TYPE_CHECKING, Tuple
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, TYPE_CHECKING, cast
 
 import aiosqlite
-import sqlite3
-import weakref
 
 from .base import StateBackend
-from ...utils.serialization import safe_deserialize, robust_serialize
-from ...infra import telemetry
+from flujo.infra import telemetry
+from flujo.utils.serialization import robust_serialize, safe_deserialize
 
-import re
-import logging  # Ensure logging is imported at the top for performance and style
+# Try to import orjson for faster JSON serialization
+try:
+    import orjson
+
+    def _fast_json_dumps(obj: Any) -> str:
+        """Use orjson for faster JSON serialization."""
+        return orjson.dumps(obj, option=orjson.OPT_SORT_KEYS).decode("utf-8")
+except ImportError:
+
+    def _fast_json_dumps(obj: Any) -> str:
+        """Fallback to standard json for JSON serialization."""
+        return json.dumps(obj, sort_keys=True, separators=(",", ":"))
 
 
 if TYPE_CHECKING:
@@ -714,14 +728,16 @@ class SQLiteBackend(StateBackend):
                 async with aiosqlite.connect(self.db_path) as db:
                     # Get execution_time_ms directly from state
                     execution_time_ms = state.get("execution_time_ms")
-                    pipeline_context_json = json.dumps(robust_serialize(state["pipeline_context"]))
+                    pipeline_context_json = _fast_json_dumps(
+                        robust_serialize(state["pipeline_context"])
+                    )
                     last_step_output_json = (
-                        json.dumps(robust_serialize(state["last_step_output"]))
+                        _fast_json_dumps(robust_serialize(state["last_step_output"]))
                         if state.get("last_step_output") is not None
                         else None
                     )
                     step_history_json = (
-                        json.dumps(robust_serialize(state["step_history"]))
+                        _fast_json_dumps(robust_serialize(state["step_history"]))
                         if state.get("step_history") is not None
                         else None
                     )
@@ -1188,9 +1204,9 @@ class SQLiteBackend(StateBackend):
                             step_data.get("duration_ms"),
                             step_data.get("cost"),
                             step_data.get("tokens"),
-                            json.dumps(robust_serialize(step_data.get("input"))),
-                            json.dumps(robust_serialize(step_data.get("output"))),
-                            json.dumps(robust_serialize(step_data.get("error")))
+                            _fast_json_dumps(robust_serialize(step_data.get("input"))),
+                            _fast_json_dumps(robust_serialize(step_data.get("output"))),
+                            _fast_json_dumps(robust_serialize(step_data.get("error")))
                             if step_data.get("error") is not None
                             else None,
                         ),
@@ -1215,7 +1231,7 @@ class SQLiteBackend(StateBackend):
                             end_data.get("status", "completed"),
                             end_data.get("end_time", datetime.utcnow()).isoformat(),
                             end_data.get("total_cost"),
-                            json.dumps(robust_serialize(end_data.get("final_context"))),
+                            _fast_json_dumps(robust_serialize(end_data.get("final_context"))),
                             run_id,
                         ),
                     )
@@ -1372,7 +1388,7 @@ class SQLiteBackend(StateBackend):
                 start_time,
                 end_time,
                 str(span_data.get("status", "running")),
-                json.dumps(robust_serialize(span_data.get("attributes", {}))),
+                _fast_json_dumps(robust_serialize(span_data.get("attributes", {}))),
             )
             spans.append(span_tuple)
 

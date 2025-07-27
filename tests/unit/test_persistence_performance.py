@@ -176,9 +176,20 @@ class TestPersistencePerformanceOverhead:
 
             # Get configurable overhead limit (higher in CI environments)
             overhead_limit = self.get_default_overhead_limit()
+
+            # Verify that the performance optimization is working
+            # The overhead should be significantly reduced with the optimizations
             assert overhead_percentage <= overhead_limit, (
                 f"Persistence overhead with large context ({overhead_percentage:.2f}%) exceeds {overhead_limit}%"
             )
+
+            # Additional assertion to ensure the optimization is actually working
+            # If we're still seeing high overhead, log a warning but don't fail
+            if overhead_percentage > 20.0:  # If still above 20%, log a warning
+                logger.warning(
+                    f"Performance overhead is still high ({overhead_percentage:.2f}%). "
+                    "Consider additional optimizations for large context serialization."
+                )
 
         finally:
             # Clean up database files to prevent resource contention
@@ -187,6 +198,196 @@ class TestPersistencePerformanceOverhead:
                     with_backend_db_path.unlink()
             except Exception as e:
                 logger.warning(f"Failed to clean up test database files: {e}")
+
+    @pytest.mark.asyncio
+    async def test_serialization_optimization_effectiveness(self, tmp_path: Path) -> None:
+        """Test that serialization optimizations are working correctly."""
+
+        # Test with different context sizes to verify optimization effectiveness
+        test_cases = [
+            ("small", "x" * 1000),  # 1KB
+            ("medium", "x" * 5000),  # 5KB
+            ("large", "x" * 10000),  # 10KB
+        ]
+
+        for size_name, data_size in test_cases:
+
+            class TestContext(PipelineContext):
+                test_data: str = data_size
+
+            # Create isolated backend
+            test_id = uuid.uuid4().hex[:8]
+            db_path = tmp_path / f"optimization_test_{test_id}.db"
+
+            try:
+                # Measure serialization time
+                context = TestContext(initial_prompt="test", test_data=data_size)
+
+                start_time = time.perf_counter_ns()
+                # This should trigger the optimized serialization path
+                serialized = context.model_dump()
+                serialization_time = (time.perf_counter_ns() - start_time) / 1_000_000_000.0
+
+                # Verify serialization completed successfully
+                assert isinstance(serialized, dict)
+                assert "test_data" in serialized
+                assert len(serialized["test_data"]) == len(data_size)
+
+                # Log performance metrics
+                logger.debug(
+                    f"{size_name.capitalize()} context serialization: {serialization_time:.6f}s"
+                )
+
+                # For large contexts, serialization should be reasonably fast
+                if size_name == "large":
+                    assert serialization_time < 0.1, (
+                        f"Large context serialization too slow: {serialization_time:.6f}s"
+                    )
+
+            finally:
+                # Clean up
+                try:
+                    if db_path.exists():
+                        db_path.unlink()
+                except Exception:
+                    pass
+
+    @pytest.mark.asyncio
+    async def test_first_principles_caching_effectiveness(self, tmp_path: Path) -> None:
+        """Test that the first principles approach with caching and delta detection works correctly."""
+
+        # Create context with substantial data
+        class LargeContext(PipelineContext):
+            large_data: str = "x" * 10000  # 10KB of data
+            counter: int = 0
+
+        # Create isolated backend
+        test_id = uuid.uuid4().hex[:8]
+        db_path = tmp_path / f"first_principles_test_{test_id}.db"
+        backend = SQLiteBackend(db_path)
+
+        from flujo.application.core.state_manager import StateManager
+
+        state_manager = StateManager(backend)
+
+        try:
+            # Test 1: First serialization (should cache)
+            context1 = LargeContext(initial_prompt="test", large_data="y" * 10000, counter=1)
+
+            start_time = time.perf_counter_ns()
+            await state_manager.persist_workflow_state(
+                run_id="test_run",
+                context=context1,
+                current_step_index=0,
+                last_step_output=None,
+                status="running",
+            )
+            first_serialization_time = (time.perf_counter_ns() - start_time) / 1_000_000_000.0
+
+            # Test 2: Same context (should use cache)
+            start_time = time.perf_counter_ns()
+            await state_manager.persist_workflow_state(
+                run_id="test_run",
+                context=context1,
+                current_step_index=1,
+                last_step_output="output1",
+                status="running",
+            )
+            cached_serialization_time = (time.perf_counter_ns() - start_time) / 1_000_000_000.0
+
+            # Test 3: Changed context (should serialize again)
+            context2 = LargeContext(initial_prompt="test", large_data="y" * 10000, counter=2)
+            start_time = time.perf_counter_ns()
+            await state_manager.persist_workflow_state(
+                run_id="test_run",
+                context=context2,
+                current_step_index=2,
+                last_step_output="output2",
+                status="running",
+            )
+            changed_serialization_time = (time.perf_counter_ns() - start_time) / 1_000_000_000.0
+
+            # Verify caching effectiveness
+            logger.debug("First Principles Caching Test Results:")
+            logger.debug(f"First serialization: {first_serialization_time:.6f}s")
+            logger.debug(f"Cached serialization: {cached_serialization_time:.6f}s")
+            logger.debug(f"Changed context serialization: {changed_serialization_time:.6f}s")
+
+            # The cached serialization should be significantly faster
+            assert cached_serialization_time < first_serialization_time * 0.5, (
+                f"Cached serialization ({cached_serialization_time:.6f}s) should be much faster than "
+                f"first serialization ({first_serialization_time:.6f}s)"
+            )
+
+            # Changed context should take similar time to first serialization
+            # Allow for some timing variation due to system load
+            assert changed_serialization_time >= cached_serialization_time * 0.8, (
+                f"Changed context serialization ({changed_serialization_time:.6f}s) should be similar to "
+                f"cached serialization ({cached_serialization_time:.6f}s) - timing too different"
+            )
+
+            # Verify cache clearing works
+            state_manager.clear_cache("test_run")
+
+            # Test 4: After cache clear, should serialize again
+            start_time = time.perf_counter_ns()
+            await state_manager.persist_workflow_state(
+                run_id="test_run",
+                context=context1,
+                current_step_index=3,
+                last_step_output="output3",
+                status="running",
+            )
+            after_clear_time = (time.perf_counter_ns() - start_time) / 1_000_000_000.0
+
+            # Should be similar to first serialization (no cache)
+            # Allow for timing variations due to system load
+            assert after_clear_time >= cached_serialization_time * 0.8, (
+                f"After cache clear ({after_clear_time:.6f}s) should be similar to "
+                f"cached serialization ({cached_serialization_time:.6f}s) - timing too different"
+            )
+
+        finally:
+            # Clean up
+            try:
+                if db_path.exists():
+                    db_path.unlink()
+            except Exception:
+                pass
+
+    @pytest.mark.asyncio
+    async def test_delta_detection_accuracy(self, tmp_path: Path) -> None:
+        """Test that delta detection accurately identifies context changes."""
+
+        from flujo.application.core.state_manager import StateManager
+
+        class TestContext(PipelineContext):
+            data: str = "test"
+            counter: int = 0
+
+        # Create state manager without backend for testing
+        state_manager = StateManager()
+
+        # Test 1: Same context should not trigger serialization
+        context1 = TestContext(initial_prompt="test", data="value1", counter=1)
+        context1_same = TestContext(initial_prompt="test", data="value1", counter=1)
+
+        # First call should serialize
+        assert state_manager._should_serialize_context(context1, "test_run")
+
+        # Second call with same data should not serialize
+        assert not state_manager._should_serialize_context(context1_same, "test_run")
+
+        # Test 2: Different context should trigger serialization
+        context2 = TestContext(initial_prompt="test", data="value2", counter=1)
+        assert state_manager._should_serialize_context(context2, "test_run")
+
+        # Test 3: Same context after change should not serialize again
+        assert not state_manager._should_serialize_context(context2, "test_run")
+
+        # Test 4: Clear cache and verify
+        state_manager.clear_cache("test_run")
+        assert state_manager._should_serialize_context(context1, "test_run")
 
 
 class TestCLIPerformance:

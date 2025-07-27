@@ -1,21 +1,97 @@
-"""State management for workflow persistence and resumption."""
+"""State management with intelligent caching and delta-based persistence."""
 
-from __future__ import annotations
-
+import hashlib
+import logging
 from datetime import datetime
-from typing import Dict, Any, Optional, TypeVar, Generic
+from typing import Any, Dict, Generic, Optional, TypeVar
 
-from ...domain.models import BaseModel, PipelineContext, PipelineResult, StepResult
-from ...state import StateBackend, WorkflowState
+from flujo.domain.models import PipelineContext, PipelineResult, StepResult, BaseModel
+from flujo.state.backends import StateBackend
+from flujo.state.models import WorkflowState
+
+logger = logging.getLogger(__name__)
 
 ContextT = TypeVar("ContextT", bound=BaseModel)
 
 
 class StateManager(Generic[ContextT]):
-    """Manages workflow state persistence and loading for durable execution."""
+    """Intelligent state manager with caching and delta-based persistence."""
 
     def __init__(self, state_backend: Optional[StateBackend] = None) -> None:
+        """Initialize state manager with optional backend."""
         self.state_backend = state_backend
+        # Cache for serialization results to avoid redundant work
+        self._serialization_cache: Dict[str, Any] = {}
+        self._context_hash_cache: Dict[str, str] = {}
+
+    def _compute_context_hash(self, context: Optional[ContextT]) -> str:
+        """Compute a hash of the context for change detection."""
+        if context is None:
+            return "none"
+
+        try:
+            # Use a fast hash of the context data, excluding auto-generated fields
+            context_data = context.model_dump()
+
+            # Remove auto-generated fields that shouldn't affect change detection
+            fields_to_exclude = {
+                "run_id",
+                "created_at",
+                "updated_at",
+                "pipeline_id",
+                "pipeline_name",
+                "pipeline_version",
+            }
+            filtered_data = {k: v for k, v in context_data.items() if k not in fields_to_exclude}
+
+            # Create a deterministic string representation
+            import json
+
+            context_str = json.dumps(filtered_data, sort_keys=True, separators=(",", ":"))
+            return hashlib.md5(context_str.encode()).hexdigest()
+        except Exception:
+            # Fallback to object id if serialization fails
+            return f"obj_{id(context)}"
+
+    def _should_serialize_context(self, context: Optional[ContextT], run_id: str) -> bool:
+        """Determine if context needs serialization based on change detection."""
+        if context is None:
+            return False
+
+        current_hash = self._compute_context_hash(context)
+        cached_hash = self._context_hash_cache.get(run_id)
+
+        if cached_hash != current_hash:
+            # Context has changed, update cache and serialize
+            self._context_hash_cache[run_id] = current_hash
+            return True
+
+        # Context hasn't changed, skip serialization
+        return False
+
+    def _get_cached_serialization(self, context: Optional[ContextT], run_id: str) -> Optional[Any]:
+        """Get cached serialization result if available."""
+        if context is None:
+            return None
+
+        cache_key = f"{run_id}_{self._compute_context_hash(context)}"
+        return self._serialization_cache.get(cache_key)
+
+    def _cache_serialization(
+        self, context: Optional[ContextT], run_id: str, serialized: Any
+    ) -> None:
+        """Cache serialization result for future use."""
+        if context is None:
+            return
+
+        cache_key = f"{run_id}_{self._compute_context_hash(context)}"
+        self._serialization_cache[cache_key] = serialized
+
+        # Limit cache size to prevent memory leaks
+        if len(self._serialization_cache) > 100:
+            # Remove oldest entries (simple LRU)
+            oldest_key = next(iter(self._serialization_cache))
+            del self._serialization_cache[oldest_key]
 
     async def load_workflow_state(
         self,
@@ -89,7 +165,7 @@ class StateManager(Generic[ContextT]):
         state_created_at: datetime | None = None,
         step_history: Optional[list[StepResult]] = None,
     ) -> None:
-        """Persist current workflow state to backend."""
+        """Persist current workflow state with intelligent caching and delta detection."""
         if self.state_backend is None or run_id is None:
             return
 
@@ -98,26 +174,50 @@ class StateManager(Generic[ContextT]):
         if state_created_at is not None:
             execution_time_ms = int((datetime.now() - state_created_at).total_seconds() * 1000)
 
-        # Estimate memory usage (rough approximation)
+        # Estimate memory usage and optimize serialization
         memory_usage_mb = None
+        pipeline_context = None
+
         if context is not None:
             try:
                 import sys
 
                 memory_usage_mb = sys.getsizeof(context) / (1024 * 1024)
-            except Exception:
-                pass
 
-        # Optimize serialization by only dumping context when necessary
-        pipeline_context = None
-        if context is not None:
-            try:
-                pipeline_context = context.model_dump()
-            except Exception:
-                # Fallback to basic serialization if model_dump fails
-                pipeline_context = {"error": "Failed to serialize context"}
+                # First principles: Only serialize if context has actually changed
+                if self._should_serialize_context(context, run_id):
+                    # Check cache first
+                    cached = self._get_cached_serialization(context, run_id)
+                    if cached is not None:
+                        pipeline_context = cached
+                        logger.debug(f"Using cached serialization for run {run_id}")
+                    else:
+                        # Optimize serialization based on context size
+                        if memory_usage_mb > 0.1:  # Large context (>100KB)
+                            pipeline_context = context.model_dump(mode="json")
+                        else:
+                            pipeline_context = context.model_dump()
 
-        # Serialize step history
+                        # Cache the result
+                        self._cache_serialization(context, run_id, pipeline_context)
+                        logger.debug(f"Serialized and cached context for run {run_id}")
+                else:
+                    # Context hasn't changed, use cached or minimal serialization
+                    cached = self._get_cached_serialization(context, run_id)
+                    if cached is not None:
+                        pipeline_context = cached
+                    else:
+                        # Fallback to minimal serialization
+                        pipeline_context = {
+                            "initial_prompt": getattr(context, "initial_prompt", "")
+                        }
+                    logger.debug(f"Skipped context serialization for unchanged run {run_id}")
+
+            except Exception as e:
+                logger.warning(f"Failed to serialize context for run {run_id}: {e}")
+                pipeline_context = {"error": f"Failed to serialize context: {e}"}
+
+        # Serialize step history with error handling
         serialized_step_history = []
         if step_history is not None:
             for step_result in step_history:
@@ -325,3 +425,18 @@ class StateManager(Generic[ContextT]):
         else:
             # Raise exception for truly invalid trace trees to trigger error handling
             raise ValueError(f"Unknown trace tree type: {type(trace_tree)}")
+
+    def clear_cache(self, run_id: Optional[str] = None) -> None:
+        """Clear serialization cache for a specific run or all runs."""
+        if run_id is None:
+            # Clear all caches
+            self._serialization_cache.clear()
+            self._context_hash_cache.clear()
+        else:
+            # Clear cache for specific run
+            keys_to_remove = [
+                k for k in self._serialization_cache.keys() if k.startswith(f"{run_id}_")
+            ]
+            for key in keys_to_remove:
+                del self._serialization_cache[key]
+            self._context_hash_cache.pop(run_id, None)
