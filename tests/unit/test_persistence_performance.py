@@ -554,7 +554,7 @@ class TestPersistencePerformanceOverhead:
             state_manager._cache_serialization(context1, run_id_with_underscores, {"data": "test"})
 
             # Verify cache entry exists
-            cache_key = f"{run_id_with_underscores}_{state_manager._compute_context_hash(context1)}"
+            cache_key = f"{run_id_with_underscores}|{state_manager._compute_context_hash(context1)}"
             assert cache_key in state_manager._serialization_cache
 
             # Test 2: Force cache eviction by adding many entries
@@ -595,8 +595,8 @@ class TestPersistencePerformanceOverhead:
 
             # Test 5: Verify that cache keys are properly formatted
             for key in state_manager._serialization_cache.keys():
-                if "_" in key:
-                    parts = key.rsplit("_", 1)
+                if "|" in key:
+                    parts = key.rsplit("|", 1)
                     assert len(parts) == 2, f"Invalid cache key format: {key}"
                     assert len(parts[1]) == 32, (
                         f"Context hash should be 32 chars: {parts[1]}"

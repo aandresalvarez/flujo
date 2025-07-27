@@ -203,7 +203,8 @@ class TestBufferPooling:
             # Release the buffer
             release_scratch_buffer()
 
-            # Check pool stats - should have increased by 1
+            # Check pool stats - pool size is expected to increase, but it may already
+            # contain buffers from previous operations, so a range is allowed.
             stats = get_buffer_pool_stats()
             # The pool size should increase by 1, but we need to handle the case
             # where the pool might already have buffers from previous operations

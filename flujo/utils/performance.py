@@ -63,7 +63,6 @@ with performance, offering both task-local safety and optional pooling for
 high-concurrency scenarios.
 """
 
-import asyncio
 import contextvars
 import logging
 import time
@@ -397,6 +396,7 @@ def optimize_event_loop() -> None:
     """
     try:
         import uvloop
+        import asyncio
 
         # uvloop provides significant performance improvements over the default event loop
         asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
@@ -408,6 +408,8 @@ def optimize_event_loop() -> None:
 
     # Configure the event loop for better performance
     try:
+        import asyncio
+
         # Use get_running_loop() to avoid RuntimeError when no loop is active
         loop = asyncio.get_running_loop()
 

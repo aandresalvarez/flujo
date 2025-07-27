@@ -3,7 +3,7 @@
 import hashlib
 import logging
 from datetime import datetime
-from typing import Any, Dict, Generic, Optional, TypeVar
+from typing import Any, Dict, Generic, Optional, TypeVar, Tuple
 
 from flujo.domain.models import PipelineContext, PipelineResult, StepResult, BaseModel
 from flujo.state.backends import StateBackend
@@ -84,7 +84,7 @@ class StateManager(Generic[ContextT]):
         # This prevents ambiguity when parsing cache keys
         return f"{run_id}|{context_hash}"
 
-    def _parse_cache_key(self, cache_key: str) -> tuple[str, str]:
+    def _parse_cache_key(self, cache_key: str) -> Tuple[str, str]:
         """Parse a cache key to extract run_id and context_hash."""
         # Split on the separator to get run_id and context_hash
         # Use rsplit to handle run_ids that might contain pipe characters
