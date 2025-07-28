@@ -1,0 +1,5 @@
+---
+description: Never Use --no-verify to commit
+globs:
+alwaysApply: true
+---

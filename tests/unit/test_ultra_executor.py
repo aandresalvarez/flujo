@@ -1436,39 +1436,51 @@ class TestUltraStepExecutor:
         assert result1.metadata_ is not result2.metadata_
 
     @pytest.mark.asyncio
-    async def test_regression_deepcopy_import_optimization(self):
-        """REGRESSION: Ensure model_copy is used instead of deepcopy for performance."""
-        import ast
-        import inspect
+    async def test_regression_cache_copy_behavior(self):
+        """REGRESSION: Ensure cached results are properly copied to prevent mutation."""
+        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.domain.dsl import Step
+        from flujo.testing.utils import StubAgent
 
-        # Get the source code of the ultra_executor module
-        from flujo.application.core import ultra_executor
+        # Create executor with caching enabled
+        executor = UltraStepExecutor(enable_cache=True)
 
-        source = inspect.getsource(ultra_executor)
+        # Create a step with multiple outputs
+        agent = StubAgent(["test output 1", "test output 2", "test output 3"])
+        step = Step(name="test_step", agent=agent)
 
-        # Parse the source code
-        tree = ast.parse(source)
+        # First execution - cache miss
+        result1 = await executor.execute_step(step, "test_input")
+        assert result1.success
+        assert (
+            result1.metadata_ is None or result1.metadata_.get("cache_hit") is None
+        )  # No cache hit metadata
 
-        # Find all model_copy method calls
-        model_copy_calls = []
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Call):
-                if isinstance(node.func, ast.Attribute) and node.func.attr == "model_copy":
-                    model_copy_calls.append(node)
+        # Second execution - cache hit
+        result2 = await executor.execute_step(step, "test_input")
+        assert result2.success
+        assert result2.metadata_.get("cache_hit") is True  # Should have cache hit metadata
 
-        # Verify that model_copy is used for caching
-        assert len(model_copy_calls) > 0, "model_copy should be used for cache copying"
+        # Third execution - another cache hit
+        result3 = await executor.execute_step(step, "test_input")
+        assert result3.success
+        assert result3.metadata_.get("cache_hit") is True  # Should have cache hit metadata
 
-        # Verify that deepcopy is not imported
-        deepcopy_imports = []
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom):
-                if node.module == "copy" and any(alias.name == "deepcopy" for alias in node.names):
-                    deepcopy_imports.append(node)
+        # CRITICAL: Verify that the original cached data wasn't corrupted
+        # The metadata should be properly set on each cache hit without affecting the original
+        assert result2.output == result1.output
+        assert result3.output == result1.output
+        assert result2.name == result1.name
+        assert result3.name == result1.name
 
-        assert len(deepcopy_imports) == 0, (
-            "deepcopy should not be imported - use model_copy instead"
-        )
+        # Verify that each result has its own metadata instance (proper copying)
+        assert result2.metadata_ is not result3.metadata_
+        assert result1.metadata_ is not result2.metadata_
+
+        # Verify that modifying one result's metadata doesn't affect others
+        result2.metadata_["test_key"] = "test_value"
+        assert "test_key" not in result3.metadata_
+        assert result1.metadata_ is None or "test_key" not in result1.metadata_
 
     @pytest.mark.asyncio
     async def test_regression_cache_key_always_defined(self):

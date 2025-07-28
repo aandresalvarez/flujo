@@ -705,15 +705,15 @@ class UltraStepExecutor(Generic[TContext]):
 
     def _handle_step_exception(self, e: Exception) -> None:
         """Handle exceptions from step execution with proper classification.
-        
+
         This method classifies exceptions and handles them appropriately:
-        - Critical exceptions (PausedException, InfiniteFallbackError, InfiniteRedirectError) 
+        - Critical exceptions (PausedException, InfiniteFallbackError, InfiniteRedirectError)
           are re-raised immediately without caching
         - Other exceptions are re-raised normally
-        
+
         Args:
             e: The exception that occurred during step execution
-            
+
         Raises:
             The original exception (either critical or normal)
         """
@@ -749,8 +749,10 @@ class UltraStepExecutor(Generic[TContext]):
             # Check cache for existing result
             cached_result = self._cache.get(cache_key)
             if cached_result is not None:
-                # CRITICAL FIX: Create a copy to avoid mutating the cached object
-                result_copy = cached_result.model_copy(deep=True)
+                # CRITICAL FIX: Create a fully independent copy to avoid mutating the cached object
+                import copy
+
+                result_copy = copy.deepcopy(cached_result)
                 result_copy.metadata_ = result_copy.metadata_ or {}
                 result_copy.metadata_["cache_hit"] = True
                 return result_copy
