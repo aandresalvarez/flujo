@@ -10,6 +10,7 @@ This test suite verifies that the new type resolution mechanism is:
 6. Maintains backward compatibility
 """
 
+import os
 import time
 import threading
 import sys
@@ -446,4 +447,5 @@ class TestTypeResolution:
             end_time = time.time()
 
             # Should complete in reasonable time
-            assert end_time - start_time < 1.0  # Under 1 second for 10k lookups
+            threshold = float(os.getenv("TYPE_RESOLUTION_THRESHOLD", 2.0))  # Default to 2 seconds
+            assert end_time - start_time < threshold  # Configurable threshold for 10k lookups

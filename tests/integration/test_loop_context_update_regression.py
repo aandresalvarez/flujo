@@ -11,12 +11,17 @@ The tests verify:
 4. Edge cases that could cause regressions
 """
 
+import os
 import pytest
 from typing import Any, Dict
 
 
 from flujo import Step, Pipeline, step, Flujo
 from flujo.domain.models import PipelineContext
+
+
+# Module-level constant for performance test loop count
+PERFORMANCE_TEST_LOOP_COUNT = int(os.getenv("PERFORMANCE_TEST_LOOP_COUNT", "1000"))
 
 
 class RegressionTestContext(PipelineContext):
@@ -358,7 +363,7 @@ async def test_regression_performance_under_load():
         context.accumulated_value += data if isinstance(data, (int, float)) else 1
 
         # Simulate performance load
-        for i in range(1000):
+        for i in range(PERFORMANCE_TEST_LOOP_COUNT):
             context.debug_data[f"performance_item_{context.iteration_count}_{i}"] = i
 
         if context.iteration_count >= 3:
@@ -400,4 +405,5 @@ async def test_regression_performance_under_load():
     assert final_context.accumulated_value >= 3
 
     # Verify large amounts of data are preserved
-    assert len(final_context.debug_data) >= 3000  # 3 iterations * 1000 items each
+    expected_items = 3 * PERFORMANCE_TEST_LOOP_COUNT  # 3 iterations * loop count items each
+    assert len(final_context.debug_data) >= expected_items

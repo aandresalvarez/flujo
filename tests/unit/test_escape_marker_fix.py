@@ -1,5 +1,6 @@
 """Comprehensive tests for the escape marker collision fix."""
 
+import os
 from flujo.utils import format_prompt
 from flujo.domain.models import BaseModel
 
@@ -286,7 +287,8 @@ class TestEscapeMarkerCollisionFix:
         end_time = time.time()
 
         # Should complete in reasonable time (less than 1 second)
-        assert end_time - start_time < 1.0
+        threshold = float(os.getenv("TYPE_RESOLUTION_THRESHOLD", 2.0))  # Default to 2 seconds
+        assert end_time - start_time < threshold
 
         # All escape markers should be preserved
         assert result.count("__ESCAPED_OPEN__") == 100

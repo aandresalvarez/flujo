@@ -192,7 +192,9 @@ def register_custom_type(type_class: Type[T]) -> None:
                 model_validate = getattr(type_class, "model_validate", None)
                 if callable(model_validate):
                     return model_validate(data)
-                raise ValueError(f"Type {type_class} does not have a callable model_validate method")
+                raise ValueError(
+                    f"Type {type_class} does not have a callable model_validate method"
+                )
 
             register_custom_deserializer(type_class, safe_model_validate)
 
