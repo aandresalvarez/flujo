@@ -85,8 +85,8 @@ class TypeResolutionContext:
                 self._resolvers[module_name] = resolver
 
             type_obj = resolver.resolve_type(type_name)
-            if type_obj and self._validate_type_resolution(type_obj, base_type):
-                return type_obj
+            if type_obj is not None and self._validate_type_resolution(type_obj, base_type):
+                return cast(Type[T], type_obj)
 
             return None
 
@@ -193,6 +193,7 @@ def _resolve_type_from_string(type_str: str) -> Optional[Type[Any]]:
         if hasattr(types, "UnionType") and isinstance(type_str, types.UnionType):
             return type_str
 
+        # Ensure type_str is treated as a string, as documented.
         # Try to evaluate as a type annotation
         import ast
 
@@ -305,7 +306,7 @@ def _deserialize_value(value: Any, field_type: Any, context_model: Type[BaseMode
             # Resolve the actual element type (handle Union types)
             resolved_element_type = _resolve_actual_type(element_type)
             if resolved_element_type is not None:
-                actual_element_type: Type[Any] = resolved_element_type
+                actual_element_type = resolved_element_type
                 # Handle Pydantic models in list
                 if (
                     hasattr(actual_element_type, "model_validate")
@@ -435,8 +436,8 @@ def _inject_context(
             if hasattr(context, "model_fields"):
                 available_fields = list(context.model_fields.keys())
             raise ContextFieldError(key, context.__class__.__name__, available_fields)
-        else:
-            setattr(context, key, value)
+        # If the field exists on the context, set it directly
+        setattr(context, key, value)
 
     # Final pass: re-apply deserialization to ensure consistency
     for key in context_model.model_fields:

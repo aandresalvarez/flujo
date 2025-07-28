@@ -704,7 +704,10 @@ async def _execute_loop_step_logic(
         with telemetry.logfire.span(f"Loop '{loop_step.name}' - Iteration {i}"):
             for body_s in loop_step.loop_body_pipeline.steps:
                 try:
-                    # Execute the body step for this iteration using the step executor
+                    # Use the step executor to execute the body step for this iteration.
+                    # This ensures proper context isolation and state management, which are
+                    # critical for maintaining the integrity of the loop's execution and
+                    # avoiding unintended side effects between iterations.
                     body_step_result_obj = await step_executor(
                         body_s,
                         current_iteration_data_for_body_step,
@@ -828,7 +831,7 @@ async def _execute_loop_step_logic(
                         )
                         # Use RuntimeError instead of AssertionError for runtime conditions
                         raise RuntimeError(
-                            f"Context merge failed in LoopStep '{loop_step.name}' iteration {i}. "
+                            f"Context merge failed in {type(loop_step).__name__} '{loop_step.name}' iteration {i}. "
                             f"This violates the first-principles guarantee that context updates must always be applied. "
                             f"(context fields: {context_fields}, iteration context fields: {iteration_fields})"
                         )
