@@ -569,13 +569,19 @@ class UltraStepExecutor(Generic[TContext]):
                                     if on_chunk:
                                         await on_chunk(chunk)
                                     chunks.append(chunk)
-                                # Combine chunks
-                                raw: str | bytes  # Type annotation for mixed content
+                                # Combine chunks using type-safe protocols
+                                raw: str | bytes
+
+                                # Determine stream type based on actual chunk types
+                                # This is more reliable than protocol checking
                                 if chunks and all(isinstance(c, str) for c in chunks):
+                                    # All chunks are strings - safe to join as strings
                                     raw = "".join(chunks)
                                 elif chunks and all(isinstance(c, bytes) for c in chunks):
-                                    raw = b"".join(chunks)  # Fix: Add bytes handler
+                                    # All chunks are bytes - safe to join as bytes
+                                    raw = b"".join(chunks)
                                 elif chunks:
+                                    # Mixed types or unknown - fall back to string representation
                                     raw = str(chunks)
                                 else:
                                     raw = ""

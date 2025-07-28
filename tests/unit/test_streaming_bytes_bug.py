@@ -1,8 +1,9 @@
 """
-Test for the critical streaming bytes corruption bug.
+Test for the critical streaming bytes corruption bug and type-safe protocols.
 
 This test demonstrates the bug where streaming bytes payloads are corrupted
-during reassembly in the UltraStepExecutor.
+during reassembly in the UltraStepExecutor, and validates the new type-safe
+streaming protocols.
 """
 
 import pytest
@@ -14,10 +15,39 @@ from flujo.application.core.ultra_executor import UltraStepExecutor
 from flujo.domain.dsl.step import Step
 from flujo.domain.models import StepResult
 from flujo.domain.resources import AppResources
+from flujo.domain.streaming_protocol import (
+    TextOnlyStreamingAgentProtocol,
+    BinaryOnlyStreamingAgentProtocol,
+    StreamingAgentProtocol,
+)
 
 
-class StubStreamingAgent:
-    """A stub agent that can be configured to yield specific chunks."""
+class StubTextStreamingAgent(TextOnlyStreamingAgentProtocol):
+    """A stub agent that explicitly streams text data."""
+
+    def __init__(self, chunks: list[str]):
+        self.chunks = chunks
+
+    async def stream(self, data: Any, **kwargs) -> AsyncIterator[str]:
+        """Stream the configured text chunks."""
+        for chunk in self.chunks:
+            yield chunk
+
+
+class StubBinaryStreamingAgent(BinaryOnlyStreamingAgentProtocol):
+    """A stub agent that explicitly streams binary data."""
+
+    def __init__(self, chunks: list[bytes]):
+        self.chunks = chunks
+
+    async def stream(self, data: Any, **kwargs) -> AsyncIterator[bytes]:
+        """Stream the configured binary chunks."""
+        for chunk in self.chunks:
+            yield chunk
+
+
+class StubLegacyStreamingAgent(StreamingAgentProtocol):
+    """A stub agent using the legacy protocol for backward compatibility."""
 
     def __init__(self, chunks: list[str | bytes]):
         self.chunks = chunks
@@ -29,7 +59,7 @@ class StubStreamingAgent:
 
 
 class TestStreamingBytesBug:
-    """Test suite for the streaming bytes corruption bug."""
+    """Test suite for the streaming bytes corruption bug and type-safe protocols."""
 
     @pytest.fixture
     def executor(self):
@@ -44,6 +74,11 @@ class TestStreamingBytesBug:
         step.processors = None
         step.config = MagicMock()
         step.config.max_retries = 3
+        # Ensure it triggers the simple path in UltraStepExecutor
+        step.plugins = None
+        step.validators = None
+        step.fallback_step = None
+        step.callable = None
         return step
 
     @pytest.fixture
@@ -52,11 +87,11 @@ class TestStreamingBytesBug:
         return MagicMock(spec=AppResources)
 
     @pytest.mark.asyncio
-    async def test_string_stream_works_correctly(self, executor, mock_step, mock_resources):
-        """Test that string streams work correctly (existing functionality)."""
+    async def test_text_streaming_agent_protocol(self, executor, mock_step, mock_resources):
+        """Test that TextStreamingAgentProtocol works correctly."""
         # Arrange
         string_chunks = ["hello", " ", "world", "!"]
-        agent = StubStreamingAgent(string_chunks)
+        agent = StubTextStreamingAgent(string_chunks)
         mock_step.agent = agent
 
         # Act
@@ -70,11 +105,11 @@ class TestStreamingBytesBug:
         assert isinstance(result.output, str)
 
     @pytest.mark.asyncio
-    async def test_bytes_stream_corruption_bug(self, executor, mock_step, mock_resources):
-        """Test that demonstrates the bytes corruption bug."""
+    async def test_binary_streaming_agent_protocol(self, executor, mock_step, mock_resources):
+        """Test that BinaryStreamingAgentProtocol works correctly."""
         # Arrange
         bytes_chunks = [b"data1", b"data2", b"data3"]
-        agent = StubStreamingAgent(bytes_chunks)
+        agent = StubBinaryStreamingAgent(bytes_chunks)
         mock_step.agent = agent
 
         # Act
@@ -82,9 +117,46 @@ class TestStreamingBytesBug:
             step=mock_step, data="test input", context=None, resources=mock_resources, stream=True
         )
 
-        # Assert - This will fail with the current bug
+        # Assert
         assert isinstance(result, StepResult)
-        # The bug causes this to be a string representation instead of concatenated bytes
+        assert result.output == b"data1data2data3"
+        assert isinstance(result.output, bytes)
+
+    @pytest.mark.asyncio
+    async def test_legacy_streaming_agent_fallback(self, executor, mock_step, mock_resources):
+        """Test that legacy streaming agents still work with runtime type checking."""
+        # Arrange
+        string_chunks = ["hello", " ", "world", "!"]
+        agent = StubLegacyStreamingAgent(string_chunks)
+        mock_step.agent = agent
+
+        # Act
+        result = await executor.execute_step(
+            step=mock_step, data="test input", context=None, resources=mock_resources, stream=True
+        )
+
+        # Assert
+        assert isinstance(result, StepResult)
+        assert result.output == "hello world!"
+        assert isinstance(result.output, str)
+
+    @pytest.mark.asyncio
+    async def test_legacy_binary_streaming_agent_fallback(
+        self, executor, mock_step, mock_resources
+    ):
+        """Test that legacy binary streaming agents work with runtime type checking."""
+        # Arrange
+        bytes_chunks = [b"data1", b"data2", b"data3"]
+        agent = StubLegacyStreamingAgent(bytes_chunks)
+        mock_step.agent = agent
+
+        # Act
+        result = await executor.execute_step(
+            step=mock_step, data="test input", context=None, resources=mock_resources, stream=True
+        )
+
+        # Assert
+        assert isinstance(result, StepResult)
         assert result.output == b"data1data2data3"
         assert isinstance(result.output, bytes)
 
@@ -93,7 +165,7 @@ class TestStreamingBytesBug:
         """Test that mixed stream types are handled gracefully."""
         # Arrange - This should fall back to str(chunks) for mixed types
         mixed_chunks = ["text", b"binary", "more_text"]
-        agent = StubStreamingAgent(mixed_chunks)
+        agent = StubLegacyStreamingAgent(mixed_chunks)
         mock_step.agent = agent
 
         # Act
@@ -113,7 +185,7 @@ class TestStreamingBytesBug:
         """Test that empty streams are handled correctly."""
         # Arrange
         empty_chunks = []
-        agent = StubStreamingAgent(empty_chunks)
+        agent = StubTextStreamingAgent(empty_chunks)
         mock_step.agent = agent
 
         # Act
@@ -131,7 +203,7 @@ class TestStreamingBytesBug:
         """Test handling of a single bytes chunk."""
         # Arrange
         single_bytes_chunk = [b"single_chunk"]
-        agent = StubStreamingAgent(single_bytes_chunk)
+        agent = StubBinaryStreamingAgent(single_bytes_chunk)
         mock_step.agent = agent
 
         # Act
@@ -149,7 +221,7 @@ class TestStreamingBytesBug:
         """Test handling of a large bytes stream to ensure performance."""
         # Arrange
         large_bytes_chunks = [b"chunk" * 1000 for _ in range(10)]
-        agent = StubStreamingAgent(large_bytes_chunks)
+        agent = StubBinaryStreamingAgent(large_bytes_chunks)
         mock_step.agent = agent
 
         # Act
@@ -163,3 +235,18 @@ class TestStreamingBytesBug:
         assert result.output == expected_bytes
         assert isinstance(result.output, bytes)
         assert len(result.output) == 50000  # 5 bytes * 1000 * 10
+
+    @pytest.mark.asyncio
+    async def test_protocol_type_safety(self):
+        """Test that the new protocols provide proper type safety."""
+        # Test that TextOnlyStreamingAgentProtocol is properly typed
+        text_agent = StubTextStreamingAgent(["hello"])
+        assert isinstance(text_agent, TextOnlyStreamingAgentProtocol)
+
+        # Test that BinaryOnlyStreamingAgentProtocol is properly typed
+        binary_agent = StubBinaryStreamingAgent([b"data"])
+        assert isinstance(binary_agent, BinaryOnlyStreamingAgentProtocol)
+
+        # Test that legacy protocol still works
+        legacy_agent = StubLegacyStreamingAgent(["hello"])
+        assert isinstance(legacy_agent, StreamingAgentProtocol)
