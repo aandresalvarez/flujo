@@ -157,6 +157,7 @@ class ExecutionManager(Generic[ContextT]):
                     # Add current step result to pipeline result before yielding
                     if step_result is not None:
                         self.step_coordinator.update_pipeline_result(result, step_result)
+                    should_add_step_result = False  # Prevent duplicate addition in finally block
                     self.set_final_context(result, context)
                     yield result
                     return
@@ -169,6 +170,7 @@ class ExecutionManager(Generic[ContextT]):
                     # Add current step result to pipeline result before yielding
                     if step_result is not None:
                         self.step_coordinator.update_pipeline_result(result, step_result)
+                    should_add_step_result = False  # Prevent duplicate addition in finally block
                     self.set_final_context(result, context)
                     yield result
                     return
