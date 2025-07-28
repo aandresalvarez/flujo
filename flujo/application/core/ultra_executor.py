@@ -665,7 +665,7 @@ class UltraStepExecutor(Generic[TContext]):
                         )
 
                         # CRITICAL FIX: Cache successful results
-                        if self._cache is not None and result.success:
+                        if self._cache is not None and result.success and cache_key is not None:
                             self._cache.set(cache_key, result)
 
                         # Return immediately
@@ -875,7 +875,7 @@ class UltraStepExecutor(Generic[TContext]):
             raise e
 
         # CRITICAL FIX: Cache successful results for complex steps
-        if self._cache is not None and result.success:
+        if self._cache is not None and result.success and cache_key is not None:
             self._cache.set(cache_key, result)
 
         return result
