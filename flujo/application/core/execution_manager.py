@@ -177,6 +177,8 @@ class ExecutionManager(Generic[ContextT]):
                 except UsageLimitExceededError:
                     # Include the breaching step in the final result for consistency
                     # This ensures the PipelineResult in the exception matches the final state
+                    # Add the breaching step to the PipelineResult before re-raising the exception
+                    # Further processing of the step result is prevented by setting should_add_step_result = False
                     if step_result is not None:
                         self.step_coordinator.update_pipeline_result(result, step_result)
                     should_add_step_result = False
@@ -203,11 +205,12 @@ class ExecutionManager(Generic[ContextT]):
                     # Do not raise here; let finally block handle
 
             finally:
-                if (
-                    step_result is not None
-                    and should_add_step_result
-                    and (not result.step_history or result.step_history[-1] is not step_result)
+                if self._should_add_step_result_to_pipeline(
+                    step_result, should_add_step_result, result
                 ):
+                    assert (
+                        step_result is not None
+                    )  # Type checker: we know it's not None from the helper method
                     self.step_coordinator.update_pipeline_result(result, step_result)
 
                     # Persist state after every step for robust crash recovery
@@ -273,6 +276,28 @@ class ExecutionManager(Generic[ContextT]):
             # Stop on step failure
             if not step_result.success:
                 break
+
+    def _should_add_step_result_to_pipeline(
+        self,
+        step_result: Optional[StepResult],
+        should_add_step_result: bool,
+        result: PipelineResult[ContextT],
+    ) -> bool:
+        """Determine if a step result should be added to the pipeline result.
+
+        Args:
+            step_result: The step result to potentially add
+            should_add_step_result: Flag indicating if the step result should be added
+            result: The current pipeline result
+
+        Returns:
+            True if the step result should be added to the pipeline result
+        """
+        return (
+            step_result is not None
+            and should_add_step_result
+            and (not result.step_history or result.step_history[-1] is not step_result)
+        )
 
     def set_final_context(
         self,
