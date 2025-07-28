@@ -101,6 +101,7 @@ class ExecutionManager(Generic[ContextT]):
         """
         for idx, step in enumerate(self.pipeline.steps[start_idx:], start=start_idx):
             step_result = None
+            should_add_step_result = False
             try:
                 try:
                     async for item in self.step_coordinator.execute_step(
@@ -126,10 +127,29 @@ class ExecutionManager(Generic[ContextT]):
                     if step_result:
                         data = step_result.output
 
+                    # CRITICAL FIX: Check usage limits immediately after step completes
+                    # This ensures we stop before the next step starts
+                    if step_result is not None:
+                        # Check usage limits after step result would be added to pipeline result
+                        # Construct a new PipelineResult for the usage check
+                        from flujo.domain.models import PipelineResult
+
+                        temp_step_history = list(result.step_history) + [step_result]
+                        temp_total_cost = sum(s.cost_usd for s in temp_step_history)
+                        temp_result: PipelineResult[ContextT] = PipelineResult(
+                            step_history=temp_step_history,
+                            total_cost_usd=temp_total_cost,
+                        )
+                        with telemetry.logfire.span(f"usage_check_{step.name}") as span:
+                            self.usage_governor.check_usage_limits(temp_result, span)
+                            self.usage_governor.update_telemetry_span(span, temp_result)
+                        # Only set the flag if the limit is not breached
+                        should_add_step_result = True
+
                 except PipelineAbortSignal:
                     # Update pipeline result before aborting
                     if step_result is not None:
-                        self.step_coordinator.update_pipeline_result(result, step_result)
+                        should_add_step_result = True
                     self.set_final_context(result, context)
                     yield result
                     return
@@ -139,11 +159,14 @@ class ExecutionManager(Generic[ContextT]):
                         if hasattr(context, "scratchpad"):
                             context.scratchpad["status"] = "paused"
                             context.scratchpad["pause_message"] = str(e)
+                    if step_result is not None:
+                        should_add_step_result = True
                     self.set_final_context(result, context)
                     yield result
                     return
                 except UsageLimitExceededError:
-                    # Re-raise usage limit errors to be handled by the runner
+                    # Do not add the step result if the usage limit is breached
+                    should_add_step_result = False
                     raise
                 except PipelineContextInitializationError as e:
                     # Convert to ContextInheritanceError if appropriate
@@ -163,11 +186,14 @@ class ExecutionManager(Generic[ContextT]):
                             else e.__context__
                         },
                     )
+                    should_add_step_result = True
                     # Do not raise here; let finally block handle
 
             finally:
-                if step_result is not None and (
-                    not result.step_history or result.step_history[-1] is not step_result
+                if (
+                    step_result is not None
+                    and should_add_step_result
+                    and (not result.step_history or result.step_history[-1] is not step_result)
                 ):
                     self.step_coordinator.update_pipeline_result(result, step_result)
 
@@ -192,16 +218,11 @@ class ExecutionManager(Generic[ContextT]):
                     elif run_id is not None and (
                         isinstance(step, LoopStep) or self.inside_loop_step
                     ):
-                        # For loop steps, only record step result for observability, skip state persistence
+                        # Always record step result for observability, skip state persistence
                         await self.state_manager.record_step_result(run_id, step_result, idx)
                         telemetry.logfire.debug(
                             f"Skipped state persistence for {'LoopStep' if isinstance(step, LoopStep) else 'inner step'} '{step.name}' to avoid context serialization issues"
                         )
-
-                    # Check usage limits after step result is added to pipeline result
-                    with telemetry.logfire.span(step.name) as span:
-                        self.usage_governor.check_usage_limits(result, span)
-                        self.usage_governor.update_telemetry_span(span, result)
 
                     # If the step failed due to context inheritance, propagate the error
                     if step_result is not None and not step_result.success and step_result.feedback:

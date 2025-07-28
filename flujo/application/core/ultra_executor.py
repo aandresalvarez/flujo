@@ -629,6 +629,7 @@ class UltraStepExecutor(Generic[TContext]):
                         await self._usage.add(cost_usd, token_counts)
 
                         # Remove any usage limit checking logic here. Only track usage, do not enforce limits.
+                        # Usage limits are enforced by the ExecutionManager at the pipeline level.
 
                         # Minimal output processing first
                         processed_output = raw
