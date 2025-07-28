@@ -243,19 +243,21 @@ completion_tokens_per_1k = 0.00013
 
             # Also mock get_cost_config to ensure it uses our mocked config
             def mock_get_cost_config():
+                from flujo.infra.config import ProviderPricing
+
                 class MockCostConfig:
                     def __init__(self):
                         self.strict = True
                         self.providers = {
                             "openai": {
-                                "gpt-4o": {
-                                    "prompt_tokens_per_1k": 0.005,
-                                    "completion_tokens_per_1k": 0.015,
-                                },
-                                "text-embedding-3-large": {
-                                    "prompt_tokens_per_1k": 0.00013,
-                                    "completion_tokens_per_1k": 0.00013,
-                                },
+                                "gpt-4o": ProviderPricing(
+                                    prompt_tokens_per_1k=0.005,
+                                    completion_tokens_per_1k=0.015,
+                                ),
+                                "text-embedding-3-large": ProviderPricing(
+                                    prompt_tokens_per_1k=0.00013,
+                                    completion_tokens_per_1k=0.00013,
+                                ),
                             }
                         }
 
