@@ -33,6 +33,45 @@ from typing import (
     TYPE_CHECKING,
 )
 
+# Import domain types early
+from ...domain.dsl.step import Step
+from ...domain.dsl.loop import LoopStep
+from ...domain.dsl.conditional import ConditionalStep
+from ...domain.dsl.dynamic_router import DynamicParallelRouterStep
+from ...domain.dsl.parallel import ParallelStep
+from ...domain.dsl.step import HumanInTheLoopStep
+from ...domain.models import BaseModel, StepResult, UsageLimits
+from ...domain.resources import AppResources
+from ...exceptions import (
+    UsageLimitExceededError,
+    PausedException,
+    PricingNotConfiguredError,
+)
+from ...steps.cache_step import CacheStep
+from ...utils.performance import time_perf_ns, time_perf_ns_to_seconds
+
+
+# Cache frame dataclasses for efficient cache key generation
+@dataclass
+class _CacheFrame:
+    """Frame for cache key generation in execute_step."""
+
+    step: Any
+    data: Any
+    context: Optional[Any]
+    resources: Optional[Any]
+
+
+@dataclass
+class _ComplexCacheFrame:
+    """Frame for cache key generation in _execute_complex_step."""
+
+    step: Any
+    data: Any
+    context: Optional[Any]
+    resources: Optional[Any]
+
+
 if TYPE_CHECKING:
     from ...domain.models import PipelineResult
 
@@ -42,7 +81,6 @@ if TYPE_CHECKING:
 # --------------------------------------------------------------------------- #
 
 # Import performance utilities
-from ...utils.performance import time_perf_ns, time_perf_ns_to_seconds
 
 try:  # ➊ 9× faster JSON
     import orjson
@@ -72,15 +110,6 @@ except ModuleNotFoundError:
 # --------------------------------------------------------------------------- #
 # ★ Domain imports
 # --------------------------------------------------------------------------- #
-
-from ...domain.dsl.step import Step
-from ...domain.models import BaseModel, StepResult, UsageLimits
-from ...domain.resources import AppResources
-from ...exceptions import (
-    UsageLimitExceededError,
-    PausedException,
-    PricingNotConfiguredError,
-)
 
 # Optional telemetry (no-op if absent)
 try:
@@ -354,10 +383,10 @@ class UltraStepExecutor(Generic[TContext]):
         agent_id = None
         if agent is not None:
             # Use agent type and configuration for stable identification
-            agent_type = type(agent).__name__
+            agent_type = f"{type(agent).__module__}.{type(agent).__name__}"
             agent_config = getattr(agent, "config", None)
             if agent_config:
-                agent_id = f"{agent_type}:{hash(str(agent_config))}"
+                agent_id = f"{agent_type}:{self._hash_obj(agent_config)}"
             else:
                 agent_id = agent_type
 
@@ -407,16 +436,7 @@ class UltraStepExecutor(Generic[TContext]):
 
         # CRITICAL FIX: Add caching logic
         if self._cache is not None:
-            # Create frame for cache key generation
-            from dataclasses import dataclass
-
-            @dataclass
-            class _CacheFrame:
-                step: Step[Any, Any]
-                data: Any
-                context: Optional[Any]
-                resources: Optional[Any]
-
+            # Create frame for cache key generation using module-level dataclass
             cache_frame = _CacheFrame(step=step, data=data, context=context, resources=resources)
             cache_key = self._cache_key(cache_frame)
 
@@ -694,16 +714,7 @@ class UltraStepExecutor(Generic[TContext]):
 
         # CRITICAL FIX: Add caching logic for complex steps
         if self._cache is not None:
-            # Create frame for cache key generation
-            from dataclasses import dataclass
-
-            @dataclass
-            class _ComplexCacheFrame:
-                step: Step[Any, Any]
-                data: Any
-                context: Optional[Any]
-                resources: Optional[Any]
-
+            # Create frame for cache key generation using module-level dataclass
             cache_frame = _ComplexCacheFrame(
                 step=step, data=data, context=context, resources=resources
             )
@@ -726,12 +737,6 @@ class UltraStepExecutor(Generic[TContext]):
             _handle_parallel_step,
             _handle_hitl_step,
         )
-        from ...domain.dsl.loop import LoopStep
-        from ...domain.dsl.conditional import ConditionalStep
-        from ...domain.dsl.dynamic_router import DynamicParallelRouterStep
-        from ...domain.dsl.parallel import ParallelStep
-        from ...domain.dsl.step import HumanInTheLoopStep
-        from ...steps.cache_step import CacheStep
 
         # Create a step executor that uses this UltraExecutor for recursion
         async def step_executor(
