@@ -144,6 +144,8 @@ class ExecutionManager(Generic[ContextT]):
                             temp_result: PipelineResult[ContextT] = PipelineResult(
                                 step_history=temp_step_history,
                                 total_cost_usd=potential_total_cost,
+                                final_pipeline_context=result.final_pipeline_context,
+                                trace_tree=result.trace_tree,
                             )
                             with telemetry.logfire.span(f"usage_check_{step.name}") as span:
                                 self.usage_governor.check_usage_limits(temp_result, span)
@@ -152,7 +154,9 @@ class ExecutionManager(Generic[ContextT]):
 
                 except PipelineAbortSignal:
                     # Update pipeline result before aborting
-                    # should_add_step_result is already True by default
+                    # Add current step result to pipeline result before yielding
+                    if step_result is not None:
+                        self.step_coordinator.update_pipeline_result(result, step_result)
                     self.set_final_context(result, context)
                     yield result
                     return
@@ -162,13 +166,17 @@ class ExecutionManager(Generic[ContextT]):
                         if hasattr(context, "scratchpad"):
                             context.scratchpad["status"] = "paused"
                             context.scratchpad["pause_message"] = str(e)
-                    # should_add_step_result is already True by default
+                    # Add current step result to pipeline result before yielding
+                    if step_result is not None:
+                        self.step_coordinator.update_pipeline_result(result, step_result)
                     self.set_final_context(result, context)
                     yield result
                     return
                 except UsageLimitExceededError:
-                    # Do not add the step result if the usage limit is breached
-                    # The step result is not added because the exception propagates
+                    # Include the breaching step in the final result for consistency
+                    # This ensures the PipelineResult in the exception matches the final state
+                    if step_result is not None:
+                        self.step_coordinator.update_pipeline_result(result, step_result)
                     should_add_step_result = False
                     raise
                 except PipelineContextInitializationError as e:
