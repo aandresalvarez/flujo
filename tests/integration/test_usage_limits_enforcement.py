@@ -13,7 +13,10 @@ class CostTrackingStubAgent(StubAgent):
     """Stub agent that simulates cost and token usage for testing."""
 
     def __init__(
-        self, cost_per_call: float = 0.50, tokens_per_call: int = 100, outputs: list[Any] = None
+        self,
+        cost_per_call: float = 0.50,
+        tokens_per_call: int = 100,
+        outputs: list[Any] = None,
     ):
         # Provide default outputs if none specified
         if outputs is None:
