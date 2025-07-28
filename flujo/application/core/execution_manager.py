@@ -139,6 +139,10 @@ class ExecutionManager(Generic[ContextT]):
 
                             # Create a new step history list for the temporary result (do not mutate the original).
                             # This ensures the exception contains the correct state at the moment of the limit breach.
+                            # Performance note: List concatenation creates a new list, but this is necessary for correctness
+                            # and exception traceability. For extremely large pipelines, consider on-disk step history.
+                            from flujo.domain.models import PipelineResult
+
                             temp_result: PipelineResult[ContextT] = PipelineResult(
                                 step_history=result.step_history + [step_result],
                                 total_cost_usd=potential_total_cost,
