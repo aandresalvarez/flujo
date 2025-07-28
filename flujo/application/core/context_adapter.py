@@ -166,7 +166,15 @@ def register_custom_type(type_class: Type[T]) -> None:
         if hasattr(type_class, "model_validate") and callable(
             getattr(type_class, "model_validate", None)
         ):
-            register_custom_deserializer(type_class, lambda data: type_class.model_validate(data))
+            # Use a type-safe approach to call model_validate
+            def safe_model_validate(data: Any) -> Any:
+                if hasattr(type_class, "model_validate") and callable(
+                    getattr(type_class, "model_validate", None)
+                ):
+                    return type_class.model_validate(data)  # type: ignore[attr-defined]
+                raise ValueError(f"Type {type_class} does not have model_validate method")
+
+            register_custom_deserializer(type_class, safe_model_validate)
 
 
 def _resolve_type_from_string(type_str: str) -> Optional[Type[Any]]:
@@ -295,8 +303,9 @@ def _deserialize_value(value: Any, field_type: Any, context_model: Type[BaseMode
         element_type = field_type.__args__[0] if field_type.__args__ else None
         if element_type is not None:
             # Resolve the actual element type (handle Union types)
-            actual_element_type = _resolve_actual_type(element_type)
-            if actual_element_type is not None:
+            resolved_element_type = _resolve_actual_type(element_type)
+            if resolved_element_type is not None:
+                actual_element_type: Type[Any] = resolved_element_type
                 # Handle Pydantic models in list
                 if (
                     hasattr(actual_element_type, "model_validate")
@@ -326,10 +335,11 @@ def _deserialize_value(value: Any, field_type: Any, context_model: Type[BaseMode
 
     # Handle dict types
     if isinstance(value, dict):
-        actual_type = _resolve_actual_type(field_type)
-        if actual_type is None:
+        resolved_type = _resolve_actual_type(field_type)
+        if resolved_type is None:
             return value
 
+        actual_type: Type[Any] = resolved_type
         # Handle Pydantic models
         if (
             hasattr(actual_type, "model_validate")
@@ -410,7 +420,7 @@ def _inject_context(
     for key, value in update_data.items():
         if key in context_model.model_fields:
             field_info = context_model.model_fields[key]
-            field_type = field_info.annotation
+            field_type = field_info.annotation  # type: ignore[assignment]
 
             # Deserialize the value using the robust deserialization logic
             deserialized_value = _deserialize_value(value, field_type, context_model)
@@ -431,10 +441,10 @@ def _inject_context(
     # Final pass: re-apply deserialization to ensure consistency
     for key in context_model.model_fields:
         field_info = context_model.model_fields[key]
-        field_type = field_info.annotation
+        field_type = field_info.annotation  # type: ignore[assignment]
         current_value = getattr(context, key, None)
 
-        if current_value is not None:
+        if current_value is not None and field_type is not None:
             deserialized_value = _deserialize_value(current_value, field_type, context_model)
             if deserialized_value != current_value:
                 setattr(context, key, deserialized_value)
