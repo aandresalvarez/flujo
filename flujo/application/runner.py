@@ -534,9 +534,12 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         current_context_instance: Optional[ContextT] = None
         if self.context_model is not None:
             try:
-                context_data = {**self.initial_context_data}
+                # CRITICAL FIX: Create a deep copy of initial context data to prevent shared state
+                import copy
+                context_data = copy.deepcopy(self.initial_context_data) if self.initial_context_data else {}
                 if initial_context_data:
-                    context_data.update(initial_context_data)
+                    # Also deep copy the initial_context_data to prevent shared state
+                    context_data.update(copy.deepcopy(initial_context_data))
                 if run_id is not None:
                     context_data["run_id"] = run_id
 
@@ -976,9 +979,11 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             context: BaseModel | None = None,
             resources: AppResources | None = None,
         ) -> PipelineResult[ContextT]:
+            # CRITICAL FIX: Create deep copies to prevent shared state between concurrent runs
+            import copy
             initial_sub_context_data: Dict[str, Any] = {}
             if inherit_context and context is not None:
-                initial_sub_context_data = context.model_dump()
+                initial_sub_context_data = copy.deepcopy(context.model_dump())
                 initial_sub_context_data.pop("run_id", None)
                 initial_sub_context_data.pop("pipeline_name", None)
                 initial_sub_context_data.pop("pipeline_version", None)
