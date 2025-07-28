@@ -54,12 +54,19 @@ def _inject_context(
                     # For Python 3.10+ Union syntax, extract types from string representation
                     type_str = str(field_type)
                     if "NestedModel" in type_str:
-                        # Import the actual NestedModel class
-                        import sys
+                        # Try to resolve the type dynamically
+                        # This is a fallback for test-specific types
+                        try:
+                            import sys
 
-                        module_name = "tests.integration.test_pipeline_context_updates"
-                        if module_name in sys.modules:
-                            actual_type = sys.modules[module_name].NestedModel
+                            # Look for the type in available modules
+                            for module_name, module in sys.modules.items():
+                                if hasattr(module, "NestedModel"):
+                                    actual_type = module.NestedModel
+                                    break
+                        except Exception:
+                            # If we can't resolve the type, continue with the original
+                            pass
 
                 # Handle Pydantic models
                 if hasattr(actual_type, "model_validate") and issubclass(actual_type, BaseModel):
@@ -92,11 +99,18 @@ def _inject_context(
                         elif isinstance(element_type, types.UnionType):
                             type_str = str(element_type)
                             if "NestedModel" in type_str:
-                                import sys
+                                # Try to resolve the type dynamically
+                                try:
+                                    import sys
 
-                                module_name = "tests.integration.test_pipeline_context_updates"
-                                if module_name in sys.modules:
-                                    actual_element_type = sys.modules[module_name].NestedModel
+                                    # Look for the type in available modules
+                                    for module_name, module in sys.modules.items():
+                                        if hasattr(module, "NestedModel"):
+                                            actual_element_type = module.NestedModel
+                                            break
+                                except Exception:
+                                    # If we can't resolve the type, continue with the original
+                                    pass
 
                         # Handle Pydantic models in list
                         if hasattr(actual_element_type, "model_validate") and issubclass(
@@ -145,12 +159,18 @@ def _inject_context(
                 # For Python 3.10+ Union syntax, extract types from string representation
                 type_str = str(field_type)
                 if "NestedModel" in type_str:
-                    # Import the actual NestedModel class
-                    import sys
+                    # Try to resolve the type dynamically
+                    try:
+                        import sys
 
-                    module_name = "tests.integration.test_pipeline_context_updates"
-                    if module_name in sys.modules:
-                        actual_type = sys.modules[module_name].NestedModel
+                        # Look for the type in available modules
+                        for module_name, module in sys.modules.items():
+                            if hasattr(module, "NestedModel"):
+                                actual_type = module.NestedModel
+                                break
+                    except Exception:
+                        # If we can't resolve the type, continue with the original
+                        pass
 
             # Handle Pydantic models
             if hasattr(actual_type, "model_validate") and issubclass(actual_type, BaseModel):

@@ -693,36 +693,28 @@ async def _execute_loop_step_logic(
 
         iteration_succeeded_fully = True
         current_iteration_data_for_body_step = current_body_input
-        # Use the same context object for all iterations
-        iteration_context = context
+        # Create a deep copy of context for iteration isolation
+        if context is not None:
+            import copy
+
+            iteration_context = copy.deepcopy(context)
+        else:
+            iteration_context = None
 
         with telemetry.logfire.span(f"Loop '{loop_step.name}' - Iteration {i}"):
             for body_s in loop_step.loop_body_pipeline.steps:
                 try:
-                    # Execute the body step for this iteration
-                    body_step_result_obj = await _run_step_logic(
-                        step=body_s,
-                        data=current_iteration_data_for_body_step,
-                        context=iteration_context,
-                        resources=resources,
-                        step_executor=step_executor,
-                        context_model_defined=context_model_defined,
-                        usage_limits=usage_limits,
-                        context_setter=context_setter,
+                    # Execute the body step for this iteration using the step executor
+                    body_step_result_obj = await step_executor(
+                        body_s,
+                        current_iteration_data_for_body_step,
+                        iteration_context,
+                        resources,
+                        None,  # breach_event
                     )
 
-                    # Update iteration context with any context updates from the step
-                    if getattr(body_s, "updates_context", False) and isinstance(
-                        body_step_result_obj.output, dict
-                    ):
-                        for key, value in body_step_result_obj.output.items():
-                            # Only update if the field exists on the context and has not been mutated in-place
-                            if not hasattr(iteration_context, key):
-                                continue  # Skip non-context fields
-                            if getattr(iteration_context, key, None) == value:
-                                continue  # Already set by in-place mutation
-                            # Otherwise, set the value
-                            setattr(iteration_context, key, value)
+                    # Context updates are handled by the step execution itself
+                    # No manual setattr operations needed - the step handles its own context updates
 
                 except PausedException:
                     if context is not None and iteration_context is not None:
