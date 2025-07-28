@@ -265,6 +265,12 @@ completion_tokens_per_1k = 0.00013
 
             m.setattr("flujo.infra.config.get_cost_config", mock_get_cost_config)
 
+            # Also mock the CI environment check to ensure it doesn't interfere
+            def mock_is_ci_environment():
+                return False
+
+            m.setattr("flujo.infra.config._is_ci_environment", mock_is_ci_environment)
+
             # Create a mock chat agent with unconfigured model
             class MockChatAgent:
                 def __init__(self):

@@ -17,7 +17,7 @@ from flujo.testing.utils import gather_result
 from tests.conftest import create_test_flujo
 
 
-class TestContext(PipelineContext):
+class _TestContext(PipelineContext):
     """Test context for verifying context modification propagation."""
 
     initial_prompt: str = "test"
@@ -28,7 +28,7 @@ class TestContext(PipelineContext):
 
 
 @step(updates_context=True)
-async def append_to_collected_data(data: int, *, context: TestContext) -> dict:
+async def append_to_collected_data(data: int, *, context: _TestContext) -> dict:
     """Append data to the collected_data list in context."""
     context.collected_data.append(data)
     context.iteration_count += 1
@@ -41,7 +41,7 @@ async def append_to_collected_data(data: int, *, context: TestContext) -> dict:
 
 
 @step(updates_context=True)
-async def set_branch_result(data: Any, *, context: TestContext) -> dict:
+async def set_branch_result(data: Any, *, context: _TestContext) -> dict:
     """Set branch result in context."""
     branch_name = data.get("branch_name", "unknown")
     context.branch_results[branch_name] = data.get("value", data)
@@ -50,7 +50,7 @@ async def set_branch_result(data: Any, *, context: TestContext) -> dict:
 
 
 @step(updates_context=True)
-async def set_conditional_branch(data: Any, *, context: TestContext) -> dict:
+async def set_conditional_branch(data: Any, *, context: _TestContext) -> dict:
     """Set which conditional branch was executed."""
     context.conditional_branch = data.get("branch", "unknown")
 
@@ -58,7 +58,7 @@ async def set_conditional_branch(data: Any, *, context: TestContext) -> dict:
 
 
 @step
-async def verify_collected_data(data: Any, *, context: TestContext) -> dict:
+async def verify_collected_data(data: Any, *, context: _TestContext) -> dict:
     """Verify that collected_data contains expected values."""
     return {
         "collected_data": context.collected_data,
@@ -68,13 +68,13 @@ async def verify_collected_data(data: Any, *, context: TestContext) -> dict:
 
 
 @step
-async def verify_branch_results(data: Any, *, context: TestContext) -> dict:
+async def verify_branch_results(data: Any, *, context: _TestContext) -> dict:
     """Verify that branch results were properly merged."""
     return {"branch_results": context.branch_results, "verification": "success"}
 
 
 @step
-async def verify_conditional_branch(data: Any, *, context: TestContext) -> dict:
+async def verify_conditional_branch(data: Any, *, context: _TestContext) -> dict:
     """Verify that conditional branch was properly set."""
     return {"conditional_branch": context.conditional_branch, "verification": "success"}
 
@@ -103,7 +103,7 @@ async def test_loop_step_context_modification_fix():
     # Add verification step
     pipeline = loop_step >> verify_collected_data
 
-    runner = create_test_flujo(pipeline, context_model=TestContext)
+    runner = create_test_flujo(pipeline, context_model=_TestContext)
     result = await gather_result(runner, 5)
 
     # Verify the fix: context modifications should be preserved
@@ -134,7 +134,7 @@ async def test_parallel_step_context_modification_fix():
     # Add verification step
     pipeline = parallel_step >> verify_branch_results
 
-    runner = create_test_flujo(pipeline, context_model=TestContext)
+    runner = create_test_flujo(pipeline, context_model=_TestContext)
     result = await gather_result(runner, {"branch_name": "test", "value": "test_value"})
 
     # Verify the fix: context modifications from branches should be merged
@@ -164,7 +164,7 @@ async def test_conditional_step_context_modification_fix():
     # Add verification step
     pipeline = conditional_step >> verify_conditional_branch
 
-    runner = create_test_flujo(pipeline, context_model=TestContext)
+    runner = create_test_flujo(pipeline, context_model=_TestContext)
     result = await gather_result(runner, {"choose_a": True, "branch": "branch_a"})
 
     # Verify the fix: context modifications from executed branch should be preserved
@@ -191,7 +191,7 @@ async def test_nested_complex_steps_context_modification_fix():
     # Add verification steps
     pipeline = loop_step >> verify_collected_data
 
-    runner = create_test_flujo(pipeline, context_model=TestContext)
+    runner = create_test_flujo(pipeline, context_model=_TestContext)
     result = await gather_result(runner, 1)
 
     # Verify the fix: context modifications from nested complex steps should be preserved
@@ -205,7 +205,7 @@ async def test_context_modification_with_mappers():
     Test that context modifications work correctly with input/output mappers.
     """
 
-    def iteration_mapper(output: Any, context: TestContext, iteration: int) -> dict:
+    def iteration_mapper(output: Any, context: _TestContext, iteration: int) -> dict:
         """Mapper that passes iteration data."""
         return {"iteration": iteration, "data": output}
 
@@ -221,7 +221,7 @@ async def test_context_modification_with_mappers():
 
     pipeline = loop_step >> verify_collected_data
 
-    runner = create_test_flujo(pipeline, context_model=TestContext)
+    runner = create_test_flujo(pipeline, context_model=_TestContext)
     result = await gather_result(runner, {"initial": "data"})
 
     # Verify the fix: context modifications should work with mappers
@@ -250,7 +250,7 @@ async def test_context_modification_regression_prevention():
 
     # Final step that reads the collected data
     @step
-    async def final_step(data: Any, *, context: TestContext) -> dict:
+    async def final_step(data: Any, *, context: _TestContext) -> dict:
         """Final step that should see all collected data."""
         if not context.collected_data:
             raise ValueError("Context modification was lost - collected_data is empty!")
@@ -263,7 +263,7 @@ async def test_context_modification_regression_prevention():
 
     pipeline = loop_step >> final_step
 
-    runner = create_test_flujo(pipeline, context_model=TestContext)
+    runner = create_test_flujo(pipeline, context_model=_TestContext)
     result = await gather_result(runner, 1)
 
     # Verify the fix prevents the regression
