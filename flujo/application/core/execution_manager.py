@@ -132,17 +132,18 @@ class ExecutionManager(Generic[ContextT]):
                     # CRITICAL FIX: Check usage limits immediately after step completes
                     # This ensures we stop before the next step starts
                     if step_result is not None:
-                        # Check usage limits after step result would be added to pipeline result
-                        # Optimize by calculating potential total cost first
-                        potential_total_cost = result.total_cost_usd + step_result.cost_usd
-
-                        # Only create temporary objects if we need to check limits
+                        # Only perform usage limit checks if limits are configured
                         if self.usage_governor.usage_limits is not None:
+                            # Calculate potential total cost only when needed
+                            potential_total_cost = result.total_cost_usd + step_result.cost_usd
+
+                            # Create temporary result for usage check without copying entire step history
                             from flujo.domain.models import PipelineResult
 
-                            temp_step_history = list(result.step_history) + [step_result]
+                            # Use a more efficient approach: create minimal temporary result
                             temp_result: PipelineResult[ContextT] = PipelineResult(
-                                step_history=temp_step_history,
+                                step_history=result.step_history
+                                + [step_result],  # Direct concatenation
                                 total_cost_usd=potential_total_cost,
                                 final_pipeline_context=result.final_pipeline_context,
                                 trace_tree=result.trace_tree,
