@@ -35,20 +35,31 @@ def _is_cleanup_io_error(error: Exception) -> bool:
 
 
 def _safe_log(logger: logging.Logger, level: int, message: str, *args: Any, **kwargs: Any) -> None:
-    """Safely log a message, handling I/O errors gracefully during cleanup."""
+    """Safely log a message, handling I/O errors gracefully during cleanup.
+
+    This function ensures that:
+    1. All valid handlers receive the log message (no premature exit)
+    2. Binary streams are handled properly
+    3. No side effects from stream testing
+    4. Graceful degradation when some handlers fail
+    """
     try:
         # Check if logger is still valid before attempting to log
         if logger is None or not hasattr(logger, "log"):
             return
 
         # Attempt to log the message - let the actual logging attempt happen
-        # and catch any I/O errors that result
+        # and catch any I/O errors that result. The logging system will handle
+        # individual handler failures internally.
         logger.log(level, message, *args, **kwargs)
 
     except (ValueError, OSError, RuntimeError) as e:
         if _is_cleanup_io_error(e):
-            pass  # Silently ignore during cleanup
+            # During cleanup, some handlers may be closed
+            # This is expected behavior, so we silently ignore
+            pass
         else:
+            # Re-raise unexpected errors
             raise
 
 

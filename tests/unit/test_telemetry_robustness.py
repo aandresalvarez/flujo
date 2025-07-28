@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import pytest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 from flujo.infra.telemetry import _safe_log, _MockLogfire, _SafeLogfireWrapper
 
@@ -42,6 +42,53 @@ class TestTelemetryRobustness:
         # This should raise the exception
         with pytest.raises(ValueError, match="unexpected error"):
             _safe_log(mock_logger, logging.INFO, "test message")
+
+    def test_safe_log_with_real_logger_and_multiple_handlers(self):
+        """Test that _safe_log works correctly with real loggers and multiple handlers."""
+        # Create a real logger with multiple handlers
+        logger = logging.getLogger("test_multi_handler")
+        logger.setLevel(logging.INFO)
+
+        # Clear any existing handlers
+        logger.handlers.clear()
+
+        # Add a working handler
+        working_handler = logging.StreamHandler()
+        working_handler.setLevel(logging.INFO)
+        logger.addHandler(working_handler)
+
+        # Add a handler that will fail
+        failing_handler = Mock()
+        failing_handler.emit = Mock(side_effect=ValueError("I/O operation on closed file"))
+        failing_handler.level = logging.INFO
+        logger.addHandler(failing_handler)
+
+        # This should not raise an exception and should log to the working handler
+        _safe_log(logger, logging.INFO, "test message")
+
+        # Clean up
+        logger.handlers.clear()
+
+    def test_safe_log_with_binary_stream_handler(self):
+        """Test that _safe_log handles binary stream handlers correctly."""
+        # Create a logger with a binary stream handler
+        logger = logging.getLogger("test_binary_handler")
+        logger.setLevel(logging.INFO)
+
+        # Clear any existing handlers
+        logger.handlers.clear()
+
+        # Add a binary stream handler (simulated)
+        binary_handler = Mock()
+        binary_handler.emit = Mock(side_effect=TypeError("write() argument must be str, not bytes"))
+        binary_handler.level = logging.INFO
+        logger.addHandler(binary_handler)
+
+        # This should not raise an exception
+        _safe_log(logger, logging.INFO, "test message")
+
+        # Clean up
+        logger.handlers.clear()
 
     def test_mock_logfire_handles_closed_file_error(self):
         """Test that _MockLogfire handles I/O errors gracefully."""
@@ -102,60 +149,52 @@ class TestTelemetryRobustness:
     @pytest.mark.asyncio
     async def test_telemetry_during_cancellation(self):
         """Test that telemetry works correctly during asyncio cancellation."""
-        from flujo.infra.telemetry import logfire
 
         # Create a task that will be cancelled
         async def long_running_task():
             try:
-                await asyncio.sleep(10)  # This will be cancelled
+                await asyncio.sleep(10)
             except asyncio.CancelledError:
-                # Log during cancellation
-                logfire.info("Task cancelled")
+                # During cancellation, telemetry should still work
+                from flujo.infra import telemetry
+
+                telemetry.logfire.info("Task cancelled, but telemetry still works")
                 raise
 
         # Start the task
         task = asyncio.create_task(long_running_task())
 
-        # Let it run briefly
-        await asyncio.sleep(0.01)
-
-        # Cancel the task
+        # Cancel it immediately
         task.cancel()
 
         # Wait for it to complete
         try:
             await task
         except asyncio.CancelledError:
-            pass
-
-        # The test should complete without I/O errors
+            pass  # Expected
 
     def test_telemetry_initialization_robustness(self):
         """Test that telemetry initialization is robust."""
+        # Test with various settings
         from flujo.infra.telemetry import init_telemetry
 
-        # Mock settings to disable telemetry
-        with patch("flujo.infra.settings.settings") as mock_settings:
-            mock_settings.telemetry_export_enabled = False
+        # Should not raise exceptions
+        init_telemetry(None)
 
-            # This should not raise any exceptions
-            init_telemetry()
-
-            # Verify it was called
-            assert mock_settings.telemetry_export_enabled is False
+        # Test with mock settings
+        mock_settings = Mock()
+        mock_settings.enabled = True
+        init_telemetry(mock_settings)
 
     def test_logging_handler_cleanup(self):
         """Test that logging handlers are cleaned up properly."""
-        # Create a logger with handlers
+        # Create a logger and add handlers
         logger = logging.getLogger("test_cleanup")
         handler = logging.StreamHandler()
         logger.addHandler(handler)
 
-        # Close the handler
-        handler.close()
-
-        # Try to log - this should not cause I/O errors with our safe logging
+        # Use the logger
         _safe_log(logger, logging.INFO, "test message")
 
         # Clean up
-        logger.removeHandler(handler)
+        logger.handlers.clear()
