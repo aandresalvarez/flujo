@@ -183,7 +183,7 @@ class TestTelemetryRobustness:
 
         # Test with mock settings
         mock_settings = Mock()
-        mock_settings.enabled = True
+        mock_settings.telemetry_export_enabled = True
         init_telemetry(mock_settings)
 
     def test_logging_handler_cleanup(self):
