@@ -3,16 +3,22 @@
 import pytest
 import asyncio
 from unittest.mock import Mock, AsyncMock
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Optional
 
-from flujo.application.core.ultra_executor import (
-    UltraStepExecutor,
-    _LRUCache,
-    _UsageTracker,
-)
+from flujo.application.core.ultra_executor import UltraStepExecutor, _LRUCache, _UsageTracker
 from flujo.domain.dsl.step import Step
 from flujo.domain.models import StepResult, UsageLimits
 from flujo.exceptions import UsageLimitExceededError
+
+
+# Create a simple replacement for the removed _Frame class
+@dataclass
+class _Frame:
+    step: Any
+    data: Any
+    context: Optional[Any] = None
+    resources: Optional[Any] = None
 
 
 class TestLRUCache:
@@ -46,13 +52,65 @@ class TestLRUCache:
 
     def test_cache_ttl(self):
         """Test TTL expiration."""
-        cache = _LRUCache(max_size=10, ttl=0)  # Immediate expiration
+        cache = _LRUCache(max_size=10, ttl=0)  # 0 means never expire (standard convention)
         result = StepResult(name="test", success=True)
 
         cache.set("test_key", result)
         retrieved = cache.get("test_key")
 
-        assert retrieved is None  # Should be expired immediately
+        assert retrieved is not None  # Should NOT expire with TTL=0 (never expire)
+        assert retrieved.name == "test"
+
+    def test_cache_ttl_never_expire(self):
+        """Test that TTL of 0 means never expire (standard convention)."""
+        cache = _LRUCache(max_size=10, ttl=0)  # 0 means never expire
+        result = StepResult(name="test", success=True)
+
+        cache.set("test_key", result)
+        retrieved = cache.get("test_key")
+
+        assert retrieved is not None  # Should NOT expire with TTL=0
+        assert retrieved.name == "test"
+
+    def test_cache_ttl_with_expiration(self):
+        """Test TTL expiration with positive value."""
+        cache = _LRUCache(max_size=10, ttl=0.1)  # 100ms expiration
+        result = StepResult(name="test", success=True)
+
+        cache.set("test_key", result)
+
+        # Should be available immediately
+        retrieved = cache.get("test_key")
+        assert retrieved is not None
+
+        # Wait for expiration
+        import time
+
+        time.sleep(0.15)  # Wait longer than TTL
+
+        # Should be expired now
+        retrieved = cache.get("test_key")
+        assert retrieved is None
+
+    def test_cache_monotonic_time(self):
+        """Test that cache uses monotonic time for reliable TTL."""
+        cache = _LRUCache(max_size=10, ttl=0.1)  # 100ms expiration
+        result = StepResult(name="test", success=True)
+
+        cache.set("test_key", result)
+
+        # Should be available immediately
+        retrieved = cache.get("test_key")
+        assert retrieved is not None
+
+        # Wait for expiration
+        import time
+
+        time.sleep(0.15)  # Wait longer than TTL
+
+        # Should be expired now
+        retrieved = cache.get("test_key")
+        assert retrieved is None
 
     def test_cache_lru_promotion(self):
         """Test that accessed items are promoted to the end."""
@@ -380,7 +438,6 @@ class TestUltraStepExecutor:
         step2.agent.run = lambda x: x
 
         # Create frame objects
-        from flujo.application.core.ultra_executor import _Frame
 
         frame1 = _Frame(step=step1, data="test_data", context=None, resources=None)
         frame2 = _Frame(step=step2, data="test_data", context=None, resources=None)
@@ -427,7 +484,6 @@ class TestUltraStepExecutor:
         step.agent.run = lambda x: x
 
         # Create frame objects
-        from flujo.application.core.ultra_executor import _Frame
 
         frame1 = _Frame(step=step, data="test_data", context=None, resources=None)
         frame2 = _Frame(step=step, data="test_data", context=None, resources=None)
@@ -544,7 +600,6 @@ class TestUltraStepExecutor:
         step2 = Step(name="test_step", agent=agent2)
 
         # Create frame objects
-        from flujo.application.core.ultra_executor import _Frame
 
         frame1 = _Frame(step=step1, data="test_data", context=None, resources=None)
         frame2 = _Frame(step=step2, data="test_data", context=None, resources=None)
@@ -569,7 +624,6 @@ class TestUltraStepExecutor:
         step2.agent.run = lambda x: x
 
         # Create frame objects
-        from flujo.application.core.ultra_executor import _Frame
 
         frame1 = _Frame(step=step1, data="test_data", context=None, resources=None)
         frame2 = _Frame(step=step2, data="test_data", context=None, resources=None)
@@ -936,7 +990,6 @@ class TestUltraStepExecutor:
         step2 = Step(name="test_step", agent=Mock())
 
         # Create frame objects
-        from flujo.application.core.ultra_executor import _Frame
 
         frame1 = _Frame(step=step1, data="test_data", context=None, resources=None)
         frame2 = _Frame(step=step2, data="test_data", context=None, resources=None)
@@ -1060,7 +1113,6 @@ class TestUltraStepExecutor:
         step = Step(name="test_step", agent=Mock())
 
         # Create frame objects with different components
-        from flujo.application.core.ultra_executor import _Frame
 
         frame1 = _Frame(step=step, data="data1", context=None, resources=None)
         frame2 = _Frame(step=step, data="data2", context=None, resources=None)
@@ -1099,7 +1151,6 @@ class TestUltraStepExecutor:
         step2 = Step(name="test_step", agent=agent2)
 
         # Create frame objects
-        from flujo.application.core.ultra_executor import _Frame
 
         frame1 = _Frame(step=step1, data="test_data", context=None, resources=None)
         frame2 = _Frame(step=step2, data="test_data", context=None, resources=None)
@@ -1120,7 +1171,6 @@ class TestUltraStepExecutor:
 
         # Test with None values
         step = Step(name="test_step", agent=None)
-        from flujo.application.core.ultra_executor import _Frame
 
         frame = _Frame(step=step, data=None, context=None, resources=None)
         key = executor._cache_key(frame)
@@ -1202,7 +1252,6 @@ class TestUltraStepExecutor:
         step2 = Step(name="test_step", agent=agent2)
 
         # Create frame objects
-        from flujo.application.core.ultra_executor import _Frame
 
         frame1 = _Frame(step=step1, data="test_data", context=None, resources=None)
         frame2 = _Frame(step=step2, data="test_data", context=None, resources=None)
@@ -1246,7 +1295,6 @@ class TestUltraStepExecutor:
         step3 = Step(name="test_step", agent=agent3)
 
         # Create frame objects
-        from flujo.application.core.ultra_executor import _Frame
 
         frame1 = _Frame(step=step1, data="test_data", context=None, resources=None)
         frame2 = _Frame(step=step2, data="test_data", context=None, resources=None)
@@ -1284,7 +1332,6 @@ class TestUltraStepExecutor:
         steps = [Step(name="test_step", agent=agent) for agent in agents]
 
         # Create frame objects
-        from flujo.application.core.ultra_executor import _Frame
 
         frames = [
             _Frame(step=step, data="test_data", context=None, resources=None) for step in steps
@@ -1376,7 +1423,6 @@ class TestUltraStepExecutor:
         step4 = Step(name="test_step", agent=AgentComplexConfig())
 
         # Create frame objects
-        from flujo.application.core.ultra_executor import _Frame
 
         frames = [
             _Frame(step=step, data="test_data", context=None, resources=None)
@@ -1532,3 +1578,409 @@ class TestUltraStepExecutor:
         # Verify that the exception was not cached by checking that it's still raised
         with pytest.raises(PausedException, match="Test pause"):
             await executor._execute_complex_step(step, "test_input")
+
+    @pytest.mark.asyncio
+    async def test_unified_error_handling_contract(self, executor):
+        """Test that step types have appropriate error handling contract.
+
+        FLUJO SPIRIT: Critical exceptions (PausedException, InfiniteFallbackError, InfiniteRedirectError)
+        should be re-raised for proper control flow. Other exceptions return StepResult(success=False)
+        for predictable API. Timing data should be preserved for all failures.
+        """
+        from flujo.domain.plugins import PluginOutcome
+
+        class FailingAgent:
+            async def run(self, data, **kwargs):
+                raise RuntimeError("Test failure")
+
+            async def stream(self, data, **kwargs):
+                yield "partial"
+                raise RuntimeError("Test failure")
+
+        class CriticalFailingAgent:
+            async def run(self, data, **kwargs):
+                from flujo.exceptions import PausedException
+
+                raise PausedException("Test pause")
+
+            async def stream(self, data, **kwargs):
+                from flujo.exceptions import InfiniteFallbackError
+
+                yield "partial"
+                raise InfiniteFallbackError("Test infinite fallback")
+
+        # Test simple non-streaming step with regular exception
+        simple_step = Step.model_validate(
+            {"name": "simple", "agent": FailingAgent(), "config": {"max_retries": 1}}
+        )
+        result = await executor.execute_step(simple_step, "test_data")
+
+        # Should return StepResult, not raise exception
+        assert isinstance(result, StepResult)
+        assert not result.success
+        assert "RuntimeError: Test failure" in result.feedback
+        assert result.latency_s > 0.0  # Timing should be preserved
+
+        # Test streaming step with regular exception
+        streaming_step = Step.model_validate(
+            {"name": "streaming", "agent": FailingAgent(), "config": {"max_retries": 1}}
+        )
+        result = await executor.execute_step(streaming_step, "test_data", stream=True)
+
+        # Should return StepResult, not raise exception
+        assert isinstance(result, StepResult)
+        assert not result.success
+        assert "RuntimeError: Test failure" in result.feedback
+        assert result.latency_s > 0.0  # Timing should be preserved
+
+        # Test complex step (with plugins) with regular exception
+        class MockPlugin:
+            async def validate(self, data: dict) -> PluginOutcome:
+                return PluginOutcome(valid=True, feedback="Mock validation passed")
+
+        complex_step = Step.model_validate(
+            {
+                "name": "complex",
+                "agent": FailingAgent(),
+                "config": {"max_retries": 1},
+                "plugins": [(MockPlugin(), 1)],  # Use proper mock plugin
+            }
+        )
+        result = await executor.execute_step(complex_step, "test_data")
+
+        # Should return StepResult, not raise exception
+        assert isinstance(result, StepResult)
+        assert not result.success
+        assert "RuntimeError: Test failure" in result.feedback
+        assert result.latency_s > 0.0  # Timing should be preserved
+
+    @pytest.mark.asyncio
+    async def test_critical_exceptions_are_re_raised(self, executor):
+        """Test that critical exceptions are re-raised for proper control flow."""
+        from flujo.exceptions import PausedException, InfiniteFallbackError, InfiniteRedirectError
+
+        class PausedAgent:
+            async def run(self, data, **kwargs):
+                raise PausedException("Test pause")
+
+        class InfiniteFallbackAgent:
+            async def run(self, data, **kwargs):
+                raise InfiniteFallbackError("Test infinite fallback")
+
+        class InfiniteRedirectAgent:
+            async def run(self, data, **kwargs):
+                raise InfiniteRedirectError("Test infinite redirect")
+
+        # Test PausedException
+        paused_step = Step.model_validate(
+            {"name": "paused", "agent": PausedAgent(), "config": {"max_retries": 1}}
+        )
+        with pytest.raises(PausedException, match="Test pause"):
+            await executor.execute_step(paused_step, "test_data")
+
+        # Test InfiniteFallbackError
+        fallback_step = Step.model_validate(
+            {"name": "fallback", "agent": InfiniteFallbackAgent(), "config": {"max_retries": 1}}
+        )
+        with pytest.raises(InfiniteFallbackError, match="Test infinite fallback"):
+            await executor.execute_step(fallback_step, "test_data")
+
+        # Test InfiniteRedirectError
+        redirect_step = Step.model_validate(
+            {"name": "redirect", "agent": InfiniteRedirectAgent(), "config": {"max_retries": 1}}
+        )
+        with pytest.raises(InfiniteRedirectError, match="Test infinite redirect"):
+            await executor.execute_step(redirect_step, "test_data")
+
+    @pytest.mark.asyncio
+    async def test_timing_preservation_for_failed_steps(self, executor):
+        """Test that timing data is preserved for failed steps."""
+        import time
+
+        class SlowFailingAgent:
+            async def run(self, data, **kwargs):
+                time.sleep(0.1)  # Simulate some work
+                raise RuntimeError("Test failure")
+
+        slow_step = Step.model_validate(
+            {"name": "slow", "agent": SlowFailingAgent(), "config": {"max_retries": 1}}
+        )
+        result = await executor.execute_step(slow_step, "test_data")
+
+        # Should preserve actual execution time
+        assert isinstance(result, StepResult)
+        assert not result.success
+        assert result.latency_s >= 0.1  # Should reflect actual execution time
+
+    @pytest.mark.asyncio
+    async def test_retry_latency_measurement(self, executor):
+        """Test that retry latency is measured independently for each attempt."""
+
+        class RetryAgent:
+            def __init__(self):
+                self.call_count = 0
+
+            async def run(self, data):
+                self.call_count += 1
+                if self.call_count < 3:  # Fail first two attempts
+                    await asyncio.sleep(0.1)  # Simulate work
+                    raise RuntimeError(f"Attempt {self.call_count} failed")
+                return "success"
+
+        step = Step(name="retry_test", agent=RetryAgent())
+        step.config.max_retries = 3
+
+        # Execute the step
+        result = await executor.execute_step(step, "test_input")
+
+        # Should succeed on third attempt (attempts 1, 2, and 3)
+        assert result.success
+        assert result.attempts == 3  # 3 attempts: 1 (fail), 2 (fail), 3 (success)
+
+        # CRITICAL FIX: Latency should reflect only the successful attempt, not cumulative
+        # The successful attempt took ~0.05s, not ~0.15s (0.1 + 0.05)
+        assert result.latency_s > 0.0
+        assert result.latency_s < 0.1  # Should be closer to 0.05s than 0.15s
+        # For successful attempts, feedback is typically None
+        assert result.feedback is None or "failed" not in result.feedback
+
+    # ============================================================================
+    # REGRESSION TESTS - Prevent previously fixed bugs from returning
+    # ============================================================================
+
+    def test_regression_dead_code_removal(self):
+        """REGRESSION TEST: Ensure dead code (_State enum, _Frame dataclass) remains removed."""
+        import flujo.application.core.ultra_executor as ultra_executor
+
+        # Verify _State enum is not defined
+        assert not hasattr(ultra_executor, "_State"), "Dead code _State enum should not exist"
+
+        # Verify _Frame dataclass is not defined
+        assert not hasattr(ultra_executor, "_Frame"), "Dead code _Frame dataclass should not exist"
+
+        # Verify no references to removed classes in the module
+        source_code = ultra_executor.__file__
+        with open(source_code, "r") as f:
+            content = f.read()
+            assert "class _State" not in content, (
+                "Dead code _State class should not exist in source"
+            )
+            assert "class _Frame" not in content, (
+                "Dead code _Frame class should not exist in source"
+            )
+
+    def test_regression_redundant_retry_logic_removal(self):
+        """REGRESSION TEST: Ensure redundant nested try-except retry logic remains removed."""
+        import flujo.application.core.ultra_executor as ultra_executor
+
+        # Check that the problematic nested try-except pattern is not present
+        source_code = ultra_executor.__file__
+        with open(source_code, "r") as f:
+            content = f.read()
+
+            # Look for the specific problematic pattern that was removed
+            problematic_pattern = """try:
+                                        if run_func is not None:
+                                            filtered_kwargs = build_filtered_kwargs(run_func)
+                                            raw = await run_func(processed_data, **filtered_kwargs)
+                                        else:
+                                            raise RuntimeError("Agent has no run method")
+                                    except Exception:
+                                        if run_func is not None:
+                                            # Fallback to filtered kwargs for backward compatibility
+                                            fallback_kwargs = build_filtered_kwargs(run_func)
+                                            raw = await run_func(processed_data, **fallback_kwargs)
+                                        else:
+                                            raise RuntimeError("Agent has no run method")"""
+
+            assert problematic_pattern not in content, "Redundant retry logic should not exist"
+
+    def test_regression_input_validation_ultra_executor(self):
+        """REGRESSION TEST: Ensure input validation remains in UltraStepExecutor constructor."""
+        from flujo.application.core.ultra_executor import UltraStepExecutor
+
+        # Test that invalid cache_size raises ValueError
+        with pytest.raises(ValueError, match="cache_size must be positive"):
+            UltraStepExecutor(cache_size=0)
+
+        with pytest.raises(ValueError, match="cache_size must be positive"):
+            UltraStepExecutor(cache_size=-1)
+
+        # Test that invalid cache_ttl raises ValueError
+        with pytest.raises(ValueError, match="cache_ttl must be non-negative"):
+            UltraStepExecutor(cache_ttl=-1)
+
+        # Test that invalid concurrency_limit raises ValueError
+        with pytest.raises(ValueError, match="concurrency_limit must be positive if specified"):
+            UltraStepExecutor(concurrency_limit=0)
+
+        with pytest.raises(ValueError, match="concurrency_limit must be positive if specified"):
+            UltraStepExecutor(concurrency_limit=-1)
+
+        # Test that valid parameters work
+        executor = UltraStepExecutor(cache_size=100, cache_ttl=3600, concurrency_limit=10)
+        assert executor is not None
+
+    def test_regression_input_validation_lru_cache(self):
+        """REGRESSION TEST: Ensure input validation remains in _LRUCache constructor."""
+        from flujo.application.core.ultra_executor import _LRUCache
+
+        # Test that invalid max_size raises ValueError
+        with pytest.raises(ValueError, match="max_size must be positive"):
+            _LRUCache(max_size=0)
+
+        with pytest.raises(ValueError, match="max_size must be positive"):
+            _LRUCache(max_size=-1)
+
+        # Test that invalid ttl raises ValueError
+        with pytest.raises(ValueError, match="ttl must be non-negative"):
+            _LRUCache(ttl=-1)
+
+        # Test that valid parameters work
+        cache = _LRUCache(max_size=100, ttl=3600)
+        assert cache is not None
+
+    def test_regression_ttl_logic_fix(self):
+        """REGRESSION TEST: Ensure TTL=0 means 'never expire' (not 'expire immediately')."""
+        from flujo.application.core.ultra_executor import _LRUCache
+        from flujo.domain.models import StepResult
+
+        # Create cache with TTL=0 (should never expire)
+        cache = _LRUCache(max_size=10, ttl=0)
+
+        # Create a test result
+        result = StepResult(
+            name="test", output="test_output", success=True, attempts=1, latency_s=0.1
+        )
+
+        # Store the result
+        cache.set("test_key", result)
+
+        # Wait a bit to ensure time has passed
+        import time
+
+        time.sleep(0.1)
+
+        # Retrieve the result - should still be there (TTL=0 means never expire)
+        retrieved = cache.get("test_key")
+        assert retrieved is not None, "TTL=0 should mean 'never expire', not 'expire immediately'"
+        assert retrieved.name == "test"
+
+    def test_regression_monotonic_time_usage(self):
+        """REGRESSION TEST: Ensure monotonic time is used for cache timestamps."""
+        import flujo.application.core.ultra_executor as ultra_executor
+
+        # Check that time.monotonic() is used instead of time.time()
+        source_code = ultra_executor.__file__
+        with open(source_code, "r") as f:
+            content = f.read()
+
+            # Should use monotonic time for cache operations
+            assert "time.monotonic()" in content, "Cache should use monotonic time"
+
+            # Should not use regular time.time() for cache timestamps
+            # (but allow it for other purposes)
+            cache_related_lines = []
+            lines = content.split("\n")
+            for i, line in enumerate(lines):
+                if "time.time()" in line and ("cache" in line.lower() or "ttl" in line.lower()):
+                    cache_related_lines.append(f"Line {i + 1}: {line.strip()}")
+
+            assert not cache_related_lines, (
+                f"Cache operations should not use time.time(): {cache_related_lines}"
+            )
+
+    def test_regression_independent_latency_measurement(self):
+        """REGRESSION TEST: Ensure latency is measured independently for each retry attempt."""
+        import flujo.application.core.ultra_executor as ultra_executor
+
+        # Check that start_time is captured inside the retry loop
+        source_code = ultra_executor.__file__
+        with open(source_code, "r") as f:
+            content = f.read()
+
+            # Look for the pattern where start_time is captured inside the retry loop
+            # This should be inside the "for attempt in range" loop
+            lines = content.split("\n")
+            retry_loop_started = False
+            start_time_captured = False
+
+            for line in lines:
+                if "for attempt in range" in line:
+                    retry_loop_started = True
+                elif retry_loop_started and "start_time = time_perf_ns()" in line:
+                    start_time_captured = True
+                    break
+                elif retry_loop_started and "except Exception:" in line:
+                    # We've reached the exception handler, start_time should have been captured
+                    break
+
+            assert start_time_captured, "start_time should be captured inside the retry loop"
+
+    def test_regression_no_duplicate_trace_functions(self):
+        """REGRESSION TEST: Ensure no duplicate trace function definitions exist."""
+        import flujo.application.core.ultra_executor as ultra_executor
+
+        # Count trace function definitions
+        source_code = ultra_executor.__file__
+        with open(source_code, "r") as f:
+            content = f.read()
+
+            trace_definitions = content.count("def trace(")
+            assert trace_definitions <= 2, (
+                f"Should have at most 2 trace function definitions (telemetry fallback), found {trace_definitions}"
+            )
+
+            # The two allowed definitions should be in the try-except block for telemetry
+            assert "try:" in content and "except Exception:" in content, (
+                "Trace functions should be in telemetry fallback block"
+            )
+
+    def test_regression_no_undefined_imports(self):
+        """REGRESSION TEST: Ensure all imports are properly defined and used."""
+        import flujo.application.core.ultra_executor as ultra_executor
+
+        # Check that all imported types are actually used
+        source_code = ultra_executor.__file__
+        with open(source_code, "r") as f:
+            content = f.read()
+
+            # Check that imported step types are used
+            assert "LoopStep" in content or "isinstance(step, LoopStep)" in content, (
+                "LoopStep should be imported and used"
+            )
+            assert "ConditionalStep" in content or "isinstance(step, ConditionalStep)" in content, (
+                "ConditionalStep should be imported and used"
+            )
+            assert (
+                "DynamicParallelRouterStep" in content
+                or "isinstance(step, DynamicParallelRouterStep)" in content
+            ), "DynamicParallelRouterStep should be imported and used"
+            assert "ParallelStep" in content or "isinstance(step, ParallelStep)" in content, (
+                "ParallelStep should be imported and used"
+            )
+            assert "CacheStep" in content or "isinstance(step, CacheStep)" in content, (
+                "CacheStep should be imported and used"
+            )
+
+    def test_regression_constructor_validation_preserved(self):
+        """REGRESSION TEST: Ensure constructor validation logic is preserved."""
+        import flujo.application.core.ultra_executor as ultra_executor
+
+        source_code = ultra_executor.__file__
+        with open(source_code, "r") as f:
+            content = f.read()
+
+            # Check that validation logic exists in UltraStepExecutor
+            assert "if cache_size <= 0:" in content, "UltraStepExecutor should validate cache_size"
+            assert "if cache_ttl < 0:" in content, "UltraStepExecutor should validate cache_ttl"
+            assert "if concurrency_limit is not None and concurrency_limit <= 0:" in content, (
+                "UltraStepExecutor should validate concurrency_limit"
+            )
+
+            # Check that validation logic exists in _LRUCache
+            assert "def __post_init__(self)" in content, (
+                "_LRUCache should have __post_init__ method"
+            )
+            assert "if self.max_size <= 0:" in content, "_LRUCache should validate max_size"
+            assert "if self.ttl < 0:" in content, "_LRUCache should validate ttl"

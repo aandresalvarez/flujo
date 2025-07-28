@@ -60,7 +60,7 @@ class TraceManager:
         self._root_span = Span(
             span_id=str(uuid.uuid4()),
             name="pipeline_root",
-            start_time=time.time(),
+            start_time=time.monotonic(),  # Use monotonic time for accurate timing
             attributes={"initial_input": str(payload.initial_input)},
         )
         self._span_stack = [self._root_span]
@@ -69,7 +69,7 @@ class TraceManager:
         """Handle post-run event - finalize root span and attach to result."""
         if self._root_span and self._span_stack:
             # Finalize the root span
-            self._root_span.end_time = time.time()
+            self._root_span.end_time = time.monotonic()  # Use monotonic time
             self._root_span.status = "completed"
 
             # Attach the trace tree to the pipeline result
@@ -85,7 +85,7 @@ class TraceManager:
         child_span = Span(
             span_id=str(uuid.uuid4()),
             name=payload.step.name,
-            start_time=time.time(),
+            start_time=time.monotonic(),  # Use monotonic time for accurate timing
             parent_span_id=parent_span.span_id,
             attributes={
                 "step_type": type(payload.step).__name__,
@@ -102,7 +102,7 @@ class TraceManager:
             return
 
         current_span = self._span_stack.pop()
-        current_span.end_time = time.time()
+        current_span.end_time = time.monotonic()  # Use monotonic time
         current_span.status = "completed"
 
         # Add result metadata
@@ -123,7 +123,7 @@ class TraceManager:
             return
 
         current_span = self._span_stack.pop()
-        current_span.end_time = time.time()
+        current_span.end_time = time.monotonic()  # Use monotonic time
         current_span.status = "failed"
         current_span.attributes.update(
             {

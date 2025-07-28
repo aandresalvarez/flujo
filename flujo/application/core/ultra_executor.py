@@ -20,34 +20,22 @@ import asyncio
 import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from enum import Enum
 from functools import cached_property
 from multiprocessing import cpu_count
-from typing import (
-    Any,
-    Awaitable,
-    Callable,
-    Generic,
-    Optional,
-    TypeVar,
-    TYPE_CHECKING,
-)
+from typing import Any, Awaitable, Callable, Generic, Optional, TypeVar
 
-# Import domain types early
-from ...domain.dsl.step import Step
+from ...domain.dsl.step import HumanInTheLoopStep
 from ...domain.dsl.loop import LoopStep
 from ...domain.dsl.conditional import ConditionalStep
 from ...domain.dsl.dynamic_router import DynamicParallelRouterStep
 from ...domain.dsl.parallel import ParallelStep
-from ...domain.dsl.step import HumanInTheLoopStep
 from ...domain.models import BaseModel, StepResult, UsageLimits, PipelineResult
-from ...domain.resources import AppResources
 from ...exceptions import (
     UsageLimitExceededError,
     PausedException,
-    PricingNotConfiguredError,
     InfiniteFallbackError,
     InfiniteRedirectError,
+    PricingNotConfiguredError,
 )
 from ...steps.cache_step import CacheStep
 from ...utils.performance import time_perf_ns, time_perf_ns_to_seconds
@@ -74,7 +62,7 @@ class _ComplexCacheFrame:
     resources: Optional[Any]
 
 
-if TYPE_CHECKING:
+if False:
     from ...domain.models import PipelineResult
 
 
@@ -137,48 +125,15 @@ except Exception:  # pragma: no cover – swallow import errors silently
 
 TContext = TypeVar("TContext", bound=BaseModel)
 
-if TYPE_CHECKING:
-    from typing import TypeAlias
-
-    FrameType: TypeAlias = "_Frame[TContext]"
-else:
-    FrameType = Any
+# Use a simple type alias for FrameType
+FrameType = Any
 
 __all__ = ["UltraStepExecutor"]
 
 
 # --------------------------------------------------------------------------- #
-# ★ Internal primitives
+# ★ Cache and usage tracking
 # --------------------------------------------------------------------------- #
-
-
-class _State(Enum):
-    PENDING = 0
-    RUNNING = 1
-    COMPLETED = 2
-    FAILED = 3
-    CACHED = 4
-
-
-@dataclass(slots=True)
-class _Frame(Generic[TContext]):
-    """Lightweight execution frame (≈ 24 bytes incl. payload refs)."""
-
-    step: Step[Any, Any]
-    data: Any
-    context: Optional[TContext]
-    resources: Optional[AppResources]
-    state: _State = _State.PENDING
-    result: Optional[StepResult] = None
-    attempt: int = 1
-    max_retries: int = 3
-    cache_key: Optional[str] = None
-    usage_limits: Optional[UsageLimits] = None
-    stream: bool = False
-    on_chunk: Optional[Callable[[Any], Awaitable[None]]] = None
-    # Add cumulative usage tracking for proper limit enforcement
-    cumulative_cost: float = 0.0
-    cumulative_tokens: int = 0
 
 
 @dataclass(slots=True)
@@ -191,14 +146,21 @@ class _LRUCache:
         init=False, default_factory=OrderedDict
     )
 
+    def __post_init__(self) -> None:
+        """Validate constructor parameters."""
+        if self.max_size <= 0:
+            raise ValueError("max_size must be positive")
+        if self.ttl < 0:
+            raise ValueError("ttl must be non-negative")
+
     def get(self, key: str) -> Optional[StepResult]:
         item = self._store.get(key)
         if not item:  # miss
             return None
         res, ts = item
-        now = time.time()
-        # If ttl is 0, items expire immediately
-        if self.ttl == 0 or (self.ttl > 0 and now - ts > self.ttl):  # stale
+        now = time.monotonic()  # Use monotonic time for reliable TTL
+        # TTL of 0 means "never expire" (standard convention)
+        if self.ttl > 0 and now - ts > self.ttl:  # stale
             self._store.pop(key, None)
             return None
         # LRU promotion
@@ -210,7 +172,7 @@ class _LRUCache:
             self._store.move_to_end(key)
         elif len(self._store) >= self.max_size:
             self._store.popitem(last=False)  # evict LRU
-        self._store[key] = (val, time.time())
+        self._store[key] = (val, time.monotonic())  # Use monotonic time
 
     def clear(self) -> None:
         self._store.clear()
@@ -281,7 +243,7 @@ class UltraStepExecutor(Generic[TContext]):
     _EMPTY_LIST: list[Any] = []
 
     # Expose _Frame for benchmarking
-    _Frame = _Frame
+    _Frame = Any  # This line is removed as _Frame is removed
 
     """
     A highly optimised iterative step executor.
@@ -302,6 +264,14 @@ class UltraStepExecutor(Generic[TContext]):
         cache_ttl: int = 3_600,
         concurrency_limit: Optional[int] = None,
     ) -> None:
+        # Validate input parameters
+        if cache_size <= 0:
+            raise ValueError("cache_size must be positive")
+        if cache_ttl < 0:
+            raise ValueError("cache_ttl must be non-negative")
+        if concurrency_limit is not None and concurrency_limit <= 0:
+            raise ValueError("concurrency_limit must be positive if specified")
+
         self._cache = _LRUCache(cache_size, cache_ttl) if enable_cache else None
         self._usage = _UsageTracker()
         self._concurrency = asyncio.Semaphore(concurrency_limit or cpu_count() * 2)
@@ -419,7 +389,7 @@ class UltraStepExecutor(Generic[TContext]):
     @trace("ultra_executor.execute_step")
     async def execute_step(
         self,
-        step: Step[Any, Any],
+        step: Any,
         data: Any,
         context: Optional[Any] = None,
         resources: Optional[Any] = None,
@@ -495,9 +465,11 @@ class UltraStepExecutor(Generic[TContext]):
         # Only handle pure agent steps directly (not callable steps)
         if agent and not (has_plugins or has_validators or has_fallback or is_callable_step):
             async with self._concurrency:  # concurrency guard
-                start_time = time_perf_ns()  # Track execution time with nanosecond precision
                 last_exception: Exception = Exception("Unknown error")
                 for attempt in range(1, step.config.max_retries + 1):
+                    # CRITICAL FIX: Capture start_time for each attempt independently
+                    start_time = time_perf_ns()  # Track execution time with nanosecond precision
+
                     run_func = getattr(agent, "run", None)
                     is_mock = isinstance(run_func, (Mock, MagicMock, AsyncMock))
 
@@ -592,19 +564,11 @@ class UltraStepExecutor(Generic[TContext]):
                                     mock_kwargs = build_filtered_kwargs(run_func)
                                     raw = await run_func(processed_data, **mock_kwargs)
                                 else:
-                                    try:
-                                        if run_func is not None:
-                                            filtered_kwargs = build_filtered_kwargs(run_func)
-                                            raw = await run_func(processed_data, **filtered_kwargs)
-                                        else:
-                                            raise RuntimeError("Agent has no run method")
-                                    except Exception:
-                                        if run_func is not None:
-                                            # Fallback to filtered kwargs for backward compatibility
-                                            fallback_kwargs = build_filtered_kwargs(run_func)
-                                            raw = await run_func(processed_data, **fallback_kwargs)
-                                        else:
-                                            raise RuntimeError("Agent has no run method")
+                                    if run_func is not None:
+                                        filtered_kwargs = build_filtered_kwargs(run_func)
+                                        raw = await run_func(processed_data, **filtered_kwargs)
+                                    else:
+                                        raise RuntimeError("Agent has no run method")
                         except Exception:
                             # Re-raise the exception to be caught by the retry loop
                             raise
@@ -711,19 +675,27 @@ class UltraStepExecutor(Generic[TContext]):
                         last_exception = e
                         continue
                 # If we get here, all retries failed
-                # For streaming agents, always convert exceptions to failed StepResult
-                # For non-streaming agents without plugins/validators/fallbacks, re-raise the exception
-                if stream or (step.plugins or step.validators or step.fallback_step):
-                    return StepResult(
-                        name=step.name,
-                        output=None,
-                        success=False,
-                        attempts=attempt,
-                        feedback=f"Agent execution failed with {type(last_exception).__name__}: {last_exception}",
-                        latency_s=0.0,
-                    )
-                else:
+                # FLUJO SPIRIT FIX: Robust error handling with critical exception preservation
+                # Calculate actual latency for failed steps to preserve timing information
+                latency = time_perf_ns_to_seconds(time_perf_ns() - start_time)
+
+                # CRITICAL FIX: Re-raise critical exceptions that carry control flow semantics
+                # These exceptions must propagate for proper human-in-the-loop and infinite loop prevention
+                if isinstance(
+                    last_exception, (PausedException, InfiniteFallbackError, InfiniteRedirectError)
+                ):
                     raise last_exception
+
+                # For non-critical exceptions, maintain unified error handling contract
+                # All other step failures return StepResult(success=False) for predictable API
+                return StepResult(
+                    name=step.name,
+                    output=None,
+                    success=False,
+                    attempts=attempt,
+                    feedback=f"Agent execution failed with {type(last_exception).__name__}: {last_exception}",
+                    latency_s=latency,  # Preserve actual execution time
+                )
         else:
             return await self._execute_complex_step(
                 step,
@@ -760,7 +732,7 @@ class UltraStepExecutor(Generic[TContext]):
 
     async def _execute_complex_step(
         self,
-        step: Step[Any, Any],
+        step: Any,
         data: Any,
         context: Optional[Any] = None,
         resources: Optional[Any] = None,
@@ -809,7 +781,7 @@ class UltraStepExecutor(Generic[TContext]):
 
         # Create a step executor that uses this UltraExecutor for recursion
         async def step_executor(
-            s: Step[Any, Any],
+            s: Any,
             d: Any,
             c: Optional[Any],
             r: Optional[Any],
@@ -829,7 +801,7 @@ class UltraStepExecutor(Generic[TContext]):
 
         # Create a special step executor for loop steps that bypasses state persistence
         async def loop_step_executor(
-            s: Step[Any, Any],
+            s: Any,
             d: Any,
             c: Optional[Any],
             r: Optional[Any],
@@ -840,7 +812,7 @@ class UltraStepExecutor(Generic[TContext]):
 
             # Create a proper wrapper that matches StepExecutor signature
             async def step_executor_wrapper(
-                step: Step[Any, Any],
+                step: Any,
                 data: Any,
                 context: Optional[Any],
                 resources: Optional[Any],
@@ -926,7 +898,7 @@ class UltraStepExecutor(Generic[TContext]):
                 from .step_logic import _run_step_logic
 
                 async def step_executor_wrapper(
-                    step: Step[Any, Any],
+                    step: Any,
                     data: Any,
                     context: Optional[Any],
                     resources: Optional[Any],
@@ -967,7 +939,7 @@ class UltraStepExecutor(Generic[TContext]):
         return result
 
     async def _run_validators_parallel(
-        self, step: Step[Any, Any], output: Any, context: Optional[TContext]
+        self, step: Any, output: Any, context: Optional[TContext]
     ) -> list[Any]:
         """Run validators in parallel."""
         if not hasattr(step, "validators") or not step.validators:
