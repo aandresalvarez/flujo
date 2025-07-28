@@ -231,12 +231,13 @@ def _inject_context(
                         except Exception:
                             pass
 
-    # CRITICAL FIX: Instead of recreating the context from scratch,
-    # validate the current context state to ensure it's still valid
-    # This preserves direct mutations while ensuring data integrity
+    # CRITICAL FIX: Apply Pydantic validation results back to the context
+    # This ensures normalization, coercion, and default values are properly applied
     try:
-        # Validate the current context state without recreating it
-        context_model.model_validate(context.model_dump())
+        # Validate the current context state and apply the validated results
+        validated = context_model.model_validate(context.model_dump())
+        # Apply the validated results back to the context to ensure normalization
+        context.__dict__.update(validated.__dict__)
     except ValidationError as e:
         # If validation fails, restore original state
         for key, value in original.items():
