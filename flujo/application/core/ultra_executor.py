@@ -31,8 +31,48 @@ from typing import (
     Optional,
     TypeVar,
     TYPE_CHECKING,
-    cast,
 )
+
+# Import domain types early
+from ...domain.dsl.step import Step
+from ...domain.dsl.loop import LoopStep
+from ...domain.dsl.conditional import ConditionalStep
+from ...domain.dsl.dynamic_router import DynamicParallelRouterStep
+from ...domain.dsl.parallel import ParallelStep
+from ...domain.dsl.step import HumanInTheLoopStep
+from ...domain.models import BaseModel, StepResult, UsageLimits
+from ...domain.resources import AppResources
+from ...exceptions import (
+    UsageLimitExceededError,
+    PausedException,
+    PricingNotConfiguredError,
+    InfiniteFallbackError,
+    InfiniteRedirectError,
+)
+from ...steps.cache_step import CacheStep
+from ...utils.performance import time_perf_ns, time_perf_ns_to_seconds
+
+
+# Cache frame dataclasses for efficient cache key generation
+@dataclass
+class _CacheFrame:
+    """Frame for cache key generation in execute_step."""
+
+    step: Any
+    data: Any
+    context: Optional[Any]
+    resources: Optional[Any]
+
+
+@dataclass
+class _ComplexCacheFrame:
+    """Frame for cache key generation in _execute_complex_step."""
+
+    step: Any
+    data: Any
+    context: Optional[Any]
+    resources: Optional[Any]
+
 
 if TYPE_CHECKING:
     from ...domain.models import PipelineResult
@@ -43,7 +83,6 @@ if TYPE_CHECKING:
 # --------------------------------------------------------------------------- #
 
 # Import performance utilities
-from ...utils.performance import time_perf_ns, time_perf_ns_to_seconds
 
 try:  # ➊ 9× faster JSON
     import orjson
@@ -73,17 +112,6 @@ except ModuleNotFoundError:
 # --------------------------------------------------------------------------- #
 # ★ Domain imports
 # --------------------------------------------------------------------------- #
-
-from ...domain.dsl.step import Step
-from ...domain.models import BaseModel, StepResult, UsageLimits
-from ...domain.resources import AppResources
-from ...exceptions import (
-    UsageLimitExceededError,
-    PausedException,
-    InfiniteFallbackError,
-    InfiniteRedirectError,
-    PricingNotConfiguredError,
-)
 
 # Optional telemetry (no-op if absent)
 try:
@@ -290,8 +318,11 @@ class UltraStepExecutor(Generic[TContext]):
         # Fast path for common types
         if obj is None:
             return "null"
-        if isinstance(obj, (str, bytes, int, float, bool)):
+        if isinstance(obj, (str, int, float, bool)):
             return _hash_bytes(str(obj).encode())
+        if isinstance(obj, bytes):
+            # CRITICAL FIX: Handle bytes directly without string conversion
+            return _hash_bytes(obj)
 
         # Try cached hash first
         try:
@@ -348,7 +379,19 @@ class UltraStepExecutor(Generic[TContext]):
             return obj
 
     def _cache_key(self, f: Any) -> str:
-        """Generate cache key efficiently."""
+        """Generate cache key efficiently with stable agent identification."""
+        # CRITICAL FIX: Use stable agent identification instead of memory address
+        agent = getattr(f.step, "agent", None)
+        agent_id = None
+        if agent is not None:
+            # Use agent type and configuration for stable identification
+            agent_type = f"{type(agent).__module__}.{type(agent).__name__}"
+            agent_config = getattr(agent, "config", None)
+            if agent_config:
+                agent_id = f"{agent_type}:{self._hash_obj(agent_config)}"
+            else:
+                agent_id = agent_type
+
         # Ultra-fast path for common case (no context/resources)
         if f.context is None and f.resources is None:
             # Use faster string concatenation instead of dict
@@ -356,7 +399,7 @@ class UltraStepExecutor(Generic[TContext]):
                 f.step.name,
                 type(f.step).__name__,
                 self._hash_obj(f.data),
-                str(getattr(f.step, "agent", None) and id(f.step.agent)),
+                agent_id or "no_agent",
             ]
             return _hash_bytes("|".join(key_parts).encode())
         else:
@@ -367,7 +410,7 @@ class UltraStepExecutor(Generic[TContext]):
                 "dh": self._hash_obj(f.data),
                 "ch": self._hash_obj(f.context) if f.context else None,
                 "rh": self._hash_obj(f.resources) if f.resources else None,
-                "ar": getattr(f.step, "agent", None) and id(f.step.agent),
+                "ar": agent_id,
             }
             return _hash_bytes(_dumps(payload))
 
@@ -392,6 +435,22 @@ class UltraStepExecutor(Generic[TContext]):
         This method does not check usage limits directly to ensure step history
         is always complete and logic is not duplicated.
         """
+
+        # CRITICAL FIX: Add caching logic
+        cache_key = None  # Initialize cache_key to avoid NameError
+        if self._cache is not None:
+            # Create frame for cache key generation using module-level dataclass
+            cache_frame = _CacheFrame(step=step, data=data, context=context, resources=resources)
+            cache_key = self._cache_key(cache_frame)
+
+            # Check cache for existing result
+            cached_result = self._cache.get(cache_key)
+            if cached_result is not None:
+                # CRITICAL FIX: Create a copy to avoid mutating the cached object
+                result_copy = cached_result.model_copy(deep=True)
+                result_copy.metadata_ = result_copy.metadata_ or {}
+                result_copy.metadata_["cache_hit"] = True
+                return result_copy
 
         import inspect
         from unittest.mock import Mock, MagicMock, AsyncMock
@@ -593,8 +652,8 @@ class UltraStepExecutor(Generic[TContext]):
                                         raw  # Use original output on processor failure
                                     )
 
-                        # Return immediately
-                        return StepResult(
+                        # Create result
+                        result = StepResult(
                             name=step.name,
                             output=getattr(processed_output, "output", processed_output),
                             success=True,
@@ -603,6 +662,13 @@ class UltraStepExecutor(Generic[TContext]):
                             cost_usd=cost_usd,
                             token_counts=token_counts,
                         )
+
+                        # CRITICAL FIX: Cache successful results
+                        if self._cache is not None and result.success and cache_key is not None:
+                            self._cache.set(cache_key, result)
+
+                        # Return immediately
+                        return result
                     except (TypeError, UsageLimitExceededError, PricingNotConfiguredError) as e:
                         # Re-raise critical exceptions immediately
                         if isinstance(e, TypeError) and "returned a Mock object" in str(e):
@@ -637,6 +703,27 @@ class UltraStepExecutor(Generic[TContext]):
                 step, data, context, resources, usage_limits, stream, on_chunk
             )
 
+    def _handle_step_exception(self, e: Exception) -> None:
+        """Handle exceptions from step execution with proper classification.
+
+        This method classifies exceptions and handles them appropriately:
+        - Critical exceptions (PausedException, InfiniteFallbackError, InfiniteRedirectError)
+          are re-raised immediately without caching
+        - Other exceptions are re-raised normally
+
+        Args:
+            e: The exception that occurred during step execution
+
+        Raises:
+            The original exception (either critical or normal)
+        """
+        if isinstance(e, (PausedException, InfiniteFallbackError, InfiniteRedirectError)):
+            # CRITICAL FIX: Re-raise critical exceptions without caching
+            raise e
+        else:
+            # Handle other exceptions normally
+            raise e
+
     async def _execute_complex_step(
         self,
         step: Step[Any, Any],
@@ -650,6 +737,26 @@ class UltraStepExecutor(Generic[TContext]):
     ) -> StepResult:
         """Execute complex steps (with plugins, validators, fallbacks) using step logic helpers."""
 
+        # CRITICAL FIX: Add caching logic for complex steps
+        cache_key = None  # Initialize cache_key to avoid NameError
+        if self._cache is not None:
+            # Create frame for cache key generation using module-level dataclass
+            cache_frame = _ComplexCacheFrame(
+                step=step, data=data, context=context, resources=resources
+            )
+            cache_key = self._cache_key(cache_frame)
+
+            # Check cache for existing result
+            cached_result = self._cache.get(cache_key)
+            if cached_result is not None:
+                # CRITICAL FIX: Create a fully independent copy to avoid mutating the cached object
+                import copy
+
+                result_copy = copy.deepcopy(cached_result)
+                result_copy.metadata_ = result_copy.metadata_ or {}
+                result_copy.metadata_["cache_hit"] = True
+                return result_copy
+
         # Import step logic helpers
         from .step_logic import (
             _handle_cache_step,
@@ -659,12 +766,6 @@ class UltraStepExecutor(Generic[TContext]):
             _handle_parallel_step,
             _handle_hitl_step,
         )
-        from ...domain.dsl.loop import LoopStep
-        from ...domain.dsl.conditional import ConditionalStep
-        from ...domain.dsl.dynamic_router import DynamicParallelRouterStep
-        from ...domain.dsl.parallel import ParallelStep
-        from ...domain.dsl.step import HumanInTheLoopStep
-        from ...steps.cache_step import CacheStep
 
         # Create a step executor that uses this UltraExecutor for recursion
         async def step_executor(
@@ -713,59 +814,58 @@ class UltraStepExecutor(Generic[TContext]):
             )
 
         # Handle different step types
-        if isinstance(step, CacheStep):
-            return await _handle_cache_step(step, data, context, resources, step_executor)
-        elif isinstance(step, LoopStep):
-            return await _handle_loop_step(
-                step,
-                data,
-                context,
-                resources,
-                loop_step_executor,  # Use special executor for loop steps
-                context_model_defined=True,
-                usage_limits=usage_limits,
-                context_setter=lambda result, ctx: None,
-            )
-        elif isinstance(step, ConditionalStep):
-            return await _handle_conditional_step(
-                step,
-                data,
-                context,
-                resources,
-                step_executor,
-                context_model_defined=True,
-                usage_limits=usage_limits,
-            )
-        elif isinstance(step, DynamicParallelRouterStep):
-            return await _handle_dynamic_router_step(
-                step,
-                data,
-                context,
-                resources,
-                step_executor,
-                context_model_defined=True,
-                usage_limits=usage_limits,
-                context_setter=lambda result, ctx: None,
-            )
-        elif isinstance(step, ParallelStep):
-            return await _handle_parallel_step(
-                step,
-                data,
-                context,
-                resources,
-                step_executor,
-                context_model_defined=True,
-                usage_limits=usage_limits,
-                context_setter=lambda result, ctx: None,
-            )
-        elif isinstance(step, HumanInTheLoopStep):
-            return await _handle_hitl_step(step, data, context)
-        else:
-            # For regular agent steps with plugins/validators/fallbacks, use the full step logic
-            from .step_logic import _run_step_logic
+        try:
+            if isinstance(step, CacheStep):
+                result = await _handle_cache_step(step, data, context, resources, step_executor)
+            elif isinstance(step, LoopStep):
+                result = await _handle_loop_step(
+                    step,
+                    data,
+                    context,
+                    resources,
+                    loop_step_executor,  # Use special executor for loop steps
+                    context_model_defined=True,
+                    usage_limits=usage_limits,
+                    context_setter=lambda result, ctx: None,
+                )
+            elif isinstance(step, ConditionalStep):
+                result = await _handle_conditional_step(
+                    step,
+                    data,
+                    context,
+                    resources,
+                    step_executor,
+                    context_model_defined=True,
+                    usage_limits=usage_limits,
+                )
+            elif isinstance(step, DynamicParallelRouterStep):
+                result = await _handle_dynamic_router_step(
+                    step,
+                    data,
+                    context,
+                    resources,
+                    step_executor,
+                    context_model_defined=True,
+                    usage_limits=usage_limits,
+                    context_setter=lambda result, ctx: None,
+                )
+            elif isinstance(step, ParallelStep):
+                result = await _handle_parallel_step(
+                    step,
+                    data,
+                    context,
+                    resources,
+                    step_executor,
+                    context_model_defined=True,
+                    usage_limits=usage_limits,
+                    context_setter=lambda result, ctx: None,
+                )
+            elif isinstance(step, HumanInTheLoopStep):
+                result = await _handle_hitl_step(step, data, context)
+            else:
+                # For other complex steps, use step logic directly
+                from .step_logic import _run_step_logic
 
-            try:
-                # Create a proper wrapper that matches StepExecutor signature
                 async def step_executor_wrapper(
                     step: Step[Any, Any],
                     data: Any,
@@ -777,38 +877,27 @@ class UltraStepExecutor(Generic[TContext]):
                         step, data, context, resources, usage_limits, stream, on_chunk, breach_event
                     )
 
-                # Use step logic helpers for complex steps
                 result = await _run_step_logic(
                     step=step,
                     data=data,
-                    context=cast(Optional[TContext], context),  # Type cast for mypy
+                    context=context,
                     resources=resources,
-                    step_executor=step_executor_wrapper,  # Use proper wrapper instead of self
+                    step_executor=step_executor_wrapper,
                     context_model_defined=True,
                     usage_limits=usage_limits,
-                    context_setter=lambda result, ctx: None,  # No-op context setter
+                    context_setter=lambda result, ctx: None,
                     stream=stream,
                     on_chunk=on_chunk,
                 )
+        except Exception as e:
+            # Use helper method to handle exception classification
+            self._handle_step_exception(e)
 
-                # Handle PausedException for agentic loops
-                if isinstance(result, PausedException):
-                    raise result
+        # CRITICAL FIX: Cache successful results for complex steps
+        if self._cache is not None and result.success and cache_key is not None:
+            self._cache.set(cache_key, result)
 
-                return result
-            except PausedException:
-                # Re-raise PausedException for agentic loops
-                raise
-            except (InfiniteFallbackError, InfiniteRedirectError):
-                # Allow critical exceptions to propagate
-                raise
-            except Exception as e:
-                # Log and re-raise other exceptions
-                import logging
-
-                logger = logging.getLogger(__name__)
-                logger.error(f"Error in complex step execution: {e}")
-                raise
+        return result
 
     async def _run_validators_parallel(
         self, step: Step[Any, Any], output: Any, context: Optional[TContext]

@@ -43,15 +43,15 @@ class _TestContext(BaseModel):
 
 
 class IncrementAgent:
-    async def run(self, data: str, *, context: _TestContext | None = None) -> str:
+    async def run(self, data: str, *, context: _TestContext | None = None) -> dict:
         if context:
             context.counter += 1
-        return data
+        return {"counter": context.counter if context else 0}
 
 
 @pytest.mark.asyncio
 async def test_concurrent_runs_with_typed_context_are_isolated() -> None:
-    step = Step.model_validate({"name": "inc", "agent": IncrementAgent()})
+    step = Step.model_validate({"name": "inc", "agent": IncrementAgent(), "updates_context": True})
     runner = create_test_flujo(step, context_model=_TestContext)
 
     async def run_one() -> PipelineResult:
