@@ -19,7 +19,6 @@ from __future__ import annotations
 import asyncio
 import time
 from collections import OrderedDict
-from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import cached_property
@@ -448,7 +447,7 @@ class UltraStepExecutor(Generic[TContext]):
             cached_result = self._cache.get(cache_key)
             if cached_result is not None:
                 # CRITICAL FIX: Create a copy to avoid mutating the cached object
-                result_copy = deepcopy(cached_result)
+                result_copy = cached_result.model_copy(deep=True)
                 result_copy.metadata_ = result_copy.metadata_ or {}
                 result_copy.metadata_["cache_hit"] = True
                 return result_copy
@@ -730,7 +729,7 @@ class UltraStepExecutor(Generic[TContext]):
             cached_result = self._cache.get(cache_key)
             if cached_result is not None:
                 # CRITICAL FIX: Create a copy to avoid mutating the cached object
-                result_copy = deepcopy(cached_result)
+                result_copy = cached_result.model_copy(deep=True)
                 result_copy.metadata_ = result_copy.metadata_ or {}
                 result_copy.metadata_["cache_hit"] = True
                 return result_copy

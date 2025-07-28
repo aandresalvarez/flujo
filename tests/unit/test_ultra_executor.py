@@ -1439,7 +1439,7 @@ class TestUltraStepExecutor:
 
     @pytest.mark.asyncio
     async def test_regression_deepcopy_import_optimization(self):
-        """REGRESSION: Ensure deepcopy import is at module level for performance."""
+        """REGRESSION: Ensure model_copy is used instead of deepcopy for performance."""
         import ast
         import inspect
 
@@ -1450,24 +1450,25 @@ class TestUltraStepExecutor:
         # Parse the source code
         tree = ast.parse(source)
 
-        # Find all import statements
-        imports = []
+        # Find all model_copy method calls
+        model_copy_calls = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                if (isinstance(node.func, ast.Attribute) and 
+                    node.func.attr == 'model_copy'):
+                    model_copy_calls.append(node)
+
+        # Verify that model_copy is used for caching
+        assert len(model_copy_calls) > 0, "model_copy should be used for cache copying"
+        
+        # Verify that deepcopy is not imported
+        deepcopy_imports = []
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom):
                 if node.module == 'copy' and any(alias.name == 'deepcopy' for alias in node.names):
-                    imports.append(node)
-
-        # Verify that deepcopy is imported at module level
-        assert len(imports) > 0, "deepcopy should be imported at module level"
+                    deepcopy_imports.append(node)
         
-        # Verify that deepcopy is not imported inside functions
-        for import_node in imports:
-            # Check if this import is at the module level (not inside a function)
-            current = import_node
-            while hasattr(current, 'parent'):
-                current = current.parent
-                if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    assert False, "deepcopy import should not be inside a function"
+        assert len(deepcopy_imports) == 0, "deepcopy should not be imported - use model_copy instead"
 
     @pytest.mark.asyncio
     async def test_regression_cache_key_always_defined(self):
