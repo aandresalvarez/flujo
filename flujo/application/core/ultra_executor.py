@@ -47,6 +47,8 @@ from ...exceptions import (
     UsageLimitExceededError,
     PausedException,
     PricingNotConfiguredError,
+    InfiniteFallbackError,
+    InfiniteRedirectError,
 )
 from ...steps.cache_step import CacheStep
 from ...utils.performance import time_perf_ns, time_perf_ns_to_seconds
@@ -436,6 +438,7 @@ class UltraStepExecutor(Generic[TContext]):
         """
 
         # CRITICAL FIX: Add caching logic
+        cache_key = None  # Initialize cache_key to avoid NameError
         if self._cache is not None:
             # Create frame for cache key generation using module-level dataclass
             cache_frame = _CacheFrame(step=step, data=data, context=context, resources=resources)
@@ -715,6 +718,7 @@ class UltraStepExecutor(Generic[TContext]):
         """Execute complex steps (with plugins, validators, fallbacks) using step logic helpers."""
 
         # CRITICAL FIX: Add caching logic for complex steps
+        cache_key = None  # Initialize cache_key to avoid NameError
         if self._cache is not None:
             # Create frame for cache key generation using module-level dataclass
             cache_frame = _ComplexCacheFrame(
@@ -788,80 +792,87 @@ class UltraStepExecutor(Generic[TContext]):
             )
 
         # Handle different step types
-        if isinstance(step, CacheStep):
-            result = await _handle_cache_step(step, data, context, resources, step_executor)
-        elif isinstance(step, LoopStep):
-            result = await _handle_loop_step(
-                step,
-                data,
-                context,
-                resources,
-                loop_step_executor,  # Use special executor for loop steps
-                context_model_defined=True,
-                usage_limits=usage_limits,
-                context_setter=lambda result, ctx: None,
-            )
-        elif isinstance(step, ConditionalStep):
-            result = await _handle_conditional_step(
-                step,
-                data,
-                context,
-                resources,
-                step_executor,
-                context_model_defined=True,
-                usage_limits=usage_limits,
-            )
-        elif isinstance(step, DynamicParallelRouterStep):
-            result = await _handle_dynamic_router_step(
-                step,
-                data,
-                context,
-                resources,
-                step_executor,
-                context_model_defined=True,
-                usage_limits=usage_limits,
-                context_setter=lambda result, ctx: None,
-            )
-        elif isinstance(step, ParallelStep):
-            result = await _handle_parallel_step(
-                step,
-                data,
-                context,
-                resources,
-                step_executor,
-                context_model_defined=True,
-                usage_limits=usage_limits,
-                context_setter=lambda result, ctx: None,
-            )
-        elif isinstance(step, HumanInTheLoopStep):
-            result = await _handle_hitl_step(step, data, context)
-        else:
-            # For other complex steps, use step logic directly
-            from .step_logic import _run_step_logic
-
-            async def step_executor_wrapper(
-                step: Step[Any, Any],
-                data: Any,
-                context: Optional[Any],
-                resources: Optional[Any],
-                breach_event: Optional[Any] = None,
-            ) -> StepResult:
-                return await self.execute_step(
-                    step, data, context, resources, usage_limits, stream, on_chunk, breach_event
+        try:
+            if isinstance(step, CacheStep):
+                result = await _handle_cache_step(step, data, context, resources, step_executor)
+            elif isinstance(step, LoopStep):
+                result = await _handle_loop_step(
+                    step,
+                    data,
+                    context,
+                    resources,
+                    loop_step_executor,  # Use special executor for loop steps
+                    context_model_defined=True,
+                    usage_limits=usage_limits,
+                    context_setter=lambda result, ctx: None,
                 )
+            elif isinstance(step, ConditionalStep):
+                result = await _handle_conditional_step(
+                    step,
+                    data,
+                    context,
+                    resources,
+                    step_executor,
+                    context_model_defined=True,
+                    usage_limits=usage_limits,
+                )
+            elif isinstance(step, DynamicParallelRouterStep):
+                result = await _handle_dynamic_router_step(
+                    step,
+                    data,
+                    context,
+                    resources,
+                    step_executor,
+                    context_model_defined=True,
+                    usage_limits=usage_limits,
+                    context_setter=lambda result, ctx: None,
+                )
+            elif isinstance(step, ParallelStep):
+                result = await _handle_parallel_step(
+                    step,
+                    data,
+                    context,
+                    resources,
+                    step_executor,
+                    context_model_defined=True,
+                    usage_limits=usage_limits,
+                    context_setter=lambda result, ctx: None,
+                )
+            elif isinstance(step, HumanInTheLoopStep):
+                result = await _handle_hitl_step(step, data, context)
+            else:
+                # For other complex steps, use step logic directly
+                from .step_logic import _run_step_logic
 
-            result = await _run_step_logic(
-                step=step,
-                data=data,
-                context=context,
-                resources=resources,
-                step_executor=step_executor_wrapper,
-                context_model_defined=True,
-                usage_limits=usage_limits,
-                context_setter=lambda result, ctx: None,
-                stream=stream,
-                on_chunk=on_chunk,
-            )
+                async def step_executor_wrapper(
+                    step: Step[Any, Any],
+                    data: Any,
+                    context: Optional[Any],
+                    resources: Optional[Any],
+                    breach_event: Optional[Any] = None,
+                ) -> StepResult:
+                    return await self.execute_step(
+                        step, data, context, resources, usage_limits, stream, on_chunk, breach_event
+                    )
+
+                result = await _run_step_logic(
+                    step=step,
+                    data=data,
+                    context=context,
+                    resources=resources,
+                    step_executor=step_executor_wrapper,
+                    context_model_defined=True,
+                    usage_limits=usage_limits,
+                    context_setter=lambda result, ctx: None,
+                    stream=stream,
+                    on_chunk=on_chunk,
+                )
+        except (PausedException, InfiniteFallbackError, InfiniteRedirectError) as e:
+            # CRITICAL FIX: Re-raise critical exceptions without caching
+            raise e
+        except Exception as e:
+            # Handle other exceptions normally
+            raise e
 
         # CRITICAL FIX: Cache successful results for complex steps
         if self._cache is not None and result.success:

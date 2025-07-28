@@ -4,7 +4,7 @@ This document outlines the comprehensive regression test suite implemented to pr
 
 ## Test Coverage Overview
 
-The regression test suite consists of **18 tests** that cover all aspects of the caching system fix, the additional improvements based on Copilot feedback, the cache mutation bug fix, and the import optimization.
+The regression test suite consists of **20 tests** that cover all aspects of the caching system fix, the additional improvements based on Copilot feedback, the cache mutation bug fix, the import optimization, and the latest bug fixes for undefined cache_key and critical exception handling.
 
 ### Original Bug Fix Tests (10 tests)
 
@@ -80,11 +80,21 @@ The regression test suite consists of **18 tests** that cover all aspects of the
     - **What it tests**: Ensures cache mutation doesn't corrupt the original cached data
     - **What it prevents**: Regression where direct mutation of cached StepResult objects corrupts cache data
 
-### Import Optimization Test (1 new test)
+### Import Optimization Test (1 test)
 
 18. **`test_regression_deepcopy_import_optimization`**
     - **What it tests**: Ensures deepcopy import is at module level for performance
     - **What it prevents**: Regression where deepcopy import is moved inside functions causing repeated import overhead
+
+### Latest Bug Fix Tests (2 new tests)
+
+19. **`test_regression_cache_key_always_defined`**
+    - **What it tests**: Ensures cache_key is always defined to prevent NameError
+    - **What it prevents**: Regression where cache_key variable is conditionally defined but used later without proper scoping
+
+20. **`test_regression_critical_exceptions_not_cached`**
+    - **What it tests**: Ensures critical exceptions are not cached when they occur
+    - **What it prevents**: Regression where critical exceptions like PausedException are incorrectly cached and returned as successful results
 
 ## Prevention Strategy
 

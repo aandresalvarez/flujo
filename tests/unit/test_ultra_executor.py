@@ -1468,3 +1468,54 @@ class TestUltraStepExecutor:
                 current = current.parent
                 if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     assert False, "deepcopy import should not be inside a function"
+
+    @pytest.mark.asyncio
+    async def test_regression_cache_key_always_defined(self):
+        """REGRESSION: Ensure cache_key is always defined to prevent NameError."""
+        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.domain.dsl import Step
+        from flujo.testing.utils import StubAgent
+
+        # Create executor with caching disabled
+        executor = UltraStepExecutor(enable_cache=False)
+
+        # Create a simple step with multiple outputs
+        agent = StubAgent(["test output 1", "test output 2", "test output 3"])
+        step = Step(name="test_step", agent=agent)
+
+        # This should not raise NameError even with caching disabled
+        result = await executor.execute_step(step, "test_input")
+        assert result.success
+
+        # Test complex step execution
+        result = await executor._execute_complex_step(step, "test_input")
+        assert result.success
+
+    @pytest.mark.asyncio
+    async def test_regression_critical_exceptions_not_cached(self):
+        """REGRESSION: Ensure critical exceptions are not cached when they occur."""
+        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.domain.dsl import Step
+        from flujo.exceptions import PausedException
+
+        # Create executor with caching enabled
+        executor = UltraStepExecutor(enable_cache=True)
+
+        # Create a step that raises PausedException
+        class PausedAgent:
+            async def run(self, data, context=None):
+                raise PausedException("Test pause")
+
+        step = Step(name="paused_step", agent=PausedAgent())
+
+        # First execution should raise PausedException
+        with pytest.raises(PausedException, match="Test pause"):
+            await executor._execute_complex_step(step, "test_input")
+
+        # Second execution should also raise PausedException (not return cached result)
+        with pytest.raises(PausedException, match="Test pause"):
+            await executor._execute_complex_step(step, "test_input")
+
+        # Verify that the exception was not cached by checking that it's still raised
+        with pytest.raises(PausedException, match="Test pause"):
+            await executor._execute_complex_step(step, "test_input")
