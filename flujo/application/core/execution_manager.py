@@ -101,6 +101,9 @@ class ExecutionManager(Generic[ContextT]):
         """
         for idx, step in enumerate(self.pipeline.steps[start_idx:], start=start_idx):
             step_result = None
+            should_add_step_result = (
+                True  # Default to adding step result unless explicitly prevented
+            )
             try:
                 try:
                     async for item in self.step_coordinator.execute_step(
@@ -126,10 +129,59 @@ class ExecutionManager(Generic[ContextT]):
                     if step_result:
                         data = step_result.output
 
+                    if step_result is not None:
+                        # Only perform usage limit checks if limits are configured
+                        if self.usage_governor.usage_limits is not None:
+                            # Calculate running totals efficiently (O(1) operation)
+                            potential_total_cost = result.total_cost_usd + step_result.cost_usd
+                            current_total_tokens = sum(
+                                getattr(step, "token_counts", 0) for step in result.step_history
+                            )
+                            step_tokens = getattr(step_result, "token_counts", 0)
+
+                            # Use the most efficient checking method that avoids PipelineResult creation
+                            limit_exceeded, _ = self.usage_governor.check_usage_limits_efficient(
+                                current_total_cost=result.total_cost_usd,
+                                current_total_tokens=current_total_tokens,
+                                step_cost=step_result.cost_usd,
+                                step_tokens=step_tokens,
+                                span=None,  # No span needed for efficient check
+                            )
+
+                            if limit_exceeded:
+                                # Only create PipelineResult when limits are actually breached
+                                # This is the only time we need the full step history for exceptions
+                                from flujo.domain.models import PipelineResult
+
+                                # Create step history efficiently: copy existing + append new step
+                                # This is only done when limits are breached, not for every step
+                                temp_step_history = result.step_history.copy()
+                                temp_step_history.append(step_result)
+
+                                exception_result: PipelineResult[ContextT] = PipelineResult(
+                                    step_history=temp_step_history,
+                                    total_cost_usd=potential_total_cost,
+                                    final_pipeline_context=result.final_pipeline_context,
+                                    trace_tree=result.trace_tree,
+                                )
+
+                                # Re-check with full PipelineResult to get proper exception
+                                with telemetry.logfire.span(f"usage_check_{step.name}") as span:
+                                    self.usage_governor.check_usage_limits(exception_result, span)
+                                    self.usage_governor.update_telemetry_span(
+                                        span, exception_result
+                                    )
+                            else:
+                                # No limits exceeded - no PipelineResult creation needed
+                                # This is the fast path for 99% of cases
+                                pass
+
                 except PipelineAbortSignal:
                     # Update pipeline result before aborting
+                    # Add current step result to pipeline result before yielding
                     if step_result is not None:
                         self.step_coordinator.update_pipeline_result(result, step_result)
+                    should_add_step_result = False  # Prevent duplicate addition in finally block
                     self.set_final_context(result, context)
                     yield result
                     return
@@ -139,11 +191,18 @@ class ExecutionManager(Generic[ContextT]):
                         if hasattr(context, "scratchpad"):
                             context.scratchpad["status"] = "paused"
                             context.scratchpad["pause_message"] = str(e)
+                    # Add current step result to pipeline result before yielding
+                    if step_result is not None:
+                        self.step_coordinator.update_pipeline_result(result, step_result)
+                    should_add_step_result = False  # Prevent duplicate addition in finally block
                     self.set_final_context(result, context)
                     yield result
                     return
                 except UsageLimitExceededError:
-                    # Re-raise usage limit errors to be handled by the runner
+                    # Add the breaching step to the PipelineResult for consistency before re-raising the exception
+                    if step_result is not None:
+                        self.step_coordinator.update_pipeline_result(result, step_result)
+                    should_add_step_result = False
                     raise
                 except PipelineContextInitializationError as e:
                     # Convert to ContextInheritanceError if appropriate
@@ -163,12 +222,16 @@ class ExecutionManager(Generic[ContextT]):
                             else e.__context__
                         },
                     )
+                    should_add_step_result = True
                     # Do not raise here; let finally block handle
 
             finally:
-                if step_result is not None and (
-                    not result.step_history or result.step_history[-1] is not step_result
+                if self._should_add_step_result_to_pipeline(
+                    step_result, should_add_step_result, result
                 ):
+                    assert (
+                        step_result is not None
+                    )  # Type checker: we know it's not None from the helper method
                     self.step_coordinator.update_pipeline_result(result, step_result)
 
                     # Persist state after every step for robust crash recovery
@@ -192,16 +255,11 @@ class ExecutionManager(Generic[ContextT]):
                     elif run_id is not None and (
                         isinstance(step, LoopStep) or self.inside_loop_step
                     ):
-                        # For loop steps, only record step result for observability, skip state persistence
+                        # Always record step result for observability, skip state persistence
                         await self.state_manager.record_step_result(run_id, step_result, idx)
                         telemetry.logfire.debug(
                             f"Skipped state persistence for {'LoopStep' if isinstance(step, LoopStep) else 'inner step'} '{step.name}' to avoid context serialization issues"
                         )
-
-                    # Check usage limits after step result is added to pipeline result
-                    with telemetry.logfire.span(step.name) as span:
-                        self.usage_governor.check_usage_limits(result, span)
-                        self.usage_governor.update_telemetry_span(span, result)
 
                     # If the step failed due to context inheritance, propagate the error
                     if step_result is not None and not step_result.success and step_result.feedback:
@@ -239,6 +297,28 @@ class ExecutionManager(Generic[ContextT]):
             # Stop on step failure
             if not step_result.success:
                 break
+
+    def _should_add_step_result_to_pipeline(
+        self,
+        step_result: Optional[StepResult],
+        should_add_step_result: bool,
+        result: PipelineResult[ContextT],
+    ) -> bool:
+        """Determine if a step result should be added to the pipeline result.
+
+        Args:
+            step_result: The step result to potentially add
+            should_add_step_result: Flag indicating if the step result should be added
+            result: The current pipeline result
+
+        Returns:
+            True if the step result should be added to the pipeline result
+        """
+        return (
+            step_result is not None
+            and should_add_step_result
+            and (not result.step_history or result.step_history[-1] is not step_result)
+        )
 
     def set_final_context(
         self,
