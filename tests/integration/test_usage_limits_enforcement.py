@@ -344,25 +344,12 @@ def test_debug_usage_limits_detailed():
     # Create Flujo runner with usage limits
     runner = Flujo(pipeline, usage_limits=usage_limits)
 
-    print(f"Usage limits: {usage_limits}")
-    print(f"Expected limit: ${usage_limits.total_cost_usd_limit}")
-
     # Run the pipeline and expect it to fail with UsageLimitExceededError
     try:
         result = runner.run("start")
-        print("Pipeline completed unexpectedly!")
-        print(f"Total cost: ${result.total_cost_usd}")
-        print(f"Steps completed: {len(result.step_history)}")
-        for i, step in enumerate(result.step_history):
-            print(f"  Step {i + 1}: {step.name} - Cost: ${step.cost_usd}")
+        # If we reach here, the pipeline completed unexpectedly
+        assert False, "Pipeline should have been stopped by usage limits"
     except UsageLimitExceededError as e:
-        print("Pipeline stopped as expected!")
-        print(f"Error message: {e}")
-        print(f"Result total cost: ${e.result.total_cost_usd}")
-        print(f"Steps in result: {len(e.result.step_history)}")
-        for i, step in enumerate(e.result.step_history):
-            print(f"  Step {i + 1}: {step.name} - Cost: ${step.cost_usd}")
-
         # Verify the exception details
         assert "Cost limit of $1.2 exceeded" in str(e)
 
