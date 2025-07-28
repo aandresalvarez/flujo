@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import types
+import re
 from typing import Any, Optional, Type, Union, Dict, TypeVar, cast
 
 from pydantic import ValidationError
@@ -9,7 +10,7 @@ from pydantic import BaseModel as PydanticBaseModel
 from ...infra import telemetry
 from ...domain.models import BaseModel
 
-__all__ = ["_build_context_update", "_inject_context"]
+__all__ = ["_build_context_update", "_inject_context", "register_custom_type"]
 
 # Type registry for efficient type resolution
 _TYPE_REGISTRY: Dict[str, Type[Any]] = {}
@@ -19,6 +20,16 @@ T = TypeVar("T")
 def _register_type(type_name: str, type_class: Type[T]) -> None:
     """Register a type in the global type registry for efficient resolution."""
     _TYPE_REGISTRY[type_name] = type_class
+
+    # Also register common aliases for better discovery
+    if hasattr(type_class, "__name__"):
+        _TYPE_REGISTRY[type_class.__name__] = type_class
+
+
+def register_custom_type(type_class: Type[T]) -> None:
+    """Public API for users to register their custom types."""
+    if hasattr(type_class, "__name__"):
+        _register_type(type_class.__name__, type_class)
 
 
 def _resolve_type_from_string(type_str: str) -> Optional[Type[Any]]:
@@ -39,10 +50,14 @@ def _resolve_type_from_string(type_str: str) -> Optional[Type[Any]]:
         import inspect
 
         frame = inspect.currentframe()
-        while frame:
+        depth = 0
+        max_depth = 10  # Reasonable limit for call stack depth
+
+        while frame and depth < max_depth:
             if type_str in frame.f_globals:
                 return cast(Type[Any], frame.f_globals[type_str])
             frame = frame.f_back
+            depth += 1
     except Exception:
         pass
 
@@ -66,17 +81,16 @@ def _extract_union_types(union_type: Any) -> list[Type[Any]]:
             args = get_args(union_type)
             non_none_types = [t for t in args if t is not type(None)]
         except Exception:
-            # Fallback to string parsing for complex cases
+            # Generic fallback: extract type names from string representation
             type_str = str(union_type)
-            # Look for specific type names in the string
-            for type_name in [
-                "NestedModel",
-                "ComplexModel",
-                "SimpleModel",
-                "TestModel",
-                "NestedTestModel",
-            ]:
-                if type_name in type_str:
+            # Use regex to find potential type names in the string
+            # Match potential type names (capitalized words that could be types)
+            type_pattern = r"\b[A-Z][a-zA-Z0-9_]*\b"
+            potential_types = re.findall(type_pattern, type_str)
+
+            for type_name in potential_types:
+                # Skip common built-in types and generic markers
+                if type_name not in ["Union", "Optional", "List", "Dict", "Any", "None"]:
                     resolved_type = _resolve_type_from_string(type_name)
                     if resolved_type:
                         non_none_types.append(resolved_type)
@@ -202,24 +216,40 @@ def _inject_context(
     """
     original = context.model_dump()
 
-    # Register types from the context model for efficient resolution
+    # Generic type registration: extract all potential types from field annotations
     for field_name, field_info in context_model.model_fields.items():
         if field_info.annotation:
-            # Extract type names for registration
             type_str = str(field_info.annotation)
-            if "NestedModel" in type_str:
-                # Register the type if it's available in the current scope
-                try:
-                    import inspect
+            # Extract potential type names using regex
+            type_pattern = r"\b[A-Z][a-zA-Z0-9_]*\b"
+            potential_types = re.findall(type_pattern, type_str)
 
-                    frame = inspect.currentframe()
-                    while frame:
-                        if "NestedModel" in frame.f_globals:
-                            _register_type("NestedModel", frame.f_globals["NestedModel"])
-                            break
-                        frame = frame.f_back
-                except Exception:
-                    pass
+            for type_name in potential_types:
+                # Skip common built-in types
+                if type_name not in [
+                    "Union",
+                    "Optional",
+                    "List",
+                    "Dict",
+                    "Any",
+                    "None",
+                    "BaseModel",
+                ]:
+                    try:
+                        import inspect
+
+                        frame = inspect.currentframe()
+                        depth = 0
+                        max_depth = 10
+
+                        while frame and depth < max_depth:
+                            if type_name in frame.f_globals:
+                                _register_type(type_name, frame.f_globals[type_name])
+                                break
+                            frame = frame.f_back
+                            depth += 1
+                    except Exception:
+                        pass
 
     # Process update data
     for key, value in update_data.items():

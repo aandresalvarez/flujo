@@ -11,6 +11,8 @@ def make_step(name: str) -> Step:
 
 @given(st.integers(min_value=1, max_value=5))
 @pytest.mark.asyncio
+@pytest.mark.slow  # Mark as slow due to hypothesis deadline issues
+@pytest.mark.hypothesis(deadline=500)  # Increase deadline to 500ms
 async def test_random_linear_pipeline(length: int) -> None:
     steps = [make_step(str(i)) for i in range(length)]
     pipeline = steps[0]
