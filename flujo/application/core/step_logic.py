@@ -928,11 +928,16 @@ async def _execute_loop_step_logic(
                         )
 
                         if not merge_success:
-                            telemetry.logfire.warn(
-                                f"Universal context merge failed in LoopStep '{loop_step.name}' iteration {i} "
-                                f"(context fields: {list(context.__dict__.keys()) if context else 'None'}, "
-                                f"iteration context fields: {list(iteration_context.__dict__.keys()) if iteration_context else 'None'}), "
-                                "but continuing execution"
+                            context_fields = list(context.__dict__.keys()) if context else "None"
+                            iteration_fields = (
+                                list(iteration_context.__dict__.keys())
+                                if iteration_context
+                                else "None"
+                            )
+                            raise AssertionError(
+                                f"Context merge failed in LoopStep '{loop_step.name}' iteration {i}. "
+                                f"This violates the first-principles guarantee that context updates must always be applied. "
+                                f"(context fields: {context_fields}, iteration context fields: {iteration_fields})"
                             )
                         # CRITICAL: Context updates are merged directly to main context
                         # No need to reassign context reference - updates are preserved
@@ -941,11 +946,11 @@ async def _execute_loop_step_logic(
                             f"Failed to perform universal context merge in LoopStep '{loop_step.name}' iteration {i}: {e}"
                         )
 
-        # Now check the exit condition on the main context after merging updates
-        # The exit condition should evaluate based on the updated main context
+        # Now check the exit condition on the iteration context to ensure it sees the most recent updates
+        # The exit condition should evaluate based on the iteration context before merging to main context
         try:
             should_exit = loop_step.exit_condition_callable(
-                final_body_output_of_last_iteration, context
+                final_body_output_of_last_iteration, iteration_context
             )
         except Exception as e:
             telemetry.logfire.error(
