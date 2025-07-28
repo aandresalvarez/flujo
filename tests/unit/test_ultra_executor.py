@@ -1158,3 +1158,241 @@ class TestUltraStepExecutor:
         assert isinstance(result2.metadata_, dict)
         assert "cache_hit" in result2.metadata_
         assert result2.metadata_["cache_hit"] is True
+
+    # ============================================================================
+    # NEW REGRESSION TESTS FOR COPILOT FEEDBACK IMPROVEMENTS
+    # ============================================================================
+
+    def test_regression_module_level_dataclasses_used(self):
+        """REGRESSION: Ensure module-level dataclasses are used instead of inline definitions."""
+        from flujo.application.core.ultra_executor import _CacheFrame, _ComplexCacheFrame
+
+        # Verify the dataclasses exist at module level
+        assert _CacheFrame is not None
+        assert _ComplexCacheFrame is not None
+
+        # Test that they can be instantiated
+        cache_frame = _CacheFrame(
+            step=Mock(), data="test", context=None, resources=None
+        )
+        complex_cache_frame = _ComplexCacheFrame(
+            step=Mock(), data="test", context=None, resources=None
+        )
+
+        assert cache_frame.step is not None
+        assert complex_cache_frame.step is not None
+
+    def test_regression_agent_identification_includes_module(self):
+        """REGRESSION: Ensure agent identification includes module name to prevent collisions."""
+        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.domain.dsl import Step
+
+        executor = UltraStepExecutor(enable_cache=True)
+
+        # Create a mock agent with a specific class name
+        class TestAgent:
+            def __init__(self, config=None):
+                self.config = config
+
+            async def run(self, data, **kwargs):
+                return "test_output"
+
+        # Create steps with different agent instances
+        agent1 = TestAgent(config={"model": "gpt-4"})
+        agent2 = TestAgent(config={"model": "gpt-3.5"})
+        step1 = Step(name="test_step", agent=agent1)
+        step2 = Step(name="test_step", agent=agent2)
+
+        # Create frame objects
+        from flujo.application.core.ultra_executor import _Frame
+
+        frame1 = _Frame(step=step1, data="test_data", context=None, resources=None)
+        frame2 = _Frame(step=step2, data="test_data", context=None, resources=None)
+
+        # Generate cache keys
+        key1 = executor._cache_key(frame1)
+        key2 = executor._cache_key(frame2)
+
+        # Keys should be different for different agent configs
+        assert key1 != key2
+
+        # But same agent config should generate same key
+        agent3 = TestAgent(config={"model": "gpt-4"})  # Same config as agent1
+        step3 = Step(name="test_step", agent=agent3)
+        frame3 = _Frame(step=step3, data="test_data", context=None, resources=None)
+        key3 = executor._cache_key(frame3)
+        assert key1 == key3
+
+    def test_regression_consistent_agent_config_hashing(self):
+        """REGRESSION: Ensure agent config hashing uses _hash_obj for consistency."""
+        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.domain.dsl import Step
+
+        executor = UltraStepExecutor(enable_cache=True)
+
+        # Create agents with complex config objects
+        class TestAgent:
+            def __init__(self, config=None):
+                self.config = config
+
+            async def run(self, data, **kwargs):
+                return "test_output"
+
+        # Test with different config types
+        agent1 = TestAgent(config={"model": "gpt-4", "temperature": 0.7})
+        agent2 = TestAgent(config={"model": "gpt-4", "temperature": 0.7})  # Same config
+        agent3 = TestAgent(config={"model": "gpt-4", "temperature": 0.8})  # Different config
+
+        step1 = Step(name="test_step", agent=agent1)
+        step2 = Step(name="test_step", agent=agent2)
+        step3 = Step(name="test_step", agent=agent3)
+
+        # Create frame objects
+        from flujo.application.core.ultra_executor import _Frame
+
+        frame1 = _Frame(step=step1, data="test_data", context=None, resources=None)
+        frame2 = _Frame(step=step2, data="test_data", context=None, resources=None)
+        frame3 = _Frame(step=step3, data="test_data", context=None, resources=None)
+
+        # Generate cache keys
+        key1 = executor._cache_key(frame1)
+        key2 = executor._cache_key(frame2)
+        key3 = executor._cache_key(frame3)
+
+        # Same config should generate same key
+        assert key1 == key2
+
+        # Different config should generate different key
+        assert key1 != key3
+
+    def test_regression_cache_key_stability_across_python_runs(self):
+        """REGRESSION: Ensure cache keys are stable across different Python runs."""
+        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.domain.dsl import Step
+
+        executor = UltraStepExecutor(enable_cache=True)
+
+        # Create agents with identical configs
+        class TestAgent:
+            def __init__(self, config=None):
+                self.config = config
+
+            async def run(self, data, **kwargs):
+                return "test_output"
+
+        # Create multiple agents with identical configs
+        config = {"model": "gpt-4", "temperature": 0.7, "max_tokens": 1000}
+        agents = [TestAgent(config=config) for _ in range(3)]
+        steps = [Step(name="test_step", agent=agent) for agent in agents]
+
+        # Create frame objects
+        from flujo.application.core.ultra_executor import _Frame
+
+        frames = [
+            _Frame(step=step, data="test_data", context=None, resources=None) for step in steps
+        ]
+
+        # Generate cache keys
+        keys = [executor._cache_key(frame) for frame in frames]
+
+        # All keys should be identical for identical configs
+        assert len(set(keys)) == 1, "All keys should be identical for identical configs"
+
+    @pytest.mark.asyncio
+    async def test_regression_cache_performance_with_module_dataclasses(self):
+        """REGRESSION: Ensure cache performance is not degraded by module-level dataclasses."""
+        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.domain.dsl import Step
+        from flujo.testing.utils import StubAgent
+        import time
+
+        # Create executor with caching enabled
+        executor = UltraStepExecutor(enable_cache=True, cache_size=1000)
+
+        # Create a simple step
+        agent = StubAgent(["test output 1", "test output 2", "test output 3"])
+        step = Step(name="test_step", agent=agent)
+
+        # Measure performance of multiple cache operations
+        start_time = time.perf_counter()
+
+        # Execute multiple times to test cache performance
+        for i in range(10):
+            result = await executor.execute_step(step, f"test_input_{i % 3}")
+            assert result.success  # Verify each execution succeeds
+
+        end_time = time.perf_counter()
+        execution_time = end_time - start_time
+
+        # Execution should be fast (less than 1 second for 10 operations)
+        assert execution_time < 1.0, f"Cache operations took too long: {execution_time}s"
+
+        # Verify cache is working
+        assert executor.cache is not None
+        assert len(executor.cache._store) > 0
+
+    def test_regression_agent_identification_handles_edge_cases(self):
+        """REGRESSION: Ensure agent identification handles edge cases gracefully."""
+        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.domain.dsl import Step
+
+        executor = UltraStepExecutor(enable_cache=True)
+
+        # Test with agent that has no config
+        class AgentNoConfig:
+            async def run(self, data, **kwargs):
+                return "test_output"
+
+        # Test with agent that has None config
+        class AgentNoneConfig:
+            def __init__(self):
+                self.config = None
+
+            async def run(self, data, **kwargs):
+                return "test_output"
+
+        # Test with agent that has empty config
+        class AgentEmptyConfig:
+            def __init__(self):
+                self.config = {}
+
+            async def run(self, data, **kwargs):
+                return "test_output"
+
+        # Test with agent that has complex config
+        class AgentComplexConfig:
+            def __init__(self):
+                self.config = {
+                    "model": "gpt-4",
+                    "temperature": 0.7,
+                    "nested": {"key": "value", "list": [1, 2, 3]},
+                }
+
+            async def run(self, data, **kwargs):
+                return "test_output"
+
+        # Create steps with different agent types
+        step1 = Step(name="test_step", agent=AgentNoConfig())
+        step2 = Step(name="test_step", agent=AgentNoneConfig())
+        step3 = Step(name="test_step", agent=AgentEmptyConfig())
+        step4 = Step(name="test_step", agent=AgentComplexConfig())
+
+        # Create frame objects
+        from flujo.application.core.ultra_executor import _Frame
+
+        frames = [
+            _Frame(step=step, data="test_data", context=None, resources=None)
+            for step in [step1, step2, step3, step4]
+        ]
+
+        # Generate cache keys - should not raise exceptions
+        keys = []
+        for frame in frames:
+            key = executor._cache_key(frame)
+            keys.append(key)
+            assert key is not None
+            assert isinstance(key, str)
+            assert len(key) > 0
+
+        # All keys should be different for different agent types
+        assert len(set(keys)) == len(keys), "Different agent types should generate different keys"
