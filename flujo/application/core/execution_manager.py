@@ -137,13 +137,10 @@ class ExecutionManager(Generic[ContextT]):
                             # Calculate potential total cost only when needed
                             potential_total_cost = result.total_cost_usd + step_result.cost_usd
 
-                            # Create temporary result for usage check with minimal overhead
-                            from flujo.domain.models import PipelineResult
-
-                            # Use efficient list concatenation without creating intermediate copy
+                            # Create a new step history list for the temporary result (do not mutate the original).
+                            # This ensures the exception contains the correct state at the moment of the limit breach.
                             temp_result: PipelineResult[ContextT] = PipelineResult(
-                                step_history=result.step_history
-                                + [step_result],  # Direct concatenation
+                                step_history=result.step_history + [step_result],
                                 total_cost_usd=potential_total_cost,
                                 final_pipeline_context=result.final_pipeline_context,
                                 trace_tree=result.trace_tree,
