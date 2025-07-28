@@ -314,9 +314,12 @@ class TestPersistencePerformanceOverhead:
             logger.debug(f"Changed context serialization: {changed_serialization_time:.6f}s")
 
             # The cached serialization should be significantly faster
-            assert cached_serialization_time < first_serialization_time * 0.8, (
+            # Use more lenient threshold in CI environments due to timing variations
+            threshold = 0.6 if os.getenv("CI") == "true" else 0.8
+            assert cached_serialization_time < first_serialization_time * threshold, (
                 f"Cached serialization ({cached_serialization_time:.6f}s) should be faster than "
-                f"first serialization ({first_serialization_time:.6f}s) - timing too close"
+                f"first serialization ({first_serialization_time:.6f}s) - timing too close "
+                f"(threshold: {threshold})"
             )
 
             # Changed context should take similar time to first serialization (both require full serialization)

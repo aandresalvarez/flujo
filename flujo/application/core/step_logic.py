@@ -1465,6 +1465,8 @@ async def _run_step_logic(
                     partial = (
                         "".join(chunks)
                         if chunks and all(isinstance(c, str) for c in chunks)
+                        else b"".join(chunks)
+                        if chunks and all(isinstance(c, bytes) for c in chunks)
                         else chunks
                     )
                     raw_output = partial
