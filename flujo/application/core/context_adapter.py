@@ -441,8 +441,10 @@ def _inject_context(
             if hasattr(context, "model_fields"):
                 available_fields = list(context.model_fields.keys())
             raise ContextFieldError(key, context.__class__.__name__, available_fields)
-        # If the field exists on the context, set it directly
-        setattr(context, key, value)
+        else:
+            # If the field exists on the context but is not in the model, set it directly
+            # This handles dynamic fields that may be added at runtime
+            setattr(context, key, value)
 
     # Final pass: re-apply deserialization to ensure consistency
     for key in context_model.model_fields:
