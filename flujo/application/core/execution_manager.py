@@ -133,18 +133,21 @@ class ExecutionManager(Generic[ContextT]):
                     # This ensures we stop before the next step starts
                     if step_result is not None:
                         # Check usage limits after step result would be added to pipeline result
-                        # Construct a new PipelineResult for the usage check
-                        from flujo.domain.models import PipelineResult
+                        # Optimize by calculating potential total cost first
+                        potential_total_cost = result.total_cost_usd + step_result.cost_usd
 
-                        temp_step_history = list(result.step_history) + [step_result]
-                        temp_total_cost = sum(s.cost_usd for s in temp_step_history)
-                        temp_result: PipelineResult[ContextT] = PipelineResult(
-                            step_history=temp_step_history,
-                            total_cost_usd=temp_total_cost,
-                        )
-                        with telemetry.logfire.span(f"usage_check_{step.name}") as span:
-                            self.usage_governor.check_usage_limits(temp_result, span)
-                            self.usage_governor.update_telemetry_span(span, temp_result)
+                        # Only create temporary objects if we need to check limits
+                        if self.usage_governor.usage_limits is not None:
+                            from flujo.domain.models import PipelineResult
+
+                            temp_step_history = list(result.step_history) + [step_result]
+                            temp_result: PipelineResult[ContextT] = PipelineResult(
+                                step_history=temp_step_history,
+                                total_cost_usd=potential_total_cost,
+                            )
+                            with telemetry.logfire.span(f"usage_check_{step.name}") as span:
+                                self.usage_governor.check_usage_limits(temp_result, span)
+                                self.usage_governor.update_telemetry_span(span, temp_result)
                         # If we reach here, the usage check passed, so keep should_add_step_result = True
 
                 except PipelineAbortSignal:
