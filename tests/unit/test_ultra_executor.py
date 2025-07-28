@@ -1172,9 +1172,7 @@ class TestUltraStepExecutor:
         assert _ComplexCacheFrame is not None
 
         # Test that they can be instantiated
-        cache_frame = _CacheFrame(
-            step=Mock(), data="test", context=None, resources=None
-        )
+        cache_frame = _CacheFrame(step=Mock(), data="test", context=None, resources=None)
         complex_cache_frame = _ComplexCacheFrame(
             step=Mock(), data="test", context=None, resources=None
         )
@@ -1445,6 +1443,7 @@ class TestUltraStepExecutor:
 
         # Get the source code of the ultra_executor module
         from flujo.application.core import ultra_executor
+
         source = inspect.getsource(ultra_executor)
 
         # Parse the source code
@@ -1454,21 +1453,22 @@ class TestUltraStepExecutor:
         model_copy_calls = []
         for node in ast.walk(tree):
             if isinstance(node, ast.Call):
-                if (isinstance(node.func, ast.Attribute) and 
-                    node.func.attr == 'model_copy'):
+                if isinstance(node.func, ast.Attribute) and node.func.attr == "model_copy":
                     model_copy_calls.append(node)
 
         # Verify that model_copy is used for caching
         assert len(model_copy_calls) > 0, "model_copy should be used for cache copying"
-        
+
         # Verify that deepcopy is not imported
         deepcopy_imports = []
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom):
-                if node.module == 'copy' and any(alias.name == 'deepcopy' for alias in node.names):
+                if node.module == "copy" and any(alias.name == "deepcopy" for alias in node.names):
                     deepcopy_imports.append(node)
-        
-        assert len(deepcopy_imports) == 0, "deepcopy should not be imported - use model_copy instead"
+
+        assert len(deepcopy_imports) == 0, (
+            "deepcopy should not be imported - use model_copy instead"
+        )
 
     @pytest.mark.asyncio
     async def test_regression_cache_key_always_defined(self):

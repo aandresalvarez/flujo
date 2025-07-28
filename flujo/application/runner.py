@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import inspect
 import weakref
-import copy
 import os
 from datetime import datetime
 from typing import (
@@ -536,7 +535,10 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             try:
                 # CRITICAL FIX: Create a deep copy of initial context data to prevent shared state
                 import copy
-                context_data = copy.deepcopy(self.initial_context_data) if self.initial_context_data else {}
+
+                context_data = (
+                    copy.deepcopy(self.initial_context_data) if self.initial_context_data else {}
+                )
                 if initial_context_data:
                     # Also deep copy the initial_context_data to prevent shared state
                     context_data.update(copy.deepcopy(initial_context_data))
@@ -981,6 +983,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         ) -> PipelineResult[ContextT]:
             # CRITICAL FIX: Create deep copies to prevent shared state between concurrent runs
             import copy
+
             initial_sub_context_data: Dict[str, Any] = {}
             if inherit_context and context is not None:
                 initial_sub_context_data = copy.deepcopy(context.model_dump())

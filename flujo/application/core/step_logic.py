@@ -591,9 +591,16 @@ async def _execute_parallel_step_logic(
                             elif isinstance(current_value, list) and isinstance(value, list):
                                 # Type-safe list merging with validation
                                 _safe_merge_list(current_value, value)
-                            elif isinstance(current_value, (int, float)) and isinstance(value, (int, float)):
+                            elif isinstance(current_value, (int, float)) and isinstance(
+                                value, (int, float)
+                            ):
                                 # For numeric types, accumulate the values (important for counters)
-                                if key in ['accumulated_value', 'counter', 'count', 'iteration_count']:
+                                if key in [
+                                    "accumulated_value",
+                                    "counter",
+                                    "count",
+                                    "iteration_count",
+                                ]:
                                     setattr(context, key, current_value + value)
                                 else:
                                     # For other numeric fields, use the maximum value
