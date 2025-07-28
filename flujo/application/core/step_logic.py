@@ -841,11 +841,11 @@ async def _execute_loop_step_logic(
                     # Re-raise the exception to maintain the first-principles guarantee
                     raise
 
-        # Now check the exit condition on the main context after merging updates
-        # The exit condition should evaluate based on the updated main context to maintain backward compatibility
+        # Now check the exit condition on the iteration context to maintain backward compatibility
+        # The exit condition should evaluate based on the iteration context to preserve existing behavior
         try:
             should_exit = loop_step.exit_condition_callable(
-                final_body_output_of_last_iteration, context
+                final_body_output_of_last_iteration, iteration_context
             )
         except Exception as e:
             telemetry.logfire.error(

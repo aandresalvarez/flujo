@@ -1,8 +1,9 @@
 import os
-from typing import Any, Optional
+from typing import Any, Optional, Dict
 from flujo import Flujo
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.dsl import Step
+from flujo.state.backends.base import StateBackend
 
 # Set test mode environment variable
 os.environ["FLUJO_TEST_MODE"] = "1"
@@ -54,3 +55,27 @@ def create_test_flujo(
         pipeline_id = f"test_{uuid.uuid4().hex[:8]}"
 
     return Flujo(pipeline, pipeline_name=pipeline_name, pipeline_id=pipeline_id, **kwargs)
+
+
+class NoOpStateBackend(StateBackend):
+    """A state backend that does nothing - used to disable state persistence in tests."""
+
+    async def save_state(self, run_id: str, state: Dict[str, Any]) -> None:
+        # Do nothing - no state persistence
+        pass
+
+    async def load_state(self, run_id: str) -> Optional[Dict[str, Any]]:
+        # Return None - no state to load
+        return None
+
+    async def delete_state(self, run_id: str) -> None:
+        # Do nothing
+        pass
+
+    async def get_trace(self, run_id: str) -> Any:
+        # Return None - no trace data
+        return None
+
+    async def save_trace(self, run_id: str, trace: Any) -> None:
+        # Do nothing - no trace persistence
+        pass
