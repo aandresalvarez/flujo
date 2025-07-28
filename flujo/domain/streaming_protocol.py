@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Protocol, AsyncIterator, Any, TypeVar, runtime_checkable
+from typing import Protocol, AsyncIterator, Any, TypeVar, runtime_checkable, TypeAlias
 
 # Type variables for streaming data types
 StreamInT = TypeVar("StreamInT", contravariant=True)
@@ -70,8 +70,8 @@ class StreamingAgentProtocol(Protocol[StreamInT]):
 
 
 # Type-safe streaming protocols for common use cases
-TextStreamingAgent = TextStreamingAgentProtocol[Any, str]
-BinaryStreamingAgent = BinaryStreamingAgentProtocol[Any, bytes]
+TextStreamingAgent: TypeAlias = TextStreamingAgentProtocol[Any, str]
+BinaryStreamingAgent: TypeAlias = BinaryStreamingAgentProtocol[Any, bytes]
 
 # Legacy type for backward compatibility
-StreamingAgent = StreamingAgentProtocol[Any]
+StreamingAgent: TypeAlias = StreamingAgentProtocol[Any]

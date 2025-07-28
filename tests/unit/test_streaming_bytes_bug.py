@@ -234,7 +234,9 @@ class TestStreamingBytesBug:
         expected_bytes = b"chunk" * 1000 * 10
         assert result.output == expected_bytes
         assert isinstance(result.output, bytes)
-        assert len(result.output) == 50000  # 5 bytes * 1000 * 10
+        assert (
+            len(result.output) == 50000
+        )  # Each 'chunk' is a 5-byte binary string (b"chunk"), repeated 1000 times per chunk and 10 chunks in total.
 
     @pytest.mark.asyncio
     async def test_protocol_type_safety(self):
