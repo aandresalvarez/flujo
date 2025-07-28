@@ -6,14 +6,15 @@ decorated functions in the loop body. This combination was identified as potenti
 problematic due to context state management across iterations.
 """
 
+from __future__ import annotations
+
 import pytest
 from typing import Any
 
-from flujo.domain import Step, Pipeline
+from flujo import Step, Pipeline, step
 from flujo.domain.models import PipelineContext
-from flujo.domain.dsl import step
 from flujo.testing.utils import gather_result
-from tests.conftest import create_test_flujo
+from tests.conftest import create_test_flujo, NoOpStateBackend
 
 
 class LoopContext(PipelineContext):
@@ -132,10 +133,16 @@ async def test_loop_with_context_updates_complex():
 async def test_loop_with_context_updates_mapper_conflicts():
     """Test loop execution with mappers that might conflict with context updates."""
 
-    def iteration_mapper(output: dict, context: LoopContext, iteration: int) -> int:
+    def iteration_mapper(output: Any, context: LoopContext, iteration: int) -> int:
         """Mapper that might conflict with context updates."""
-        # This mapper should work correctly with context updates
-        return output.get("current_data", 1) + iteration
+        # Handle both dict and int outputs from steps
+        if isinstance(output, dict):
+            return output.get("current_data", 1) + iteration
+        elif isinstance(output, (int, float)):
+            return output + iteration
+        else:
+            # Default fallback
+            return 1 + iteration
 
     def exit_condition(data: Any, context: LoopContext) -> bool:
         """Exit condition that depends on context state."""
@@ -228,15 +235,15 @@ async def test_loop_with_context_updates_state_isolation():
     async def state_isolation_step(data: Any, *, context: LoopContext) -> dict:
         """Step that tests state isolation between iterations."""
         # Each iteration should start with a clean context state
+
+        # Only return data that doesn't include context fields to avoid resetting context
         iteration_data = {
-            "iteration_count": context.iteration_count,
             "input_data": data,
             "timestamp": "iteration_data",  # This should be isolated
         }
 
         context.iteration_count += 1
         context.accumulated_value += data if isinstance(data, (int, float)) else 1
-
         return iteration_data
 
     loop_body = Pipeline.from_step(state_isolation_step)
@@ -248,8 +255,17 @@ async def test_loop_with_context_updates_state_isolation():
         max_loops=5,
     )
 
-    runner = create_test_flujo(loop_step, context_model=LoopContext)
-    result = await gather_result(runner, 5)
+    runner = create_test_flujo(
+        loop_step, context_model=LoopContext, state_backend=NoOpStateBackend()
+    )
+    result = await gather_result(
+        runner,
+        5,
+        initial_context_data={
+            "iteration_count": 0,
+            "accumulated_value": 0,
+        },
+    )
 
     # Verify state isolation and context propagation
     # FIXED: Context updates are now properly applied between iterations

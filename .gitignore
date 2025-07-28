@@ -44,7 +44,7 @@ venv.bak/
 .env.development.local
 .env.test.local
 .env.production.local
-.cursor/
+
 # Project specific
 site/
 settings.json

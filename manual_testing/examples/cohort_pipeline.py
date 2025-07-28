@@ -6,7 +6,7 @@ from flujo.domain.models import PipelineContext
 from flujo.infra.settings import settings as flujo_settings
 
 # --- STEP 3: INTRODUCING STATE WITH PIPELINECONTEXT ---
-# 
+#
 # This step introduces the core state management concept in Flujo:
 # - Custom PipelineContext: Creating a Pydantic model to store state
 # - @step(updates_context=True): Steps that can modify the shared context
@@ -20,7 +20,7 @@ from flujo.infra.settings import settings as flujo_settings
 class CohortContext(PipelineContext):
     """
     Custom PipelineContext that stores the evolving state of our cohort definition.
-    
+
     This is the key concept: instead of passing data between steps as function
     parameters, we store it in a shared context that all steps can access and modify.
     """
@@ -49,20 +49,20 @@ ClarificationAgent = make_agent_async(
 async def assess_and_refine(definition_to_assess: str, *, context: CohortContext) -> dict:
     """
     This step calls the agent and returns a dictionary of updates for the context.
-    
+
     The @step(updates_context=True) decorator tells Flujo that this step can
     modify the shared context. The return value is a dictionary of field updates.
-    
+
     Args:
         definition_to_assess: The definition to assess (from the loop input)
         context: The shared CohortContext that all steps can access
-    
+
     Returns:
         dict: Updates to apply to the context
     """
     # Call the agent with the current definition
     agent_response = await ClarificationAgent.run(definition_to_assess, context=context)
-    
+
     # Extract the actual output from the agent response
     # The agent might return an object with an 'output' attribute or a string directly
     agent_output = getattr(agent_response, "output", agent_response)
@@ -70,22 +70,24 @@ async def assess_and_refine(definition_to_assess: str, *, context: CohortContext
     if "[CLARITY_CONFIRMED]" in agent_output:
         # If clear, update the definition and set the 'is_clear' flag to True
         final_definition = agent_output.replace("[CLARITY_CONFIRMED]", "").strip()
-        return {
+        updates = {
             "current_definition": final_definition,
             "is_clear": True
         }
+        return updates
     else:
         # If not clear, simulate human clarification based on the agent's question
         # This is a simplified simulation for Step 3 demonstration.
         clarification = _simulate_human_clarification(agent_output, context.clarification_count)
-        
+
         # Combine the old definition with the clarification for the next round
         new_definition = f"Definition so far: '{context.current_definition}'. Clarification: '{clarification}'"
-        return {
+        updates = {
             "current_definition": new_definition,
             "is_clear": False,
             "clarification_count": context.clarification_count + 1
         }
+        return updates
 
 def _simulate_human_clarification(agent_question: str, clarification_count: int) -> str:
     """
@@ -93,7 +95,7 @@ def _simulate_human_clarification(agent_question: str, clarification_count: int)
     This is a simplified simulation for Step 3 demonstration.
     """
     question_lower = agent_question.lower()
-    
+
     if "age" in question_lower or "time frame" in question_lower:
         return "patients of all ages, seen in the last 12 months"
     elif "medication" in question_lower and "currently" in question_lower:
@@ -119,7 +121,7 @@ loop_body_pipeline = Pipeline.from_step(assess_and_refine)
 def exit_loop_when_clear(output: dict, context: CohortContext) -> bool:
     """
     The loop now checks the `is_clear` flag in our context.
-    
+
     This is much more robust than parsing strings - we have explicit state!
     """
     print(f"  [Loop Check] Context 'is_clear' flag is: {context.is_clear}")
@@ -128,7 +130,7 @@ def exit_loop_when_clear(output: dict, context: CohortContext) -> bool:
 def map_context_to_input(initial_input: str, context: CohortContext) -> str:
     """
     The first loop iteration should use the definition from the context.
-    
+
     This mapper controls what data flows into the loop body on the first iteration.
     """
     return context.current_definition
@@ -136,7 +138,7 @@ def map_context_to_input(initial_input: str, context: CohortContext) -> str:
 def map_output_to_next_input(last_output: dict, context: CohortContext, i: int) -> str:
     """
     Subsequent iterations also use the updated definition from the context.
-    
+
     This mapper controls what data flows into the loop body on subsequent iterations.
     """
     # Use the last output's current_definition if available, otherwise fall back to context

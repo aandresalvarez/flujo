@@ -190,9 +190,6 @@ def safe_merge_context_updates(
                         # Use setattr to trigger Pydantic validation
                         setattr(target_context, field_name, actual_source_value)
                         updated_count += 1
-                        logger.debug(
-                            f"Updated field '{field_name}' from {current_value} to {actual_source_value}"
-                        )
                 except (TypeError, ValueError, AttributeError, ValidationError) as e:
                     # Enhanced error handling for loop context updates
                     error_msg = f"Failed to update field '{field_name}': {e}"
@@ -208,15 +205,12 @@ def safe_merge_context_updates(
                 continue
 
         if updated_count > 0:
-            logger.debug(f"Successfully updated {updated_count} fields in context")
-
             # Note: We don't validate the entire context after updates to allow for more flexible handling
             # of invalid values as expected by tests. Pydantic v2 field validators are not automatically
             # called on attribute assignment, so this approach is more permissive.
 
             return True
         else:
-            logger.debug("No fields were updated during context merge")
             return True
 
     except Exception as e:
