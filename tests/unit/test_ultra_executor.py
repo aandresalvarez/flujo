@@ -3,6 +3,7 @@
 import pytest
 import asyncio
 from unittest.mock import Mock, AsyncMock
+from typing import Any
 
 from flujo.application.core.ultra_executor import (
     UltraStepExecutor,
@@ -402,6 +403,189 @@ class TestUltraStepExecutor:
         assert hash1 == hash2  # Same content, same hash
         assert hash1 != hash3  # Different content, different hash
 
+    def test_hash_obj_bytes_fix(self, executor):
+        """Test that bytes are handled correctly without string conversion."""
+        # Test bytes handling - this was a critical bug
+        bytes_data = b"bytes_content"
+        str_data = "string_content"
+
+        bytes_hash = executor._hash_obj(bytes_data)
+        str_hash = executor._hash_obj(str_data)
+
+        # These should be different because bytes and string have different content
+        assert bytes_hash != str_hash
+
+        # Same bytes should hash to same value
+        bytes_hash2 = executor._hash_obj(bytes_data)
+        assert bytes_hash == bytes_hash2
+
+    def test_stable_cache_keys(self, executor):
+        """Test that cache keys are stable across different runs."""
+        step = Mock(spec=Step)
+        step.name = "test_step"
+        step.agent = Mock()
+        step.agent.run = lambda x: x
+
+        # Create frame objects
+        from flujo.application.core.ultra_executor import _Frame
+
+        frame1 = _Frame(step=step, data="test_data", context=None, resources=None)
+        frame2 = _Frame(step=step, data="test_data", context=None, resources=None)
+
+        # Same step and data should generate same cache key
+        key1 = executor._cache_key(frame1)
+        key2 = executor._cache_key(frame2)
+        assert key1 == key2
+
+    @pytest.mark.asyncio
+    async def test_caching_functionality(self):
+        """Test that caching actually works in the executor."""
+        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.domain.dsl import Step
+        from flujo.testing.utils import StubAgent
+
+        # Create executor with caching enabled
+        executor = UltraStepExecutor(enable_cache=True, cache_size=100)
+
+        # Create a simple step with multiple outputs
+        agent = StubAgent(["test output 1", "test output 2", "test output 3"])
+        step = Step(name="test_step", agent=agent)
+
+        # First execution - should be cache miss
+        result1 = await executor.execute_step(step, "test_input")
+        assert result1.success
+        assert "cache_hit" not in (result1.metadata_ or {})
+
+        # Second execution with same input - should be cache hit
+        result2 = await executor.execute_step(step, "test_input")
+        assert result2.success
+        assert result2.metadata_.get("cache_hit") is True
+
+        # Third execution with different input - should be cache miss
+        result3 = await executor.execute_step(step, "different_input")
+        assert result3.success
+        assert "cache_hit" not in (result3.metadata_ or {})
+
+    @pytest.mark.asyncio
+    async def test_caching_with_context(self):
+        """Test caching works correctly with context."""
+        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.domain.dsl import Step
+        from flujo.testing.utils import StubAgent
+        from flujo.domain.models import BaseModel
+
+        class TestContext(BaseModel):
+            value: str = "default"
+
+        # Create executor with caching enabled
+        executor = UltraStepExecutor(enable_cache=True, cache_size=100)
+
+        # Create a simple step with multiple outputs
+        agent = StubAgent(["test output 1", "test output 2", "test output 3"])
+        step = Step(name="test_step", agent=agent)
+
+        context1 = TestContext(value="context1")
+        context2 = TestContext(value="context2")
+
+        # First execution with context1
+        result1 = await executor.execute_step(step, "test_input", context=context1)
+        assert result1.success
+        assert "cache_hit" not in (result1.metadata_ or {})
+
+        # Second execution with same input and context - should be cache hit
+        result2 = await executor.execute_step(step, "test_input", context=context1)
+        assert result2.success
+        assert result2.metadata_.get("cache_hit") is True
+
+        # Third execution with different context - should be cache miss
+        result3 = await executor.execute_step(step, "test_input", context=context2)
+        assert result3.success
+        assert "cache_hit" not in (result3.metadata_ or {})
+
+    @pytest.mark.asyncio
+    async def test_caching_disabled(self):
+        """Test that caching is properly disabled when enable_cache=False."""
+        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.domain.dsl import Step
+        from flujo.testing.utils import StubAgent
+
+        # Create executor with caching disabled
+        executor = UltraStepExecutor(enable_cache=False)
+
+        # Create a simple step with multiple outputs
+        agent = StubAgent(["test output 1", "test output 2"])
+        step = Step(name="test_step", agent=agent)
+
+        # First execution
+        result1 = await executor.execute_step(step, "test_input")
+        assert result1.success
+        assert "cache_hit" not in (result1.metadata_ or {})
+
+        # Second execution with same input - should not be cache hit
+        result2 = await executor.execute_step(step, "test_input")
+        assert result2.success
+        assert "cache_hit" not in (result2.metadata_ or {})
+
+    @pytest.mark.asyncio
+    async def test_cache_key_stability(self):
+        """Test that cache keys are stable and deterministic."""
+        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.domain.dsl import Step
+        from flujo.testing.utils import StubAgent
+
+        # Create two executors
+        executor1 = UltraStepExecutor(enable_cache=True)
+        executor2 = UltraStepExecutor(enable_cache=True)
+
+        # Create identical steps
+        agent1 = StubAgent(["test output"])
+        agent2 = StubAgent(["test output"])
+        step1 = Step(name="test_step", agent=agent1)
+        step2 = Step(name="test_step", agent=agent2)
+
+        # Create frame objects
+        from flujo.application.core.ultra_executor import _Frame
+
+        frame1 = _Frame(step=step1, data="test_data", context=None, resources=None)
+        frame2 = _Frame(step=step2, data="test_data", context=None, resources=None)
+
+        # Generate cache keys
+        key1 = executor1._cache_key(frame1)
+        key2 = executor2._cache_key(frame2)
+
+        # Keys should be stable and deterministic for identical inputs
+        assert key1 == key2
+
+    def test_agent_identification_stability(self, executor):
+        """Test that agent identification is stable and doesn't use memory addresses."""
+        step1 = Mock(spec=Step)
+        step1.name = "test_step"
+        step1.agent = Mock()
+        step1.agent.run = lambda x: x
+
+        step2 = Mock(spec=Step)
+        step2.name = "test_step"
+        step2.agent = Mock()
+        step2.agent.run = lambda x: x
+
+        # Create frame objects
+        from flujo.application.core.ultra_executor import _Frame
+
+        frame1 = _Frame(step=step1, data="test_data", context=None, resources=None)
+        frame2 = _Frame(step=step2, data="test_data", context=None, resources=None)
+
+        # Generate cache keys
+        key1 = executor._cache_key(frame1)
+        key2 = executor._cache_key(frame2)
+
+        # Keys should be different for different agent instances
+        assert key1 != key2
+
+        # But same agent should generate same key
+        frame3 = _Frame(step=step1, data="test_data", context=None, resources=None)
+        key3 = executor._cache_key(frame3)
+        assert key1 == key3
+
     @pytest.mark.asyncio
     async def test_concurrency_limiting(self, executor):
         """Test that concurrency limiting works."""
@@ -683,3 +867,294 @@ class TestUltraStepExecutor:
                 context=None,
                 resources=None,
             )
+
+    # ============================================================================
+    # REGRESSION TESTS: Prevent caching bug from happening again
+    # ============================================================================
+
+    @pytest.mark.asyncio
+    async def test_regression_cache_integration_works(self):
+        """REGRESSION: Ensure caching is actually integrated into execution flow."""
+        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.domain.dsl import Step
+        from flujo.testing.utils import StubAgent
+
+        # Create executor with caching enabled
+        executor = UltraStepExecutor(enable_cache=True, cache_size=100)
+
+        # Create a simple step
+        agent = StubAgent(["test output 1", "test output 2"])
+        step = Step(name="test_step", agent=agent)
+
+        # First execution - should be cache miss
+        result1 = await executor.execute_step(step, "test_input")
+        assert result1.success
+        assert "cache_hit" not in (result1.metadata_ or {})
+
+        # Second execution with same input - should be cache hit
+        result2 = await executor.execute_step(step, "test_input")
+        assert result2.success
+        assert result2.metadata_.get("cache_hit") is True
+
+        # Verify the agent was only called once (proving cache worked)
+        # Note: StubAgent doesn't track calls, but we can verify cache hit metadata
+
+    @pytest.mark.asyncio
+    async def test_regression_cache_disabled_works(self):
+        """REGRESSION: Ensure caching can be properly disabled."""
+        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.domain.dsl import Step
+        from flujo.testing.utils import StubAgent
+
+        # Create executor with caching disabled
+        executor = UltraStepExecutor(enable_cache=False)
+
+        # Create a simple step
+        agent = StubAgent(["test output 1", "test output 2"])
+        step = Step(name="test_step", agent=agent)
+
+        # First execution
+        result1 = await executor.execute_step(step, "test_input")
+        assert result1.success
+        assert "cache_hit" not in (result1.metadata_ or {})
+
+        # Second execution with same input - should NOT be cache hit
+        result2 = await executor.execute_step(step, "test_input")
+        assert result2.success
+        assert "cache_hit" not in (result2.metadata_ or {})
+
+    def test_regression_cache_key_stability(self):
+        """REGRESSION: Ensure cache keys are stable and don't use memory addresses."""
+        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.domain.dsl import Step
+        from unittest.mock import Mock
+
+        executor = UltraStepExecutor(enable_cache=True)
+
+        # Create two identical steps with different agent instances
+        step1 = Step(name="test_step", agent=Mock())
+        step2 = Step(name="test_step", agent=Mock())
+
+        # Create frame objects
+        from flujo.application.core.ultra_executor import _Frame
+
+        frame1 = _Frame(step=step1, data="test_data", context=None, resources=None)
+        frame2 = _Frame(step=step2, data="test_data", context=None, resources=None)
+
+        # Generate cache keys
+        key1 = executor._cache_key(frame1)
+        key2 = executor._cache_key(frame2)
+
+        # Keys should be different for different agent instances
+        assert key1 != key2
+
+        # But same agent should generate same key
+        frame3 = _Frame(step=step1, data="test_data", context=None, resources=None)
+        key3 = executor._cache_key(frame3)
+        assert key1 == key3
+
+    def test_regression_bytes_hashing_correct(self):
+        """REGRESSION: Ensure bytes are hashed correctly without string conversion."""
+        from flujo.application.core.ultra_executor import UltraStepExecutor
+
+        executor = UltraStepExecutor(enable_cache=True)
+
+        # Test with different content to ensure proper hashing
+        bytes_data = b"bytes_content"
+        str_data = "string_content"
+
+        bytes_hash = executor._hash_obj(bytes_data)
+        str_hash = executor._hash_obj(str_data)
+
+        # These should be different because they have different content
+        assert bytes_hash != str_hash
+
+        # Same bytes should hash to same value
+        bytes_hash2 = executor._hash_obj(bytes_data)
+        assert bytes_hash == bytes_hash2
+
+        # Different bytes should hash to different values
+        bytes_data2 = b"different_bytes"
+        bytes_hash3 = executor._hash_obj(bytes_data2)
+        assert bytes_hash != bytes_hash3
+
+    @pytest.mark.asyncio
+    async def test_regression_cache_with_complex_steps(self):
+        """REGRESSION: Ensure caching works with complex steps (plugins, validators, etc.)."""
+        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.domain.dsl import Step
+        from flujo.testing.utils import StubAgent
+        from flujo.domain.plugins import PluginOutcome
+        from flujo.domain.validation import ValidationResult
+
+        # Create executor with caching enabled
+        executor = UltraStepExecutor(enable_cache=True, cache_size=100)
+
+        # Create a step with plugins and validators (complex step)
+        agent = StubAgent(["test output 1", "test output 2"])
+        step = Step(name="test_step", agent=agent)
+
+        # Create proper plugin and validator objects
+        class MockPlugin:
+            async def validate(self, data: dict) -> PluginOutcome:
+                return PluginOutcome(success=True)
+
+        class MockValidator:
+            async def validate(self, output: Any, *, context=None) -> ValidationResult:
+                return ValidationResult(is_valid=True, validator_name="MockValidator")
+
+        step.plugins = [(MockPlugin(), 1)]  # Plugin with priority
+        step.validators = [MockValidator()]
+
+        # First execution - should be cache miss
+        result1 = await executor.execute_step(step, "test_input")
+        assert result1.success
+        assert "cache_hit" not in (result1.metadata_ or {})
+
+        # Second execution with same input - should be cache hit
+        result2 = await executor.execute_step(step, "test_input")
+        assert result2.success
+        assert result2.metadata_.get("cache_hit") is True
+
+    @pytest.mark.asyncio
+    async def test_regression_cache_with_resources(self):
+        """REGRESSION: Ensure caching works correctly with resources."""
+        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.domain.dsl import Step
+        from flujo.testing.utils import StubAgent
+
+        # Create executor with caching enabled
+        executor = UltraStepExecutor(enable_cache=True, cache_size=100)
+
+        # Create a simple step
+        agent = StubAgent(["test output 1", "test output 2"])
+        step = Step(name="test_step", agent=agent)
+
+        resources1 = {"resource": "value1"}
+        resources2 = {"resource": "value2"}
+
+        # First execution with resources1
+        result1 = await executor.execute_step(step, "test_input", resources=resources1)
+        assert result1.success
+        assert "cache_hit" not in (result1.metadata_ or {})
+
+        # Second execution with same input and resources - should be cache hit
+        result2 = await executor.execute_step(step, "test_input", resources=resources1)
+        assert result2.success
+        assert result2.metadata_.get("cache_hit") is True
+
+        # Third execution with different resources - should be cache miss
+        result3 = await executor.execute_step(step, "test_input", resources=resources2)
+        assert result3.success
+        assert "cache_hit" not in (result3.metadata_ or {})
+
+    def test_regression_cache_key_includes_all_components(self):
+        """REGRESSION: Ensure cache keys include all relevant components."""
+        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.domain.dsl import Step
+        from unittest.mock import Mock
+
+        executor = UltraStepExecutor(enable_cache=True)
+
+        # Create a step
+        step = Step(name="test_step", agent=Mock())
+
+        # Create frame objects with different components
+        from flujo.application.core.ultra_executor import _Frame
+
+        frame1 = _Frame(step=step, data="data1", context=None, resources=None)
+        frame2 = _Frame(step=step, data="data2", context=None, resources=None)
+        frame3 = _Frame(step=step, data="data1", context={"ctx": "val"}, resources=None)
+        frame4 = _Frame(step=step, data="data1", context=None, resources={"res": "val"})
+
+        # Generate cache keys
+        key1 = executor._cache_key(frame1)
+        key2 = executor._cache_key(frame2)
+        key3 = executor._cache_key(frame3)
+        key4 = executor._cache_key(frame4)
+
+        # All keys should be different
+        assert key1 != key2  # Different data
+        assert key1 != key3  # Different context
+        assert key1 != key4  # Different resources
+        assert key2 != key3  # Different data and context
+        assert key2 != key4  # Different data and resources
+        assert key3 != key4  # Different context and resources
+
+    @pytest.mark.asyncio
+    async def test_regression_cache_persistence_across_executor_instances(self):
+        """REGRESSION: Ensure cache keys are stable across different executor instances."""
+        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.domain.dsl import Step
+        from flujo.testing.utils import StubAgent
+
+        # Create two executors
+        executor1 = UltraStepExecutor(enable_cache=True)
+        executor2 = UltraStepExecutor(enable_cache=True)
+
+        # Create identical steps
+        agent1 = StubAgent(["test output"])
+        agent2 = StubAgent(["test output"])
+        step1 = Step(name="test_step", agent=agent1)
+        step2 = Step(name="test_step", agent=agent2)
+
+        # Create frame objects
+        from flujo.application.core.ultra_executor import _Frame
+
+        frame1 = _Frame(step=step1, data="test_data", context=None, resources=None)
+        frame2 = _Frame(step=step2, data="test_data", context=None, resources=None)
+
+        # Generate cache keys
+        key1 = executor1._cache_key(frame1)
+        key2 = executor2._cache_key(frame2)
+
+        # Keys should be stable and deterministic for identical inputs
+        assert key1 == key2
+
+    def test_regression_cache_key_handles_edge_cases(self):
+        """REGRESSION: Ensure cache key generation handles edge cases gracefully."""
+        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.domain.dsl import Step
+
+        executor = UltraStepExecutor(enable_cache=True)
+
+        # Test with None values
+        step = Step(name="test_step", agent=None)
+        from flujo.application.core.ultra_executor import _Frame
+
+        frame = _Frame(step=step, data=None, context=None, resources=None)
+        key = executor._cache_key(frame)
+
+        # Should not raise an exception
+        assert key is not None
+        assert isinstance(key, str)
+        assert len(key) > 0
+
+    @pytest.mark.asyncio
+    async def test_regression_cache_metadata_correct(self):
+        """REGRESSION: Ensure cache hit metadata is set correctly."""
+        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.domain.dsl import Step
+        from flujo.testing.utils import StubAgent
+
+        # Create executor with caching enabled
+        executor = UltraStepExecutor(enable_cache=True, cache_size=100)
+
+        # Create a simple step
+        agent = StubAgent(["test output 1", "test output 2"])
+        step = Step(name="test_step", agent=agent)
+
+        # First execution - should be cache miss
+        result1 = await executor.execute_step(step, "test_input")
+        assert result1.success
+        assert "cache_hit" not in (result1.metadata_ or {})
+
+        # Second execution with same input - should be cache hit
+        result2 = await executor.execute_step(step, "test_input")
+        assert result2.success
+        assert result2.metadata_.get("cache_hit") is True
+
+        # Verify metadata structure
+        assert isinstance(result2.metadata_, dict)
+        assert "cache_hit" in result2.metadata_
+        assert result2.metadata_["cache_hit"] is True

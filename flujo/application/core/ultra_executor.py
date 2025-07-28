@@ -31,7 +31,6 @@ from typing import (
     Optional,
     TypeVar,
     TYPE_CHECKING,
-    cast,
 )
 
 if TYPE_CHECKING:
@@ -80,8 +79,6 @@ from ...domain.resources import AppResources
 from ...exceptions import (
     UsageLimitExceededError,
     PausedException,
-    InfiniteFallbackError,
-    InfiniteRedirectError,
     PricingNotConfiguredError,
 )
 
@@ -290,8 +287,11 @@ class UltraStepExecutor(Generic[TContext]):
         # Fast path for common types
         if obj is None:
             return "null"
-        if isinstance(obj, (str, bytes, int, float, bool)):
+        if isinstance(obj, (str, int, float, bool)):
             return _hash_bytes(str(obj).encode())
+        if isinstance(obj, bytes):
+            # CRITICAL FIX: Handle bytes directly without string conversion
+            return _hash_bytes(obj)
 
         # Try cached hash first
         try:
@@ -348,7 +348,19 @@ class UltraStepExecutor(Generic[TContext]):
             return obj
 
     def _cache_key(self, f: Any) -> str:
-        """Generate cache key efficiently."""
+        """Generate cache key efficiently with stable agent identification."""
+        # CRITICAL FIX: Use stable agent identification instead of memory address
+        agent = getattr(f.step, "agent", None)
+        agent_id = None
+        if agent is not None:
+            # Use agent type and configuration for stable identification
+            agent_type = type(agent).__name__
+            agent_config = getattr(agent, "config", None)
+            if agent_config:
+                agent_id = f"{agent_type}:{hash(str(agent_config))}"
+            else:
+                agent_id = agent_type
+
         # Ultra-fast path for common case (no context/resources)
         if f.context is None and f.resources is None:
             # Use faster string concatenation instead of dict
@@ -356,7 +368,7 @@ class UltraStepExecutor(Generic[TContext]):
                 f.step.name,
                 type(f.step).__name__,
                 self._hash_obj(f.data),
-                str(getattr(f.step, "agent", None) and id(f.step.agent)),
+                agent_id or "no_agent",
             ]
             return _hash_bytes("|".join(key_parts).encode())
         else:
@@ -367,7 +379,7 @@ class UltraStepExecutor(Generic[TContext]):
                 "dh": self._hash_obj(f.data),
                 "ch": self._hash_obj(f.context) if f.context else None,
                 "rh": self._hash_obj(f.resources) if f.resources else None,
-                "ar": getattr(f.step, "agent", None) and id(f.step.agent),
+                "ar": agent_id,
             }
             return _hash_bytes(_dumps(payload))
 
@@ -392,6 +404,29 @@ class UltraStepExecutor(Generic[TContext]):
         This method does not check usage limits directly to ensure step history
         is always complete and logic is not duplicated.
         """
+
+        # CRITICAL FIX: Add caching logic
+        if self._cache is not None:
+            # Create frame for cache key generation
+            from dataclasses import dataclass
+
+            @dataclass
+            class _CacheFrame:
+                step: Step[Any, Any]
+                data: Any
+                context: Optional[Any]
+                resources: Optional[Any]
+
+            cache_frame = _CacheFrame(step=step, data=data, context=context, resources=resources)
+            cache_key = self._cache_key(cache_frame)
+
+            # Check cache for existing result
+            cached_result = self._cache.get(cache_key)
+            if cached_result is not None:
+                # Return cached result with cache hit metadata
+                cached_result.metadata_ = cached_result.metadata_ or {}
+                cached_result.metadata_["cache_hit"] = True
+                return cached_result
 
         import inspect
         from unittest.mock import Mock, MagicMock, AsyncMock
@@ -593,8 +628,8 @@ class UltraStepExecutor(Generic[TContext]):
                                         raw  # Use original output on processor failure
                                     )
 
-                        # Return immediately
-                        return StepResult(
+                        # Create result
+                        result = StepResult(
                             name=step.name,
                             output=getattr(processed_output, "output", processed_output),
                             success=True,
@@ -603,6 +638,13 @@ class UltraStepExecutor(Generic[TContext]):
                             cost_usd=cost_usd,
                             token_counts=token_counts,
                         )
+
+                        # CRITICAL FIX: Cache successful results
+                        if self._cache is not None and result.success:
+                            self._cache.set(cache_key, result)
+
+                        # Return immediately
+                        return result
                     except (TypeError, UsageLimitExceededError, PricingNotConfiguredError) as e:
                         # Re-raise critical exceptions immediately
                         if isinstance(e, TypeError) and "returned a Mock object" in str(e):
@@ -649,6 +691,31 @@ class UltraStepExecutor(Generic[TContext]):
         breach_event: Optional[Any] = None,
     ) -> StepResult:
         """Execute complex steps (with plugins, validators, fallbacks) using step logic helpers."""
+
+        # CRITICAL FIX: Add caching logic for complex steps
+        if self._cache is not None:
+            # Create frame for cache key generation
+            from dataclasses import dataclass
+
+            @dataclass
+            class _ComplexCacheFrame:
+                step: Step[Any, Any]
+                data: Any
+                context: Optional[Any]
+                resources: Optional[Any]
+
+            cache_frame = _ComplexCacheFrame(
+                step=step, data=data, context=context, resources=resources
+            )
+            cache_key = self._cache_key(cache_frame)
+
+            # Check cache for existing result
+            cached_result = self._cache.get(cache_key)
+            if cached_result is not None:
+                # Return cached result with cache hit metadata
+                cached_result.metadata_ = cached_result.metadata_ or {}
+                cached_result.metadata_["cache_hit"] = True
+                return cached_result
 
         # Import step logic helpers
         from .step_logic import (
@@ -714,9 +781,9 @@ class UltraStepExecutor(Generic[TContext]):
 
         # Handle different step types
         if isinstance(step, CacheStep):
-            return await _handle_cache_step(step, data, context, resources, step_executor)
+            result = await _handle_cache_step(step, data, context, resources, step_executor)
         elif isinstance(step, LoopStep):
-            return await _handle_loop_step(
+            result = await _handle_loop_step(
                 step,
                 data,
                 context,
@@ -727,7 +794,7 @@ class UltraStepExecutor(Generic[TContext]):
                 context_setter=lambda result, ctx: None,
             )
         elif isinstance(step, ConditionalStep):
-            return await _handle_conditional_step(
+            result = await _handle_conditional_step(
                 step,
                 data,
                 context,
@@ -737,7 +804,7 @@ class UltraStepExecutor(Generic[TContext]):
                 usage_limits=usage_limits,
             )
         elif isinstance(step, DynamicParallelRouterStep):
-            return await _handle_dynamic_router_step(
+            result = await _handle_dynamic_router_step(
                 step,
                 data,
                 context,
@@ -748,7 +815,7 @@ class UltraStepExecutor(Generic[TContext]):
                 context_setter=lambda result, ctx: None,
             )
         elif isinstance(step, ParallelStep):
-            return await _handle_parallel_step(
+            result = await _handle_parallel_step(
                 step,
                 data,
                 context,
@@ -759,56 +826,40 @@ class UltraStepExecutor(Generic[TContext]):
                 context_setter=lambda result, ctx: None,
             )
         elif isinstance(step, HumanInTheLoopStep):
-            return await _handle_hitl_step(step, data, context)
+            result = await _handle_hitl_step(step, data, context)
         else:
-            # For regular agent steps with plugins/validators/fallbacks, use the full step logic
+            # For other complex steps, use step logic directly
             from .step_logic import _run_step_logic
 
-            try:
-                # Create a proper wrapper that matches StepExecutor signature
-                async def step_executor_wrapper(
-                    step: Step[Any, Any],
-                    data: Any,
-                    context: Optional[Any],
-                    resources: Optional[Any],
-                    breach_event: Optional[Any] = None,
-                ) -> StepResult:
-                    return await self.execute_step(
-                        step, data, context, resources, usage_limits, stream, on_chunk, breach_event
-                    )
-
-                # Use step logic helpers for complex steps
-                result = await _run_step_logic(
-                    step=step,
-                    data=data,
-                    context=cast(Optional[TContext], context),  # Type cast for mypy
-                    resources=resources,
-                    step_executor=step_executor_wrapper,  # Use proper wrapper instead of self
-                    context_model_defined=True,
-                    usage_limits=usage_limits,
-                    context_setter=lambda result, ctx: None,  # No-op context setter
-                    stream=stream,
-                    on_chunk=on_chunk,
+            async def step_executor_wrapper(
+                step: Step[Any, Any],
+                data: Any,
+                context: Optional[Any],
+                resources: Optional[Any],
+                breach_event: Optional[Any] = None,
+            ) -> StepResult:
+                return await self.execute_step(
+                    step, data, context, resources, usage_limits, stream, on_chunk, breach_event
                 )
 
-                # Handle PausedException for agentic loops
-                if isinstance(result, PausedException):
-                    raise result
+            result = await _run_step_logic(
+                step=step,
+                data=data,
+                context=context,
+                resources=resources,
+                step_executor=step_executor_wrapper,
+                context_model_defined=True,
+                usage_limits=usage_limits,
+                context_setter=lambda result, ctx: None,
+                stream=stream,
+                on_chunk=on_chunk,
+            )
 
-                return result
-            except PausedException:
-                # Re-raise PausedException for agentic loops
-                raise
-            except (InfiniteFallbackError, InfiniteRedirectError):
-                # Allow critical exceptions to propagate
-                raise
-            except Exception as e:
-                # Log and re-raise other exceptions
-                import logging
+        # CRITICAL FIX: Cache successful results for complex steps
+        if self._cache is not None and result.success:
+            self._cache.set(cache_key, result)
 
-                logger = logging.getLogger(__name__)
-                logger.error(f"Error in complex step execution: {e}")
-                raise
+        return result
 
     async def _run_validators_parallel(
         self, step: Step[Any, Any], output: Any, context: Optional[TContext]
