@@ -20,8 +20,7 @@ class TextStreamingAgentProtocol(Protocol[StreamInT, TextOutT]):
 
     async def stream(self, data: StreamInT, **kwargs: Any) -> AsyncIterator[TextOutT]:
         """Asynchronously yield text output chunks."""
-        if False:  # pragma: no cover - placeholder
-            yield ""
+        ...
 
 
 @runtime_checkable
@@ -34,8 +33,7 @@ class BinaryStreamingAgentProtocol(Protocol[StreamInT, BinaryOutT]):
 
     async def stream(self, data: StreamInT, **kwargs: Any) -> AsyncIterator[BinaryOutT]:
         """Asynchronously yield binary output chunks."""
-        if False:  # pragma: no cover - placeholder
-            yield b""
+        ...
 
 
 # More specific protocols that are mutually exclusive
@@ -45,8 +43,7 @@ class TextOnlyStreamingAgentProtocol(Protocol[StreamInT]):
 
     async def stream(self, data: StreamInT, **kwargs: Any) -> AsyncIterator[str]:
         """Asynchronously yield text output chunks."""
-        if False:  # pragma: no cover - placeholder
-            yield ""
+        ...
 
 
 @runtime_checkable
@@ -55,8 +52,7 @@ class BinaryOnlyStreamingAgentProtocol(Protocol[StreamInT]):
 
     async def stream(self, data: StreamInT, **kwargs: Any) -> AsyncIterator[bytes]:
         """Asynchronously yield binary output chunks."""
-        if False:  # pragma: no cover - placeholder
-            yield b""
+        ...
 
 
 @runtime_checkable
@@ -70,8 +66,7 @@ class StreamingAgentProtocol(Protocol[StreamInT]):
 
     async def stream(self, data: StreamInT, **kwargs: Any) -> AsyncIterator[Any]:
         """Asynchronously yield output chunks of any type."""
-        if False:  # pragma: no cover - placeholder
-            yield None
+        ...
 
 
 # Type-safe streaming protocols for common use cases
