@@ -196,9 +196,9 @@ class _LRUCache:
         if not item:  # miss
             return None
         res, ts = item
-        now = time.time()
-        # If ttl is 0, items expire immediately
-        if self.ttl == 0 or (self.ttl > 0 and now - ts > self.ttl):  # stale
+        now = time.monotonic()  # Use monotonic time for reliable TTL
+        # TTL of 0 means "never expire" (standard convention)
+        if self.ttl > 0 and now - ts > self.ttl:  # stale
             self._store.pop(key, None)
             return None
         # LRU promotion
@@ -210,7 +210,7 @@ class _LRUCache:
             self._store.move_to_end(key)
         elif len(self._store) >= self.max_size:
             self._store.popitem(last=False)  # evict LRU
-        self._store[key] = (val, time.time())
+        self._store[key] = (val, time.monotonic())  # Use monotonic time
 
     def clear(self) -> None:
         self._store.clear()
@@ -495,9 +495,11 @@ class UltraStepExecutor(Generic[TContext]):
         # Only handle pure agent steps directly (not callable steps)
         if agent and not (has_plugins or has_validators or has_fallback or is_callable_step):
             async with self._concurrency:  # concurrency guard
-                start_time = time_perf_ns()  # Track execution time with nanosecond precision
                 last_exception: Exception = Exception("Unknown error")
                 for attempt in range(1, step.config.max_retries + 1):
+                    # CRITICAL FIX: Capture start_time for each attempt independently
+                    start_time = time_perf_ns()  # Track execution time with nanosecond precision
+
                     run_func = getattr(agent, "run", None)
                     is_mock = isinstance(run_func, (Mock, MagicMock, AsyncMock))
 

@@ -16,7 +16,7 @@ def monitored_agent(agent_name: str) -> Callable[[Type[_Any]], Type[_Any]]:
 
         @wraps(original_run)
         async def monitored_run(self: _Any, data: Any, **kwargs: Any) -> Any:
-            start = time.time()
+            start = time.monotonic()  # Use monotonic time for accurate duration
             exception = None
             result = None
             try:
@@ -26,7 +26,7 @@ def monitored_agent(agent_name: str) -> Callable[[Type[_Any]], Type[_Any]]:
                 exception = e
                 raise
             finally:
-                duration_ms = (time.time() - start) * 1000
+                duration_ms = (time.monotonic() - start) * 1000  # Use monotonic time
                 success = exception is None
                 failure_type = None
                 if isinstance(exception, AgentIOValidationError):
