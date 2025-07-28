@@ -149,10 +149,10 @@ _type_context = TypeResolutionContext()
 def register_custom_type(type_class: Type[T]) -> None:
     """
     Register a custom type for serialization and type resolution.
-    
+
     This integrates with Flujo's serialization system and provides
     automatic type resolution for the registered type.
-    
+
     Args:
         type_class: The type class to register
     """
@@ -161,9 +161,11 @@ def register_custom_type(type_class: Type[T]) -> None:
         register_custom_serializer(
             type_class, lambda obj: obj.model_dump() if hasattr(obj, "model_dump") else obj.__dict__
         )
-        
+
         # Register deserializer if it's a Pydantic model
-        if hasattr(type_class, "model_validate") and callable(getattr(type_class, "model_validate", None)):
+        if hasattr(type_class, "model_validate") and callable(
+            getattr(type_class, "model_validate", None)
+        ):
             register_custom_deserializer(type_class, lambda data: type_class.model_validate(data))
 
 
@@ -276,7 +278,7 @@ def _resolve_actual_type(field_type: Any) -> Optional[Type[Any]]:
 def _deserialize_value(value: Any, field_type: Any, context_model: Type[BaseModel]) -> Any:
     """
     Deserialize a value according to its field type.
-    
+
     This centralizes the deserialization logic and integrates with
     Flujo's serialization system.
     """
@@ -296,8 +298,10 @@ def _deserialize_value(value: Any, field_type: Any, context_model: Type[BaseMode
             actual_element_type = _resolve_actual_type(element_type)
             if actual_element_type is not None:
                 # Handle Pydantic models in list
-                if hasattr(actual_element_type, "model_validate") and callable(getattr(actual_element_type, "model_validate", None)) and issubclass(
-                    actual_element_type, BaseModel
+                if (
+                    hasattr(actual_element_type, "model_validate")
+                    and callable(getattr(actual_element_type, "model_validate", None))
+                    and issubclass(actual_element_type, BaseModel)
                 ):
                     try:
                         return [
@@ -327,7 +331,11 @@ def _deserialize_value(value: Any, field_type: Any, context_model: Type[BaseMode
             return value
 
         # Handle Pydantic models
-        if hasattr(actual_type, "model_validate") and callable(getattr(actual_type, "model_validate", None)) and issubclass(actual_type, BaseModel):
+        if (
+            hasattr(actual_type, "model_validate")
+            and callable(getattr(actual_type, "model_validate", None))
+            and issubclass(actual_type, BaseModel)
+        ):
             try:
                 return actual_type.model_validate(value)
             except Exception:
