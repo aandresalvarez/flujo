@@ -40,7 +40,7 @@ from ...domain.dsl.conditional import ConditionalStep
 from ...domain.dsl.dynamic_router import DynamicParallelRouterStep
 from ...domain.dsl.parallel import ParallelStep
 from ...domain.dsl.step import HumanInTheLoopStep
-from ...domain.models import BaseModel, StepResult, UsageLimits
+from ...domain.models import BaseModel, StepResult, UsageLimits, PipelineResult
 from ...domain.resources import AppResources
 from ...exceptions import (
     UsageLimitExceededError,
@@ -427,7 +427,8 @@ class UltraStepExecutor(Generic[TContext]):
         stream: bool = False,
         on_chunk: Optional[Callable[[Any], Awaitable[None]]] = None,
         breach_event: Optional[Any] = None,
-        result: Optional[Any] = None,  # <-- new argument
+        result: Optional[Any] = None,  # <-- preserved argument
+        context_setter: Optional[Callable[["PipelineResult[Any]", Optional[Any]], None]] = None,
     ) -> StepResult:
         """Execute a single step with ultra-fast path for trivial agent steps.
 
@@ -435,6 +436,13 @@ class UltraStepExecutor(Generic[TContext]):
         This method does not check usage limits directly to ensure step history
         is always complete and logic is not duplicated.
         """
+
+        # Import here to avoid circular import
+        from .step_logic import _default_set_final_context
+
+        # Fallback to default setter if none provided
+        if context_setter is None:
+            context_setter = _default_set_final_context
 
         # CRITICAL FIX: Add caching logic
         cache_key = None  # Initialize cache_key to avoid NameError
@@ -459,7 +467,15 @@ class UltraStepExecutor(Generic[TContext]):
         agent = getattr(step, "agent", None)
         if not agent:
             return await self._execute_complex_step(
-                step, data, context, resources, usage_limits, stream, on_chunk
+                step,
+                data,
+                context,
+                resources,
+                usage_limits,
+                stream,
+                on_chunk,
+                breach_event,
+                context_setter,
             )
 
         # Check if this is a simple agent step (no plugins, validators, or fallbacks)
@@ -700,7 +716,15 @@ class UltraStepExecutor(Generic[TContext]):
                     raise last_exception
         else:
             return await self._execute_complex_step(
-                step, data, context, resources, usage_limits, stream, on_chunk
+                step,
+                data,
+                context,
+                resources,
+                usage_limits,
+                stream,
+                on_chunk,
+                breach_event,
+                context_setter,
             )
 
     def _handle_step_exception(self, e: Exception) -> None:
@@ -734,8 +758,14 @@ class UltraStepExecutor(Generic[TContext]):
         stream: bool = False,
         on_chunk: Optional[Callable[[Any], Awaitable[None]]] = None,
         breach_event: Optional[Any] = None,
+        context_setter: Optional[Callable[["PipelineResult[Any]", Optional[Any]], None]] = None,
     ) -> StepResult:
         """Execute complex steps (with plugins, validators, fallbacks) using step logic helpers."""
+
+        from .step_logic import _default_set_final_context
+
+        if context_setter is None:
+            context_setter = _default_set_final_context
 
         # CRITICAL FIX: Add caching logic for complex steps
         cache_key = None  # Initialize cache_key to avoid NameError
@@ -775,7 +805,17 @@ class UltraStepExecutor(Generic[TContext]):
             r: Optional[Any],
             breach_event: Optional[Any] = None,
         ) -> StepResult:
-            return await self.execute_step(s, d, c, r, usage_limits, stream, on_chunk, breach_event)
+            return await self.execute_step(
+                s,
+                d,
+                c,
+                r,
+                usage_limits,
+                stream,
+                on_chunk,
+                breach_event,
+                context_setter=context_setter,
+            )
 
         # Create a special step executor for loop steps that bypasses state persistence
         async def loop_step_executor(
@@ -797,7 +837,15 @@ class UltraStepExecutor(Generic[TContext]):
                 breach_event: Optional[Any] = None,
             ) -> StepResult:
                 return await self.execute_step(
-                    step, data, context, resources, usage_limits, stream, on_chunk, breach_event
+                    step,
+                    data,
+                    context,
+                    resources,
+                    usage_limits,
+                    stream,
+                    on_chunk,
+                    breach_event,
+                    context_setter=context_setter,
                 )
 
             return await _run_step_logic(
@@ -808,7 +856,7 @@ class UltraStepExecutor(Generic[TContext]):
                 step_executor=step_executor_wrapper,  # Use proper wrapper instead of self
                 context_model_defined=True,
                 usage_limits=usage_limits,
-                context_setter=lambda result, ctx: None,  # No-op context setter
+                context_setter=context_setter,
                 stream=stream,
                 on_chunk=on_chunk,
             )
@@ -826,7 +874,7 @@ class UltraStepExecutor(Generic[TContext]):
                     loop_step_executor,  # Use special executor for loop steps
                     context_model_defined=True,
                     usage_limits=usage_limits,
-                    context_setter=lambda result, ctx: None,
+                    context_setter=context_setter,
                 )
             elif isinstance(step, ConditionalStep):
                 result = await _handle_conditional_step(
@@ -847,7 +895,7 @@ class UltraStepExecutor(Generic[TContext]):
                     step_executor,
                     context_model_defined=True,
                     usage_limits=usage_limits,
-                    context_setter=lambda result, ctx: None,
+                    context_setter=context_setter,
                 )
             elif isinstance(step, ParallelStep):
                 result = await _handle_parallel_step(
@@ -858,7 +906,7 @@ class UltraStepExecutor(Generic[TContext]):
                     step_executor,
                     context_model_defined=True,
                     usage_limits=usage_limits,
-                    context_setter=lambda result, ctx: None,
+                    context_setter=context_setter,
                 )
             elif isinstance(step, HumanInTheLoopStep):
                 result = await _handle_hitl_step(step, data, context)
@@ -874,7 +922,15 @@ class UltraStepExecutor(Generic[TContext]):
                     breach_event: Optional[Any] = None,
                 ) -> StepResult:
                     return await self.execute_step(
-                        step, data, context, resources, usage_limits, stream, on_chunk, breach_event
+                        step,
+                        data,
+                        context,
+                        resources,
+                        usage_limits,
+                        stream,
+                        on_chunk,
+                        breach_event,
+                        context_setter=context_setter,
                     )
 
                 result = await _run_step_logic(
@@ -885,7 +941,7 @@ class UltraStepExecutor(Generic[TContext]):
                     step_executor=step_executor_wrapper,
                     context_model_defined=True,
                     usage_limits=usage_limits,
-                    context_setter=lambda result, ctx: None,
+                    context_setter=context_setter,
                     stream=stream,
                     on_chunk=on_chunk,
                 )
