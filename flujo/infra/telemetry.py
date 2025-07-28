@@ -27,6 +27,13 @@ if not _fallback_logger.handlers:
     _fallback_logger.addHandler(error_handler)
 
 
+def _is_cleanup_io_error(error: Exception) -> bool:
+    """Check if an error is related to cleanup I/O operations."""
+    error_str = str(error).lower()
+    cleanup_phrases = ["i/o operation on closed file", "closed", "bad file descriptor"]
+    return any(phrase in error_str for phrase in cleanup_phrases)
+
+
 def _safe_log(logger: logging.Logger, level: int, message: str, *args: Any, **kwargs: Any) -> None:
     """Safely log a message, handling I/O errors gracefully during cleanup."""
     try:
@@ -34,35 +41,14 @@ def _safe_log(logger: logging.Logger, level: int, message: str, *args: Any, **kw
         if logger is None or not hasattr(logger, "log"):
             return
 
-        # Check if any handlers are still open
-        if hasattr(logger, "handlers"):
-            try:
-                handlers = logger.handlers
-                if handlers is not None:
-                    for handler in handlers:
-                        if hasattr(handler, "stream") and handler.stream is not None:
-                            try:
-                                # Test if stream is still writable
-                                handler.stream.write("")
-                            except (ValueError, OSError, RuntimeError):
-                                # Stream is closed, skip logging
-                                return
-            except (TypeError, AttributeError):
-                # Handlers might be a Mock or other non-iterable object
-                pass
-
+        # Attempt to log the message - let the actual logging attempt happen
+        # and catch any I/O errors that result
         logger.log(level, message, *args, **kwargs)
+
     except (ValueError, OSError, RuntimeError) as e:
-        # During test cleanup, logging handlers may be closed
-        # We don't want to raise exceptions for logging failures
-        if any(
-            phrase in str(e).lower()
-            for phrase in ["i/o operation on closed file", "closed", "bad file descriptor"]
-        ):
-            # Silently ignore logging errors during cleanup
-            pass
+        if _is_cleanup_io_error(e):
+            pass  # Silently ignore during cleanup
         else:
-            # Re-raise unexpected errors
             raise
 
 
@@ -76,10 +62,7 @@ class _SafeLogfireWrapper:
         try:
             self._real_logfire.info(message, *args, **kwargs)
         except (ValueError, OSError, RuntimeError) as e:
-            if any(
-                phrase in str(e).lower()
-                for phrase in ["i/o operation on closed file", "closed", "bad file descriptor"]
-            ):
+            if _is_cleanup_io_error(e):
                 pass  # Silently ignore during cleanup
             else:
                 raise
@@ -88,10 +71,7 @@ class _SafeLogfireWrapper:
         try:
             self._real_logfire.warn(message, *args, **kwargs)
         except (ValueError, OSError, RuntimeError) as e:
-            if any(
-                phrase in str(e).lower()
-                for phrase in ["i/o operation on closed file", "closed", "bad file descriptor"]
-            ):
+            if _is_cleanup_io_error(e):
                 pass  # Silently ignore during cleanup
             else:
                 raise
@@ -112,10 +92,7 @@ class _SafeLogfireWrapper:
         try:
             self._real_logfire.error(message, *args, **kwargs)
         except (ValueError, OSError, RuntimeError) as e:
-            if any(
-                phrase in str(e).lower()
-                for phrase in ["i/o operation on closed file", "closed", "bad file descriptor"]
-            ):
+            if _is_cleanup_io_error(e):
                 pass  # Silently ignore during cleanup
             else:
                 raise
@@ -124,10 +101,7 @@ class _SafeLogfireWrapper:
         try:
             self._real_logfire.debug(message, *args, **kwargs)
         except (ValueError, OSError, RuntimeError) as e:
-            if any(
-                phrase in str(e).lower()
-                for phrase in ["i/o operation on closed file", "closed", "bad file descriptor"]
-            ):
+            if _is_cleanup_io_error(e):
                 pass  # Silently ignore during cleanup
             else:
                 raise
@@ -136,10 +110,7 @@ class _SafeLogfireWrapper:
         try:
             self._real_logfire.configure(*args, **kwargs)
         except (ValueError, OSError, RuntimeError) as e:
-            if any(
-                phrase in str(e).lower()
-                for phrase in ["i/o operation on closed file", "closed", "bad file descriptor"]
-            ):
+            if _is_cleanup_io_error(e):
                 pass  # Silently ignore during cleanup
             else:
                 raise
@@ -157,10 +128,7 @@ class _SafeLogfireWrapper:
 
                 return decorator
         except (ValueError, OSError, RuntimeError) as e:
-            if any(
-                phrase in str(e).lower()
-                for phrase in ["i/o operation on closed file", "closed", "bad file descriptor"]
-            ):
+            if _is_cleanup_io_error(e):
                 # Return a no-op decorator during cleanup
                 def decorator(func: Callable[[Any], Any]) -> Callable[[Any], Any]:
                     return func
@@ -173,10 +141,7 @@ class _SafeLogfireWrapper:
         try:
             return self._real_logfire.span(name, *args, **kwargs)
         except (ValueError, OSError, RuntimeError) as e:
-            if any(
-                phrase in str(e).lower()
-                for phrase in ["i/o operation on closed file", "closed", "bad file descriptor"]
-            ):
+            if _is_cleanup_io_error(e):
                 # Return a mock span during cleanup
                 return _MockLogfireSpan()
             else:
@@ -186,10 +151,7 @@ class _SafeLogfireWrapper:
         try:
             self._real_logfire.enable_stdout_viewer()
         except (ValueError, OSError, RuntimeError) as e:
-            if any(
-                phrase in str(e).lower()
-                for phrase in ["i/o operation on closed file", "closed", "bad file descriptor"]
-            ):
+            if _is_cleanup_io_error(e):
                 pass  # Silently ignore during cleanup
             else:
                 raise
