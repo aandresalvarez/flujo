@@ -695,7 +695,9 @@ class UltraStepExecutor(Generic[TContext]):
                 resources: Optional[Any],
                 breach_event: Optional[Any] = None,
             ) -> StepResult:
-                return await self.execute_step(step, data, context, resources, usage_limits, stream, on_chunk, breach_event)
+                return await self.execute_step(
+                    step, data, context, resources, usage_limits, stream, on_chunk, breach_event
+                )
 
             return await _run_step_logic(
                 step=s,
@@ -771,7 +773,9 @@ class UltraStepExecutor(Generic[TContext]):
                     resources: Optional[Any],
                     breach_event: Optional[Any] = None,
                 ) -> StepResult:
-                    return await self.execute_step(step, data, context, resources, usage_limits, stream, on_chunk, breach_event)
+                    return await self.execute_step(
+                        step, data, context, resources, usage_limits, stream, on_chunk, breach_event
+                    )
 
                 # Use step logic helpers for complex steps
                 result = await _run_step_logic(
