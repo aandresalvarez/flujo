@@ -818,7 +818,10 @@ async def _execute_loop_step_logic(
                         raise RuntimeError(
                             f"Context merge failed in {type(loop_step).__name__} '{loop_step.name}' iteration {i}. "
                             f"This violates the first-principles guarantee that context updates must always be applied. "
-                            f"(context fields: {context_fields}, iteration context fields: {iteration_fields})"
+                            f"(context fields: {context_fields}, iteration context fields: {iteration_fields}). "
+                            f"Possible causes: mismatched field types between contexts, invalid context objects "
+                            f"(ensure both are instances of the expected BaseModel subclass), or incorrectly configured "
+                            f"excluded fields. Please verify these aspects and retry."
                         )
                     # CRITICAL: Context updates are merged directly to main context
                     # No need to reassign context reference - updates are preserved
