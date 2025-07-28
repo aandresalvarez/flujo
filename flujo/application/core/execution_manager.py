@@ -101,7 +101,9 @@ class ExecutionManager(Generic[ContextT]):
         """
         for idx, step in enumerate(self.pipeline.steps[start_idx:], start=start_idx):
             step_result = None
-            should_add_step_result = False
+            should_add_step_result = (
+                True  # Default to adding step result unless explicitly prevented
+            )
             try:
                 try:
                     async for item in self.step_coordinator.execute_step(
@@ -143,13 +145,11 @@ class ExecutionManager(Generic[ContextT]):
                         with telemetry.logfire.span(f"usage_check_{step.name}") as span:
                             self.usage_governor.check_usage_limits(temp_result, span)
                             self.usage_governor.update_telemetry_span(span, temp_result)
-                        # Only set the flag if the limit is not breached
-                        should_add_step_result = True
+                        # If we reach here, the usage check passed, so keep should_add_step_result = True
 
                 except PipelineAbortSignal:
                     # Update pipeline result before aborting
-                    if step_result is not None:
-                        should_add_step_result = True
+                    # should_add_step_result is already True by default
                     self.set_final_context(result, context)
                     yield result
                     return
@@ -159,13 +159,13 @@ class ExecutionManager(Generic[ContextT]):
                         if hasattr(context, "scratchpad"):
                             context.scratchpad["status"] = "paused"
                             context.scratchpad["pause_message"] = str(e)
-                    if step_result is not None:
-                        should_add_step_result = True
+                    # should_add_step_result is already True by default
                     self.set_final_context(result, context)
                     yield result
                     return
                 except UsageLimitExceededError:
                     # Do not add the step result if the usage limit is breached
+                    # The step result is not added because the exception propagates
                     should_add_step_result = False
                     raise
                 except PipelineContextInitializationError as e:
