@@ -984,6 +984,8 @@ async def _execute_conditional_step_logic(
                         span.set_attribute("executed_branch_key", str(executed_branch_key))
                     except Exception as e:
                         telemetry.logfire.error(f"Error setting span attribute: {e}")
+
+                # Execute the branch step - context modifications are handled by the step executor
                 branch_step_result_obj = await step_executor(
                     branch_s,
                     current_branch_data,
@@ -991,6 +993,10 @@ async def _execute_conditional_step_logic(
                     resources,
                     None,  # breach_event
                 )
+
+                # Ensure context modifications are propagated
+                # The step_executor already handles context updates through the UltraStepExecutor
+                # No additional context handling needed here as the step executor manages this
 
             conditional_overall_result.latency_s += branch_step_result_obj.latency_s
             conditional_overall_result.cost_usd += getattr(branch_step_result_obj, "cost_usd", 0.0)
@@ -1012,6 +1018,18 @@ async def _execute_conditional_step_logic(
         if not branch_pipeline_failed_internally:
             branch_output = current_branch_data
             branch_succeeded = True
+
+            # Ensure context modifications from the executed branch are committed
+            # This is critical for preserving context updates made within the conditional branch
+            if context is not None and branch_succeeded:
+                # Create a PipelineResult to commit context changes
+                from ...domain.models import PipelineResult
+
+                pr: PipelineResult[TContext] = PipelineResult(
+                    step_history=[conditional_overall_result],
+                    total_cost_usd=conditional_overall_result.cost_usd,
+                )
+                context_setter(pr, context)
 
     except Exception as e:
         telemetry.logfire.error(
