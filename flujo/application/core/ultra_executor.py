@@ -687,12 +687,22 @@ class UltraStepExecutor(Generic[TContext]):
             # For loop steps, call step logic directly to avoid state persistence
             from .step_logic import _run_step_logic
 
+            # Create a proper wrapper that matches StepExecutor signature
+            async def step_executor_wrapper(
+                step: Step[Any, Any],
+                data: Any,
+                context: Optional[Any],
+                resources: Optional[Any],
+                breach_event: Optional[Any] = None,
+            ) -> StepResult:
+                return await self.execute_step(step, data, context, resources, usage_limits, stream, on_chunk, breach_event)
+
             return await _run_step_logic(
                 step=s,
                 data=d,
                 context=c,
                 resources=r,
-                step_executor=self._execute_complex_step,  # Use self for recursion
+                step_executor=step_executor_wrapper,  # Use proper wrapper instead of self
                 context_model_defined=True,
                 usage_limits=usage_limits,
                 context_setter=lambda result, ctx: None,  # No-op context setter
@@ -753,13 +763,23 @@ class UltraStepExecutor(Generic[TContext]):
             from .step_logic import _run_step_logic
 
             try:
+                # Create a proper wrapper that matches StepExecutor signature
+                async def step_executor_wrapper(
+                    step: Step[Any, Any],
+                    data: Any,
+                    context: Optional[Any],
+                    resources: Optional[Any],
+                    breach_event: Optional[Any] = None,
+                ) -> StepResult:
+                    return await self.execute_step(step, data, context, resources, usage_limits, stream, on_chunk, breach_event)
+
                 # Use step logic helpers for complex steps
                 result = await _run_step_logic(
                     step=step,
                     data=data,
                     context=cast(Optional[TContext], context),  # Type cast for mypy
                     resources=resources,
-                    step_executor=self._execute_complex_step,  # Use self for recursion
+                    step_executor=step_executor_wrapper,  # Use proper wrapper instead of self
                     context_model_defined=True,
                     usage_limits=usage_limits,
                     context_setter=lambda result, ctx: None,  # No-op context setter
