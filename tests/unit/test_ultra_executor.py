@@ -1541,6 +1541,7 @@ class TestUltraStepExecutor:
         should be re-raised for proper control flow. Other exceptions return StepResult(success=False)
         for predictable API. Timing data should be preserved for all failures.
         """
+        from flujo.domain.plugins import PluginOutcome
 
         class FailingAgent:
             async def run(self, data, **kwargs):
@@ -1587,12 +1588,16 @@ class TestUltraStepExecutor:
         assert result.latency_s > 0.0  # Timing should be preserved
 
         # Test complex step (with plugins) with regular exception
+        class MockPlugin:
+            async def validate(self, data: dict) -> PluginOutcome:
+                return PluginOutcome(valid=True, feedback="Mock validation passed")
+
         complex_step = Step.model_validate(
             {
                 "name": "complex",
                 "agent": FailingAgent(),
                 "config": {"max_retries": 1},
-                "plugins": [(Mock(), 1)],  # Add a plugin to make it complex
+                "plugins": [(MockPlugin(), 1)],  # Use proper mock plugin
             }
         )
         result = await executor.execute_step(complex_step, "test_data")
