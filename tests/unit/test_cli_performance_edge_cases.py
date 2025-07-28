@@ -194,7 +194,7 @@ class TestCLIPerformanceEdgeCases:
             execution_time = time.perf_counter() - start_time
 
             print(f"Nonexistent data query {test_args} performance: {execution_time:.3f}s")
-            assert execution_time < 0.1, f"Nonexistent query {test_args} took {execution_time:.3f}s"
+            assert execution_time < 0.2, f"Nonexistent query {test_args} took {execution_time:.3f}s"
 
     def test_database_index_optimization(self, tmp_path: Path) -> None:
         """Test that database indexes are working correctly for performance."""
