@@ -1396,3 +1396,43 @@ class TestUltraStepExecutor:
 
         # All keys should be different for different agent types
         assert len(set(keys)) == len(keys), "Different agent types should generate different keys"
+
+    @pytest.mark.asyncio
+    async def test_regression_cache_mutation_does_not_corrupt_cached_data(self):
+        """REGRESSION: Ensure cache mutation doesn't corrupt the original cached data."""
+        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.domain.dsl import Step
+        from flujo.testing.utils import StubAgent
+
+        # Create executor with caching enabled
+        executor = UltraStepExecutor(enable_cache=True, cache_size=100)
+
+        # Create a simple step
+        agent = StubAgent(["test output 1", "test output 2", "test output 3"])
+        step = Step(name="test_step", agent=agent)
+
+        # First execution - should be cache miss
+        result1 = await executor.execute_step(step, "test_input")
+        assert result1.success
+        assert "cache_hit" not in (result1.metadata_ or {})
+
+        # Second execution with same input - should be cache hit
+        result2 = await executor.execute_step(step, "test_input")
+        assert result2.success
+        assert result2.metadata_.get("cache_hit") is True
+
+        # Third execution with same input - should still be cache hit
+        result3 = await executor.execute_step(step, "test_input")
+        assert result3.success
+        assert result3.metadata_.get("cache_hit") is True
+
+        # CRITICAL: Verify that the original cached data wasn't corrupted
+        # The metadata should be properly set on each cache hit without affecting the original
+        assert result2.output == result1.output
+        assert result3.output == result1.output
+        assert result2.name == result1.name
+        assert result3.name == result1.name
+
+        # Verify that each result has its own metadata instance
+        assert result2.metadata_ is not result3.metadata_
+        assert result1.metadata_ is not result2.metadata_

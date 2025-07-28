@@ -4,7 +4,7 @@ This document outlines the comprehensive regression test suite implemented to pr
 
 ## Test Coverage Overview
 
-The regression test suite consists of **16 tests** that cover all aspects of the caching system fix and the additional improvements based on Copilot feedback.
+The regression test suite consists of **17 tests** that cover all aspects of the caching system fix, the additional improvements based on Copilot feedback, and the cache mutation bug fix.
 
 ### Original Bug Fix Tests (10 tests)
 
@@ -48,7 +48,7 @@ The regression test suite consists of **16 tests** that cover all aspects of the
     - **What it tests**: Ensures cache metadata is correctly set on cache hits
     - **What it prevents**: Regression where cache hit metadata is not properly set
 
-### Copilot Feedback Improvement Tests (6 new tests)
+### Copilot Feedback Improvement Tests (6 tests)
 
 11. **`test_regression_module_level_dataclasses_used`**
     - **What it tests**: Ensures module-level dataclasses are used instead of inline definitions
@@ -73,6 +73,12 @@ The regression test suite consists of **16 tests** that cover all aspects of the
 16. **`test_regression_agent_identification_handles_edge_cases`**
     - **What it tests**: Ensures agent identification handles edge cases gracefully
     - **What it prevents**: Regression where edge cases in agent identification cause failures
+
+### Cache Mutation Bug Fix Test (1 new test)
+
+17. **`test_regression_cache_mutation_does_not_corrupt_cached_data`**
+    - **What it tests**: Ensures cache mutation doesn't corrupt the original cached data
+    - **What it prevents**: Regression where direct mutation of cached StepResult objects corrupts cache data
 
 ## Prevention Strategy
 

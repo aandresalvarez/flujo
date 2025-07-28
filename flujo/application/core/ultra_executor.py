@@ -443,10 +443,12 @@ class UltraStepExecutor(Generic[TContext]):
             # Check cache for existing result
             cached_result = self._cache.get(cache_key)
             if cached_result is not None:
-                # Return cached result with cache hit metadata
-                cached_result.metadata_ = cached_result.metadata_ or {}
-                cached_result.metadata_["cache_hit"] = True
-                return cached_result
+                # CRITICAL FIX: Create a copy to avoid mutating the cached object
+                from copy import deepcopy
+                result_copy = deepcopy(cached_result)
+                result_copy.metadata_ = result_copy.metadata_ or {}
+                result_copy.metadata_["cache_hit"] = True
+                return result_copy
 
         import inspect
         from unittest.mock import Mock, MagicMock, AsyncMock
@@ -723,10 +725,12 @@ class UltraStepExecutor(Generic[TContext]):
             # Check cache for existing result
             cached_result = self._cache.get(cache_key)
             if cached_result is not None:
-                # Return cached result with cache hit metadata
-                cached_result.metadata_ = cached_result.metadata_ or {}
-                cached_result.metadata_["cache_hit"] = True
-                return cached_result
+                # CRITICAL FIX: Create a copy to avoid mutating the cached object
+                from copy import deepcopy
+                result_copy = deepcopy(cached_result)
+                result_copy.metadata_ = result_copy.metadata_ or {}
+                result_copy.metadata_["cache_hit"] = True
+                return result_copy
 
         # Import step logic helpers
         from .step_logic import (
