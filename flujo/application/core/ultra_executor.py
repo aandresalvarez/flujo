@@ -570,8 +570,11 @@ class UltraStepExecutor(Generic[TContext]):
                                         await on_chunk(chunk)
                                     chunks.append(chunk)
                                 # Combine chunks
+                                raw: str | bytes  # Type annotation for mixed content
                                 if chunks and all(isinstance(c, str) for c in chunks):
                                     raw = "".join(chunks)
+                                elif chunks and all(isinstance(c, bytes) for c in chunks):
+                                    raw = b"".join(chunks)  # Fix: Add bytes handler
                                 elif chunks:
                                     raw = str(chunks)
                                 else:
