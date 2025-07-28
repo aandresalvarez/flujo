@@ -145,12 +145,15 @@ class ExecutionManager(Generic[ContextT]):
 
                                 # Create a new step history list for the temporary result (do not mutate the original).
                                 # This ensures the exception contains the correct state at the moment of the limit breach.
-                                # Performance note: List concatenation creates a new list, but this is necessary for correctness
-                                # and exception traceability. For extremely large pipelines, consider on-disk step history.
+                                # Performance optimization: Use list copy + append instead of concatenation for large pipelines
                                 from flujo.domain.models import PipelineResult
 
+                                # Create step history efficiently: copy existing + append new step
+                                temp_step_history = result.step_history.copy()
+                                temp_step_history.append(step_result)
+
                                 cost_check_result: PipelineResult[ContextT] = PipelineResult(
-                                    step_history=result.step_history + [step_result],
+                                    step_history=temp_step_history,
                                     total_cost_usd=potential_total_cost,
                                     final_pipeline_context=result.final_pipeline_context,
                                     trace_tree=result.trace_tree,
@@ -170,8 +173,12 @@ class ExecutionManager(Generic[ContextT]):
 
                                     from flujo.domain.models import PipelineResult
 
+                                    # Create step history efficiently: copy existing + append new step
+                                    temp_step_history = result.step_history.copy()
+                                    temp_step_history.append(step_result)
+
                                     token_check_result: PipelineResult[ContextT] = PipelineResult(
-                                        step_history=result.step_history + [step_result],
+                                        step_history=temp_step_history,
                                         total_cost_usd=potential_total_cost,
                                         final_pipeline_context=result.final_pipeline_context,
                                         trace_tree=result.trace_tree,
