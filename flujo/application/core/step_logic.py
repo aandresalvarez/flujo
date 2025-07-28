@@ -1496,6 +1496,8 @@ async def _run_step_logic(
             # Usage limits are checked by the UsageGovernor at the pipeline level
             # No need to check them here as it would interfere with cumulative tracking
         except (TypeError, UsageLimitExceededError, PricingNotConfiguredError) as e:
+            # FLUJO SPIRIT FIX: Track timing even for failed attempts
+            result.latency_s += time.monotonic() - start
             # Re-raise critical exceptions immediately
             if isinstance(e, TypeError) and "Mock object as output" in str(e):
                 raise
@@ -1507,9 +1509,13 @@ async def _run_step_logic(
             last_exception = e
             continue
         except PausedException:
+            # FLUJO SPIRIT FIX: Track timing even for failed attempts
+            result.latency_s += time.monotonic() - start
             # For PausedException, just raise after updating context; context already contains the log.
             raise
         except Exception as e:
+            # FLUJO SPIRIT FIX: Track timing even for failed attempts
+            result.latency_s += time.monotonic() - start
             # Retry on all other exceptions
             last_exception = e
             continue
@@ -1691,7 +1697,8 @@ async def _run_step_logic(
             f"Agent execution failed with {type(last_exception).__name__}: {last_exception}"
         )
     result.attempts = step.config.max_retries
-    result.latency_s = 0.0
+    # FLUJO SPIRIT FIX: Preserve actual execution time for failed steps
+    # result.latency_s is already accumulated from actual execution time above
 
     # If the step failed and a fallback is defined, execute it.
     if not result.success and step.fallback_step:

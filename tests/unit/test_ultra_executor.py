@@ -1535,10 +1535,11 @@ class TestUltraStepExecutor:
 
     @pytest.mark.asyncio
     async def test_unified_error_handling_contract(self, executor):
-        """Test that all step types have consistent error handling contract.
+        """Test that step types have appropriate error handling contract.
 
-        FLUJO SPIRIT: All step failures should return StepResult(success=False),
-        never raise exceptions. This ensures a predictable and robust API.
+        FLUJO SPIRIT: Critical exceptions (PausedException, InfiniteFallbackError, InfiniteRedirectError)
+        should be re-raised for proper control flow. Other exceptions return StepResult(success=False)
+        for predictable API. Timing data should be preserved for all failures.
         """
 
         class FailingAgent:
@@ -1549,7 +1550,19 @@ class TestUltraStepExecutor:
                 yield "partial"
                 raise RuntimeError("Test failure")
 
-        # Test simple non-streaming step
+        class CriticalFailingAgent:
+            async def run(self, data, **kwargs):
+                from flujo.exceptions import PausedException
+
+                raise PausedException("Test pause")
+
+            async def stream(self, data, **kwargs):
+                from flujo.exceptions import InfiniteFallbackError
+
+                yield "partial"
+                raise InfiniteFallbackError("Test infinite fallback")
+
+        # Test simple non-streaming step with regular exception
         simple_step = Step.model_validate(
             {"name": "simple", "agent": FailingAgent(), "config": {"max_retries": 1}}
         )
@@ -1559,8 +1572,9 @@ class TestUltraStepExecutor:
         assert isinstance(result, StepResult)
         assert not result.success
         assert "RuntimeError: Test failure" in result.feedback
+        assert result.latency_s > 0.0  # Timing should be preserved
 
-        # Test streaming step
+        # Test streaming step with regular exception
         streaming_step = Step.model_validate(
             {"name": "streaming", "agent": FailingAgent(), "config": {"max_retries": 1}}
         )
@@ -1570,8 +1584,9 @@ class TestUltraStepExecutor:
         assert isinstance(result, StepResult)
         assert not result.success
         assert "RuntimeError: Test failure" in result.feedback
+        assert result.latency_s > 0.0  # Timing should be preserved
 
-        # Test complex step (with plugins)
+        # Test complex step (with plugins) with regular exception
         complex_step = Step.model_validate(
             {
                 "name": "complex",
@@ -1586,3 +1601,62 @@ class TestUltraStepExecutor:
         assert isinstance(result, StepResult)
         assert not result.success
         assert "RuntimeError: Test failure" in result.feedback
+        assert result.latency_s > 0.0  # Timing should be preserved
+
+    @pytest.mark.asyncio
+    async def test_critical_exceptions_are_re_raised(self, executor):
+        """Test that critical exceptions are re-raised for proper control flow."""
+        from flujo.exceptions import PausedException, InfiniteFallbackError, InfiniteRedirectError
+
+        class PausedAgent:
+            async def run(self, data, **kwargs):
+                raise PausedException("Test pause")
+
+        class InfiniteFallbackAgent:
+            async def run(self, data, **kwargs):
+                raise InfiniteFallbackError("Test infinite fallback")
+
+        class InfiniteRedirectAgent:
+            async def run(self, data, **kwargs):
+                raise InfiniteRedirectError("Test infinite redirect")
+
+        # Test PausedException
+        paused_step = Step.model_validate(
+            {"name": "paused", "agent": PausedAgent(), "config": {"max_retries": 1}}
+        )
+        with pytest.raises(PausedException, match="Test pause"):
+            await executor.execute_step(paused_step, "test_data")
+
+        # Test InfiniteFallbackError
+        fallback_step = Step.model_validate(
+            {"name": "fallback", "agent": InfiniteFallbackAgent(), "config": {"max_retries": 1}}
+        )
+        with pytest.raises(InfiniteFallbackError, match="Test infinite fallback"):
+            await executor.execute_step(fallback_step, "test_data")
+
+        # Test InfiniteRedirectError
+        redirect_step = Step.model_validate(
+            {"name": "redirect", "agent": InfiniteRedirectAgent(), "config": {"max_retries": 1}}
+        )
+        with pytest.raises(InfiniteRedirectError, match="Test infinite redirect"):
+            await executor.execute_step(redirect_step, "test_data")
+
+    @pytest.mark.asyncio
+    async def test_timing_preservation_for_failed_steps(self, executor):
+        """Test that timing data is preserved for failed steps."""
+        import time
+
+        class SlowFailingAgent:
+            async def run(self, data, **kwargs):
+                time.sleep(0.1)  # Simulate some work
+                raise RuntimeError("Test failure")
+
+        slow_step = Step.model_validate(
+            {"name": "slow", "agent": SlowFailingAgent(), "config": {"max_retries": 1}}
+        )
+        result = await executor.execute_step(slow_step, "test_data")
+
+        # Should preserve actual execution time
+        assert isinstance(result, StepResult)
+        assert not result.success
+        assert result.latency_s >= 0.1  # Should reflect actual execution time

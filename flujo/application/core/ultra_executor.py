@@ -711,16 +711,26 @@ class UltraStepExecutor(Generic[TContext]):
                         last_exception = e
                         continue
                 # If we get here, all retries failed
-                # FLUJO SPIRIT FIX: Unify error handling contract for reliability and consistency
-                # All step failures should return StepResult(success=False) for predictable API
-                # This ensures consistent behavior across streaming, non-streaming, and complex steps
+                # FLUJO SPIRIT FIX: Robust error handling with critical exception preservation
+                # Calculate actual latency for failed steps to preserve timing information
+                latency = time_perf_ns_to_seconds(time_perf_ns() - start_time)
+
+                # CRITICAL FIX: Re-raise critical exceptions that carry control flow semantics
+                # These exceptions must propagate for proper human-in-the-loop and infinite loop prevention
+                if isinstance(
+                    last_exception, (PausedException, InfiniteFallbackError, InfiniteRedirectError)
+                ):
+                    raise last_exception
+
+                # For non-critical exceptions, maintain unified error handling contract
+                # All other step failures return StepResult(success=False) for predictable API
                 return StepResult(
                     name=step.name,
                     output=None,
                     success=False,
                     attempts=attempt,
                     feedback=f"Agent execution failed with {type(last_exception).__name__}: {last_exception}",
-                    latency_s=0.0,
+                    latency_s=latency,  # Preserve actual execution time
                 )
         else:
             return await self._execute_complex_step(

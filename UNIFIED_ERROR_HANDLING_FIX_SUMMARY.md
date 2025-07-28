@@ -1,4 +1,4 @@
-# Unified Error Handling Contract - Fix Summary
+# Unified Error Handling Contract Fix - Enhanced Implementation
 
 ## Problem Description
 
@@ -7,6 +7,10 @@ The Flujo framework had **inconsistent error handling contracts** across differe
 - **Simple non-streaming steps**: Raised exceptions on failure
 - **Complex steps** (with plugins/validators/fallbacks): Returned `StepResult(success=False)`
 - **Streaming steps**: Returned `StepResult(success=False)`
+
+Additionally, the initial fix had two critical issues:
+1. **Critical exceptions were incorrectly masked** (PausedException, InfiniteFallbackError, InfiniteRedirectError)
+2. **Timing data was lost** (latency_s hardcoded to 0.0 for failed steps)
 
 This inconsistency violated Flujo's core principles of **reliability and consistency**.
 
@@ -26,43 +30,63 @@ This created an unpredictable API where:
 - Simple steps raised exceptions
 - Complex/streaming steps returned `StepResult`
 
-## FLUJO SPIRIT FIX
+## ENHANCED FLUJO SPIRIT FIX
 
 ### First Principles Approach
 
-**Principle**: A robust system should have **one consistent error handling contract**.
+**Principle**: A robust system should have **one consistent error handling contract** while preserving critical control flow semantics.
 
-**Solution**: Always return `StepResult(success=False)` for all execution failures, making the API predictable and robust.
+**Solution**:
+1. **Re-raise critical exceptions** (PausedException, InfiniteFallbackError, InfiniteRedirectError) for proper control flow
+2. **Return StepResult(success=False)** for all other execution failures
+3. **Preserve timing data** for all failures
 
 ### Implementation
 
 **File**: `flujo/application/core/ultra_executor.py`
 
 ```python
-# AFTER (unified)
-# FLUJO SPIRIT FIX: Unify error handling contract for reliability and consistency
-# All step failures should return StepResult(success=False) for predictable API
-# This ensures consistent behavior across streaming, non-streaming, and complex steps
+# AFTER (enhanced unified)
+# FLUJO SPIRIT FIX: Robust error handling with critical exception preservation
+# Calculate actual latency for failed steps to preserve timing information
+latency = time_perf_ns_to_seconds(time_perf_ns() - start_time)
+
+# CRITICAL FIX: Re-raise critical exceptions that carry control flow semantics
+# These exceptions must propagate for proper human-in-the-loop and infinite loop prevention
+if isinstance(last_exception, (PausedException, InfiniteFallbackError, InfiniteRedirectError)):
+    raise last_exception
+
+# For non-critical exceptions, maintain unified error handling contract
+# All other step failures return StepResult(success=False) for predictable API
 return StepResult(
     name=step.name,
     output=None,
     success=False,
     attempts=attempt,
     feedback=f"Agent execution failed with {type(last_exception).__name__}: {last_exception}",
-    latency_s=0.0,
+    latency_s=latency,  # Preserve actual execution time
 )
 ```
 
 ## Benefits
 
 ### ✅ **Predictable API Contract**
-All step failures now return `StepResult(success=False)`, never raise exceptions.
+- Critical exceptions propagate for proper control flow
+- All other failures return `StepResult(success=False)`
+- Consistent behavior across all step types
+
+### ✅ **Preserved Control Flow Semantics**
+- `PausedException`: Human-in-the-loop interactions work correctly
+- `InfiniteFallbackError`: Prevents infinite fallback loops
+- `InfiniteRedirectError`: Prevents infinite redirect loops
 
 ### ✅ **Robust Error Handling**
-Clients can implement one consistent error handling pattern for all step types.
+- Clients can implement one consistent error handling pattern for regular failures
+- Critical exceptions maintain their special semantics
 
 ### ✅ **Better Debugging**
-Error information is preserved in `StepResult.feedback` with clear exception details.
+- Error information preserved in `StepResult.feedback` with clear exception details
+- **Timing data preserved** for performance analysis and debugging
 
 ### ✅ **Simplified Client Code**
 ```python
@@ -76,26 +100,43 @@ async for item in runner.stream_async("data"):
     if hasattr(item, 'step_history') and not item.step_history[0].success:
         # Handle StepResult for streaming steps
 
-# AFTER: One consistent pattern
+# AFTER: One consistent pattern for regular failures
 result = runner.run("data")
 if not result.step_history[0].success:
-    # Handle all step failures uniformly
+    # Handle all regular step failures uniformly
+
+# Critical exceptions still propagate naturally
+try:
+    result = runner.run("data")
+except PausedException:
+    # Handle human-in-the-loop
+except InfiniteFallbackError:
+    # Handle infinite fallback prevention
 ```
 
 ### ✅ **Maintains Backward Compatibility**
-Existing code that checks `StepResult.success` continues to work without changes.
+- Existing code that checks `StepResult.success` continues to work
+- Critical exception handling remains unchanged
+
+### ✅ **Performance Insights**
+- Failed steps now preserve actual execution time
+- Better debugging and performance analysis capabilities
 
 ## Testing
 
 ### Unit Tests
 **File**: `tests/unit/test_ultra_executor.py`
-- `test_unified_error_handling_contract()`: Validates all step types return `StepResult`
+- `test_unified_error_handling_contract()`: Validates regular failures return `StepResult`
+- `test_critical_exceptions_are_re_raised()`: Validates critical exceptions propagate
+- `test_timing_preservation_for_failed_steps()`: Validates timing data preservation
 
 ### Integration Tests
 **File**: `tests/integration/test_unified_error_handling.py`
 - Comprehensive real-world scenario testing
 - Validates error information preservation
 - Tests pipeline continuation behavior
+- Validates critical exception propagation
+- Tests timing data preservation
 
 ## Alignment with Flujo Design Principles
 
@@ -103,33 +144,38 @@ Existing code that checks `StepResult.success` continues to work without changes
 - Consistent behavior across all step types
 - Predictable error handling contract
 - Robust failure recovery
+- **Preserved critical control flow semantics**
 
 ### 🎯 **Observability**
 - Clear error information in `StepResult.feedback`
 - Preserved exception details for debugging
+- **Accurate timing data for all failures**
 - Consistent telemetry and logging
 
 ### 🎯 **Modularity**
 - Single responsibility: All steps handle errors uniformly
 - Clean separation of concerns
 - Maintainable and testable code
+- **Critical exceptions maintain their special semantics**
 
 ### 🎯 **Consistency**
-- One error handling pattern for all step types
+- One error handling pattern for regular failures
 - Uniform API contract across the framework
 - Predictable behavior for users
+- **Critical exceptions propagate naturally**
 
 ## Impact
 
-This fix addresses a **fundamental design flaw** that affected:
+This enhanced fix addresses **fundamental design flaws** that affected:
 
 1. **API Reliability**: Unpredictable error handling made the API unreliable
 2. **Developer Experience**: Required different error handling for different step types
-3. **Debugging**: Inconsistent error information made troubleshooting difficult
+3. **Debugging**: Inconsistent error information and lost timing data made troubleshooting difficult
 4. **Maintainability**: Complex conditional logic was hard to understand and maintain
+5. **Control Flow**: Critical exceptions were incorrectly masked, breaking human-in-the-loop and infinite loop prevention
 
 ## Conclusion
 
-The unified error handling contract fix embodies Flujo's spirit of providing **reliable, predictable, and well-architected solutions**. By applying first principles reasoning and eliminating the inconsistent error handling, we've created a more robust and maintainable framework that better serves its users.
+The enhanced unified error handling contract fix embodies Flujo's spirit of providing **reliable, predictable, and well-architected solutions**. By applying first principles reasoning and implementing a nuanced approach that preserves critical control flow while unifying regular error handling, we've created a more robust and maintainable framework that better serves its users.
 
-This fix demonstrates Flujo's commitment to **quality engineering** and **user experience**, ensuring that the framework provides a consistent and reliable foundation for building intelligent systems.
+This fix demonstrates Flujo's commitment to **quality engineering** and **user experience**, ensuring that the framework provides a consistent and reliable foundation for building intelligent systems while preserving the special semantics of critical exceptions.
