@@ -703,6 +703,27 @@ class UltraStepExecutor(Generic[TContext]):
                 step, data, context, resources, usage_limits, stream, on_chunk
             )
 
+    def _handle_step_exception(self, e: Exception) -> None:
+        """Handle exceptions from step execution with proper classification.
+        
+        This method classifies exceptions and handles them appropriately:
+        - Critical exceptions (PausedException, InfiniteFallbackError, InfiniteRedirectError) 
+          are re-raised immediately without caching
+        - Other exceptions are re-raised normally
+        
+        Args:
+            e: The exception that occurred during step execution
+            
+        Raises:
+            The original exception (either critical or normal)
+        """
+        if isinstance(e, (PausedException, InfiniteFallbackError, InfiniteRedirectError)):
+            # CRITICAL FIX: Re-raise critical exceptions without caching
+            raise e
+        else:
+            # Handle other exceptions normally
+            raise e
+
     async def _execute_complex_step(
         self,
         step: Step[Any, Any],
@@ -866,12 +887,9 @@ class UltraStepExecutor(Generic[TContext]):
                     stream=stream,
                     on_chunk=on_chunk,
                 )
-        except (PausedException, InfiniteFallbackError, InfiniteRedirectError) as e:
-            # CRITICAL FIX: Re-raise critical exceptions without caching
-            raise e
         except Exception as e:
-            # Handle other exceptions normally
-            raise e
+            # Use helper method to handle exception classification
+            self._handle_step_exception(e)
 
         # CRITICAL FIX: Cache successful results for complex steps
         if self._cache is not None and result.success and cache_key is not None:
