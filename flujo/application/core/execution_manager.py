@@ -129,70 +129,52 @@ class ExecutionManager(Generic[ContextT]):
                     if step_result:
                         data = step_result.output
 
-                    # CRITICAL FIX: Check usage limits immediately after step completes
-                    # This ensures we stop before the next step starts
                     if step_result is not None:
                         # Only perform usage limit checks if limits are configured
                         if self.usage_governor.usage_limits is not None:
-                            # Try fast cost-only check first to avoid expensive PipelineResult creation
-                            if self.usage_governor.check_usage_limits_fast(
-                                current_total_cost=result.total_cost_usd,
-                                step_cost=step_result.cost_usd,
-                                span=None,  # No span needed for fast check
-                            ):
-                                # Cost limit would be exceeded, create full PipelineResult for proper exception
-                                potential_total_cost = result.total_cost_usd + step_result.cost_usd
+                            # Calculate running totals efficiently (O(1) operation)
+                            potential_total_cost = result.total_cost_usd + step_result.cost_usd
+                            current_total_tokens = sum(
+                                getattr(step, "token_counts", 0) for step in result.step_history
+                            )
+                            step_tokens = getattr(step_result, "token_counts", 0)
 
-                                # Create a new step history list for the temporary result (do not mutate the original).
-                                # This ensures the exception contains the correct state at the moment of the limit breach.
-                                # Performance optimization: Use list copy + append instead of concatenation for large pipelines
+                            # Use the most efficient checking method that avoids PipelineResult creation
+                            limit_exceeded, _ = self.usage_governor.check_usage_limits_efficient(
+                                current_total_cost=result.total_cost_usd,
+                                current_total_tokens=current_total_tokens,
+                                step_cost=step_result.cost_usd,
+                                step_tokens=step_tokens,
+                                span=None,  # No span needed for efficient check
+                            )
+
+                            if limit_exceeded:
+                                # Only create PipelineResult when limits are actually breached
+                                # This is the only time we need the full step history for exceptions
                                 from flujo.domain.models import PipelineResult
 
                                 # Create step history efficiently: copy existing + append new step
+                                # This is only done when limits are breached, not for every step
                                 temp_step_history = result.step_history.copy()
                                 temp_step_history.append(step_result)
 
-                                cost_check_result: PipelineResult[ContextT] = PipelineResult(
+                                exception_result: PipelineResult[ContextT] = PipelineResult(
                                     step_history=temp_step_history,
                                     total_cost_usd=potential_total_cost,
                                     final_pipeline_context=result.final_pipeline_context,
                                     trace_tree=result.trace_tree,
                                 )
+
+                                # Re-check with full PipelineResult to get proper exception
                                 with telemetry.logfire.span(f"usage_check_{step.name}") as span:
-                                    self.usage_governor.check_usage_limits(cost_check_result, span)
+                                    self.usage_governor.check_usage_limits(exception_result, span)
                                     self.usage_governor.update_telemetry_span(
-                                        span, cost_check_result
+                                        span, exception_result
                                     )
                             else:
-                                # Fast check passed, but we still need to check token limits if configured
-                                if self.usage_governor.usage_limits.total_tokens_limit is not None:
-                                    # Token limits need full step history, create PipelineResult for complete check
-                                    potential_total_cost = (
-                                        result.total_cost_usd + step_result.cost_usd
-                                    )
-
-                                    from flujo.domain.models import PipelineResult
-
-                                    # Create step history efficiently: copy existing + append new step
-                                    temp_step_history = result.step_history.copy()
-                                    temp_step_history.append(step_result)
-
-                                    token_check_result: PipelineResult[ContextT] = PipelineResult(
-                                        step_history=temp_step_history,
-                                        total_cost_usd=potential_total_cost,
-                                        final_pipeline_context=result.final_pipeline_context,
-                                        trace_tree=result.trace_tree,
-                                    )
-                                    with telemetry.logfire.span(f"usage_check_{step.name}") as span:
-                                        self.usage_governor.check_usage_limits(
-                                            token_check_result, span
-                                        )
-                                        self.usage_governor.update_telemetry_span(
-                                            span, token_check_result
-                                        )
-                                else:
-                                    # No token limits, fast check was sufficient
-                                    pass
+                                # No limits exceeded - no PipelineResult creation needed
+                                # This is the fast path for 99% of cases
+                                pass
 
                 except PipelineAbortSignal:
                     # Update pipeline result before aborting

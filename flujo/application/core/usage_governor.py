@@ -17,6 +17,55 @@ class UsageGovernor(Generic[ContextT]):
     def __init__(self, usage_limits: Optional[UsageLimits] = None) -> None:
         self.usage_limits = usage_limits
 
+    def check_usage_limits_efficient(
+        self,
+        current_total_cost: float,
+        current_total_tokens: int,
+        step_cost: float,
+        step_tokens: int,
+        span: Any | None,
+    ) -> tuple[bool, Optional[PipelineResult[ContextT]]]:
+        """Efficient usage limit check that avoids creating PipelineResult unless needed.
+
+        This method performs both cost and token checks using running totals,
+        only creating a PipelineResult when a limit is actually breached.
+        This is O(1) for the check itself, with PipelineResult creation only
+        when exceptions are raised.
+
+        Args:
+            current_total_cost: Current total cost before this step
+            current_total_tokens: Current total tokens before this step
+            step_cost: Cost of the current step
+            step_tokens: Tokens used by the current step
+            span: Telemetry span for error recording
+
+        Returns:
+            tuple[bool, Optional[PipelineResult]]: (limit_exceeded, pipeline_result_for_exception)
+        """
+        if self.usage_limits is None:
+            return False, None
+
+        potential_total_cost = current_total_cost + step_cost
+        potential_total_tokens = current_total_tokens + step_tokens
+
+        # Check cost limits
+        if (
+            self.usage_limits.total_cost_usd_limit is not None
+            and potential_total_cost > self.usage_limits.total_cost_usd_limit
+        ):
+            # Cost limit exceeded - we need a PipelineResult for the exception
+            return True, None  # PipelineResult will be created by caller
+
+        # Check token limits
+        if (
+            self.usage_limits.total_tokens_limit is not None
+            and potential_total_tokens > self.usage_limits.total_tokens_limit
+        ):
+            # Token limit exceeded - we need a PipelineResult for the exception
+            return True, None  # PipelineResult will be created by caller
+
+        return False, None
+
     def check_usage_limits_fast(
         self,
         current_total_cost: float,
