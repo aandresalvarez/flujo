@@ -1436,3 +1436,35 @@ class TestUltraStepExecutor:
         # Verify that each result has its own metadata instance
         assert result2.metadata_ is not result3.metadata_
         assert result1.metadata_ is not result2.metadata_
+
+    @pytest.mark.asyncio
+    async def test_regression_deepcopy_import_optimization(self):
+        """REGRESSION: Ensure deepcopy import is at module level for performance."""
+        import ast
+        import inspect
+
+        # Get the source code of the ultra_executor module
+        from flujo.application.core import ultra_executor
+        source = inspect.getsource(ultra_executor)
+
+        # Parse the source code
+        tree = ast.parse(source)
+
+        # Find all import statements
+        imports = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                if node.module == 'copy' and any(alias.name == 'deepcopy' for alias in node.names):
+                    imports.append(node)
+
+        # Verify that deepcopy is imported at module level
+        assert len(imports) > 0, "deepcopy should be imported at module level"
+        
+        # Verify that deepcopy is not imported inside functions
+        for import_node in imports:
+            # Check if this import is at the module level (not inside a function)
+            current = import_node
+            while hasattr(current, 'parent'):
+                current = current.parent
+                if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    assert False, "deepcopy import should not be inside a function"
