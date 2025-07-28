@@ -60,16 +60,12 @@ async def assess_and_refine(definition_to_assess: str, *, context: CohortContext
     Returns:
         dict: Updates to apply to the context
     """
-    # Debug logging removed for production
-
     # Call the agent with the current definition
     agent_response = await ClarificationAgent.run(definition_to_assess, context=context)
 
     # Extract the actual output from the agent response
     # The agent might return an object with an 'output' attribute or a string directly
     agent_output = getattr(agent_response, "output", agent_response)
-
-    # Debug logging removed for production
 
     if "[CLARITY_CONFIRMED]" in agent_output:
         # If clear, update the definition and set the 'is_clear' flag to True
@@ -78,7 +74,6 @@ async def assess_and_refine(definition_to_assess: str, *, context: CohortContext
             "current_definition": final_definition,
             "is_clear": True
         }
-        # Debug logging removed for production
         return updates
     else:
         # If not clear, simulate human clarification based on the agent's question
@@ -92,7 +87,6 @@ async def assess_and_refine(definition_to_assess: str, *, context: CohortContext
             "is_clear": False,
             "clarification_count": context.clarification_count + 1
         }
-        # Debug logging removed for production
         return updates
 
 def _simulate_human_clarification(agent_question: str, clarification_count: int) -> str:

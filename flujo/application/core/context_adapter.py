@@ -154,7 +154,13 @@ def register_custom_type(type_class: Type[T]) -> None:
     automatic type resolution for the registered type.
 
     Args:
-        type_class: The type class to register
+        type_class: The type class to register for serialization and type resolution.
+
+    Returns:
+        None
+
+    Raises:
+        ValueError: If the type class doesn't have required methods for serialization.
     """
     if hasattr(type_class, "__name__"):
         # Register for serialization - register the class itself
@@ -168,11 +174,10 @@ def register_custom_type(type_class: Type[T]) -> None:
         ):
             # Use a type-safe approach to call model_validate
             def safe_model_validate(data: Any) -> Any:
-                if hasattr(type_class, "model_validate") and callable(
-                    getattr(type_class, "model_validate", None)
-                ):
-                    return type_class.model_validate(data)  # type: ignore[attr-defined]
-                raise ValueError(f"Type {type_class} does not have model_validate method")
+                model_validate = getattr(type_class, "model_validate", None)
+                if callable(model_validate):
+                    return model_validate(data)
+                raise ValueError(f"Type {type_class} does not have a callable model_validate method")
 
             register_custom_deserializer(type_class, safe_model_validate)
 

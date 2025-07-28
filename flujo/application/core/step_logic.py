@@ -803,13 +803,6 @@ async def _execute_loop_step_logic(
             # After each iteration, merge all updates from iteration_context into context.
             # This ensures that all loop types (LoopStep, MapStep, etc.) have their context updates preserved.
             if context is not None and iteration_context is not None:
-                # Debug: Log context values before merging
-                telemetry.logfire.debug(
-                    f"Before merge - iteration {i}, "
-                    f"context.iteration_count: {getattr(context, 'iteration_count', 'N/A')}, "
-                    f"iteration_context.iteration_count: {getattr(iteration_context, 'iteration_count', 'N/A')}"
-                )
-
                 try:
                     merge_success = safe_merge_context_updates(
                         target_context=context,
@@ -817,19 +810,11 @@ async def _execute_loop_step_logic(
                         excluded_fields=set(),
                     )
 
-                    # Debug: Log context values after merging
-                    telemetry.logfire.debug(
-                        f"After merge - iteration {i}, "
-                        f"context.iteration_count: {getattr(context, 'iteration_count', 'N/A')}, "
-                        f"merge_success: {merge_success}"
-                    )
-
                     if not merge_success:
                         context_fields = list(context.__dict__.keys()) if context else "None"
                         iteration_fields = (
                             list(iteration_context.__dict__.keys()) if iteration_context else "None"
                         )
-                        # Use RuntimeError instead of AssertionError for runtime conditions
                         raise RuntimeError(
                             f"Context merge failed in {type(loop_step).__name__} '{loop_step.name}' iteration {i}. "
                             f"This violates the first-principles guarantee that context updates must always be applied. "
@@ -921,8 +906,6 @@ async def _execute_loop_step_logic(
                 "Loop did not complete successfully or exit condition not met positively."
             )
 
-    # Note: context_setter is designed for pipeline-level results, not step-level results
-    # The loop step handles context updates internally through the first-principles guarantee
     return loop_overall_result
 
 
