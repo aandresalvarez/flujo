@@ -20,6 +20,10 @@ from flujo import Step, Pipeline, step, Flujo
 from flujo.domain.models import PipelineContext
 
 
+# Module-level constant for performance test loop count
+PERFORMANCE_TEST_LOOP_COUNT = int(os.getenv("PERFORMANCE_TEST_LOOP_COUNT", "1000"))
+
+
 class RegressionTestContext(PipelineContext):
     """Context for regression testing the loop context update bug."""
 
@@ -359,7 +363,6 @@ async def test_regression_performance_under_load():
         context.accumulated_value += data if isinstance(data, (int, float)) else 1
 
         # Simulate performance load
-        PERFORMANCE_TEST_LOOP_COUNT = int(os.getenv("PERFORMANCE_TEST_LOOP_COUNT", "1000"))
         for i in range(PERFORMANCE_TEST_LOOP_COUNT):
             context.debug_data[f"performance_item_{context.iteration_count}_{i}"] = i
 
@@ -402,6 +405,5 @@ async def test_regression_performance_under_load():
     assert final_context.accumulated_value >= 3
 
     # Verify large amounts of data are preserved
-    performance_loop_count = int(os.getenv("PERFORMANCE_TEST_LOOP_COUNT", "1000"))
-    expected_items = 3 * performance_loop_count  # 3 iterations * loop count items each
+    expected_items = 3 * PERFORMANCE_TEST_LOOP_COUNT  # 3 iterations * loop count items each
     assert len(final_context.debug_data) >= expected_items
