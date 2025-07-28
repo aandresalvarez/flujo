@@ -134,25 +134,58 @@ class ExecutionManager(Generic[ContextT]):
                     if step_result is not None:
                         # Only perform usage limit checks if limits are configured
                         if self.usage_governor.usage_limits is not None:
-                            # Calculate potential total cost only when needed
-                            potential_total_cost = result.total_cost_usd + step_result.cost_usd
+                            # Try fast cost-only check first to avoid expensive PipelineResult creation
+                            if self.usage_governor.check_usage_limits_fast(
+                                current_total_cost=result.total_cost_usd,
+                                step_cost=step_result.cost_usd,
+                                span=None,  # No span needed for fast check
+                            ):
+                                # Cost limit would be exceeded, create full PipelineResult for proper exception
+                                potential_total_cost = result.total_cost_usd + step_result.cost_usd
 
-                            # Create a new step history list for the temporary result (do not mutate the original).
-                            # This ensures the exception contains the correct state at the moment of the limit breach.
-                            # Performance note: List concatenation creates a new list, but this is necessary for correctness
-                            # and exception traceability. For extremely large pipelines, consider on-disk step history.
-                            from flujo.domain.models import PipelineResult
+                                # Create a new step history list for the temporary result (do not mutate the original).
+                                # This ensures the exception contains the correct state at the moment of the limit breach.
+                                # Performance note: List concatenation creates a new list, but this is necessary for correctness
+                                # and exception traceability. For extremely large pipelines, consider on-disk step history.
+                                from flujo.domain.models import PipelineResult
 
-                            temp_result: PipelineResult[ContextT] = PipelineResult(
-                                step_history=result.step_history + [step_result],
-                                total_cost_usd=potential_total_cost,
-                                final_pipeline_context=result.final_pipeline_context,
-                                trace_tree=result.trace_tree,
-                            )
-                            with telemetry.logfire.span(f"usage_check_{step.name}") as span:
-                                self.usage_governor.check_usage_limits(temp_result, span)
-                                self.usage_governor.update_telemetry_span(span, temp_result)
-                        # If we reach here, the usage check passed, so keep should_add_step_result = True
+                                cost_check_result: PipelineResult[ContextT] = PipelineResult(
+                                    step_history=result.step_history + [step_result],
+                                    total_cost_usd=potential_total_cost,
+                                    final_pipeline_context=result.final_pipeline_context,
+                                    trace_tree=result.trace_tree,
+                                )
+                                with telemetry.logfire.span(f"usage_check_{step.name}") as span:
+                                    self.usage_governor.check_usage_limits(cost_check_result, span)
+                                    self.usage_governor.update_telemetry_span(
+                                        span, cost_check_result
+                                    )
+                            else:
+                                # Fast check passed, but we still need to check token limits if configured
+                                if self.usage_governor.usage_limits.total_tokens_limit is not None:
+                                    # Token limits need full step history, create PipelineResult for complete check
+                                    potential_total_cost = (
+                                        result.total_cost_usd + step_result.cost_usd
+                                    )
+
+                                    from flujo.domain.models import PipelineResult
+
+                                    token_check_result: PipelineResult[ContextT] = PipelineResult(
+                                        step_history=result.step_history + [step_result],
+                                        total_cost_usd=potential_total_cost,
+                                        final_pipeline_context=result.final_pipeline_context,
+                                        trace_tree=result.trace_tree,
+                                    )
+                                    with telemetry.logfire.span(f"usage_check_{step.name}") as span:
+                                        self.usage_governor.check_usage_limits(
+                                            token_check_result, span
+                                        )
+                                        self.usage_governor.update_telemetry_span(
+                                            span, token_check_result
+                                        )
+                                else:
+                                    # No token limits, fast check was sufficient
+                                    pass
 
                 except PipelineAbortSignal:
                     # Update pipeline result before aborting

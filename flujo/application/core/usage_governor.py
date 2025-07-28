@@ -17,6 +17,37 @@ class UsageGovernor(Generic[ContextT]):
     def __init__(self, usage_limits: Optional[UsageLimits] = None) -> None:
         self.usage_limits = usage_limits
 
+    def check_usage_limits_fast(
+        self,
+        current_total_cost: float,
+        step_cost: float,
+        span: Any | None,
+    ) -> bool:
+        """Fast cost-only usage limit check without creating PipelineResult objects.
+
+        This method performs a lightweight cost check to avoid creating expensive
+        PipelineResult objects for every step. Returns True if limits would be exceeded.
+
+        Args:
+            current_total_cost: Current total cost before this step
+            step_cost: Cost of the current step
+            span: Telemetry span for error recording
+
+        Returns:
+            bool: True if cost limit would be exceeded, False otherwise
+        """
+        if self.usage_limits is None:
+            return False
+
+        # Check cost limits only (fast path)
+        if (
+            self.usage_limits.total_cost_usd_limit is not None
+            and current_total_cost + step_cost > self.usage_limits.total_cost_usd_limit
+        ):
+            return True
+
+        return False
+
     def check_usage_limits(
         self,
         pipeline_result: PipelineResult[ContextT],
