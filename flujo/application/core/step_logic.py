@@ -9,7 +9,7 @@ from typing import Any, Dict, Optional, TypeVar, Callable, Awaitable, cast
 from unittest.mock import Mock
 
 from ...domain.dsl.pipeline import Pipeline
-from ...domain.dsl.loop import LoopStep, MapStep
+from ...domain.dsl.loop import LoopStep
 from ...domain.dsl.conditional import ConditionalStep
 from ...domain.dsl.parallel import ParallelStep
 from ...domain.dsl.step import (
@@ -796,161 +796,56 @@ async def _execute_loop_step_logic(
                 final_body_output_of_last_iteration = current_iteration_data_for_body_step
                 last_successful_iteration_body_output = current_iteration_data_for_body_step
 
-            # --- FIRST PRINCIPLES GUARANTEE ---
-            # After each iteration, always merge all updates from iteration_context into context.
+            # --- UNIFIED CONTEXT MERGE ---
+            # After each iteration, merge all updates from iteration_context into context.
             # This ensures that all loop types (LoopStep, MapStep, etc.) have their context updates preserved.
-            # No code path (deepcopy, serialization, etc.) can reset or shadow updated fields between merge and exit condition.
             if context is not None and iteration_context is not None:
-                merge_success = safe_merge_context_updates(
-                    target_context=context,
-                    source_context=iteration_context,
-                    excluded_fields=set(),
+                # Debug: Log context values before merging
+                telemetry.logfire.debug(
+                    f"Before merge - iteration {i}, "
+                    f"context.iteration_count: {getattr(context, 'iteration_count', 'N/A')}, "
+                    f"iteration_context.iteration_count: {getattr(iteration_context, 'iteration_count', 'N/A')}"
                 )
-                if not merge_success:
-                    context_fields = list(context.__dict__.keys()) if context else "None"
-                    iteration_fields = (
-                        list(iteration_context.__dict__.keys()) if iteration_context else "None"
+
+                try:
+                    merge_success = safe_merge_context_updates(
+                        target_context=context,
+                        source_context=iteration_context,
+                        excluded_fields=set(),
                     )
-                    raise AssertionError(
-                        f"Context merge failed in LoopStep '{loop_step.name}' iteration {i}. "
-                        f"This violates the first-principles guarantee that context updates must always be applied. "
-                        f"(context fields: {context_fields}, iteration context fields: {iteration_fields})"
-                    )
-            # Context merging for MapStep, RefineUntil, AgenticLoop: must happen after body step execution
-            if isinstance(loop_step, MapStep):  # Replace hasattr with type check
-                if context is not None and iteration_context is not None:
-                    try:
-                        merge_success = safe_merge_context_updates(
-                            target_context=context,
-                            source_context=iteration_context,
-                            excluded_fields=set(),
-                        )
-                        if not merge_success:
-                            telemetry.logfire.warn(
-                                f"Context merge failed in MapStep '{loop_step.name}' iteration {i} "
-                                f"(context fields: {list(context.__dict__.keys()) if context else 'None'}, "
-                                f"iteration context fields: {list(iteration_context.__dict__.keys()) if iteration_context else 'None'}), "
-                                "but continuing execution"
-                            )
-                    except Exception as e:
-                        telemetry.logfire.error(
-                            f"Failed to merge context updates in MapStep '{loop_step.name}' iteration {i}: {e}"
-                        )
-            elif (
-                hasattr(loop_step, "loop_output_mapper")
-                and loop_step.loop_output_mapper is not None
-            ):
-                if context is not None and iteration_context is not None:
-                    try:
-                        merge_success = safe_merge_context_updates(
-                            target_context=context,
-                            source_context=iteration_context,
-                            excluded_fields=set(),
-                        )
-                        if not merge_success:
-                            telemetry.logfire.warn(
-                                f"Context merge failed in {loop_step.name} iteration {i} "
-                                f"(context fields: {list(context.__dict__.keys()) if context else 'None'}, "
-                                f"iteration context fields: {list(iteration_context.__dict__.keys()) if iteration_context else 'None'}), "
-                                "but continuing execution"
-                            )
-                    except Exception as e:
-                        telemetry.logfire.error(
-                            f"Failed to merge context updates in {loop_step.name} iteration {i}: {e}"
-                        )
-            else:
-                # FIXED: Add context merging for regular LoopStep with @step(updates_context=True)
-                # This ensures context updates from loop body steps are properly applied
-                if context is not None and iteration_context is not None:
+
+                    # Debug: Log context values after merging
                     telemetry.logfire.debug(
-                        f"Attempting context merge for LoopStep '{loop_step.name}' iteration {i}"
-                    )
-                    try:
-                        # First, apply any context updates from the step execution to the iteration context
-                        # This ensures that the iteration context has the latest updates before merging
-                        # CRITICAL FIX: Only apply context updates if the step is configured for it
-                        # This prevents treating regular step outputs as context updates
-                        if isinstance(final_body_output_of_last_iteration, dict):
-                            # Context updates are handled by safe_merge_context_updates below
-                            # No manual setattr operations needed - merge function handles all updates
-                            pass
-
-                        merge_success = safe_merge_context_updates(
-                            target_context=context,
-                            source_context=iteration_context,
-                            excluded_fields=set(),
-                        )
-
-                        if merge_success:
-                            telemetry.logfire.debug(
-                                f"Successfully merged context updates in LoopStep '{loop_step.name}' iteration {i}"
-                            )
-
-                        else:
-                            telemetry.logfire.warn(
-                                f"Context merge failed in LoopStep '{loop_step.name}' iteration {i} "
-                                f"(context fields: {list(context.__dict__.keys()) if context else 'None'}, "
-                                f"iteration context fields: {list(iteration_context.__dict__.keys()) if iteration_context else 'None'}), "
-                                "but continuing execution"
-                            )
-                    except Exception as e:
-                        telemetry.logfire.error(
-                            f"Failed to merge context updates in LoopStep '{loop_step.name}' iteration {i}: {e}"
-                        )
-                # Regular LoopStep: ensure iterations remain isolated to prevent unintended
-                # side effects between iterations. Isolation ensures that each iteration operates
-                # independently, maintaining the integrity of the loop's logic and results.
-
-                # --- FIRST PRINCIPLES GUARANTEE ---
-                # After each iteration, always merge all updates from iteration_context into context.
-                # This ensures that all loop types (LoopStep, MapStep, etc.) have their context updates preserved.
-                # No code path (deepcopy, serialization, etc.) can reset or shadow updated fields between merge and exit condition.
-                if context is not None and iteration_context is not None:
-                    # Debug: Log context values before merging
-                    telemetry.logfire.debug(
-                        f"Before merge - iteration {i}, "
+                        f"After merge - iteration {i}, "
                         f"context.iteration_count: {getattr(context, 'iteration_count', 'N/A')}, "
-                        f"iteration_context.iteration_count: {getattr(iteration_context, 'iteration_count', 'N/A')}"
+                        f"merge_success: {merge_success}"
                     )
 
-                    try:
-                        merge_success = safe_merge_context_updates(
-                            target_context=context,
-                            source_context=iteration_context,
-                            excluded_fields=set(),
+                    if not merge_success:
+                        context_fields = list(context.__dict__.keys()) if context else "None"
+                        iteration_fields = (
+                            list(iteration_context.__dict__.keys()) if iteration_context else "None"
                         )
-
-                        # Debug: Log context values after merging
-                        telemetry.logfire.debug(
-                            f"After merge - iteration {i}, "
-                            f"context.iteration_count: {getattr(context, 'iteration_count', 'N/A')}, "
-                            f"merge_success: {merge_success}"
+                        # Use RuntimeError instead of AssertionError for runtime conditions
+                        raise RuntimeError(
+                            f"Context merge failed in LoopStep '{loop_step.name}' iteration {i}. "
+                            f"This violates the first-principles guarantee that context updates must always be applied. "
+                            f"(context fields: {context_fields}, iteration context fields: {iteration_fields})"
                         )
+                    # CRITICAL: Context updates are merged directly to main context
+                    # No need to reassign context reference - updates are preserved
+                except Exception as e:
+                    telemetry.logfire.error(
+                        f"Failed to perform context merge in LoopStep '{loop_step.name}' iteration {i}: {e}"
+                    )
+                    # Re-raise the exception to maintain the first-principles guarantee
+                    raise
 
-                        if not merge_success:
-                            context_fields = list(context.__dict__.keys()) if context else "None"
-                            iteration_fields = (
-                                list(iteration_context.__dict__.keys())
-                                if iteration_context
-                                else "None"
-                            )
-                            raise AssertionError(
-                                f"Context merge failed in LoopStep '{loop_step.name}' iteration {i}. "
-                                f"This violates the first-principles guarantee that context updates must always be applied. "
-                                f"(context fields: {context_fields}, iteration context fields: {iteration_fields})"
-                            )
-                        # CRITICAL: Context updates are merged directly to main context
-                        # No need to reassign context reference - updates are preserved
-                    except Exception as e:
-                        telemetry.logfire.error(
-                            f"Failed to perform universal context merge in LoopStep '{loop_step.name}' iteration {i}: {e}"
-                        )
-
-        # Now check the exit condition on the iteration context to ensure it sees the most recent updates
-        # The exit condition should evaluate based on the iteration context before merging to main context
+        # Now check the exit condition on the main context after merging updates
+        # The exit condition should evaluate based on the updated main context to maintain backward compatibility
         try:
             should_exit = loop_step.exit_condition_callable(
-                final_body_output_of_last_iteration, iteration_context
+                final_body_output_of_last_iteration, context
             )
         except Exception as e:
             telemetry.logfire.error(
