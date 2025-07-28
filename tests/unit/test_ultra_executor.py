@@ -1532,3 +1532,57 @@ class TestUltraStepExecutor:
         # Verify that the exception was not cached by checking that it's still raised
         with pytest.raises(PausedException, match="Test pause"):
             await executor._execute_complex_step(step, "test_input")
+
+    @pytest.mark.asyncio
+    async def test_unified_error_handling_contract(self, executor):
+        """Test that all step types have consistent error handling contract.
+
+        FLUJO SPIRIT: All step failures should return StepResult(success=False),
+        never raise exceptions. This ensures a predictable and robust API.
+        """
+
+        class FailingAgent:
+            async def run(self, data, **kwargs):
+                raise RuntimeError("Test failure")
+
+            async def stream(self, data, **kwargs):
+                yield "partial"
+                raise RuntimeError("Test failure")
+
+        # Test simple non-streaming step
+        simple_step = Step.model_validate(
+            {"name": "simple", "agent": FailingAgent(), "config": {"max_retries": 1}}
+        )
+        result = await executor.execute_step(simple_step, "test_data")
+
+        # Should return StepResult, not raise exception
+        assert isinstance(result, StepResult)
+        assert not result.success
+        assert "RuntimeError: Test failure" in result.feedback
+
+        # Test streaming step
+        streaming_step = Step.model_validate(
+            {"name": "streaming", "agent": FailingAgent(), "config": {"max_retries": 1}}
+        )
+        result = await executor.execute_step(streaming_step, "test_data", stream=True)
+
+        # Should return StepResult, not raise exception
+        assert isinstance(result, StepResult)
+        assert not result.success
+        assert "RuntimeError: Test failure" in result.feedback
+
+        # Test complex step (with plugins)
+        complex_step = Step.model_validate(
+            {
+                "name": "complex",
+                "agent": FailingAgent(),
+                "config": {"max_retries": 1},
+                "plugins": [(Mock(), 1)],  # Add a plugin to make it complex
+            }
+        )
+        result = await executor.execute_step(complex_step, "test_data")
+
+        # Should return StepResult, not raise exception
+        assert isinstance(result, StepResult)
+        assert not result.success
+        assert "RuntimeError: Test failure" in result.feedback

@@ -303,7 +303,13 @@ async def test_pipeline_composition_error_handling() -> None:
     # Compose them
     composed = failing_pipeline >> working_pipeline
 
-    # Execute - the pipeline should fail at the first step
+    # Execute - the pipeline should fail at the first step and return StepResult
+    # instead of raising an exception (unified error handling)
     runner = create_test_flujo(composed)
-    with pytest.raises(Exception, match="Simulated failure"):
-        await gather_result(runner, "input")
+    result = await gather_result(runner, "input")
+
+    # Verify that the pipeline failed at the first step
+    assert len(result.step_history) == 1
+    assert not result.step_history[0].success
+    assert result.step_history[0].name == "failing_step"
+    assert "Simulated failure" in result.step_history[0].feedback

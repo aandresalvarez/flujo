@@ -711,19 +711,17 @@ class UltraStepExecutor(Generic[TContext]):
                         last_exception = e
                         continue
                 # If we get here, all retries failed
-                # For streaming agents, always convert exceptions to failed StepResult
-                # For non-streaming agents without plugins/validators/fallbacks, re-raise the exception
-                if stream or (step.plugins or step.validators or step.fallback_step):
-                    return StepResult(
-                        name=step.name,
-                        output=None,
-                        success=False,
-                        attempts=attempt,
-                        feedback=f"Agent execution failed with {type(last_exception).__name__}: {last_exception}",
-                        latency_s=0.0,
-                    )
-                else:
-                    raise last_exception
+                # FLUJO SPIRIT FIX: Unify error handling contract for reliability and consistency
+                # All step failures should return StepResult(success=False) for predictable API
+                # This ensures consistent behavior across streaming, non-streaming, and complex steps
+                return StepResult(
+                    name=step.name,
+                    output=None,
+                    success=False,
+                    attempts=attempt,
+                    feedback=f"Agent execution failed with {type(last_exception).__name__}: {last_exception}",
+                    latency_s=0.0,
+                )
         else:
             return await self._execute_complex_step(
                 step,
