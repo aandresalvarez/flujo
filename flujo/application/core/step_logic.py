@@ -935,6 +935,7 @@ async def _execute_conditional_step_logic(
     step_executor: StepExecutor[TContext],
     context_model_defined: bool,
     usage_limits: UsageLimits | None = None,
+    context_setter: Callable[[PipelineResult[TContext], Optional[TContext]], None],
 ) -> StepResult:
     """Logic for executing a ConditionalStep without engine coupling."""
     conditional_overall_result = StepResult(name=conditional_step.name)
@@ -1229,6 +1230,7 @@ async def _handle_conditional_step(
     step_executor: StepExecutor[TContext],
     context_model_defined: bool,
     usage_limits: UsageLimits | None,
+    context_setter: Callable[[PipelineResult[TContext], Optional[TContext]], None],
 ) -> StepResult:
     return await _execute_conditional_step_logic(
         conditional_step=step,
@@ -1238,6 +1240,7 @@ async def _handle_conditional_step(
         step_executor=step_executor,
         context_model_defined=context_model_defined,
         usage_limits=usage_limits,
+        context_setter=context_setter,
     )
 
 
@@ -1334,7 +1337,14 @@ async def _run_step_logic(
         )
     if isinstance(step, ConditionalStep):
         return await _handle_conditional_step(
-            step, data, context, resources, step_executor, context_model_defined, usage_limits
+            step,
+            data,
+            context,
+            resources,
+            step_executor,
+            context_model_defined,
+            usage_limits,
+            context_setter,
         )
     if isinstance(step, DynamicParallelRouterStep):
         return await _handle_dynamic_router_step(

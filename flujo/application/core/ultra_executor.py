@@ -885,6 +885,7 @@ class UltraStepExecutor(Generic[TContext]):
                     step_executor,
                     context_model_defined=True,
                     usage_limits=usage_limits,
+                    context_setter=context_setter,
                 )
             elif isinstance(step, DynamicParallelRouterStep):
                 result = await _handle_dynamic_router_step(
