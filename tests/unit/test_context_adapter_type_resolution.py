@@ -29,28 +29,28 @@ from flujo.application.core.context_adapter import (
 )
 
 
-class TestModel(BaseModel):
+class _TestModel(BaseModel):
     """Test model for type resolution testing."""
 
     value: int
     name: str = "test"
 
 
-class NestedTestModel(BaseModel):
+class _NestedTestModel(BaseModel):
     """Nested test model for type resolution testing."""
 
     nested_value: str
-    test_model: TestModel
+    test_model: _TestModel
 
 
-class UserCustomModel(BaseModel):
+class _UserCustomModel(BaseModel):
     """User-defined custom model for testing type resolution."""
 
     custom_field: str
     number: int
 
 
-class AnotherCustomModel(BaseModel):
+class _AnotherCustomModel(BaseModel):
     """Another user-defined custom model."""
 
     another_field: bool
@@ -69,15 +69,15 @@ class TestTypeResolution:
     def test_register_custom_type_integration(self):
         """Test that custom type registration integrates with serialization."""
         # Register a custom type
-        register_custom_type(UserCustomModel)
+        register_custom_type(_UserCustomModel)
 
         # Verify it's registered for serialization
         from flujo.utils.serialization import lookup_custom_serializer, lookup_custom_deserializer
 
         # Create an instance to test serializer lookup
-        instance = UserCustomModel(custom_field="test", number=42)
+        instance = _UserCustomModel(custom_field="test", number=42)
         serializer = lookup_custom_serializer(instance)
-        deserializer = lookup_custom_deserializer(UserCustomModel)
+        deserializer = lookup_custom_deserializer(_UserCustomModel)
 
         assert serializer is not None
         assert deserializer is not None
@@ -91,7 +91,7 @@ class TestTypeResolution:
             # Use the current module for testing
             current_module = sys.modules[__name__]
             with context.module_scope(current_module):
-                result = context.resolve_type("TestModel", BaseModel)
+                result = context.resolve_type("_TestModel", BaseModel)
                 results.append(result)
 
         # Start multiple threads
@@ -106,7 +106,7 @@ class TestTypeResolution:
             thread.join()
 
         # All results should be the same
-        assert all(result == TestModel for result in results)
+        assert all(result == _TestModel for result in results)
 
     def test_module_scope_resolution(self):
         """Test module-scoped type resolution."""
@@ -116,8 +116,8 @@ class TestTypeResolution:
         current_module = sys.modules[__name__]
         with context.module_scope(current_module):
             # Should be able to resolve types from current module
-            result = context.resolve_type("TestModel", BaseModel)
-            assert result == TestModel
+            result = context.resolve_type("_TestModel", BaseModel)
+            assert result == _TestModel
 
             # Should not resolve types from other modules
             result = context.resolve_type("NonExistentType", BaseModel)
@@ -131,20 +131,20 @@ class TestTypeResolution:
         current_module = sys.modules[__name__]
         with context.module_scope(current_module):
             # Valid type
-            result = context.resolve_type("TestModel", BaseModel)
-            assert result == TestModel
+            result = context.resolve_type("_TestModel", BaseModel)
+            assert result == _TestModel
 
             # Invalid base type
-            result = context.resolve_type("TestModel", str)
+            result = context.resolve_type("_TestModel", str)
             assert result is None
 
     def test_extract_union_types_type_system(self):
         """Test extracting types using proper type system integration."""
         # Test Union[T, None]
-        union_type = Optional[TestModel]
+        union_type = Optional[_TestModel]
         non_none_types = _extract_union_types(union_type)
         assert len(non_none_types) == 1
-        assert non_none_types[0] == TestModel
+        assert non_none_types[0] == _TestModel
 
         # Test Union[T, U, None]
         union_type = Union[str, int, None]
@@ -156,10 +156,10 @@ class TestTypeResolution:
     def test_extract_union_types_modern_syntax(self):
         """Test extracting types from modern Union syntax (Python 3.10+)."""
         # Test T | None syntax
-        union_type = TestModel | None
+        union_type = _TestModel | None
         non_none_types = _extract_union_types(union_type)
         assert len(non_none_types) == 1
-        assert non_none_types[0] == TestModel
+        assert non_none_types[0] == _TestModel
 
         # Test T | U | None syntax
         union_type = str | int | None
@@ -171,12 +171,12 @@ class TestTypeResolution:
     def test_resolve_actual_type(self):
         """Test resolving actual types from field annotations."""
         # Test direct type
-        actual_type = _resolve_actual_type(TestModel)
-        assert actual_type == TestModel
+        actual_type = _resolve_actual_type(_TestModel)
+        assert actual_type == _TestModel
 
         # Test Union type
-        actual_type = _resolve_actual_type(Optional[TestModel])
-        assert actual_type == TestModel
+        actual_type = _resolve_actual_type(Optional[_TestModel])
+        assert actual_type == _TestModel
 
         # Test None
         actual_type = _resolve_actual_type(None)
@@ -186,17 +186,17 @@ class TestTypeResolution:
         """Test value deserialization with serialization system integration."""
         # Test Pydantic model deserialization
         test_data = {"value": 42, "name": "test"}
-        deserialized = _deserialize_value(test_data, TestModel, TestModel)
-        assert isinstance(deserialized, TestModel)
+        deserialized = _deserialize_value(test_data, _TestModel, _TestModel)
+        assert isinstance(deserialized, _TestModel)
         assert deserialized.value == 42
         assert deserialized.name == "test"
 
         # Test list of models
         list_data = [{"value": 1, "name": "a"}, {"value": 2, "name": "b"}]
-        deserialized = _deserialize_value(list_data, List[TestModel], TestModel)
+        deserialized = _deserialize_value(list_data, List[_TestModel], _TestModel)
         assert isinstance(deserialized, list)
         assert len(deserialized) == 2
-        assert all(isinstance(item, TestModel) for item in deserialized)
+        assert all(isinstance(item, _TestModel) for item in deserialized)
 
     def test_performance_improvement(self):
         """Test that the new system is more efficient."""
@@ -222,17 +222,17 @@ class TestTypeResolution:
         current_module = sys.modules[__name__]
         with context.module_scope(current_module):
             # Multiple calls should return the same result
-            result1 = context.resolve_type("TestModel", BaseModel)
-            result2 = context.resolve_type("TestModel", BaseModel)
-            result3 = context.resolve_type("TestModel", BaseModel)
+            result1 = context.resolve_type("_TestModel", BaseModel)
+            result2 = context.resolve_type("_TestModel", BaseModel)
+            result3 = context.resolve_type("_TestModel", BaseModel)
 
-            assert result1 == result2 == result3 == TestModel
+            assert result1 == result2 == result3 == _TestModel
 
     def test_backward_compatibility(self):
         """Test that the system maintains backward compatibility."""
         # Test with a type that would have been found in sys.modules
         with patch("inspect.currentframe") as mock_frame:
-            mock_frame.return_value.f_globals = {"NestedTestModel": NestedTestModel}
+            mock_frame.return_value.f_globals = {"NestedTestModel": _NestedTestModel}
             mock_frame.return_value.f_back = None
 
             result = _resolve_type_from_string("NestedTestModel")
@@ -256,14 +256,14 @@ class TestTypeResolution:
     def test_complex_union_handling(self):
         """Test handling of complex union types with nested models."""
         # Test complex union type
-        union_type = NestedTestModel | None
+        union_type = _NestedTestModel | None
         non_none_types = _extract_union_types(union_type)
         assert len(non_none_types) == 1
-        assert non_none_types[0] == NestedTestModel
+        assert non_none_types[0] == _NestedTestModel
 
         # Test resolving actual type
         actual_type = _resolve_actual_type(union_type)
-        assert actual_type == NestedTestModel
+        assert actual_type == _NestedTestModel
 
     def test_module_resolver_caching(self):
         """Test that module resolver properly caches results."""
@@ -273,17 +273,17 @@ class TestTypeResolution:
         current_module = sys.modules[__name__]
         with context.module_scope(current_module):
             # First call should cache the result
-            result1 = context.resolve_type("TestModel", BaseModel)
-            assert result1 == TestModel
+            result1 = context.resolve_type("_TestModel", BaseModel)
+            assert result1 == _TestModel
 
             # Second call should use cache
-            result2 = context.resolve_type("TestModel", BaseModel)
-            assert result2 == TestModel
+            result2 = context.resolve_type("_TestModel", BaseModel)
+            assert result2 == _TestModel
 
             # Verify cache is working
             resolver = context._resolvers.get(__name__)
             assert resolver is not None
-            assert "TestModel" in resolver._cache
+            assert "_TestModel" in resolver._cache
 
     def test_type_hints_integration(self):
         """Test integration with Python's type hints system."""
@@ -293,8 +293,8 @@ class TestTypeResolution:
         current_module = sys.modules[__name__]
         with context.module_scope(current_module):
             # Should be able to resolve types from type hints
-            result = context.resolve_type("TestModel", BaseModel)
-            assert result == TestModel
+            result = context.resolve_type("_TestModel", BaseModel)
+            assert result == _TestModel
 
     def test_concurrent_type_resolution(self):
         """Test that type resolution is thread-safe under concurrent access."""
@@ -305,7 +305,7 @@ class TestTypeResolution:
             # Use the current module for testing
             current_module = sys.modules[__name__]
             with context.module_scope(current_module):
-                result = context.resolve_type("TestModel", BaseModel)
+                result = context.resolve_type("_TestModel", BaseModel)
                 results.append(result)
 
         # Start multiple threads
@@ -320,23 +320,23 @@ class TestTypeResolution:
             thread.join()
 
         # All results should be the same
-        assert all(result == TestModel for result in results)
+        assert all(result == _TestModel for result in results)
 
     def test_serialization_integration(self):
         """Test that type registration integrates with serialization system."""
         # Register a custom type
-        register_custom_type(UserCustomModel)
+        register_custom_type(_UserCustomModel)
 
         # Create an instance
-        instance = UserCustomModel(custom_field="test", number=42)
+        instance = _UserCustomModel(custom_field="test", number=42)
 
         # Test serialization
         from flujo.utils.serialization import safe_serialize, safe_deserialize
 
         serialized = safe_serialize(instance)
-        deserialized = safe_deserialize(serialized, UserCustomModel)
+        deserialized = safe_deserialize(serialized, _UserCustomModel)
 
-        assert isinstance(deserialized, UserCustomModel)
+        assert isinstance(deserialized, _UserCustomModel)
         assert deserialized.custom_field == "test"
         assert deserialized.number == 42
 
@@ -347,14 +347,14 @@ class TestTypeResolution:
         from flujo.application.core.context_adapter import _inject_context
 
         class TestContext(BaseModel):
-            user: UserCustomModel
+            user: _UserCustomModel
             settings: Optional[Dict[str, Any]] = None
 
         # Register the custom type
-        register_custom_type(UserCustomModel)
+        register_custom_type(_UserCustomModel)
 
         # Create context
-        context = TestContext(user=UserCustomModel(custom_field="test", number=42))
+        context = TestContext(user=_UserCustomModel(custom_field="test", number=42))
 
         # Test injection
         update_data = {"user": {"custom_field": "updated", "number": 100}}
@@ -403,16 +403,16 @@ class TestTypeResolution:
 
         # Test that we can get type hints from a simple class
         class TestClass:
-            test_field: TestModel
-            user_field: UserCustomModel
+            test_field: _TestModel
+            user_field: _UserCustomModel
 
         type_hints = get_type_hints(TestClass)
 
         # Should include our test types
         assert "test_field" in type_hints
         assert "user_field" in type_hints
-        assert type_hints["test_field"] == TestModel
-        assert type_hints["user_field"] == UserCustomModel
+        assert type_hints["test_field"] == _TestModel
+        assert type_hints["user_field"] == _UserCustomModel
 
     def test_robust_error_recovery(self):
         """Test that the system recovers gracefully from errors."""

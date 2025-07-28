@@ -30,11 +30,35 @@ if not _fallback_logger.handlers:
 def _safe_log(logger: logging.Logger, level: int, message: str, *args: Any, **kwargs: Any) -> None:
     """Safely log a message, handling I/O errors gracefully during cleanup."""
     try:
+        # Check if logger is still valid before attempting to log
+        if logger is None or not hasattr(logger, "log"):
+            return
+
+        # Check if any handlers are still open
+        if hasattr(logger, "handlers"):
+            try:
+                handlers = logger.handlers
+                if handlers is not None:
+                    for handler in handlers:
+                        if hasattr(handler, "stream") and handler.stream is not None:
+                            try:
+                                # Test if stream is still writable
+                                handler.stream.write("")
+                            except (ValueError, OSError, RuntimeError):
+                                # Stream is closed, skip logging
+                                return
+            except (TypeError, AttributeError):
+                # Handlers might be a Mock or other non-iterable object
+                pass
+
         logger.log(level, message, *args, **kwargs)
     except (ValueError, OSError, RuntimeError) as e:
         # During test cleanup, logging handlers may be closed
         # We don't want to raise exceptions for logging failures
-        if "I/O operation on closed file" in str(e) or "closed" in str(e).lower():
+        if any(
+            phrase in str(e).lower()
+            for phrase in ["i/o operation on closed file", "closed", "bad file descriptor"]
+        ):
             # Silently ignore logging errors during cleanup
             pass
         else:
@@ -52,7 +76,10 @@ class _SafeLogfireWrapper:
         try:
             self._real_logfire.info(message, *args, **kwargs)
         except (ValueError, OSError, RuntimeError) as e:
-            if "I/O operation on closed file" in str(e) or "closed" in str(e).lower():
+            if any(
+                phrase in str(e).lower()
+                for phrase in ["i/o operation on closed file", "closed", "bad file descriptor"]
+            ):
                 pass  # Silently ignore during cleanup
             else:
                 raise
@@ -61,7 +88,10 @@ class _SafeLogfireWrapper:
         try:
             self._real_logfire.warn(message, *args, **kwargs)
         except (ValueError, OSError, RuntimeError) as e:
-            if "I/O operation on closed file" in str(e) or "closed" in str(e).lower():
+            if any(
+                phrase in str(e).lower()
+                for phrase in ["i/o operation on closed file", "closed", "bad file descriptor"]
+            ):
                 pass  # Silently ignore during cleanup
             else:
                 raise
@@ -70,7 +100,10 @@ class _SafeLogfireWrapper:
         try:
             self._real_logfire.warning(message, *args, **kwargs)
         except (ValueError, OSError, RuntimeError) as e:
-            if "I/O operation on closed file" in str(e) or "closed" in str(e).lower():
+            if any(
+                phrase in str(e).lower()
+                for phrase in ["i/o operation on closed file", "closed", "bad file descriptor"]
+            ):
                 pass  # Silently ignore during cleanup
             else:
                 raise
@@ -79,7 +112,10 @@ class _SafeLogfireWrapper:
         try:
             self._real_logfire.error(message, *args, **kwargs)
         except (ValueError, OSError, RuntimeError) as e:
-            if "I/O operation on closed file" in str(e) or "closed" in str(e).lower():
+            if any(
+                phrase in str(e).lower()
+                for phrase in ["i/o operation on closed file", "closed", "bad file descriptor"]
+            ):
                 pass  # Silently ignore during cleanup
             else:
                 raise
@@ -88,7 +124,10 @@ class _SafeLogfireWrapper:
         try:
             self._real_logfire.debug(message, *args, **kwargs)
         except (ValueError, OSError, RuntimeError) as e:
-            if "I/O operation on closed file" in str(e) or "closed" in str(e).lower():
+            if any(
+                phrase in str(e).lower()
+                for phrase in ["i/o operation on closed file", "closed", "bad file descriptor"]
+            ):
                 pass  # Silently ignore during cleanup
             else:
                 raise
@@ -97,7 +136,10 @@ class _SafeLogfireWrapper:
         try:
             self._real_logfire.configure(*args, **kwargs)
         except (ValueError, OSError, RuntimeError) as e:
-            if "I/O operation on closed file" in str(e) or "closed" in str(e).lower():
+            if any(
+                phrase in str(e).lower()
+                for phrase in ["i/o operation on closed file", "closed", "bad file descriptor"]
+            ):
                 pass  # Silently ignore during cleanup
             else:
                 raise
@@ -115,7 +157,10 @@ class _SafeLogfireWrapper:
 
                 return decorator
         except (ValueError, OSError, RuntimeError) as e:
-            if "I/O operation on closed file" in str(e) or "closed" in str(e).lower():
+            if any(
+                phrase in str(e).lower()
+                for phrase in ["i/o operation on closed file", "closed", "bad file descriptor"]
+            ):
                 # Return a no-op decorator during cleanup
                 def decorator(func: Callable[[Any], Any]) -> Callable[[Any], Any]:
                     return func
@@ -128,7 +173,10 @@ class _SafeLogfireWrapper:
         try:
             return self._real_logfire.span(name, *args, **kwargs)
         except (ValueError, OSError, RuntimeError) as e:
-            if "I/O operation on closed file" in str(e) or "closed" in str(e).lower():
+            if any(
+                phrase in str(e).lower()
+                for phrase in ["i/o operation on closed file", "closed", "bad file descriptor"]
+            ):
                 # Return a mock span during cleanup
                 return _MockLogfireSpan()
             else:
@@ -138,7 +186,10 @@ class _SafeLogfireWrapper:
         try:
             self._real_logfire.enable_stdout_viewer()
         except (ValueError, OSError, RuntimeError) as e:
-            if "I/O operation on closed file" in str(e) or "closed" in str(e).lower():
+            if any(
+                phrase in str(e).lower()
+                for phrase in ["i/o operation on closed file", "closed", "bad file descriptor"]
+            ):
                 pass  # Silently ignore during cleanup
             else:
                 raise

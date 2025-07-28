@@ -164,6 +164,7 @@ markers = [
   "serial: marks tests that must run serially to avoid concurrency issues",
   "slow: marks tests that are slow and should be run separately",
   "fast: marks tests that are fast and can be run in parallel",
+  "no_collect: marks classes that should not be collected as test classes",
 ]
 filterwarnings = [
   "ignore:coroutine 'AsyncMockMixin._execute_mock_call' was never awaited:RuntimeWarning",
