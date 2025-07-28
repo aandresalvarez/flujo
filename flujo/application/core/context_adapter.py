@@ -51,6 +51,7 @@ class TypeResolutionContext:
         self._resolvers: Dict[str, "_ModuleTypeResolver"] = {}
         self._current_module: Optional[Any] = None
         self._lock = threading.RLock()
+        self._global_type_cache: Dict[str, Type[Any]] = {}
 
     @contextmanager
     def module_scope(self, module: Any) -> Iterator[None]:
@@ -77,6 +78,13 @@ class TypeResolutionContext:
             if self._current_module is None:
                 return None
 
+            # Check global cache first for frequently resolved types
+            cache_key = f"{type_name}:{base_type.__name__}"
+            if cache_key in self._global_type_cache:
+                cached_type = self._global_type_cache[cache_key]
+                if self._validate_type_resolution(cached_type, base_type):
+                    return cast(Type[T], cached_type)
+
             module_name = getattr(self._current_module, "__name__", str(id(self._current_module)))
             resolver = self._resolvers.get(module_name)
 
@@ -86,6 +94,8 @@ class TypeResolutionContext:
 
             type_obj = resolver.resolve_type(type_name)
             if type_obj is not None and self._validate_type_resolution(type_obj, base_type):
+                # Add to global cache for future lookups
+                self._global_type_cache[cache_key] = type_obj
                 return cast(Type[T], type_obj)
 
             return None
@@ -100,6 +110,11 @@ class TypeResolutionContext:
             return False
 
         return True
+
+    def clear_global_cache(self) -> None:
+        """Clear the global type cache."""
+        with self._lock:
+            self._global_type_cache.clear()
 
 
 class _ModuleTypeResolver:
