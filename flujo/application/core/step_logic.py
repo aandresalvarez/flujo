@@ -727,7 +727,7 @@ async def _execute_parallel_step_logic(
         result.output = merged_output
     elif parallel_step.merge_strategy == MergeStrategy.MERGE_SCRATCHPAD:
         result.output = outputs
-    elif parallel_step.merge_strategy == MergeStrategy.CONTEXT_UPDATE:
+    elif parallel_step.merge_strategy == MergeStrategy.CONTEXT_UPDATE:  # type: ignore[comparison-overlap]
         result.output = outputs
     else:  # MergeStrategy.MERGE
         merged_output = {}
