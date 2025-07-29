@@ -673,7 +673,7 @@ async def _execute_parallel_step_logic(
                     if hasattr(context, "scratchpad") and hasattr(branch_ctx, "scratchpad"):
                         context.scratchpad.update(branch_ctx.scratchpad)
                     telemetry.logfire.debug(f"Merged scratchpad from branch {key}")
-        elif callable(parallel_step.merge_strategy):  # type: ignore[comparison-overlap]
+        elif isinstance(parallel_step.merge_strategy, type(lambda: None)):
             telemetry.logfire.debug("Using callable merge strategy")
             # For callable merge strategies, call the function with context and branch_results
             try:
@@ -1254,7 +1254,7 @@ async def _execute_dynamic_router_step_logic(
     telemetry.logfire.debug(f"Parallel step branches: {list(parallel_step.branches.keys())}")
     telemetry.logfire.debug(f"Parallel step merge strategy: {parallel_step.merge_strategy}")
     parallel_result = await _execute_parallel_step_logic(
-        parallel_step,
+        parallel_step,  # type: ignore[arg-type]
         router_input,
         context,
         resources,
