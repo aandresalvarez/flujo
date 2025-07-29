@@ -293,10 +293,31 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         This method acts as the Composition Root, assembling all the
         components needed for optimal execution.
         """
-        from ..application.core.ultra_executor import ExecutorCore
+        from ..application.core.ultra_executor import (
+            ExecutorCore,
+            OrjsonSerializer,
+            Blake3Hasher,
+            InMemoryLRUBackend,
+            ThreadSafeMeter,
+            DefaultAgentRunner,
+            DefaultProcessorPipeline,
+            DefaultValidatorRunner,
+            DefaultPluginRunner,
+            DefaultTelemetry,
+        )
 
-        # ✅ Assemble ExecutorCore with default high-performance components
-        executor: ExecutorCore[Any] = ExecutorCore()  # Use default configuration
+        # ✅ Assemble ExecutorCore with explicit high-performance components
+        executor: ExecutorCore[Any] = ExecutorCore(
+            serializer=OrjsonSerializer(),
+            hasher=Blake3Hasher(),
+            cache_backend=InMemoryLRUBackend(),
+            usage_meter=ThreadSafeMeter(),
+            agent_runner=DefaultAgentRunner(),
+            processor_pipeline=DefaultProcessorPipeline(),
+            validator_runner=DefaultValidatorRunner(),
+            plugin_runner=DefaultPluginRunner(),
+            telemetry=DefaultTelemetry(),
+        )
 
         # ✅ Create LocalBackend and inject the executor
         from ..infra.backends import LocalBackend
