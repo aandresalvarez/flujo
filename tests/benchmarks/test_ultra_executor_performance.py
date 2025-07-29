@@ -414,13 +414,13 @@ class TestUltraExecutorPerformance:
         usage_step.persist_feedback_to_context = False
 
         # Add some usage if the attribute exists
-        if hasattr(ultra_executor, '_usage'):
+        if hasattr(ultra_executor, "_usage"):
             await ultra_executor._usage.add(0.1, 100)
 
         result = await ultra_executor.execute_step(usage_step, data, context, resources)
 
         print("\nUsage Tracking Feature Value:")
-        if hasattr(ultra_executor, '_usage'):
+        if hasattr(ultra_executor, "_usage"):
             print(f"Total cost tracked: {ultra_executor._usage.total_cost}")
             print(f"Total tokens tracked: {ultra_executor._usage.total_tokens}")
         else:
@@ -612,7 +612,7 @@ class TestUltraExecutorPerformance:
 
         # Create various frames if the class exists
         frames = []
-        if hasattr(ultra_executor, '_Frame'):
+        if hasattr(ultra_executor, "_Frame"):
             for i in range(iterations):
                 frame = ultra_executor._Frame(
                     step=mock_step,
@@ -655,7 +655,7 @@ class TestUltraExecutorPerformance:
         iterations = 500  # Reduced for faster execution
 
         # Simulate many usage additions if the attribute exists
-        if hasattr(ultra_executor, '_usage'):
+        if hasattr(ultra_executor, "_usage"):
             start_time = time.perf_counter()
             for i in range(iterations):
                 await ultra_executor._usage.add(i * 0.01, i * 10)
