@@ -40,7 +40,7 @@ class ParallelStep(Step[Any, Any], Generic[TContext]):
         description="If provided, only these top-level context fields will be copied to each branch. "
         "If None, the entire context is deep-copied (default behavior).",
     )
-    merge_strategy: Union[MergeStrategy, Callable[[TContext, TContext], None]] = Field(
+    merge_strategy: Union[MergeStrategy, Callable[[TContext, Dict[str, Any]], None]] = Field(
         default=MergeStrategy.NO_MERGE,
         description="Strategy for merging successful branch contexts back into the main context.",
     )

@@ -668,9 +668,10 @@ async def _execute_parallel_step_logic(
                 if branch_ctx is not None:
                     # Ensure branch context has a scratchpad
                     if not hasattr(branch_ctx, "scratchpad"):
-                        branch_ctx.scratchpad = {}
+                        setattr(branch_ctx, "scratchpad", {})
                     # Merge the branch scratchpad into the main context
-                    context.scratchpad.update(branch_ctx.scratchpad)
+                    if hasattr(context, "scratchpad") and hasattr(branch_ctx, "scratchpad"):
+                        context.scratchpad.update(branch_ctx.scratchpad)
                     telemetry.logfire.debug(f"Merged scratchpad from branch {key}")
         elif callable(parallel_step.merge_strategy):  # type: ignore[comparison-overlap]
             telemetry.logfire.debug("Using callable merge strategy")

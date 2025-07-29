@@ -37,7 +37,7 @@ class DynamicParallelRouterStep(Step[Any, Any], Generic[TContext]):
         default=None,
         description="Context keys to include when copying context to branches.",
     )
-    merge_strategy: Union[MergeStrategy, Callable[[TContext, TContext], None]] = Field(
+    merge_strategy: Union[MergeStrategy, Callable[[TContext, Dict[str, Any]], None]] = Field(
         default=MergeStrategy.NO_MERGE,
         description="Strategy for merging branch contexts back.",
     )
