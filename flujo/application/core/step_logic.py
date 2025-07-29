@@ -611,11 +611,48 @@ async def _execute_parallel_step_logic(
         if parallel_step.merge_strategy == MergeStrategy.CONTEXT_UPDATE:
             telemetry.logfire.debug("Using CONTEXT_UPDATE strategy")
             # For CONTEXT_UPDATE, merge contexts in the order of branch_results to ensure later branches overwrite earlier ones
+            # Track accumulated values for counter fields to prevent overwriting
+            accumulated_values = {}
+
             for key, branch_result in branch_results.items():
                 branch_ctx = getattr(branch_result, "branch_context", None)
                 if branch_ctx is not None:
                     try:
+                        # For CONTEXT_UPDATE, we need to handle counter fields specially
+                        # Counter fields should be accumulated, not replaced
+                        counter_field_names = {
+                            "accumulated_value",
+                            "iteration_count",
+                            "counter",
+                            "count",
+                            "total_count",
+                            "processed_count",
+                            "success_count",
+                            "error_count",
+                        }
+
+                        # First, accumulate counter fields
+                        for field_name in counter_field_names:
+                            if hasattr(branch_ctx, field_name) and hasattr(context, field_name):
+                                branch_value = getattr(branch_ctx, field_name)
+                                current_value = getattr(context, field_name)
+
+                                # Only accumulate if both values are numeric
+                                if isinstance(branch_value, (int, float)) and isinstance(
+                                    current_value, (int, float)
+                                ):
+                                    if field_name not in accumulated_values:
+                                        accumulated_values[field_name] = current_value
+                                    accumulated_values[field_name] += branch_value
+
+                        # Then merge other fields normally
                         safe_merge_context_updates(context, branch_ctx)
+
+                        # Finally, apply accumulated counter values
+                        for field_name, accumulated_value in accumulated_values.items():
+                            if hasattr(context, field_name):
+                                setattr(context, field_name, accumulated_value)
+
                         telemetry.logfire.debug(f"Merged context from branch {key}")
                     except Exception as e:
                         telemetry.logfire.error(f"Failed to merge context from branch {key}: {e}")

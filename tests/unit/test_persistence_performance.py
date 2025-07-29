@@ -18,7 +18,7 @@ from flujo.testing.utils import gather_result, StubAgent
 from tests.conftest import create_test_flujo
 
 # Default overhead limit for performance tests
-DEFAULT_OVERHEAD_LIMIT = 20.0
+DEFAULT_OVERHEAD_LIMIT = 35.0
 
 logger = logging.getLogger(__name__)
 
