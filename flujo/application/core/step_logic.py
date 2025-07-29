@@ -668,15 +668,15 @@ async def _execute_parallel_step_logic(
                 if branch_ctx is not None:
                     # Ensure branch context has a scratchpad
                     if not hasattr(branch_ctx, "scratchpad"):
-                        branch_ctx.scratchpad = {}
+                        branch_ctx.scratchpad = {}  # type: ignore[attr-defined]
                     # Merge the branch scratchpad into the main context
-                    context.scratchpad.update(branch_ctx.scratchpad)
+                    context.scratchpad.update(branch_ctx.scratchpad)  # type: ignore[attr-defined]
                     telemetry.logfire.debug(f"Merged scratchpad from branch {key}")
         elif callable(parallel_step.merge_strategy):  # type: ignore[comparison-overlap]
             telemetry.logfire.debug("Using callable merge strategy")
             # For callable merge strategies, call the function with context and branch_results
             try:
-                parallel_step.merge_strategy(context, branch_results)
+                parallel_step.merge_strategy(context, branch_results)  # type: ignore[arg-type]
                 telemetry.logfire.debug("Applied callable merge strategy")
             except Exception as e:
                 telemetry.logfire.error(f"Failed to apply callable merge strategy: {e}")
