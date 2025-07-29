@@ -130,7 +130,10 @@ def create_core_test_pipeline() -> Pipeline:
     branch_step = Step.branch_on(
         "test_branch",
         condition_callable=lambda data, context: context.branch,
-        branches={"A": Pipeline.from_step(branch_a_step), "B": Pipeline.from_step(branch_b_step)},
+        branches={
+            "A": Pipeline.from_step(branch_a_step),
+            "B": Pipeline.from_step(branch_b_step),
+        },
     )
 
     # Test parallel primitive

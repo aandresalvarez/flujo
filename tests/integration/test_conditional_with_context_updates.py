@@ -297,7 +297,10 @@ async def test_conditional_with_context_updates_complex_branching():
                 "level1": {
                     "level2": {
                         "value": f"complex_value_{context.total_branches}",
-                        "metadata": {"timestamp": "now", "iteration": context.total_branches},
+                        "metadata": {
+                            "timestamp": "now",
+                            "iteration": context.total_branches,
+                        },
                     }
                 }
             },

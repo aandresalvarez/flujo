@@ -93,7 +93,11 @@ class _SafeLogfireWrapper:
         except (ValueError, OSError, RuntimeError) as e:
             if any(
                 phrase in str(e).lower()
-                for phrase in ["i/o operation on closed file", "closed", "bad file descriptor"]
+                for phrase in [
+                    "i/o operation on closed file",
+                    "closed",
+                    "bad file descriptor",
+                ]
             ):
                 pass  # Silently ignore during cleanup
             else:
@@ -278,7 +282,9 @@ def init_telemetry(settings_obj: Optional["TelemetrySettings"] = None) -> None:
                 ),
             )
             _safe_log(
-                _fallback_logger, logging.INFO, "Logfire initialized successfully (actual Logfire)."
+                _fallback_logger,
+                logging.INFO,
+                "Logfire initialized successfully (actual Logfire).",
             )
             _initialized = True
             return

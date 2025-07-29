@@ -22,7 +22,10 @@ from pydantic import BaseModel as PydanticBaseModel
 
 from ...infra import telemetry
 from ...domain.models import BaseModel
-from ...utils.serialization import register_custom_serializer, register_custom_deserializer
+from ...utils.serialization import (
+    register_custom_serializer,
+    register_custom_deserializer,
+)
 
 __all__ = [
     "_build_context_update",
@@ -180,7 +183,8 @@ def register_custom_type(type_class: Type[T]) -> None:
     if hasattr(type_class, "__name__"):
         # Register for serialization - register the class itself
         register_custom_serializer(
-            type_class, lambda obj: obj.model_dump() if hasattr(obj, "model_dump") else obj.__dict__
+            type_class,
+            lambda obj: obj.model_dump() if hasattr(obj, "model_dump") else obj.__dict__,
         )
 
         # Register deserializer if it's a Pydantic model

@@ -51,7 +51,10 @@ class KwargsAgent:
     async def run(self, data: str, **kwargs) -> dict:
         """Run method that accepts **kwargs."""
         await self.run_mock(data, **kwargs)
-        return {"output": f"Kwargs processed: {data}", "kwargs_received": "context" in kwargs}
+        return {
+            "output": f"Kwargs processed: {data}",
+            "kwargs_received": "context" in kwargs,
+        }
 
 
 class FailingAgent:

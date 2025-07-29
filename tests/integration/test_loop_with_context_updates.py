@@ -68,7 +68,10 @@ async def finalize_state(data: Any, *, context: LoopContext) -> dict:
     }
 
     # Return the final state as the output, but don't try to update context fields
-    return {"final_state": context.final_state, "message": "Loop completed successfully"}
+    return {
+        "final_state": context.final_state,
+        "message": "Loop completed successfully",
+    }
 
 
 @pytest.mark.asyncio

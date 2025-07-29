@@ -111,7 +111,12 @@ class DummyRemoteBackend(ExecutionBackend):
         self.agent_registry = agent_registry or {}
         self.call_counter = 0
         self.recorded_requests: List[StepExecutionRequest] = []
-        self.local = LocalBackend(agent_registry=self.agent_registry)
+
+        # ✅ Create ExecutorCore and inject into LocalBackend
+        from ..application.core.ultra_executor import ExecutorCore
+
+        executor: ExecutorCore[Any] = ExecutorCore()
+        self.local = LocalBackend(executor=executor, agent_registry=self.agent_registry)
 
     async def execute_step(self, request: StepExecutionRequest) -> StepResult:
         self.call_counter += 1

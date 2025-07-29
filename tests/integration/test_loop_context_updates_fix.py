@@ -37,7 +37,11 @@ async def context_updating_step(data: str, *, context: LoopTestContext) -> dict[
     # Simulate the bug scenario: agent determines if definition is clear
     if "clear" in data.lower() or context.iteration_count >= 3:
         context.is_clear = True
-        return {"is_clear": True, "current_value": data, "iteration_count": context.iteration_count}
+        return {
+            "is_clear": True,
+            "current_value": data,
+            "iteration_count": context.iteration_count,
+        }
     else:
         # Simulate clarification needed
         context.is_clear = False
@@ -87,7 +91,9 @@ async def test_loop_context_updates_basic():
 
     # Create runner with context model
     runner = Flujo(
-        loop_step, pipeline_name="test_loop_context_updates", context_model=LoopTestContext
+        loop_step,
+        pipeline_name="test_loop_context_updates",
+        context_model=LoopTestContext,
     )
 
     # Test with initial data that should become clear
@@ -135,7 +141,9 @@ async def test_loop_context_updates_multiple_iterations():
 
     # Create runner with context model
     runner = Flujo(
-        loop_step, pipeline_name="test_multiple_iterations", context_model=LoopTestContext
+        loop_step,
+        pipeline_name="test_multiple_iterations",
+        context_model=LoopTestContext,
     )
 
     # Test with initial data that requires multiple clarifications

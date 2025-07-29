@@ -58,7 +58,8 @@ class OpenAIEmbeddingClient:
 
         # Create usage information from the response
         usage_info = Usage(
-            request_tokens=response.usage.prompt_tokens, total_tokens=response.usage.total_tokens
+            request_tokens=response.usage.prompt_tokens,
+            total_tokens=response.usage.total_tokens,
         )
 
         # Return the embedding result

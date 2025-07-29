@@ -191,7 +191,8 @@ async def test_hitl_with_context_updates_context_dependent():
         }
 
     hitl_step = Step.human_in_the_loop(
-        name="context_dependent_hitl", message_for_user="Please review and approve the content"
+        name="context_dependent_hitl",
+        message_for_user="Please review and approve the content",
     )
 
     pipeline = (
@@ -283,7 +284,10 @@ async def test_hitl_with_context_updates_complex_interaction():
                 "level1": {
                     "level2": {
                         "value": f"complex_value_{context.total_interactions}",
-                        "metadata": {"timestamp": "now", "interaction": context.total_interactions},
+                        "metadata": {
+                            "timestamp": "now",
+                            "interaction": context.total_interactions,
+                        },
                     }
                 }
             },

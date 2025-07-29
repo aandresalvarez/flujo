@@ -1,7 +1,16 @@
 from __future__ import annotations
 
 import inspect
-from typing import Any, Sequence, get_type_hints, get_origin, get_args, Union, Literal, cast
+from typing import (
+    Any,
+    Sequence,
+    get_type_hints,
+    get_origin,
+    get_args,
+    Union,
+    Literal,
+    cast,
+)
 
 from ...infra import telemetry
 from ...domain.events import (
@@ -18,7 +27,9 @@ from ...exceptions import PipelineAbortSignal
 __all__ = ["_dispatch_hook", "_should_dispatch", "_get_hook_params"]
 
 
-def _get_hook_params(hook: HookCallable) -> tuple[list[inspect.Parameter], dict[str, Any]]:
+def _get_hook_params(
+    hook: HookCallable,
+) -> tuple[list[inspect.Parameter], dict[str, Any]]:
     try:
         sig = inspect.signature(hook)
         params = list(sig.parameters.values())

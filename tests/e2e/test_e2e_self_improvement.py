@@ -3,7 +3,10 @@ import vcr
 import pytest
 import httpx
 from flujo.application.eval_adapter import run_pipeline_async
-from flujo.application.self_improvement import evaluate_and_improve, SelfImprovementAgent
+from flujo.application.self_improvement import (
+    evaluate_and_improve,
+    SelfImprovementAgent,
+)
 from flujo.domain.models import ImprovementReport, SuggestionType
 from flujo.domain import Step
 from flujo.validation import BaseValidator, ValidationResult

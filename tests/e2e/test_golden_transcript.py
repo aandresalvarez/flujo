@@ -51,7 +51,8 @@ def test_golden_transcript():
 
     result = asyncio.run(
         run_default_pipeline(
-            pipeline, Task(prompt="Write a short haiku about a robot learning to paint.")
+            pipeline,
+            Task(prompt="Write a short haiku about a robot learning to paint."),
         )
     )
 

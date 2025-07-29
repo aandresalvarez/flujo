@@ -3,9 +3,17 @@
 import pytest
 from typing import Any
 
-from flujo.domain.commands import AgentCommand, FinishCommand, RunAgentCommand, AskHumanCommand
+from flujo.domain.commands import (
+    AgentCommand,
+    FinishCommand,
+    RunAgentCommand,
+    AskHumanCommand,
+)
 from flujo.domain.models import PipelineContext
-from flujo.recipes.factories import make_agentic_loop_pipeline, run_agentic_loop_pipeline
+from flujo.recipes.factories import (
+    make_agentic_loop_pipeline,
+    run_agentic_loop_pipeline,
+)
 from flujo.testing.utils import StubAgent
 from unittest.mock import AsyncMock
 

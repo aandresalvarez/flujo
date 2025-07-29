@@ -60,21 +60,27 @@ class ConceptResolutionAgent:
 class SQLGenerationAgent:
     """Agent that generates SQL from resolved concepts."""
 
-    async def run(self, data: Dict[str, Any], **kwargs) -> str:
+    async def run(self, data: Dict[str, Any], **kwargs) -> Dict[str, Any]:
         # Simulate SQL generation based on resolved concepts
         concepts = data.get("concepts", [])
         sql = f"SELECT * FROM {', '.join(concepts)} WHERE 1=1;"
-        return sql
+        return {"sql": sql, "generated_sql": sql}
 
 
 class SQLValidationAgent:
     """Agent that validates generated SQL."""
 
-    async def run(self, data: str, **kwargs) -> Dict[str, Any]:
+    async def run(self, data: Dict[str, Any], **kwargs) -> Dict[str, Any]:
         # Simulate SQL validation
-        is_valid = "SELECT" in data and "FROM" in data
+        # Extract SQL from the input data (could be a string or dict with sql field)
+        if isinstance(data, str):
+            sql = data
+        else:
+            sql = data.get("sql", "")
+
+        is_valid = "SELECT" in sql and "FROM" in sql
         return {
-            "sql": data,
+            "sql": sql,
             "is_valid": is_valid,
             "errors": [] if is_valid else ["Invalid SQL syntax"],
         }

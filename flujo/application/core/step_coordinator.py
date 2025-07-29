@@ -9,7 +9,12 @@ from ...domain.models import BaseModel, PipelineResult, StepResult, PipelineCont
 from ...domain.resources import AppResources
 from ...domain.types import HookCallable
 from typing import Literal
-from ...exceptions import PausedException, PipelineAbortSignal, PipelineContextInitializationError
+from ...exceptions import (
+    PausedException,
+    PipelineAbortSignal,
+    PipelineContextInitializationError,
+    UsageLimitExceededError,
+)
 from ...infra import telemetry
 from ..core.hook_dispatcher import _dispatch_hook as _dispatch_hook_impl
 
@@ -74,6 +79,9 @@ class StepCoordinator(Generic[ContextT]):
                     scratch = context.scratchpad
                     if "paused_step_input" not in scratch:
                         scratch["paused_step_input"] = data
+                raise
+            except UsageLimitExceededError:
+                # Re-raise usage limit exceptions to be handled by ExecutionManager
                 raise
             except PipelineContextInitializationError:
                 # Re-raise context initialization errors to be handled by ExecutionManager

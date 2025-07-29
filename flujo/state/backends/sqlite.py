@@ -11,7 +11,17 @@ import time
 import weakref
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, TYPE_CHECKING, cast
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Tuple,
+    TYPE_CHECKING,
+    cast,
+)
 
 import aiosqlite
 
@@ -26,6 +36,7 @@ try:
     def _fast_json_dumps(obj: Any) -> str:
         """Use orjson for faster JSON serialization."""
         return orjson.dumps(obj, option=orjson.OPT_SORT_KEYS).decode("utf-8")
+
 except ImportError:
 
     def _fast_json_dumps(obj: Any) -> str:
@@ -203,7 +214,14 @@ def _validate_column_definition(column_def: str) -> bool:
     if not match:
         raise ValueError(f"Column definition does not match a safe SQLite structure: {column_def}")
     # Ensure no unknown trailing content after allowed constraints
-    allowed_constraints = ["PRIMARY KEY", "UNIQUE", "NOT NULL", "DEFAULT", "CHECK", "COLLATE"]
+    allowed_constraints = [
+        "PRIMARY KEY",
+        "UNIQUE",
+        "NOT NULL",
+        "DEFAULT",
+        "CHECK",
+        "COLLATE",
+    ]
     # Remove type and type parameters
     rest = column_def[len(match.group(1) or "") :]
     if match.group(2):
@@ -226,7 +244,9 @@ def _validate_column_definition(column_def: str) -> bool:
     if default_match:
         val = default_match.group(1)
         if not re.match(
-            r"^(NULL|[0-9]+|[0-9]*\.[0-9]+|'.*?'|\".*?\"|TRUE|FALSE)$", val, re.IGNORECASE
+            r"^(NULL|[0-9]+|[0-9]*\.[0-9]+|'.*?'|\".*?\"|TRUE|FALSE)$",
+            val,
+            re.IGNORECASE,
         ):
             raise ValueError(f"Unsafe column definition: invalid DEFAULT value: {val}")
 
@@ -1005,11 +1025,13 @@ class SQLiteBackend(StateBackend):
                 await cursor.close()
 
                 # Get status counts
-                cursor = await db.execute("""
+                cursor = await db.execute(
+                    """
                     SELECT status, COUNT(*)
                     FROM workflow_state
                     GROUP BY status
-                """)
+                """
+                )
                 status_counts_rows = await cursor.fetchall()
                 status_counts: Dict[str, int] = {
                     row[0]: row[1] for row in status_counts_rows if row is not None
@@ -1017,11 +1039,13 @@ class SQLiteBackend(StateBackend):
                 await cursor.close()
 
                 # Get recent workflows (last 24 hours)
-                cursor = await db.execute("""
+                cursor = await db.execute(
+                    """
                     SELECT COUNT(*)
                     FROM workflow_state
                     WHERE created_at >= datetime('now', '-24 hours')
-                """)
+                """
+                )
                 recent_workflows_24h_row = await cursor.fetchone()
                 recent_workflows_24h = (
                     recent_workflows_24h_row[0] if recent_workflows_24h_row else 0
@@ -1029,11 +1053,13 @@ class SQLiteBackend(StateBackend):
                 await cursor.close()
 
                 # Get average execution time
-                cursor = await db.execute("""
+                cursor = await db.execute(
+                    """
                     SELECT AVG(execution_time_ms)
                     FROM workflow_state
                     WHERE execution_time_ms IS NOT NULL
-                """)
+                """
+                )
                 avg_exec_time_row = await cursor.fetchone()
                 avg_exec_time = avg_exec_time_row[0] if avg_exec_time_row else 0
                 await cursor.close()
@@ -1342,7 +1368,9 @@ class SQLiteBackend(StateBackend):
             return spans
 
         def extract_span_recursive(
-            span_data: Dict[str, Any], parent_span_id: Optional[str] = None, depth: int = 0
+            span_data: Dict[str, Any],
+            parent_span_id: Optional[str] = None,
+            depth: int = 0,
         ) -> None:
             # Check depth limit to prevent stack overflow
             if depth > max_depth:
@@ -1400,7 +1428,8 @@ class SQLiteBackend(StateBackend):
         return spans
 
     def _reconstruct_trace_tree(
-        self, spans_data: List[Tuple[str, Optional[str], str, float, Optional[float], str, str]]
+        self,
+        spans_data: List[Tuple[str, Optional[str], str, float, Optional[float], str, str]],
     ) -> Optional[Dict[str, Any]]:
         """Reconstruct a hierarchical trace tree from flat spans data."""
         spans_map: Dict[str, Dict[str, Any]] = {}
@@ -1408,7 +1437,15 @@ class SQLiteBackend(StateBackend):
 
         # First pass: create a map of all spans by ID
         for row in spans_data:
-            span_id, parent_span_id, name, start_time, end_time, status, attributes = row
+            (
+                span_id,
+                parent_span_id,
+                name,
+                start_time,
+                end_time,
+                status,
+                attributes,
+            ) = row
             span_data: Dict[str, Any] = {
                 "span_id": span_id,
                 "parent_span_id": parent_span_id,
@@ -1500,7 +1537,15 @@ class SQLiteBackend(StateBackend):
                     rows = await cursor.fetchall()
                     results: List[Dict[str, Any]] = []
                     for r in rows:
-                        span_id, parent_span_id, name, start_time, end_time, status, attributes = r
+                        (
+                            span_id,
+                            parent_span_id,
+                            name,
+                            start_time,
+                            end_time,
+                            status,
+                            attributes,
+                        ) = r
                         results.append(
                             {
                                 "span_id": str(span_id),
@@ -1517,7 +1562,9 @@ class SQLiteBackend(StateBackend):
                     return results
 
     async def get_span_statistics(
-        self, pipeline_name: Optional[str] = None, time_range: Optional[Tuple[float, float]] = None
+        self,
+        pipeline_name: Optional[str] = None,
+        time_range: Optional[Tuple[float, float]] = None,
     ) -> Dict[str, Any]:
         """Get aggregated span statistics."""
         await self._ensure_init()
@@ -1562,7 +1609,10 @@ class SQLiteBackend(StateBackend):
                         stats["by_status"][status] += 1
                         # Average duration by name
                         if name not in stats["avg_duration_by_name"]:
-                            stats["avg_duration_by_name"][name] = {"total": 0.0, "count": 0}
+                            stats["avg_duration_by_name"][name] = {
+                                "total": 0.0,
+                                "count": 0,
+                            }
                         stats["avg_duration_by_name"][name]["total"] += duration
                         stats["avg_duration_by_name"][name]["count"] += 1
                     for name, data in stats["avg_duration_by_name"].items():

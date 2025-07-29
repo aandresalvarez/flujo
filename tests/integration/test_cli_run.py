@@ -12,7 +12,15 @@ runner = CliRunner()
 
 def test_run_basic():
     result = runner.invoke(
-        app, ["run", PIPELINE_FILE, "--input", "Test input", "--context-model", "TestContext"]
+        app,
+        [
+            "run",
+            PIPELINE_FILE,
+            "--input",
+            "Test input",
+            "--context-model",
+            "TestContext",
+        ],
     )
     assert result.exit_code == 0
     assert "Pipeline execution completed successfully!" in result.output
@@ -65,7 +73,8 @@ def test_run_with_context_yaml():
 
 def test_run_missing_pipeline():
     result = runner.invoke(
-        app, ["run", "nonexistent.py", "--input", "fail", "--context-model", "TestContext"]
+        app,
+        ["run", "nonexistent.py", "--input", "fail", "--context-model", "TestContext"],
     )
     assert result.exit_code != 0
     assert "Failed to load pipeline file" in result.output or "No" in result.output
@@ -73,7 +82,8 @@ def test_run_missing_pipeline():
 
 def test_run_missing_context_model():
     result = runner.invoke(
-        app, ["run", PIPELINE_FILE, "--input", "fail", "--context-model", "DoesNotExist"]
+        app,
+        ["run", PIPELINE_FILE, "--input", "fail", "--context-model", "DoesNotExist"],
     )
     assert result.exit_code != 0
     assert "Context model" in result.output

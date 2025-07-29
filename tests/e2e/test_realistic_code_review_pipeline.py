@@ -209,13 +209,21 @@ async def human_review_approval(
         context.changes_requested = True
         context.reviewer_comments.append("Approved with minor improvements requested")
         context.reason = "Minor improvements needed"
-        return {"approved": True, "changes_requested": True, "reason": "Minor improvements needed"}
+        return {
+            "approved": True,
+            "changes_requested": True,
+            "reason": "Minor improvements needed",
+        }
     else:
         context.approval_given = True
         context.changes_requested = False
         context.reviewer_comments.append("Excellent code quality - approved")
         context.reason = "High quality code"
-        return {"approved": True, "changes_requested": False, "reason": "High quality code"}
+        return {
+            "approved": True,
+            "changes_requested": False,
+            "reason": "High quality code",
+        }
 
 
 @step

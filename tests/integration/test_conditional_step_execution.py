@@ -364,7 +364,9 @@ async def test_conditional_step_overall_span(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_conditional_step_branch_selection_logging_and_span_attributes(monkeypatch) -> None:
+async def test_conditional_step_branch_selection_logging_and_span_attributes(
+    monkeypatch,
+) -> None:
     infos: list[str] = []
     spans: list[str] = []
     attrs: list[tuple[str, Any]] = []

@@ -102,7 +102,9 @@ class StateBackend(ABC):
         raise NotImplementedError
 
     async def get_span_statistics(
-        self, pipeline_name: Optional[str] = None, time_range: Optional[Tuple[float, float]] = None
+        self,
+        pipeline_name: Optional[str] = None,
+        time_range: Optional[Tuple[float, float]] = None,
     ) -> Dict[str, Any]:
         """Get aggregated span statistics."""
         raise NotImplementedError

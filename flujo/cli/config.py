@@ -103,12 +103,14 @@ def load_backend_from_config() -> StateBackend:
         # Do NOT auto-create parent directories; fail if missing
         if not parent_dir.exists():
             typer.echo(
-                f"[red]Error: Database directory '{parent_dir}' does not exist[/red]", err=True
+                f"[red]Error: Database directory '{parent_dir}' does not exist[/red]",
+                err=True,
             )
             raise typer.Exit(1)
         if not os.access(parent_dir, os.W_OK):
             typer.echo(
-                f"[red]Error: Database directory '{parent_dir}' is not writable[/red]", err=True
+                f"[red]Error: Database directory '{parent_dir}' is not writable[/red]",
+                err=True,
             )
             raise typer.Exit(1)
         # Ensure the database file exists with secure permissions (read/write for owner only)

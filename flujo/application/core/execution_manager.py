@@ -119,7 +119,8 @@ class ExecutionManager(Generic[ContextT]):
                             yield item
 
                     # Validate type compatibility with next step - this may raise TypeMismatchError
-                    if step_result and idx < len(self.pipeline.steps) - 1:
+                    # Only validate types if the step succeeded (to avoid TypeMismatchError for failed steps)
+                    if step_result and step_result.success and idx < len(self.pipeline.steps) - 1:
                         next_step = self.pipeline.steps[idx + 1]
                         self.type_validator.validate_step_output(
                             step, step_result.output, next_step
@@ -140,7 +141,10 @@ class ExecutionManager(Generic[ContextT]):
                             step_tokens = getattr(step_result, "token_counts", 0)
 
                             # Use the most efficient checking method that avoids PipelineResult creation
-                            limit_exceeded, _ = self.usage_governor.check_usage_limits_efficient(
+                            (
+                                limit_exceeded,
+                                _,
+                            ) = self.usage_governor.check_usage_limits_efficient(
                                 current_total_cost=result.total_cost_usd,
                                 current_total_tokens=current_total_tokens,
                                 step_cost=step_result.cost_usd,
@@ -281,7 +285,8 @@ class ExecutionManager(Generic[ContextT]):
                                 import re
 
                                 match = re.search(
-                                    r"Missing required fields: ([\w, ]+)", step_result.feedback
+                                    r"Missing required fields: ([\w, ]+)",
+                                    step_result.feedback,
                                 )
                                 if match:
                                     missing_fields = [f.strip() for f in match.group(1).split(",")]

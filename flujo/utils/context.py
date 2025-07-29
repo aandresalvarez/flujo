@@ -128,6 +128,7 @@ def safe_merge_context_updates(
     3. Handling computed fields and validators properly
     4. Gracefully handling equality comparison failures
     5. Enhanced error handling for loop context updates
+    6. Performing deep merges for dictionaries and lists to prevent overwrites
 
     Args:
         target_context: The target context to update
@@ -144,6 +145,24 @@ def safe_merge_context_updates(
     # Use default excluded fields if none provided
     if excluded_fields is None:
         excluded_fields = get_excluded_fields()
+
+    print("[DEBUG] safe_merge_context_updates called")
+    print(f"[DEBUG] target_context type: {type(target_context)}")
+    print(f"[DEBUG] source_context type: {type(source_context)}")
+    print(f"[DEBUG] excluded_fields: {excluded_fields}")
+
+    def deep_merge_dict(target_dict: dict[str, Any], source_dict: dict[str, Any]) -> dict[str, Any]:
+        """Recursively merge source dictionary into target dictionary."""
+        result = target_dict.copy()
+        for key, source_value in source_dict.items():
+            if key in result and isinstance(result[key], dict) and isinstance(source_value, dict):
+                result[key] = deep_merge_dict(result[key], source_value)
+            elif key in result and isinstance(result[key], list) and isinstance(source_value, list):
+                # For lists, extend with new items to avoid duplicates
+                result[key].extend([item for item in source_value if item not in result[key]])
+            else:
+                result[key] = source_value
+        return result
 
     try:
         # Get field values using Pydantic's model_dump() method
@@ -162,6 +181,8 @@ def safe_merge_context_updates(
                 if not key.startswith("_")
             }
 
+        print(f"[DEBUG] source_fields: {source_fields}")
+
         # Update only changed fields using setattr to trigger validation
         updated_count = 0
         validation_errors = []
@@ -174,28 +195,63 @@ def safe_merge_context_updates(
 
                 # Skip excluded fields to prevent duplication during loop merging
                 if field_name in excluded_fields:
+                    print(f"[DEBUG] Skipping excluded field: {field_name}")
                     continue
 
                 # Check if field exists in target
                 if not hasattr(target_context, field_name):
+                    print(f"[DEBUG] Field not found in target: {field_name}")
                     continue
 
                 # Always get the actual value from the source context for merging
                 actual_source_value = getattr(source_context, field_name)
                 current_value = getattr(target_context, field_name)
 
-                # Compare values safely with enhanced error handling
-                try:
-                    if current_value != actual_source_value:
-                        # Use setattr to trigger Pydantic validation
-                        setattr(target_context, field_name, actual_source_value)
+                print(f"[DEBUG] Processing field: {field_name}")
+                print(f"[DEBUG] current_value: {current_value}")
+                print(f"[DEBUG] actual_source_value: {actual_source_value}")
+
+                # Perform deep merge for dictionaries and lists
+                if isinstance(current_value, dict) and isinstance(actual_source_value, dict):
+                    print(f"[DEBUG] Merging dictionaries for field: {field_name}")
+                    merged_value = deep_merge_dict(current_value, actual_source_value)
+                    if merged_value != current_value:
+                        setattr(target_context, field_name, merged_value)
                         updated_count += 1
-                except (TypeError, ValueError, AttributeError, ValidationError) as e:
-                    # Enhanced error handling for loop context updates
-                    error_msg = f"Failed to update field '{field_name}': {e}"
-                    logger.warning(error_msg)
-                    validation_errors.append(error_msg)
-                    continue
+                        print(f"[DEBUG] Updated dict field: {field_name}")
+                elif isinstance(current_value, list) and isinstance(actual_source_value, list):
+                    print(f"[DEBUG] Merging lists for field: {field_name}")
+                    # For lists, extend with new items to avoid duplicates
+                    new_items = [item for item in actual_source_value if item not in current_value]
+                    if new_items:
+                        current_value.extend(new_items)
+                        updated_count += 1
+                        print(
+                            f"[DEBUG] Updated list field: {field_name} with new items: {new_items}"
+                        )
+                    else:
+                        print(f"[DEBUG] No new items to add to list field: {field_name}")
+                else:
+                    # For other types, use simple replacement
+                    try:
+                        if current_value != actual_source_value:
+                            # Use setattr to trigger Pydantic validation
+                            setattr(target_context, field_name, actual_source_value)
+                            updated_count += 1
+                            print(f"[DEBUG] Updated simple field: {field_name}")
+                        else:
+                            print(f"[DEBUG] Field unchanged: {field_name}")
+                    except (
+                        TypeError,
+                        ValueError,
+                        AttributeError,
+                        ValidationError,
+                    ) as e:
+                        # Enhanced error handling for loop context updates
+                        error_msg = f"Failed to update field '{field_name}': {e}"
+                        logger.warning(error_msg)
+                        validation_errors.append(error_msg)
+                        continue
 
             except (AttributeError, TypeError, ValidationError) as e:
                 # Skip fields that can't be accessed or set
@@ -203,6 +259,9 @@ def safe_merge_context_updates(
                 logger.debug(error_msg)
                 validation_errors.append(error_msg)
                 continue
+
+        print(f"[DEBUG] Total fields updated: {updated_count}")
+        print(f"[DEBUG] Validation errors: {validation_errors}")
 
         if updated_count > 0:
             # Note: We don't validate the entire context after updates to allow for more flexible handling

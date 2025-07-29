@@ -136,7 +136,8 @@ class BaseModel(PydanticBaseModel):
         try:
             if callable(value):
                 if isinstance(
-                    value, (FunctionType, MethodType, BuiltinFunctionType, BuiltinMethodType)
+                    value,
+                    (FunctionType, MethodType, BuiltinFunctionType, BuiltinMethodType),
                 ):
                     module = getattr(value, "__module__", "<unknown>")
                     qualname = getattr(value, "__qualname__", repr(value))

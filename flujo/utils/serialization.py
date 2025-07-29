@@ -454,7 +454,11 @@ def safe_serialize(
         if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
             return {
                 k: safe_serialize(
-                    v, default_serializer, _seen, _recursion_depth + 1, circular_ref_placeholder
+                    v,
+                    default_serializer,
+                    _seen,
+                    _recursion_depth + 1,
+                    circular_ref_placeholder,
                 )
                 for k, v in dataclasses.asdict(obj).items()
             }
@@ -481,21 +485,33 @@ def safe_serialize(
                 str(
                     _serialize_for_key(k, _seen, default_serializer, _recursion_depth + 1)
                 ): safe_serialize(
-                    v, default_serializer, _seen, _recursion_depth + 1, circular_ref_placeholder
+                    v,
+                    default_serializer,
+                    _seen,
+                    _recursion_depth + 1,
+                    circular_ref_placeholder,
                 )
                 for k, v in obj.items()
             }
         if isinstance(obj, (list, tuple)):
             return [
                 safe_serialize(
-                    item, default_serializer, _seen, _recursion_depth + 1, circular_ref_placeholder
+                    item,
+                    default_serializer,
+                    _seen,
+                    _recursion_depth + 1,
+                    circular_ref_placeholder,
                 )
                 for item in obj
             ]
         if isinstance(obj, (set, frozenset)):
             return [
                 safe_serialize(
-                    item, default_serializer, _seen, _recursion_depth + 1, circular_ref_placeholder
+                    item,
+                    default_serializer,
+                    _seen,
+                    _recursion_depth + 1,
+                    circular_ref_placeholder,
                 )
                 for item in sorted(obj, key=str)
             ]

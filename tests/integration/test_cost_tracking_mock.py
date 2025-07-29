@@ -10,7 +10,10 @@ class MockAgentWithUsage:
     """A mock agent that simulates pydantic-ai usage tracking."""
 
     def __init__(
-        self, prompt_tokens: int = 100, completion_tokens: int = 50, model_name: str = "gpt-4o"
+        self,
+        prompt_tokens: int = 100,
+        completion_tokens: int = 50,
+        model_name: str = "gpt-4o",
     ):
         self.prompt_tokens = prompt_tokens
         self.completion_tokens = completion_tokens

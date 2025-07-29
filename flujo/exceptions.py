@@ -81,7 +81,10 @@ class ContextInheritanceError(OrchestratorError):
     """Raised when inheriting context for a nested pipeline fails."""
 
     def __init__(
-        self, missing_fields: list[str], parent_context_keys: list[str], child_model_name: str
+        self,
+        missing_fields: list[str],
+        parent_context_keys: list[str],
+        child_model_name: str,
     ) -> None:
         msg = (
             f"Failed to inherit context for {child_model_name}. Missing required fields: "

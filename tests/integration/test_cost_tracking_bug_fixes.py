@@ -215,7 +215,10 @@ class TestBug2FixParallelStepRaceCondition:
 
         parallel_step = ParallelStep(
             name="parallel_test",
-            branches={"branch1": Pipeline.from_step(step1), "branch2": Pipeline.from_step(step2)},
+            branches={
+                "branch1": Pipeline.from_step(step1),
+                "branch2": Pipeline.from_step(step2),
+            },
             merge_strategy=MergeStrategy.NO_MERGE,
         )
 

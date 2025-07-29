@@ -70,6 +70,7 @@ class MergeStrategy(Enum):
     OVERWRITE = "overwrite"
     MERGE_SCRATCHPAD = "merge_scratchpad"
     CONTEXT_UPDATE = "context_update"  # New strategy for proper context updates with validation
+    KEEP_FIRST = "keep_first"  # Keep first occurrence of each key when merging
 
 
 class BranchFailureStrategy(Enum):

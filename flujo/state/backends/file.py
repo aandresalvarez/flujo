@@ -88,8 +88,15 @@ class FileBackend(StateBackend):
         return []
 
     async def get_span_statistics(
-        self, pipeline_name: Optional[str] = None, time_range: Optional[Tuple[float, float]] = None
+        self,
+        pipeline_name: Optional[str] = None,
+        time_range: Optional[Tuple[float, float]] = None,
     ) -> Dict[str, Any]:
         """Get aggregated span statistics."""
         # FileBackend doesn't support span statistics
-        return {"total_spans": 0, "by_name": {}, "by_status": {}, "avg_duration_by_name": {}}
+        return {
+            "total_spans": 0,
+            "by_name": {},
+            "by_status": {},
+            "avg_duration_by_name": {},
+        }

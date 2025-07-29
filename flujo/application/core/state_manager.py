@@ -44,7 +44,7 @@ class StateManager(Generic[ContextT]):
             }
             filtered_data = {k: v for k, v in context_data.items() if k not in fields_to_exclude}
 
-            # Create a deterministic string representation
+            # Use MD5 for fast hashing while maintaining 32-character output
             import json
 
             context_str = json.dumps(filtered_data, sort_keys=True, separators=(",", ":"))
@@ -261,7 +261,12 @@ class StateManager(Generic[ContextT]):
                             "updated_at": getattr(context, "updated_at", None),
                         }
                         # Include any additional fields that might be present
-                        for field_name in ["status", "current_step", "last_error", "metadata"]:
+                        for field_name in [
+                            "status",
+                            "current_step",
+                            "last_error",
+                            "metadata",
+                        ]:
                             if hasattr(context, field_name):
                                 pipeline_context[field_name] = getattr(context, field_name, None)
                     logger.debug(f"Skipped context serialization for unchanged run {run_id}")

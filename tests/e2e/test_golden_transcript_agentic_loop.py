@@ -9,7 +9,12 @@ import pytest
 from typing import Any, List
 
 from flujo.domain.models import PipelineContext
-from flujo.domain.commands import AgentCommand, RunAgentCommand, AskHumanCommand, FinishCommand
+from flujo.domain.commands import (
+    AgentCommand,
+    RunAgentCommand,
+    AskHumanCommand,
+    FinishCommand,
+)
 from flujo.recipes import make_agentic_loop_pipeline
 from tests.conftest import create_test_flujo
 
@@ -84,7 +89,11 @@ async def test_golden_transcript_agentic_loop():
     result = None
     async for r in runner.run_async(
         "initial_task",
-        initial_context_data={"initial_prompt": "test", "command_log": [], "final_state": ""},
+        initial_context_data={
+            "initial_prompt": "test",
+            "command_log": [],
+            "final_state": "",
+        },
     ):
         result = r
 
@@ -146,7 +155,11 @@ async def test_golden_transcript_agentic_loop_resume():
     result = None
     async for r in runner.run_async(
         "resume_task",
-        initial_context_data={"initial_prompt": "test", "command_log": [], "final_state": ""},
+        initial_context_data={
+            "initial_prompt": "test",
+            "command_log": [],
+            "final_state": "",
+        },
     ):
         result = r
         # Break after first iteration to test resume

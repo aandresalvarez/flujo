@@ -13,7 +13,13 @@ from pydantic import TypeAdapter
 
 from ..domain.dsl.pipeline import Pipeline
 from ..domain.dsl.step import Step
-from ..domain.models import PipelineContext, Task, Candidate, Checklist, ExecutedCommandLog
+from ..domain.models import (
+    PipelineContext,
+    Task,
+    Candidate,
+    Checklist,
+    ExecutedCommandLog,
+)
 from ..domain.commands import AgentCommand, FinishCommand
 from ..application.runner import Flujo
 from ..testing.utils import gather_result

@@ -433,7 +433,11 @@ class TestUltraExecutorPerformance:
         self, ultra_executor, realistic_iterative_executor, mock_step
     ):
         """Test cache performance with realistic workloads."""
-        data = {"cache": "test", "value": 456, "complex": {"nested": {"data": "structure"}}}
+        data = {
+            "cache": "test",
+            "value": 456,
+            "complex": {"nested": {"data": "structure"}},
+        }
         context = Mock()
         context.model_dump.return_value = {"context": "data"}
         resources = Mock()

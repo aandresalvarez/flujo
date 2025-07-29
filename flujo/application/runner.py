@@ -267,10 +267,16 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         if tracer_instance:
             self.hooks.append(tracer_instance.hook)
         if backend is None:
-            from ..infra.backends import LocalBackend
-
-            backend = LocalBackend()
+            # ✅ COMPOSITION ROOT: Create and wire all dependencies
+            backend = self._create_default_backend()
         self.backend = backend
+        # Debug: Log backend and executor type
+        from flujo.infra import telemetry
+
+        backend_type = type(self.backend).__name__
+        executor_type = getattr(getattr(self.backend, "_executor", None), "__class__", None)
+        telemetry.logfire.debug(f"Flujo backend: {backend_type}, executor: {executor_type}")
+
         self.state_backend: StateBackend | None
         if state_backend is None:
             from pathlib import Path
@@ -280,6 +286,22 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         else:
             self.state_backend = state_backend
         self.delete_on_completion = delete_on_completion
+
+    def _create_default_backend(self) -> "ExecutionBackend":
+        """Create a default LocalBackend with properly wired ExecutorCore.
+
+        This method acts as the Composition Root, assembling all the
+        components needed for optimal execution.
+        """
+        from ..application.core.ultra_executor import ExecutorCore
+
+        # ✅ Assemble ExecutorCore with default high-performance components
+        executor: ExecutorCore[Any] = ExecutorCore()  # Use default configuration
+
+        # ✅ Create LocalBackend and inject the executor
+        from ..infra.backends import LocalBackend
+
+        return LocalBackend(executor=executor)
 
     def disable_tracing(self) -> None:
         """Disable tracing by removing the TraceManager hook."""

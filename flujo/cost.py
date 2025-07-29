@@ -2,7 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Optional, Tuple, Any, Protocol, runtime_checkable, Dict, TypeVar, Callable
+from typing import (
+    Optional,
+    Tuple,
+    Any,
+    Protocol,
+    runtime_checkable,
+    Dict,
+    TypeVar,
+    Callable,
+)
 import flujo.infra.config
 from flujo.exceptions import PricingNotConfiguredError
 
@@ -118,7 +127,10 @@ def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[
             # Calculate cost if we have token information
             if prompt_tokens > 0 or completion_tokens > 0:
                 # Get the model information from the agent using centralized extraction
-                from .utils.model_utils import extract_model_id, extract_provider_and_model
+                from .utils.model_utils import (
+                    extract_model_id,
+                    extract_provider_and_model,
+                )
 
                 model_id = extract_model_id(agent, step_name)
 

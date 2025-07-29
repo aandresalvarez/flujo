@@ -225,7 +225,10 @@ def _serialize_for_cache_key(
         except Exception as e:
             # Improved error handling for unhashable types
             logging.debug(
-                "Serialization error for %s: %s: %s", type(obj).__name__, type(e).__name__, str(e)
+                "Serialization error for %s: %s: %s",
+                type(obj).__name__,
+                type(e).__name__,
+                str(e),
             )
             return f"<unserializable: {type(obj).__name__}>"
     finally:

@@ -21,7 +21,7 @@ async def test_fallback_assignment() -> None:
 async def test_fallback_not_triggered_on_success() -> None:
     agent = StubAgent(["ok"])
     primary = Step.model_validate({"name": "p", "agent": agent})
-    fb = Step.model_validate({"name": "fb", "agent": StubAgent(["fb"])})
+    fb = Step.model_validate({"name": "fb", "agent": StubAgent(["fallback"])})
     primary.fallback(fb)
     runner = create_test_flujo(primary)
     res = await gather_result(runner, "in")
@@ -29,7 +29,7 @@ async def test_fallback_not_triggered_on_success() -> None:
     assert sr.output == "ok"
     assert agent.call_count == 1
     assert getattr(fb.agent, "call_count", 0) == 0
-    assert sr.metadata_ is None
+    assert sr.metadata_ == {}  # metadata_ defaults to empty dict, not None
 
 
 @pytest.mark.asyncio

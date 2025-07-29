@@ -103,7 +103,10 @@ async def failing_cache_step(data: Any, *, context: CacheContext) -> Dict[str, A
     if data == "fail":
         raise RuntimeError("Intentional failure for cache testing")
 
-    return {"operation_count": context.operation_count, "result": f"success_result_{data}"}
+    return {
+        "operation_count": context.operation_count,
+        "result": f"success_result_{data}",
+    }
 
 
 # Utility function to create simplified steps

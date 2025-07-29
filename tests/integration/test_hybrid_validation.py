@@ -31,7 +31,9 @@ class ContextValidator(BaseValidator):
     ) -> ValidationResult:
         flag = getattr(context, "flag", False) if context else False
         return ValidationResult(
-            is_valid=flag, feedback=None if flag else "flag not set", validator_name=self.name
+            is_valid=flag,
+            feedback=None if flag else "flag not set",
+            validator_name=self.name,
         )
 
 

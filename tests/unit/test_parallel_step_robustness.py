@@ -2,10 +2,12 @@
 
 import pytest
 import asyncio
+from typing import Any
 
 from flujo.application.core.step_logic import _execute_parallel_step_logic
 from flujo.domain.dsl.parallel import ParallelStep
 from flujo.domain.dsl.pipeline import Pipeline
+from flujo.domain.dsl.step import Step
 from flujo.domain.models import StepResult, UsageLimits
 from flujo.exceptions import UsageLimitExceededError
 from flujo.testing.utils import StubAgent
@@ -114,6 +116,7 @@ class TestParallelStepRobustness:
             context_setter_calls.append({"result": result, "context": context})
 
         # Execute the parallel step
+        breach_event = asyncio.Event()
         await _execute_parallel_step_logic(
             parallel_step=parallel_step,
             parallel_input="test_input",
@@ -123,6 +126,7 @@ class TestParallelStepRobustness:
             context_model_defined=False,
             usage_limits=usage_limits,
             context_setter=context_setter,
+            breach_event=breach_event,
         )
 
         # Verify that the step executor was called for each branch
@@ -180,6 +184,7 @@ class TestParallelStepRobustness:
             context_setter_calls.append({"result": result, "context": context})
 
         # Execute the parallel step
+        breach_event = asyncio.Event()
         await _execute_parallel_step_logic(
             parallel_step=parallel_step,
             parallel_input="test_input",
@@ -189,6 +194,7 @@ class TestParallelStepRobustness:
             context_model_defined=False,
             usage_limits=usage_limits,
             context_setter=context_setter,
+            breach_event=breach_event,
         )
 
         # Verify that all branches were called
@@ -199,36 +205,54 @@ class TestParallelStepRobustness:
         # Create usage limits that will be breached
         usage_limits = UsageLimits(total_cost_usd_limit=0.005, total_tokens_limit=5)
 
-        # Create a step executor that always returns high cost
-        async def expensive_executor(step, data, context, resources, breach_event=None):
-            return StepResult(
-                name=step.name,
-                output=data,
-                success=True,
-                attempts=1,
-                latency_s=0.1,
-                token_counts=10,  # This will breach the token limit
-                cost_usd=0.01,  # This will breach the cost limit
-            )
+        # Create a stub agent that returns high cost
+        class ExpensiveStubAgent:
+            async def run(self, data: Any, **kwargs: Any) -> Any:
+                class UsageResponse:
+                    def __init__(self, output: Any, cost: float, tokens: int):
+                        self.output = output
+                        self.cost_usd = cost
+                        self.token_counts = tokens
 
-        # Create a context setter that tracks what's set
-        context_setter_calls = []
+                    def usage(self) -> dict[str, Any]:
+                        return {
+                            "prompt_tokens": self.token_counts,
+                            "completion_tokens": 0,
+                            "total_tokens": self.token_counts,
+                            "cost_usd": self.cost_usd,
+                        }
 
-        def context_setter(result, context):
-            context_setter_calls.append({"result": result, "context": context})
+                return UsageResponse(data, 0.01, 10)  # High cost and tokens
 
-        # Execute the parallel step - should raise UsageLimitExceededError
+        # Create steps with the expensive agent
+        step1 = Step.model_validate({"name": "step1", "agent": ExpensiveStubAgent()})
+        step2 = Step.model_validate({"name": "step2", "agent": ExpensiveStubAgent()})
+
+        # Create a parallel step with these steps
+        from flujo.domain.dsl.parallel import ParallelStep
+
+        parallel_step = ParallelStep.model_validate(
+            {
+                "name": "parallel_step",
+                "branches": {
+                    "branch1": Pipeline.model_validate({"steps": [step1]}),
+                    "branch2": Pipeline.model_validate({"steps": [step2]}),
+                },
+            }
+        )
+
+        # Create a pipeline with the parallel step
+        pipeline = Pipeline.model_validate({"steps": [parallel_step]})
+
+        # Create Flujo runner with usage limits
+        from flujo import Flujo
+
+        runner = Flujo(pipeline, usage_limits=usage_limits)
+
+        # Execute the pipeline - should raise UsageLimitExceededError
         with pytest.raises(UsageLimitExceededError) as exc_info:
-            await _execute_parallel_step_logic(
-                parallel_step=parallel_step,
-                parallel_input="test_input",
-                context=None,
-                resources=None,
-                step_executor=expensive_executor,
-                context_model_defined=False,
-                usage_limits=usage_limits,
-                context_setter=context_setter,
-            )
+            async for result in runner.run_async("test_input"):
+                pass  # Consume the async iterator
 
         # Verify that the error contains proper step history
         error = exc_info.value
@@ -269,6 +293,7 @@ class TestParallelStepRobustness:
             pass
 
         # Execute the parallel step
+        breach_event = asyncio.Event()
         await _execute_parallel_step_logic(
             parallel_step=parallel_step,
             parallel_input="test_input",
@@ -278,6 +303,7 @@ class TestParallelStepRobustness:
             context_model_defined=False,
             usage_limits=usage_limits,
             context_setter=context_setter,
+            breach_event=breach_event,
         )
 
         # Verify that breach_event was passed to all steps

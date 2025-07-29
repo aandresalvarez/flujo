@@ -83,8 +83,8 @@ class StepResult(BaseModel):
         default=None,
         description="Final context object for a branch in ParallelStep.",
     )
-    metadata_: dict[str, Any] | None = Field(
-        default=None,
+    metadata_: dict[str, Any] = Field(
+        default_factory=dict,
         description="Optional metadata about the step execution.",
     )
 
