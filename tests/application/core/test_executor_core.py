@@ -572,3 +572,169 @@ class TestExecutorCoreSimpleStep:
         assert result.success is False
         # Note: The actual persistence logic would be tested in integration tests
         # This test verifies the method signature and basic flow
+
+
+class TestExecutorCoreComplexStepClassification:
+    """Test suite for ExecutorCore._is_complex_step method (FSD 6.1)."""
+
+    @pytest.fixture
+    def executor_core(self):
+        """Create an ExecutorCore instance with mocked dependencies."""
+        mock_agent_runner = AsyncMock()
+        mock_processor_pipeline = AsyncMock()
+        mock_validator_runner = AsyncMock()
+        mock_plugin_runner = AsyncMock()
+        mock_usage_meter = AsyncMock()
+        mock_cache_backend = AsyncMock()
+        mock_telemetry = Mock()
+
+        return ExecutorCore(
+            agent_runner=mock_agent_runner,
+            processor_pipeline=mock_processor_pipeline,
+            validator_runner=mock_validator_runner,
+            plugin_runner=mock_plugin_runner,
+            usage_meter=mock_usage_meter,
+            cache_backend=mock_cache_backend,
+            telemetry=mock_telemetry,
+        )
+
+    @pytest.mark.asyncio
+    async def test_fallback_steps_are_simple(self, executor_core):
+        """Test that steps with fallbacks are classified as simple."""
+        # Arrange
+        step = Mock()
+        step.name = "test_step"
+        step.fallback_step = Mock()
+        step.fallback_step.name = "fallback_step"
+
+        # Configure step to not have plugins or meta (which would make it complex)
+        step.plugins = None  # Explicitly set to None
+        step.meta = None  # Explicitly set to None
+
+        # Act
+        is_complex = executor_core._is_complex_step(step)
+
+        # Assert
+        assert not is_complex, "Steps with fallbacks should be classified as simple"
+
+    @pytest.mark.asyncio
+    async def test_complex_steps_remain_complex(self, executor_core):
+        """Test that truly complex steps are still classified as complex."""
+        from flujo.domain.dsl.loop import LoopStep
+        from flujo.domain.dsl.parallel import ParallelStep
+
+        # Test LoopStep
+        loop_step = Mock(spec=LoopStep)
+        loop_step.name = "loop_step"
+        assert executor_core._is_complex_step(loop_step)
+
+        # Test ParallelStep
+        parallel_step = Mock(spec=ParallelStep)
+        parallel_step.name = "parallel_step"
+        assert executor_core._is_complex_step(parallel_step)
+
+    @pytest.mark.asyncio
+    async def test_validation_steps_remain_complex(self, executor_core):
+        """Test that validation steps are still classified as complex."""
+        step = Mock()
+        step.name = "validation_step"
+        step.meta = {"is_validation_step": True}
+
+        assert executor_core._is_complex_step(step)
+
+    @pytest.mark.asyncio
+    async def test_plugin_steps_remain_complex(self, executor_core):
+        """Test that steps with plugins are still classified as complex."""
+        step = Mock()
+        step.name = "plugin_step"
+        step.plugins = [Mock(), Mock()]
+
+        assert executor_core._is_complex_step(step)
+
+    @pytest.mark.asyncio
+    async def test_simple_steps_without_fallbacks(self, executor_core):
+        """Test that simple steps without fallbacks are classified as simple."""
+        step = Mock()
+        step.name = "simple_step"
+        # No fallback_step attribute
+        step.plugins = None  # Explicitly set to None
+        step.meta = None  # Explicitly set to None
+
+        is_complex = executor_core._is_complex_step(step)
+        assert not is_complex
+
+    @pytest.mark.asyncio
+    async def test_steps_with_none_fallback(self, executor_core):
+        """Test that steps with None fallback are classified as simple."""
+        step = Mock()
+        step.name = "step_with_none_fallback"
+        step.fallback_step = None
+        step.plugins = None  # Explicitly set to None
+        step.meta = None  # Explicitly set to None
+
+        is_complex = executor_core._is_complex_step(step)
+        assert not is_complex
+
+    @pytest.mark.asyncio
+    async def test_cache_steps_remain_complex(self, executor_core):
+        """Test that CacheStep is still classified as complex."""
+        from flujo.steps.cache_step import CacheStep
+
+        cache_step = Mock(spec=CacheStep)
+        cache_step.name = "cache_step"
+
+        assert executor_core._is_complex_step(cache_step)
+
+    @pytest.mark.asyncio
+    async def test_conditional_steps_remain_complex(self, executor_core):
+        """Test that ConditionalStep is still classified as complex."""
+        from flujo.domain.dsl.conditional import ConditionalStep
+
+        conditional_step = Mock(spec=ConditionalStep)
+        conditional_step.name = "conditional_step"
+
+        assert executor_core._is_complex_step(conditional_step)
+
+    @pytest.mark.asyncio
+    async def test_hitl_steps_remain_complex(self, executor_core):
+        """Test that HumanInTheLoopStep is still classified as complex."""
+        from flujo.domain.dsl.step import HumanInTheLoopStep
+
+        hitl_step = Mock(spec=HumanInTheLoopStep)
+        hitl_step.name = "hitl_step"
+
+        assert executor_core._is_complex_step(hitl_step)
+
+    @pytest.mark.asyncio
+    async def test_dynamic_router_steps_remain_complex(self, executor_core):
+        """Test that DynamicParallelRouterStep is still classified as complex."""
+        from flujo.domain.dsl.dynamic_router import DynamicParallelRouterStep
+
+        router_step = Mock(spec=DynamicParallelRouterStep)
+        router_step.name = "router_step"
+
+        assert executor_core._is_complex_step(router_step)
+
+    @pytest.mark.asyncio
+    async def test_steps_with_fallbacks_and_plugins(self, executor_core):
+        """Test that steps with both fallbacks and plugins are classified as complex (due to plugins)."""
+        step = Mock()
+        step.name = "step_with_fallback_and_plugins"
+        step.fallback_step = Mock()
+        step.fallback_step.name = "fallback_step"
+        step.plugins = [Mock()]
+
+        # Should be complex due to plugins, not fallback
+        assert executor_core._is_complex_step(step)
+
+    @pytest.mark.asyncio
+    async def test_steps_with_fallbacks_and_validation(self, executor_core):
+        """Test that steps with both fallbacks and validation are classified as complex (due to validation)."""
+        step = Mock()
+        step.name = "step_with_fallback_and_validation"
+        step.fallback_step = Mock()
+        step.fallback_step.name = "fallback_step"
+        step.meta = {"is_validation_step": True}
+
+        # Should be complex due to validation, not fallback
+        assert executor_core._is_complex_step(step)

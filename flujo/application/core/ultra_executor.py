@@ -1042,10 +1042,10 @@ class ExecutorCore(Generic[TContext]):
             telemetry.logfire.debug(f"Validation step detected: {step.name}")
             return True
 
-        # Check for steps with fallbacks
-        if hasattr(step, "fallback_step") and step.fallback_step is not None:
-            telemetry.logfire.debug(f"Step with fallback detected: {step.name}")
-            return True
+        # ✅ REMOVE: Steps with fallbacks should be handled by _execute_simple_step
+        # if hasattr(step, "fallback_step") and step.fallback_step is not None:
+        #     telemetry.logfire.debug(f"Step with fallback detected: {step.name}")
+        #     return True
 
         # Check for steps with plugins (plugins can have redirects, feedback, etc.)
         if hasattr(step, "plugins") and step.plugins:
