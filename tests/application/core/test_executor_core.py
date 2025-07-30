@@ -104,7 +104,7 @@ class TestExecutorCoreSimpleStep:
         # Assert
         assert result.success is True
         assert result.attempts == 1
-        assert result.output == "final output"
+        assert result.output == "processed output"
         assert result.feedback is None
         assert result.latency_s > 0
         assert result.cost_usd >= 0
@@ -114,7 +114,8 @@ class TestExecutorCoreSimpleStep:
         executor_core._processor_pipeline.apply_prompt.assert_called_once()
         executor_core._agent_runner.run.assert_called_once()
         executor_core._processor_pipeline.apply_output.assert_called_once()
-        executor_core._plugin_runner.run_plugins.assert_called_once()
+        # Plugin runner should NOT be called when step.plugins is empty
+        executor_core._plugin_runner.run_plugins.assert_not_called()
         executor_core._usage_meter.add.assert_called_once()
 
     @pytest.mark.asyncio
@@ -152,7 +153,7 @@ class TestExecutorCoreSimpleStep:
         # Assert
         assert result.success is True
         assert result.attempts == 2
-        assert result.output == "final output"
+        assert result.output == "processed output"
         assert result.feedback is None
 
         # Verify agent was called twice
@@ -346,6 +347,9 @@ class TestExecutorCoreSimpleStep:
         cache_key = "test_cache_key"
         breach_event = None
 
+        # Set up step with actual plugins to test plugin validation failure
+        mock_step.plugins = [Mock(), Mock()]  # Add actual plugins
+
         # Configure plugin runner to raise ValueError with specific message
         executor_core._plugin_runner.run_plugins.side_effect = ValueError(
             "Plugin validation failed: Invalid format"
@@ -371,6 +375,76 @@ class TestExecutorCoreSimpleStep:
             "Agent execution failed with ValueError: Plugin validation failed: Invalid format"
             in result.feedback
         )
+
+    @pytest.mark.asyncio
+    async def test_plugin_runner_not_called_when_plugins_empty(self, executor_core, mock_step):
+        """Test that plugin runner is not called when step.plugins is empty."""
+        # Arrange
+        data = "test input"
+        context = None
+        resources = None
+        limits = None
+        stream = False
+        on_chunk = None
+        cache_key = "test_cache_key"
+        breach_event = None
+
+        # Ensure step has empty plugins list
+        mock_step.plugins = []
+
+        # Act
+        result = await executor_core._execute_simple_step(
+            mock_step,
+            data,
+            context,
+            resources,
+            limits,
+            stream,
+            on_chunk,
+            cache_key,
+            breach_event,
+        )
+
+        # Assert
+        assert result.success is True
+        assert result.output == "processed output"
+        # Plugin runner should NOT be called when plugins is empty
+        executor_core._plugin_runner.run_plugins.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_plugin_runner_not_called_when_plugins_none(self, executor_core, mock_step):
+        """Test that plugin runner is not called when step.plugins is None."""
+        # Arrange
+        data = "test input"
+        context = None
+        resources = None
+        limits = None
+        stream = False
+        on_chunk = None
+        cache_key = "test_cache_key"
+        breach_event = None
+
+        # Ensure step has None plugins
+        mock_step.plugins = None
+
+        # Act
+        result = await executor_core._execute_simple_step(
+            mock_step,
+            data,
+            context,
+            resources,
+            limits,
+            stream,
+            on_chunk,
+            cache_key,
+            breach_event,
+        )
+
+        # Assert
+        assert result.success is True
+        assert result.output == "processed output"
+        # Plugin runner should NOT be called when plugins is None
+        executor_core._plugin_runner.run_plugins.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_caching_behavior(self, executor_core, mock_step):

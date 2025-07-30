@@ -2057,9 +2057,10 @@ class ExecutorCore(Generic[TContext]):
                             pass
 
                 # Run plugins
-                processed_output = await self._plugin_runner.run_plugins(
-                    step.plugins, processed_output, context=context
-                )
+                if step.plugins:
+                    processed_output = await self._plugin_runner.run_plugins(
+                        step.plugins, processed_output, context=context
+                    )
 
                 # Calculate latency
                 latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_time)

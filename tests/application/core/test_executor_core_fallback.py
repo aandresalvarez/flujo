@@ -118,7 +118,9 @@ class TestExecutorCoreFallback:
 
         # Assert
         assert result.success is True
-        assert result.output == "final output"  # Processor pipeline modifies the output
+        assert (
+            result.output == "processed output"
+        )  # Processor pipeline output (no plugin runner called)
         assert "fallback_triggered" not in (result.metadata_ or {})
 
     @pytest.mark.asyncio
@@ -847,7 +849,9 @@ class TestExecutorCoreFallback:
 
         # Assert
         assert result.success is True
-        assert result.output == "final output"  # Processor pipeline modifies cached output
+        assert (
+            result.output == "processed output"
+        )  # Processor pipeline output (no plugin runner called)
         assert "fallback_triggered" not in (result.metadata_ or {})
 
     @pytest.mark.asyncio
@@ -1096,7 +1100,7 @@ class TestExecutorCoreFallback:
                 # Assert
                 assert result.success is True
                 assert (
-                    result.output == "final output"
+                    result.output == "processed output"
                 )  # Plugin runner processes the fallback output
 
                 # Verify usage meter was called for the fallback execution
@@ -1171,7 +1175,9 @@ class TestExecutorCoreFallback:
 
         # Assert
         assert result.success is True
-        assert result.output == "final output"  # Plugin runner processes the fallback output
+        assert (
+            result.output == "processed output"
+        )  # Processor pipeline output (no plugin runner called)
         # Verify processor pipeline was called
         assert executor_core._processor_pipeline.apply_prompt.called
         assert executor_core._processor_pipeline.apply_output.called
@@ -1234,9 +1240,11 @@ class TestExecutorCoreFallback:
 
         # Assert
         assert result.success is True
-        assert result.output == "final output"  # Plugin runner processes the fallback output
-        # Verify plugin runner was called
-        assert executor_core._plugin_runner.run_plugins.called
+        assert (
+            result.output == "processed output"
+        )  # Processor pipeline output (no plugin runner called)
+        # Plugin runner should NOT be called when plugins is empty
+        executor_core._plugin_runner.run_plugins.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_fallback_with_cache_backend(self, executor_core, create_step_with_fallback):
@@ -1334,7 +1342,9 @@ class TestExecutorCoreFallback:
 
         # Assert
         assert result.success is True
-        assert result.output == "final output"  # Plugin runner processes the fallback output
+        assert (
+            result.output == "processed output"
+        )  # Processor pipeline output (no plugin runner called)
         # Note: Telemetry behavior may vary during fallback execution
         # The fallback execution might not trigger telemetry tracing
 
