@@ -14,6 +14,7 @@ from ...exceptions import (
     PipelineAbortSignal,
     PipelineContextInitializationError,
     UsageLimitExceededError,
+    ContextInheritanceError,
 )
 from ...infra import telemetry
 from ..core.hook_dispatcher import _dispatch_hook as _dispatch_hook_impl
@@ -85,6 +86,9 @@ class StepCoordinator(Generic[ContextT]):
                 raise
             except PipelineContextInitializationError:
                 # Re-raise context initialization errors to be handled by ExecutionManager
+                raise
+            except ContextInheritanceError:
+                # Re-raise context inheritance errors to be handled by ExecutionManager
                 raise
 
             # Update telemetry span with step metadata

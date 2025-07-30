@@ -49,9 +49,10 @@ class StateManager(Generic[ContextT]):
 
             context_str = json.dumps(filtered_data, sort_keys=True, separators=(",", ":"))
             return hashlib.md5(context_str.encode()).hexdigest()
-        except Exception:
-            # Fallback to object id if serialization fails
-            return f"obj_{id(context)}"
+        except Exception as e:
+            # Re-raise the exception so it can be caught by the outer handler
+            # This ensures the error field is set in the pipeline context
+            raise e
 
     def _should_serialize_context(self, context: Optional[ContextT], run_id: str) -> bool:
         """Determine if context needs serialization based on change detection."""
@@ -234,10 +235,12 @@ class StateManager(Generic[ContextT]):
                         logger.debug(f"Using cached serialization for run {run_id}")
                     else:
                         # Optimize serialization based on context size
+                        logger.debug(f"About to serialize context for run {run_id}")
                         if memory_usage_mb > 0.1:  # Large context (>100KB)
                             pipeline_context = context.model_dump(mode="json")
                         else:
                             pipeline_context = context.model_dump()
+                        logger.debug(f"Successfully serialized context for run {run_id}")
 
                         # Cache the result
                         self._cache_serialization(context, run_id, pipeline_context)

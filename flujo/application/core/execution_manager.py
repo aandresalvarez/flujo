@@ -19,6 +19,7 @@ from ...exceptions import (
     PipelineAbortSignal,
     UsageLimitExceededError,
     PipelineContextInitializationError,
+    ContextInheritanceError,
 )
 from .state_manager import StateManager
 from .usage_governor import UsageGovernor
@@ -104,6 +105,25 @@ class ExecutionManager(Generic[ContextT]):
             should_add_step_result = (
                 True  # Default to adding step result unless explicitly prevented
             )
+            usage_limit_exceeded = False  # Track if a usage limit exception was raised
+
+            # ✅ CRITICAL FIX: Persist state BEFORE step execution for crash recovery
+            # This ensures state is saved even if the process crashes during step execution
+            if run_id is not None and not isinstance(step, LoopStep) and not self.inside_loop_step:
+                await self.state_manager.persist_workflow_state(
+                    run_id=run_id,
+                    context=context,
+                    current_step_index=idx,  # Show current step index (about to start this step)
+                    last_step_output=data
+                    if idx == start_idx
+                    else result.step_history[-1].output
+                    if result.step_history
+                    else None,
+                    status="running",
+                    state_created_at=state_created_at,
+                    step_history=result.step_history,
+                )
+
             try:
                 try:
                     async for item in self.step_coordinator.execute_step(
@@ -130,56 +150,41 @@ class ExecutionManager(Generic[ContextT]):
                     if step_result:
                         data = step_result.output
 
-                    if step_result is not None:
-                        # Only perform usage limit checks if limits are configured
-                        if self.usage_governor.usage_limits is not None:
-                            # Calculate running totals efficiently (O(1) operation)
-                            potential_total_cost = result.total_cost_usd + step_result.cost_usd
-                            current_total_tokens = sum(
-                                getattr(step, "token_counts", 0) for step in result.step_history
-                            )
-                            step_tokens = getattr(step_result, "token_counts", 0)
+                    # ✅ 1. CRITICAL FIX: Update the state *before* checking limits.
+                    if step_result:
+                        self.step_coordinator.update_pipeline_result(result, step_result)
 
-                            # Use the most efficient checking method that avoids PipelineResult creation
-                            (
-                                limit_exceeded,
-                                _,
-                            ) = self.usage_governor.check_usage_limits_efficient(
-                                current_total_cost=result.total_cost_usd,
-                                current_total_tokens=current_total_tokens,
-                                step_cost=step_result.cost_usd,
-                                step_tokens=step_tokens,
-                                span=None,  # No span needed for efficient check
-                            )
+                    # ✅ 2. Call the efficient, non-raising check.
+                    if self.usage_governor.usage_limits is not None:
+                        # Calculate running totals efficiently (O(1) operation)
+                        current_total_tokens = sum(
+                            getattr(step, "token_counts", 0) for step in result.step_history
+                        )
+                        step_tokens = getattr(step_result, "token_counts", 0)
 
-                            if limit_exceeded:
-                                # Only create PipelineResult when limits are actually breached
-                                # This is the only time we need the full step history for exceptions
-                                from flujo.domain.models import PipelineResult
+                        if step_result and self.usage_governor.check_usage_limits_efficient(
+                            current_total_cost=result.total_cost_usd
+                            - step_result.cost_usd,  # Pass previous total
+                            current_total_tokens=current_total_tokens
+                            - step_tokens,  # Pass previous total
+                            step_cost=step_result.cost_usd,
+                            step_tokens=step_tokens,
+                            span=None,
+                        ):
+                            # ✅ 3. If breached, the manager raises the exception with the *correct* state.
+                            with telemetry.logfire.span(f"usage_check_{step.name}") as span:
+                                self.usage_governor.check_usage_limits(result, span)
+                                self.usage_governor.update_telemetry_span(span, result)
 
-                                # Create step history efficiently: copy existing + append new step
-                                # This is only done when limits are breached, not for every step
-                                temp_step_history = result.step_history.copy()
-                                temp_step_history.append(step_result)
-
-                                exception_result: PipelineResult[ContextT] = PipelineResult(
-                                    step_history=temp_step_history,
-                                    total_cost_usd=potential_total_cost,
-                                    final_pipeline_context=result.final_pipeline_context,
-                                    trace_tree=result.trace_tree,
-                                )
-
-                                # Re-check with full PipelineResult to get proper exception
-                                with telemetry.logfire.span(f"usage_check_{step.name}") as span:
-                                    self.usage_governor.check_usage_limits(exception_result, span)
-                                    self.usage_governor.update_telemetry_span(
-                                        span, exception_result
-                                    )
-                            else:
-                                # No limits exceeded - no PipelineResult creation needed
-                                # This is the fast path for 99% of cases
-                                pass
-
+                except UsageLimitExceededError:
+                    # ✅ 4. The exception is caught here. The `finally` block will now have the
+                    # correct step_history because we updated it *before* the check.
+                    # We must add the breaching step result to the history before re-raising.
+                    if step_result and step_result not in result.step_history:
+                        self.step_coordinator.update_pipeline_result(result, step_result)
+                    should_add_step_result = False
+                    usage_limit_exceeded = True
+                    raise  # Re-raise the correctly populated exception.
                 except PipelineAbortSignal:
                     # Update pipeline result before aborting
                     # Add current step result to pipeline result before yielding
@@ -202,35 +207,36 @@ class ExecutionManager(Generic[ContextT]):
                     self.set_final_context(result, context)
                     yield result
                     return
-                except UsageLimitExceededError:
-                    # Add the breaching step to the PipelineResult for consistency before re-raising the exception
-                    if step_result is not None:
-                        self.step_coordinator.update_pipeline_result(result, step_result)
-                    should_add_step_result = False
-                    raise
                 except PipelineContextInitializationError as e:
-                    # Convert to ContextInheritanceError if appropriate
-                    from ...exceptions import ContextInheritanceError
-                    from ..context_manager import _extract_missing_fields
-
-                    # Attach the exception itself to a dummy StepResult for finally block
-                    step_result = StepResult(
-                        name=step.name,
-                        output=None,
-                        success=False,
-                        attempts=0,
-                        feedback=str(e),
-                        metadata_={
-                            "_context_init_cause": e.__cause__
-                            if e.__cause__ is not None
-                            else e.__context__
-                        },
-                    )
-                    should_add_step_result = True
-                    # Do not raise here; let finally block handle
+                    # Propagate PipelineContextInitializationError so it can be converted to ContextInheritanceError
+                    # at the appropriate level (e.g., in as_step method)
+                    raise e
+                except ContextInheritanceError as e:
+                    # Propagate ContextInheritanceError immediately
+                    raise e
 
             finally:
-                if self._should_add_step_result_to_pipeline(
+                # The finally block logic for adding the step result is now more of a safeguard.
+                # The primary update happens before the usage check.
+
+                # Always record step results to persistence backend, even if already in pipeline result
+                if (
+                    run_id is not None
+                    and step_result is not None
+                    and not isinstance(step, LoopStep)
+                    and not self.inside_loop_step
+                ):
+                    await self.state_manager.record_step_result(run_id, step_result, idx)
+                elif (
+                    run_id is not None
+                    and step_result is not None
+                    and (isinstance(step, LoopStep) or self.inside_loop_step)
+                ):
+                    # Always record step result for observability, skip state persistence
+                    await self.state_manager.record_step_result(run_id, step_result, idx)
+
+                # Only add to pipeline result if not already there
+                if not usage_limit_exceeded and self._should_add_step_result_to_pipeline(
                     step_result, should_add_step_result, result
                 ):
                     assert (
@@ -248,60 +254,49 @@ class ExecutionManager(Generic[ContextT]):
                         await self.state_manager.persist_workflow_state(
                             run_id=run_id,
                             context=context,
-                            current_step_index=idx + 1,
+                            current_step_index=idx
+                            + 1,  # Show completed step index (just finished this step)
                             last_step_output=step_result.output,
                             status="running",
                             state_created_at=state_created_at,
                             step_history=result.step_history,
                         )
-                        # Always record step result for observability
-                        await self.state_manager.record_step_result(run_id, step_result, idx)
-                    elif run_id is not None and (
-                        isinstance(step, LoopStep) or self.inside_loop_step
-                    ):
-                        # Always record step result for observability, skip state persistence
-                        await self.state_manager.record_step_result(run_id, step_result, idx)
-                        telemetry.logfire.debug(
-                            f"Skipped state persistence for {'LoopStep' if isinstance(step, LoopStep) else 'inner step'} '{step.name}' to avoid context serialization issues"
-                        )
-
-                    # If the step failed due to context inheritance, propagate the error
-                    if step_result is not None and not step_result.success and step_result.feedback:
-                        if (
-                            "Failed to inherit context" in step_result.feedback
-                            or "Missing required fields" in step_result.feedback
-                        ):
-                            from ...exceptions import ContextInheritanceError
-                            from ..context_manager import _extract_missing_fields
-
-                            cause = None
-                            if (
-                                step_result.metadata_
-                                and "_context_init_cause" in step_result.metadata_
-                            ):
-                                cause = step_result.metadata_["_context_init_cause"]
-                            missing_fields = _extract_missing_fields(cause)
-                            if not missing_fields and step_result.feedback:
-                                import re
-
-                                match = re.search(
-                                    r"Missing required fields: ([\w, ]+)",
-                                    step_result.feedback,
-                                )
-                                if match:
-                                    missing_fields = [f.strip() for f in match.group(1).split(",")]
-                            raise ContextInheritanceError(
-                                missing_fields=missing_fields,
-                                parent_context_keys=[],
-                                child_model_name="Unknown",
-                            )
 
             if step_result is None:
                 continue
 
             # Stop on step failure
             if not step_result.success:
+                # ✅ CRITICAL FIX: Record failed step result before breaking
+                # This ensures failed steps are always persisted
+                if run_id is not None:
+                    await self.state_manager.record_step_result(run_id, step_result, idx)
+                    # Also persist the workflow state to reflect the completed step
+                    if not isinstance(step, LoopStep) and not self.inside_loop_step:
+                        await self.state_manager.persist_workflow_state(
+                            run_id=run_id,
+                            context=context,
+                            current_step_index=idx + 1,  # Reflect completed step
+                            last_step_output=step_result.output,
+                            status="running",
+                            state_created_at=state_created_at,
+                            step_history=result.step_history,
+                        )
                 break
+
+        # ✅ CRITICAL FIX: Persist final state after all steps complete
+        # This ensures the final state reflects all completed steps
+        if run_id is not None and not self.inside_loop_step:
+            await self.state_manager.persist_workflow_state(
+                run_id=run_id,
+                context=context,
+                current_step_index=start_idx
+                + len(result.step_history),  # Show total completed steps
+                last_step_output=result.step_history[-1].output if result.step_history else None,
+                status="running",
+                state_created_at=state_created_at,
+                step_history=result.step_history,
+            )
 
     def _should_add_step_result_to_pipeline(
         self,

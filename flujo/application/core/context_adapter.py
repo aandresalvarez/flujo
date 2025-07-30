@@ -394,7 +394,13 @@ def _deserialize_value(value: Any, field_type: Any, context_model: Type[BaseMode
 def _build_context_update(output: BaseModel | dict[str, Any] | Any) -> dict[str, Any] | None:
     """Return context update dict extracted from a step output."""
     if isinstance(output, (BaseModel, PydanticBaseModel)):
-        return output.model_dump(exclude_unset=True)
+        # Handle PipelineResult objects from as_step
+        if hasattr(output, "final_pipeline_context") and output.final_pipeline_context is not None:
+            result = output.final_pipeline_context.model_dump(exclude_unset=True)
+            return result if isinstance(result, dict) else None
+        # Handle regular BaseModel objects
+        result = output.model_dump(exclude_unset=True)
+        return result if isinstance(result, dict) else None
     if isinstance(output, dict):
         return output
     return None

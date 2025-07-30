@@ -189,3 +189,29 @@ async def test_as_step_context_inheritance_error() -> None:
             initial_context_data={"initial_prompt": "goal"},
         )
     assert exc.value.missing_fields == ["extra"]
+
+
+@pytest.mark.asyncio
+async def test_direct_context_inheritance_error():
+    from flujo.exceptions import ContextInheritanceError
+    from flujo.domain.models import PipelineContext
+    from flujo.domain.dsl.step import Step
+    from flujo.application.runner import Flujo
+    from flujo.testing.utils import StubAgent
+
+    class ChildCtx(PipelineContext):
+        extra: int
+
+    # Create the problematic setup
+    step = Step.model_validate({"name": "s", "agent": StubAgent(["ok"])})
+    inner_runner = Flujo(step, context_model=ChildCtx)
+    pipeline_step = inner_runner.as_step(name="inner")
+    runner = Flujo(pipeline_step, context_model=PipelineContext)
+
+    # Run the pipeline and expect the error to be raised
+    with pytest.raises(ContextInheritanceError) as exc:
+        async for result in runner.run_async(
+            "goal", initial_context_data={"initial_prompt": "goal"}
+        ):
+            pass  # Consume all results to ensure full iteration
+    assert exc.value.missing_fields == ["extra"]

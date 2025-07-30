@@ -38,6 +38,7 @@ from ...exceptions import (
     InfiniteFallbackError,
     PausedException,
     PricingNotConfiguredError,
+    ContextInheritanceError,
 )
 from ...infra import telemetry
 from ...domain.resources import AppResources
@@ -1665,7 +1666,12 @@ async def _run_step_logic(
 
             # Usage limits are checked by the UsageGovernor at the pipeline level
             # No need to check them here as it would interfere with cumulative tracking
-        except (TypeError, UsageLimitExceededError, PricingNotConfiguredError) as e:
+        except (
+            TypeError,
+            UsageLimitExceededError,
+            PricingNotConfiguredError,
+            ContextInheritanceError,
+        ) as e:
             # FLUJO SPIRIT FIX: Track timing even for failed attempts
             result.latency_s += time.monotonic() - start
             # Re-raise critical exceptions immediately
@@ -1675,6 +1681,10 @@ async def _run_step_logic(
                 raise
             if isinstance(e, PricingNotConfiguredError):
                 raise
+            if isinstance(e, ContextInheritanceError):
+                # CRITICAL: ContextInheritanceError must always propagate to pipeline level
+                # Never convert to step failure - this is a pipeline-level error
+                raise
             # For other TypeErrors, continue retrying
             last_exception = e
             continue
@@ -1682,6 +1692,8 @@ async def _run_step_logic(
             # FLUJO SPIRIT FIX: Track timing even for failed attempts
             result.latency_s += time.monotonic() - start
             # For PausedException, just raise after updating context; context already contains the log.
+            raise
+        except ContextInheritanceError:
             raise
         except Exception as e:
             # FLUJO SPIRIT FIX: Track timing even for failed attempts
@@ -1855,6 +1867,8 @@ async def _run_step_logic(
         last_feedback = "\n".join(accumulated_feedbacks).strip() if accumulated_feedbacks else None
 
     # If we get here, all retries failed
+    if isinstance(last_exception, ContextInheritanceError):
+        raise last_exception
     result.success = False
     if accumulated_feedbacks:
         result.feedback = "\n".join(accumulated_feedbacks).strip()

@@ -122,9 +122,18 @@ class TestFailedStepRecording:
         run_id = "test_run"
 
         # Use an async generator for the step executor
-        async def failing_step_executor(*args, **kwargs):
-            result = await failing_agent.run(*args, **kwargs)
-            yield result
+        async def failing_step_executor(step, data, context, resources, stream=False):
+            # Create a failed step result
+            from flujo.domain.models import StepResult
+
+            step_result = StepResult(
+                name="failing_step",
+                output=None,
+                success=False,
+                attempts=1,
+                feedback="Simulated failure",
+            )
+            yield step_result
 
         # Execute steps
         async for _ in execution_manager.execute_steps(

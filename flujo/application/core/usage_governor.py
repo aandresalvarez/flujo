@@ -24,74 +24,25 @@ class UsageGovernor(Generic[ContextT]):
         step_cost: float,
         step_tokens: int,
         span: Any | None,
-    ) -> tuple[bool, Optional[PipelineResult[ContextT]]]:
-        """Efficient usage limit check that avoids creating PipelineResult unless needed.
-
-        This method performs both cost and token checks using running totals,
-        only creating a PipelineResult when a limit is actually breached.
-        This is O(1) for the check itself, with PipelineResult creation only
-        when exceptions are raised.
-
-        Args:
-            current_total_cost: Current total cost before this step
-            current_total_tokens: Current total tokens before this step
-            step_cost: Cost of the current step
-            step_tokens: Tokens used by the current step
-            span: Telemetry span for error recording
-
-        Returns:
-            tuple[bool, Optional[PipelineResult]]: (limit_exceeded, pipeline_result_for_exception)
-        """
-        if self.usage_limits is None:
-            return False, None
-
-        potential_total_cost = current_total_cost + step_cost
-        potential_total_tokens = current_total_tokens + step_tokens
-
-        # Check cost limits
-        if (
-            self.usage_limits.total_cost_usd_limit is not None
-            and potential_total_cost > self.usage_limits.total_cost_usd_limit
-        ):
-            # Cost limit exceeded - we need a PipelineResult for the exception
-            return True, None  # PipelineResult will be created by caller
-
-        # Check token limits
-        if (
-            self.usage_limits.total_tokens_limit is not None
-            and potential_total_tokens > self.usage_limits.total_tokens_limit
-        ):
-            # Token limit exceeded - we need a PipelineResult for the exception
-            return True, None  # PipelineResult will be created by caller
-
-        return False, None
-
-    def check_usage_limits_fast(
-        self,
-        current_total_cost: float,
-        step_cost: float,
-        span: Any | None,
     ) -> bool:
-        """Fast cost-only usage limit check without creating PipelineResult objects.
-
-        This method performs a lightweight cost check to avoid creating expensive
-        PipelineResult objects for every step. Returns True if limits would be exceeded.
-
-        Args:
-            current_total_cost: Current total cost before this step
-            step_cost: Cost of the current step
-            span: Telemetry span for error recording
-
-        Returns:
-            bool: True if cost limit would be exceeded, False otherwise
+        """
+        ✅ NEW: Efficiently checks limits using running totals.
+        Returns True if a limit is breached, False otherwise.
         """
         if self.usage_limits is None:
             return False
 
-        # Check cost limits only (fast path)
+        # Check cost limits
         if (
             self.usage_limits.total_cost_usd_limit is not None
-            and current_total_cost + step_cost > self.usage_limits.total_cost_usd_limit
+            and (current_total_cost + step_cost) > self.usage_limits.total_cost_usd_limit
+        ):
+            return True
+
+        # Check token limits
+        if (
+            self.usage_limits.total_tokens_limit is not None
+            and (current_total_tokens + step_tokens) > self.usage_limits.total_tokens_limit
         ):
             return True
 
@@ -102,10 +53,9 @@ class UsageGovernor(Generic[ContextT]):
         pipeline_result: PipelineResult[ContextT],
         span: Any | None,
     ) -> None:
-        """Check if current usage exceeds configured limits.
-
-        Raises:
-            UsageLimitExceededError: If any limit is exceeded
+        """
+        ✅ REFACTORED: This method now raises the exception but relies on the caller
+        to provide the complete PipelineResult.
         """
         if self.usage_limits is None:
             return

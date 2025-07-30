@@ -49,6 +49,7 @@ from ...exceptions import (
     InfiniteFallbackError,
     InfiniteRedirectError,
     PricingNotConfiguredError,
+    ContextInheritanceError,
 )
 from ...steps.cache_step import CacheStep
 from ...utils.performance import time_perf_ns, time_perf_ns_to_seconds
@@ -482,7 +483,12 @@ class DefaultAgentRunner:
                     if on_chunk:
                         await on_chunk(chunk)
                     chunks.append(chunk)
-            except (PausedException, InfiniteFallbackError, InfiniteRedirectError) as e:
+            except (
+                PausedException,
+                InfiniteFallbackError,
+                InfiniteRedirectError,
+                ContextInheritanceError,
+            ) as e:
                 # Re-raise critical exceptions immediately
                 raise e
             except Exception as e:
@@ -513,7 +519,12 @@ class DefaultAgentRunner:
                     if inspect.iscoroutine(result):
                         return await result
                     return result
-            except (PausedException, InfiniteFallbackError, InfiniteRedirectError) as e:
+            except (
+                PausedException,
+                InfiniteFallbackError,
+                InfiniteRedirectError,
+                ContextInheritanceError,
+            ) as e:
                 # Re-raise critical exceptions immediately
                 raise e
 
@@ -1331,8 +1342,13 @@ class ExecutorCore(Generic[TContext]):
 
                 return result
 
-            except (PausedException, InfiniteFallbackError, InfiniteRedirectError) as e:
-                # Re-raise control flow and critical exceptions immediately
+            except (
+                PausedException,
+                InfiniteFallbackError,
+                InfiniteRedirectError,
+                ContextInheritanceError,
+            ) as e:
+                # Re-raise critical exceptions immediately
                 raise e
             except (
                 TypeError,
@@ -1369,6 +1385,8 @@ class ExecutorCore(Generic[TContext]):
                     last_exception = exc
                     continue
 
+            except ContextInheritanceError:
+                raise
             except Exception as exc:
                 # Treat all other exceptions as retryable
                 last_exception = exc
@@ -1436,8 +1454,10 @@ class ExecutorCore(Generic[TContext]):
 
             raise MissingAgentError(f"Step '{step.name}' has no agent configured")
 
-        # Check usage limits before execution
-        if limits:
+        # ✅ COMPATIBILITY: Call usage meter guard for direct ExecutorCore usage
+        # This maintains backward compatibility while allowing ExecutionManager
+        # to handle centralized enforcement when used through the manager.
+        if limits and self._usage_meter:
             await self._usage_meter.guard(limits)
 
         last_exception: Exception | None = None
@@ -1560,7 +1580,12 @@ class ExecutorCore(Generic[TContext]):
 
                 return result
 
-            except (PausedException, InfiniteFallbackError, InfiniteRedirectError) as e:
+            except (
+                PausedException,
+                InfiniteFallbackError,
+                InfiniteRedirectError,
+                ContextInheritanceError,
+            ) as e:
                 # Re-raise control flow and critical exceptions immediately
                 raise e
             except (
@@ -1609,7 +1634,12 @@ class ExecutorCore(Generic[TContext]):
         # Re-raise critical exceptions
         if isinstance(
             last_exception,
-            (PausedException, InfiniteFallbackError, InfiniteRedirectError),
+            (
+                PausedException,
+                InfiniteFallbackError,
+                InfiniteRedirectError,
+                ContextInheritanceError,
+            ),
         ):
             raise last_exception
 

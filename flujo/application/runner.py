@@ -444,6 +444,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                         TypeError,
                         ValueError,
                         RuntimeError,
+                        ContextInheritanceError,
                     ):
                         # Allow critical exceptions to propagate
                         raise
@@ -1041,6 +1042,33 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
 
             try:
                 self._ensure_pipeline()
+
+                # Validate context model compatibility before creating sub-runner
+                if self.context_model is not None and inherit_context and context is not None:
+                    # Check if the context model can be initialized with the provided data
+                    try:
+                        # Create a test instance to validate compatibility
+                        test_data = copy.deepcopy(initial_sub_context_data)
+                        test_data.pop("run_id", None)
+                        test_data.pop("pipeline_name", None)
+                        test_data.pop("pipeline_version", None)
+
+                        # Try to create an instance of the context model
+                        self.context_model(**test_data)
+                    except ValidationError as e:
+                        # Extract missing fields from the validation error
+                        missing_fields = _extract_missing_fields(e)
+                        context_inheritance_error = ContextInheritanceError(
+                            missing_fields=missing_fields,
+                            parent_context_keys=(
+                                list(context.model_dump().keys()) if context else []
+                            ),
+                            child_model_name=(
+                                self.context_model.__name__ if self.context_model else "Unknown"
+                            ),
+                        )
+                        raise context_inheritance_error
+
                 sub_runner = Flujo(
                     self.pipeline,
                     context_model=self.context_model,
@@ -1054,41 +1082,27 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     registry=self.registry,
                     pipeline_name=self.pipeline_name,
                     pipeline_version=self.pipeline_version,
-                    pipeline_id=self.pipeline_id,
                 )
-            except PipelineContextInitializationError as e:
-                cause = getattr(e, "__cause__", None)
-                missing_fields = _extract_missing_fields(cause)
-                raise ContextInheritanceError(
-                    missing_fields=missing_fields,
-                    parent_context_keys=(list(context.model_dump().keys()) if context else []),
-                    child_model_name=(
-                        self.context_model.__name__ if self.context_model else "Unknown"
-                    ),
-                ) from e
-            final_result: PipelineResult[ContextT] | None = None
-            try:
-                async for item in sub_runner.run_async(initial_input):
-                    final_result = item
-            except PipelineContextInitializationError as e:
-                cause = getattr(e, "__cause__", None)
-                missing_fields = _extract_missing_fields(cause)
-                raise ContextInheritanceError(
-                    missing_fields=missing_fields,
-                    parent_context_keys=(list(context.model_dump().keys()) if context else []),
-                    child_model_name=(
-                        self.context_model.__name__ if self.context_model else "Unknown"
-                    ),
-                ) from e
-            if final_result is None:
-                raise OrchestratorError(
-                    "Final result is None. The pipeline did not produce a valid result."
-                )
-            if inherit_context and context is not None and final_result.final_pipeline_context:
-                context.__dict__.update(final_result.final_pipeline_context.__dict__)
-            return final_result
 
-        return Step.from_callable(_runner, name=name, **kwargs)
+                async for result in sub_runner.run_async(
+                    initial_input,
+                    initial_context_data=initial_sub_context_data,
+                ):
+                    pass  # Consume all results to get the last one
+                return result
+            except PipelineContextInitializationError as e:
+                cause = getattr(e, "__cause__", None)
+                missing_fields = _extract_missing_fields(cause)
+                context_inheritance_error = ContextInheritanceError(
+                    missing_fields=missing_fields,
+                    parent_context_keys=(list(context.model_dump().keys()) if context else []),
+                    child_model_name=(
+                        self.context_model.__name__ if self.context_model else "Unknown"
+                    ),
+                )
+                raise context_inheritance_error
+
+        return Step.from_callable(_runner, name=name, updates_context=inherit_context, **kwargs)
 
 
 __all__ = [
