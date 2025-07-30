@@ -53,6 +53,8 @@ from ...exceptions import (
     PricingNotConfiguredError,
     ContextInheritanceError,
 )
+
+# Removed unused imports: _manage_fallback_relationships, _detect_fallback_loop
 from ...steps.cache_step import CacheStep
 from ...utils.performance import time_perf_ns, time_perf_ns_to_seconds
 from ...cost import extract_usage_metrics
@@ -1960,6 +1962,7 @@ class ExecutorCore(Generic[TContext]):
 
         last_exception: Exception | None = None
         accumulated_feedbacks: list[str] = []
+        last_attempt_token_counts = 0  # Track token counts from last attempt
 
         # Get agent from step
         agent = step.agent
@@ -2016,6 +2019,24 @@ class ExecutorCore(Generic[TContext]):
                     context=context,
                 )
 
+                # Extract usage metrics FIRST (before validation/plugins that might fail)
+                try:
+                    prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
+                        raw_output, agent, step.name
+                    )
+                except PricingNotConfiguredError:
+                    # Re-raise PricingNotConfiguredError for strict mode failures
+                    raise
+                except Exception:
+                    # Fallback to zero cost if extraction fails
+                    prompt_tokens, completion_tokens, cost_usd = 0, 0, 0.0
+
+                # Track usage
+                await self._usage_meter.add(cost_usd, prompt_tokens, completion_tokens)
+
+                # Store token counts for this attempt
+                last_attempt_token_counts = prompt_tokens + completion_tokens
+
                 # Run validators
                 if step.validators:
                     await self._validator_runner.validate(
@@ -2039,21 +2060,6 @@ class ExecutorCore(Generic[TContext]):
                 processed_output = await self._plugin_runner.run_plugins(
                     step.plugins, processed_output, context=context
                 )
-
-                # Extract usage metrics
-                try:
-                    prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
-                        raw_output, agent, step.name
-                    )
-                except PricingNotConfiguredError:
-                    # Re-raise PricingNotConfiguredError for strict mode failures
-                    raise
-                except Exception:
-                    # Fallback to zero cost if extraction fails
-                    prompt_tokens, completion_tokens, cost_usd = 0, 0, 0.0
-
-                # Track usage
-                await self._usage_meter.add(cost_usd, prompt_tokens, completion_tokens)
 
                 # Calculate latency
                 latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_time)
@@ -2155,6 +2161,7 @@ class ExecutorCore(Generic[TContext]):
             attempts=step.config.max_retries,
             feedback=f"Agent execution failed with {type(last_exception).__name__}: {last_exception}",
             latency_s=latency_s,
+            token_counts=last_attempt_token_counts,  # Include token counts from last attempt
         )
 
         # Persist feedback if requested
@@ -2167,6 +2174,69 @@ class ExecutorCore(Generic[TContext]):
                 history_list = getattr(context, step.persist_feedback_to_context)
                 if isinstance(history_list, list) and result.feedback:
                     history_list.append(result.feedback)
+
+        # ✅ NEW: Add fallback logic after the retry loop
+        if not result.success and step.fallback_step:
+            telemetry.logfire.info(
+                f"Step '{step.name}' failed. Attempting fallback step '{step.fallback_step.name}'."
+            )
+            original_failure_feedback = result.feedback
+
+            # ✅ Store primary token counts for summing later
+            primary_token_counts = result.token_counts
+
+            try:
+                # ✅ Use recursive call to self.execute for fallback
+                fallback_result = await self.execute(
+                    step=step.fallback_step,
+                    data=data,
+                    context=context,
+                    resources=resources,
+                    limits=limits,
+                    stream=stream,
+                    on_chunk=on_chunk,
+                    breach_event=breach_event,
+                )
+            except Exception as e:
+                # Handle fallback execution errors
+                fallback_result = StepResult(
+                    name=str(step.fallback_step.name),
+                    success=False,
+                    feedback=f"Fallback execution failed: {e}",
+                    latency_s=0.0,
+                    cost_usd=0.0,
+                    token_counts=0,
+                )
+
+            # ✅ Aggregate metrics according to FSD 5 rules
+            result.latency_s += fallback_result.latency_s
+
+            if fallback_result.success:
+                result.success = True
+                result.output = fallback_result.output
+                result.feedback = None  # Clear the primary failure feedback
+                result.metadata_ = {
+                    **(result.metadata_ or {}),
+                    "fallback_triggered": True,
+                    "original_error": original_failure_feedback,
+                }
+                # ✅ Set metrics on fallback SUCCESS
+                result.cost_usd = fallback_result.cost_usd  # Overwrite with fallback cost
+                result.token_counts = (
+                    primary_token_counts + fallback_result.token_counts
+                )  # SUM tokens
+                return result
+            else:
+                # ✅ Set metrics on fallback FAILURE
+                result.cost_usd = fallback_result.cost_usd  # Overwrite with fallback cost
+                result.token_counts = (
+                    primary_token_counts + fallback_result.token_counts
+                )  # SUM tokens
+                result.feedback = (
+                    f"Original error: {original_failure_feedback}\n"
+                    f"Fallback error: {fallback_result.feedback}"
+                )
+                return result
 
         return result
 

@@ -41,6 +41,7 @@ class TestExecutorCoreSimpleStep:
         step.processors.output_processors = []
         step.validators = []
         step.plugins = []
+        step.fallback_step = None  # Explicitly set to None to avoid triggering fallback logic
         return step
 
     @pytest.fixture
@@ -62,7 +63,7 @@ class TestExecutorCoreSimpleStep:
         # Configure agent runner to return a non-Mock object
         mock_agent_runner.run.return_value = "raw output"
 
-        return ExecutorCore(
+        executor = ExecutorCore(
             agent_runner=mock_agent_runner,
             processor_pipeline=mock_processor_pipeline,
             validator_runner=mock_validator_runner,
@@ -71,6 +72,8 @@ class TestExecutorCoreSimpleStep:
             cache_backend=mock_cache_backend,
             telemetry=mock_telemetry,
         )
+
+        return executor
 
     @pytest.mark.asyncio
     async def test_successful_run_no_retries(self, executor_core, mock_step):
@@ -738,3 +741,466 @@ class TestExecutorCoreComplexStepClassification:
 
         # Should be complex due to validation, not fallback
         assert executor_core._is_complex_step(step)
+
+
+class TestExecutorCoreFallbackLogic:
+    """Test suite for fallback logic in ExecutorCore._execute_simple_step method."""
+
+    @pytest.fixture
+    def executor_core(self):
+        """Create an ExecutorCore instance with mocked dependencies."""
+        # Create mock implementations of all injected components
+        mock_agent_runner = AsyncMock()
+        mock_processor_pipeline = AsyncMock()
+        mock_validator_runner = AsyncMock()
+        mock_plugin_runner = AsyncMock()
+        mock_usage_meter = AsyncMock()
+        mock_cache_backend = AsyncMock()
+        mock_telemetry = Mock()
+
+        # Configure mock behaviors
+        mock_processor_pipeline.apply_prompt.return_value = "processed data"
+        mock_processor_pipeline.apply_output.return_value = "processed output"
+        mock_plugin_runner.run_plugins.return_value = "final output"
+        # Configure agent runner to return a non-Mock object
+        mock_agent_runner.run.return_value = "raw output"
+
+        return ExecutorCore(
+            agent_runner=mock_agent_runner,
+            processor_pipeline=mock_processor_pipeline,
+            validator_runner=mock_validator_runner,
+            plugin_runner=mock_plugin_runner,
+            usage_meter=mock_usage_meter,
+            cache_backend=mock_cache_backend,
+            telemetry=mock_telemetry,
+        )
+
+    @pytest.mark.asyncio
+    async def test_successful_fallback_execution(self, executor_core):
+        """Test that successful fallbacks work correctly in ExecutorCore."""
+        # Arrange
+        primary_step = Mock()
+        primary_step.name = "primary_step"
+        primary_step.agent = Mock()
+        primary_step.agent.run = AsyncMock(side_effect=Exception("Primary failed"))
+        primary_step.config.max_retries = 1
+        primary_step.config.temperature = 0.7
+        primary_step.processors = Mock()
+        primary_step.processors.prompt_processors = []
+        primary_step.processors.output_processors = []
+        primary_step.validators = []
+        primary_step.plugins = []
+
+        fallback_step = Mock()
+        fallback_step.name = "fallback_step"
+        fallback_step.agent = Mock()
+        fallback_step.agent.run = AsyncMock(return_value="fallback success")
+        fallback_step.config.max_retries = 1
+        fallback_step.config.temperature = 0.7
+        fallback_step.processors = Mock()
+        fallback_step.processors.prompt_processors = []
+        fallback_step.processors.output_processors = []
+        fallback_step.validators = []
+        fallback_step.plugins = []
+
+        primary_step.fallback_step = fallback_step
+
+        # Configure executor to handle fallback
+        executor_core._agent_runner.run.side_effect = [
+            Exception("Primary failed"),  # Primary fails
+            "fallback success",  # Fallback succeeds
+        ]
+
+        # Configure the mocked execute method for fallback
+        from flujo.domain.models import StepResult
+        from unittest.mock import patch
+
+        with patch.object(executor_core, "execute", new_callable=AsyncMock) as mock_execute:
+            mock_execute.return_value = StepResult(
+                name="fallback_step",
+                output="fallback success",
+                success=True,
+                attempts=1,
+                latency_s=0.1,
+                cost_usd=0.2,
+                token_counts=23,  # 15 + 8
+                feedback=None,
+            )
+
+            # Act
+            result = await executor_core._execute_simple_step(
+                primary_step,
+                "test data",
+                None,  # context
+                None,  # resources
+                None,  # limits
+                False,  # stream
+                None,  # on_chunk
+                "cache_key",
+                None,  # breach_event
+            )
+
+            # Assert
+            assert result.success is True
+            assert result.output == "fallback success"
+            assert result.feedback is None
+            assert result.metadata_["fallback_triggered"] is True
+            assert "original_error" in result.metadata_
+
+    @pytest.mark.asyncio
+    async def test_failed_fallback_execution(self, executor_core):
+        """Test that failed fallbacks work correctly in ExecutorCore."""
+        # Arrange
+        primary_step = Mock()
+        primary_step.name = "primary_step"
+        primary_step.agent = Mock()
+        primary_step.agent.run = AsyncMock(side_effect=Exception("Primary failed"))
+        primary_step.config.max_retries = 1
+        primary_step.config.temperature = 0.7
+        primary_step.processors = Mock()
+        primary_step.processors.prompt_processors = []
+        primary_step.processors.output_processors = []
+        primary_step.validators = []
+        primary_step.plugins = []
+
+        fallback_step = Mock()
+        fallback_step.name = "fallback_step"
+        fallback_step.agent = Mock()
+        fallback_step.agent.run = AsyncMock(side_effect=Exception("Fallback failed"))
+        fallback_step.config.max_retries = 1
+        fallback_step.config.temperature = 0.7
+        fallback_step.processors = Mock()
+        fallback_step.processors.prompt_processors = []
+        fallback_step.processors.output_processors = []
+        fallback_step.validators = []
+        fallback_step.plugins = []
+
+        primary_step.fallback_step = fallback_step
+
+        # Configure executor to handle both failures
+        executor_core._agent_runner.run.side_effect = [
+            Exception("Primary failed"),  # Primary fails
+            Exception("Fallback failed"),  # Fallback fails
+        ]
+
+        # Configure the mocked execute method for failed fallback
+        from flujo.domain.models import StepResult
+        from unittest.mock import patch
+
+        with patch.object(executor_core, "execute", new_callable=AsyncMock) as mock_execute:
+            mock_execute.return_value = StepResult(
+                name="fallback_step",
+                output=None,
+                success=False,
+                attempts=1,
+                latency_s=0.1,
+                cost_usd=0.2,
+                token_counts=23,
+                feedback="Fallback error: Fallback failed",
+            )
+
+            # Act
+            result = await executor_core._execute_simple_step(
+                primary_step,
+                "test data",
+                None,  # context
+                None,  # resources
+                None,  # limits
+                False,  # stream
+                None,  # on_chunk
+                "cache_key",
+                None,  # breach_event
+            )
+
+            # Assert
+            assert result.success is False
+            assert "Original error" in result.feedback
+            assert "Fallback error" in result.feedback
+
+    @pytest.mark.asyncio
+    async def test_fallback_metric_accounting(self, executor_core):
+        """Test that fallback metrics are correctly accounted for."""
+        # Arrange
+        primary_step = Mock()
+        primary_step.name = "primary_step"
+        primary_step.agent = Mock()
+        primary_step.agent.run = AsyncMock(side_effect=Exception("Primary failed"))
+        primary_step.config.max_retries = 1
+        primary_step.config.temperature = 0.7
+        primary_step.processors = Mock()
+        primary_step.processors.prompt_processors = []
+        primary_step.processors.output_processors = []
+        primary_step.validators = [Mock()]  # Add a validator to trigger validation
+        primary_step.plugins = []
+
+        fallback_step = Mock()
+        fallback_step.name = "fallback_step"
+        fallback_step.agent = Mock()
+        fallback_step.agent.run = AsyncMock(return_value="fallback success")
+        fallback_step.config.max_retries = 1
+        fallback_step.config.temperature = 0.7
+        fallback_step.processors = Mock()
+        fallback_step.processors.prompt_processors = []
+        fallback_step.processors.output_processors = []
+        fallback_step.validators = []
+        fallback_step.plugins = []
+
+        primary_step.fallback_step = fallback_step
+
+        # Configure executor to make primary step succeed in agent run but fail in validation
+        executor_core._agent_runner.run.side_effect = [
+            "primary success",  # Primary succeeds in agent run
+            "fallback success",  # Fallback succeeds
+        ]
+
+        # Configure validator to fail for primary step
+        executor_core._validator_runner.validate.side_effect = [
+            ValueError("Validation failed"),  # Primary fails validation
+            None,  # Fallback passes validation
+        ]
+
+        # Configure processor pipeline to return the agent output
+        executor_core._processor_pipeline.apply_output.return_value = "primary success"
+
+        # Configure the mocked execute method for fallback with specific metrics
+        from flujo.domain.models import StepResult
+        from unittest.mock import patch
+
+        with patch.object(executor_core, "execute", new_callable=AsyncMock) as mock_execute:
+            mock_execute.return_value = StepResult(
+                name="fallback_step",
+                output="fallback success",
+                success=True,
+                attempts=1,
+                latency_s=0.1,
+                cost_usd=0.2,  # Fallback cost
+                token_counts=23,  # 15 + 8
+                feedback=None,
+            )
+
+            # Mock usage extraction to return specific values for primary step
+            with patch(
+                "flujo.application.core.ultra_executor.extract_usage_metrics"
+            ) as mock_extract:
+                mock_extract.side_effect = [
+                    (10, 5, 0.1),  # Primary: 10 prompt, 5 completion, $0.1
+                    (15, 8, 0.2),  # Fallback: 15 prompt, 8 completion, $0.2
+                ]
+
+                # Act
+                result = await executor_core._execute_simple_step(
+                    primary_step,
+                    "test data",
+                    None,  # context
+                    None,  # resources
+                    None,  # limits
+                    False,  # stream
+                    None,  # on_chunk
+                    "cache_key",
+                    None,  # breach_event
+                )
+
+                # Assert
+                assert result.success is True
+                assert result.cost_usd == 0.2  # Should be fallback cost only
+                print(f"Expected token counts: 38, Actual: {result.token_counts}")
+                print("Primary token counts from mock: 15, Fallback token counts: 23")
+                assert result.token_counts == 38  # Should be sum: (10+5) + (15+8) = 38
+
+    @pytest.mark.asyncio
+    async def test_fallback_latency_accumulation(self, executor_core):
+        """Test that fallback latency is correctly accumulated."""
+        # Arrange
+        primary_step = Mock()
+        primary_step.name = "primary_step"
+        primary_step.agent = Mock()
+        primary_step.agent.run = AsyncMock(side_effect=Exception("Primary failed"))
+        primary_step.config.max_retries = 1
+        primary_step.config.temperature = 0.7
+        primary_step.processors = Mock()
+        primary_step.processors.prompt_processors = []
+        primary_step.processors.output_processors = []
+        primary_step.validators = []
+        primary_step.plugins = []
+
+        fallback_step = Mock()
+        fallback_step.name = "fallback_step"
+        fallback_step.agent = Mock()
+        fallback_step.agent.run = AsyncMock(return_value="fallback success")
+        fallback_step.config.max_retries = 1
+        fallback_step.config.temperature = 0.7
+        fallback_step.processors = Mock()
+        fallback_step.processors.prompt_processors = []
+        fallback_step.processors.output_processors = []
+        fallback_step.validators = []
+        fallback_step.plugins = []
+
+        primary_step.fallback_step = fallback_step
+
+        # Configure executor
+        executor_core._agent_runner.run.side_effect = [
+            Exception("Primary failed"),  # Primary fails
+            "fallback success",  # Fallback succeeds
+        ]
+
+        # Configure the mocked execute method for fallback
+        from flujo.domain.models import StepResult
+        from unittest.mock import patch
+
+        with patch.object(executor_core, "execute", new_callable=AsyncMock) as mock_execute:
+            mock_execute.return_value = StepResult(
+                name="fallback_step",
+                output="fallback success",
+                success=True,
+                attempts=1,
+                latency_s=0.1,
+                cost_usd=0.2,
+                token_counts=23,
+                feedback=None,
+            )
+
+            # Act
+            result = await executor_core._execute_simple_step(
+                primary_step,
+                "test data",
+                None,  # context
+                None,  # resources
+                None,  # limits
+                False,  # stream
+                None,  # on_chunk
+                "cache_key",
+                None,  # breach_event
+            )
+
+            # Assert
+            assert result.success is True
+            assert result.latency_s > 0  # Should have accumulated latency
+            # Note: Exact timing depends on execution speed, so we just check it's positive
+
+    @pytest.mark.asyncio
+    async def test_fallback_with_none_feedback(self, executor_core):
+        """Test fallback handling when primary step has no feedback."""
+        # Arrange
+        primary_step = Mock()
+        primary_step.name = "primary_step"
+        primary_step.agent = Mock()
+        primary_step.agent.run = AsyncMock(side_effect=Exception("Primary failed"))
+        primary_step.config.max_retries = 1
+        primary_step.config.temperature = 0.7
+        primary_step.processors = Mock()
+        primary_step.processors.prompt_processors = []
+        primary_step.processors.output_processors = []
+        primary_step.validators = []
+        primary_step.plugins = []
+
+        fallback_step = Mock()
+        fallback_step.name = "fallback_step"
+        fallback_step.agent = Mock()
+        fallback_step.agent.run = AsyncMock(return_value="fallback success")
+        fallback_step.config.max_retries = 1
+        fallback_step.config.temperature = 0.7
+        fallback_step.processors = Mock()
+        fallback_step.processors.prompt_processors = []
+        fallback_step.processors.output_processors = []
+        fallback_step.validators = []
+        fallback_step.plugins = []
+
+        primary_step.fallback_step = fallback_step
+
+        # Configure executor
+        executor_core._agent_runner.run.side_effect = [
+            Exception("Primary failed"),  # Primary fails
+            "fallback success",  # Fallback succeeds
+        ]
+
+        # Configure the mocked execute method for fallback
+        from flujo.domain.models import StepResult
+        from unittest.mock import patch
+
+        with patch.object(executor_core, "execute", new_callable=AsyncMock) as mock_execute:
+            mock_execute.return_value = StepResult(
+                name="fallback_step",
+                output="fallback success",
+                success=True,
+                attempts=1,
+                latency_s=0.1,
+                cost_usd=0.2,
+                token_counts=23,
+                feedback=None,
+            )
+
+            # Act
+            result = await executor_core._execute_simple_step(
+                primary_step,
+                "test data",
+                None,  # context
+                None,  # resources
+                None,  # limits
+                False,  # stream
+                None,  # on_chunk
+                "cache_key",
+                None,  # breach_event
+            )
+
+            # Assert
+            assert result.success is True
+            assert result.feedback is None  # Should be cleared on successful fallback
+
+    @pytest.mark.asyncio
+    async def test_fallback_execution_exception_handling(self, executor_core):
+        """Test that exceptions during fallback execution are handled gracefully."""
+        # Arrange
+        primary_step = Mock()
+        primary_step.name = "primary_step"
+        primary_step.agent = Mock()
+        primary_step.agent.run = AsyncMock(side_effect=Exception("Primary failed"))
+        primary_step.config.max_retries = 1
+        primary_step.config.temperature = 0.7
+        primary_step.processors = Mock()
+        primary_step.processors.prompt_processors = []
+        primary_step.processors.output_processors = []
+        primary_step.validators = []
+        primary_step.plugins = []
+
+        fallback_step = Mock()
+        fallback_step.name = "fallback_step"
+        fallback_step.agent = Mock()
+        fallback_step.agent.run = AsyncMock(return_value="fallback success")
+        fallback_step.config.max_retries = 1
+        fallback_step.config.temperature = 0.7
+        fallback_step.processors = Mock()
+        fallback_step.processors.prompt_processors = []
+        fallback_step.processors.output_processors = []
+        fallback_step.validators = []
+        fallback_step.plugins = []
+
+        primary_step.fallback_step = fallback_step
+
+        # Configure executor to raise exception during fallback execution
+        executor_core._agent_runner.run.side_effect = [
+            Exception("Primary failed"),  # Primary fails
+            Exception("Fallback execution failed"),  # Fallback execution fails
+        ]
+
+        # Configure the mocked execute method to raise an exception
+        from unittest.mock import patch
+
+        with patch.object(executor_core, "execute", new_callable=AsyncMock) as mock_execute:
+            mock_execute.side_effect = Exception("Fallback execution failed")
+
+            # Act
+            result = await executor_core._execute_simple_step(
+                primary_step,
+                "test data",
+                None,  # context
+                None,  # resources
+                None,  # limits
+                False,  # stream
+                None,  # on_chunk
+                "cache_key",
+                None,  # breach_event
+            )
+
+            # Assert
+            assert result.success is False
+            assert "Fallback execution failed" in result.feedback
