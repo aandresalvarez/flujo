@@ -8,22 +8,21 @@ Make sure you have a flujo.toml file with DALL-E 3 cost configuration before run
 
 import asyncio
 from flujo import Step, Flujo, UsageLimits
-from flujo.infra.agents import make_agent_async
 from flujo.exceptions import UsageLimitExceededError
 
 
 class MockDALLE3Agent:
     """A mock DALL-E 3 agent that simulates image generation with cost tracking."""
-    
+
     def __init__(self, image_count: int = 1, quality: str = "standard", size: str = "1024x1024"):
         self.image_count = image_count
         self.quality = quality
         self.size = size
         self.model_id = "openai:dall-e-3"
-    
+
     async def run(self, data: str):
         """Simulate a DALL-E 3 image generation response with usage information."""
-        
+
         # Create a response object that mimics pydantic-ai's AgentRunResult
         class AgentResponse:
             def __init__(self, image_count, quality, size):
@@ -58,7 +57,7 @@ async def basic_image_cost_tracking():
     result = await runner.run_async("Generate a beautiful landscape")
 
     # Display cost information
-    print(f"\nPipeline completed successfully!")
+    print("\nPipeline completed successfully!")
     print(f"Total steps: {len(result.step_history)}")
 
     total_cost = 0
@@ -86,8 +85,8 @@ async def image_cost_tracking_with_different_qualities():
 
     # Create pipeline with multiple steps
     pipeline = (
-        Step.solution(standard_agent) >> 
-        Step.validate(hd_agent) >> 
+        Step.solution(standard_agent) >>
+        Step.validate(hd_agent) >>
         Step.reflect(large_agent)
     )
     runner = Flujo(pipeline)
@@ -96,7 +95,7 @@ async def image_cost_tracking_with_different_qualities():
     result = await runner.run_async("Generate multiple images with different qualities")
 
     # Display cost information
-    print(f"\nPipeline completed successfully!")
+    print("\nPipeline completed successfully!")
     print(f"Total steps: {len(result.step_history)}")
 
     total_cost = 0
@@ -121,7 +120,7 @@ async def image_cost_tracking_with_usage_limits():
 
     # Create pipeline
     pipeline = Step.solution(dalle_agent)
-    
+
     # Set usage limits below the expected cost
     usage_limits = UsageLimits(total_cost_usd_limit=0.01)  # $0.01 limit
     runner = Flujo(pipeline, usage_limits=usage_limits)
@@ -145,15 +144,15 @@ async def image_cost_tracking_regression_test():
             class AgentResponse:
                 def __init__(self):
                     self.output = "Chat response"
-                    
+
                 def usage(self):
                     class UsageInfo:
                         def __init__(self):
                             self.request_tokens = 100
                             self.response_tokens = 50
-                    
+
                     return UsageInfo()
-            
+
             return AgentResponse()
 
     chat_agent = MockChatAgent()
@@ -166,7 +165,7 @@ async def image_cost_tracking_regression_test():
     result = await runner.run_async("Hello")
 
     # Display cost information
-    print(f"\nChat pipeline completed successfully!")
+    print("\nChat pipeline completed successfully!")
     print(f"Total steps: {len(result.step_history)}")
 
     for step_result in result.step_history:
@@ -185,24 +184,24 @@ async def main():
     """Run all image cost tracking demonstrations."""
     print("🚀 Image Cost Tracking Demo")
     print("=" * 50)
-    
+
     try:
         await basic_image_cost_tracking()
         await image_cost_tracking_with_different_qualities()
         await image_cost_tracking_with_usage_limits()
         await image_cost_tracking_regression_test()
-        
+
         print("\n✅ All demonstrations completed successfully!")
         print("\nKey Features Demonstrated:")
         print("- Automatic image cost calculation based on quality and size")
         print("- Integration with usage limits")
         print("- Support for multiple image configurations")
         print("- Backward compatibility with chat models")
-        
+
     except Exception as e:
         print(f"\n❌ Error during demonstration: {e}")
         print("Make sure you have DALL-E 3 pricing configured in your flujo.toml file.")
 
 
 if __name__ == "__main__":
-    asyncio.run(main()) 
+    asyncio.run(main())

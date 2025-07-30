@@ -15,13 +15,11 @@ This test validates all the core concepts being tested in Step 1:
 import asyncio
 import os
 import pytest
-from typing import Optional, List
-from unittest.mock import patch, MagicMock
+from typing import Optional
+from unittest.mock import patch
 
 from flujo import Flujo, Step, Pipeline
 from flujo.domain.models import PipelineResult, PipelineContext
-from flujo.infra.agents import make_agent_async
-from flujo.infra.settings import settings as flujo_settings
 
 from manual_testing.examples.cohort_pipeline import (
     COHORT_CLARIFICATION_PIPELINE,
@@ -37,16 +35,16 @@ class TestStep1CoreAgentic:
     def test_agent_creation(self):
         """Test that the agent is created correctly with make_agent_async()."""
         print("\n🧪 Testing agent creation...")
-        
+
         # Verify the agent was created with correct parameters
         assert ClarificationAgent is not None
         assert hasattr(ClarificationAgent, 'run')
         assert callable(ClarificationAgent.run)
-        
+
         # Verify the agent uses the correct model
         # Note: We can't directly access the model, but we can verify the agent exists
         print("✅ Agent created successfully with make_agent_async()")
-        
+
         # Test that the system prompt is properly formatted
         assert "[CLARITY_CONFIRMED]" in CLARIFICATION_AGENT_SYSTEM_PROMPT
         assert "clinical research assistant" in CLARIFICATION_AGENT_SYSTEM_PROMPT.lower()
@@ -55,7 +53,7 @@ class TestStep1CoreAgentic:
     def test_step_creation(self):
         """Test that the step is created correctly."""
         print("\n🧪 Testing step creation...")
-        
+
         # Verify the step has the correct structure
         assert assess_clarity_step is not None
         assert assess_clarity_step.name == "AssessClarity"
@@ -65,7 +63,7 @@ class TestStep1CoreAgentic:
     def test_pipeline_creation(self):
         """Test that the pipeline is created correctly."""
         print("\n🧪 Testing pipeline creation...")
-        
+
         # Verify the pipeline structure
         assert COHORT_CLARIFICATION_PIPELINE is not None
         assert len(COHORT_CLARIFICATION_PIPELINE.steps) == 1
@@ -76,7 +74,7 @@ class TestStep1CoreAgentic:
     async def test_pipeline_execution_with_mock_agent(self):
         """Test pipeline execution with a mock agent to avoid API calls."""
         print("\n🧪 Testing pipeline execution with mock agent...")
-        
+
         # Create a mock agent that returns predictable responses
         class MockClarificationAgent:
             async def run(self, data: str, **kwargs) -> str:
@@ -90,7 +88,7 @@ class TestStep1CoreAgentic:
         # Create a test pipeline with the mock agent
         mock_step = Step(name="MockAssessClarity", agent=MockClarificationAgent())
         mock_pipeline = Pipeline.from_step(mock_step)
-        
+
         # Create the runner
         runner = Flujo(
             mock_pipeline,
@@ -101,7 +99,7 @@ class TestStep1CoreAgentic:
         # Test case 1: Unclear definition
         test_input = "patients with diabetes"
         result: Optional[PipelineResult] = None
-        
+
         async for item in runner.run_async(
             test_input,
             initial_context_data={"initial_prompt": test_input}
@@ -112,7 +110,7 @@ class TestStep1CoreAgentic:
         assert result is not None
         assert result.step_history is not None
         assert len(result.step_history) == 1
-        
+
         final_step = result.step_history[-1]
         assert final_step.success
         assert "diabetes" in final_step.output.lower()
@@ -122,7 +120,7 @@ class TestStep1CoreAgentic:
         # Test case 2: Clear definition
         test_input = "clear definition"
         result = None
-        
+
         async for item in runner.run_async(
             test_input,
             initial_context_data={"initial_prompt": test_input}
@@ -133,7 +131,7 @@ class TestStep1CoreAgentic:
         assert result is not None
         assert result.step_history is not None
         assert len(result.step_history) == 1
-        
+
         final_step = result.step_history[-1]
         assert final_step.success
         assert "[CLARITY_CONFIRMED]" in final_step.output
@@ -143,7 +141,7 @@ class TestStep1CoreAgentic:
     async def test_fsd11_signature_aware_context_injection(self):
         """Test FSD-11 fix: signature-aware context injection."""
         print("\n🧪 Testing FSD-11: Signature-aware context injection...")
-        
+
         # Test with a stateless agent (should work without context)
         class StatelessTestAgent:
             async def run(self, data: str) -> str:
@@ -151,7 +149,7 @@ class TestStep1CoreAgentic:
 
         stateless_step = Step(name="StatelessTest", agent=StatelessTestAgent())
         stateless_pipeline = Pipeline.from_step(stateless_step)
-        
+
         runner = Flujo(
             stateless_pipeline,
             pipeline_name="test_stateless",
@@ -174,7 +172,7 @@ class TestStep1CoreAgentic:
     async def test_fsd12_tracing_and_observability(self):
         """Test FSD-12: Automatic tracing and observability."""
         print("\n🧪 Testing FSD-12: Tracing and observability...")
-        
+
         # Create a simple test pipeline
         class TracingTestAgent:
             async def run(self, data: str, **kwargs) -> str:
@@ -182,7 +180,7 @@ class TestStep1CoreAgentic:
 
         tracing_step = Step(name="TracingTest", agent=TracingTestAgent())
         tracing_pipeline = Pipeline.from_step(tracing_step)
-        
+
         runner = Flujo(
             tracing_pipeline,
             pipeline_name="test_tracing",
@@ -202,14 +200,14 @@ class TestStep1CoreAgentic:
         assert result.final_pipeline_context is not None
         assert result.final_pipeline_context.run_id is not None
         assert len(result.final_pipeline_context.run_id) > 0
-        
+
         # Verify step history contains tracing data
         assert len(result.step_history) == 1
         step = result.step_history[0]
         assert step.name == "TracingTest"
         assert step.success
         assert step.output is not None
-        
+
         print("✅ Tracing information captured correctly")
         print(f"   Run ID: {result.final_pipeline_context.run_id}")
         print(f"   Step name: {step.name}")
@@ -219,7 +217,7 @@ class TestStep1CoreAgentic:
     async def test_error_handling(self):
         """Test error handling in the pipeline."""
         print("\n🧪 Testing error handling...")
-        
+
         # Test with an agent that raises an exception
         class ErrorTestAgent:
             async def run(self, data: str) -> str:
@@ -227,7 +225,7 @@ class TestStep1CoreAgentic:
 
         error_step = Step(name="ErrorTest", agent=ErrorTestAgent())
         error_pipeline = Pipeline.from_step(error_step)
-        
+
         runner = Flujo(
             error_pipeline,
             pipeline_name="test_error",
@@ -245,7 +243,7 @@ class TestStep1CoreAgentic:
         assert result is not None
         assert result.step_history is not None
         assert len(result.step_history) == 1
-        
+
         step = result.step_history[0]
         assert not step.success
         assert step.feedback is not None
@@ -256,26 +254,26 @@ class TestStep1CoreAgentic:
     def test_api_key_validation(self):
         """Test API key validation functionality."""
         print("\n🧪 Testing API key validation...")
-        
+
         # Test with missing API key
         with patch.dict(os.environ, {}, clear=True):
             with pytest.raises(ValueError, match="OPENAI_API_KEY"):
                 from manual_testing.examples.main import ensure_api_key
                 ensure_api_key()
-        
+
         # Test with valid API key
         with patch.dict(os.environ, {"OPENAI_API_KEY": "test_key_1234"}):
             from manual_testing.examples.main import ensure_api_key
             # Should not raise an exception
             ensure_api_key()
-        
+
         print("✅ API key validation works correctly")
 
     @pytest.mark.asyncio
     async def test_integration_with_real_agent(self):
         """Integration test with the real agent (requires API key)."""
         print("\n🧪 Testing integration with real agent...")
-        
+
         # Skip if no API key is available
         if not os.getenv("OPENAI_API_KEY"):
             print("⚠️  Skipping real agent test - no API key available")
@@ -291,7 +289,7 @@ class TestStep1CoreAgentic:
         # Test with a simple input
         test_input = "patients with asthma"
         result = None
-        
+
         async for item in runner.run_async(
             test_input,
             initial_context_data={"initial_prompt": test_input}
@@ -302,25 +300,25 @@ class TestStep1CoreAgentic:
         assert result is not None
         assert result.step_history is not None
         assert len(result.step_history) == 1
-        
+
         final_step = result.step_history[-1]
         assert final_step.success
         assert final_step.output is not None
         assert len(final_step.output) > 0
-        
+
         print("✅ Integration test with real agent successful")
         print(f"   Agent response: {final_step.output[:100]}...")
 
     def test_pipeline_structure_validation(self):
         """Test that the pipeline structure is correct."""
         print("\n🧪 Testing pipeline structure validation...")
-        
+
         # Verify pipeline has correct structure
         assert COHORT_CLARIFICATION_PIPELINE is not None
         assert hasattr(COHORT_CLARIFICATION_PIPELINE, 'steps')
         assert isinstance(COHORT_CLARIFICATION_PIPELINE.steps, list)
         assert len(COHORT_CLARIFICATION_PIPELINE.steps) == 1
-        
+
         # Verify the step structure
         step = COHORT_CLARIFICATION_PIPELINE.steps[0]
         assert step.name == "AssessClarity"
@@ -328,17 +326,17 @@ class TestStep1CoreAgentic:
         # Don't test direct step invocation - that's not allowed
         assert hasattr(step, 'name')
         assert hasattr(step, 'agent')
-        
+
         print("✅ Pipeline structure is correct")
 
     def test_agent_system_prompt_validation(self):
         """Test that the agent system prompt is properly formatted."""
         print("\n🧪 Testing agent system prompt validation...")
-        
+
         # Verify the system prompt contains required elements
         assert CLARIFICATION_AGENT_SYSTEM_PROMPT is not None
         assert len(CLARIFICATION_AGENT_SYSTEM_PROMPT) > 0
-        
+
         # Check for required markers and instructions
         required_elements = [
             "clinical research assistant",
@@ -346,11 +344,11 @@ class TestStep1CoreAgentic:
             "[CLARITY_CONFIRMED]",
             "clarify"
         ]
-        
+
         for element in required_elements:
             assert element.lower() in CLARIFICATION_AGENT_SYSTEM_PROMPT.lower(), \
                 f"System prompt missing required element: {element}"
-        
+
         print("✅ Agent system prompt is properly formatted")
 
 
@@ -363,7 +361,7 @@ async def run_comprehensive_test():
 
     # Create test instance
     test_suite = TestStep1CoreAgentic()
-    
+
     # Run all tests
     test_methods = [
         test_suite.test_agent_creation,
@@ -401,7 +399,7 @@ async def run_comprehensive_test():
     print("=" * 80)
     print(f"Passed: {passed}/{total}")
     print(f"Failed: {total - passed}/{total}")
-    
+
     if passed == total:
         print("\n🎉 ALL TESTS PASSED!")
         print("Step 1 implementation is working correctly.")
@@ -415,9 +413,9 @@ async def run_comprehensive_test():
         print("✅ FSD-12 - Automatic tracing and observability")
     else:
         print(f"\n⚠️  {total - passed} tests failed. Please review the implementation.")
-    
+
     print("=" * 80)
 
 
 if __name__ == "__main__":
-    asyncio.run(run_comprehensive_test()) 
+    asyncio.run(run_comprehensive_test())

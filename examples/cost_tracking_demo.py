@@ -36,7 +36,7 @@ async def basic_cost_tracking():
     result = await runner.run_async("Write a short poem about coding.")
 
     # Display cost information
-    print(f"\nPipeline completed successfully!")
+    print("\nPipeline completed successfully!")
     print(f"Total steps: {len(result.step_history)}")
 
     total_cost = 0
@@ -83,7 +83,7 @@ async def usage_limits_demo():
         print("Pipeline completed successfully!")
     except UsageLimitExceededError as e:
         print(f"Pipeline stopped due to usage limits: {e}")
-        print(f"Partial results available:")
+        print("Partial results available:")
 
         # Show partial results
         for step_result in e.partial_result.step_history:

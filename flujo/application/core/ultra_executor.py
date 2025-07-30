@@ -18,6 +18,8 @@ from __future__ import annotations
 import asyncio
 import time
 import hashlib
+import copy
+import multiprocessing
 from abc import abstractmethod
 from collections import OrderedDict
 from dataclasses import dataclass, field
@@ -36,7 +38,7 @@ from typing import (
 )
 from weakref import WeakKeyDictionary
 
-from ...domain.dsl.step import HumanInTheLoopStep
+from ...domain.dsl.step import HumanInTheLoopStep, Step, MergeStrategy, BranchFailureStrategy
 from ...domain.dsl.loop import LoopStep
 from ...domain.dsl.conditional import ConditionalStep
 from ...domain.dsl.dynamic_router import DynamicParallelRouterStep
@@ -55,6 +57,10 @@ from ...steps.cache_step import CacheStep
 from ...utils.performance import time_perf_ns, time_perf_ns_to_seconds
 from ...cost import extract_usage_metrics
 from ...infra import telemetry
+from ...signature_tools import analyze_signature
+from ...application.context_manager import _accepts_param
+from ...utils.context import safe_merge_context_updates
+from .step_logic import ParallelUsageGovernor, _should_pass_context
 
 # --------------------------------------------------------------------------- #
 # ★ Interfaces (Protocols)
@@ -918,7 +924,7 @@ class ExecutorCore(Generic[TContext]):
         telemetry: Optional[ITelemetry] = None,
         concurrency_limit: Optional[int] = None,
         enable_cache: bool = True,
-    ):
+    ) -> None:
         # Initialize components with defaults
         self._serializer = serializer or OrjsonSerializer()
         self._hasher = hasher or Blake3Hasher()
@@ -1069,8 +1075,6 @@ class ExecutorCore(Generic[TContext]):
             _handle_cache_step,
             _handle_loop_step,
             _handle_conditional_step,
-            _handle_dynamic_router_step,
-            _handle_parallel_step,
             _handle_hitl_step,
             _run_step_logic,
             _default_set_final_context,
@@ -1148,28 +1152,24 @@ class ExecutorCore(Generic[TContext]):
             )
         elif isinstance(step, DynamicParallelRouterStep):
             telemetry.logfire.debug("Handling DynamicParallelRouterStep")
-            result = await _handle_dynamic_router_step(
+            result = await self._handle_dynamic_router_step(
                 step,
                 data,
                 context,
                 resources,
-                step_executor,
-                context_model_defined=True,
-                usage_limits=limits,
-                context_setter=context_setter,
+                limits,
+                context_setter,
             )
         elif isinstance(step, ParallelStep):
             telemetry.logfire.debug("Handling ParallelStep")
-            result = await _handle_parallel_step(
+            result = await self._handle_parallel_step(
                 step,
                 data,
                 context,
                 resources,
-                step_executor,
-                context_model_defined=True,
-                usage_limits=limits,
-                context_setter=context_setter,
-                breach_event=breach_event,
+                limits,
+                breach_event,
+                context_setter,
             )
         elif isinstance(step, HumanInTheLoopStep):
             telemetry.logfire.debug("Handling HumanInTheLoopStep")
@@ -1197,6 +1197,504 @@ class ExecutorCore(Generic[TContext]):
             await self._cache_backend.put(cache_key, result, ttl_s=3600)
 
         return result
+
+    async def _handle_parallel_step(
+        self,
+        parallel_step: ParallelStep[TContext],
+        data: Any,
+        context: Optional[TContext],
+        resources: Optional[Any],
+        limits: Optional[UsageLimits],
+        breach_event: Optional[Any],
+        context_setter: Optional[Callable[["PipelineResult[Any]", Optional[Any]], None]],
+    ) -> StepResult:
+        """✅ NEW: This method now contains the migrated logic for ParallelStep."""
+        telemetry.logfire.debug(f"_handle_parallel_step called for step: {parallel_step.name}")
+        telemetry.logfire.debug(f"Context is None: {context is None}")
+        telemetry.logfire.debug(f"Merge strategy: {parallel_step.merge_strategy}")
+
+        result = StepResult(name=parallel_step.name)
+        outputs: Dict[str, Any] = {}
+        branch_results: Dict[str, StepResult] = {}
+        errors: Dict[str, Exception] = {}
+
+        # Create usage governor for parallel execution
+        usage_governor = ParallelUsageGovernor(limits)
+
+        # Check for empty branches
+        if not parallel_step.branches:
+            result.success = False
+            result.feedback = "Parallel step has no branches to execute"
+            result.output = {}
+            return result
+
+        # Track completion order for OVERWRITE merge strategy
+        completion_order = []
+        completion_lock = asyncio.Lock()
+        running_tasks: Dict[str, asyncio.Task[None]] = {}
+
+        # Create bounded concurrency semaphore to prevent thundering herd
+        # Use a reasonable limit based on CPU cores to prevent lock contention
+        cpu_count = multiprocessing.cpu_count()
+        semaphore = asyncio.Semaphore(min(10, cpu_count * 2))
+
+        async def run_branch(key: str, branch_pipe: Any) -> None:
+            """Execute a single branch with cancellation handling and bounded concurrency."""
+            # Acquire semaphore to limit concurrent execution and prevent lock contention
+            async with semaphore:
+                # Isolate context for this branch
+                branch_context = copy.deepcopy(context) if context is not None else None
+                branch_results[key] = StepResult(name=key, success=False, attempts=0)
+
+                try:
+                    if not hasattr(branch_pipe, "name"):
+                        object.__setattr__(branch_pipe, "name", f"parallel_branch_{key}")
+                    current_data = data
+                    total_latency = 0.0
+                    total_cost = 0.0
+                    total_tokens = 0
+                    all_successful = True
+                    last_feedback = None
+
+                    for step in branch_pipe.steps:
+                        try:
+                            # Use self.execute for recursive execution
+                            step_result = await self.execute(
+                                step,
+                                current_data,
+                                context=branch_context,
+                                resources=resources,
+                                limits=limits,
+                                breach_event=breach_event,
+                                context_setter=context_setter,
+                            )
+
+                            # Add usage to governor and check for breach
+                            cost_delta = getattr(step_result, "cost_usd", 0.0)
+                            token_delta = getattr(step_result, "token_counts", 0)
+                            if await usage_governor.add_usage(cost_delta, token_delta, step_result):
+                                # Limit was breached. Signal other branches to stop
+                                if breach_event:
+                                    breach_event.set()
+                                telemetry.logfire.debug(
+                                    f"Branch {key} breached limit, signaling others to stop"
+                                )
+                                return
+
+                            total_latency += step_result.latency_s
+                            total_cost += cost_delta
+                            total_tokens += token_delta
+                            if not step_result.success:
+                                all_successful = False
+                                last_feedback = step_result.feedback
+                                break
+                            current_data = step_result.output
+                        except Exception as step_error:
+                            all_successful = False
+                            last_feedback = f"Branch execution error: {str(step_error)}"
+                            break
+
+                    branch_result = StepResult(
+                        name=f"branch::{key}",
+                        output=current_data if all_successful else None,
+                        success=all_successful,
+                        attempts=1,
+                        latency_s=total_latency,
+                        token_counts=total_tokens,
+                        cost_usd=total_cost,
+                        feedback=last_feedback,
+                        branch_context=branch_context,
+                    )
+                    branch_results[key] = branch_result
+                    outputs[key] = branch_result.output
+
+                    # Track completion order for OVERWRITE merge strategy
+                    async with completion_lock:
+                        completion_order.append(key)
+
+                except asyncio.CancelledError:
+                    # This is the cancellation hygiene recommended by the expert.
+                    # If cancelled, record a specific "cancelled" result.
+                    branch_results[key] = StepResult(
+                        name=f"branch::{key}",
+                        success=False,
+                        feedback="Cancelled due to usage limit breach by another branch.",
+                        cost_usd=total_cost if "total_cost" in locals() else 0.0,
+                        token_counts=total_tokens if "total_tokens" in locals() else 0,
+                    )
+                except Exception as e:
+                    errors[key] = e
+                    branch_results[key] = StepResult(
+                        name=key,
+                        output=None,
+                        success=False,
+                        feedback=f"Branch execution error: {str(e)}",
+                        cost_usd=total_cost if "total_cost" in locals() else 0.0,
+                        token_counts=total_tokens if "total_tokens" in locals() else 0,
+                    )
+
+        # Start all branches concurrently
+        for key, branch_pipe in parallel_step.branches.items():
+            task = asyncio.create_task(run_branch(key, branch_pipe), name=f"branch_{key}")
+            running_tasks[key] = task
+
+        # Create the breach watcher for responsive signaling
+        async def breach_watcher() -> None:
+            """Watch for breach events and cancel all running tasks."""
+            try:
+                # Wait for either a breach or all tasks to complete
+                # Use a shorter timeout to prevent hanging
+                await asyncio.wait_for(usage_governor.limit_breached.wait(), timeout=1.0)
+                for task in running_tasks.values():
+                    if not task.done():
+                        task.cancel()
+            except asyncio.CancelledError:
+                # Handle cancellation gracefully
+                pass
+            except asyncio.TimeoutError:
+                # Handle timeout gracefully - this means no breach occurred
+                # Wait for all tasks to complete naturally
+                if running_tasks:
+                    await asyncio.gather(*running_tasks.values(), return_exceptions=True)
+
+        watcher_task = asyncio.create_task(breach_watcher(), name="breach_watcher")
+
+        # Use asyncio.gather for state integrity - this ensures all tasks complete
+        # and we get their results, even if some were cancelled
+        all_tasks = list(running_tasks.values()) + [watcher_task]
+        await asyncio.gather(*all_tasks, return_exceptions=True)
+
+        # Centralized decision-making with complete state
+        if usage_governor.breached():
+            # Ensure the history is complete, even if some branches were cancelled
+            final_history = list(branch_results.values())
+            for key in parallel_step.branches:
+                if key not in branch_results:
+                    # This branch was likely cancelled before it could even start or report.
+                    # Add a placeholder to ensure the history is complete.
+                    final_history.append(
+                        StepResult(
+                            name=f"branch::{key}",
+                            success=False,
+                            feedback="Not executed due to usage limit breach.",
+                        )
+                    )
+
+            pipeline_result_for_exc: PipelineResult[Any] = PipelineResult(
+                step_history=final_history,
+                total_cost_usd=usage_governor.total_cost,
+            )
+            message = usage_governor.get_error_message() or "Usage limit exceeded"
+            raise UsageLimitExceededError(message, result=pipeline_result_for_exc)
+
+        # Accumulate cost and tokens from all branches
+        total_cost = 0.0
+        total_tokens = 0
+        total_latency = 0.0
+        for branch_result in branch_results.values():
+            total_cost += getattr(branch_result, "cost_usd", 0.0)
+            total_tokens += getattr(branch_result, "token_counts", 0)
+            total_latency += getattr(branch_result, "latency_s", 0.0)
+
+        # Set the accumulated metrics on the result
+        result.cost_usd = total_cost
+        result.token_counts = total_tokens
+        result.latency_s = total_latency
+
+        telemetry.logfire.debug("=== AFTER METRICS ACCUMULATION ===")
+        telemetry.logfire.debug(f"Total cost: {total_cost}")
+        telemetry.logfire.debug(f"Total tokens: {total_tokens}")
+        telemetry.logfire.debug(f"Total latency: {total_latency}")
+
+        # Context merging based on strategy
+        print("[DEBUG] === CONTEXT MERGING SECTION ===")
+        print(f"[DEBUG] About to start context merging. Context is None: {context is None}")
+        print(f"[DEBUG] Merge strategy: {parallel_step.merge_strategy}")
+        print(f"[DEBUG] Branch results: {list(branch_results.keys())}")
+        print(f"[DEBUG] Context type: {type(context)}")
+        print(
+            f"[DEBUG] Condition: {context is not None and (parallel_step.merge_strategy in {MergeStrategy.CONTEXT_UPDATE, MergeStrategy.OVERWRITE, MergeStrategy.MERGE_SCRATCHPAD} or callable(parallel_step.merge_strategy))}"
+        )
+        if context is not None and (
+            parallel_step.merge_strategy
+            in {
+                MergeStrategy.CONTEXT_UPDATE,
+                MergeStrategy.OVERWRITE,
+                MergeStrategy.MERGE_SCRATCHPAD,
+            }
+            or callable(parallel_step.merge_strategy)
+        ):
+            telemetry.logfire.debug("Context merging condition met, proceeding with merge")
+            if parallel_step.merge_strategy == MergeStrategy.CONTEXT_UPDATE:
+                telemetry.logfire.debug("Using CONTEXT_UPDATE strategy")
+                # For CONTEXT_UPDATE, merge contexts in the order of branch_results to ensure later branches overwrite earlier ones
+                # Track accumulated values for counter fields to prevent overwriting
+                accumulated_values = {}
+
+                for key, branch_result in branch_results.items():
+                    branch_ctx = getattr(branch_result, "branch_context", None)
+                    if branch_ctx is not None:
+                        try:
+                            # For CONTEXT_UPDATE, we need to handle counter fields specially
+                            # Counter fields should be accumulated, not replaced
+                            counter_field_names = {
+                                "accumulated_value",
+                                "iteration_count",
+                                "counter",
+                                "count",
+                                "total_count",
+                                "processed_count",
+                                "success_count",
+                                "error_count",
+                            }
+
+                            # First, accumulate counter fields
+                            for field_name in counter_field_names:
+                                if hasattr(branch_ctx, field_name) and hasattr(context, field_name):
+                                    branch_value = getattr(branch_ctx, field_name)
+                                    current_value = getattr(context, field_name)
+
+                                    # Only accumulate if both values are numeric
+                                    if isinstance(branch_value, (int, float)) and isinstance(
+                                        current_value, (int, float)
+                                    ):
+                                        if field_name not in accumulated_values:
+                                            accumulated_values[field_name] = current_value
+                                        accumulated_values[field_name] += branch_value
+
+                            # Then merge other fields normally
+                            safe_merge_context_updates(context, branch_ctx)
+
+                            # Finally, apply accumulated counter values
+                            for field_name, accumulated_value in accumulated_values.items():
+                                if hasattr(context, field_name):
+                                    setattr(context, field_name, accumulated_value)
+
+                            telemetry.logfire.debug(f"Merged context from branch {key}")
+                        except Exception as e:
+                            telemetry.logfire.error(
+                                f"Failed to merge context from branch {key}: {e}"
+                            )
+            elif parallel_step.merge_strategy == MergeStrategy.OVERWRITE:
+                print("[DEBUG] Using OVERWRITE strategy")
+                # For OVERWRITE, merge scratchpad from all successful branches
+                # and use the last successful branch's context for other fields
+                last_successful_branch = None
+                # Iterate through completion order in reverse to find the last successful branch
+                for key in reversed(completion_order):
+                    branch_result_item: StepResult | None = branch_results.get(key)
+                    if branch_result_item and branch_result_item.success:
+                        branch_ctx = getattr(branch_result_item, "branch_context", None)
+                        if branch_ctx is not None:
+                            last_successful_branch = (key, branch_ctx)
+                            break
+
+                if last_successful_branch:
+                    key, branch_ctx = last_successful_branch
+                    try:
+                        # First, merge scratchpad from all successful branches
+                        for branch_key, branch_result in branch_results.items():
+                            if branch_result.success:
+                                branch_ctx_for_merge = getattr(
+                                    branch_result, "branch_context", None
+                                )
+                                if branch_ctx_for_merge is not None and hasattr(
+                                    branch_ctx_for_merge, "scratchpad"
+                                ):
+                                    if not hasattr(context, "scratchpad"):
+                                        context.scratchpad = {}  # type: ignore
+                                    context.scratchpad.update(branch_ctx_for_merge.scratchpad)  # type: ignore
+
+                        # Then update other fields from the last successful branch using non-destructive field-by-field update
+                        for field_name in type(branch_ctx).model_fields:
+                            if hasattr(branch_ctx, field_name) and field_name != "scratchpad":
+                                setattr(context, field_name, getattr(branch_ctx, field_name))
+                        print(
+                            f"[DEBUG] Overwrote context fields from branch {key} and merged scratchpad from all successful branches"
+                        )
+                    except Exception as e:
+                        print(f"[DEBUG] Failed to overwrite context from branch {key}: {e}")
+            elif parallel_step.merge_strategy == MergeStrategy.MERGE_SCRATCHPAD:
+                telemetry.logfire.debug("Using MERGE_SCRATCHPAD strategy")
+                # For MERGE_SCRATCHPAD, always ensure context has a scratchpad
+                if not hasattr(context, "scratchpad"):
+                    context.scratchpad = {}  # type: ignore
+
+                # Merge scratchpad fields from all branches
+                for key, branch_result in branch_results.items():
+                    branch_ctx = getattr(branch_result, "branch_context", None)
+                    if branch_ctx is not None:
+                        # Ensure branch context has a scratchpad
+                        if not hasattr(branch_ctx, "scratchpad"):
+                            setattr(branch_ctx, "scratchpad", {})
+                        # Merge the branch scratchpad into the main context
+                        if hasattr(context, "scratchpad") and hasattr(branch_ctx, "scratchpad"):
+                            context.scratchpad.update(branch_ctx.scratchpad)
+                        telemetry.logfire.debug(f"Merged scratchpad from branch {key}")
+            elif not isinstance(parallel_step.merge_strategy, MergeStrategy):
+                telemetry.logfire.debug("Using callable merge strategy")
+                # For callable merge strategies, call the function with context and branch_results
+                try:
+                    parallel_step.merge_strategy(context, branch_results)
+                    telemetry.logfire.debug("Applied callable merge strategy")
+                except Exception as e:
+                    telemetry.logfire.error(f"Failed to apply callable merge strategy: {e}")
+        else:
+            telemetry.logfire.debug("Context merging condition not met, skipping merge")
+
+        # Failure handling and feedback
+        failed_branches = [k for k, r in branch_results.items() if not r.success]
+        if failed_branches:
+            if parallel_step.on_branch_failure == BranchFailureStrategy.PROPAGATE:
+                first_failure_key = failed_branches[0]
+                result.success = False
+                result.feedback = f"Branch '{first_failure_key}' failed. Propagating failure."
+                result.output = {key: branch_results[key] for key in parallel_step.branches.keys()}
+                return result
+            elif parallel_step.on_branch_failure == BranchFailureStrategy.IGNORE:
+                if all(not branch_results[key].success for key in parallel_step.branches.keys()):
+                    result.success = False
+                    result.feedback = f"All parallel branches failed: {list(parallel_step.branches.keys())}. Details: {[branch_results[k].feedback for k in failed_branches]}"
+                    result.output = {
+                        key: branch_results[key] for key in parallel_step.branches.keys()
+                    }
+                    return result
+                # For IGNORE, include both successful outputs and failed branch results
+                for failed_key in failed_branches:
+                    outputs[failed_key] = branch_results[failed_key]
+
+        # Merge results based on strategy
+        if parallel_step.merge_strategy == MergeStrategy.NO_MERGE:
+            result.output = outputs
+        elif parallel_step.merge_strategy == MergeStrategy.CONTEXT_UPDATE:
+            result.output = outputs
+        elif parallel_step.merge_strategy == MergeStrategy.OVERWRITE:
+            merged_output = {}
+            for key, output in outputs.items():
+                if isinstance(output, dict):
+                    merged_output.update(output)
+                else:
+                    merged_output[key] = output
+            result.output = merged_output
+        elif parallel_step.merge_strategy == MergeStrategy.KEEP_FIRST:
+            merged_output = {}
+            for key, output in outputs.items():
+                if key not in merged_output:
+                    if isinstance(output, dict):
+                        merged_output.update(output)
+                    else:
+                        merged_output[key] = output
+            result.output = merged_output
+        elif parallel_step.merge_strategy == MergeStrategy.MERGE_SCRATCHPAD:
+            result.output = outputs
+        elif parallel_step.merge_strategy == MergeStrategy.CONTEXT_UPDATE:  # type: ignore[comparison-overlap]
+            result.output = outputs
+        else:  # MergeStrategy.MERGE
+            merged_output = {}
+            for key, output in outputs.items():
+                if isinstance(output, dict):
+                    merged_output.update(output)
+                else:
+                    merged_output[key] = output
+            result.output = merged_output
+
+        result.success = True
+        return result
+
+    async def _handle_dynamic_router_step(
+        self,
+        router_step: DynamicParallelRouterStep[TContext],
+        data: Any,
+        context: Optional[TContext],
+        resources: Optional[Any],
+        limits: Optional[UsageLimits],
+        context_setter: Optional[Callable[["PipelineResult[Any]", Optional[Any]], None]],
+    ) -> StepResult:
+        """✅ NEW: This method now contains the migrated logic for DynamicParallelRouterStep."""
+        telemetry.logfire.debug("=== HANDLE DYNAMIC ROUTER STEP ===")
+        telemetry.logfire.debug(f"Router step name: {router_step.name}")
+        telemetry.logfire.debug(f"Router input: {data}")
+
+        result = StepResult(name=router_step.name)
+        try:
+            func = getattr(router_step.router_agent, "run", router_step.router_agent)
+            spec = analyze_signature(func)
+
+            router_kwargs: Dict[str, Any] = {}
+
+            # Handle context parameter passing - follow the same pattern as regular step logic
+            if spec.needs_context:
+                if context is None:
+                    raise TypeError(
+                        f"Router agent in step '{router_step.name}' requires a context, but no context model was provided to the Flujo runner."
+                    )
+                router_kwargs["context"] = context
+            elif _should_pass_context(spec, context, func):
+                router_kwargs["context"] = context
+
+            # Handle resources parameter passing
+            if resources is not None:
+                if _accepts_param(func, "resources"):
+                    router_kwargs["resources"] = resources
+
+            raw = await func(data, **router_kwargs)
+            branch_keys = getattr(raw, "output", raw)
+        except Exception as e:  # pragma: no cover - defensive
+            telemetry.logfire.error(f"Router agent error in '{router_step.name}': {e}")
+            result.success = False
+            result.feedback = f"Router agent error: {e}"
+            return result
+
+        if not isinstance(branch_keys, list):
+            branch_keys = [branch_keys]
+
+        selected: Dict[str, Any] = {
+            k: v for k, v in router_step.branches.items() if k in branch_keys
+        }
+        if not selected:
+            result.success = True
+            result.output = {}
+            result.attempts = 1
+            result.metadata_ = {"executed_branches": []}
+            return result
+
+        config_kwargs = router_step.config.model_dump()
+
+        parallel_step = Step.parallel(
+            name=f"{router_step.name}_parallel",
+            branches=selected,
+            context_include_keys=router_step.context_include_keys,
+            merge_strategy=router_step.merge_strategy,
+            on_branch_failure=router_step.on_branch_failure,
+            field_mapping=router_step.field_mapping,
+            **config_kwargs,
+        )
+
+        # --- FIRST PRINCIPLES GUARANTEE ---
+        # DynamicParallelRouterStep delegates to ParallelStep, which has its own first-principles guarantee.
+        # The context updates from parallel branch execution are preserved through the ParallelStep logic.
+        telemetry.logfire.debug("About to call _handle_parallel_step")
+        telemetry.logfire.debug(f"Parallel step name: {parallel_step.name}")
+        telemetry.logfire.debug(f"Parallel step branches: {list(parallel_step.branches.keys())}")
+        telemetry.logfire.debug(f"Parallel step merge strategy: {parallel_step.merge_strategy}")
+        from typing import cast
+
+        parallel_result = await self._handle_parallel_step(
+            cast(ParallelStep[TContext], parallel_step),
+            data,
+            context,
+            resources,
+            limits,
+            None,  # breach_event - not needed for dynamic router
+            context_setter,
+        )
+        telemetry.logfire.debug("Returned from _handle_parallel_step")
+
+        parallel_result.name = router_step.name
+        parallel_result.metadata_ = parallel_result.metadata_ or {}
+        parallel_result.metadata_["executed_branches"] = list(selected.keys())
+
+        return parallel_result
 
     async def _execute_step_logic(
         self,
