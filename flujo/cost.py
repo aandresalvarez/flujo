@@ -102,7 +102,14 @@ def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[
         # Return prompt_tokens as 0 since it cannot be determined reliably here.
         return 0, total_tokens, cost_usd
 
-    # 2. If explicit metrics are not fully present, proceed with usage() extraction
+    # 2. Handle string outputs as 1 token (matches original fallback logic behavior)
+    if isinstance(raw_output, str):
+        telemetry.logfire.info(
+            f"Counting string output as 1 token for step '{step_name}': '{raw_output[:50]}{'...' if len(raw_output) > 50 else ''}'"
+        )
+        return 0, 1, 0.0
+
+    # 3. If explicit metrics are not fully present, proceed with usage() extraction
     if hasattr(raw_output, "usage"):
         try:
             usage_info = raw_output.usage()

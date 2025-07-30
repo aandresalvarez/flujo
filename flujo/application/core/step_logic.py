@@ -1557,6 +1557,11 @@ async def _run_step_logic(
     validation_failed = False
     accumulated_feedbacks: list[str] = []
     last_exception: Exception = Exception("Unknown error")
+
+    # ✅ 1. Introduce variables to store metrics from the last attempt
+    last_attempt_cost_usd = 0.0
+    last_attempt_token_counts = 0
+
     for attempt in range(1, step.config.max_retries + 1):
         validation_failed = False
         result.attempts = attempt
@@ -1638,6 +1643,7 @@ async def _run_step_logic(
                 raw_output = await current_agent.run(data, **agent_kwargs)
                 result.latency_s += time.monotonic() - start
 
+            # ✅ 2. After agent run, always capture the metrics
             # Extract usage metrics using shared helper function
             from ...cost import extract_usage_metrics
 
@@ -1645,9 +1651,13 @@ async def _run_step_logic(
                 raw_output, current_agent, step.name
             )
 
+            # Store metrics from this attempt
+            last_attempt_cost_usd = cost_usd
+            last_attempt_token_counts = prompt_tokens + completion_tokens
+
             # Update result with usage metrics
-            result.token_counts = prompt_tokens + completion_tokens
-            result.cost_usd = cost_usd
+            result.token_counts = last_attempt_token_counts
+            result.cost_usd = last_attempt_cost_usd
 
             # Check for Mock objects and usage limits
             if isinstance(raw_output, Mock):
@@ -1798,7 +1808,9 @@ async def _run_step_logic(
             result.output = unpacked_output
             result.success = True
             result.feedback = feedback
-            # Metrics are already calculated above in extract_usage_metrics
+            # ✅ 3. Apply the preserved metrics to the successful result
+            result.cost_usd = last_attempt_cost_usd
+            result.token_counts = last_attempt_token_counts
             _apply_validation_metadata(
                 result,
                 validation_failed=validation_failed,
@@ -1811,7 +1823,9 @@ async def _run_step_logic(
             result.output = unpacked_output
             result.success = False
             result.feedback = feedback
-            # Do not add metrics here - they will be added in the "no fallback" else block
+            # ✅ 4. Apply the preserved metrics to the validation failure result
+            result.cost_usd = last_attempt_cost_usd
+            result.token_counts = last_attempt_token_counts
             _apply_validation_metadata(
                 result,
                 validation_failed=validation_failed,
@@ -1853,29 +1867,12 @@ async def _run_step_logic(
     # FLUJO SPIRIT FIX: Preserve actual execution time for failed steps
     # result.latency_s is already accumulated from actual execution time above
 
+    # ✅ 5. Apply the preserved metrics to the failed result
+    result.cost_usd = last_attempt_cost_usd
+    result.token_counts = last_attempt_token_counts
+
     # If the step failed and a fallback is defined, execute it.
     if not result.success and step.fallback_step:
-        # Add primary step's metrics before fallback logic
-        metrics_source = (
-            raw_output
-            if "raw_output" in locals() and raw_output is not None
-            else last_unpacked_output
-        )
-        if metrics_source is not None:
-            # Robust default: 1 token for string outputs, else use token_counts attribute or 0
-            if hasattr(metrics_source, "token_counts"):
-                result.token_counts += metrics_source.token_counts
-            elif isinstance(metrics_source, str):
-                result.token_counts += 1
-            else:
-                result.token_counts += 0
-            result.cost_usd += getattr(metrics_source, "cost_usd", 0.0)
-
-        # --- Fallback Metrics Policy ---
-        # On fallback, only the fallback's cost is used in the final result (not summed with primary),
-        # but token counts are summed (primary + fallback). This avoids double-counting costs and
-        # matches user/test expectations. If you need full traceability, consider adding a metrics_history field.
-        # This is the most robust and production-safe default.
         telemetry.logfire.info(
             f"Step '{step.name}' failed. Attempting fallback step '{step.fallback_step.name}'."
         )
@@ -1895,7 +1892,7 @@ async def _run_step_logic(
             raise InfiniteFallbackError(f"Fallback loop detected in step '{step.name}'")
 
         token = _fallback_chain_var.set(chain + [step])
-        # Store primary token counts for summing, but do not add cost yet
+        # ✅ 6. Store primary token counts for summing
         primary_token_counts = result.token_counts
         try:
             fallback_result = await step_executor(
@@ -1923,14 +1920,14 @@ async def _run_step_logic(
                 "fallback_triggered": True,
                 "original_error": original_failure_feedback,
             }
-            result.cost_usd = fallback_result.cost_usd
-            result.token_counts = primary_token_counts + fallback_result.token_counts
+            # ✅ 7. Correctly set metrics on fallback success
+            result.cost_usd = fallback_result.cost_usd  # Fallback cost ONLY
+            result.token_counts = primary_token_counts + fallback_result.token_counts  # SUM tokens
             return result
         else:
-            # On fallback failure, set cost to fallback's cost, and sum token counts
-            result.cost_usd = 0.0  # Reset before setting fallback cost
-            result.cost_usd = fallback_result.cost_usd
-            result.token_counts = primary_token_counts + fallback_result.token_counts
+            # ✅ 8. Correctly set metrics on fallback failure
+            result.cost_usd = fallback_result.cost_usd  # Fallback cost ONLY
+            result.token_counts = primary_token_counts + fallback_result.token_counts  # SUM tokens
             result.feedback = (
                 f"Original error: {original_failure_feedback}\n"
                 f"Fallback error: {fallback_result.feedback}"
