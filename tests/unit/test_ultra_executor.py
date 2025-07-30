@@ -792,7 +792,7 @@ class TestUltraStepExecutor:
 
     @pytest.mark.asyncio
     async def test_step_with_fallback(self, executor):
-        """Test that steps with fallbacks use complex execution path."""
+        """Test that steps with fallbacks use simple execution path (FSD 6.1)."""
         # Create a step with fallback
         step_with_fallback = Mock(spec=Step)
         step_with_fallback.name = "step_with_fallback"
@@ -812,7 +812,7 @@ class TestUltraStepExecutor:
         step_with_fallback.meta = {}
         step_with_fallback.persist_feedback_to_context = False
 
-        # This should use the complex execution path
+        # This should use the simple execution path (FSD 6.1)
         result = await executor.execute_step(
             step=step_with_fallback,
             data="test_input",
