@@ -1072,9 +1072,10 @@ class ExecutorCore(Generic[TContext]):
     ) -> StepResult:
         """Execute complex steps using step logic helpers."""
 
-        # Import step logic helpers
+        # Import step logic helpers (remove _handle_loop_step)
         from .step_logic import (
             _handle_cache_step,
+            # _handle_loop_step,  # ❌ REMOVED: Now handled by ExecutorCore
             _handle_hitl_step,
             _run_step_logic,
             _default_set_final_context,
