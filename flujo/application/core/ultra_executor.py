@@ -1075,7 +1075,6 @@ class ExecutorCore(Generic[TContext]):
         # Import step logic helpers
         from .step_logic import (
             _handle_cache_step,
-            _handle_loop_step,
             _handle_conditional_step,
             _handle_hitl_step,
             _run_step_logic,
@@ -1130,15 +1129,13 @@ class ExecutorCore(Generic[TContext]):
             result = await _handle_cache_step(step, data, context, resources, step_executor)
         elif isinstance(step, LoopStep):
             telemetry.logfire.debug("Handling LoopStep")
-            result = await _handle_loop_step(
+            result = await self._handle_loop_step(
                 step,
                 data,
                 context,
                 resources,
-                step_executor,
-                context_model_defined=True,
-                usage_limits=limits,
-                context_setter=context_setter,
+                limits,
+                context_setter,
             )
         elif isinstance(step, ConditionalStep):
             telemetry.logfire.debug("Handling ConditionalStep")
@@ -1697,6 +1694,50 @@ class ExecutorCore(Generic[TContext]):
         parallel_result.metadata_["executed_branches"] = list(selected.keys())
 
         return parallel_result
+
+    async def _handle_loop_step(
+        self,
+        loop_step: LoopStep[TContext],
+        data: Any,
+        context: Optional[TContext],
+        resources: Optional[Any],
+        limits: Optional[UsageLimits],
+        context_setter: Optional[Callable[["PipelineResult[Any]", Optional[Any]], None]],
+    ) -> StepResult:
+        """Handle LoopStep execution using component-based architecture."""
+
+        # TODO: Implement full LoopStep logic migration
+        # For now, delegate to legacy implementation
+        from .step_logic import _handle_loop_step as legacy_handle_loop_step
+
+        async def step_executor(
+            s: Any,
+            d: Any,
+            c: Optional[Any],
+            r: Optional[Any],
+            breach_event: Optional[Any] = None,
+            **extra_kwargs: Any,
+        ) -> StepResult:
+            """Recursive step executor."""
+            _limits = extra_kwargs.get("usage_limits", limits)
+            _context_setter = extra_kwargs.get("context_setter", context_setter)
+
+            return await self.execute(
+                s, d, context=c, resources=r, limits=_limits, context_setter=_context_setter
+            )
+
+        from typing import cast
+
+        return await legacy_handle_loop_step(
+            loop_step,
+            data,
+            context,
+            resources,
+            step_executor=step_executor,
+            context_model_defined=True,
+            usage_limits=limits,
+            context_setter=cast(Any, context_setter),
+        )
 
     async def _execute_step_logic(
         self,
