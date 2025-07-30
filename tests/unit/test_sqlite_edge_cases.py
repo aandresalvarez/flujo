@@ -297,7 +297,12 @@ class TestSQLiteBackendPerformanceThresholds:
 
         assert len(workflows) == num_workflows
         # Should complete within reasonable time (default threshold is 0.0004s per workflow)
-        assert (end_time - start_time) < 0.01  # 10ms for 10 workflows
+        # Allow for some overhead in test environment (2x the theoretical limit)
+        expected_time = num_workflows * 0.0004 * 2  # 8ms for 10 workflows
+        assert (end_time - start_time) < expected_time, (
+            f"Performance test failed: took {end_time - start_time:.6f}s, "
+            f"expected < {expected_time:.6f}s for {num_workflows} workflows"
+        )
 
 
 class TestSQLiteBackendLoggerContextManagement:
