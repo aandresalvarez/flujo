@@ -142,6 +142,35 @@ async def test_failed_fallback_accumulates_metrics() -> None:
 
 
 @pytest.mark.asyncio
+async def test_successful_fallback_correctly_sets_metrics() -> None:
+    """Test that successful fallbacks correctly set metrics according to FSD 5."""
+    plugin_primary = DummyPlugin([PluginOutcome(success=False, feedback="primary failed")])
+    primary = Step.model_validate(
+        {
+            "name": "p",
+            "agent": StubAgent(["bad"]),
+            "plugins": [(plugin_primary, 0)],
+            "config": StepConfig(max_retries=1),
+        }
+    )
+    fb_agent = StubAgent([CostlyOutput("success")])
+    fb = Step.model_validate({"name": "fb", "agent": fb_agent})
+    primary.fallback(fb)
+    runner = create_test_flujo(primary)
+    res = await gather_result(runner, "in")
+    sr = res.step_history[0]
+
+    # FSD 5 requirements for successful fallbacks:
+    assert sr.success is True
+    assert sr.cost_usd == 0.2  # Should be fallback cost only
+    assert sr.token_counts == 6  # Should be sum of primary (1) + fallback (5) = 6
+    assert sr.feedback is None  # Should be cleared on successful fallback
+    assert sr.metadata_ is not None
+    assert sr.metadata_.get("fallback_triggered") is True
+    assert "original_error" in sr.metadata_
+
+
+@pytest.mark.asyncio
 async def test_infinite_fallback_loop_detected() -> None:
     plugin = DummyPlugin([PluginOutcome(success=False, feedback="err")])
     a = Step.model_validate(
