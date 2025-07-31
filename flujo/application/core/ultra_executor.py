@@ -144,6 +144,7 @@ class IAgentRunner(Protocol):
         options: Dict[str, Any],
         stream: bool = False,
         on_chunk: Optional[Callable[[Any], Awaitable[None]]] = None,
+        breach_event: Optional[Any] = None,
     ) -> Any:
         """Run an agent and return raw output."""
         ...
@@ -353,6 +354,7 @@ class DefaultAgentRunner:
         options: Dict[str, Any],
         stream: bool = False,
         on_chunk: Optional[Callable[[Any], Awaitable[None]]] = None,
+        breach_event: Optional[Any] = None,
     ) -> Any:
         """Run agent with proper parameter filtering and fallback strategies."""
         import inspect
@@ -451,6 +453,10 @@ class DefaultAgentRunner:
                     if value is not None and _accepts_param(executable_func, key):
                         filtered_kwargs[key] = value
 
+                # Add breach_event if the function accepts it
+                if breach_event is not None and _accepts_param(executable_func, "breach_event"):
+                    filtered_kwargs["breach_event"] = breach_event
+
             except Exception:
                 # If signature analysis fails, try basic parameter passing
                 filtered_kwargs.update(options)
@@ -458,6 +464,8 @@ class DefaultAgentRunner:
                     filtered_kwargs["context"] = context
                 if resources is not None:
                     filtered_kwargs["resources"] = resources
+                if breach_event is not None:
+                    filtered_kwargs["breach_event"] = breach_event
         else:
             # For mocks, pass all parameters
             filtered_kwargs.update(options)
@@ -465,6 +473,8 @@ class DefaultAgentRunner:
                 filtered_kwargs["context"] = context
             if resources is not None:
                 filtered_kwargs["resources"] = resources
+            if breach_event is not None:
+                filtered_kwargs["breach_event"] = breach_event
 
         # Step 5: Execute the agent
         if stream and hasattr(target_agent, "stream"):
@@ -1218,6 +1228,10 @@ class ExecutorCore(Generic[TContext]):
         # Create usage governor for parallel execution
         usage_governor = ParallelUsageGovernor(limits)
 
+        # Create breach event for immediate cancellation signaling only when limits are set
+        if breach_event is None and limits is not None:
+            breach_event = asyncio.Event()
+
         # Check for empty branches
         if not parallel_step.branches:
             result.success = False
@@ -1255,6 +1269,13 @@ class ExecutorCore(Generic[TContext]):
 
                     for step in branch_pipe.steps:
                         try:
+                            # Check for breach before executing the step (only when limits are set)
+                            if limits is not None and breach_event and breach_event.is_set():
+                                telemetry.logfire.debug(
+                                    f"Branch {key} detected breach before step execution"
+                                )
+                                return
+
                             # Use self.execute for recursive execution
                             step_result = await self.execute(
                                 step,
@@ -1270,13 +1291,22 @@ class ExecutorCore(Generic[TContext]):
                             cost_delta = getattr(step_result, "cost_usd", 0.0)
                             token_delta = getattr(step_result, "token_counts", 0)
                             if await usage_governor.add_usage(cost_delta, token_delta, step_result):
-                                # Limit was breached. Signal other branches to stop
+                                # Limit was breached. Signal other branches to stop IMMEDIATELY
+                                telemetry.logfire.debug(
+                                    f"Branch {key} breached limit with cost_delta={cost_delta}, total_cost={usage_governor.total_cost}"
+                                )
                                 if breach_event:
                                     breach_event.set()
+                                    telemetry.logfire.debug(f"Set breach_event for branch {key}")
+                                else:
+                                    telemetry.logfire.debug(
+                                        f"No breach_event available for branch {key}"
+                                    )
                                 telemetry.logfire.debug(
-                                    f"Branch {key} breached limit, signaling others to stop"
+                                    f"Branch {key} breached limit, signaling others to stop IMMEDIATELY"
                                 )
-                                return
+                                # Don't return here - let the breach_watcher handle cancellation
+                                # This ensures all branches are cancelled immediately
 
                             total_latency += step_result.latency_s
                             total_cost += cost_delta
@@ -1339,9 +1369,16 @@ class ExecutorCore(Generic[TContext]):
         async def breach_watcher() -> None:
             """Watch for breach events and cancel all running tasks."""
             try:
-                # Wait for either a breach or all tasks to complete
-                # Use a shorter timeout to prevent hanging
-                await asyncio.wait_for(usage_governor.limit_breached.wait(), timeout=1.0)
+                # Wait for either a breach event or the usage governor to signal a breach
+                # Use a reasonable timeout for responsive cancellation
+                if breach_event:
+                    # Wait for immediate breach signal from any branch
+                    await asyncio.wait_for(breach_event.wait(), timeout=1.0)
+                else:
+                    # Fallback to usage governor with reasonable timeout
+                    await asyncio.wait_for(usage_governor.limit_breached.wait(), timeout=1.0)
+
+                # Immediately cancel all running tasks when breach is detected
                 for task in running_tasks.values():
                     if not task.done():
                         task.cancel()
@@ -1354,12 +1391,16 @@ class ExecutorCore(Generic[TContext]):
                 if running_tasks:
                     await asyncio.gather(*running_tasks.values(), return_exceptions=True)
 
-        watcher_task = asyncio.create_task(breach_watcher(), name="breach_watcher")
-
-        # Use asyncio.gather for state integrity - this ensures all tasks complete
-        # and we get their results, even if some were cancelled
-        all_tasks = list(running_tasks.values()) + [watcher_task]
-        await asyncio.gather(*all_tasks, return_exceptions=True)
+        # Only start breach watcher when limits are set
+        if limits is not None:
+            watcher_task = asyncio.create_task(breach_watcher(), name="breach_watcher")
+            # Use asyncio.gather for state integrity - this ensures all tasks complete
+            # and we get their results, even if some were cancelled
+            all_tasks = list(running_tasks.values()) + [watcher_task]
+            await asyncio.gather(*all_tasks, return_exceptions=True)
+        else:
+            # No limits, just wait for all branches to complete
+            await asyncio.gather(*running_tasks.values(), return_exceptions=True)
 
         # Centralized decision-making with complete state
         if usage_governor.breached():
@@ -2087,6 +2128,7 @@ class ExecutorCore(Generic[TContext]):
                     options={"temperature": step.config.temperature},
                     stream=stream,
                     on_chunk=on_chunk,
+                    breach_event=breach_event,
                 )
 
                 # Check for Mock objects in output (not the agent itself)

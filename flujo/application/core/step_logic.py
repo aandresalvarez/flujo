@@ -526,9 +526,16 @@ async def _execute_parallel_step_logic(
     async def breach_watcher() -> None:
         """Watch for breach events and cancel all running tasks."""
         try:
-            # Wait for either a breach or all tasks to complete
-            # Use a shorter timeout to prevent hanging
-            await asyncio.wait_for(usage_governor.limit_breached.wait(), timeout=1.0)
+            # Wait for either a breach event or the usage governor to signal a breach
+            # Use a much shorter timeout for responsive cancellation
+            if breach_event:
+                # Wait for immediate breach signal from any branch
+                await asyncio.wait_for(breach_event.wait(), timeout=0.1)
+            else:
+                # Fallback to usage governor with shorter timeout
+                await asyncio.wait_for(usage_governor.limit_breached.wait(), timeout=0.1)
+
+            # Immediately cancel all running tasks when breach is detected
             for task in running_tasks.values():
                 if not task.done():
                     task.cancel()

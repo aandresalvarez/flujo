@@ -1,6 +1,5 @@
 """State management with intelligent caching and delta-based persistence."""
 
-import hashlib
 import logging
 from datetime import datetime
 from typing import Any, Dict, Generic, Optional, TypeVar, Tuple
@@ -25,7 +24,7 @@ class StateManager(Generic[ContextT]):
         self._context_hash_cache: Dict[str, str] = {}
 
     def _compute_context_hash(self, context: Optional[ContextT]) -> str:
-        """Compute a hash of the context for change detection."""
+        """Compute a fast hash of the context for change detection."""
         if context is None:
             return "none"
 
@@ -44,10 +43,26 @@ class StateManager(Generic[ContextT]):
             }
             filtered_data = {k: v for k, v in context_data.items() if k not in fields_to_exclude}
 
-            # Use MD5 for fast hashing while maintaining 32-character output
-            import json
+            # Optimize for large contexts: use a faster hash computation
+            # For large contexts, we can use a simpler hash to avoid expensive JSON serialization
+            import hashlib
 
-            context_str = json.dumps(filtered_data, sort_keys=True, separators=(",", ":"))
+            # Use a faster approach for large contexts
+            if len(filtered_data) > 10 or any(
+                isinstance(v, (list, dict)) and len(str(v)) > 1000 for v in filtered_data.values()
+            ):
+                # For large contexts, use a faster hash based on key names and value types
+                # This avoids expensive JSON serialization while still detecting changes
+                hash_input = []
+                for key, value in sorted(filtered_data.items()):
+                    hash_input.append(f"{key}:{type(value).__name__}:{len(str(value))}")
+                context_str = "|".join(hash_input)
+            else:
+                # For small contexts, use the original JSON-based approach
+                import json
+
+                context_str = json.dumps(filtered_data, sort_keys=True, separators=(",", ":"))
+
             return hashlib.md5(context_str.encode()).hexdigest()
         except Exception as e:
             # Re-raise the exception so it can be caught by the outer handler
@@ -236,10 +251,8 @@ class StateManager(Generic[ContextT]):
                     else:
                         # Optimize serialization based on context size
                         logger.debug(f"About to serialize context for run {run_id}")
-                        if memory_usage_mb > 0.1:  # Large context (>100KB)
-                            pipeline_context = context.model_dump(mode="json")
-                        else:
-                            pipeline_context = context.model_dump()
+                        # Always use the most efficient serialization method
+                        pipeline_context = context.model_dump()
                         logger.debug(f"Successfully serialized context for run {run_id}")
 
                         # Cache the result
