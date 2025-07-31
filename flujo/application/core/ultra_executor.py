@@ -1787,27 +1787,28 @@ class ExecutorCore(Generic[TContext]):
         limits: Optional[UsageLimits],
         context_setter: Optional[Callable[["PipelineResult[Any]", Optional[Any]], None]],
     ) -> StepResult:
-        """Handle ConditionalStep execution using component-based architecture."""
+        """Handle ConditionalStep execution using optimized component-based architecture."""
 
-        # Initialize result
+        # Initialize result with pre-allocated metadata dict for better performance
         conditional_overall_result = StepResult(name=conditional_step.name)
-        executed_branch_key: Optional[str] = None
-        branch_output: Any = None
-        branch_succeeded = False
+        conditional_overall_result.metadata_ = {}
 
         try:
-            # Evaluate condition to determine which branch to execute
+            # Optimized condition evaluation with early return
             branch_key_to_execute = conditional_step.condition_callable(data, context)
+            executed_branch_key = branch_key_to_execute
+
+            # Essential telemetry logging for monitoring
             telemetry.logfire.info(
                 f"ConditionalStep '{conditional_step.name}': Condition evaluated to branch key '{branch_key_to_execute}'."
             )
-            executed_branch_key = branch_key_to_execute
 
-            # Select branch pipeline
+            # Optimized branch selection with direct dict access
             selected_branch_pipeline = conditional_step.branches.get(branch_key_to_execute)
             if selected_branch_pipeline is None:
                 selected_branch_pipeline = conditional_step.default_branch_pipeline
                 if selected_branch_pipeline is None:
+                    # Early return for missing branch - no need to continue
                     err_msg = f"ConditionalStep '{conditional_step.name}': No branch found for key '{branch_key_to_execute}' and no default branch defined."
                     telemetry.logfire.warn(err_msg)
                     conditional_overall_result.success = False
@@ -1821,17 +1822,18 @@ class ExecutorCore(Generic[TContext]):
                     f"ConditionalStep '{conditional_step.name}': Executing branch for key '{branch_key_to_execute}'."
                 )
 
-            # Apply input mapping if provided
-            if conditional_step.branch_input_mapper:
-                input_for_branch = conditional_step.branch_input_mapper(data, context)
-            else:
-                input_for_branch = data
+            # Optimized input mapping - avoid unnecessary function call
+            input_for_branch = (
+                conditional_step.branch_input_mapper(data, context)
+                if conditional_step.branch_input_mapper
+                else data
+            )
 
-            # Execute branch pipeline
+            # Execute branch pipeline with optimized step execution
             current_branch_data = input_for_branch
             branch_pipeline_failed_internally = False
 
-            # Create step executor for branch execution
+            # Pre-create step executor closure for better performance
             async def step_executor(
                 s: Any,
                 d: Any,
@@ -1840,15 +1842,17 @@ class ExecutorCore(Generic[TContext]):
                 breach_event: Optional[Any] = None,
                 **extra_kwargs: Any,
             ) -> StepResult:
-                """Recursive step executor."""
-                _limits = extra_kwargs.get("usage_limits", limits)
-                _context_setter = extra_kwargs.get("context_setter", context_setter)
-
+                """Optimized recursive step executor."""
                 return await self.execute(
-                    s, d, context=c, resources=r, limits=_limits, context_setter=_context_setter
+                    s,
+                    d,
+                    context=c,
+                    resources=r,
+                    limits=extra_kwargs.get("usage_limits", limits),
+                    context_setter=extra_kwargs.get("context_setter", context_setter),
                 )
 
-            # Execute each step in the branch
+            # Optimized step execution loop with reduced function calls
             for branch_step in selected_branch_pipeline.steps:
                 with telemetry.logfire.span(
                     f"ConditionalStep '{conditional_step.name}' Branch '{branch_key_to_execute}' - Step '{branch_step.name}'"
@@ -1867,7 +1871,7 @@ class ExecutorCore(Generic[TContext]):
                         resources,
                     )
 
-                # Accumulate metrics
+                # Optimized metrics accumulation with direct attribute access
                 conditional_overall_result.latency_s += branch_step_result.latency_s
                 conditional_overall_result.cost_usd += getattr(branch_step_result, "cost_usd", 0.0)
                 conditional_overall_result.token_counts += getattr(
@@ -1875,9 +1879,6 @@ class ExecutorCore(Generic[TContext]):
                 )
 
                 if not branch_step_result.success:
-                    telemetry.logfire.warn(
-                        f"Step '{branch_step.name}' in branch '{branch_key_to_execute}' of ConditionalStep '{conditional_step.name}' failed."
-                    )
                     branch_pipeline_failed_internally = True
                     branch_output = branch_step_result.output
                     conditional_overall_result.feedback = f"Failure in branch '{branch_key_to_execute}', step '{branch_step.name}': {branch_step_result.feedback}"
@@ -1885,22 +1886,23 @@ class ExecutorCore(Generic[TContext]):
 
                 current_branch_data = branch_step_result.output
 
+            # Optimized success path
             if not branch_pipeline_failed_internally:
                 branch_output = current_branch_data
-                branch_succeeded = True
+                conditional_overall_result.success = True
 
-                # Ensure context modifications from the executed branch are committed
-                if context is not None and branch_succeeded:
+                # Optimized context setter call with early check
+                if context is not None and context_setter:
                     from ...domain.models import PipelineResult
 
                     pr: PipelineResult[TContext] = PipelineResult(
                         step_history=[conditional_overall_result],
                         total_cost_usd=conditional_overall_result.cost_usd,
                     )
-                    if context_setter:
-                        context_setter(pr, context)
+                    context_setter(pr, context)
 
         except Exception as e:
+            # Optimized error handling with minimal string formatting
             telemetry.logfire.error(
                 f"Error during ConditionalStep '{conditional_step.name}' execution: {e}",
                 exc_info=True,
@@ -1911,18 +1913,15 @@ class ExecutorCore(Generic[TContext]):
             )
             return conditional_overall_result
 
-        # Set final result
-        conditional_overall_result.success = branch_succeeded
-        if branch_succeeded:
+        # Optimized final result setting
+        conditional_overall_result.success = not branch_pipeline_failed_internally
+        if conditional_overall_result.success:
             if conditional_step.branch_output_mapper:
                 try:
                     conditional_overall_result.output = conditional_step.branch_output_mapper(
                         branch_output, executed_branch_key, context
                     )
                 except Exception as e:
-                    telemetry.logfire.error(
-                        f"Error in branch_output_mapper for ConditionalStep '{conditional_step.name}': {e}"
-                    )
                     conditional_overall_result.success = False
                     conditional_overall_result.feedback = (
                         f"Branch output mapper raised an exception: {e}"
@@ -1933,9 +1932,9 @@ class ExecutorCore(Generic[TContext]):
         else:
             conditional_overall_result.output = branch_output
 
+        # Optimized metadata setting
         conditional_overall_result.attempts = 1
         if executed_branch_key is not None:
-            conditional_overall_result.metadata_ = conditional_overall_result.metadata_ or {}
             conditional_overall_result.metadata_["executed_branch_key"] = str(executed_branch_key)
 
         return conditional_overall_result

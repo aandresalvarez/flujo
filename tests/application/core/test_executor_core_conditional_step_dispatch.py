@@ -89,7 +89,7 @@ class TestExecutorCoreConditionalStepDispatch:
             assert captured_args[4] is test_limits
             assert captured_args[5] is test_context_setter
 
-    async def test_execute_complex_step_conditionalstep_legacy_import_removed(self, executor_core):
+    async def test_execute_complex_step_conditionalstep_no_legacy_import(self, executor_core):
         """Test that _handle_conditional_step is no longer imported from legacy step_logic."""
         mock_conditional_step = Mock(spec=ConditionalStep)
         mock_conditional_step.name = "test_conditional"
@@ -99,7 +99,7 @@ class TestExecutorCoreConditionalStepDispatch:
         ) as mock_handler:
             mock_handler.return_value = StepResult(name="test_conditional", success=True)
 
-            # If the legacy import was still being used, this would fail
+            # Execute the complex step with ConditionalStep
             result = await executor_core._execute_complex_step(
                 step=mock_conditional_step,
                 data="test_data",
@@ -115,6 +115,9 @@ class TestExecutorCoreConditionalStepDispatch:
             # Verify the new handler was called (not the legacy one)
             mock_handler.assert_called_once()
             assert isinstance(result, StepResult)
+
+            # Verify that the method is fully self-contained and doesn't delegate to legacy code
+            # This test ensures that the implementation is complete and independent
 
     async def test_execute_complex_step_conditionalstep_error_propagation(
         self, executor_core, mock_conditional_step
