@@ -1215,12 +1215,16 @@ class ExecutorCore(Generic[TContext]):
         breach_event: Optional[Any],
         context_setter: Optional[Callable[["PipelineResult[Any]", Optional[Any]], None]],
     ) -> StepResult:
-        """✅ NEW: This method now contains the migrated logic for ParallelStep."""
+        """Handle ParallelStep execution using optimized component-based architecture."""
+
+        # Initialize result with pre-allocated metadata dict for better performance
+        result = StepResult(name=parallel_step.name)
+        result.metadata_ = {}
+
         telemetry.logfire.debug(f"_handle_parallel_step called for step: {parallel_step.name}")
         telemetry.logfire.debug(f"Context is None: {context is None}")
         telemetry.logfire.debug(f"Merge strategy: {parallel_step.merge_strategy}")
 
-        result = StepResult(name=parallel_step.name)
         outputs: Dict[str, Any] = {}
         branch_results: Dict[str, StepResult] = {}
         errors: Dict[str, Exception] = {}
@@ -1368,6 +1372,7 @@ class ExecutorCore(Generic[TContext]):
         # Create the breach watcher for responsive signaling
         async def breach_watcher() -> None:
             """Watch for breach events and cancel all running tasks."""
+
             try:
                 # Wait for either a breach event or the usage governor to signal a breach
                 # Use a reasonable timeout for responsive cancellation
@@ -1743,40 +1748,234 @@ class ExecutorCore(Generic[TContext]):
         limits: Optional[UsageLimits],
         context_setter: Optional[Callable[["PipelineResult[Any]", Optional[Any]], None]],
     ) -> StepResult:
-        """Handle LoopStep execution using component-based architecture."""
+        """Handle LoopStep execution using optimized component-based architecture."""
+        import copy
+        from flujo.utils.context import safe_merge_context_updates
+        from flujo.infra import telemetry
 
-        # TODO: Implement full LoopStep logic migration
-        # For now, delegate to legacy implementation
-        from .step_logic import _handle_loop_step as legacy_handle_loop_step
+        loop_overall_result = StepResult(name=loop_step.name)
+        loop_overall_result.metadata_ = {}
 
-        async def step_executor(
-            s: Any,
-            d: Any,
-            c: Optional[Any],
-            r: Optional[Any],
-            breach_event: Optional[Any] = None,
-            **extra_kwargs: Any,
-        ) -> StepResult:
-            """Recursive step executor."""
-            _limits = extra_kwargs.get("usage_limits", limits)
-            _context_setter = extra_kwargs.get("context_setter", context_setter)
+        # Handle initial input mapping
+        if loop_step.initial_input_to_loop_body_mapper:
+            try:
+                current_body_input = loop_step.initial_input_to_loop_body_mapper(data, context)
+            except Exception as e:
+                loop_overall_result.success = False
+                loop_overall_result.feedback = f"Initial input mapper raised an exception: {e}"
+                return loop_overall_result
+        else:
+            current_body_input = data
 
-            return await self.execute(
-                s, d, context=c, resources=r, limits=_limits, context_setter=_context_setter
+        last_successful_iteration_body_output: Any = None
+        final_body_output_of_last_iteration: Any = None
+        loop_exited_successfully_by_condition = False
+
+        for i in range(1, loop_step.max_loops + 1):
+            loop_overall_result.attempts = i
+            telemetry.logfire.info(
+                f"LoopStep '{loop_step.name}': Starting Iteration {i}/{loop_step.max_loops}"
             )
 
-        from typing import cast
+            iteration_succeeded_fully = True
+            current_iteration_data_for_body_step = current_body_input
+            iteration_context = copy.deepcopy(context) if context is not None else None
 
-        return await legacy_handle_loop_step(
-            loop_step,
-            data,
-            context,
-            resources,
-            step_executor=step_executor,
-            context_model_defined=True,
-            usage_limits=limits,
-            context_setter=cast(Any, context_setter),
-        )
+            with telemetry.logfire.span(f"Loop '{loop_step.name}' - Iteration {i}"):
+                for body_step in loop_step.loop_body_pipeline.steps:
+                    try:
+                        body_step_result = await self.execute(
+                            body_step,
+                            current_iteration_data_for_body_step,
+                            context=iteration_context,
+                            resources=resources,
+                            limits=limits,
+                            context_setter=context_setter,
+                        )
+
+                        # If the body step result is a UsageLimitExceededError, raise it immediately
+                        if isinstance(body_step_result, Exception) and isinstance(
+                            body_step_result, UsageLimitExceededError
+                        ):
+                            raise body_step_result
+
+                        loop_overall_result.latency_s += body_step_result.latency_s
+                        loop_overall_result.cost_usd += getattr(body_step_result, "cost_usd", 0.0)
+                        loop_overall_result.token_counts += getattr(
+                            body_step_result, "token_counts", 0
+                        )
+
+                        if limits is not None:
+                            if (
+                                limits.total_cost_usd_limit is not None
+                                and loop_overall_result.cost_usd > limits.total_cost_usd_limit
+                            ):
+                                telemetry.logfire.warn(
+                                    f"Cost limit of ${limits.total_cost_usd_limit} exceeded"
+                                )
+                                loop_overall_result.success = False
+                                loop_overall_result.feedback = (
+                                    f"Cost limit of ${limits.total_cost_usd_limit} exceeded"
+                                )
+                                pr: PipelineResult[Any] = PipelineResult(
+                                    step_history=[loop_overall_result],
+                                    total_cost_usd=loop_overall_result.cost_usd,
+                                )
+                                if context_setter:
+                                    context_setter(pr, context)
+                                raise UsageLimitExceededError(loop_overall_result.feedback, pr)
+                            if (
+                                limits.total_tokens_limit is not None
+                                and loop_overall_result.token_counts > limits.total_tokens_limit
+                            ):
+                                telemetry.logfire.warn(
+                                    f"Token limit of {limits.total_tokens_limit} exceeded"
+                                )
+                                loop_overall_result.success = False
+                                loop_overall_result.feedback = (
+                                    f"Token limit of {limits.total_tokens_limit} exceeded"
+                                )
+                                pr_tokens: PipelineResult[Any] = PipelineResult(
+                                    step_history=[loop_overall_result],
+                                    total_cost_usd=loop_overall_result.cost_usd,
+                                )
+                                if context_setter:
+                                    context_setter(pr_tokens, context)
+                                raise UsageLimitExceededError(
+                                    loop_overall_result.feedback, pr_tokens
+                                )
+
+                        if not body_step_result.success:
+                            telemetry.logfire.warn(
+                                f"Body Step '{body_step.name}' in LoopStep '{loop_step.name}' (Iteration {i}) failed."
+                            )
+                            iteration_succeeded_fully = False
+                            final_body_output_of_last_iteration = body_step_result.output
+                            break
+                        current_iteration_data_for_body_step = body_step_result.output
+                    except PausedException:
+                        # Handle pause by merging context and re-raising the exception
+                        if context is not None and iteration_context is not None:
+                            try:
+                                # For LoopStep, we want to preserve command_log and other fields
+                                # So we don't exclude any fields during context merging
+                                from flujo.utils.context import safe_merge_context_updates
+
+                                safe_merge_context_updates(
+                                    context, iteration_context, excluded_fields=set()
+                                )
+                            except Exception as e:
+                                telemetry.logfire.error(
+                                    f"Failed to perform context merge in LoopStep '{loop_step.name}' iteration {i} during pause: {e}"
+                                )
+                                raise
+                        # Re-raise PausedException to propagate it up the call stack
+                        raise
+                    except Exception as e:
+                        # Re-raise UsageLimitExceededError immediately
+                        if isinstance(e, UsageLimitExceededError):
+                            raise
+                        iteration_succeeded_fully = False
+                        final_body_output_of_last_iteration = None
+                        loop_overall_result.feedback = f"Step execution error: {e}"
+                        break
+
+                if iteration_succeeded_fully:
+                    final_body_output_of_last_iteration = current_iteration_data_for_body_step
+                    last_successful_iteration_body_output = current_iteration_data_for_body_step
+
+                # Merge context updates from iteration
+                if context is not None and iteration_context is not None:
+                    try:
+                        # For LoopStep, we want to preserve command_log and other fields
+                        # So we don't exclude any fields during context merging
+                        from flujo.utils.context import safe_merge_context_updates
+
+                        safe_merge_context_updates(
+                            context, iteration_context, excluded_fields=set()
+                        )
+                    except Exception as e:
+                        telemetry.logfire.error(
+                            f"Failed to perform context merge in LoopStep '{loop_step.name}' iteration {i}: {e}"
+                        )
+                        raise
+
+            # Check exit condition
+            try:
+                should_exit = loop_step.exit_condition_callable(
+                    final_body_output_of_last_iteration, iteration_context
+                )
+            except Exception as e:
+                telemetry.logfire.error(
+                    f"Error in exit_condition_callable for LoopStep '{loop_step.name}': {e}"
+                )
+                loop_overall_result.success = False
+                loop_overall_result.feedback = f"Exit condition callable raised an exception: {e}"
+                break
+
+            if should_exit:
+                telemetry.logfire.info(
+                    f"LoopStep '{loop_step.name}' exit condition met at iteration {i}."
+                )
+                loop_overall_result.success = iteration_succeeded_fully
+                if not iteration_succeeded_fully:
+                    loop_overall_result.feedback = (
+                        "Loop exited by condition, but last iteration body failed."
+                    )
+                loop_exited_successfully_by_condition = True
+                break
+
+            # Prepare input for next iteration
+            if i < loop_step.max_loops:
+                if loop_step.iteration_input_mapper:
+                    try:
+                        current_body_input = loop_step.iteration_input_mapper(
+                            final_body_output_of_last_iteration, context, i
+                        )
+                    except Exception as e:
+                        telemetry.logfire.error(
+                            f"Error in iteration_input_mapper for LoopStep '{loop_step.name}': {e}"
+                        )
+                        loop_overall_result.success = False
+                        loop_overall_result.feedback = (
+                            f"Iteration input mapper raised an exception: {e}"
+                        )
+                        break
+                else:
+                    current_body_input = final_body_output_of_last_iteration
+        else:
+            telemetry.logfire.warn(
+                f"LoopStep '{loop_step.name}' reached max_loops ({loop_step.max_loops}) without exit condition being met."
+            )
+            loop_overall_result.success = False
+            loop_overall_result.feedback = (
+                f"Reached max_loops ({loop_step.max_loops}) without meeting exit condition."
+            )
+
+        # Set final output
+        if loop_overall_result.success and loop_exited_successfully_by_condition:
+            if loop_step.loop_output_mapper:
+                try:
+                    loop_overall_result.output = loop_step.loop_output_mapper(
+                        last_successful_iteration_body_output, context
+                    )
+                except Exception as e:
+                    telemetry.logfire.error(
+                        f"Error in loop_output_mapper for LoopStep '{loop_step.name}': {e}"
+                    )
+                    loop_overall_result.success = False
+                    loop_overall_result.feedback = f"Loop output mapper raised an exception: {e}"
+                    loop_overall_result.output = None
+            else:
+                loop_overall_result.output = last_successful_iteration_body_output
+        else:
+            loop_overall_result.output = final_body_output_of_last_iteration
+            if not loop_overall_result.feedback:
+                loop_overall_result.feedback = (
+                    "Loop did not complete successfully or exit condition not met positively."
+                )
+
+        return loop_overall_result
 
     async def _handle_conditional_step(
         self,
