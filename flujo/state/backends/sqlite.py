@@ -654,10 +654,19 @@ class SQLiteBackend(StateBackend):
                 if not self._initialized:
                     try:
                         await self._init_db()
+                        # Lazily create a connection pool for faster operations
+                        self._connection_pool = await aiosqlite.connect(self.db_path)
+                        await self._connection_pool.execute("PRAGMA foreign_keys = ON")
+                        await self._connection_pool.execute("PRAGMA journal_mode = WAL")
                         self._initialized = True
                     except sqlite3.DatabaseError as e:
                         telemetry.logfire.error(f"Failed to initialize DB: {e}")
                         raise
+
+    async def _get_connection(self) -> aiosqlite.Connection:
+        await self._ensure_init()
+        assert self._connection_pool is not None
+        return self._connection_pool
 
     async def close(self) -> None:
         """Close database connections and cleanup resources."""
@@ -788,8 +797,8 @@ class SQLiteBackend(StateBackend):
                             state.get("memory_usage_mb"),
                         ),
                     )
-                    await db.commit()
-                    telemetry.logfire.info(f"Saved state for run_id={run_id}")
+                await db.commit()
+                telemetry.logfire.info(f"Saved state for run_id={run_id}")
 
             await self._with_retries(_save)
 
@@ -1157,19 +1166,19 @@ class SQLiteBackend(StateBackend):
         async with self._lock:
 
             async def _save() -> None:
-                async with aiosqlite.connect(self.db_path) as db:
-                    base_timestamp = (
-                        run_data.get("created_at")
-                        or run_data.get("start_time")
-                        or datetime.utcnow().isoformat()
-                    )
-                    created_at = base_timestamp
-                    updated_at = run_data.get("updated_at") or base_timestamp
-                    start_time = run_data.get("start_time") or created_at
-                    end_time = run_data.get("end_time")
-                    total_cost = run_data.get("total_cost")
-                    final_context_blob = run_data.get("final_context_blob")
-                    await db.execute(
+                db = await self._get_connection()
+                base_timestamp = (
+                    run_data.get("created_at")
+                    or run_data.get("start_time")
+                    or datetime.utcnow().isoformat()
+                )
+                created_at = base_timestamp
+                updated_at = run_data.get("updated_at") or base_timestamp
+                start_time = run_data.get("start_time") or created_at
+                end_time = run_data.get("end_time")
+                total_cost = run_data.get("total_cost")
+                final_context_blob = run_data.get("final_context_blob")
+                await db.execute(
                         """
                         INSERT OR REPLACE INTO runs (
                             run_id, pipeline_id, pipeline_name, pipeline_version, status, created_at, updated_at, start_time, end_time, total_cost, final_context_blob
@@ -1188,8 +1197,8 @@ class SQLiteBackend(StateBackend):
                             total_cost,
                             final_context_blob,
                         ),
-                    )
-                    await db.commit()
+                )
+                await db.commit()
 
             await self._with_retries(_save)
 
@@ -1198,8 +1207,8 @@ class SQLiteBackend(StateBackend):
         async with self._lock:
 
             async def _save() -> None:
-                async with aiosqlite.connect(self.db_path) as db:
-                    await db.execute(
+                db = await self._get_connection()
+                await db.execute(
                         """
                         INSERT OR REPLACE INTO steps (
                             step_run_id, run_id, step_name, step_index, status,
@@ -1237,7 +1246,7 @@ class SQLiteBackend(StateBackend):
                             else None,
                         ),
                     )
-                    await db.commit()
+                await db.commit()
 
             await self._with_retries(_save)
 
