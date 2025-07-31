@@ -1214,6 +1214,7 @@ class ExecutorCore(Generic[TContext]):
         limits: Optional[UsageLimits],
         breach_event: Optional[Any],
         context_setter: Optional[Callable[["PipelineResult[Any]", Optional[Any]], None]],
+        step_executor: Optional[Callable[[Any, Any, Optional[Any], Optional[Any], Optional[Any]], Awaitable[StepResult]]] = None,
     ) -> StepResult:
         """Handle ParallelStep execution using optimized component-based architecture."""
 
@@ -1253,6 +1254,26 @@ class ExecutorCore(Generic[TContext]):
         cpu_count = multiprocessing.cpu_count()
         semaphore = asyncio.Semaphore(min(10, cpu_count * 2))
 
+        # Use provided step executor or fall back to self.execute
+        if step_executor is None:
+            async def step_executor(
+                s: Any,
+                d: Any,
+                c: Optional[Any],
+                r: Optional[Any],
+                breach_event: Optional[Any] = None,
+                **extra_kwargs: Any,
+            ) -> StepResult:
+                return await self.execute(
+                    s,
+                    d,
+                    context=c,
+                    resources=r,
+                    limits=limits,
+                    breach_event=breach_event,
+                    context_setter=context_setter,
+                )
+
         async def run_branch(key: str, branch_pipe: Any) -> None:
             """Execute a single branch with cancellation handling and bounded concurrency."""
             # Acquire semaphore to limit concurrent execution and prevent lock contention
@@ -1280,15 +1301,13 @@ class ExecutorCore(Generic[TContext]):
                                 )
                                 return
 
-                            # Use self.execute for recursive execution
-                            step_result = await self.execute(
+                            # Use step_executor for recursive execution
+                            step_result = await step_executor(
                                 step,
                                 current_data,
-                                context=branch_context,
-                                resources=resources,
-                                limits=limits,
-                                breach_event=breach_event,
-                                context_setter=context_setter,
+                                branch_context,
+                                resources,
+                                breach_event,
                             )
 
                             # Add usage to governor and check for breach
@@ -1598,48 +1617,19 @@ class ExecutorCore(Generic[TContext]):
                 if all(not branch_results[key].success for key in parallel_step.branches.keys()):
                     result.success = False
                     result.feedback = f"All parallel branches failed: {list(parallel_step.branches.keys())}. Details: {[branch_results[k].feedback for k in failed_branches]}"
-                    result.output = {
-                        key: branch_results[key] for key in parallel_step.branches.keys()
-                    }
+                    result.output = {key: branch_results[key] for key in parallel_step.branches.keys()}
                     return result
-                # For IGNORE, include both successful outputs and failed branch results
-                for failed_key in failed_branches:
-                    outputs[failed_key] = branch_results[failed_key]
+                # If some branches succeeded, include all branch results (both successful and failed)
+                result.output = {key: branch_results[key] for key in parallel_step.branches.keys()}
+                result.success = True
+                return result
 
-        # Merge results based on strategy
+        # Set the final output based on merge strategy
         if parallel_step.merge_strategy == MergeStrategy.NO_MERGE:
             result.output = outputs
-        elif parallel_step.merge_strategy == MergeStrategy.CONTEXT_UPDATE:
+        else:
+            # For other merge strategies, use the outputs directly
             result.output = outputs
-        elif parallel_step.merge_strategy == MergeStrategy.OVERWRITE:
-            merged_output = {}
-            for key, output in outputs.items():
-                if isinstance(output, dict):
-                    merged_output.update(output)
-                else:
-                    merged_output[key] = output
-            result.output = merged_output
-        elif parallel_step.merge_strategy == MergeStrategy.KEEP_FIRST:
-            merged_output = {}
-            for key, output in outputs.items():
-                if key not in merged_output:
-                    if isinstance(output, dict):
-                        merged_output.update(output)
-                    else:
-                        merged_output[key] = output
-            result.output = merged_output
-        elif parallel_step.merge_strategy == MergeStrategy.MERGE_SCRATCHPAD:
-            result.output = outputs
-        elif parallel_step.merge_strategy == MergeStrategy.CONTEXT_UPDATE:  # type: ignore[comparison-overlap]
-            result.output = outputs
-        else:  # MergeStrategy.MERGE
-            merged_output = {}
-            for key, output in outputs.items():
-                if isinstance(output, dict):
-                    merged_output.update(output)
-                else:
-                    merged_output[key] = output
-            result.output = merged_output
 
         result.success = True
         return result
@@ -2068,6 +2058,7 @@ class ExecutorCore(Generic[TContext]):
                         current_branch_data,
                         context,
                         resources,
+                        breach_event,
                     )
 
                 # Optimized metrics accumulation with direct attribute access
