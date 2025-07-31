@@ -36,6 +36,7 @@ from typing import (
     Dict,
     List,
 )
+import weakref
 from weakref import WeakKeyDictionary
 
 from ...domain.dsl.step import HumanInTheLoopStep, Step, MergeStrategy, BranchFailureStrategy
@@ -3158,17 +3159,37 @@ class OptimizedContextManager:
     """Optimized context management with caching."""
 
     def __init__(self) -> None:
+        # Some built-in types (e.g. ``dict``) cannot be used as weak keys. We
+        # therefore keep two caches: one based on weak references for objects
+        # supporting them and one id-based cache for everything else.
         self._context_cache: WeakKeyDictionary[Any, Any] = WeakKeyDictionary()
-        self._merge_cache: WeakKeyDictionary[tuple[int, int], bool] = WeakKeyDictionary()
+        self._context_id_cache: Dict[int, Any] = {}
+        self._merge_cache: Dict[tuple[int, int], bool] = {}
+
+    @staticmethod
+    def _weakrefable(obj: Any) -> bool:
+        try:
+            weakref.ref(obj)
+            return True
+        except TypeError:
+            return False
 
     def optimized_copy(self, context: Any) -> Any:
-        if context in self._context_cache:
-            return self._context_cache[context]
-        if hasattr(context, "__slots__"):
-            copied = copy.copy(context)
+        if self._weakrefable(context):
+            cached = self._context_cache.get(context)
+            if cached is not None:
+                return cached
         else:
-            copied = copy.deepcopy(context)
-        self._context_cache[context] = copied
+            cached = self._context_id_cache.get(id(context))
+            if cached is not None:
+                return cached
+
+        copied = copy.copy(context) if hasattr(context, "__slots__") else copy.deepcopy(context)
+
+        if self._weakrefable(context):
+            self._context_cache[context] = copied
+        else:
+            self._context_id_cache[id(context)] = copied
         return copied
 
     def optimized_merge(self, target: Any, source: Any) -> bool:
@@ -3263,7 +3284,11 @@ class OptimizedExecutorCore(ExecutorCore[TContext]):
         if "context" in kwargs and kwargs["context"] is not None:
             kwargs["context"] = self._context_manager_opt.optimized_copy(kwargs["context"])
         result = await self.execute(step, data, **kwargs)
-        if "context" in kwargs and kwargs["context"] is not None and getattr(result, "context", None) is not None:
+        if (
+            "context" in kwargs
+            and kwargs["context"] is not None
+            and getattr(result, "context", None) is not None
+        ):
             self._context_manager_opt.optimized_merge(kwargs["context"], result.context)
         return result
 

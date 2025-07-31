@@ -7,11 +7,13 @@ from flujo.testing.utils import StubAgent
 
 
 def create_step(output: str = "ok") -> Step:
-    return Step.model_validate({
-        "name": "reg_step",
-        "agent": StubAgent([output]),
-        "config": StepConfig(max_retries=1),
-    })
+    return Step.model_validate(
+        {
+            "name": "reg_step",
+            "agent": StubAgent([output]),
+            "config": StepConfig(max_retries=1),
+        }
+    )
 
 
 @pytest.mark.asyncio
@@ -41,4 +43,3 @@ async def test_optimization_error_handling():
     opt = OptimizedExecutorCore()
     result = await opt.optimized_execute(step, "data")
     assert not result.success
-
