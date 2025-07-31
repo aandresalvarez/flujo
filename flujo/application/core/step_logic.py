@@ -46,8 +46,13 @@ from ...application.context_manager import _apply_validation_metadata
 TContext = TypeVar("TContext", bound=BaseModel)
 
 
-def deprecated_function(func: Callable[..., Any]) -> Callable[..., Any]:
+# Type alias for the wrapper function
+DeprecatedFunction = Callable[..., Any]
+
+
+def deprecated_function(func: Callable[..., Any]) -> DeprecatedFunction:
     """Decorator to mark functions as deprecated."""
+
     def wrapper(*args: Any, **kwargs: Any) -> Any:
         warnings.warn(
             f"{func.__name__} is deprecated and will be removed in a future version. "
@@ -56,9 +61,9 @@ def deprecated_function(func: Callable[..., Any]) -> Callable[..., Any]:
             stacklevel=2,
         )
         return func(*args, **kwargs)
-    
+
     # Set the wrapped function and preserve metadata
-    wrapper.__wrapped__ = func
+    wrapper.__wrapped__ = func  # type: ignore[attr-defined]
     wrapper.__name__ = func.__name__
     wrapper.__doc__ = func.__doc__
     return wrapper

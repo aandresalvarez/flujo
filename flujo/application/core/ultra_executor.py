@@ -1214,7 +1214,9 @@ class ExecutorCore(Generic[TContext]):
         limits: Optional[UsageLimits],
         breach_event: Optional[Any],
         context_setter: Optional[Callable[["PipelineResult[Any]", Optional[Any]], None]],
-        step_executor: Optional[Callable[[Any, Any, Optional[Any], Optional[Any], Optional[Any]], Awaitable[StepResult]]] = None,
+        step_executor: Optional[
+            Callable[[Any, Any, Optional[Any], Optional[Any], Optional[Any]], Awaitable[StepResult]]
+        ] = None,
     ) -> StepResult:
         """Handle ParallelStep execution using optimized component-based architecture."""
 
@@ -1256,6 +1258,7 @@ class ExecutorCore(Generic[TContext]):
 
         # Use provided step executor or fall back to self.execute
         if step_executor is None:
+
             async def step_executor(
                 s: Any,
                 d: Any,
@@ -1617,7 +1620,9 @@ class ExecutorCore(Generic[TContext]):
                 if all(not branch_results[key].success for key in parallel_step.branches.keys()):
                     result.success = False
                     result.feedback = f"All parallel branches failed: {list(parallel_step.branches.keys())}. Details: {[branch_results[k].feedback for k in failed_branches]}"
-                    result.output = {key: branch_results[key] for key in parallel_step.branches.keys()}
+                    result.output = {
+                        key: branch_results[key] for key in parallel_step.branches.keys()
+                    }
                     return result
                 # If some branches succeeded, include all branch results (both successful and failed)
                 result.output = {key: branch_results[key] for key in parallel_step.branches.keys()}
@@ -2058,7 +2063,7 @@ class ExecutorCore(Generic[TContext]):
                         current_branch_data,
                         context,
                         resources,
-                        breach_event,
+                        None,  # breach_event - not needed for conditional steps
                     )
 
                 # Optimized metrics accumulation with direct attribute access
