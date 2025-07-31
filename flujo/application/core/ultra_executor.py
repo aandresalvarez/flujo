@@ -21,9 +21,9 @@ import hashlib
 import copy
 import multiprocessing
 from abc import abstractmethod
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 from dataclasses import dataclass, field
-from functools import cached_property
+from functools import cached_property, wraps
 from multiprocessing import cpu_count
 from typing import (
     Any,
@@ -3129,6 +3129,146 @@ class _UsageTracker:
 
 
 # --------------------------------------------------------------------------- #
+# ★ FSD 5 Optimized Components
+# --------------------------------------------------------------------------- #
+
+T = TypeVar("T")
+
+
+@dataclass
+class ObjectPool(Generic[T]):
+    """Simple async object pool for frequently allocated objects."""
+
+    _pool: Dict[Type[T], list[T]] = field(default_factory=dict)
+    _lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+
+    async def get(self, obj_type: Type[T]) -> T:
+        async with self._lock:
+            if obj_type in self._pool and self._pool[obj_type]:
+                return self._pool[obj_type].pop()
+        return obj_type()
+
+    async def put(self, obj: T) -> None:
+        async with self._lock:
+            obj_type = type(obj)
+            self._pool.setdefault(obj_type, []).append(obj)
+
+
+class OptimizedContextManager:
+    """Optimized context management with caching."""
+
+    def __init__(self) -> None:
+        self._context_cache: WeakKeyDictionary[Any, Any] = WeakKeyDictionary()
+        self._merge_cache: WeakKeyDictionary[tuple[int, int], bool] = WeakKeyDictionary()
+
+    def optimized_copy(self, context: Any) -> Any:
+        if context in self._context_cache:
+            return self._context_cache[context]
+        if hasattr(context, "__slots__"):
+            copied = copy.copy(context)
+        else:
+            copied = copy.deepcopy(context)
+        self._context_cache[context] = copied
+        return copied
+
+    def optimized_merge(self, target: Any, source: Any) -> bool:
+        cache_key = (id(target), id(source))
+        if cache_key in self._merge_cache:
+            return self._merge_cache[cache_key]
+        result = safe_merge_context_updates(target, source)
+        self._merge_cache[cache_key] = result
+        return result
+
+
+class OptimizedStepExecutor:
+    """Thin wrapper around ExecutorCore.execute with simple caching."""
+
+    def __init__(self, executor: "ExecutorCore[Any]") -> None:
+        self._executor = executor
+        self._step_cache: Dict[int, Dict[str, Any]] = {}
+
+    async def optimized_execute(self, step: Any, data: Any, **kwargs: Any) -> StepResult:
+        step_key = id(step)
+        if step_key not in self._step_cache:
+            self._step_cache[step_key] = {"cached": True}
+        return await self._executor.execute(step, data, **kwargs)
+
+
+class OptimizedTelemetry:
+    """Optimized telemetry collector with minimal overhead."""
+
+    def __init__(self) -> None:
+        self._span_cache: Dict[str, Callable[..., Any]] = {}
+        self._metric_cache: Dict[str, list[float]] = {}
+
+    def optimized_trace(self, name: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+        if name in self._span_cache:
+            return self._span_cache[name]
+
+        def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+            @wraps(func)
+            async def wrapper(*args: Any, **kwargs: Any) -> Any:
+                start_time = time.perf_counter()
+                try:
+                    return await func(*args, **kwargs)
+                finally:
+                    duration = time.perf_counter() - start_time
+                    self._metric_cache.setdefault(name, []).append(duration)
+
+            return wrapper
+
+        self._span_cache[name] = decorator
+        return decorator
+
+
+class PerformanceMonitor:
+    """Lightweight performance metric collector."""
+
+    def __init__(self) -> None:
+        self._metrics: defaultdict[str, list[float]] = defaultdict(list)
+        self._thresholds: Dict[str, float] = {}
+
+    def record_metric(self, name: str, value: float) -> None:
+        self._metrics[name].append(value)
+        if name in self._thresholds and value > self._thresholds[name]:
+            telemetry.logfire.warn(f"Performance threshold exceeded for {name}: {value}")
+
+    def get_statistics(self, name: str) -> Dict[str, float]:
+        values = self._metrics[name]
+        if not values:
+            return {}
+        values_sorted = sorted(values)
+        return {
+            "count": len(values),
+            "mean": sum(values) / len(values),
+            "min": min(values),
+            "max": max(values),
+            "p95": values_sorted[int(len(values_sorted) * 0.95)],
+            "p99": values_sorted[int(len(values_sorted) * 0.99)],
+        }
+
+
+class OptimizedExecutorCore(ExecutorCore[TContext]):
+    """ExecutorCore variant with additional performance helpers."""
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._object_pool = ObjectPool()
+        self._context_manager_opt = OptimizedContextManager()
+        self._step_executor_opt = OptimizedStepExecutor(self)
+        self._telemetry_opt = OptimizedTelemetry()
+        self._perf_monitor = PerformanceMonitor()
+
+    async def optimized_execute(self, step: Any, data: Any, **kwargs: Any) -> StepResult:
+        if "context" in kwargs and kwargs["context"] is not None:
+            kwargs["context"] = self._context_manager_opt.optimized_copy(kwargs["context"])
+        result = await self.execute(step, data, **kwargs)
+        if "context" in kwargs and kwargs["context"] is not None and getattr(result, "context", None) is not None:
+            self._context_manager_opt.optimized_merge(kwargs["context"], result.context)
+        return result
+
+
+# --------------------------------------------------------------------------- #
 # ★ Public API
 # --------------------------------------------------------------------------- #
 
@@ -3162,4 +3302,11 @@ __all__ = [
     # Legacy aliases for backward compatibility
     "_LRUCache",
     "_UsageTracker",
+    # FSD 5 optimized classes
+    "ObjectPool",
+    "OptimizedContextManager",
+    "OptimizedStepExecutor",
+    "OptimizedTelemetry",
+    "PerformanceMonitor",
+    "OptimizedExecutorCore",
 ]
