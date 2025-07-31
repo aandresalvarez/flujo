@@ -43,7 +43,7 @@ from ...domain.dsl.loop import LoopStep
 from ...domain.dsl.conditional import ConditionalStep
 from ...domain.dsl.dynamic_router import DynamicParallelRouterStep
 from ...domain.dsl.parallel import ParallelStep
-from ...domain.models import BaseModel, StepResult, UsageLimits, PipelineResult
+from ...domain.models import BaseModel, StepResult, UsageLimits, PipelineResult, PipelineContext
 from ...domain.validation import ValidationResult
 from ...exceptions import (
     UsageLimitExceededError,
@@ -1086,7 +1086,7 @@ class ExecutorCore(Generic[TContext]):
         from .step_logic import (
             # _handle_cache_step,  # ❌ REMOVED: Now handled by ExecutorCore
             # _handle_loop_step,  # ❌ REMOVED: Now handled by ExecutorCore
-            _handle_hitl_step,
+            # _handle_hitl_step,  # ❌ REMOVED: Now handled by ExecutorCore
             _run_step_logic,
             _default_set_final_context,
         )
@@ -1189,7 +1189,14 @@ class ExecutorCore(Generic[TContext]):
             )
         elif isinstance(step, HumanInTheLoopStep):
             telemetry.logfire.debug("Handling HumanInTheLoopStep")
-            result = await _handle_hitl_step(step, data, context)
+            result = await self._handle_hitl_step(
+                step,
+                data,
+                context,
+                resources,
+                limits,
+                context_setter,
+            )
         else:
             telemetry.logfire.debug("Falling back to general step logic")
             # Fall back to general step logic
@@ -2142,6 +2149,39 @@ class ExecutorCore(Generic[TContext]):
             conditional_overall_result.metadata_["executed_branch_key"] = str(executed_branch_key)
 
         return conditional_overall_result
+
+    async def _handle_hitl_step(
+        self,
+        step: HumanInTheLoopStep,
+        data: Any,
+        context: Optional[TContext],
+        resources: Optional[Any],
+        limits: Optional[UsageLimits],
+        context_setter: Optional[Callable[["PipelineResult[Any]", Optional[Any]], None]],
+    ) -> StepResult:
+        """Handle HumanInTheLoopStep execution using optimized component-based architecture."""
+
+        # Generate message for user
+        try:
+            message = step.message_for_user if step.message_for_user is not None else str(data)
+        except Exception:
+            # If string conversion fails, use a fallback message
+            message = "Data conversion failed"
+
+        # Update context scratchpad if available
+        if isinstance(context, PipelineContext):
+            try:
+                context.scratchpad["status"] = "paused"
+                context.scratchpad["hitl_message"] = message
+                context.scratchpad["hitl_data"] = data
+            except Exception as e:
+                telemetry.logfire.error(f"Failed to update context scratchpad: {e}")
+
+        # Log HITL step execution
+        telemetry.logfire.info(f"HITL step '{step.name}' paused execution with message: {message}")
+
+        # Raise PausedException to pause pipeline execution
+        raise PausedException(message)
 
     async def _execute_step_logic(
         self,
