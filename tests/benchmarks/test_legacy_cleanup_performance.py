@@ -72,7 +72,7 @@ class TestCleanupPerformanceImpact:
 
         # Import the modules
         # import flujo.application.core.step_logic  # Unused import removed
-        
+
         # Measure memory after importing
         memory_after = process.memory_info().rss
 

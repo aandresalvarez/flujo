@@ -1082,9 +1082,9 @@ class ExecutorCore(Generic[TContext]):
     ) -> StepResult:
         """Execute complex steps using step logic helpers."""
 
-        # Import step logic helpers (remove _handle_loop_step)
+        # Import step logic helpers (remove _handle_cache_step)
         from .step_logic import (
-            _handle_cache_step,
+            # _handle_cache_step,  # ❌ REMOVED: Now handled by ExecutorCore
             # _handle_loop_step,  # ❌ REMOVED: Now handled by ExecutorCore
             _handle_hitl_step,
             _run_step_logic,
@@ -1136,7 +1136,16 @@ class ExecutorCore(Generic[TContext]):
 
         if isinstance(step, CacheStep):
             telemetry.logfire.debug("Handling CacheStep")
-            result = await _handle_cache_step(step, data, context, resources, step_executor)
+            result = await self._handle_cache_step(
+                step,
+                data,
+                context,
+                resources,
+                limits,
+                breach_event,
+                context_setter,
+                step_executor,
+            )
         elif isinstance(step, LoopStep):
             telemetry.logfire.debug("Handling LoopStep")
             result = await self._handle_loop_step(
@@ -2687,6 +2696,110 @@ class ExecutorCore(Generic[TContext]):
     async def get_usage_snapshot(self) -> tuple[float, int, int]:
         """Get current usage metrics."""
         return await self._usage_meter.snapshot()
+
+    async def _handle_cache_step(
+        self,
+        cache_step: CacheStep[Any, Any],
+        data: Any,
+        context: Optional[TContext],
+        resources: Optional[Any],
+        limits: Optional[UsageLimits],
+        breach_event: Optional[Any],
+        context_setter: Optional[Callable[["PipelineResult[Any]", Optional[Any]], None]],
+        step_executor: Optional[
+            Callable[[Any, Any, Optional[Any], Optional[Any], Optional[Any]], Awaitable[StepResult]]
+        ] = None,
+    ) -> StepResult:
+        """Handle CacheStep execution with improved cache key generation and backend integration."""
+
+        telemetry.logfire.debug("=== HANDLE CACHE STEP ===")
+        telemetry.logfire.debug(f"Cache step: {cache_step.name}")
+        telemetry.logfire.debug(f"Wrapped step: {cache_step.wrapped_step.name}")
+
+        # Generate cache key using the legacy method for backward compatibility
+        from flujo.steps.cache_step import _generate_cache_key
+
+        key = _generate_cache_key(cache_step.wrapped_step, data, context, resources)
+
+        telemetry.logfire.debug(f"Generated cache key: {key}")
+
+        cached: Optional[StepResult] = None
+        if key:
+            try:
+                cached = await cache_step.cache_backend.get(key)
+                if cached is not None:
+                    telemetry.logfire.debug("Cache hit detected")
+                else:
+                    telemetry.logfire.debug("Cache miss detected")
+            except Exception as e:
+                telemetry.logfire.warn(f"Cache get failed for key {key}: {e}")
+
+        if isinstance(cached, StepResult):
+            # Cache hit - return cached result with metadata
+            cache_result = cached.model_copy(deep=True)
+            cache_result.metadata_ = cache_result.metadata_ or {}
+            cache_result.metadata_["cache_hit"] = True
+
+            # CRITICAL FIX: Apply context updates even for cache hits
+            if cache_step.wrapped_step.updates_context and context is not None:
+                try:
+                    # Apply the cached output to context as if the step had executed
+                    if isinstance(cache_result.output, dict):
+                        for key, value in cache_result.output.items():
+                            if hasattr(context, key):
+                                setattr(context, key, value)
+                    elif hasattr(context, "result"):
+                        # Fallback: store in generic result field
+                        setattr(context, "result", cache_result.output)
+                except Exception as e:
+                    telemetry.logfire.error(f"Failed to apply context updates from cache hit: {e}")
+
+            telemetry.logfire.debug("Returning cached result")
+            return cache_result
+
+        # Cache miss - execute the wrapped step
+        telemetry.logfire.debug("Executing wrapped step due to cache miss")
+
+        # Create step executor if not provided
+        if step_executor is None:
+
+            async def step_executor(
+                s: Any,
+                d: Any,
+                c: Optional[Any],
+                r: Optional[Any],
+                breach_event: Optional[Any] = None,
+                **extra_kwargs: Any,
+            ) -> StepResult:
+                """Recursive step executor for cache step."""
+                return await self.execute(
+                    s,
+                    d,
+                    context=c,
+                    resources=r,
+                    limits=limits,
+                    breach_event=breach_event,
+                    **extra_kwargs,
+                )
+
+        # Execute the wrapped step
+        cache_result = await step_executor(
+            cache_step.wrapped_step, data, context, resources, breach_event
+        )
+
+        # Cache successful result
+        if cache_result.success and key:
+            try:
+                # Use TTL from cache backend if available, otherwise default to 3600s
+                ttl_s = getattr(cache_step.cache_backend, "ttl_s", 3600)
+                # Use set method for backward compatibility with existing cache backends
+                await cache_step.cache_backend.set(key, cache_result, ttl_s)
+                telemetry.logfire.debug(f"Cached result with TTL {ttl_s}s")
+            except Exception as e:
+                telemetry.logfire.warn(f"Cache set failed for key {key}: {e}")
+
+        telemetry.logfire.debug("Returning executed result")
+        return cache_result
 
 
 def traced(name: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:

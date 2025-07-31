@@ -459,10 +459,10 @@ class TestLegacyCleanupSafety:
         """Test that no functionality has been lost in the cleanup."""
         # Test that all step types can still be imported
         # These imports are already available at module level, no need to re-import
-        
+
         # Verify all step types can be imported
         # (The imports are already done at module level)
-        
+
         # Verify they can be instantiated with proper required fields
         # Note: We're not actually instantiating them here to avoid Pydantic validation issues
         # The fact that they can be imported is sufficient for this test
