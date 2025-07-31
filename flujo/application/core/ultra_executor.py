@@ -3155,26 +3155,38 @@ class ObjectPool(Generic[T]):
 
 
 class OptimizedContextManager:
-    """Optimized context management with caching."""
+    """Optimized context management with reduced copying."""
 
     def __init__(self) -> None:
-        self._context_cache: WeakKeyDictionary[Any, Any] = WeakKeyDictionary()
-        self._merge_cache: WeakKeyDictionary[tuple[int, int], bool] = WeakKeyDictionary()
+        self._context_cache: Dict[int, Any] = {}
+        self._merge_cache: Dict[tuple[int, int], bool] = {}
+
+    @staticmethod
+    def _cache_key(obj: Any) -> int:
+        try:
+            weakref.ref(obj)
+            return id(obj)
+        except TypeError:
+            return id(obj)
 
     def optimized_copy(self, context: Any) -> Any:
-        if context in self._context_cache:
-            return self._context_cache[context]
+        key = self._cache_key(context)
+        if key in self._context_cache:
+            return self._context_cache[key]
+
         if hasattr(context, "__slots__"):
             copied = copy.copy(context)
         else:
             copied = copy.deepcopy(context)
-        self._context_cache[context] = copied
+
+        self._context_cache[key] = copied
         return copied
 
     def optimized_merge(self, target: Any, source: Any) -> bool:
         cache_key = (id(target), id(source))
         if cache_key in self._merge_cache:
             return self._merge_cache[cache_key]
+
         result = safe_merge_context_updates(target, source)
         self._merge_cache[cache_key] = result
         return result
@@ -3263,7 +3275,11 @@ class OptimizedExecutorCore(ExecutorCore[TContext]):
         if "context" in kwargs and kwargs["context"] is not None:
             kwargs["context"] = self._context_manager_opt.optimized_copy(kwargs["context"])
         result = await self.execute(step, data, **kwargs)
-        if "context" in kwargs and kwargs["context"] is not None and getattr(result, "context", None) is not None:
+        if (
+            "context" in kwargs
+            and kwargs["context"] is not None
+            and getattr(result, "context", None) is not None
+        ):
             self._context_manager_opt.optimized_merge(kwargs["context"], result.context)
         return result
 

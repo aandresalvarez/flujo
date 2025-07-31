@@ -7,11 +7,13 @@ from flujo.testing.utils import StubAgent
 
 
 def create_step(output: str = "ok") -> Step:
-    return Step.model_validate({
-        "name": "stress_step",
-        "agent": StubAgent([output]),
-        "config": StepConfig(max_retries=1),
-    })
+    return Step.model_validate(
+        {
+            "name": "stress_step",
+            "agent": StubAgent([output]),
+            "config": StepConfig(max_retries=1),
+        }
+    )
 
 
 @pytest.mark.asyncio
@@ -50,4 +52,3 @@ async def test_network_latency_stress():
     step = create_step()
     result = await core.optimized_execute(step, "data")
     assert result.success
-

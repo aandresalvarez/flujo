@@ -14,11 +14,13 @@ from flujo.exceptions import UsageLimitExceededError
 
 
 def create_step(output: str = "ok") -> Step:
-    return Step.model_validate({
-        "name": "int_step",
-        "agent": StubAgent([output]),
-        "config": StepConfig(max_retries=1),
-    })
+    return Step.model_validate(
+        {
+            "name": "int_step",
+            "agent": StubAgent([output]),
+            "config": StepConfig(max_retries=1),
+        }
+    )
 
 
 @pytest.mark.asyncio
@@ -33,6 +35,7 @@ async def test_dependency_injection_performance():
     class CustomRunner:
         async def run(self, *args, **kwargs):
             return "custom"
+
     core = OptimizedExecutorCore(agent_runner=CustomRunner())
     step = create_step()
     result = await core.optimized_execute(step, "data")
@@ -52,6 +55,7 @@ async def test_component_lifecycle_optimization():
 async def test_error_handling_optimization():
     async def bad_run(*_, **__):
         raise RuntimeError("fail")
+
     step = create_step()
     step.agent.run = AsyncMock(side_effect=bad_run)
     core = OptimizedExecutorCore()
@@ -93,4 +97,3 @@ async def test_telemetry_performance():
 
     result = await work()
     assert result == "done"
-

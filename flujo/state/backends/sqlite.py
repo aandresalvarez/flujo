@@ -656,7 +656,6 @@ class SQLiteBackend(StateBackend):
                         await self._init_db()
                         # Lazily create a connection pool for faster operations
                         self._connection_pool = await aiosqlite.connect(self.db_path)
-                        await self._connection_pool.execute("PRAGMA foreign_keys = ON")
                         await self._connection_pool.execute("PRAGMA journal_mode = WAL")
                         self._initialized = True
                     except sqlite3.DatabaseError as e:
@@ -797,8 +796,8 @@ class SQLiteBackend(StateBackend):
                             state.get("memory_usage_mb"),
                         ),
                     )
-                await db.commit()
-                telemetry.logfire.info(f"Saved state for run_id={run_id}")
+                    await db.commit()
+                    telemetry.logfire.info(f"Saved state for run_id={run_id}")
 
             await self._with_retries(_save)
 
@@ -1179,24 +1178,24 @@ class SQLiteBackend(StateBackend):
                 total_cost = run_data.get("total_cost")
                 final_context_blob = run_data.get("final_context_blob")
                 await db.execute(
-                        """
+                    """
                         INSERT OR REPLACE INTO runs (
                             run_id, pipeline_id, pipeline_name, pipeline_version, status, created_at, updated_at, start_time, end_time, total_cost, final_context_blob
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
-                        (
-                            run_data["run_id"],
-                            run_data.get("pipeline_id", "unknown"),
-                            run_data.get("pipeline_name", "unknown"),
-                            run_data.get("pipeline_version", "latest"),
-                            run_data.get("status", "running"),
-                            created_at,
-                            updated_at,
-                            start_time,
-                            end_time,
-                            total_cost,
-                            final_context_blob,
-                        ),
+                    (
+                        run_data["run_id"],
+                        run_data.get("pipeline_id", "unknown"),
+                        run_data.get("pipeline_name", "unknown"),
+                        run_data.get("pipeline_version", "latest"),
+                        run_data.get("status", "running"),
+                        created_at,
+                        updated_at,
+                        start_time,
+                        end_time,
+                        total_cost,
+                        final_context_blob,
+                    ),
                 )
                 await db.commit()
 
@@ -1209,43 +1208,43 @@ class SQLiteBackend(StateBackend):
             async def _save() -> None:
                 db = await self._get_connection()
                 await db.execute(
-                        """
+                    """
                         INSERT OR REPLACE INTO steps (
                             step_run_id, run_id, step_name, step_index, status,
                             start_time, end_time, duration_ms, cost, tokens,
                             input_blob, output_blob, error_blob
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
+                    (
+                        step_data["step_run_id"],
+                        step_data["run_id"],
+                        step_data["step_name"],
+                        step_data["step_index"],
+                        step_data.get("status", "completed"),
                         (
-                            step_data["step_run_id"],
-                            step_data["run_id"],
-                            step_data["step_name"],
-                            step_data["step_index"],
-                            step_data.get("status", "completed"),
                             (
-                                (
-                                    lambda v: v.isoformat()
-                                    if isinstance(v, datetime)
-                                    else (str(v) if v is not None else None)
-                                )(step_data.get("start_time"))
-                            ),
-                            (
-                                (
-                                    lambda v: v.isoformat()
-                                    if isinstance(v, datetime)
-                                    else (str(v) if v is not None else None)
-                                )(step_data.get("end_time"))
-                            ),
-                            step_data.get("duration_ms"),
-                            step_data.get("cost"),
-                            step_data.get("tokens"),
-                            _fast_json_dumps(robust_serialize(step_data.get("input"))),
-                            _fast_json_dumps(robust_serialize(step_data.get("output"))),
-                            _fast_json_dumps(robust_serialize(step_data.get("error")))
-                            if step_data.get("error") is not None
-                            else None,
+                                lambda v: v.isoformat()
+                                if isinstance(v, datetime)
+                                else (str(v) if v is not None else None)
+                            )(step_data.get("start_time"))
                         ),
-                    )
+                        (
+                            (
+                                lambda v: v.isoformat()
+                                if isinstance(v, datetime)
+                                else (str(v) if v is not None else None)
+                            )(step_data.get("end_time"))
+                        ),
+                        step_data.get("duration_ms"),
+                        step_data.get("cost"),
+                        step_data.get("tokens"),
+                        _fast_json_dumps(robust_serialize(step_data.get("input"))),
+                        _fast_json_dumps(robust_serialize(step_data.get("output"))),
+                        _fast_json_dumps(robust_serialize(step_data.get("error")))
+                        if step_data.get("error") is not None
+                        else None,
+                    ),
+                )
                 await db.commit()
 
             await self._with_retries(_save)
