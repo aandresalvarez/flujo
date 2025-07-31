@@ -1789,38 +1789,156 @@ class ExecutorCore(Generic[TContext]):
     ) -> StepResult:
         """Handle ConditionalStep execution using component-based architecture."""
 
-        # TODO: Implement full ConditionalStep logic migration
-        # For now, delegate to legacy implementation
-        from .step_logic import _handle_conditional_step as legacy_handle_conditional_step
+        # Initialize result
+        conditional_overall_result = StepResult(name=conditional_step.name)
+        executed_branch_key: Optional[str] = None
+        branch_output: Any = None
+        branch_succeeded = False
 
-        async def step_executor(
-            s: Any,
-            d: Any,
-            c: Optional[Any],
-            r: Optional[Any],
-            breach_event: Optional[Any] = None,
-            **extra_kwargs: Any,
-        ) -> StepResult:
-            """Recursive step executor."""
-            _limits = extra_kwargs.get("usage_limits", limits)
-            _context_setter = extra_kwargs.get("context_setter", context_setter)
-
-            return await self.execute(
-                s, d, context=c, resources=r, limits=_limits, context_setter=_context_setter
+        try:
+            # Evaluate condition to determine which branch to execute
+            branch_key_to_execute = conditional_step.condition_callable(data, context)
+            telemetry.logfire.info(
+                f"ConditionalStep '{conditional_step.name}': Condition evaluated to branch key '{branch_key_to_execute}'."
             )
+            executed_branch_key = branch_key_to_execute
 
-        from typing import cast
+            # Select branch pipeline
+            selected_branch_pipeline = conditional_step.branches.get(branch_key_to_execute)
+            if selected_branch_pipeline is None:
+                selected_branch_pipeline = conditional_step.default_branch_pipeline
+                if selected_branch_pipeline is None:
+                    err_msg = f"ConditionalStep '{conditional_step.name}': No branch found for key '{branch_key_to_execute}' and no default branch defined."
+                    telemetry.logfire.warn(err_msg)
+                    conditional_overall_result.success = False
+                    conditional_overall_result.feedback = err_msg
+                    return conditional_overall_result
+                telemetry.logfire.info(
+                    f"ConditionalStep '{conditional_step.name}': Executing default branch."
+                )
+            else:
+                telemetry.logfire.info(
+                    f"ConditionalStep '{conditional_step.name}': Executing branch for key '{branch_key_to_execute}'."
+                )
 
-        return await legacy_handle_conditional_step(
-            conditional_step,
-            data,
-            context,
-            resources,
-            step_executor=step_executor,
-            context_model_defined=True,
-            usage_limits=limits,
-            context_setter=cast(Any, context_setter),
-        )
+            # Apply input mapping if provided
+            if conditional_step.branch_input_mapper:
+                input_for_branch = conditional_step.branch_input_mapper(data, context)
+            else:
+                input_for_branch = data
+
+            # Execute branch pipeline
+            current_branch_data = input_for_branch
+            branch_pipeline_failed_internally = False
+
+            # Create step executor for branch execution
+            async def step_executor(
+                s: Any,
+                d: Any,
+                c: Optional[Any],
+                r: Optional[Any],
+                breach_event: Optional[Any] = None,
+                **extra_kwargs: Any,
+            ) -> StepResult:
+                """Recursive step executor."""
+                _limits = extra_kwargs.get("usage_limits", limits)
+                _context_setter = extra_kwargs.get("context_setter", context_setter)
+
+                return await self.execute(
+                    s, d, context=c, resources=r, limits=_limits, context_setter=_context_setter
+                )
+
+            # Execute each step in the branch
+            for branch_step in selected_branch_pipeline.steps:
+                with telemetry.logfire.span(
+                    f"ConditionalStep '{conditional_step.name}' Branch '{branch_key_to_execute}' - Step '{branch_step.name}'"
+                ) as span:
+                    if executed_branch_key is not None:
+                        try:
+                            span.set_attribute("executed_branch_key", str(executed_branch_key))
+                        except Exception as e:
+                            telemetry.logfire.error(f"Error setting span attribute: {e}")
+
+                    # Execute the branch step
+                    branch_step_result = await step_executor(
+                        branch_step,
+                        current_branch_data,
+                        context,
+                        resources,
+                    )
+
+                # Accumulate metrics
+                conditional_overall_result.latency_s += branch_step_result.latency_s
+                conditional_overall_result.cost_usd += getattr(branch_step_result, "cost_usd", 0.0)
+                conditional_overall_result.token_counts += getattr(
+                    branch_step_result, "token_counts", 0
+                )
+
+                if not branch_step_result.success:
+                    telemetry.logfire.warn(
+                        f"Step '{branch_step.name}' in branch '{branch_key_to_execute}' of ConditionalStep '{conditional_step.name}' failed."
+                    )
+                    branch_pipeline_failed_internally = True
+                    branch_output = branch_step_result.output
+                    conditional_overall_result.feedback = f"Failure in branch '{branch_key_to_execute}', step '{branch_step.name}': {branch_step_result.feedback}"
+                    break
+
+                current_branch_data = branch_step_result.output
+
+            if not branch_pipeline_failed_internally:
+                branch_output = current_branch_data
+                branch_succeeded = True
+
+                # Ensure context modifications from the executed branch are committed
+                if context is not None and branch_succeeded:
+                    from ...domain.models import PipelineResult
+
+                    pr: PipelineResult[TContext] = PipelineResult(
+                        step_history=[conditional_overall_result],
+                        total_cost_usd=conditional_overall_result.cost_usd,
+                    )
+                    if context_setter:
+                        context_setter(pr, context)
+
+        except Exception as e:
+            telemetry.logfire.error(
+                f"Error during ConditionalStep '{conditional_step.name}' execution: {e}",
+                exc_info=True,
+            )
+            conditional_overall_result.success = False
+            conditional_overall_result.feedback = (
+                f"Error executing conditional logic or branch: {e}"
+            )
+            return conditional_overall_result
+
+        # Set final result
+        conditional_overall_result.success = branch_succeeded
+        if branch_succeeded:
+            if conditional_step.branch_output_mapper:
+                try:
+                    conditional_overall_result.output = conditional_step.branch_output_mapper(
+                        branch_output, executed_branch_key, context
+                    )
+                except Exception as e:
+                    telemetry.logfire.error(
+                        f"Error in branch_output_mapper for ConditionalStep '{conditional_step.name}': {e}"
+                    )
+                    conditional_overall_result.success = False
+                    conditional_overall_result.feedback = (
+                        f"Branch output mapper raised an exception: {e}"
+                    )
+                    conditional_overall_result.output = None
+            else:
+                conditional_overall_result.output = branch_output
+        else:
+            conditional_overall_result.output = branch_output
+
+        conditional_overall_result.attempts = 1
+        if executed_branch_key is not None:
+            conditional_overall_result.metadata_ = conditional_overall_result.metadata_ or {}
+            conditional_overall_result.metadata_["executed_branch_key"] = str(executed_branch_key)
+
+        return conditional_overall_result
 
     async def _execute_step_logic(
         self,

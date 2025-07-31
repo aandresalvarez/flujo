@@ -1,15 +1,16 @@
-"""Comprehensive tests for ExecutorCore ConditionalStep handling."""
+"""Tests for ConditionalStep handling in ExecutorCore."""
 
 import pytest
-from unittest.mock import Mock, AsyncMock
+from unittest.mock import Mock, AsyncMock, patch
 from flujo.domain.dsl.conditional import ConditionalStep
 from flujo.domain.dsl import Pipeline, Step
+from flujo.domain.dsl.step import StepConfig
 from flujo.domain.models import StepResult, UsageLimits
 from flujo.application.core.ultra_executor import ExecutorCore
 
 
 class TestExecutorCoreConditionalStep:
-    """Test suite for ExecutorCore ConditionalStep handling."""
+    """Test suite for ConditionalStep handling in ExecutorCore."""
 
     @pytest.fixture
     def executor_core(self):
@@ -35,33 +36,50 @@ class TestExecutorCoreConditionalStep:
         assert callable(executor_core._handle_conditional_step)
 
     async def test_handle_conditional_step_signature(self, executor_core, mock_conditional_step):
-        """Test that _handle_conditional_step has correct signature."""
-        method = executor_core._handle_conditional_step
+        """Test that _handle_conditional_step has the correct signature."""
         import inspect
 
-        sig = inspect.signature(method)
+        sig = inspect.signature(executor_core._handle_conditional_step)
+        params = list(sig.parameters.keys())
 
-        # Check required parameters
-        expected_params = {
+        expected_params = [
             "conditional_step",
             "data",
             "context",
             "resources",
             "limits",
             "context_setter",
-        }
-        actual_params = set(sig.parameters.keys())
-        assert expected_params.issubset(actual_params)
+        ]
+
+        assert params == expected_params
 
     async def test_handle_conditional_step_basic_execution(
         self, executor_core, mock_conditional_step, monkeypatch
     ):
-        """Test basic ConditionalStep execution through ExecutorCore."""
-        # Mock the legacy handler to return success
-        monkeypatch.setattr(
-            "flujo.application.core.step_logic._handle_conditional_step",
-            AsyncMock(return_value=StepResult(name="test_conditional", success=True)),
-        )
+        """Test basic ConditionalStep execution."""
+        with patch.object(executor_core, "execute", new_callable=AsyncMock) as mock_execute:
+            mock_execute.return_value = StepResult(
+                name="test_agent", success=True, output="test_output"
+            )
+
+            result = await executor_core._handle_conditional_step(
+                mock_conditional_step,
+                data="test_data",
+                context=None,
+                resources=None,
+                limits=None,
+                context_setter=None,
+            )
+
+            assert result.success is True
+            assert result.name == "test_conditional"
+
+    async def test_handle_conditional_step_error_handling(
+        self, executor_core, mock_conditional_step, monkeypatch
+    ):
+        """Test ConditionalStep error handling."""
+        # Test condition evaluation failure
+        mock_conditional_step.condition_callable.side_effect = Exception("Test error")
 
         result = await executor_core._handle_conditional_step(
             mock_conditional_step,
@@ -72,21 +90,26 @@ class TestExecutorCoreConditionalStep:
             context_setter=None,
         )
 
-        assert isinstance(result, StepResult)
-        assert result.success is True
+        assert result.success is False
+        assert "Error executing conditional logic or branch" in result.feedback
 
-    async def test_handle_conditional_step_error_handling(
+    async def test_handle_conditional_step_recursive_execution(
         self, executor_core, mock_conditional_step, monkeypatch
     ):
-        """Test ConditionalStep error handling."""
-        # Mock the legacy handler to raise an exception
-        monkeypatch.setattr(
-            "flujo.application.core.step_logic._handle_conditional_step",
-            AsyncMock(side_effect=Exception("Test error")),
-        )
+        """Test that ConditionalStep uses recursive step execution."""
+        # Add a step to the branch to test execution
+        mock_step = Mock(spec=Step)
+        mock_step.name = "test_step"
+        mock_step.agent = Mock()
+        mock_step.config = StepConfig(max_retries=1)
+        mock_conditional_step.branches["branch_a"].steps = [mock_step]
 
-        with pytest.raises(Exception, match="Test error"):
-            await executor_core._handle_conditional_step(
+        with patch.object(executor_core, "execute", new_callable=AsyncMock) as mock_execute:
+            mock_execute.return_value = StepResult(
+                name="test_step", success=True, output="test_output"
+            )
+
+            result = await executor_core._handle_conditional_step(
                 mock_conditional_step,
                 data="test_data",
                 context=None,
@@ -95,51 +118,20 @@ class TestExecutorCoreConditionalStep:
                 context_setter=None,
             )
 
-    async def test_handle_conditional_step_recursive_execution(
-        self, executor_core, mock_conditional_step, monkeypatch
-    ):
-        """Test that ConditionalStep uses recursive step execution."""
-        # Mock the legacy handler to capture the step_executor
-        captured_step_executor = None
-
-        async def mock_legacy_handler(*args, **kwargs):
-            nonlocal captured_step_executor
-            captured_step_executor = kwargs.get("step_executor")
-            return StepResult(name="test_conditional", success=True)
-
-        monkeypatch.setattr(
-            "flujo.application.core.step_logic._handle_conditional_step", mock_legacy_handler
-        )
-
-        await executor_core._handle_conditional_step(
-            mock_conditional_step,
-            data="test_data",
-            context=None,
-            resources=None,
-            limits=None,
-            context_setter=None,
-        )
-
-        # Verify that a step_executor was passed
-        assert captured_step_executor is not None
-        assert callable(captured_step_executor)
+            # Verify that execute was called (recursive execution)
+            mock_execute.assert_called_once()
+            assert result.success is True
 
     async def test_handle_conditional_step_parameter_passing(
         self, executor_core, mock_conditional_step, monkeypatch
     ):
-        """Test that all parameters are correctly passed to legacy handler."""
-        captured_args = None
-        captured_kwargs = None
-
-        async def mock_legacy_handler(*args, **kwargs):
-            nonlocal captured_args, captured_kwargs
-            captured_args = args
-            captured_kwargs = kwargs
-            return StepResult(name="test_conditional", success=True)
-
-        monkeypatch.setattr(
-            "flujo.application.core.step_logic._handle_conditional_step", mock_legacy_handler
-        )
+        """Test that all parameters are correctly passed to step execution."""
+        # Add a step to the branch
+        mock_step = Mock(spec=Step)
+        mock_step.name = "test_step"
+        mock_step.agent = Mock()
+        mock_step.config = StepConfig(max_retries=1)
+        mock_conditional_step.branches["branch_a"].steps = [mock_step]
 
         test_data = "test_data"
         test_context = Mock()
@@ -147,54 +139,45 @@ class TestExecutorCoreConditionalStep:
         test_limits = UsageLimits(total_cost_usd_limit=10.0)
         test_context_setter = Mock()
 
-        await executor_core._handle_conditional_step(
-            mock_conditional_step,
-            data=test_data,
-            context=test_context,
-            resources=test_resources,
-            limits=test_limits,
-            context_setter=test_context_setter,
-        )
+        with patch.object(executor_core, "execute", new_callable=AsyncMock) as mock_execute:
+            mock_execute.return_value = StepResult(
+                name="test_step", success=True, output="test_output"
+            )
 
-        # Verify parameters were passed correctly
-        assert captured_args[0] is mock_conditional_step
-        assert captured_args[1] is test_data
-        assert captured_args[2] is test_context
-        assert captured_args[3] is test_resources
+            await executor_core._handle_conditional_step(
+                mock_conditional_step,
+                data=test_data,
+                context=test_context,
+                resources=test_resources,
+                limits=test_limits,
+                context_setter=test_context_setter,
+            )
 
-        assert captured_kwargs["context_model_defined"] is True
-        assert captured_kwargs["usage_limits"] is test_limits
-        assert captured_kwargs["context_setter"] is test_context_setter
-        assert "step_executor" in captured_kwargs
+            # Verify parameters were passed correctly to execute
+            mock_execute.assert_called_once()
+            call_args = mock_execute.call_args
+            assert call_args[0][0] == mock_step  # step
+            assert call_args[0][1] == test_data  # data
+            assert call_args[1]["context"] == test_context
+            assert call_args[1]["resources"] == test_resources
+            assert call_args[1]["limits"] == test_limits
 
     async def test_handle_conditional_step_step_executor_functionality(
         self, executor_core, mock_conditional_step, monkeypatch
     ):
-        """Test that the step_executor function works correctly."""
-        captured_step_executor = None
+        """Test that the step execution works correctly."""
         test_step = Mock(spec=Step)
         test_step.name = "test_step"
+        test_step.agent = Mock()
+        test_step.config = StepConfig(max_retries=1)
+        mock_conditional_step.branches["branch_a"].steps = [test_step]
 
-        async def mock_legacy_handler(*args, **kwargs):
-            nonlocal captured_step_executor
-            captured_step_executor = kwargs.get("step_executor")
+        with patch.object(executor_core, "execute", new_callable=AsyncMock) as mock_execute:
+            mock_execute.return_value = StepResult(
+                name="test_step", success=True, output="test_output"
+            )
 
-            # Test the step_executor by calling it
-            if captured_step_executor:
-                result = await captured_step_executor(test_step, "test_input", None, None)
-                return result
-            return StepResult(name="test_conditional", success=True)
-
-        monkeypatch.setattr(
-            "flujo.application.core.step_logic._handle_conditional_step", mock_legacy_handler
-        )
-
-        # Mock the execute method to return a known result
-        original_execute = executor_core.execute
-        executor_core.execute = AsyncMock(return_value=StepResult(name="test_step", success=True))
-
-        try:
-            await executor_core._handle_conditional_step(
+            result = await executor_core._handle_conditional_step(
                 mock_conditional_step,
                 data="test_data",
                 context=None,
@@ -203,86 +186,67 @@ class TestExecutorCoreConditionalStep:
                 context_setter=None,
             )
 
-            # Verify that execute was called by the step_executor
-            executor_core.execute.assert_called_once()
-
-        finally:
-            executor_core.execute = original_execute
+            # Verify that execute was called
+            mock_execute.assert_called_once()
+            assert result.success is True
 
     async def test_handle_conditional_step_with_limits_and_context_setter(
         self, executor_core, mock_conditional_step, monkeypatch
     ):
-        """Test ConditionalStep with usage limits and context setter."""
-        captured_kwargs = None
-
-        async def mock_legacy_handler(*args, **kwargs):
-            nonlocal captured_kwargs
-            captured_kwargs = kwargs
-            return StepResult(name="test_conditional", success=True)
-
-        monkeypatch.setattr(
-            "flujo.application.core.step_logic._handle_conditional_step", mock_legacy_handler
-        )
-
-        test_limits = UsageLimits(total_cost_usd_limit=5.0, total_tokens_limit=1000)
+        """Test ConditionalStep with limits and context setter."""
+        test_limits = UsageLimits(total_cost_usd_limit=10.0)
         test_context_setter = Mock()
+        test_context = {"test": "value"}
 
-        await executor_core._handle_conditional_step(
-            mock_conditional_step,
-            data="test_data",
-            context=None,
-            resources=None,
-            limits=test_limits,
-            context_setter=test_context_setter,
-        )
+        with patch.object(executor_core, "execute", new_callable=AsyncMock) as mock_execute:
+            mock_execute.return_value = StepResult(
+                name="test_agent", success=True, output="test_output"
+            )
 
-        # Verify that limits and context_setter are passed through
-        assert captured_kwargs["usage_limits"] is test_limits
-        assert captured_kwargs["context_setter"] is test_context_setter
+            await executor_core._handle_conditional_step(
+                mock_conditional_step,
+                data="test_data",
+                context=test_context,
+                resources=None,
+                limits=test_limits,
+                context_setter=test_context_setter,
+            )
+
+            # Verify that context setter was called
+            test_context_setter.assert_called_once()
 
     async def test_handle_conditional_step_null_parameters(
         self, executor_core, mock_conditional_step, monkeypatch
     ):
         """Test ConditionalStep with null parameters."""
-        captured_kwargs = None
+        with patch.object(executor_core, "execute", new_callable=AsyncMock) as mock_execute:
+            mock_execute.return_value = StepResult(
+                name="test_agent", success=True, output="test_output"
+            )
 
-        async def mock_legacy_handler(*args, **kwargs):
-            nonlocal captured_kwargs
-            captured_kwargs = kwargs
-            return StepResult(name="test_conditional", success=True)
+            result = await executor_core._handle_conditional_step(
+                mock_conditional_step,
+                data=None,
+                context=None,
+                resources=None,
+                limits=None,
+                context_setter=None,
+            )
 
-        monkeypatch.setattr(
-            "flujo.application.core.step_logic._handle_conditional_step", mock_legacy_handler
-        )
-
-        await executor_core._handle_conditional_step(
-            mock_conditional_step,
-            data="test_data",
-            context=None,
-            resources=None,
-            limits=None,
-            context_setter=None,
-        )
-
-        # Verify that null parameters are handled correctly
-        assert captured_kwargs["usage_limits"] is None
-        assert captured_kwargs["context_setter"] is None
-        assert captured_kwargs["context_model_defined"] is True
+            assert result.success is True
+            assert result.metadata_["executed_branch_key"] == "branch_a"
 
     async def test_handle_conditional_step_integration_with_execute_complex_step(
         self, executor_core, mock_conditional_step
     ):
-        """Test that ConditionalStep is properly integrated in _execute_complex_step."""
-        # Mock the _handle_conditional_step method to verify it's called
-        original_handle_conditional = executor_core._handle_conditional_step
-        executor_core._handle_conditional_step = AsyncMock(
-            return_value=StepResult(name="test_conditional", success=True)
-        )
+        """Test that ConditionalStep integrates with _execute_complex_step."""
+        with patch.object(executor_core, "execute", new_callable=AsyncMock) as mock_execute:
+            mock_execute.return_value = StepResult(
+                name="test_agent", success=True, output="test_output"
+            )
 
-        try:
-            # Call _execute_complex_step with a ConditionalStep
             result = await executor_core._execute_complex_step(
-                mock_conditional_step,
+                step=mock_conditional_step,
                 data="test_data",
                 context=None,
                 resources=None,
@@ -293,12 +257,5 @@ class TestExecutorCoreConditionalStep:
                 context_setter=None,
             )
 
-            # Verify that _handle_conditional_step was called
-            executor_core._handle_conditional_step.assert_called_once()
-
-            # Verify the result
-            assert isinstance(result, StepResult)
             assert result.success is True
-
-        finally:
-            executor_core._handle_conditional_step = original_handle_conditional
+            assert result.name == "test_conditional"
