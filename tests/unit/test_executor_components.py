@@ -454,6 +454,8 @@ class TestFlujoCompositionRoot:
 
         # Verify it has an ExecutorCore
         assert hasattr(backend, "_executor")
+        from flujo.application.core.ultra_executor import ExecutorCore
+
         assert isinstance(backend._executor, ExecutorCore)
 
     def test_executor_core_dependency_injection(self):

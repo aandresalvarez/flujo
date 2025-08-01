@@ -8,9 +8,8 @@ to help with the legacy cleanup process outlined in FSD_LEGACY_STEP_LOGIC_CLEANU
 
 import ast
 import os
-import sys
 from pathlib import Path
-from typing import Dict, Set, List, Any, Optional
+from typing import Dict, Set, List
 from collections import defaultdict
 import argparse
 

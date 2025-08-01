@@ -79,7 +79,7 @@ async def usage_limits_demo():
     runner = Flujo(pipeline, usage_limits=limits)
 
     try:
-        result = await runner.run_async("Explain quantum computing in detail with many examples.")
+        await runner.run_async("Explain quantum computing in detail with many examples.")
         print("Pipeline completed successfully!")
     except UsageLimitExceededError as e:
         print(f"Pipeline stopped due to usage limits: {e}")

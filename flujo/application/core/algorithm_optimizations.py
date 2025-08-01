@@ -10,29 +10,30 @@ import hashlib
 import time
 import weakref
 from collections import OrderedDict, defaultdict
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set, Tuple, Union, Callable
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 from threading import RLock
-import sys
 
 from ...domain.models import BaseModel
 
 # Try to import high-performance libraries
 try:
     import orjson
+
     HAS_ORJSON = True
 except ImportError:
-    import json
     HAS_ORJSON = False
 
 try:
     import blake3
+
     HAS_BLAKE3 = True
 except ImportError:
     HAS_BLAKE3 = False
 
 try:
     import xxhash
+
     HAS_XXHASH = True
 except ImportError:
     HAS_XXHASH = False
@@ -41,19 +42,19 @@ except ImportError:
 @dataclass
 class HashStats:
     """Statistics for hash operations."""
-    
+
     total_hashes: int = 0
     cache_hits: int = 0
     cache_misses: int = 0
     total_time_ns: int = 0
     hash_collisions: int = 0
-    
+
     @property
     def cache_hit_rate(self) -> float:
         """Calculate cache hit rate."""
         total_requests = self.cache_hits + self.cache_misses
         return self.cache_hits / total_requests if total_requests > 0 else 0.0
-    
+
     @property
     def average_time_ns(self) -> float:
         """Calculate average hash time."""
@@ -63,7 +64,7 @@ class HashStats:
 @dataclass
 class SerializationStats:
     """Statistics for serialization operations."""
-    
+
     total_serializations: int = 0
     total_deserializations: int = 0
     cache_hits: int = 0
@@ -71,18 +72,22 @@ class SerializationStats:
     total_serialize_time_ns: int = 0
     total_deserialize_time_ns: int = 0
     total_bytes_serialized: int = 0
-    
+
     @property
     def cache_hit_rate(self) -> float:
         """Calculate cache hit rate."""
         total_requests = self.cache_hits + self.cache_misses
         return self.cache_hits / total_requests if total_requests > 0 else 0.0
-    
+
     @property
     def average_serialize_time_ns(self) -> float:
         """Calculate average serialization time."""
-        return self.total_serialize_time_ns / self.total_serializations if self.total_serializations > 0 else 0.0
-    
+        return (
+            self.total_serialize_time_ns / self.total_serializations
+            if self.total_serializations > 0
+            else 0.0
+        )
+
     @property
     def compression_ratio(self) -> float:
         """Calculate average compression ratio."""
@@ -94,7 +99,7 @@ class SerializationStats:
 class OptimizedHasher:
     """
     High-performance hasher with multiple algorithms and caching.
-    
+
     Features:
     - Multiple hash algorithms (Blake3, xxHash, SHA256)
     - Hash result caching with LRU eviction
@@ -102,17 +107,12 @@ class OptimizedHasher:
     - Collision detection and statistics
     - Weak reference tracking for memory efficiency
     """
-    
-    def __init__(
-        self,
-        algorithm: str = "auto",
-        cache_size: int = 10000,
-        enable_stats: bool = True
-    ):
+
+    def __init__(self, algorithm: str = "auto", cache_size: int = 10000, enable_stats: bool = True):
         self.algorithm = algorithm
         self.cache_size = cache_size
         self.enable_stats = enable_stats
-        
+
         # Choose optimal hash algorithm
         if algorithm == "auto":
             if HAS_BLAKE3:
@@ -121,39 +121,41 @@ class OptimizedHasher:
                 self.algorithm = "xxhash"
             else:
                 self.algorithm = "sha256"
-        
+
         # Hash cache with LRU eviction
         self._hash_cache: OrderedDict[int, str] = OrderedDict()
         self._collision_tracker: Dict[str, List[Any]] = defaultdict(list)
-        self._weak_refs: Set[weakref.ref] = set()
-        
+        # Weak references for cleanup
+        self._weak_refs: Set[weakref.ref[Any]] = set()
+        self._last_cleanup = time.time()
+
         # Statistics
         self._stats = HashStats() if enable_stats else None
-        
+
         # Thread safety
         self._lock = RLock()
-    
+
     def hash_object(self, obj: Any) -> str:
         """
         Hash an object with caching and optimization.
-        
+
         Args:
             obj: Object to hash
-            
+
         Returns:
             Hexadecimal hash string
         """
         start_time = time.perf_counter_ns()
-        
+
         try:
             # Fast path for None
             if obj is None:
                 return self._hash_bytes(b"null")
-            
+
             # Fast path for basic types
             if isinstance(obj, (str, int, float, bool)):
                 return self._hash_basic_type(obj)
-            
+
             # Check cache
             obj_id = id(obj)
             with self._lock:
@@ -161,101 +163,101 @@ class OptimizedHasher:
                     # LRU promotion
                     hash_value = self._hash_cache[obj_id]
                     self._hash_cache.move_to_end(obj_id)
-                    
-                    if self.enable_stats:
+
+                    if self.enable_stats and self._stats is not None:
                         self._stats.cache_hits += 1
                         self._stats.total_hashes += 1
                         self._stats.total_time_ns += time.perf_counter_ns() - start_time
-                    
+
                     return hash_value
-                
+
                 # Cache miss
-                if self.enable_stats:
+                if self.enable_stats and self._stats is not None:
                     self._stats.cache_misses += 1
-            
+
             # Compute hash
             hash_value = self._compute_hash(obj)
-            
+
             # Cache result
             self._cache_hash(obj_id, hash_value, obj)
-            
+
             # Check for collisions
             self._check_collision(hash_value, obj)
-            
+
             # Update statistics
-            if self.enable_stats:
+            if self.enable_stats and self._stats is not None:
                 self._stats.total_hashes += 1
                 self._stats.total_time_ns += time.perf_counter_ns() - start_time
-            
+
             return hash_value
-            
+
         except Exception:
             # Fallback to simple hash
-            fallback_hash = self._hash_bytes(str(obj).encode('utf-8', errors='ignore'))
-            
-            if self.enable_stats:
+            fallback_hash = self._hash_bytes(str(obj).encode("utf-8", errors="ignore"))
+
+            if self.enable_stats and self._stats is not None:
                 self._stats.total_hashes += 1
                 self._stats.total_time_ns += time.perf_counter_ns() - start_time
-            
+
             return fallback_hash
-    
+
     def _hash_basic_type(self, obj: Union[str, int, float, bool]) -> str:
         """Fast path for basic types."""
         if isinstance(obj, str):
-            return self._hash_bytes(obj.encode('utf-8'))
+            return self._hash_bytes(obj.encode("utf-8"))
         elif isinstance(obj, bool):
             return self._hash_bytes(b"true" if obj else b"false")
         else:
-            return self._hash_bytes(str(obj).encode('utf-8'))
-    
+            return self._hash_bytes(str(obj).encode("utf-8"))
+
     def _compute_hash(self, obj: Any) -> str:
         """Compute hash for complex objects."""
         # Handle BaseModel efficiently
         if isinstance(obj, BaseModel):
             try:
-                json_bytes = obj.model_dump_json(sort_keys=True).encode('utf-8')
+                json_bytes = obj.model_dump_json(sort_keys=True).encode("utf-8")
                 return self._hash_bytes(json_bytes)
             except Exception:
                 pass
-        
+
         # Handle dictionaries
         if isinstance(obj, dict):
             return self._hash_dict(obj)
-        
+
         # Handle lists and tuples
         if isinstance(obj, (list, tuple)):
             return self._hash_sequence(obj)
-        
+
         # Handle sets
         if isinstance(obj, set):
             return self._hash_set(obj)
-        
+
         # Handle bytes
         if isinstance(obj, bytes):
             return self._hash_bytes(obj)
-        
+
         # Fallback to string representation
-        return self._hash_bytes(str(obj).encode('utf-8', errors='ignore'))
-    
+        return self._hash_bytes(str(obj).encode("utf-8", errors="ignore"))
+
     def _hash_dict(self, d: Dict[Any, Any]) -> str:
         """Hash dictionary with sorted keys."""
         try:
             # Sort keys for deterministic hashing
             sorted_items = sorted(d.items(), key=lambda x: str(x[0]))
             content = []
-            
+
             for key, value in sorted_items:
                 key_hash = self.hash_object(key)
                 value_hash = self.hash_object(value)
                 content.append(f"{key_hash}:{value_hash}")
-            
+
             combined = "|".join(content)
-            return self._hash_bytes(combined.encode('utf-8'))
-            
+            return self._hash_bytes(combined.encode("utf-8"))
+
         except Exception:
             # Fallback
-            return self._hash_bytes(str(d).encode('utf-8', errors='ignore'))
-    
+            return self._hash_bytes(str(d).encode("utf-8", errors="ignore"))
+
     def _hash_sequence(self, seq: Union[List[Any], Tuple[Any, ...]]) -> str:
         """Hash sequence (list or tuple)."""
         try:
@@ -263,32 +265,32 @@ class OptimizedHasher:
             for item in seq:
                 item_hash = self.hash_object(item)
                 content.append(item_hash)
-            
+
             combined = "|".join(content)
-            return self._hash_bytes(combined.encode('utf-8'))
-            
+            return self._hash_bytes(combined.encode("utf-8"))
+
         except Exception:
             # Fallback
-            return self._hash_bytes(str(seq).encode('utf-8', errors='ignore'))
-    
+            return self._hash_bytes(str(seq).encode("utf-8", errors="ignore"))
+
     def _hash_set(self, s: Set[Any]) -> str:
         """Hash set with sorted elements."""
         try:
             # Sort elements for deterministic hashing
             sorted_elements = sorted(s, key=lambda x: str(x))
             content = []
-            
+
             for item in sorted_elements:
                 item_hash = self.hash_object(item)
                 content.append(item_hash)
-            
+
             combined = "|".join(content)
-            return self._hash_bytes(combined.encode('utf-8'))
-            
+            return self._hash_bytes(combined.encode("utf-8"))
+
         except Exception:
             # Fallback
-            return self._hash_bytes(str(s).encode('utf-8', errors='ignore'))
-    
+            return self._hash_bytes(str(s).encode("utf-8", errors="ignore"))
+
     def _hash_bytes(self, data: bytes) -> str:
         """Hash bytes using the selected algorithm."""
         if self.algorithm == "blake3" and HAS_BLAKE3:
@@ -300,17 +302,17 @@ class OptimizedHasher:
         else:
             # Fallback to MD5 for speed (not cryptographically secure)
             return hashlib.md5(data).hexdigest()
-    
+
     def _cache_hash(self, obj_id: int, hash_value: str, obj: Any) -> None:
         """Cache hash result with LRU eviction."""
         with self._lock:
             # Remove oldest entries if cache is full
             while len(self._hash_cache) >= self.cache_size:
                 self._hash_cache.popitem(last=False)
-            
+
             # Add to cache
             self._hash_cache[obj_id] = hash_value
-            
+
             # Track with weak reference
             try:
                 weak_ref = weakref.ref(obj, lambda ref: self._cleanup_cache(obj_id))
@@ -318,34 +320,35 @@ class OptimizedHasher:
             except TypeError:
                 # Some objects can't be weakly referenced
                 pass
-    
+
     def _check_collision(self, hash_value: str, obj: Any) -> None:
         """Check for hash collisions."""
         if not self.enable_stats:
             return
-        
+
         with self._lock:
             if hash_value in self._collision_tracker:
                 # Check if this is actually a collision
                 existing_objects = self._collision_tracker[hash_value]
                 for existing_obj in existing_objects:
                     if existing_obj is not obj and existing_obj != obj:
-                        self._stats.hash_collisions += 1
+                        if self._stats is not None:
+                            self._stats.hash_collisions += 1
                         break
-                
+
                 existing_objects.append(obj)
             else:
                 self._collision_tracker[hash_value] = [obj]
-    
+
     def _cleanup_cache(self, obj_id: int) -> None:
         """Clean up cache entry when object is garbage collected."""
         with self._lock:
             self._hash_cache.pop(obj_id, None)
-    
+
     def get_stats(self) -> Optional[HashStats]:
         """Get hash statistics."""
         return self._stats
-    
+
     def clear_cache(self) -> None:
         """Clear hash cache."""
         with self._lock:
@@ -357,7 +360,7 @@ class OptimizedHasher:
 class OptimizedSerializer:
     """
     High-performance serializer with caching and compression.
-    
+
     Features:
     - Multiple serialization formats (orjson, json)
     - Serialization result caching
@@ -365,55 +368,57 @@ class OptimizedSerializer:
     - Fast paths for common types
     - Statistics tracking
     """
-    
+
     def __init__(
         self,
         format: str = "auto",
         cache_size: int = 1000,
         compression_threshold: int = 1024,
-        enable_stats: bool = True
+        enable_stats: bool = True,
     ):
         self.format = format
         self.cache_size = cache_size
         self.compression_threshold = compression_threshold
         self.enable_stats = enable_stats
-        
+
         # Choose optimal serialization format
         if format == "auto":
             self.format = "orjson" if HAS_ORJSON else "json"
-        
+
         # Serialization cache
         self._serialize_cache: OrderedDict[int, bytes] = OrderedDict()
         self._deserialize_cache: OrderedDict[str, Any] = OrderedDict()
-        self._weak_refs: Set[weakref.ref] = set()
-        
+        # Weak references for cleanup
+        self._weak_refs: Set[weakref.ref[Any]] = set()
+        self._last_cleanup = time.time()
+
         # Statistics
         self._stats = SerializationStats() if enable_stats else None
-        
+
         # Thread safety
         self._lock = RLock()
-    
+
     def serialize(self, obj: Any) -> bytes:
         """
         Serialize object to bytes with caching.
-        
+
         Args:
             obj: Object to serialize
-            
+
         Returns:
             Serialized bytes
         """
         start_time = time.perf_counter_ns()
-        
+
         try:
             # Fast path for None
             if obj is None:
                 return b"null"
-            
+
             # Fast path for basic types
             if isinstance(obj, (str, int, float, bool)):
                 return self._serialize_basic_type(obj)
-            
+
             # Check cache
             obj_id = id(obj)
             with self._lock:
@@ -421,113 +426,115 @@ class OptimizedSerializer:
                     # LRU promotion
                     result = self._serialize_cache[obj_id]
                     self._serialize_cache.move_to_end(obj_id)
-                    
-                    if self.enable_stats:
+
+                    if self.enable_stats and self._stats is not None:
                         self._stats.cache_hits += 1
                         self._stats.total_serializations += 1
                         self._stats.total_serialize_time_ns += time.perf_counter_ns() - start_time
-                    
+
                     return result
-                
+
                 # Cache miss
-                if self.enable_stats:
+                if self.enable_stats and self._stats is not None:
                     self._stats.cache_misses += 1
-            
+
             # Serialize object
             result = self._serialize_object(obj)
-            
+
             # Cache result
             self._cache_serialization(obj_id, result, obj)
-            
+
             # Update statistics
-            if self.enable_stats:
+            if self.enable_stats and self._stats is not None:
                 self._stats.total_serializations += 1
                 self._stats.total_serialize_time_ns += time.perf_counter_ns() - start_time
                 self._stats.total_bytes_serialized += len(result)
-            
+
             return result
-            
+
         except Exception:
             # Fallback serialization
-            fallback_result = str(obj).encode('utf-8', errors='ignore')
-            
-            if self.enable_stats:
+            fallback_result = str(obj).encode("utf-8", errors="ignore")
+
+            if self.enable_stats and self._stats is not None:
                 self._stats.total_serializations += 1
                 self._stats.total_serialize_time_ns += time.perf_counter_ns() - start_time
                 self._stats.total_bytes_serialized += len(fallback_result)
-            
+
             return fallback_result
-    
+
     def deserialize(self, data: bytes) -> Any:
         """
         Deserialize bytes to object with caching.
-        
+
         Args:
             data: Bytes to deserialize
-            
+
         Returns:
             Deserialized object
         """
         start_time = time.perf_counter_ns()
-        
+
         try:
             # Create cache key
             data_hash = hashlib.md5(data).hexdigest()
-            
+
             # Check cache
             with self._lock:
                 if data_hash in self._deserialize_cache:
                     # LRU promotion
                     result = self._deserialize_cache[data_hash]
                     self._deserialize_cache.move_to_end(data_hash)
-                    
-                    if self.enable_stats:
+
+                    if self.enable_stats and self._stats is not None:
                         self._stats.cache_hits += 1
                         self._stats.total_deserializations += 1
-                    
+                        self._stats.total_deserialize_time_ns += time.perf_counter_ns() - start_time
+
                     return result
-                
+
                 # Cache miss
-                if self.enable_stats:
+                if self.enable_stats and self._stats is not None:
                     self._stats.cache_misses += 1
-            
+
             # Deserialize data
             result = self._deserialize_data(data)
-            
+
             # Cache result
             with self._lock:
                 # Remove oldest entries if cache is full
                 while len(self._deserialize_cache) >= self.cache_size:
                     self._deserialize_cache.popitem(last=False)
-                
+
                 self._deserialize_cache[data_hash] = result
-            
+
             # Update statistics
-            if self.enable_stats:
+            if self.enable_stats and self._stats is not None:
                 self._stats.total_deserializations += 1
-            
+
             return result
-            
+
         except Exception:
             # Fallback deserialization
             try:
-                result = data.decode('utf-8', errors='ignore')
-                
-                if self.enable_stats:
+                result = data.decode("utf-8", errors="ignore")
+
+                if self.enable_stats and self._stats is not None:
                     self._stats.total_deserializations += 1
-                
+
                 return result
             except Exception:
                 return str(data)
-    
+
     def _serialize_basic_type(self, obj: Union[str, int, float, bool]) -> bytes:
         """Fast path for basic types."""
         if self.format == "orjson" and HAS_ORJSON:
             return orjson.dumps(obj)
         else:
             import json
-            return json.dumps(obj, separators=(',', ':')).encode('utf-8')
-    
+
+            return json.dumps(obj, separators=(",", ":")).encode("utf-8")
+
     def _serialize_object(self, obj: Any) -> bytes:
         """Serialize complex objects."""
         # Handle BaseModel efficiently
@@ -537,10 +544,13 @@ class OptimizedSerializer:
                     return orjson.dumps(obj.model_dump(), option=orjson.OPT_SORT_KEYS)
                 else:
                     import json
-                    return json.dumps(obj.model_dump(), sort_keys=True, separators=(',', ':')).encode('utf-8')
+
+                    return json.dumps(
+                        obj.model_dump(), sort_keys=True, separators=(",", ":")
+                    ).encode("utf-8")
             except Exception:
                 pass
-        
+
         # Handle dictionaries and lists
         if isinstance(obj, (dict, list, tuple, set)):
             try:
@@ -550,36 +560,40 @@ class OptimizedSerializer:
                     serializable_obj = sorted(list(obj), key=str)
                 elif isinstance(obj, tuple):
                     serializable_obj = list(obj)
-                
+
                 if self.format == "orjson" and HAS_ORJSON:
                     return orjson.dumps(serializable_obj, option=orjson.OPT_SORT_KEYS)
                 else:
                     import json
-                    return json.dumps(serializable_obj, sort_keys=True, separators=(',', ':')).encode('utf-8')
+
+                    return json.dumps(
+                        serializable_obj, sort_keys=True, separators=(",", ":")
+                    ).encode("utf-8")
             except Exception:
                 pass
-        
+
         # Fallback to string representation
-        return str(obj).encode('utf-8', errors='ignore')
-    
+        return str(obj).encode("utf-8", errors="ignore")
+
     def _deserialize_data(self, data: bytes) -> Any:
         """Deserialize data using the selected format."""
         if self.format == "orjson" and HAS_ORJSON:
             return orjson.loads(data)
         else:
             import json
-            return json.loads(data.decode('utf-8'))
-    
+
+            return json.loads(data.decode("utf-8"))
+
     def _cache_serialization(self, obj_id: int, result: bytes, obj: Any) -> None:
         """Cache serialization result."""
         with self._lock:
             # Remove oldest entries if cache is full
             while len(self._serialize_cache) >= self.cache_size:
                 self._serialize_cache.popitem(last=False)
-            
+
             # Add to cache
             self._serialize_cache[obj_id] = result
-            
+
             # Track with weak reference
             try:
                 weak_ref = weakref.ref(obj, lambda ref: self._cleanup_serialize_cache(obj_id))
@@ -587,16 +601,16 @@ class OptimizedSerializer:
             except TypeError:
                 # Some objects can't be weakly referenced
                 pass
-    
+
     def _cleanup_serialize_cache(self, obj_id: int) -> None:
         """Clean up serialization cache entry."""
         with self._lock:
             self._serialize_cache.pop(obj_id, None)
-    
+
     def get_stats(self) -> Optional[SerializationStats]:
         """Get serialization statistics."""
         return self._stats
-    
+
     def clear_cache(self) -> None:
         """Clear serialization caches."""
         with self._lock:
@@ -608,7 +622,7 @@ class OptimizedSerializer:
 class OptimizedCacheKeyGenerator:
     """
     Optimized cache key generator with intelligent hashing.
-    
+
     Features:
     - Hierarchical key generation
     - Component-based caching
@@ -616,175 +630,175 @@ class OptimizedCacheKeyGenerator:
     - Collision avoidance
     - Statistics tracking
     """
-    
+
     def __init__(
         self,
         hasher: Optional[OptimizedHasher] = None,
         serializer: Optional[OptimizedSerializer] = None,
-        enable_component_caching: bool = True
+        enable_component_caching: bool = True,
     ):
         self.hasher = hasher or OptimizedHasher()
         self.serializer = serializer or OptimizedSerializer()
         self.enable_component_caching = enable_component_caching
-        
+
         # Component cache for partial key reuse
         self._component_cache: Dict[str, str] = {}
         self._lock = RLock()
-    
+
     def generate_cache_key(
         self,
         step: Any,
         data: Any,
         context: Optional[Any] = None,
         resources: Optional[Any] = None,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> str:
         """
         Generate optimized cache key.
-        
+
         Args:
             step: Step object
             data: Input data
             context: Execution context
             resources: Available resources
             **kwargs: Additional parameters
-            
+
         Returns:
             Cache key string
         """
         # Build key components
         components = []
-        
+
         # Step component
         step_key = self._get_step_key(step)
         components.append(f"step:{step_key}")
-        
+
         # Data component
         data_key = self._get_data_key(data)
         components.append(f"data:{data_key}")
-        
+
         # Context component (if present)
         if context is not None:
             context_key = self._get_context_key(context)
             components.append(f"context:{context_key}")
-        
+
         # Resources component (if present)
         if resources is not None:
             resources_key = self._get_resources_key(resources)
             components.append(f"resources:{resources_key}")
-        
+
         # Additional parameters
         if kwargs:
             kwargs_key = self._get_kwargs_key(kwargs)
             components.append(f"kwargs:{kwargs_key}")
-        
+
         # Combine components
         combined_key = "|".join(components)
-        
+
         # Generate final hash
         return self.hasher.hash_object(combined_key)
-    
+
     def _get_step_key(self, step: Any) -> str:
         """Get cache key component for step."""
         cache_key = "step_key"
-        
+
         if self.enable_component_caching:
             step_id = id(step)
             cache_key = f"step_{step_id}"
-            
+
             with self._lock:
                 if cache_key in self._component_cache:
                     return self._component_cache[cache_key]
-        
+
         # Generate step key
         step_components = []
-        
+
         # Step name and type
-        step_name = getattr(step, 'name', 'unknown')
+        step_name = getattr(step, "name", "unknown")
         step_type = type(step).__name__
         step_components.append(f"{step_type}:{step_name}")
-        
+
         # Agent hash (if present)
-        if hasattr(step, 'agent') and step.agent:
+        if hasattr(step, "agent") and step.agent:
             agent_key = self._get_agent_key(step.agent)
             step_components.append(f"agent:{agent_key}")
-        
+
         # Configuration hash (if present)
-        if hasattr(step, 'config') and step.config:
+        if hasattr(step, "config") and step.config:
             config_key = self.hasher.hash_object(step.config)
             step_components.append(f"config:{config_key}")
-        
+
         step_key = "|".join(step_components)
         step_hash = self.hasher.hash_object(step_key)
-        
+
         # Cache result
         if self.enable_component_caching:
             with self._lock:
                 self._component_cache[cache_key] = step_hash
-        
+
         return step_hash
-    
+
     def _get_agent_key(self, agent: Any) -> str:
         """Get cache key component for agent."""
         # Use agent type and configuration for stable identification
         agent_type = f"{type(agent).__module__}.{type(agent).__name__}"
-        
+
         # Include agent configuration if available
         config_parts = [agent_type]
-        
-        if hasattr(agent, 'config'):
+
+        if hasattr(agent, "config"):
             config_hash = self.hasher.hash_object(agent.config)
             config_parts.append(config_hash)
-        
+
         return self.hasher.hash_object("|".join(config_parts))
-    
+
     def _get_data_key(self, data: Any) -> str:
         """Get cache key component for data."""
         return self.hasher.hash_object(data)
-    
+
     def _get_context_key(self, context: Any) -> str:
         """Get cache key component for context."""
         cache_key = "context_key"
-        
+
         if self.enable_component_caching:
             context_id = id(context)
             cache_key = f"context_{context_id}"
-            
+
             with self._lock:
                 if cache_key in self._component_cache:
                     return self._component_cache[cache_key]
-        
+
         # Generate context key
         context_hash = self.hasher.hash_object(context)
-        
+
         # Cache result
         if self.enable_component_caching:
             with self._lock:
                 self._component_cache[cache_key] = context_hash
-        
+
         return context_hash
-    
+
     def _get_resources_key(self, resources: Any) -> str:
         """Get cache key component for resources."""
         return self.hasher.hash_object(resources)
-    
+
     def _get_kwargs_key(self, kwargs: Dict[str, Any]) -> str:
         """Get cache key component for additional parameters."""
         # Sort kwargs for deterministic key generation
         sorted_kwargs = sorted(kwargs.items(), key=lambda x: str(x[0]))
         return self.hasher.hash_object(sorted_kwargs)
-    
+
     def clear_component_cache(self) -> None:
         """Clear component cache."""
         with self._lock:
             self._component_cache.clear()
-    
+
     def get_component_cache_stats(self) -> Dict[str, Any]:
         """Get component cache statistics."""
         with self._lock:
             return {
-                'cache_size': len(self._component_cache),
-                'cache_enabled': self.enable_component_caching
+                "cache_size": len(self._component_cache),
+                "cache_enabled": self.enable_component_caching,
             }
 
 
@@ -842,7 +856,7 @@ def generate_cache_key_optimized(
     data: Any,
     context: Optional[Any] = None,
     resources: Optional[Any] = None,
-    **kwargs: Any
+    **kwargs: Any,
 ) -> str:
     """Convenience function to generate optimized cache key."""
     generator = get_global_cache_key_generator()

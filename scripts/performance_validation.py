@@ -8,13 +8,12 @@ compares against baseline targets, and identifies optimization opportunities.
 
 import asyncio
 import json
-import os
 import psutil
 import statistics
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, asdict
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any
 from unittest.mock import Mock
 
 # Import the optimized components
@@ -130,9 +129,9 @@ class PerformanceValidator:
                 start_time = time.perf_counter()
                 try:
                     if asyncio.iscoroutinefunction(func):
-                        result = await func(*args, **kwargs)
+                        await func(*args, **kwargs)
                     else:
-                        result = func(*args, **kwargs)
+                        func(*args, **kwargs)
                     successful_runs += 1
                 except Exception as e:
                     print(f"Benchmark error: {e}")
@@ -197,7 +196,7 @@ class PerformanceValidator:
         improvement = (baseline_metrics.mean_time - optimized_metrics.mean_time) / baseline_metrics.mean_time * 100
         self.results.improvements["execution_performance"] = improvement
         
-        print(f"Execution Performance:")
+        print("Execution Performance:")
         print(f"  Baseline: {baseline_metrics.mean_time:.6f}s")
         print(f"  Optimized: {optimized_metrics.mean_time:.6f}s")
         print(f"  Improvement: {improvement:.1f}%")
@@ -239,7 +238,7 @@ class PerformanceValidator:
         memory_improvement = (baseline_metrics.memory_usage_mb - optimized_metrics.memory_usage_mb) / baseline_metrics.memory_usage_mb * 100
         self.results.improvements["memory_efficiency"] = memory_improvement
         
-        print(f"Memory Efficiency:")
+        print("Memory Efficiency:")
         print(f"  Baseline: {baseline_metrics.memory_usage_mb:.2f} MB")
         print(f"  Optimized: {optimized_metrics.memory_usage_mb:.2f} MB")
         print(f"  Improvement: {memory_improvement:.1f}%")
@@ -287,7 +286,7 @@ class PerformanceValidator:
         improvement = (baseline_metrics.mean_time - optimized_metrics.mean_time) / baseline_metrics.mean_time * 100
         self.results.improvements["concurrent_performance"] = improvement
         
-        print(f"Concurrent Performance:")
+        print("Concurrent Performance:")
         print(f"  Baseline: {baseline_metrics.mean_time:.6f}s")
         print(f"  Optimized: {optimized_metrics.mean_time:.6f}s")
         print(f"  Improvement: {improvement:.1f}%")
@@ -333,7 +332,7 @@ class PerformanceValidator:
         improvement = (baseline_metrics.mean_time - optimized_metrics.mean_time) / baseline_metrics.mean_time * 100
         self.results.improvements["cache_performance"] = improvement
         
-        print(f"Cache Performance:")
+        print("Cache Performance:")
         print(f"  Baseline: {baseline_metrics.mean_time:.6f}s")
         print(f"  Optimized: {optimized_metrics.mean_time:.6f}s")
         print(f"  Improvement: {improvement:.1f}%")
@@ -373,7 +372,7 @@ class PerformanceValidator:
         improvement = (baseline_metrics.mean_time - optimized_metrics.mean_time) / baseline_metrics.mean_time * 100
         self.results.improvements["context_handling"] = improvement
         
-        print(f"Context Handling Performance:")
+        print("Context Handling Performance:")
         print(f"  Baseline: {baseline_metrics.mean_time:.6f}s")
         print(f"  Optimized: {optimized_metrics.mean_time:.6f}s")
         print(f"  Improvement: {improvement:.1f}%")

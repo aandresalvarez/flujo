@@ -9,9 +9,7 @@ sampling rates, and adaptive resource management thresholds.
 """
 
 import asyncio
-import json
 import multiprocessing
-import os
 import sys
 import time
 from pathlib import Path
@@ -20,15 +18,13 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from flujo.application.core.optimization_parameter_tuner import (
+from flujo.application.core.optimization_parameter_tuner import (  # noqa: E402
     OptimizationParameterTuner,
-    TuningStrategy,
-    get_global_parameter_tuner,
-    apply_system_optimized_parameters
+    TuningStrategy
 )
-from flujo.application.core.ultra_executor import OptimizedExecutorCore, OptimizationConfig
-from flujo.domain.dsl.step import Step, StepConfig
-from flujo.testing.utils import StubAgent
+from flujo.application.core.ultra_executor import OptimizedExecutorCore, OptimizationConfig  # noqa: E402
+from flujo.domain.dsl.step import Step, StepConfig  # noqa: E402
+from flujo.testing.utils import StubAgent  # noqa: E402
 
 
 class ParameterTuningManager:
@@ -120,7 +116,7 @@ class ParameterTuningManager:
         for _ in range(20):
             start_time = time.perf_counter()
             try:
-                result = await executor.execute(step, data)
+                await executor.execute(step, data)
                 successful_runs += 1
                 end_time = time.perf_counter()
                 times.append(end_time - start_time)
@@ -147,7 +143,7 @@ class ParameterTuningManager:
         optimized_params = self.tuner.get_system_optimized_defaults()
         
         # Apply the parameters
-        results = self.tuner.apply_optimized_parameters()
+        # results = self.tuner.apply_optimized_parameters()  # Unused variable
         
         print("System-optimized parameters applied:")
         for param_name, value in optimized_params.items():
@@ -370,11 +366,11 @@ async def main():
         if args.quick:
             # Quick tuning - just apply system defaults
             print("Running quick parameter tuning (system defaults only)...")
-            system_params = await manager.apply_system_optimized_defaults()
+            # system_params = await manager.apply_system_optimized_defaults()  # Unused variable
             validation_results = await manager.validate_tuned_parameters()
             manager.save_optimized_configuration("optimized_executor_config.py")
             
-            print(f"\n✅ Quick tuning completed successfully!")
+            print("\n✅ Quick tuning completed successfully!")
             print(f"Performance: {validation_results['performance']:.6f}s")
             print(f"Stability: {validation_results['stability']:.1%}")
         else:
@@ -383,11 +379,11 @@ async def main():
             
             # Check if tuning was successful
             if results['summary']['overall_improvement'] > 0:
-                print(f"\n✅ Parameter tuning completed successfully!")
+                print("\n✅ Parameter tuning completed successfully!")
                 print(f"Overall improvement: {results['summary']['overall_improvement']:.1%}")
                 return 0
             else:
-                print(f"\n⚠️  Parameter tuning completed with limited improvements")
+                print("\n⚠️  Parameter tuning completed with limited improvements")
                 print(f"Overall improvement: {results['summary']['overall_improvement']:.1%}")
                 return 0
     

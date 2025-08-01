@@ -127,7 +127,7 @@ async def image_cost_tracking_with_usage_limits():
 
     try:
         # Run pipeline - should fail due to usage limits
-        result = await runner.run_async("Generate a high-quality image")
+        await runner.run_async("Generate a high-quality image")
         print("Pipeline completed (unexpected)")
     except UsageLimitExceededError as e:
         print(f"Pipeline failed as expected: {e}")

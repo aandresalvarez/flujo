@@ -22,6 +22,9 @@ class TestContext(BaseModel):
     branch_executed: str = ""
     loop_iterations: int = 0
 
+    def __init__(self, **data):
+        super().__init__(**data)
+
 
 class TestExecutorCoreLoopConditionalMigration:
     """Integration test suite for LoopStep and ConditionalStep migration."""

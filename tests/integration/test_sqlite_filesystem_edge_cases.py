@@ -75,12 +75,16 @@ class TestSQLiteFilesystemEdgeCases:
 
         backend = SQLiteBackend(db_path)
 
-        # Mock exists to simulate race condition
+        # Mock exists to simulate race condition - return False initially, then True
+        original_exists = Path.exists
+        call_count = 0
+
         def mock_exists(self):
-            # Simulate file being created by another process
-            if "corrupt.1234567890" in str(self):
-                return True
-            return Path.exists(self)
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return False
+            return original_exists(self)
 
         with patch.object(Path, "exists", mock_exists):
             with patch("time.time", return_value=1234567890):
@@ -88,5 +92,5 @@ class TestSQLiteFilesystemEdgeCases:
 
         # Verify backup was created and new database exists
         backup_files = list(tmp_path.glob("test.db.corrupt.*"))
-        assert len(backup_files) > 0
+        assert len(backup_files) >= 1  # At least one backup should exist
         assert db_path.exists()

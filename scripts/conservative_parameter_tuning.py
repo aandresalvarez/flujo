@@ -11,7 +11,6 @@ parameters for maximum efficiency.
 import asyncio
 import json
 import multiprocessing
-import os
 import sys
 import time
 from pathlib import Path
@@ -272,7 +271,7 @@ async def validate_conservative_configuration():
         for _ in range(10):
             start_time = time.perf_counter()
             try:
-                result = await executor.execute(step, {"test": "conservative"})
+                await executor.execute(step, {"test": "conservative"})
                 end_time = time.perf_counter()
                 times.append(end_time - start_time)
             except Exception as e:
@@ -281,9 +280,9 @@ async def validate_conservative_configuration():
         
         if times:
             avg_time = sum(times) / len(times)
-            print(f"✅ Conservative configuration validation successful")
+            print("✅ Conservative configuration validation successful")
             print(f"   Average execution time: {avg_time:.6f}s")
-            print(f"   All optimizations disabled for minimal overhead")
+            print("   All optimizations disabled for minimal overhead")
             return True
         else:
             print("❌ No successful test executions")

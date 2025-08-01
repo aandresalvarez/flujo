@@ -75,7 +75,7 @@ strict = true
 prompt_tokens_per_1k = 0.005
 completion_tokens_per_1k = 0.015
 """
-        toml_path = create_flujo_toml(toml_content, temp_path)
+        create_flujo_toml(toml_content, temp_path)
 
         # Change to the temp directory so flujo can find the toml file
         original_cwd = os.getcwd()
@@ -120,7 +120,7 @@ strict = true
 prompt_tokens_per_1k = 0.0015
 completion_tokens_per_1k = 0.002
 """
-        toml_path = create_flujo_toml(toml_content, temp_path)
+        create_flujo_toml(toml_content, temp_path)
 
         # Change to the temp directory so flujo can find the toml file
         original_cwd = os.getcwd()
@@ -161,7 +161,7 @@ async def demo_default_behavior():
 # No strict mode specified (defaults to false)
 # No pricing configuration
 """
-        toml_path = create_flujo_toml(toml_content, temp_path)
+        create_flujo_toml(toml_content, temp_path)
 
         # Change to the temp directory so flujo can find the toml file
         original_cwd = os.getcwd()

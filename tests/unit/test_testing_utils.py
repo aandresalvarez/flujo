@@ -402,6 +402,7 @@ class TestEdgeCases:
         assert result == "output"
 
     @pytest.mark.asyncio
+    @pytest.mark.slow  # Mark as slow due to multiple error conditions
     async def test_stub_agent_call_count_overflow(self):
         """Test StubAgent call count with many calls."""
         agent = StubAgent(["output1", "output2"])

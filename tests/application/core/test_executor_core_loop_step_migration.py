@@ -27,6 +27,9 @@ class TestContext(BaseModel):
     data: dict[str, Any] = {}
     original_value: Optional[str] = None
 
+    def __init__(self, **data):
+        super().__init__(**data)
+
 
 def create_mock_step(
     name: str,

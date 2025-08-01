@@ -665,7 +665,7 @@ async def _run_step_logic(
         max_retries = int(step.config.max_retries)
     except (TypeError, ValueError, AttributeError):
         max_retries = 3  # Default fallback
-    
+
     for attempt in range(1, max_retries + 1):
         validation_failed = False
         result.attempts = attempt
@@ -950,7 +950,12 @@ async def _run_step_logic(
             # Do not return here; allow fallback logic to execute after all retries
 
         for handler in step.failure_handlers:
-            handler()
+            try:
+                handler()
+            except Exception:
+                # Failure handler exceptions should propagate to pipeline level
+                # Don't catch them here - let them bubble up
+                raise
 
         if redirect_to:
             redirect_id = id(redirect_to)
