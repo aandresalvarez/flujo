@@ -660,7 +660,13 @@ async def _run_step_logic(
     last_attempt_cost_usd = 0.0
     last_attempt_token_counts = 0
 
-    for attempt in range(1, step.config.max_retries + 1):
+    # Defensive programming: ensure max_retries is an integer
+    try:
+        max_retries = int(step.config.max_retries)
+    except (TypeError, ValueError, AttributeError):
+        max_retries = 3  # Default fallback
+    
+    for attempt in range(1, max_retries + 1):
         validation_failed = False
         result.attempts = attempt
         feedbacks: list[str] = []  # feedbacks for this attempt only
@@ -911,7 +917,7 @@ async def _run_step_logic(
         if feedback:
             accumulated_feedbacks.extend(feedbacks)
         # --- END JOIN ---
-        if not success and attempt == step.config.max_retries:
+        if not success and attempt == max_retries:
             pass  # Could use last_unpacked_output here if needed
         if success:
             result.output = unpacked_output
@@ -974,7 +980,7 @@ async def _run_step_logic(
         result.feedback = (
             f"Agent execution failed with {type(last_exception).__name__}: {last_exception}"
         )
-    result.attempts = step.config.max_retries
+    result.attempts = max_retries
     # FLUJO SPIRIT FIX: Preserve actual execution time for failed steps
     # result.latency_s is already accumulated from actual execution time above
 

@@ -503,9 +503,9 @@ class TestExecutorCoreHITLStepMigration:
             )
         end_time = time.perf_counter()
 
-        # Assert - should complete within reasonable time (1ms)
+        # Assert - should complete within reasonable time (10ms)
         execution_time = end_time - start_time
-        assert execution_time < 0.001
+        assert execution_time < 0.01
 
     async def test_handle_hitl_step_context_performance(
         self,

@@ -1,0 +1,21 @@
+{
+  "strategy": "conservative",
+  "timestamp": "2025-07-31 17:38:50",
+  "disabled_optimizations": [
+    "object_pool",
+    "context_optimization",
+    "memory_optimization",
+    "step_optimization",
+    "algorithm_optimization",
+    "concurrency_optimization",
+    "optimized_telemetry",
+    "performance_monitoring",
+    "optimized_error_handling",
+    "circuit_breaker",
+    "cache_optimization",
+    "automatic_optimization"
+  ],
+  "rationale": "Optimizations were causing significant performance regressions",
+  "approach": "Disable all optimizations and use baseline ExecutorCore performance",
+  "validation_successful": true
+}

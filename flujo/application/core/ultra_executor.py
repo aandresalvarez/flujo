@@ -2674,7 +2674,7 @@ class ExecutorCore(Generic[TContext]):
             primary_token_counts = result.token_counts
 
             try:
-                # ✅ Use recursive call to self.execute for fallback
+                # ✅ Use recursive call to self.execute for fallback with depth tracking
                 fallback_result = await self.execute(
                     step=step.fallback_step,
                     data=data,
@@ -2684,6 +2684,7 @@ class ExecutorCore(Generic[TContext]):
                     stream=stream,
                     on_chunk=on_chunk,
                     breach_event=breach_event,
+                    _fallback_depth=_fallback_depth + 1,
                 )
             except Exception as e:
                 # Handle fallback execution errors
@@ -3269,28 +3270,1393 @@ class PerformanceMonitor:
         }
 
 
+@dataclass
+class OptimizationConfig:
+    """Configuration for ExecutorCore optimizations."""
+    
+    # Memory optimizations - CONSERVATIVE
+    enable_object_pool: bool = False  # Disabled due to overhead
+    enable_context_optimization: bool = False  # Disabled due to overhead
+    enable_memory_optimization: bool = False  # Disabled due to overhead
+    object_pool_max_size: int = 50  # Minimal if enabled
+    object_pool_cleanup_threshold: float = 0.9  # Less aggressive cleanup
+    
+    # Execution optimizations - CONSERVATIVE
+    enable_step_optimization: bool = False  # Disabled due to overhead
+    enable_algorithm_optimization: bool = False  # Disabled due to overhead
+    enable_concurrency_optimization: bool = False  # Disabled due to overhead
+    max_concurrent_executions: Optional[int] = None  # Auto-detect if None
+    
+    # Telemetry optimizations - MINIMAL
+    enable_optimized_telemetry: bool = False  # Disabled due to overhead
+    enable_performance_monitoring: bool = False  # Disabled due to overhead
+    telemetry_batch_size: int = 10  # Smaller batches
+    telemetry_flush_interval_seconds: float = 30.0  # Less frequent flushing
+    
+    # Error handling optimizations - MINIMAL
+    enable_optimized_error_handling: bool = False  # Disabled due to overhead
+    enable_circuit_breaker: bool = False  # Disabled due to overhead
+    error_cache_size: int = 50  # Minimal cache
+    circuit_breaker_failure_threshold: int = 10  # Less sensitive
+    circuit_breaker_recovery_timeout_seconds: int = 60  # Longer recovery
+    
+    # Cache optimizations - MINIMAL
+    enable_cache_optimization: bool = False  # Disabled due to overhead
+    cache_compression: bool = False
+    cache_ttl_seconds: int = 7200  # Longer TTL
+    cache_max_size: int = 500  # Smaller cache  # Reduced cache size
+    
+    # Performance thresholds
+    slow_execution_threshold_ms: float = 1000.0
+    memory_pressure_threshold_mb: float = 500.0
+    cpu_usage_threshold_percent: float = 80.0
+    
+    # Automatic optimization
+    enable_automatic_optimization: bool = False  # Disabled by default due to dependencies
+    optimization_analysis_interval_seconds: float = 60.0
+    performance_degradation_threshold: float = 0.2  # 20% degradation
+    
+    # Backward compatibility
+    maintain_backward_compatibility: bool = True
+    
+    # Runtime configuration
+    allow_runtime_changes: bool = True
+    config_validation_enabled: bool = True
+    
+    def validate(self) -> List[str]:
+        """Validate configuration and return list of issues."""
+        issues = []
+        
+        # Validate ranges
+        if self.object_pool_max_size <= 0:
+            issues.append("object_pool_max_size must be positive")
+        
+        if self.telemetry_batch_size <= 0:
+            issues.append("telemetry_batch_size must be positive")
+        
+        if self.error_cache_size <= 0:
+            issues.append("error_cache_size must be positive")
+        
+        if self.cache_ttl_seconds <= 0:
+            issues.append("cache_ttl_seconds must be positive")
+        
+        if not (0.0 <= self.object_pool_cleanup_threshold <= 1.0):
+            issues.append("object_pool_cleanup_threshold must be between 0.0 and 1.0")
+        
+        if not (0.0 <= self.cpu_usage_threshold_percent <= 100.0):
+            issues.append("cpu_usage_threshold_percent must be between 0.0 and 100.0")
+        
+        if self.max_concurrent_executions is not None and self.max_concurrent_executions <= 0:
+            issues.append("max_concurrent_executions must be positive or None")
+        
+        # Validate logical dependencies
+        if self.enable_performance_monitoring and not self.enable_optimized_telemetry:
+            issues.append("Performance monitoring requires optimized telemetry")
+        
+        if self.enable_automatic_optimization and not self.enable_performance_monitoring:
+            issues.append("Automatic optimization requires performance monitoring")
+        
+        return issues
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert configuration to dictionary."""
+        return {
+            field.name: getattr(self, field.name)
+            for field in self.__dataclass_fields__.values()
+        }
+    
+    @classmethod
+    def from_dict(cls, config_dict: Dict[str, Any]) -> 'OptimizationConfig':
+        """Create configuration from dictionary."""
+        # Filter out unknown fields
+        valid_fields = {field.name for field in cls.__dataclass_fields__.values()}
+        filtered_dict = {
+            key: value for key, value in config_dict.items()
+            if key in valid_fields
+        }
+        
+        return cls(**filtered_dict)
+    
+    def merge(self, other: 'OptimizationConfig') -> 'OptimizationConfig':
+        """Merge with another configuration, with other taking precedence."""
+        merged_dict = self.to_dict()
+        merged_dict.update(other.to_dict())
+        return self.from_dict(merged_dict)
+    
+    def create_optimized_variant(self, performance_data: Dict[str, Any]) -> 'OptimizationConfig':
+        """Create an optimized variant based on performance data."""
+        optimized = OptimizationConfig(**self.to_dict())
+        
+        # Analyze performance data and adjust configuration
+        avg_execution_time = performance_data.get('avg_execution_time_ms', 0)
+        memory_usage_mb = performance_data.get('memory_usage_mb', 0)
+        cpu_usage_percent = performance_data.get('cpu_usage_percent', 0)
+        error_rate = performance_data.get('error_rate', 0)
+        cache_hit_rate = performance_data.get('cache_hit_rate', 0)
+        
+        # Adjust based on execution time
+        if avg_execution_time > self.slow_execution_threshold_ms:
+            optimized.enable_step_optimization = True
+            optimized.enable_algorithm_optimization = True
+            optimized.enable_concurrency_optimization = True
+        
+        # Adjust based on memory usage
+        if memory_usage_mb > self.memory_pressure_threshold_mb:
+            optimized.enable_memory_optimization = True
+            optimized.object_pool_cleanup_threshold = 0.6  # More aggressive cleanup
+            optimized.cache_max_size = min(self.cache_max_size, 5000)  # Reduce cache size
+        
+        # Adjust based on CPU usage
+        if cpu_usage_percent > self.cpu_usage_threshold_percent:
+            optimized.telemetry_batch_size = max(50, self.telemetry_batch_size // 2)
+            optimized.telemetry_flush_interval_seconds = min(10.0, self.telemetry_flush_interval_seconds * 2)
+        
+        # Adjust based on error rate
+        if error_rate > 0.1:  # 10% error rate
+            optimized.enable_optimized_error_handling = True
+            optimized.enable_circuit_breaker = True
+            optimized.circuit_breaker_failure_threshold = max(3, self.circuit_breaker_failure_threshold - 2)
+        
+        # Adjust based on cache performance
+        if cache_hit_rate < 0.3:  # 30% hit rate
+            optimized.cache_ttl_seconds = min(7200, self.cache_ttl_seconds * 2)  # Increase TTL
+            optimized.cache_max_size = min(20000, self.cache_max_size * 2)  # Increase cache size
+        
+        return optimized
+
+
+class OptimizationConfigManager:
+    """Manages optimization configuration with runtime updates and validation."""
+    
+    def __init__(self, initial_config: Optional[OptimizationConfig] = None):
+        self._config = initial_config or OptimizationConfig()
+        self._config_history: List[Tuple[float, OptimizationConfig]] = []
+        self._change_callbacks: List[Callable[[OptimizationConfig, OptimizationConfig], None]] = []
+        self._lock = asyncio.Lock()
+        
+        # Performance tracking for automatic optimization
+        self._performance_samples: List[Dict[str, Any]] = []
+        self._last_optimization_time = time.time()
+        
+        # Validation
+        if self._config.config_validation_enabled:
+            issues = self._config.validate()
+            if issues:
+                raise ValueError(f"Invalid configuration: {', '.join(issues)}")
+    
+    @property
+    def current_config(self) -> OptimizationConfig:
+        """Get current configuration."""
+        return self._config
+    
+    async def update_config(
+        self, 
+        new_config: OptimizationConfig,
+        validate: bool = True
+    ) -> None:
+        """Update configuration with validation and callbacks."""
+        async with self._lock:
+            # Validate new configuration
+            if validate and new_config.config_validation_enabled:
+                issues = new_config.validate()
+                if issues:
+                    raise ValueError(f"Invalid configuration: {', '.join(issues)}")
+            
+            # Check if runtime changes are allowed
+            if not self._config.allow_runtime_changes:
+                raise RuntimeError("Runtime configuration changes are disabled")
+            
+            # Store old configuration
+            old_config = self._config
+            
+            # Update configuration
+            self._config = new_config
+            
+            # Record change in history
+            self._config_history.append((time.time(), new_config))
+            
+            # Limit history size
+            if len(self._config_history) > 100:
+                self._config_history = self._config_history[-50:]
+            
+            # Notify callbacks
+            for callback in self._change_callbacks:
+                try:
+                    callback(old_config, new_config)
+                except Exception:
+                    # Don't let callback errors affect configuration update
+                    continue
+    
+    def add_change_callback(
+        self, 
+        callback: Callable[[OptimizationConfig, OptimizationConfig], None]
+    ) -> None:
+        """Add callback for configuration changes."""
+        self._change_callbacks.append(callback)
+    
+    def remove_change_callback(
+        self, 
+        callback: Callable[[OptimizationConfig, OptimizationConfig], None]
+    ) -> None:
+        """Remove configuration change callback."""
+        if callback in self._change_callbacks:
+            self._change_callbacks.remove(callback)
+    
+    async def update_partial(self, **kwargs: Any) -> None:
+        """Update specific configuration fields."""
+        current_dict = self._config.to_dict()
+        current_dict.update(kwargs)
+        new_config = OptimizationConfig.from_dict(current_dict)
+        await self.update_config(new_config)
+    
+    def get_config_history(self, limit: int = 10) -> List[Tuple[float, OptimizationConfig]]:
+        """Get configuration change history."""
+        return self._config_history[-limit:]
+    
+    def record_performance_sample(self, sample: Dict[str, Any]) -> None:
+        """Record performance sample for automatic optimization."""
+        sample['timestamp'] = time.time()
+        self._performance_samples.append(sample)
+        
+        # Limit sample history
+        if len(self._performance_samples) > 1000:
+            self._performance_samples = self._performance_samples[-500:]
+    
+    async def analyze_and_optimize(self) -> Optional[OptimizationConfig]:
+        """Analyze performance and suggest optimized configuration."""
+        if not self._config.enable_automatic_optimization:
+            return None
+        
+        current_time = time.time()
+        if (current_time - self._last_optimization_time < 
+            self._config.optimization_analysis_interval_seconds):
+            return None
+        
+        if len(self._performance_samples) < 10:
+            return None  # Not enough data
+        
+        # Analyze recent performance
+        recent_samples = [
+            sample for sample in self._performance_samples
+            if current_time - sample['timestamp'] < 300  # Last 5 minutes
+        ]
+        
+        if not recent_samples:
+            return None
+        
+        # Calculate performance metrics
+        performance_data = self._calculate_performance_metrics(recent_samples)
+        
+        # Check if optimization is needed
+        if self._needs_optimization(performance_data):
+            optimized_config = self._config.create_optimized_variant(performance_data)
+            self._last_optimization_time = current_time
+            return optimized_config
+        
+        return None
+    
+    def _calculate_performance_metrics(self, samples: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Calculate aggregate performance metrics from samples."""
+        if not samples:
+            return {}
+        
+        # Extract metrics
+        execution_times = [s.get('execution_time_ms', 0) for s in samples]
+        memory_usage = [s.get('memory_usage_mb', 0) for s in samples]
+        cpu_usage = [s.get('cpu_usage_percent', 0) for s in samples]
+        error_counts = [s.get('error_count', 0) for s in samples]
+        cache_hits = [s.get('cache_hits', 0) for s in samples]
+        cache_misses = [s.get('cache_misses', 0) for s in samples]
+        
+        # Calculate aggregates
+        total_cache_requests = sum(cache_hits) + sum(cache_misses)
+        cache_hit_rate = sum(cache_hits) / max(total_cache_requests, 1)
+        
+        return {
+            'avg_execution_time_ms': sum(execution_times) / len(execution_times),
+            'max_execution_time_ms': max(execution_times) if execution_times else 0,
+            'avg_memory_usage_mb': sum(memory_usage) / len(memory_usage),
+            'max_memory_usage_mb': max(memory_usage) if memory_usage else 0,
+            'avg_cpu_usage_percent': sum(cpu_usage) / len(cpu_usage),
+            'max_cpu_usage_percent': max(cpu_usage) if cpu_usage else 0,
+            'error_rate': sum(error_counts) / len(samples),
+            'cache_hit_rate': cache_hit_rate,
+            'sample_count': len(samples)
+        }
+    
+    def _needs_optimization(self, performance_data: Dict[str, Any]) -> bool:
+        """Determine if optimization is needed based on performance data."""
+        # Check various performance indicators
+        needs_optimization = False
+        
+        # Execution time check
+        if performance_data.get('avg_execution_time_ms', 0) > self._config.slow_execution_threshold_ms:
+            needs_optimization = True
+        
+        # Memory pressure check
+        if performance_data.get('avg_memory_usage_mb', 0) > self._config.memory_pressure_threshold_mb:
+            needs_optimization = True
+        
+        # CPU usage check
+        if performance_data.get('avg_cpu_usage_percent', 0) > self._config.cpu_usage_threshold_percent:
+            needs_optimization = True
+        
+        # Error rate check
+        if performance_data.get('error_rate', 0) > 0.05:  # 5% error rate
+            needs_optimization = True
+        
+        # Cache performance check
+        if performance_data.get('cache_hit_rate', 1.0) < 0.3:  # 30% hit rate
+            needs_optimization = True
+        
+        return needs_optimization
+    
+    def export_config(self, format: str = 'dict') -> Union[Dict[str, Any], str]:
+        """Export configuration in specified format."""
+        config_dict = self._config.to_dict()
+        
+        if format == 'dict':
+            return config_dict
+        elif format == 'json':
+            import json
+            return json.dumps(config_dict, indent=2)
+        elif format == 'yaml':
+            try:
+                import yaml
+                return yaml.dump(config_dict, default_flow_style=False)
+            except ImportError:
+                raise ImportError("PyYAML is required for YAML export")
+        else:
+            raise ValueError(f"Unsupported format: {format}")
+    
+    def import_config(self, config_data: Union[Dict[str, Any], str], format: str = 'dict') -> None:
+        """Import configuration from specified format."""
+        if format == 'dict':
+            config_dict = config_data
+        elif format == 'json':
+            import json
+            config_dict = json.loads(config_data)
+        elif format == 'yaml':
+            try:
+                import yaml
+                config_dict = yaml.safe_load(config_data)
+            except ImportError:
+                raise ImportError("PyYAML is required for YAML import")
+        else:
+            raise ValueError(f"Unsupported format: {format}")
+        
+        new_config = OptimizationConfig.from_dict(config_dict)
+        asyncio.create_task(self.update_config(new_config))
+
+
 class OptimizedExecutorCore(ExecutorCore[TContext]):
-    """ExecutorCore variant with additional performance helpers."""
+    """
+    ExecutorCore variant with comprehensive performance optimizations.
+    
+    Features:
+    - Optimized object pooling for reduced memory allocation
+    - Enhanced context management with copy-on-write
+    - Optimized step execution with caching and analysis
+    - Low-overhead telemetry with batching
+    - Advanced error handling with circuit breakers
+    - Performance monitoring and automatic optimization
+    - Algorithm optimizations for hashing and serialization
+    - Concurrency optimizations with adaptive limits
+    """
 
-    def __init__(self, **kwargs: Any) -> None:
+    def __init__(
+        self, 
+        optimization_config: Optional[OptimizationConfig] = None,
+        config_manager: Optional[OptimizationConfigManager] = None,
+        **kwargs: Any
+    ) -> None:
+        # Initialize configuration management
+        if config_manager:
+            self._config_manager = config_manager
+        else:
+            initial_config = optimization_config or OptimizationConfig()
+            self._config_manager = OptimizationConfigManager(initial_config)
+        
+        # Initialize base ExecutorCore
         super().__init__(**kwargs)
-        self._object_pool = ObjectPool()
-        self._context_manager_opt = OptimizedContextManager()
-        self._step_executor_opt = OptimizedStepExecutor(self)
-        self._telemetry_opt = OptimizedTelemetry()
-        self._perf_monitor = PerformanceMonitor()
-
+        
+        # Initialize optimization components
+        self._init_optimization_components()
+        
+        # Performance monitoring
+        self._execution_stats = {
+            'total_executions': 0,
+            'optimized_executions': 0,
+            'cache_hits': 0,
+            'error_recoveries': 0,
+            'total_execution_time_ms': 0.0
+        }
+        
+        # Backward compatibility tracking
+        self._compatibility_mode = self.optimization_config.maintain_backward_compatibility
+        
+        # Automatic optimization task
+        self._auto_optimization_task: Optional[asyncio.Task] = None
+        
+        # Set up configuration change callback
+        self._config_manager.add_change_callback(self._on_config_change)
+        
+        # Start automatic optimization if enabled
+        if self.optimization_config.enable_automatic_optimization:
+            self._start_automatic_optimization()
+    
+    @property
+    def optimization_config(self) -> OptimizationConfig:
+        """Get current optimization configuration."""
+        return self._config_manager.current_config
+    
+    def _init_optimization_components(self) -> None:
+        """Initialize all optimization components."""
+        
+        # Memory optimizations
+        if self.optimization_config.enable_object_pool:
+            from .optimization.memory.object_pool import get_global_pool
+            self._object_pool = get_global_pool()
+        else:
+            self._object_pool = None
+            
+        if self.optimization_config.enable_context_optimization:
+            from .optimization.memory.context_manager import get_global_context_manager
+            self._context_manager_opt = get_global_context_manager()
+        else:
+            self._context_manager_opt = None
+            
+        if self.optimization_config.enable_memory_optimization:
+            from .optimization.memory.memory_utils import get_global_memory_optimizer
+            self._memory_optimizer = get_global_memory_optimizer()
+        else:
+            self._memory_optimizer = None
+        
+        # Execution optimizations
+        if self.optimization_config.enable_step_optimization:
+            from .optimization.performance.step_executor import get_global_step_executor
+            self._step_executor_opt = get_global_step_executor()
+        else:
+            self._step_executor_opt = None
+            
+        if self.optimization_config.enable_algorithm_optimization:
+            from .optimization.performance.algorithms import (
+                get_global_hasher, get_global_serializer, get_global_cache_key_generator
+            )
+            self._optimized_hasher = get_global_hasher()
+            self._optimized_serializer = get_global_serializer()
+            self._optimized_cache_key_gen = get_global_cache_key_generator()
+        else:
+            self._optimized_hasher = None
+            self._optimized_serializer = None
+            self._optimized_cache_key_gen = None
+            
+        if self.optimization_config.enable_concurrency_optimization:
+            from .optimization.performance.concurrency import get_global_concurrency_optimizer
+            self._concurrency_manager = get_global_concurrency_optimizer()
+        else:
+            self._concurrency_manager = None
+        
+        # Telemetry optimizations
+        if self.optimization_config.enable_optimized_telemetry:
+            from .optimized_telemetry import get_global_telemetry
+            self._telemetry_opt = get_global_telemetry()
+        else:
+            self._telemetry_opt = None
+            
+        if self.optimization_config.enable_performance_monitoring:
+            from .performance_monitor import get_global_performance_monitor
+            self._perf_monitor = get_global_performance_monitor()
+        else:
+            self._perf_monitor = None
+        
+        # Error handling optimizations
+        if self.optimization_config.enable_optimized_error_handling:
+            from .optimized_error_handler import get_global_error_handler
+            self._error_handler = get_global_error_handler()
+        else:
+            self._error_handler = None
+            
+        if self.optimization_config.enable_circuit_breaker:
+            from .circuit_breaker import get_global_registry
+            self._circuit_breaker_registry = get_global_registry()
+        else:
+            self._circuit_breaker_registry = None
+    
+    async def execute(
+        self,
+        step: Any,
+        data: Any,
+        *,
+        context: Optional[TContext] = None,
+        resources: Optional[Any] = None,
+        limits: Optional[UsageLimits] = None,
+        stream: bool = False,
+        on_chunk: Optional[Callable[[Any], Awaitable[None]]] = None,
+        breach_event: Optional[Any] = None,
+        result: Optional[Any] = None,
+        context_setter: Optional[Callable[["PipelineResult[Any]", Optional[Any]], None]] = None,
+        _fallback_depth: int = 0,  # Track fallback recursion depth
+        **kwargs: Any
+    ) -> StepResult:
+        """Execute step with comprehensive optimizations and fallback mechanisms."""
+        start_time = time.perf_counter()
+        optimization_attempted = False
+        
+        # Prevent infinite fallback recursion
+        MAX_FALLBACK_DEPTH = 2
+        if _fallback_depth > MAX_FALLBACK_DEPTH:
+            return StepResult(
+                name=getattr(step, 'name', 'unknown'),
+                success=False,
+                feedback=f"Fallback loop detected in step '{getattr(step, 'name', 'unknown')}'",
+                latency_s=0.0,
+                cost_usd=0.0,
+                token_counts=0,
+            )
+        
+        # Start automatic optimization if enabled and not already running
+        if (self.optimization_config.enable_automatic_optimization and 
+            (self._auto_optimization_task is None or self._auto_optimization_task.done())):
+            try:
+                loop = asyncio.get_running_loop()
+                self._auto_optimization_task = loop.create_task(self._automatic_optimization_loop())
+            except RuntimeError:
+                pass  # No running event loop
+        
+        try:
+            # Update execution statistics
+            self._execution_stats['total_executions'] += 1
+            
+            # Record performance metrics
+            if self._perf_monitor:
+                self._perf_monitor.record_metric("executor.executions_total", 1)
+                self._perf_monitor.record_metric("executor.step_type", 1, {
+                    "step_type": type(step).__name__,
+                    "step_name": getattr(step, 'name', 'unknown')
+                })
+            
+            # Check memory pressure and adjust optimizations
+            if self._memory_optimizer:
+                memory_stats = self._memory_optimizer.check_memory_pressure()
+                if memory_stats.get('pressure_level', 'low') == 'high':
+                    # Disable some optimizations under memory pressure
+                    if self._perf_monitor:
+                        self._perf_monitor.record_metric("executor.memory_pressure_detected", 1)
+            
+            # Optimize context if available
+            optimized_context = context
+            if context is not None and self._context_manager_opt:
+                try:
+                    optimized_context = self._context_manager_opt.optimized_copy(context)
+                    optimization_attempted = True
+                except Exception as e:
+                    # Context optimization failed, use original context
+                    if self._perf_monitor:
+                        self._perf_monitor.record_metric("executor.context_optimization_failures", 1)
+                    optimized_context = context
+            
+            # Use optimized cache key generation if available
+            cache_key = None
+            cached_result = None
+            
+            if self._enable_cache:
+                try:
+                    if self._optimized_cache_key_gen:
+                        cache_key = self._optimized_cache_key_gen.generate_cache_key(
+                            step, data, optimized_context, resources
+                        )
+                        optimization_attempted = True
+                    else:
+                        # Fallback to standard cache key generation
+                        cache_key = self._cache_key_generator.generate_key(
+                            step, data, optimized_context, resources
+                        )
+                    
+                    # Check cache
+                    if self._cache_backend and cache_key:
+                        cached_result = await self._cache_backend.get(cache_key)
+                        if cached_result:
+                            self._execution_stats['cache_hits'] += 1
+                            if self._perf_monitor:
+                                self._perf_monitor.record_metric("executor.cache_hits", 1)
+                            return cached_result
+                            
+                except Exception as e:
+                    # Cache key generation failed, continue without caching
+                    if self._perf_monitor:
+                        self._perf_monitor.record_metric("executor.cache_key_failures", 1)
+                    cache_key = None
+            
+            # Attempt optimized execution with concurrency management
+            result = None
+            execution_method = "standard"
+            
+            try:
+                # Use concurrency optimization if available
+                if self._concurrency_manager:
+                    # Create coroutine for concurrency manager
+                    execute_coro = self._execute_with_optimizations(
+                        step, data, optimized_context, resources, limits,
+                        stream, on_chunk, breach_event, context_setter, **kwargs
+                    )
+                    
+                    result = await self._concurrency_manager.execute_with_concurrency(
+                        execute_coro
+                    )
+                    execution_method = "optimized_with_concurrency"
+                    optimization_attempted = True
+                else:
+                    result = await self._execute_with_optimizations(
+                        step, data, optimized_context, resources, limits,
+                        stream, on_chunk, breach_event, context_setter, **kwargs
+                    )
+                    execution_method = "optimized"
+                    optimization_attempted = True
+                    
+            except Exception as opt_error:
+                # Optimized execution failed, fall back to standard execution
+                if self._perf_monitor:
+                    self._perf_monitor.record_metric("executor.optimization_failures", 1, {
+                        "error_type": type(opt_error).__name__
+                    })
+                
+                # Fall back to standard execution
+                result = await super().execute(
+                    step=step,
+                    data=data,
+                    context=optimized_context,
+                    resources=resources,
+                    limits=limits,
+                    stream=stream,
+                    on_chunk=on_chunk,
+                    breach_event=breach_event,
+                    result=result,
+                    context_setter=context_setter,
+                    **kwargs
+                )
+                execution_method = "fallback"
+            
+            # Cache result if caching is enabled and result is valid
+            if cache_key and self._cache_backend and result:
+                try:
+                    await self._cache_backend.put(cache_key, result, 3600)  # 1 hour TTL
+                except Exception as e:
+                    # Cache storage failed, continue
+                    if self._perf_monitor:
+                        self._perf_monitor.record_metric("executor.cache_store_failures", 1)
+            
+            # Update statistics
+            execution_time_ms = (time.perf_counter() - start_time) * 1000
+            self._execution_stats['total_execution_time_ms'] += execution_time_ms
+            
+            if optimization_attempted:
+                self._execution_stats['optimized_executions'] += 1
+            
+            # Record performance metrics
+            if self._perf_monitor:
+                self._perf_monitor.record_metric("executor.execution_time_ms", execution_time_ms, {
+                    "execution_method": execution_method
+                })
+                
+                # Check for slow executions
+                if execution_time_ms > self.optimization_config.slow_execution_threshold_ms:
+                    self._perf_monitor.record_metric("executor.slow_executions", 1, {
+                        "step_type": type(step).__name__,
+                        "execution_time_ms": execution_time_ms,
+                        "execution_method": execution_method
+                    })
+            
+            # Optimize result context if needed
+            if result and hasattr(result, 'context') and result.context and self._context_manager_opt:
+                try:
+                    result.context = self._context_manager_opt.optimized_copy(result.context)
+                except Exception as e:
+                    # Context optimization failed, keep original context
+                    if self._perf_monitor:
+                        self._perf_monitor.record_metric("executor.result_context_optimization_failures", 1)
+            
+            return result
+            
+        except Exception as error:
+            # Handle errors with optimized error handling
+            recovery_attempted = False
+            
+            if self._error_handler:
+                try:
+                    recovery_result = await self._error_handler.handle_error(
+                        error=error,
+                        step_name=getattr(step, 'name', 'unknown'),
+                        execution_id=kwargs.get('execution_id'),
+                        attempt_number=kwargs.get('attempt_number', 1)
+                    )
+                    recovery_attempted = True
+                    
+                    if recovery_result.success:
+                        self._execution_stats['error_recoveries'] += 1
+                        if self._perf_monitor:
+                            self._perf_monitor.record_metric("executor.error_recoveries", 1, {
+                                "recovery_action": recovery_result.action_taken.value,
+                                "error_type": type(error).__name__
+                            })
+                        
+                        # Return recovered value if available
+                        if recovery_result.recovered_value is not None:
+                            return recovery_result.recovered_value
+                    
+                except Exception as recovery_error:
+                    # Error handling itself failed, continue with original error
+                    if self._perf_monitor:
+                        self._perf_monitor.record_metric("executor.error_recovery_failures", 1, {
+                            "original_error": type(error).__name__,
+                            "recovery_error": type(recovery_error).__name__
+                        })
+            
+            # Record error metrics
+            if self._perf_monitor:
+                self._perf_monitor.record_metric("executor.errors", 1, {
+                    "error_type": type(error).__name__,
+                    "step_type": type(step).__name__,
+                    "recovery_attempted": str(recovery_attempted).lower(),
+                    "optimization_attempted": str(optimization_attempted).lower()
+                })
+            
+            # Re-raise original error
+            raise
+    
+    async def _execute_with_optimizations(
+        self,
+        step: Any,
+        data: Any,
+        context: Optional[TContext],
+        resources: Optional[Any],
+        limits: Optional[UsageLimits],
+        stream: bool,
+        on_chunk: Optional[Callable[[Any], Awaitable[None]]],
+        breach_event: Optional[Any],
+        context_setter: Optional[Callable[["PipelineResult[Any]", Optional[Any]], None]],
+        **kwargs: Any
+    ) -> StepResult:
+        """Execute step using optimized components."""
+        
+        # Use optimized step execution if available
+        if self._step_executor_opt:
+            return await self._step_executor_opt.execute_optimized(
+                step=step,
+                data=data,
+                context=context,
+                resources=resources,
+                **kwargs
+            )
+        else:
+            # Fall back to standard execution
+            return await super().execute(
+                step=step,
+                data=data,
+                context=context,
+                resources=resources,
+                limits=limits,
+                stream=stream,
+                on_chunk=on_chunk,
+                breach_event=breach_event,
+                result=kwargs.get('result'),
+                context_setter=context_setter,
+                **kwargs
+            )
+    
     async def optimized_execute(self, step: Any, data: Any, **kwargs: Any) -> StepResult:
-        if "context" in kwargs and kwargs["context"] is not None:
-            kwargs["context"] = self._context_manager_opt.optimized_copy(kwargs["context"])
-        result = await self.execute(step, data, **kwargs)
-        if (
-            "context" in kwargs
-            and kwargs["context"] is not None
-            and getattr(result, "context", None) is not None
-        ):
-            self._context_manager_opt.optimized_merge(kwargs["context"], result.context)
-        return result
+        """
+        Backward compatible optimized execution method.
+        
+        This method provides the same interface as the original optimized_execute
+        while using the new comprehensive optimization system.
+        """
+        return await self.execute(step, data, **kwargs)
+    
+    async def execute_with_monitoring(
+        self, 
+        step: Any, 
+        data: Any, 
+        **kwargs: Any
+    ) -> Tuple[StepResult, Dict[str, Any]]:
+        """
+        Execute step with detailed performance monitoring.
+        
+        Returns both the result and detailed performance metrics.
+        """
+        start_time = time.perf_counter()
+        
+        # Start performance monitoring
+        if self._perf_monitor:
+            await self._perf_monitor.start_monitoring()
+        
+        try:
+            result = await self.execute(step, data, **kwargs)
+            
+            execution_time_ms = (time.perf_counter() - start_time) * 1000
+            
+            # Collect detailed metrics
+            metrics = {
+                'execution_time_ms': execution_time_ms,
+                'step_type': type(step).__name__,
+                'step_name': getattr(step, 'name', 'unknown'),
+                'optimization_stats': self.get_optimization_stats(),
+                'timestamp': time.time()
+            }
+            
+            # Add performance monitor data if available
+            if self._perf_monitor:
+                metrics['performance_summary'] = self._perf_monitor.get_performance_summary()
+                metrics['bottlenecks'] = self._perf_monitor.detect_bottlenecks()
+            
+            return result, metrics
+            
+        finally:
+            # Stop performance monitoring
+            if self._perf_monitor:
+                await self._perf_monitor.stop_monitoring()
+    
+    async def execute_batch(
+        self, 
+        steps_and_data: List[Tuple[Any, Any]], 
+        **kwargs: Any
+    ) -> List[StepResult]:
+        """
+        Execute multiple steps in an optimized batch.
+        
+        This method can apply batch-level optimizations like:
+        - Shared context optimization
+        - Batch cache operations
+        - Optimized concurrency management
+        """
+        if not steps_and_data:
+            return []
+        
+        batch_start_time = time.perf_counter()
+        results = []
+        
+        # Record batch execution
+        if self._perf_monitor:
+            self._perf_monitor.record_metric("executor.batch_executions", 1, {
+                "batch_size": len(steps_and_data)
+            })
+        
+        # Optimize context once for the entire batch if possible
+        optimized_context = kwargs.get('context')
+        if optimized_context and self._context_manager_opt:
+            try:
+                optimized_context = await self._context_manager_opt.optimize_context(optimized_context)
+                kwargs['context'] = optimized_context
+            except Exception:
+                # Context optimization failed, use original
+                pass
+        
+        # Execute steps with optimized concurrency
+        if self._concurrency_manager:
+            # Use concurrency optimization for each step
+            async def execute_single(step_data_pair):
+                step, data = step_data_pair
+                
+                # Create coroutine for concurrency manager
+                execute_coro = self.execute(step, data, **kwargs)
+                
+                return await self._concurrency_manager.execute_with_concurrency(
+                    execute_coro
+                )
+            
+            # Execute all steps concurrently
+            results = await asyncio.gather(*[
+                execute_single(pair) for pair in steps_and_data
+            ], return_exceptions=True)
+            
+            # Handle any exceptions
+            final_results = []
+            for result in results:
+                if isinstance(result, Exception):
+                    if self._perf_monitor:
+                        self._perf_monitor.record_metric("executor.batch_step_failures", 1)
+                    raise result
+                final_results.append(result)
+            results = final_results
+        else:
+            # Sequential execution with standard concurrency
+            for step, data in steps_and_data:
+                try:
+                    result = await self.execute(step, data, **kwargs)
+                    results.append(result)
+                except Exception as e:
+                    # Handle batch execution errors
+                    if self._perf_monitor:
+                        self._perf_monitor.record_metric("executor.batch_step_failures", 1)
+                    raise
+        
+        # Record batch completion metrics
+        batch_time_ms = (time.perf_counter() - batch_start_time) * 1000
+        if self._perf_monitor:
+            self._perf_monitor.record_metric("executor.batch_execution_time_ms", batch_time_ms, {
+                "batch_size": len(steps_and_data)
+            })
+        
+        return results
+    
+    async def execute_with_circuit_breaker(
+        self, 
+        step: Any, 
+        data: Any, 
+        circuit_breaker_name: Optional[str] = None,
+        **kwargs: Any
+    ) -> StepResult:
+        """
+        Execute step with circuit breaker protection.
+        
+        This method wraps execution with a circuit breaker to prevent
+        cascade failures and improve system resilience.
+        """
+        if not self._circuit_breaker_registry:
+            # Circuit breaker not available, use standard execution
+            return await self.execute(step, data, **kwargs)
+        
+        # Get or create circuit breaker
+        cb_name = circuit_breaker_name or f"step_{getattr(step, 'name', 'unknown')}"
+        circuit_breaker = self._circuit_breaker_registry.get_or_create(cb_name)
+        
+        # Execute with circuit breaker protection
+        async def protected_execution():
+            return await self.execute(step, data, **kwargs)
+        
+        try:
+            result = await circuit_breaker.call(protected_execution)
+            
+            # Record successful execution
+            if self._perf_monitor:
+                self._perf_monitor.record_metric("executor.circuit_breaker_successes", 1, {
+                    "circuit_name": cb_name
+                })
+            
+            return result
+            
+        except Exception as e:
+            # Record circuit breaker failure
+            if self._perf_monitor:
+                self._perf_monitor.record_metric("executor.circuit_breaker_failures", 1, {
+                    "circuit_name": cb_name,
+                    "error_type": type(e).__name__
+                })
+            raise
+    
+    async def execute_with_automatic_optimization(
+        self, 
+        step: Any, 
+        data: Any, 
+        **kwargs: Any
+    ) -> StepResult:
+        """
+        Execute step with automatic optimization selection.
+        
+        This method analyzes the step and execution context to automatically
+        select the best optimization strategy.
+        """
+        # Analyze step characteristics
+        step_analysis = await self._analyze_step_for_optimization(step, data, kwargs)
+        
+        # Select optimization strategy based on analysis
+        if step_analysis['is_cpu_intensive']:
+            # Use concurrency optimization for CPU-intensive steps
+            if self._concurrency_manager:
+                # Create coroutine for concurrency manager
+                execute_coro = self.execute(step, data, **kwargs)
+                
+                return await self._concurrency_manager.execute_with_concurrency(
+                    execute_coro,
+                    priority=1  # Higher priority for CPU-intensive tasks
+                )
+        
+        elif step_analysis['is_memory_intensive']:
+            # Use memory optimization for memory-intensive steps
+            if self._memory_optimizer:
+                # Track memory usage for this step
+                step_name = getattr(step, 'name', 'unknown')
+                self._memory_optimizer.track_object(step, f"memory_intensive_step_{step_name}")
+                return await self.execute(step, data, **kwargs)
+        
+        elif step_analysis['is_io_intensive']:
+            # Use I/O optimization for I/O-intensive steps
+            return await self.execute_with_circuit_breaker(step, data, **kwargs)
+        
+        elif step_analysis['is_cacheable']:
+            # Ensure caching is enabled for cacheable steps
+            original_cache_setting = self._enable_cache
+            self._enable_cache = True
+            try:
+                return await self.execute(step, data, **kwargs)
+            finally:
+                self._enable_cache = original_cache_setting
+        
+        # Default execution
+        return await self.execute(step, data, **kwargs)
+    
+    async def _analyze_step_for_optimization(
+        self, 
+        step: Any, 
+        data: Any, 
+        kwargs: Dict[str, Any]
+    ) -> Dict[str, bool]:
+        """Analyze step characteristics for optimization selection."""
+        analysis = {
+            'is_cpu_intensive': False,
+            'is_memory_intensive': False,
+            'is_io_intensive': False,
+            'is_cacheable': True,
+            'has_side_effects': False
+        }
+        
+        # Analyze step type
+        step_type = type(step).__name__
+        
+        # CPU-intensive patterns
+        if 'parallel' in step_type.lower() or 'batch' in step_type.lower():
+            analysis['is_cpu_intensive'] = True
+        
+        # Memory-intensive patterns
+        if hasattr(step, 'agent') and step.agent:
+            # Steps with agents are typically memory-intensive
+            analysis['is_memory_intensive'] = True
+        
+        # I/O-intensive patterns
+        if 'http' in step_type.lower() or 'api' in step_type.lower():
+            analysis['is_io_intensive'] = True
+        
+        # Non-cacheable patterns
+        if hasattr(step, 'meta') and step.meta:
+            if step.meta.get('no_cache', False):
+                analysis['is_cacheable'] = False
+            if step.meta.get('has_side_effects', False):
+                analysis['has_side_effects'] = True
+                analysis['is_cacheable'] = False
+        
+        # Analyze data size
+        try:
+            import sys
+            data_size = sys.getsizeof(data)
+            if data_size > 1024 * 1024:  # 1MB
+                analysis['is_memory_intensive'] = True
+        except Exception:
+            pass
+        
+        return analysis
+    
+    def get_optimization_stats(self) -> Dict[str, Any]:
+        """Get comprehensive optimization statistics."""
+        stats = {
+            'execution_stats': self._execution_stats.copy(),
+            'optimization_config': {
+                'object_pool_enabled': self.optimization_config.enable_object_pool,
+                'context_optimization_enabled': self.optimization_config.enable_context_optimization,
+                'step_optimization_enabled': self.optimization_config.enable_step_optimization,
+                'telemetry_optimization_enabled': self.optimization_config.enable_optimized_telemetry,
+                'error_handling_optimization_enabled': self.optimization_config.enable_optimized_error_handling,
+            }
+        }
+        
+        # Add component-specific stats
+        if self._object_pool:
+            stats['object_pool_stats'] = self._object_pool.get_stats()
+        
+        if self._context_manager_opt:
+            stats['context_manager_stats'] = self._context_manager_opt.get_stats()
+        
+        if self._step_executor_opt:
+            stats['step_executor_stats'] = {
+                'global_stats': self._step_executor_opt.get_global_stats().__dict__,
+                'cache_stats': self._step_executor_opt.get_analysis_cache_stats()
+            }
+        
+        if self._perf_monitor:
+            stats['performance_stats'] = self._perf_monitor.get_performance_summary()
+        
+        if self._error_handler:
+            error_stats = self._error_handler.get_stats()
+            if error_stats:
+                stats['error_handling_stats'] = {
+                    'total_errors': error_stats.total_errors,
+                    'recovered_errors': error_stats.recovered_errors,
+                    'recovery_rate': error_stats.recovery_rate,
+                    'cache_hit_rate': error_stats.cache_hit_rate
+                }
+        
+        if self._memory_optimizer:
+            stats['memory_stats'] = self._memory_optimizer.get_comprehensive_stats()
+        
+        return stats
+    
+    def get_performance_recommendations(self) -> List[Dict[str, Any]]:
+        """Get performance optimization recommendations."""
+        recommendations = []
+        
+        # Analyze execution patterns
+        if self._execution_stats['total_executions'] > 0:
+            avg_execution_time = (
+                self._execution_stats['total_execution_time_ms'] / 
+                self._execution_stats['total_executions']
+            )
+            
+            cache_hit_rate = (
+                self._execution_stats['cache_hits'] / 
+                self._execution_stats['total_executions']
+            )
+            
+            optimization_rate = (
+                self._execution_stats['optimized_executions'] / 
+                self._execution_stats['total_executions']
+            )
+            
+            # Performance recommendations
+            if avg_execution_time > self.optimization_config.slow_execution_threshold_ms:
+                recommendations.append({
+                    'type': 'performance',
+                    'priority': 'high',
+                    'description': f'Average execution time ({avg_execution_time:.1f}ms) exceeds threshold',
+                    'suggestion': 'Consider enabling more aggressive optimizations or reviewing step complexity'
+                })
+            
+            if cache_hit_rate < 0.3:
+                recommendations.append({
+                    'type': 'caching',
+                    'priority': 'medium',
+                    'description': f'Cache hit rate ({cache_hit_rate:.1%}) is low',
+                    'suggestion': 'Review cache configuration and consider increasing cache size'
+                })
+            
+            if optimization_rate < 0.8:
+                recommendations.append({
+                    'type': 'optimization',
+                    'priority': 'medium',
+                    'description': f'Optimization rate ({optimization_rate:.1%}) could be improved',
+                    'suggestion': 'Enable more optimization components for better performance'
+                })
+        
+        # Component-specific recommendations
+        if self._error_handler:
+            error_suggestions = self._error_handler.suggest_optimizations()
+            recommendations.extend(error_suggestions)
+        
+        if self._perf_monitor:
+            bottlenecks = self._perf_monitor.detect_bottlenecks()
+            for bottleneck in bottlenecks:
+                recommendations.append({
+                    'type': 'bottleneck',
+                    'priority': bottleneck.get('severity', 'medium'),
+                    'description': bottleneck.get('description', 'Performance bottleneck detected'),
+                    'suggestion': 'Review and optimize the identified bottleneck'
+                })
+        
+        return recommendations
+    
+    async def optimize_configuration(self) -> OptimizationConfig:
+        """Automatically optimize configuration based on usage patterns."""
+        current_config = self.optimization_config
+        
+        # Analyze current performance
+        stats = self.get_optimization_stats()
+        recommendations = self.get_performance_recommendations()
+        
+        # Create optimized configuration
+        optimized_config = OptimizationConfig(
+            # Enable more optimizations if performance is poor
+            enable_object_pool=True,
+            enable_context_optimization=True,
+            enable_memory_optimization=True,
+            enable_step_optimization=True,
+            enable_algorithm_optimization=True,
+            enable_concurrency_optimization=True,
+            enable_optimized_telemetry=True,
+            enable_performance_monitoring=True,
+            enable_optimized_error_handling=True,
+            enable_circuit_breaker=True,
+            
+            # Adjust sizes based on usage
+            object_pool_max_size=min(2000, current_config.object_pool_max_size * 2),
+            error_cache_size=min(1000, current_config.error_cache_size * 2),
+            telemetry_batch_size=max(50, min(200, current_config.telemetry_batch_size)),
+            
+            # Maintain backward compatibility
+            maintain_backward_compatibility=current_config.maintain_backward_compatibility
+        )
+        
+        return optimized_config
+    
+    async def apply_optimization_config(self, config: OptimizationConfig) -> None:
+        """Apply new optimization configuration."""
+        await self._config_manager.update_config(config)
+    
+    async def update_config_partial(self, **kwargs: Any) -> None:
+        """Update specific configuration fields."""
+        await self._config_manager.update_partial(**kwargs)
+    
+    def _on_config_change(
+        self, 
+        old_config: OptimizationConfig, 
+        new_config: OptimizationConfig
+    ) -> None:
+        """Handle configuration changes."""
+        # Reinitialize components with new configuration
+        self._init_optimization_components()
+        
+        # Update backward compatibility mode
+        self._compatibility_mode = new_config.maintain_backward_compatibility
+        
+        # Restart automatic optimization if needed
+        if new_config.enable_automatic_optimization != old_config.enable_automatic_optimization:
+            if new_config.enable_automatic_optimization:
+                self._start_automatic_optimization()
+            else:
+                self._stop_automatic_optimization()
+        
+        # Log configuration change
+        if self._perf_monitor:
+            self._perf_monitor.record_metric("executor.config_changes", 1, {
+                "change_type": "runtime_update"
+            })
+    
+    def _start_automatic_optimization(self) -> None:
+        """Start automatic optimization task."""
+        try:
+            # Only start if there's a running event loop
+            loop = asyncio.get_running_loop()
+            if self._auto_optimization_task is None or self._auto_optimization_task.done():
+                self._auto_optimization_task = loop.create_task(self._automatic_optimization_loop())
+        except RuntimeError:
+            # No running event loop, automatic optimization will start on first execute
+            self._auto_optimization_task = None
+    
+    def _stop_automatic_optimization(self) -> None:
+        """Stop automatic optimization task."""
+        if self._auto_optimization_task and not self._auto_optimization_task.done():
+            self._auto_optimization_task.cancel()
+    
+    async def _automatic_optimization_loop(self) -> None:
+        """Automatic optimization loop."""
+        try:
+            while True:
+                await asyncio.sleep(self.optimization_config.optimization_analysis_interval_seconds)
+                
+                # Analyze performance and optimize if needed
+                optimized_config = await self._config_manager.analyze_and_optimize()
+                if optimized_config:
+                    await self._config_manager.update_config(optimized_config)
+                    
+                    if self._perf_monitor:
+                        self._perf_monitor.record_metric("executor.automatic_optimizations", 1)
+                        
+        except asyncio.CancelledError:
+            # Task was cancelled, exit gracefully
+            pass
+        except Exception as e:
+            # Log error but don't crash
+            if self._perf_monitor:
+                self._perf_monitor.record_metric("executor.automatic_optimization_errors", 1, {
+                    "error_type": type(e).__name__
+                })
+    
+    def get_config_manager(self) -> OptimizationConfigManager:
+        """Get the configuration manager."""
+        return self._config_manager
+    
+    def export_config(self, format: str = 'dict') -> Union[Dict[str, Any], str]:
+        """Export current configuration."""
+        return self._config_manager.export_config(format)
+    
+    async def import_config(
+        self, 
+        config_data: Union[Dict[str, Any], str], 
+        format: str = 'dict'
+    ) -> None:
+        """Import configuration."""
+        self._config_manager.import_config(config_data, format)
+    
+    def get_config_recommendations(self) -> List[Dict[str, Any]]:
+        """Get configuration recommendations based on current performance."""
+        recommendations = []
+        
+        # Get current performance data
+        stats = self.get_optimization_stats()
+        
+        # Analyze execution statistics
+        if stats['execution_stats']['total_executions'] > 100:
+            avg_time = (
+                stats['execution_stats']['total_execution_time_ms'] / 
+                stats['execution_stats']['total_executions']
+            )
+            
+            if avg_time > self.optimization_config.slow_execution_threshold_ms:
+                recommendations.append({
+                    'type': 'performance',
+                    'priority': 'high',
+                    'config_field': 'enable_step_optimization',
+                    'current_value': self.optimization_config.enable_step_optimization,
+                    'recommended_value': True,
+                    'description': f'Average execution time ({avg_time:.1f}ms) exceeds threshold',
+                    'expected_improvement': 'Reduce execution time by 20-40%'
+                })
+        
+        # Analyze cache performance
+        cache_hit_rate = (
+            stats['execution_stats']['cache_hits'] / 
+            max(stats['execution_stats']['total_executions'], 1)
+        )
+        
+        if cache_hit_rate < 0.3:
+            recommendations.append({
+                'type': 'caching',
+                'priority': 'medium',
+                'config_field': 'cache_max_size',
+                'current_value': self.optimization_config.cache_max_size,
+                'recommended_value': min(20000, self.optimization_config.cache_max_size * 2),
+                'description': f'Cache hit rate ({cache_hit_rate:.1%}) is low',
+                'expected_improvement': 'Improve cache hit rate by 10-20%'
+            })
+        
+        # Analyze error recovery
+        if stats['execution_stats']['total_executions'] > 0:
+            error_rate = (
+                (stats['execution_stats']['total_executions'] - 
+                 stats['execution_stats']['error_recoveries']) / 
+                stats['execution_stats']['total_executions']
+            )
+            
+            if error_rate > 0.05:  # 5% error rate
+                recommendations.append({
+                    'type': 'error_handling',
+                    'priority': 'high',
+                    'config_field': 'enable_circuit_breaker',
+                    'current_value': self.optimization_config.enable_circuit_breaker,
+                    'recommended_value': True,
+                    'description': f'Error rate ({error_rate:.1%}) is high',
+                    'expected_improvement': 'Reduce cascade failures and improve resilience'
+                })
+        
+        return recommendations
+    
+    async def apply_recommended_config(self, recommendations: List[Dict[str, Any]]) -> None:
+        """Apply recommended configuration changes."""
+        config_updates = {}
+        
+        for rec in recommendations:
+            if rec.get('config_field') and rec.get('recommended_value') is not None:
+                config_updates[rec['config_field']] = rec['recommended_value']
+        
+        if config_updates:
+            await self.update_config_partial(**config_updates)
+            
+            if self._perf_monitor:
+                self._perf_monitor.record_metric("executor.config_recommendations_applied", 1, {
+                    "recommendation_count": len(config_updates)
+                })
+    
+    def __del__(self) -> None:
+        """Cleanup when executor is destroyed."""
+        # Stop automatic optimization task
+        self._stop_automatic_optimization()
 
 
 # --------------------------------------------------------------------------- #
