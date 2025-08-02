@@ -10,7 +10,7 @@ import asyncio
 import gc
 import pytest
 import time
-from typing import Any, Optional
+from typing import Any, List, Optional
 from unittest.mock import Mock, AsyncMock
 
 from flujo.application.core.ultra_executor import (
@@ -109,7 +109,7 @@ class MockUsageMeter(IUsageMeter):
         self.total_cost += cost_usd
         self.total_tokens += prompt_tokens + completion_tokens
 
-    async def guard(self, limits: UsageLimits) -> None:
+    async def guard(self, limits: UsageLimits, step_history: Optional[List[Any]] = None) -> None:
         self.guard_calls += 1
 
     async def snapshot(self) -> tuple[float, int, int]:

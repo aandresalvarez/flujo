@@ -599,7 +599,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             return
         except PipelineAbortSignal as e:
             telemetry.logfire.info(str(e))
-        except (UsageLimitExceededError, PricingNotConfiguredError):
+        except (UsageLimitExceededError, PricingNotConfiguredError) as e:
             if current_context_instance is not None:
                 assert self.pipeline is not None
                 execution_manager: ExecutionManager[ContextT] = ExecutionManager[ContextT](
@@ -609,6 +609,13 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     pipeline_result_obj,
                     cast(Optional[ContextT], current_context_instance),
                 )
+                # Update the UsageLimitExceededError result with the current pipeline step_history
+                if isinstance(e, UsageLimitExceededError):
+                    # Preserve the exception's step_history if it's more complete
+                    if len(e.result.step_history) > len(pipeline_result_obj.step_history):
+                        pipeline_result_obj.step_history = e.result.step_history
+                    else:
+                        e.result.step_history = pipeline_result_obj.step_history
             raise
         finally:
             if (

@@ -74,12 +74,20 @@ class StepCoordinator(Generic[ContextT]):
                 # Prioritize step_executor for backward compatibility with tests
                 if step_executor is not None:
                     # Legacy approach: use step_executor
-                    async for item in step_executor(step, data, context, self.resources, stream=stream):
-                        if isinstance(item, StepResult):
-                            step_result = item
-                            yield item  # Yield StepResult objects
-                        else:
-                            yield item
+                    # Handle both async generators and regular async functions
+                    try:
+                        # Try to use as async generator first
+                        async for item in step_executor(step, data, context, self.resources, stream=stream):
+                            if isinstance(item, StepResult):
+                                step_result = item
+                                yield item  # Yield StepResult objects
+                            else:
+                                yield item
+                    except TypeError:
+                        # If that fails, try as regular async function
+                        step_result = await step_executor(step, data, context, self.resources, stream=stream)
+                        if isinstance(step_result, StepResult):
+                            yield step_result
                 elif backend is not None:
                     # New approach: call backend directly
                     if stream:

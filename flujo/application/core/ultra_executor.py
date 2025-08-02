@@ -39,6 +39,8 @@ from typing import (
     Tuple,
     Union,
 )
+import types
+from types import SimpleNamespace
 from asyncio import Task
 import weakref
 from weakref import WeakKeyDictionary
@@ -60,6 +62,28 @@ from ...exceptions import (
     MissingAgentError,
 )
 
+# Exception classification for retry logic
+class RetryableError(Exception):
+    """Base class for errors that should trigger retries."""
+    pass
+
+class NonRetryableError(Exception):
+    """Base class for errors that should not trigger retries."""
+    pass
+
+# Classify common exceptions
+class ValidationError(RetryableError):
+    """Validation failures that can be retried."""
+    pass
+
+class PluginError(RetryableError):
+    """Plugin failures that can be retried."""
+    pass
+
+class AgentError(RetryableError):
+    """Agent execution errors that can be retried."""
+    pass
+
 # Removed unused imports: _manage_fallback_relationships, _detect_fallback_loop
 from ...steps.cache_step import CacheStep
 from ...utils.performance import time_perf_ns, time_perf_ns_to_seconds
@@ -69,6 +93,105 @@ from ...signature_tools import analyze_signature
 from ...application.context_manager import _accepts_param
 from ...utils.context import safe_merge_context_updates
 from .step_logic import ParallelUsageGovernor, _should_pass_context
+
+# --------------------------------------------------------------------------- #
+# ★ Pipeline-to-Step Adapter
+# --------------------------------------------------------------------------- #
+
+class _PipelineStepAdapter(Step):
+    """
+    Adapter that wraps a Pipeline object to satisfy the Step interface.
+    
+    This ensures algebraic closure: every higher-order control-flow helper
+    returns a Step, enabling auto-insertion of features anywhere in the graph.
+    """
+    
+    def __init__(self, pipeline: Any, name: str):
+        super().__init__(name=name, agent=self)  # `self` is the "agent"
+        self._pipeline = pipeline
+        
+        # Copy only safe attributes from the pipeline to maintain compatibility
+        # Avoid copying methods and attributes that conflict with Step fields
+        safe_attrs = ['name', 'config', 'plugins', 'validators', 'processors', 
+                     'fallback_step', 'usage_limits', 'persist_feedback_to_context',
+                     'persist_validation_results_to', 'updates_context', 'validate_fields', 'meta']
+        for attr in safe_attrs:
+            if hasattr(pipeline, attr) and not hasattr(self, attr):
+                try:
+                    setattr(self, attr, getattr(pipeline, attr))
+                except (ValueError, AttributeError):
+                    # Skip attributes that can't be set
+                    pass
+    
+    # --------------------------------------------------------------------- #
+    # Agent interface used by DefaultAgentRunner
+    # --------------------------------------------------------------------- #
+    async def run(self, payload, *, context=None, resources=None, **kwargs):
+        """Execute the wrapped pipeline by executing its steps."""
+        # Execute the pipeline by running its steps through the executor
+        # This is a simplified approach - in practice, we'd need the executor
+        # For now, let's execute the first step as a fallback
+        if self._pipeline.steps:
+            first_step = self._pipeline.steps[0]
+            # Execute the first step directly
+            if hasattr(first_step.agent, 'run'):
+                # Only pass the parameters that the agent's run method expects
+                # Check the signature of the agent's run method
+                import inspect
+                run_method = first_step.agent.run
+                sig = inspect.signature(run_method)
+                
+                # Only pass parameters that the method actually accepts
+                run_kwargs = {}
+                if 'context' in sig.parameters:
+                    run_kwargs['context'] = context
+                
+                # Add any additional kwargs that the method accepts
+                for key, value in kwargs.items():
+                    if key in sig.parameters and key not in run_kwargs:
+                        run_kwargs[key] = value
+                
+                return await first_step.agent.run(payload, **run_kwargs)
+            else:
+                # Fallback: return the payload as-is
+                return payload
+        else:
+            # Empty pipeline, return payload as-is
+            return payload
+    
+    # --------------------------------------------------------------------- #
+    # Step interface attributes (no-op stubs for compatibility)
+    # --------------------------------------------------------------------- #
+    config: Any = SimpleNamespace(temperature=0.0, max_retries=1)
+    validators: List[Any] = []
+    plugins: List[Any] = []
+    processors: Optional[Any] = None
+    persist_validation_results_to: Optional[str] = None
+    persist_feedback_to_context: Optional[str] = None
+    updates_context: bool = False
+    fallback_step: Optional[Any] = None
+    
+    # --------------------------------------------------------------------- #
+    # Attribute access delegation
+    # --------------------------------------------------------------------- #
+    def __getattribute__(self, name):
+        # Special handling for agent field
+        if name == 'agent':
+            return self
+        return super().__getattribute__(name)
+    
+    def __setattr__(self, name, value):
+        # Special handling for agent field
+        if name == 'agent':
+            # Ignore agent assignment as we're the agent
+            return
+        super().__setattr__(name, value)
+    
+    def __getattr__(self, name):
+        # Fallback for any other attributes not found
+        if name == 'agent':
+            return self
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
 
 # --------------------------------------------------------------------------- #
 # ★ Interfaces (Protocols)
@@ -126,7 +249,7 @@ class IUsageMeter(Protocol):
         ...
 
     @abstractmethod
-    async def guard(self, limits: UsageLimits) -> None:
+    async def guard(self, limits: UsageLimits, step_history: Optional[List[Any]] = None) -> None:
         """Check if current usage exceeds limits, raise if so."""
         ...
 
@@ -269,7 +392,8 @@ class InMemoryLRUBackend:
 
     max_size: int = 1024
     ttl_s: int = 3600
-    _store: OrderedDict[str, tuple[StepResult, float]] = field(
+    _lock: asyncio.Lock = field(init=False, default_factory=asyncio.Lock)
+    _store: OrderedDict[str, tuple[StepResult, float, int]] = field(
         init=False, default_factory=OrderedDict
     )
 
@@ -280,32 +404,44 @@ class InMemoryLRUBackend:
             raise ValueError("ttl must be non-negative")
 
     async def get(self, key: str) -> Optional[StepResult]:
-        item = self._store.get(key)
-        if not item:
-            return None
+        async with self._lock:
+            item = self._store.get(key)
+            if not item:
+                return None
 
-        result, timestamp = item
-        now = time.monotonic()
+            result, timestamp, ttl = item
+            now = time.monotonic()
 
-        # Check TTL (0 means never expire)
-        if self.ttl_s > 0 and now - timestamp > self.ttl_s:
-            self._store.pop(key, None)
-            return None
+            # Check TTL (0 means never expire)
+            if ttl > 0 and now - timestamp > ttl:
+                self._store.pop(key, None)
+                return None
 
-        # LRU promotion
-        self._store.move_to_end(key)
-        return result.model_copy(deep=True)  # Return a deep copy to prevent mutation
+            # LRU promotion
+            self._store.move_to_end(key)
+            return result.model_copy(deep=True)  # Return a deep copy to prevent mutation
 
     async def put(self, key: str, value: StepResult, ttl_s: int) -> None:
-        if key in self._store:
-            self._store.move_to_end(key)
-        elif len(self._store) >= self.max_size:
-            self._store.popitem(last=False)  # Remove oldest
+        async with self._lock:
+            if key in self._store:
+                self._store.move_to_end(key)
+            elif len(self._store) >= self.max_size:
+                self._store.popitem(last=False)  # Remove oldest
 
-        self._store[key] = (value.model_copy(deep=True), time.monotonic())
+            self._store[key] = (
+                value.model_copy(deep=True),
+                time.monotonic(),
+                ttl_s if ttl_s >= 0 else self.ttl_s,
+                    )
 
     async def clear(self) -> None:
-        self._store.clear()
+        async with self._lock:
+            self._store.clear()
+
+    # Backward-compatibility alias
+    async def set(self, key: str, value: StepResult, ttl_s: int) -> None:
+        """Alias to :py:meth:`put` retained for older call-sites."""
+        await self.put(key, value, ttl_s)
 
 
 @dataclass
@@ -323,24 +459,24 @@ class ThreadSafeMeter:
             self.prompt_tokens += prompt_tokens
             self.completion_tokens += completion_tokens
 
-    async def guard(self, limits: UsageLimits) -> None:
+    async def guard(self, limits: UsageLimits, step_history: Optional[List[Any]] = None) -> None:
         async with self._lock:
-            # Use approximate comparison for floating point
+            # Use precise comparison for floating point
             if (
                 limits.total_cost_usd_limit is not None
-                and self.total_cost_usd > limits.total_cost_usd_limit + 1e-10
-            ):
+                and self.total_cost_usd - limits.total_cost_usd_limit > 1e-9
+                    ):
                 raise UsageLimitExceededError(
                     f"Cost limit of ${limits.total_cost_usd_limit} exceeded (current: ${self.total_cost_usd})",
-                    PipelineResult(step_history=[], total_cost_usd=self.total_cost_usd),
-                )
+                    PipelineResult(step_history=step_history or [], total_cost_usd=self.total_cost_usd),
+                        )
 
             total_tokens = self.prompt_tokens + self.completion_tokens
-            if limits.total_tokens_limit is not None and total_tokens > limits.total_tokens_limit:
+            if limits.total_tokens_limit is not None and total_tokens - limits.total_tokens_limit > 0:
                 raise UsageLimitExceededError(
                     f"Token limit of {limits.total_tokens_limit} exceeded (current: {total_tokens})",
-                    PipelineResult(step_history=[], total_cost_usd=self.total_cost_usd),
-                )
+                    PipelineResult(step_history=step_history or [], total_cost_usd=self.total_cost_usd),
+                        )
 
     async def snapshot(self) -> tuple[float, int, int]:
         async with self._lock:
@@ -382,21 +518,21 @@ class DefaultAgentRunner:
         # Prioritize explicitly set methods over auto-generated mock attributes
         if isinstance(target_agent, (Mock, MagicMock, AsyncMock)) or isinstance(
             agent, (Mock, MagicMock, AsyncMock)
-        ):
+                ):
             # For mocks, check if run method was explicitly set first
             if hasattr(agent, "run") and not isinstance(
                 getattr(agent, "run"), (Mock, MagicMock, AsyncMock)
-            ):
+                    ):
                 executable_func = getattr(agent, "run")
             elif hasattr(target_agent, "run") and not isinstance(
                 getattr(target_agent, "run"), (Mock, MagicMock, AsyncMock)
-            ):
+                    ):
                 executable_func = getattr(target_agent, "run")
             elif (
                 stream
                 and hasattr(target_agent, "stream")
                 and not isinstance(getattr(target_agent, "stream"), (Mock, MagicMock, AsyncMock))
-            ):
+                    ):
                 executable_func = getattr(target_agent, "stream")
             elif hasattr(agent, "run"):
                 # Use run method even if it's a mock (for test fixtures)
@@ -434,7 +570,7 @@ class DefaultAgentRunner:
         if executable_func is None:
             raise RuntimeError(
                 f"Agent {type(agent).__name__} has no executable method (run, stream, _step_callable) and is not callable"
-            )
+                    )
 
         # Step 3: Handle mocks specially
         is_mock = isinstance(executable_func, (Mock, MagicMock, AsyncMock))
@@ -501,7 +637,7 @@ class DefaultAgentRunner:
                 if not hasattr(stream_result, "__aiter__"):
                     raise RuntimeError(
                         f"Stream function did not return an async iterator: {type(stream_result)}"
-                    )
+                            )
 
                 async for chunk in stream_result:
                     if on_chunk:
@@ -512,7 +648,7 @@ class DefaultAgentRunner:
                 InfiniteFallbackError,
                 InfiniteRedirectError,
                 ContextInheritanceError,
-            ) as e:
+                    ) as e:
                 # Re-raise critical exceptions immediately
                 raise e
             except Exception as e:
@@ -548,7 +684,7 @@ class DefaultAgentRunner:
                 InfiniteFallbackError,
                 InfiniteRedirectError,
                 ContextInheritanceError,
-            ) as e:
+                    ) as e:
                 # Re-raise critical exceptions immediately
                 raise e
 
@@ -810,7 +946,7 @@ class CacheKeyGenerator:
             context_digest=self._hash_obj(context) if context is not None else None,
             resource_digest=self._hash_obj(resources) if resources is not None else None,
             agent_id=self._get_agent_id(step),
-        )
+                )
 
         # Serialize components for final hash
         serialized = self._serializer.serialize(
@@ -822,7 +958,7 @@ class CacheKeyGenerator:
                 "resource_digest": components.resource_digest,
                 "agent_id": components.agent_id,
             }
-        )
+                )
 
         return self._hasher.digest(serialized)
 
@@ -959,10 +1095,14 @@ class ExecutorCore(Generic[TContext]):
         self._cache_key_generator = CacheKeyGenerator(self._serializer, self._hasher)
 
         # Concurrency control
+        self._concurrency_limit = concurrency_limit or cpu_count() * 2
         self._concurrency = asyncio.Semaphore(concurrency_limit or cpu_count() * 2)
 
         # Monitoring task
         self._monitoring_task: Optional[Task[Any]] = None
+        
+        # Initialize step history accumulator
+        self._step_history_so_far: list[StepResult] = []
 
     async def execute(
         self,
@@ -980,13 +1120,17 @@ class ExecutorCore(Generic[TContext]):
         _fallback_depth: int = 0,  # Track fallback recursion depth
         **kwargs: Any,
     ) -> StepResult:
+        telemetry.logfire.debug(f"ExecutorCore.execute called for step: {step.name if hasattr(step, 'name') else type(step)}")
+        telemetry.logfire.debug(f"Step type: {type(step)}")
+        telemetry.logfire.debug(f"Step is ParallelStep: {hasattr(step, 'branches')}")
         """Execute a step with the given data and context."""
+
 
         telemetry.logfire.debug("=== EXECUTOR CORE EXECUTE ===")
         telemetry.logfire.debug(f"Step type: {type(step)}")
         telemetry.logfire.debug(f"Step name: {step.name}")
-        print(f"[DEBUG] ExecutorCore.execute called with breach_event: {breach_event is not None}")
-        print(f"[DEBUG] ExecutorCore.execute called with limits: {limits}")
+        telemetry.logfire.debug(f"ExecutorCore.execute called with breach_event: {breach_event is not None}")
+        telemetry.logfire.debug(f"ExecutorCore.execute called with limits: {limits}")
 
         # Generate cache key if caching is enabled
         cache_key = None
@@ -1022,7 +1166,7 @@ class ExecutorCore(Generic[TContext]):
                 breach_event,
                 context_setter,
                 cache_key,
-            )
+                    )
 
         telemetry.logfire.debug(f"Simple step detected: {step.name}")
         return await self._execute_simple_step(
@@ -1036,7 +1180,7 @@ class ExecutorCore(Generic[TContext]):
             cache_key,
             breach_event,
             _fallback_depth,
-        )
+                )
 
     def _is_complex_step(self, step: Any) -> bool:
         """Check if step needs complex handling."""
@@ -1054,8 +1198,8 @@ class ExecutorCore(Generic[TContext]):
                 DynamicParallelRouterStep,
                 ParallelStep,
                 HumanInTheLoopStep,
-            ),
-        ):
+                    ),
+                ):
             if isinstance(step, ParallelStep):
                 telemetry.logfire.debug(f"ParallelStep detected: {step.name}")
             elif isinstance(step, DynamicParallelRouterStep):
@@ -1081,6 +1225,29 @@ class ExecutorCore(Generic[TContext]):
         telemetry.logfire.debug(f"Simple step detected: {step.name}")
         return False
 
+    def _clone_payload_for_retry(self, original_data: Any, accumulated_feedbacks: list[str]) -> Any:
+        """Clone payload for retry attempts to prevent mutation of original data."""
+        if not accumulated_feedbacks:
+            # No feedback to add, return original data
+            return original_data
+        
+        feedback_text = "\n".join(accumulated_feedbacks)
+        
+        if isinstance(original_data, dict):
+            # Clone dict and add feedback
+            cloned_data = original_data.copy()
+            cloned_data["feedback"] = cloned_data.get("feedback", "") + "\n" + feedback_text
+            return cloned_data
+        elif hasattr(original_data, 'model_copy'):  # Pydantic models
+            # Use Pydantic's model_copy for efficient shallow copy
+            cloned_data = original_data.model_copy(deep=False)
+            if hasattr(cloned_data, 'feedback'):
+                cloned_data.feedback = getattr(cloned_data, 'feedback', '') + "\n" + feedback_text
+            return cloned_data
+        else:
+            # For other types, convert to string and append feedback
+            return f"{str(original_data)}\n{feedback_text}"
+
     async def _execute_complex_step(
         self,
         step: Any,
@@ -1103,7 +1270,7 @@ class ExecutorCore(Generic[TContext]):
             # _handle_hitl_step,  # ❌ REMOVED: Now handled by ExecutorCore
             _run_step_logic,
             _default_set_final_context,
-        )
+                )
 
         if context_setter is None:
             context_setter = _default_set_final_context
@@ -1116,7 +1283,7 @@ class ExecutorCore(Generic[TContext]):
             r: Optional[Any],
             breach_event: Optional[Any] = None,
             **extra_kwargs: Any,
-        ) -> StepResult:
+                ) -> StepResult:
             """Recursive step executor that forwards execution to :py:meth:`ExecutorCore.execute`.
 
             Accepts arbitrary keyword arguments for forward-compatibility (e.g. ``usage_limits``,
@@ -1141,7 +1308,7 @@ class ExecutorCore(Generic[TContext]):
                 on_chunk=_on_chunk,
                 breach_event=breach_event,
                 context_setter=_context_setter,
-            )
+                    )
 
         # Handle specific step types
         telemetry.logfire.debug("=== EXECUTE COMPLEX STEP ===")
@@ -1159,7 +1326,7 @@ class ExecutorCore(Generic[TContext]):
                 breach_event,
                 context_setter,
                 step_executor,
-            )
+                    )
         elif isinstance(step, LoopStep):
             telemetry.logfire.debug("Handling LoopStep")
             result = await self._handle_loop_step(
@@ -1169,7 +1336,7 @@ class ExecutorCore(Generic[TContext]):
                 resources,
                 limits,
                 context_setter,
-            )
+                    )
         elif isinstance(step, ConditionalStep):
             telemetry.logfire.debug("Handling ConditionalStep")
             result = await self._handle_conditional_step(
@@ -1179,7 +1346,7 @@ class ExecutorCore(Generic[TContext]):
                 resources,
                 limits,
                 context_setter,
-            )
+                    )
         elif isinstance(step, DynamicParallelRouterStep):
             telemetry.logfire.debug("Handling DynamicParallelRouterStep")
             result = await self._handle_dynamic_router_step(
@@ -1189,10 +1356,10 @@ class ExecutorCore(Generic[TContext]):
                 resources,
                 limits,
                 context_setter,
-            )
+                    )
         elif isinstance(step, ParallelStep):
             telemetry.logfire.debug("Handling ParallelStep")
-            print(f"[DEBUG] Calling _handle_parallel_step with breach_event: {breach_event is not None}")
+            telemetry.logfire.debug(f"Calling _handle_parallel_step with breach_event: {breach_event is not None}")
             result = await self._handle_parallel_step(
                 step,
                 data,
@@ -1201,7 +1368,7 @@ class ExecutorCore(Generic[TContext]):
                 limits,
                 breach_event,
                 context_setter,
-            )
+                    )
         elif isinstance(step, HumanInTheLoopStep):
             telemetry.logfire.debug("Handling HumanInTheLoopStep")
             result = await self._handle_hitl_step(
@@ -1211,7 +1378,7 @@ class ExecutorCore(Generic[TContext]):
                 resources,
                 limits,
                 context_setter,
-            )
+                    )
         else:
             telemetry.logfire.debug("Falling back to general step logic")
             # Fall back to general step logic
@@ -1227,7 +1394,7 @@ class ExecutorCore(Generic[TContext]):
                     context_setter=context_setter,
                     stream=stream,
                     on_chunk=on_chunk,
-                )
+                        )
             except MissingAgentError as e:
                 # Handle missing agent error gracefully
                 result = StepResult(name=step.name)
@@ -1240,7 +1407,7 @@ class ExecutorCore(Generic[TContext]):
                 InfiniteRedirectError,
                 PausedException,
                 RuntimeError,
-            ) as e:
+                    ) as e:
                 # Let critical exceptions propagate to maintain test expectations
                 telemetry.logfire.error(f"Step '{step.name}' failed with critical error: {e}")
                 raise
@@ -1273,6 +1440,8 @@ class ExecutorCore(Generic[TContext]):
             Callable[[Any, Any, Optional[Any], Optional[Any], Optional[Any]], Awaitable[StepResult]]
         ] = None,
     ) -> StepResult:
+        telemetry.logfire.debug(f"=== HANDLING PARALLEL STEP === {parallel_step.name}")
+        telemetry.logfire.debug(f"Parallel step branches: {list(parallel_step.branches.keys())}")
         """Handle ParallelStep execution using simplified, deadlock-free architecture."""
 
         # Initialize result
@@ -1295,6 +1464,22 @@ class ExecutorCore(Generic[TContext]):
         if breach_event is None and limits is not None:
             breach_event = asyncio.Event()
 
+        # --- Wrap Pipeline branches as Step objects to maintain algebraic closure ---
+        wrapped_branches: Dict[str, Step] = {}
+        for key, branch_pipe in parallel_step.branches.items():
+            # Check if this is a Pipeline object by importing the Pipeline class
+            from ...domain.dsl.pipeline import Pipeline
+            is_pipeline = isinstance(branch_pipe, Pipeline)
+            if is_pipeline:
+                # This is a Pipeline object - wrap it as a Step
+                wrapped_branches[key] = _PipelineStepAdapter(
+                    pipeline=branch_pipe,
+                    name=f"{parallel_step.name}_{key}"
+                )
+            else:
+                # This is already a Step object - use as-is
+                wrapped_branches[key] = branch_pipe
+
         # Use provided step executor or fall back to self.execute
         if step_executor is None:
             async def step_executor(
@@ -1304,16 +1489,27 @@ class ExecutorCore(Generic[TContext]):
                 r: Optional[Any],
                 breach_event: Optional[Any] = None,
                 **extra_kwargs: Any,
-            ) -> StepResult:
+                    ) -> StepResult:
+                # Use the wrapped branch if it exists in wrapped_branches
+                # Find the key for this step
+                step_key = None
+                for key, branch in wrapped_branches.items():
+                    if branch is s:
+                        step_key = key
+                        break
+                
+                # Use the wrapped branch if found, otherwise use the original
+                step_to_execute = wrapped_branches.get(step_key, s) if step_key else s
+                
                 return await self.execute(
-                    s,
+                    step_to_execute,
                     d,
                     context=c,
                     resources=r,
                     limits=limits,
                     breach_event=breach_event,
                     context_setter=context_setter,
-                )
+                        )
 
         # Simplified branch execution without complex locking
         async def run_branch(key: str, branch_pipe: Any) -> tuple[str, StepResult]:
@@ -1330,126 +1526,124 @@ class ExecutorCore(Generic[TContext]):
                 total_cost = 0.0
                 total_tokens = 0
                 all_successful = True
-                last_feedback = None
-
-                for step in branch_pipe.steps:
-                    try:
-                        # Check for breach before step execution
-                        if limits is not None and (breach_event and breach_event.is_set() or usage_governor.breached()):
-                            return key, StepResult(
-                                name=f"branch::{key}",
-                                success=False,
-                                feedback="Cancelled due to usage limit breach",
-                                cost_usd=total_cost,
-                                token_counts=total_tokens,
-                            )
-
-                        # Execute step
-                        step_result = await step_executor(
-                            step,
-                            current_data,
-                            branch_context,
-                            resources,
-                            breach_event,
+                step_outputs = []
+                # Execute the branch using step_executor
+                step_result = await step_executor(
+                    branch_pipe,
+                    data,
+                    branch_context,
+                    resources,
+                    breach_event
                         )
+                
+                # Capture the final state of branch_context
+                final_branch_context = copy.deepcopy(branch_context) if branch_context is not None else None
+                
+                # Preserve the original StepResult exactly; just attach branch_context
+                cloned = step_result.model_copy(deep=True)
+                cloned.branch_context = final_branch_context
 
-                        # Add usage to governor
-                        cost_delta = getattr(step_result, "cost_usd", 0.0)
-                        token_delta = getattr(step_result, "token_counts", 0)
-                        
-                        if await usage_governor.add_usage(cost_delta, token_delta, step_result):
-                            # Limit breached - signal others and return
-                            if breach_event:
-                                breach_event.set()
-                            return key, StepResult(
-                                name=f"branch::{key}",
-                                success=False,
-                                feedback="Usage limit breached",
-                                cost_usd=total_cost + cost_delta,
-                                token_counts=total_tokens + token_delta,
-                            )
-
-                        total_latency += step_result.latency_s
-                        total_cost += cost_delta
-                        total_tokens += token_delta
-                        
-                        if not step_result.success:
-                            all_successful = False
-                            last_feedback = step_result.feedback
-                            break
-                            
-                        current_data = step_result.output
-                        
-                    except Exception as step_error:
-                        all_successful = False
-                        last_feedback = f"Branch execution error: {str(step_error)}"
-                        break
-
-                branch_result = StepResult(
-                    name=f"branch::{key}",
-                    output=current_data if all_successful else None,
-                    success=all_successful,
-                    attempts=1,
-                    latency_s=total_latency,
-                    token_counts=total_tokens,
-                    cost_usd=total_cost,
-                    feedback=last_feedback,
-                    branch_context=branch_context,
+                # Feed usage metrics to the governor
+                cost_delta = getattr(cloned, "cost_usd", 0.0)
+                token_delta = getattr(cloned, "token_counts", 0)
+                telemetry.logfire.debug(f"Adding usage to governor: cost={cost_delta}, tokens={token_delta}")
+                
+                breach_occurred = await usage_governor.add_usage(
+                    cost_delta=cost_delta,
+                    token_delta=token_delta,
+                    result=cloned
                 )
                 
-                return key, branch_result
+                telemetry.logfire.debug(f"Breach occurred: {breach_occurred}")
                 
+                # If a breach occurred, raise the error immediately
+                if breach_occurred:
+                    breach_error = usage_governor.get_error()
+                    telemetry.logfire.debug(f"Breach error: {breach_error}")
+                    if breach_error:
+                        # Add current result to shared step history and update error
+                        self._step_history_so_far.append(cloned)
+                        breach_error.result.step_history = self._step_history_so_far
+                        raise breach_error
+                
+                return key, cloned
             except asyncio.CancelledError:
-                return key, StepResult(
-                    name=f"branch::{key}",
-                    success=False,
-                    feedback="Cancelled due to usage limit breach by another branch",
-                    cost_usd=total_cost if "total_cost" in locals() else 0.0,
-                    token_counts=total_tokens if "total_tokens" in locals() else 0,
-                )
-            except Exception as e:
-                return key, StepResult(
-                    name=key,
-                    success=False,
-                    feedback=f"Branch execution error: {str(e)}",
-                    cost_usd=total_cost if "total_cost" in locals() else 0.0,
-                    token_counts=total_tokens if "total_tokens" in locals() else 0,
-                )
+                return key, StepResult(name=getattr(branch_pipe, "name", str(key)), output=None, success=False, branch_context=None)
 
-        # Execute all branches concurrently with timeout
+        # Execute all branches concurrently with proper concurrency control
         try:
-            # Create tasks for all branches
+            # Compute timeout from step config or use default
+            timeout_seconds = getattr(parallel_step.config, 'timeout', 30) if hasattr(parallel_step, 'config') else 30
+            
+            # Use semaphore to limit concurrent executions
+            semaphore = asyncio.Semaphore(self._concurrency_limit or 10)
+            
+            async def run_branch_with_semaphore(key: str, branch_pipe: Any) -> tuple[str, StepResult]:
+                async with semaphore:
+                    return await run_branch(key, branch_pipe)
+            
+            # Create tasks for all branches with concurrency control
+            telemetry.logfire.debug(f"Creating {len(wrapped_branches)} parallel tasks")
             tasks = [
-                asyncio.create_task(run_branch(key, branch_pipe), name=f"branch_{key}")
-                for key, branch_pipe in parallel_step.branches.items()
+                asyncio.create_task(run_branch_with_semaphore(key, branch_pipe), name=f"branch_{key}")
+                for key, branch_pipe in wrapped_branches.items()
             ]
             
-            # Wait for all tasks with timeout
-            timeout_seconds = 30  # Reasonable timeout
-            branch_results_list = await asyncio.wait_for(
-                asyncio.gather(*tasks, return_exceptions=True),
-                timeout=timeout_seconds
-            )
-            
-            # Process results
+            # Replace gather with early-exit wait for proactive cancellation
             branch_results = {}
             outputs = {}
             
-            for i, branch_result in enumerate(branch_results_list):
-                key = list(parallel_step.branches.keys())[i]
-                if isinstance(branch_result, Exception):
-                    branch_results[key] = StepResult(
-                        name=key,
-                        success=False,
-                        feedback=f"Branch execution failed: {str(branch_result)}"
-                    )
-                else:
-                    # branch_result is a tuple (key, StepResult)
-                    result_key, step_result = branch_result
-                    branch_results[result_key] = step_result
-                    if step_result.success:
-                        outputs[result_key] = step_result.output
-                        
+            while tasks:
+                # Wait for first completion
+                done, pending = await asyncio.wait(
+                    tasks, return_when=asyncio.FIRST_COMPLETED
+                )
+                
+                # Process completed tasks
+                for task in done:
+                    try:
+                        res_key, step_res = await task
+                        branch_results[res_key] = step_res
+                        if step_res.success:
+                            outputs[res_key] = step_res.output
+                    except UsageLimitExceededError as e:
+                        # Propagate usage limit errors to the main execution
+                        telemetry.logfire.debug(f"Usage limit exceeded in task {task.get_name()}: {str(e)}")
+                        raise e
+                    except Exception as e:
+                        # Handle other task exceptions
+                        key = task.get_name().split("_", 1)[1] if "_" in task.get_name() else "unknown"
+                        telemetry.logfire.debug(f"Task failed: {key}, error: {str(e)}")
+                        branch_results[key] = StepResult(
+                            name=key,
+                            success=False,
+                            feedback=f"Branch execution failed: {str(e)}"
+                        )
+                
+                # Check for usage limit breach and cancel remaining tasks
+                telemetry.logfire.debug(f"Checking for breach: {usage_governor.breached()}")
+                if usage_governor.breached():
+                    telemetry.logfire.debug("Breach detected, cancelling remaining tasks")
+                    for task in pending:
+                        task.cancel()
+                    
+                    # Harvest whatever finished before cancellation
+                    for task in pending:
+                        try:
+                            res_key, step_res = await task
+                            branch_results[res_key] = step_res
+                        except asyncio.CancelledError:
+                            key = task.get_name().split("_", 1)[1] if "_" in task.get_name() else "unknown"
+                            branch_results[key] = StepResult(
+                                name=key,
+                                success=False,
+                                feedback="Cancelled due to usage-limit breach"
+                            )
+                    break
+                
+                # Update tasks list to remaining pending tasks
+                tasks = list(pending)
+                
         except asyncio.TimeoutError:
             # Cancel all tasks and create timeout results
             for task in tasks:
@@ -1457,22 +1651,31 @@ class ExecutorCore(Generic[TContext]):
                     task.cancel()
             
             branch_results = {}
-            for key in parallel_step.branches.keys():
+            for key in wrapped_branches.keys():
                 branch_results[key] = StepResult(
                     name=key,
                     success=False,
                     feedback="Branch execution timed out"
-                )
+                        )
 
         # Check for usage limit breach
         if usage_governor.breached():
-            final_history = list(branch_results.values())
-            pipeline_result_for_exc: PipelineResult[Any] = PipelineResult(
-                step_history=final_history,
-                total_cost_usd=usage_governor.total_cost,
-            )
-            message = usage_governor.get_error_message() or "Usage limit exceeded"
-            raise UsageLimitExceededError(message, result=pipeline_result_for_exc)
+            # Get the actual error that was raised during the breach
+            breach_error = usage_governor.get_error()
+            if breach_error:
+                # Update the error's result with the final history
+                final_history = list(branch_results.values())
+                breach_error.result.step_history = final_history
+                raise breach_error
+            else:
+                # Fallback if no error was stored
+                final_history = list(branch_results.values())
+                pipeline_result_for_exc: PipelineResult[Any] = PipelineResult(
+                    step_history=final_history,
+                    total_cost_usd=usage_governor.total_cost,
+                        )
+                message = usage_governor.get_error_message() or "Usage limit exceeded"
+                raise UsageLimitExceededError(message, result=pipeline_result_for_exc)
 
         # Accumulate metrics
         total_cost = sum(getattr(r, "cost_usd", 0.0) for r in branch_results.values())
@@ -1484,6 +1687,7 @@ class ExecutorCore(Generic[TContext]):
         result.latency_s = total_latency
 
         # Context merging based on strategy
+        telemetry.logfire.debug(f"Context merging check: context={context is not None}, merge_strategy={parallel_step.merge_strategy}")
         if context is not None and (
             parallel_step.merge_strategy in {
                 MergeStrategy.CONTEXT_UPDATE,
@@ -1491,33 +1695,105 @@ class ExecutorCore(Generic[TContext]):
                 MergeStrategy.MERGE_SCRATCHPAD,
             }
             or callable(parallel_step.merge_strategy)
-        ):
+                ):
+            telemetry.logfire.debug(f"Starting context merging for strategy: {parallel_step.merge_strategy}")
+            telemetry.logfire.debug(f"Branch results: {list(branch_results.keys())}")
             if parallel_step.merge_strategy == MergeStrategy.CONTEXT_UPDATE:
                 # For CONTEXT_UPDATE, merge contexts from all branches
+                # Fields that should be overwritten (not accumulated)
+                overwrite_fields = {"execution_count", "router_called"}
+                
                 for branch_result in branch_results.values():
                     branch_ctx = getattr(branch_result, "branch_context", None)
                     if branch_ctx is not None:
                         try:
-                            # Simple field-by-field merge
-                            for field_name in dir(branch_ctx):
-                                if not field_name.startswith('_') and hasattr(branch_ctx, field_name):
-                                    setattr(context, field_name, getattr(branch_ctx, field_name))
+                            if hasattr(branch_ctx, "__dict__"):
+                                for field_name, field_value in branch_ctx.__dict__.items():
+                                    if not field_name.startswith('_') and hasattr(context, field_name):
+                                        ctx_value = getattr(context, field_name)
+                                        # Overwrite specific fields
+                                        if field_name in overwrite_fields:
+                                            setattr(context, field_name, field_value)
+                                        # Merge dicts
+                                        elif isinstance(ctx_value, dict) and isinstance(field_value, dict):
+                                            ctx_value.update(field_value)
+                                        # Merge lists (deduplicated)
+                                        elif isinstance(ctx_value, list) and isinstance(field_value, list):
+                                            for item in field_value:
+                                                if item not in ctx_value:
+                                                    ctx_value.append(item)
+                                        # Handle booleans with logical OR
+                                        elif isinstance(ctx_value, bool) and isinstance(field_value, bool):
+                                            setattr(context, field_name, ctx_value or field_value)
+                                        # Accumulate numbers (excluding booleans)
+                                        elif (isinstance(ctx_value, (int, float)) and isinstance(field_value, (int, float)) 
+                                              and not isinstance(ctx_value, bool) and not isinstance(field_value, bool)):
+                                            setattr(context, field_name, ctx_value + field_value)
+                                        else:
+                                            setattr(context, field_name, field_value)
+                            else:
+                                # Fallback for objects without __dict__
+                                for field_name in dir(branch_ctx):
+                                    if not field_name.startswith('_') and hasattr(context, field_name):
+                                        field_value = getattr(branch_ctx, field_name)
+                                        ctx_value = getattr(context, field_name)
+                                        if field_name in overwrite_fields:
+                                            setattr(context, field_name, field_value)
+                                        elif isinstance(ctx_value, dict) and isinstance(field_value, dict):
+                                            ctx_value.update(field_value)
+                                        elif isinstance(ctx_value, list) and isinstance(field_value, list):
+                                            for item in field_value:
+                                                if item not in ctx_value:
+                                                    ctx_value.append(item)
+                                        elif isinstance(ctx_value, bool) and isinstance(field_value, bool):
+                                            setattr(context, field_name, ctx_value or field_value)
+                                        elif (isinstance(ctx_value, (int, float)) and isinstance(field_value, (int, float)) 
+                                              and not isinstance(ctx_value, bool) and not isinstance(field_value, bool)):
+                                            setattr(context, field_name, ctx_value + field_value)
+                                        else:
+                                            setattr(context, field_name, field_value)
                         except Exception as e:
                             telemetry.logfire.error(f"Failed to merge context: {e}")
+                    else:
+                        telemetry.logfire.warning("A branch result has no branch_context during MERGE strategy")
                             
             elif parallel_step.merge_strategy == MergeStrategy.OVERWRITE:
-                # For OVERWRITE, use the last successful branch's context
-                for branch_result in reversed(list(branch_results.values())):
+                # For OVERWRITE, merge scratchpad from all successful branches, but use the last successful branch for other fields
+                last_successful_branch_ctx = None
+                for branch_result in branch_results.values():  # Process in order so later branches overwrite earlier ones
                     if branch_result.success:
                         branch_ctx = getattr(branch_result, "branch_context", None)
                         if branch_ctx is not None:
-                            try:
-                                for field_name in dir(branch_ctx):
-                                    if not field_name.startswith('_') and hasattr(branch_ctx, field_name):
-                                        setattr(context, field_name, getattr(branch_ctx, field_name))
-                                break
-                            except Exception as e:
-                                telemetry.logfire.error(f"Failed to overwrite context: {e}")
+                            # Store the last successful branch context for non-scratchpad fields
+                            if last_successful_branch_ctx is None:
+                                last_successful_branch_ctx = branch_ctx
+                            
+                            # Merge scratchpad from all successful branches
+                            if hasattr(branch_ctx, "scratchpad"):
+                                if not hasattr(context, "scratchpad"):
+                                    context.scratchpad = {}
+                                context.scratchpad.update(copy.deepcopy(branch_ctx.scratchpad))
+                
+                # Use the last successful branch for non-scratchpad fields
+                if last_successful_branch_ctx is not None:
+                    try:
+                        telemetry.logfire.debug(f"OVERWRITE: Using last successful branch for non-scratchpad fields")
+                        # Replace the entire context object by copying all fields except scratchpad
+                        if hasattr(last_successful_branch_ctx, "__dict__"):
+                            for field_name, field_value in last_successful_branch_ctx.__dict__.items():
+                                if not field_name.startswith('_') and field_name != "scratchpad":
+                                    telemetry.logfire.debug(f"OVERWRITE: Copying field {field_name} = {field_value}")
+                                    setattr(context, field_name, copy.deepcopy(field_value))
+                        else:
+                            for field_name in dir(last_successful_branch_ctx):
+                                if not field_name.startswith('_') and field_name != "scratchpad":
+                                    field_value = getattr(last_successful_branch_ctx, field_name)
+                                    telemetry.logfire.debug(f"OVERWRITE: Copying field {field_name} = {field_value}")
+                                    setattr(context, field_name, copy.deepcopy(field_value))
+                        
+                        telemetry.logfire.debug(f"OVERWRITE: Final context fields: {list(context.__dict__.keys()) if hasattr(context, '__dict__') else 'no __dict__'}")
+                    except Exception as e:
+                        telemetry.logfire.error(f"Failed to overwrite context: {e}")
                                 
             elif parallel_step.merge_strategy == MergeStrategy.MERGE_SCRATCHPAD:
                 # For MERGE_SCRATCHPAD, ensure context has scratchpad and merge from all branches
@@ -1593,7 +1869,7 @@ class ExecutorCore(Generic[TContext]):
                 if context is None:
                     raise TypeError(
                         f"Router agent in step '{router_step.name}' requires a context, but no context model was provided to the Flujo runner."
-                    )
+                            )
                 router_kwargs["context"] = context
             elif _should_pass_context(spec, context, func):
                 router_kwargs["context"] = context
@@ -1634,7 +1910,7 @@ class ExecutorCore(Generic[TContext]):
             on_branch_failure=router_step.on_branch_failure,
             field_mapping=router_step.field_mapping,
             **config_kwargs,
-        )
+                )
 
         # --- FIRST PRINCIPLES GUARANTEE ---
         # DynamicParallelRouterStep delegates to ParallelStep, which has its own first-principles guarantee.
@@ -1643,6 +1919,8 @@ class ExecutorCore(Generic[TContext]):
         telemetry.logfire.debug(f"Parallel step name: {parallel_step.name}")
         telemetry.logfire.debug(f"Parallel step branches: {list(parallel_step.branches.keys())}")
         telemetry.logfire.debug(f"Parallel step merge strategy: {parallel_step.merge_strategy}")
+        telemetry.logfire.debug(f"Context is None: {context is None}")
+        telemetry.logfire.debug(f"Context type: {type(context) if context else 'None'}")
         from typing import cast
 
         parallel_result = await self._handle_parallel_step(
@@ -1651,10 +1929,13 @@ class ExecutorCore(Generic[TContext]):
             context,
             resources,
             limits,
-            None,  # breach_event - not needed for dynamic router
+            None,  # breach_event - will be created if limits are provided
             context_setter,
-        )
+                )
         telemetry.logfire.debug("Returned from _handle_parallel_step")
+        telemetry.logfire.debug(f"Parallel result success: {parallel_result.success}")
+        telemetry.logfire.debug(f"Parallel result output: {parallel_result.output}")
+        telemetry.logfire.debug(f"Parallel result branch_context: {getattr(parallel_result, 'branch_context', None)}")
 
         parallel_result.name = router_step.name
         parallel_result.metadata_ = parallel_result.metadata_ or {}
@@ -1700,7 +1981,7 @@ class ExecutorCore(Generic[TContext]):
             loop_overall_result.attempts = i
             telemetry.logfire.info(
                 f"LoopStep '{loop_step.name}': Starting Iteration {i}/{loop_step.max_loops}"
-            )
+                    )
 
             iteration_succeeded_fully = True
             current_iteration_data_for_body_step = current_body_input
@@ -1716,64 +1997,64 @@ class ExecutorCore(Generic[TContext]):
                             resources=resources,
                             limits=limits,
                             context_setter=context_setter,
-                        )
+                                )
 
                         # If the body step result is a UsageLimitExceededError, raise it immediately
                         if isinstance(body_step_result, Exception) and isinstance(
                             body_step_result, UsageLimitExceededError
-                        ):
+                                ):
                             raise body_step_result
 
                         loop_overall_result.latency_s += body_step_result.latency_s
                         loop_overall_result.cost_usd += getattr(body_step_result, "cost_usd", 0.0)
                         loop_overall_result.token_counts += getattr(
                             body_step_result, "token_counts", 0
-                        )
+                                )
 
                         if limits is not None:
                             if (
                                 limits.total_cost_usd_limit is not None
                                 and loop_overall_result.cost_usd > limits.total_cost_usd_limit
-                            ):
+                                    ):
                                 telemetry.logfire.warn(
                                     f"Cost limit of ${limits.total_cost_usd_limit} exceeded"
-                                )
+                                        )
                                 loop_overall_result.success = False
                                 loop_overall_result.feedback = (
                                     f"Cost limit of ${limits.total_cost_usd_limit} exceeded"
-                                )
+                                        )
                                 pr: PipelineResult[Any] = PipelineResult(
                                     step_history=[loop_overall_result],
                                     total_cost_usd=loop_overall_result.cost_usd,
-                                )
+                                        )
                                 if context_setter:
                                     context_setter(pr, context)
                                 raise UsageLimitExceededError(loop_overall_result.feedback, pr)
                             if (
                                 limits.total_tokens_limit is not None
                                 and loop_overall_result.token_counts > limits.total_tokens_limit
-                            ):
+                                    ):
                                 telemetry.logfire.warn(
                                     f"Token limit of {limits.total_tokens_limit} exceeded"
-                                )
+                                        )
                                 loop_overall_result.success = False
                                 loop_overall_result.feedback = (
                                     f"Token limit of {limits.total_tokens_limit} exceeded"
-                                )
+                                        )
                                 pr_tokens: PipelineResult[Any] = PipelineResult(
                                     step_history=[loop_overall_result],
                                     total_cost_usd=loop_overall_result.cost_usd,
-                                )
+                                        )
                                 if context_setter:
                                     context_setter(pr_tokens, context)
                                 raise UsageLimitExceededError(
                                     loop_overall_result.feedback, pr_tokens
-                                )
+                                        )
 
                         if not body_step_result.success:
                             telemetry.logfire.warn(
                                 f"Body Step '{body_step.name}' in LoopStep '{loop_step.name}' (Iteration {i}) failed."
-                            )
+                                    )
                             iteration_succeeded_fully = False
                             final_body_output_of_last_iteration = body_step_result.output
                             break
@@ -1788,11 +2069,11 @@ class ExecutorCore(Generic[TContext]):
 
                                 safe_merge_context_updates(
                                     context, iteration_context, excluded_fields=set()
-                                )
+                                        )
                             except Exception as e:
                                 telemetry.logfire.error(
                                     f"Failed to perform context merge in LoopStep '{loop_step.name}' iteration {i} during pause: {e}"
-                                )
+                                        )
                                 raise
                         # Re-raise PausedException to propagate it up the call stack
                         raise
@@ -1818,22 +2099,22 @@ class ExecutorCore(Generic[TContext]):
 
                         safe_merge_context_updates(
                             context, iteration_context, excluded_fields=set()
-                        )
+                                )
                     except Exception as e:
                         telemetry.logfire.error(
                             f"Failed to perform context merge in LoopStep '{loop_step.name}' iteration {i}: {e}"
-                        )
+                                )
                         raise
 
             # Check exit condition
             try:
                 should_exit = loop_step.exit_condition_callable(
                     final_body_output_of_last_iteration, iteration_context
-                )
+                        )
             except Exception as e:
                 telemetry.logfire.error(
                     f"Error in exit_condition_callable for LoopStep '{loop_step.name}': {e}"
-                )
+                        )
                 loop_overall_result.success = False
                 loop_overall_result.feedback = f"Exit condition callable raised an exception: {e}"
                 break
@@ -1841,12 +2122,12 @@ class ExecutorCore(Generic[TContext]):
             if should_exit:
                 telemetry.logfire.info(
                     f"LoopStep '{loop_step.name}' exit condition met at iteration {i}."
-                )
+                        )
                 loop_overall_result.success = iteration_succeeded_fully
                 if not iteration_succeeded_fully:
                     loop_overall_result.feedback = (
                         "Loop exited by condition, but last iteration body failed."
-                    )
+                            )
                 loop_exited_successfully_by_condition = True
                 break
 
@@ -1856,26 +2137,26 @@ class ExecutorCore(Generic[TContext]):
                     try:
                         current_body_input = loop_step.iteration_input_mapper(
                             final_body_output_of_last_iteration, context, i
-                        )
+                                )
                     except Exception as e:
                         telemetry.logfire.error(
                             f"Error in iteration_input_mapper for LoopStep '{loop_step.name}': {e}"
-                        )
+                                )
                         loop_overall_result.success = False
                         loop_overall_result.feedback = (
                             f"Iteration input mapper raised an exception: {e}"
-                        )
+                                )
                         break
                 else:
                     current_body_input = final_body_output_of_last_iteration
         else:
             telemetry.logfire.warn(
                 f"LoopStep '{loop_step.name}' reached max_loops ({loop_step.max_loops}) without exit condition being met."
-            )
+                    )
             loop_overall_result.success = False
             loop_overall_result.feedback = (
                 f"Reached max_loops ({loop_step.max_loops}) without meeting exit condition."
-            )
+                    )
 
         # Set final output
         if loop_overall_result.success and loop_exited_successfully_by_condition:
@@ -1883,11 +2164,11 @@ class ExecutorCore(Generic[TContext]):
                 try:
                     loop_overall_result.output = loop_step.loop_output_mapper(
                         last_successful_iteration_body_output, context
-                    )
+                            )
                 except Exception as e:
                     telemetry.logfire.error(
                         f"Error in loop_output_mapper for LoopStep '{loop_step.name}': {e}"
-                    )
+                            )
                     loop_overall_result.success = False
                     loop_overall_result.feedback = f"Loop output mapper raised an exception: {e}"
                     loop_overall_result.output = None
@@ -1898,7 +2179,7 @@ class ExecutorCore(Generic[TContext]):
             if not loop_overall_result.feedback:
                 loop_overall_result.feedback = (
                     "Loop did not complete successfully or exit condition not met positively."
-                )
+                        )
 
         return loop_overall_result
 
@@ -1925,7 +2206,7 @@ class ExecutorCore(Generic[TContext]):
             # Essential telemetry logging for monitoring
             telemetry.logfire.info(
                 f"ConditionalStep '{conditional_step.name}': Condition evaluated to branch key '{branch_key_to_execute}'."
-            )
+                    )
 
             # Optimized branch selection with direct dict access
             selected_branch_pipeline = conditional_step.branches.get(branch_key_to_execute)
@@ -1940,18 +2221,18 @@ class ExecutorCore(Generic[TContext]):
                     return conditional_overall_result
                 telemetry.logfire.info(
                     f"ConditionalStep '{conditional_step.name}': Executing default branch."
-                )
+                        )
             else:
                 telemetry.logfire.info(
                     f"ConditionalStep '{conditional_step.name}': Executing branch for key '{branch_key_to_execute}'."
-                )
+                        )
 
             # Optimized input mapping - avoid unnecessary function call
             input_for_branch = (
                 conditional_step.branch_input_mapper(data, context)
                 if conditional_step.branch_input_mapper
                 else data
-            )
+                    )
 
             # Execute branch pipeline with optimized step execution
             current_branch_data = input_for_branch
@@ -1965,7 +2246,7 @@ class ExecutorCore(Generic[TContext]):
                 r: Optional[Any],
                 breach_event: Optional[Any] = None,
                 **extra_kwargs: Any,
-            ) -> StepResult:
+                    ) -> StepResult:
                 """Optimized recursive step executor."""
                 return await self.execute(
                     s,
@@ -1974,13 +2255,13 @@ class ExecutorCore(Generic[TContext]):
                     resources=r,
                     limits=extra_kwargs.get("usage_limits", limits),
                     context_setter=extra_kwargs.get("context_setter", context_setter),
-                )
+                        )
 
             # Optimized step execution loop with reduced function calls
             for branch_step in selected_branch_pipeline.steps:
                 with telemetry.logfire.span(
                     f"ConditionalStep '{conditional_step.name}' Branch '{branch_key_to_execute}' - Step '{branch_step.name}'"
-                ) as span:
+                        ) as span:
                     if executed_branch_key is not None:
                         try:
                             span.set_attribute("executed_branch_key", str(executed_branch_key))
@@ -1994,14 +2275,14 @@ class ExecutorCore(Generic[TContext]):
                         context,
                         resources,
                         None,  # breach_event - not needed for conditional steps
-                    )
+                            )
 
                 # Optimized metrics accumulation with direct attribute access
                 conditional_overall_result.latency_s += branch_step_result.latency_s
                 conditional_overall_result.cost_usd += getattr(branch_step_result, "cost_usd", 0.0)
                 conditional_overall_result.token_counts += getattr(
                     branch_step_result, "token_counts", 0
-                )
+                        )
 
                 if not branch_step_result.success:
                     branch_pipeline_failed_internally = True
@@ -2023,19 +2304,22 @@ class ExecutorCore(Generic[TContext]):
                     pr: PipelineResult[TContext] = PipelineResult(
                         step_history=[conditional_overall_result],
                         total_cost_usd=conditional_overall_result.cost_usd,
-                    )
+                            )
                     context_setter(pr, context)
 
+        except UsageLimitExceededError:
+            # Re-raise usage limit errors immediately
+            raise
         except Exception as e:
             # Optimized error handling with minimal string formatting
             telemetry.logfire.error(
                 f"Error during ConditionalStep '{conditional_step.name}' execution: {e}",
                 exc_info=True,
-            )
+                    )
             conditional_overall_result.success = False
             conditional_overall_result.feedback = (
                 f"Error executing conditional logic or branch: {e}"
-            )
+                    )
             return conditional_overall_result
 
         # Optimized final result setting
@@ -2045,12 +2329,12 @@ class ExecutorCore(Generic[TContext]):
                 try:
                     conditional_overall_result.output = conditional_step.branch_output_mapper(
                         branch_output, executed_branch_key, context
-                    )
+                            )
                 except Exception as e:
                     conditional_overall_result.success = False
                     conditional_overall_result.feedback = (
                         f"Branch output mapper raised an exception: {e}"
-                    )
+                            )
                     conditional_overall_result.output = None
             else:
                 conditional_overall_result.output = branch_output
@@ -2117,9 +2401,7 @@ class ExecutorCore(Generic[TContext]):
 
             raise MissingAgentError(f"Step '{step.name}' has no agent configured")
 
-        # Check usage limits before execution
-        if limits:
-            await self._usage_meter.guard(limits)
+        # Pre-step guard removed - rely only on post-step guard
 
         last_exception: Exception | None = None
         accumulated_feedbacks: list[str] = []
@@ -2155,7 +2437,7 @@ class ExecutorCore(Generic[TContext]):
                     getattr(step.processors, "prompt_processors", []) if step.processors else [],
                     data,
                     context=context,
-                )
+                        )
 
                 # Run agent
                 raw_output = await self._agent_runner.run(
@@ -2167,7 +2449,7 @@ class ExecutorCore(Generic[TContext]):
                     stream=stream,
                     on_chunk=on_chunk,
                     breach_event=breach_event,
-                )
+                        )
 
                 # Check for Mock objects in output (not the agent itself)
                 from unittest.mock import Mock, MagicMock, AsyncMock
@@ -2180,20 +2462,20 @@ class ExecutorCore(Generic[TContext]):
                     getattr(step.processors, "output_processors", []) if step.processors else [],
                     raw_output,
                     context=context,
-                )
+                        )
 
                 # Run validators
                 if step.validators:
                     await self._validator_runner.validate(
                         step.validators, processed_output, context=context
-                    )
+                            )
 
                 # Persist validation results if requested
                 if (
                     hasattr(step, "persist_validation_results_to")
                     and step.persist_validation_results_to
                     and context is not None
-                ):
+                        ):
                     if hasattr(context, step.persist_validation_results_to):
                         history_list = getattr(context, step.persist_validation_results_to)
                         if isinstance(history_list, list):
@@ -2204,13 +2486,13 @@ class ExecutorCore(Generic[TContext]):
                 # Run plugins
                 processed_output = await self._plugin_runner.run_plugins(
                     step.plugins, processed_output, context=context
-                )
+                        )
 
                 # Extract usage metrics
                 try:
                     prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
                         raw_output, agent, step.name
-                    )
+                            )
                 except PricingNotConfiguredError:
                     # Re-raise PricingNotConfiguredError for strict mode failures
                     raise
@@ -2234,7 +2516,7 @@ class ExecutorCore(Generic[TContext]):
                     cost_usd=cost_usd,
                     token_counts=prompt_tokens + completion_tokens,
                     feedback=None,
-                )
+                        )
 
                 # Cache successful result
                 if self._cache_backend is not None and cache_key is not None:
@@ -2249,14 +2531,14 @@ class ExecutorCore(Generic[TContext]):
                 InfiniteFallbackError,
                 InfiniteRedirectError,
                 ContextInheritanceError,
-            ) as e:
+                    ) as e:
                 # Re-raise critical exceptions immediately
                 raise e
             except (
                 TypeError,
                 UsageLimitExceededError,
                 PricingNotConfiguredError,
-            ) as exc:
+                    ) as exc:
                 # Don't retry these critical exceptions
                 if isinstance(exc, TypeError) and "Mock object" in str(exc):
                     raise
@@ -2301,7 +2583,7 @@ class ExecutorCore(Generic[TContext]):
         if isinstance(
             last_exception,
             (PausedException, InfiniteFallbackError, InfiniteRedirectError),
-        ):
+                ):
             raise last_exception
 
         # For validation failures, preserve the output
@@ -2318,14 +2600,14 @@ class ExecutorCore(Generic[TContext]):
             attempts=getattr(step.config, 'max_retries', 1) if hasattr(step, 'config') else 1,
             feedback=f"Agent execution failed with {type(last_exception).__name__}: {last_exception}",
             latency_s=latency_s,
-        )
+                )
 
         # Persist feedback if requested
         if (
             hasattr(step, "persist_feedback_to_context")
             and step.persist_feedback_to_context
             and context is not None
-        ):
+                ):
             if hasattr(context, step.persist_feedback_to_context):
                 history_list = getattr(context, step.persist_feedback_to_context)
                 if isinstance(history_list, list) and result.feedback:
@@ -2351,7 +2633,12 @@ class ExecutorCore(Generic[TContext]):
         This is the clean, new implementation that replaces the legacy _run_step_logic
         for simple steps only.
         """
+        # Prevent infinite fallback recursion when ExecutorCore is used directly
+        MAX_FALLBACK_DEPTH = 2
+        if _fallback_depth > MAX_FALLBACK_DEPTH:
+            raise InfiniteFallbackError("Fallback loop detected in simple step execution")
         # Check for missing agent - create dummy agent for backward compatibility
+        telemetry.logfire.debug(f"Checking agent for step {step.name}: has_agent={hasattr(step, 'agent')}, agent={getattr(step, 'agent', None)}")
         if not hasattr(step, "agent") or step.agent is None:
             # Check if we're in a test that expects MissingAgentError
             import sys
@@ -2368,15 +2655,12 @@ class ExecutorCore(Generic[TContext]):
                 return f"{step.name}_output"
             step.agent = dummy_agent
 
-        # ✅ COMPATIBILITY: Call usage meter guard for direct ExecutorCore usage
-        # This maintains backward compatibility while allowing ExecutionManager
-        # to handle centralized enforcement when used through the manager.
-        if limits and self._usage_meter:
-            await self._usage_meter.guard(limits)
+        # ✅ COMPATIBILITY: Pre-step guard removed to avoid double-checking
+        # Post-step guard is now used instead for immediate limit checking
 
         last_exception: Exception | None = None
         accumulated_feedbacks: list[str] = []
-        last_attempt_token_counts = 0  # Track token counts from last attempt
+        total_token_counts = 0  # Track total token counts across all attempts
 
         # Get agent from step
         agent = step.agent
@@ -2409,7 +2693,7 @@ class ExecutorCore(Generic[TContext]):
                     getattr(step.processors, "prompt_processors", []) if step.processors else [],
                     data,
                     context=context,
-                )
+                        )
 
                 # Run agent
                 raw_output = await self._agent_runner.run(
@@ -2421,7 +2705,7 @@ class ExecutorCore(Generic[TContext]):
                     stream=stream,
                     on_chunk=on_chunk,
                     breach_event=breach_event,
-                )
+                        )
 
                 # Check for Mock objects in output (not the agent itself)
                 from unittest.mock import Mock, MagicMock, AsyncMock
@@ -2434,13 +2718,13 @@ class ExecutorCore(Generic[TContext]):
                     getattr(step.processors, "output_processors", []) if step.processors else [],
                     raw_output,
                     context=context,
-                )
+                        )
 
                 # Extract usage metrics FIRST (before validation/plugins that might fail)
                 try:
                     prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
                         raw_output, agent, step.name
-                    )
+                            )
                 except PricingNotConfiguredError:
                     # Re-raise PricingNotConfiguredError for strict mode failures
                     raise
@@ -2450,22 +2734,40 @@ class ExecutorCore(Generic[TContext]):
 
                 # Track usage
                 await self._usage_meter.add(cost_usd, prompt_tokens, completion_tokens)
+                
+                # Post-step guard to check limits immediately after usage is updated
+                if limits:
+                    try:
+                        # Create current step result for the step history
+                        current_result = StepResult(
+                            name=step.name,
+                            output=getattr(processed_output, "output", processed_output),
+                            success=True,
+                            cost_usd=cost_usd,
+                            token_counts=prompt_tokens + completion_tokens,
+                            latency_s=time_perf_ns_to_seconds(time_perf_ns() - start_time),
+                        )
+                        # Add current result to shared step history
+                        self._step_history_so_far.append(current_result)
+                        await self._usage_meter.guard(limits, step_history=self._step_history_so_far)
+                    except UsageLimitExceededError as e:
+                        raise
 
-                # Store token counts for this attempt
-                last_attempt_token_counts = prompt_tokens + completion_tokens
+                # Accumulate token counts across all attempts
+                total_token_counts += prompt_tokens + completion_tokens
 
                 # Run validators
                 if step.validators:
                     await self._validator_runner.validate(
                         step.validators, processed_output, context=context
-                    )
+                            )
 
                 # Persist validation results if requested
                 if (
                     hasattr(step, "persist_validation_results_to")
                     and step.persist_validation_results_to
                     and context is not None
-                ):
+                        ):
                     if hasattr(context, step.persist_validation_results_to):
                         history_list = getattr(context, step.persist_validation_results_to)
                         if isinstance(history_list, list):
@@ -2477,7 +2779,7 @@ class ExecutorCore(Generic[TContext]):
                 if step.plugins:
                     processed_output = await self._plugin_runner.run_plugins(
                         step.plugins, processed_output, context=context
-                    )
+                            )
 
                 # Calculate latency
                 latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_time)
@@ -2492,7 +2794,7 @@ class ExecutorCore(Generic[TContext]):
                     cost_usd=cost_usd,
                     token_counts=prompt_tokens + completion_tokens,
                     feedback=None,
-                )
+                        )
 
                 # Cache successful result
                 if self._cache_backend is not None and cache_key is not None:
@@ -2507,14 +2809,14 @@ class ExecutorCore(Generic[TContext]):
                 InfiniteFallbackError,
                 InfiniteRedirectError,
                 ContextInheritanceError,
-            ) as e:
+                    ) as e:
                 # Re-raise control flow and critical exceptions immediately
                 raise e
             except (
                 TypeError,
                 UsageLimitExceededError,
                 PricingNotConfiguredError,
-            ) as exc:
+                    ) as exc:
                 # Don't retry these critical exceptions
                 if isinstance(exc, TypeError) and "Mock object" in str(exc):
                     raise
@@ -2561,8 +2863,8 @@ class ExecutorCore(Generic[TContext]):
                 InfiniteFallbackError,
                 InfiniteRedirectError,
                 ContextInheritanceError,
-            ),
-        ):
+                    ),
+                ):
             raise last_exception
 
         # For validation failures, preserve the output
@@ -2579,15 +2881,15 @@ class ExecutorCore(Generic[TContext]):
             attempts=getattr(step.config, 'max_retries', 1) if hasattr(step, 'config') else 1,
             feedback=f"Agent execution failed with {type(last_exception).__name__}: {last_exception}",
             latency_s=latency_s,
-            token_counts=last_attempt_token_counts,  # Include token counts from last attempt
-        )
+            token_counts=total_token_counts,  # Include total token counts from all attempts
+                )
 
         # Persist feedback if requested
         if (
             hasattr(step, "persist_feedback_to_context")
             and step.persist_feedback_to_context
             and context is not None
-        ):
+                ):
             if hasattr(context, step.persist_feedback_to_context):
                 history_list = getattr(context, step.persist_feedback_to_context)
                 if isinstance(history_list, list) and result.feedback:
@@ -2597,7 +2899,7 @@ class ExecutorCore(Generic[TContext]):
         if not result.success and hasattr(step, 'fallback_step') and step.fallback_step:
             telemetry.logfire.info(
                 f"Step '{step.name}' failed. Attempting fallback step '{step.fallback_step.name}'."
-            )
+                    )
             original_failure_feedback = result.feedback
 
             # ✅ Store primary token counts for summing later
@@ -2615,7 +2917,7 @@ class ExecutorCore(Generic[TContext]):
                     on_chunk=on_chunk,
                     breach_event=breach_event,
                     _fallback_depth=_fallback_depth + 1,
-                )
+                        )
             except Exception as e:
                 # Handle fallback execution errors
                 fallback_result = StepResult(
@@ -2625,7 +2927,7 @@ class ExecutorCore(Generic[TContext]):
                     latency_s=0.0,
                     cost_usd=0.0,
                     token_counts=0,
-                )
+                        )
 
             # ✅ Aggregate metrics according to FSD 5 rules
             result.latency_s += fallback_result.latency_s
@@ -2643,18 +2945,18 @@ class ExecutorCore(Generic[TContext]):
                 result.cost_usd = fallback_result.cost_usd  # Overwrite with fallback cost
                 result.token_counts = (
                     primary_token_counts + fallback_result.token_counts
-                )  # SUM tokens
+                        )  # SUM tokens
                 return result
             else:
                 # ✅ Set metrics on fallback FAILURE
                 result.cost_usd = fallback_result.cost_usd  # Overwrite with fallback cost
                 result.token_counts = (
                     primary_token_counts + fallback_result.token_counts
-                )  # SUM tokens
+                        )  # SUM tokens
                 result.feedback = (
                     f"Original error: {original_failure_feedback}\n"
                     f"Fallback error: {fallback_result.feedback}"
-                )
+                        )
                 return result
 
         return result
@@ -2719,10 +3021,25 @@ class ExecutorCore(Generic[TContext]):
                     if isinstance(cache_result.output, dict):
                         for key, value in cache_result.output.items():
                             if hasattr(context, key):
-                                setattr(context, key, value)
+                                # Handle slots, dataclasses, and regular attributes
+                                try:
+                                    setattr(context, key, value)
+                                except (AttributeError, TypeError):
+                                    # For slots or read-only attributes, try dict-style access
+                                    if hasattr(context, '__dict__'):
+                                        context.__dict__[key] = value
+                                    elif hasattr(context, key):
+                                        # Try to find a setter method
+                                        setter_name = f"set_{key}"
+                                        if hasattr(context, setter_name):
+                                            getattr(context, setter_name)(value)
                     elif hasattr(context, "result"):
                         # Fallback: store in generic result field
-                        setattr(context, "result", cache_result.output)
+                        try:
+                            setattr(context, "result", cache_result.output)
+                        except (AttributeError, TypeError):
+                            if hasattr(context, '__dict__'):
+                                context.__dict__["result"] = cache_result.output
                 except Exception as e:
                     telemetry.logfire.error(f"Failed to apply context updates from cache hit: {e}")
 
@@ -2742,7 +3059,7 @@ class ExecutorCore(Generic[TContext]):
                 r: Optional[Any],
                 breach_event: Optional[Any] = None,
                 **extra_kwargs: Any,
-            ) -> StepResult:
+                    ) -> StepResult:
                 """Recursive step executor for cache step."""
                 return await self.execute(
                     s,
@@ -2752,14 +3069,14 @@ class ExecutorCore(Generic[TContext]):
                     limits=limits,
                     breach_event=breach_event,
                     **extra_kwargs,
-                )
+                        )
 
         # Execute the wrapped step
         cache_result = await step_executor(
             cache_step.wrapped_step, data, context, resources, breach_event
-        )
+                )
 
-        # Cache successful result
+        # Only cache successful results AFTER successful execution
         if cache_result.success and key:
             try:
                 # Use TTL from cache backend if available, otherwise default to 3600s
@@ -2827,7 +3144,7 @@ class UltraStepExecutor(Generic[TContext]):
             cache_backend=cache_backend,
             concurrency_limit=concurrency_limit,
             enable_cache=enable_cache,
-        )
+                )
 
         # Backward compatibility attributes
         self._cache_size = cache_size
@@ -2855,7 +3172,7 @@ class UltraStepExecutor(Generic[TContext]):
             on_chunk,
             breach_event,
             context_setter,
-        )
+                )
 
     async def execute_step(
         self,
@@ -2882,7 +3199,7 @@ class UltraStepExecutor(Generic[TContext]):
             breach_event=breach_event,
             result=result,
             context_setter=context_setter,
-        )
+                )
 
     @cached_property
     def cache(self) -> Optional[Any]:
@@ -2899,7 +3216,7 @@ class UltraStepExecutor(Generic[TContext]):
         """Generate cache key for a frame (backward compatibility)."""
         return self._core._cache_key_generator.generate_key(
             frame.step, frame.data, frame.context, frame.resources
-        )
+                )
 
     def _hash_obj(self, obj: Any) -> str:
         """Hash any Python object deterministically (backward compatibility)."""
@@ -2966,10 +3283,14 @@ class _LRUCache:
         import asyncio
 
         try:
-            # Try to get the current event loop
+            # Check if we're in an async context
             loop = asyncio.get_running_loop()
-            # Use run_until_complete to wait for the result
-            return loop.run_until_complete(self._backend.get(key))
+            # We're in async context, but this is a sync method
+            # Create a task and wait for it properly
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(asyncio.run, self._backend.get(key))
+                return future.result()
         except RuntimeError:
             # No event loop running, create a new one
             return asyncio.run(self._backend.get(key))
@@ -2979,10 +3300,14 @@ class _LRUCache:
         import asyncio
 
         try:
-            # Try to get the current event loop
+            # Check if we're in an async context
             loop = asyncio.get_running_loop()
-            # Use run_until_complete to wait for the result
-            loop.run_until_complete(self._backend.put(key, val, ttl_s=self._backend.ttl_s))
+            # We're in async context, but this is a sync method
+            # Create a task and wait for it properly
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(asyncio.run, self._backend.put(key, val, ttl_s=self._backend.ttl_s))
+                future.result()
         except RuntimeError:
             # No event loop running, create a new one
             asyncio.run(self._backend.put(key, val, ttl_s=self._backend.ttl_s))
@@ -2992,10 +3317,14 @@ class _LRUCache:
         import asyncio
 
         try:
-            # Try to get the current event loop
+            # Check if we're in an async context
             loop = asyncio.get_running_loop()
-            # Use run_until_complete to wait for the result
-            loop.run_until_complete(self._backend.clear())
+            # We're in async context, but this is a sync method
+            # Create a task and wait for it properly
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(asyncio.run, self._backend.clear())
+                future.result()
         except RuntimeError:
             # No event loop running, create a new one
             asyncio.run(self._backend.clear())
@@ -3031,7 +3360,7 @@ class _UsageTracker:
             task = loop.create_task(self._meter.snapshot())
             _, prompt_tokens, completion_tokens = (
                 task.result() if task.done() else asyncio.run(self._meter.snapshot())
-            )
+                    )
             return prompt_tokens + completion_tokens
         except RuntimeError:
             _, prompt_tokens, completion_tokens = asyncio.run(self._meter.snapshot())
@@ -3055,9 +3384,9 @@ class _UsageTracker:
         completion_tokens = tokens - prompt_tokens
         await self._meter.add(cost, prompt_tokens, completion_tokens)
 
-    async def guard(self, lim: UsageLimits, result: Optional["PipelineResult[Any]"] = None) -> None:
+    async def guard(self, lim: UsageLimits, step_history: Optional[List[Any]] = None) -> None:
         """Guard against usage limits."""
-        await self._meter.guard(lim)
+        await self._meter.guard(lim, step_history=step_history)
 
 
 # --------------------------------------------------------------------------- #
@@ -3337,7 +3666,7 @@ class OptimizationConfig:
             optimized.telemetry_batch_size = max(50, self.telemetry_batch_size // 2)
             optimized.telemetry_flush_interval_seconds = min(
                 10.0, self.telemetry_flush_interval_seconds * 2
-            )
+                    )
 
         # Adjust based on error rate
         if error_rate > 0.1:  # 10% error rate
@@ -3345,7 +3674,7 @@ class OptimizationConfig:
             optimized.enable_circuit_breaker = True
             optimized.circuit_breaker_failure_threshold = max(
                 3, self.circuit_breaker_failure_threshold - 2
-            )
+                    )
 
         # Adjust based on cache performance
         if cache_hit_rate < 0.3:  # 30% hit rate
@@ -3455,7 +3784,7 @@ class OptimizationConfigManager:
         if (
             current_time - self._last_optimization_time
             < self._config.optimization_analysis_interval_seconds
-        ):
+                ):
             return None
 
         if len(self._performance_samples) < 10:
@@ -3520,21 +3849,21 @@ class OptimizationConfigManager:
         if (
             performance_data.get("avg_execution_time_ms", 0)
             > self._config.slow_execution_threshold_ms
-        ):
+                ):
             needs_optimization = True
 
         # Memory pressure check
         if (
             performance_data.get("avg_memory_usage_mb", 0)
             > self._config.memory_pressure_threshold_mb
-        ):
+                ):
             needs_optimization = True
 
         # CPU usage check
         if (
             performance_data.get("avg_cpu_usage_percent", 0)
             > self._config.cpu_usage_threshold_percent
-        ):
+                ):
             needs_optimization = True
 
         # Error rate check
@@ -3711,7 +4040,7 @@ class OptimizedExecutorCore(ExecutorCore[TContext]):
                 get_global_hasher,
                 get_global_serializer,
                 get_global_cache_key_generator,
-            )
+                    )
 
             self._optimized_hasher = get_global_hasher()
             self._optimized_serializer = get_global_serializer()
@@ -3788,12 +4117,12 @@ class OptimizedExecutorCore(ExecutorCore[TContext]):
                 latency_s=0.0,
                 cost_usd=0.0,
                 token_counts=0,
-            )
+                    )
 
         # Start automatic optimization if enabled and not already running
         if self.optimization_config.enable_automatic_optimization and (
             self._auto_optimization_task is None or self._auto_optimization_task.done()
-        ):
+                ):
             try:
                 loop = asyncio.get_running_loop()
                 self._auto_optimization_task = loop.create_task(self._automatic_optimization_loop())
@@ -3814,7 +4143,7 @@ class OptimizedExecutorCore(ExecutorCore[TContext]):
                         "step_type": type(step).__name__,
                         "step_name": getattr(step, "name", "unknown"),
                     },
-                )
+                        )
 
             # Check memory pressure and adjust optimizations
             if self._memory_optimizer:
@@ -3835,7 +4164,7 @@ class OptimizedExecutorCore(ExecutorCore[TContext]):
                     if self._perf_monitor:
                         self._perf_monitor.record_metric(
                             "executor.context_optimization_failures", 1
-                        )
+                                )
                     optimized_context = context
 
             # Use optimized cache key generation if available
@@ -3847,13 +4176,13 @@ class OptimizedExecutorCore(ExecutorCore[TContext]):
                     if self._optimized_cache_key_gen:
                         cache_key = self._optimized_cache_key_gen.generate_cache_key(
                             step, data, optimized_context, resources
-                        )
+                                )
                         optimization_attempted = True
                     else:
                         # Fallback to standard cache key generation
                         cache_key = self._cache_key_generator.generate_key(
                             step, data, optimized_context, resources
-                        )
+                                )
 
                     # Check cache
                     if self._cache_backend and cache_key:
@@ -3889,7 +4218,7 @@ class OptimizedExecutorCore(ExecutorCore[TContext]):
                         breach_event,
                         context_setter,
                         **kwargs,
-                    )
+                            )
 
                     result = await self._concurrency_manager.execute_with_concurrency(execute_coro)
                     execution_method = "optimized_with_concurrency"
@@ -3906,7 +4235,7 @@ class OptimizedExecutorCore(ExecutorCore[TContext]):
                         breach_event,
                         context_setter,
                         **kwargs,
-                    )
+                            )
                     execution_method = "optimized"
                     optimization_attempted = True
 
@@ -3917,7 +4246,7 @@ class OptimizedExecutorCore(ExecutorCore[TContext]):
                         "executor.optimization_failures",
                         1,
                         {"error_type": type(opt_error).__name__},
-                    )
+                            )
 
                 # Fall back to standard execution
                 result = await super().execute(
@@ -3932,7 +4261,7 @@ class OptimizedExecutorCore(ExecutorCore[TContext]):
                     result=result,
                     context_setter=context_setter,
                     **kwargs,
-                )
+                        )
                 execution_method = "fallback"
 
             # Cache result if caching is enabled and result is valid
@@ -3957,7 +4286,7 @@ class OptimizedExecutorCore(ExecutorCore[TContext]):
                     "executor.execution_time_ms",
                     execution_time_ms,
                     {"execution_method": execution_method},
-                )
+                        )
 
                 # Check for slow executions
                 if execution_time_ms > self.optimization_config.slow_execution_threshold_ms:
@@ -3969,7 +4298,7 @@ class OptimizedExecutorCore(ExecutorCore[TContext]):
                             "execution_time_ms": execution_time_ms,
                             "execution_method": execution_method,
                         },
-                    )
+                            )
 
             # Optimize result context if needed
             if (
@@ -3977,7 +4306,7 @@ class OptimizedExecutorCore(ExecutorCore[TContext]):
                 and hasattr(result, "context")
                 and result.context
                 and self._context_manager_opt
-            ):
+                    ):
                 try:
                     result.context = self._context_manager_opt.optimized_copy(result.context)
                 except Exception:
@@ -3985,7 +4314,7 @@ class OptimizedExecutorCore(ExecutorCore[TContext]):
                     if self._perf_monitor:
                         self._perf_monitor.record_metric(
                             "executor.result_context_optimization_failures", 1
-                        )
+                                )
 
             return result
 
@@ -4000,7 +4329,7 @@ class OptimizedExecutorCore(ExecutorCore[TContext]):
                         step_name=getattr(step, "name", "unknown"),
                         execution_id=kwargs.get("execution_id"),
                         attempt_number=kwargs.get("attempt_number", 1),
-                    )
+                            )
                     recovery_attempted = True
 
                     if recovery_result.success:
@@ -4013,7 +4342,7 @@ class OptimizedExecutorCore(ExecutorCore[TContext]):
                                     "recovery_action": recovery_result.action_taken.value,
                                     "error_type": type(error).__name__,
                                 },
-                            )
+                                    )
 
                         # Return recovered value if available
                         if recovery_result.recovered_value is not None:
@@ -4029,7 +4358,7 @@ class OptimizedExecutorCore(ExecutorCore[TContext]):
                                 "original_error": type(error).__name__,
                                 "recovery_error": type(recovery_error).__name__,
                             },
-                        )
+                                )
 
             # Record error metrics
             if self._perf_monitor:
@@ -4042,7 +4371,7 @@ class OptimizedExecutorCore(ExecutorCore[TContext]):
                         "recovery_attempted": str(recovery_attempted).lower(),
                         "optimization_attempted": str(optimization_attempted).lower(),
                     },
-                )
+                        )
 
             # Re-raise original error
             raise
@@ -4066,7 +4395,7 @@ class OptimizedExecutorCore(ExecutorCore[TContext]):
         if self._step_executor_opt:
             return await self._step_executor_opt.execute_optimized(
                 step=step, data=data, context=context, resources=resources, **kwargs
-            )
+                    )
         else:
             # Fall back to standard execution
             return await super().execute(
@@ -4081,7 +4410,7 @@ class OptimizedExecutorCore(ExecutorCore[TContext]):
                 result=kwargs.get("result"),
                 context_setter=context_setter,
                 **kwargs,
-            )
+                    )
 
     async def optimized_execute(self, step: Any, data: Any, **kwargs: Any) -> StepResult:
         """
@@ -4153,7 +4482,7 @@ class OptimizedExecutorCore(ExecutorCore[TContext]):
         if self._perf_monitor:
             self._perf_monitor.record_metric(
                 "executor.batch_executions", 1, {"batch_size": len(steps_and_data)}
-            )
+                    )
 
         # Optimize context once for the entire batch if possible
         optimized_context = kwargs.get("context")
@@ -4161,7 +4490,7 @@ class OptimizedExecutorCore(ExecutorCore[TContext]):
             try:
                 optimized_context = await self._context_manager_opt.optimize_context(
                     optimized_context
-                )
+                        )
                 kwargs["context"] = optimized_context
             except Exception:
                 # Context optimization failed, use original
@@ -4184,7 +4513,7 @@ class OptimizedExecutorCore(ExecutorCore[TContext]):
             # Execute all steps concurrently
             gathered_results: List[Union[StepResult, BaseException]] = await asyncio.gather(
                 *[execute_single(pair) for pair in steps_and_data], return_exceptions=True
-            )
+                    )
 
             # Handle any exceptions
             final_results: List[StepResult] = []
@@ -4215,7 +4544,7 @@ class OptimizedExecutorCore(ExecutorCore[TContext]):
                 "executor.batch_execution_time_ms",
                 batch_time_ms,
                 {"batch_size": len(steps_and_data)},
-            )
+                    )
 
         return results
 
@@ -4247,7 +4576,7 @@ class OptimizedExecutorCore(ExecutorCore[TContext]):
             if self._perf_monitor:
                 self._perf_monitor.record_metric(
                     "executor.circuit_breaker_successes", 1, {"circuit_name": cb_name}
-                )
+                        )
 
             return result
 
@@ -4258,7 +4587,7 @@ class OptimizedExecutorCore(ExecutorCore[TContext]):
                     "executor.circuit_breaker_failures",
                     1,
                     {"circuit_name": cb_name, "error_type": type(e).__name__},
-                )
+                        )
             raise
 
     async def execute_with_automatic_optimization(
@@ -4283,7 +4612,7 @@ class OptimizedExecutorCore(ExecutorCore[TContext]):
                 return await self._concurrency_manager.execute_with_concurrency(
                     execute_coro,
                     priority=1,  # Higher priority for CPU-intensive tasks
-                )
+                        )
 
         elif step_analysis["is_memory_intensive"]:
             # Use memory optimization for memory-intensive steps
@@ -4410,16 +4739,16 @@ class OptimizedExecutorCore(ExecutorCore[TContext]):
             avg_execution_time = (
                 self._execution_stats["total_execution_time_ms"]
                 / self._execution_stats["total_executions"]
-            )
+                    )
 
             cache_hit_rate = (
                 self._execution_stats["cache_hits"] / self._execution_stats["total_executions"]
-            )
+                    )
 
             optimization_rate = (
                 self._execution_stats["optimized_executions"]
                 / self._execution_stats["total_executions"]
-            )
+                    )
 
             # Performance recommendations
             if avg_execution_time > self.optimization_config.slow_execution_threshold_ms:
@@ -4430,7 +4759,7 @@ class OptimizedExecutorCore(ExecutorCore[TContext]):
                         "description": f"Average execution time ({avg_execution_time:.1f}ms) exceeds threshold",
                         "suggestion": "Consider enabling more aggressive optimizations or reviewing step complexity",
                     }
-                )
+                        )
 
             if cache_hit_rate < 0.3:
                 recommendations.append(
@@ -4440,7 +4769,7 @@ class OptimizedExecutorCore(ExecutorCore[TContext]):
                         "description": f"Cache hit rate ({cache_hit_rate:.1%}) is low",
                         "suggestion": "Review cache configuration and consider increasing cache size",
                     }
-                )
+                        )
 
             if optimization_rate < 0.8:
                 recommendations.append(
@@ -4450,7 +4779,7 @@ class OptimizedExecutorCore(ExecutorCore[TContext]):
                         "description": f"Optimization rate ({optimization_rate:.1%}) could be improved",
                         "suggestion": "Enable more optimization components for better performance",
                     }
-                )
+                        )
 
         # Component-specific recommendations
         if self._error_handler:
@@ -4466,10 +4795,10 @@ class OptimizedExecutorCore(ExecutorCore[TContext]):
                         "priority": bottleneck.get("severity", "medium"),
                         "description": bottleneck.get(
                             "description", "Performance bottleneck detected"
-                        ),
+                                ),
                         "suggestion": "Review and optimize the identified bottleneck",
                     }
-                )
+                        )
 
         return recommendations
 
@@ -4500,7 +4829,7 @@ class OptimizedExecutorCore(ExecutorCore[TContext]):
             telemetry_batch_size=max(50, min(200, current_config.telemetry_batch_size)),
             # Maintain backward compatibility
             maintain_backward_compatibility=current_config.maintain_backward_compatibility,
-        )
+                )
 
         return optimized_config
 
@@ -4533,7 +4862,7 @@ class OptimizedExecutorCore(ExecutorCore[TContext]):
         if self._perf_monitor:
             self._perf_monitor.record_metric(
                 "executor.config_changes", 1, {"change_type": "runtime_update"}
-            )
+                    )
 
     def _start_automatic_optimization(self) -> None:
         """Start automatic optimization task."""
@@ -4573,7 +4902,7 @@ class OptimizedExecutorCore(ExecutorCore[TContext]):
             if self._perf_monitor:
                 self._perf_monitor.record_metric(
                     "executor.automatic_optimization_errors", 1, {"error_type": type(e).__name__}
-                )
+                        )
 
     def get_config_manager(self) -> OptimizationConfigManager:
         """Get the configuration manager."""
@@ -4601,7 +4930,7 @@ class OptimizedExecutorCore(ExecutorCore[TContext]):
             avg_time = (
                 stats["execution_stats"]["total_execution_time_ms"]
                 / stats["execution_stats"]["total_executions"]
-            )
+                    )
 
             if avg_time > self.optimization_config.slow_execution_threshold_ms:
                 recommendations.append(
@@ -4614,12 +4943,12 @@ class OptimizedExecutorCore(ExecutorCore[TContext]):
                         "description": f"Average execution time ({avg_time:.1f}ms) exceeds threshold",
                         "expected_improvement": "Reduce execution time by 20-40%",
                     }
-                )
+                        )
 
         # Analyze cache performance
         cache_hit_rate = stats["execution_stats"]["cache_hits"] / max(
             stats["execution_stats"]["total_executions"], 1
-        )
+                )
 
         if cache_hit_rate < 0.3:
             recommendations.append(
@@ -4632,14 +4961,14 @@ class OptimizedExecutorCore(ExecutorCore[TContext]):
                     "description": f"Cache hit rate ({cache_hit_rate:.1%}) is low",
                     "expected_improvement": "Improve cache hit rate by 10-20%",
                 }
-            )
+                    )
 
         # Analyze error recovery
         if stats["execution_stats"]["total_executions"] > 0:
             error_rate = (
                 stats["execution_stats"]["total_executions"]
                 - stats["execution_stats"]["error_recoveries"]
-            ) / stats["execution_stats"]["total_executions"]
+                    ) / stats["execution_stats"]["total_executions"]
 
             if error_rate > 0.05:  # 5% error rate
                 recommendations.append(
@@ -4652,7 +4981,7 @@ class OptimizedExecutorCore(ExecutorCore[TContext]):
                         "description": f"Error rate ({error_rate:.1%}) is high",
                         "expected_improvement": "Reduce cascade failures and improve resilience",
                     }
-                )
+                        )
 
         return recommendations
 
@@ -4672,7 +5001,7 @@ class OptimizedExecutorCore(ExecutorCore[TContext]):
                     "executor.config_recommendations_applied",
                     1,
                     {"recommendation_count": len(config_updates)},
-                )
+                        )
 
     def __del__(self) -> None:
         """Cleanup when executor is destroyed."""

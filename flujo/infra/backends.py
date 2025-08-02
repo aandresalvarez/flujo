@@ -34,6 +34,7 @@ class LocalBackend(ExecutionBackend):
         telemetry.logfire.debug("=== LOCAL BACKEND EXECUTE STEP ===")
         telemetry.logfire.debug(f"Step type: {type(step)}")
         telemetry.logfire.debug(f"Step name: {step.name}")
+        telemetry.logfire.debug(f"Step is ParallelStep: {hasattr(step, 'branches')}")
 
         return await self._executor.execute(
             step=step,
