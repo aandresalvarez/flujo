@@ -330,6 +330,7 @@ class ParallelUsageGovernor:
         self.total_tokens = 0
         self.limit_breached = asyncio.Event()
         self.limit_breach_error: Optional[UsageLimitExceededError] = None
+        self._breach_detected = False  # Add explicit flag to prevent race conditions
 
     def _create_breach_error_message(
         self, limit_type: str, limit_value: Any, current_value: Any
@@ -342,46 +343,67 @@ class ParallelUsageGovernor:
 
     async def add_usage(self, cost_delta: float, token_delta: int, result: StepResult) -> bool:
         """Add usage and check for breach. Returns True if breach occurred."""
-        async with self.lock:
-            self.total_cost += cost_delta
-            self.total_tokens += token_delta
+        # Early return if breach already detected to prevent deadlocks
+        if self._breach_detected:
+            return True
+            
+        try:
+            # Add timeout to prevent infinite lock waits
+            async with asyncio.timeout(5.0):  # 5 second timeout
+                async with self.lock:
+                    # Double-check breach status after acquiring lock
+                    if self._breach_detected:
+                        return True
+                        
+                    self.total_cost += cost_delta
+                    self.total_tokens += token_delta
 
-            if self.usage_limits is not None:
-                if (
-                    self.usage_limits.total_cost_usd_limit is not None
-                    and self.total_cost > self.usage_limits.total_cost_usd_limit
-                ):
-                    message = self._create_breach_error_message(
-                        "cost", self.usage_limits.total_cost_usd_limit, self.total_cost
-                    )
-                    pipeline_result_cost: PipelineResult[Any] = PipelineResult(
-                        step_history=[result] if result else [],
-                        total_cost_usd=self.total_cost,
-                    )
-                    self.limit_breach_error = UsageLimitExceededError(
-                        message, result=pipeline_result_cost
-                    )
-                    self.limit_breached.set()
-                elif (
-                    self.usage_limits.total_tokens_limit is not None
-                    and self.total_tokens > self.usage_limits.total_tokens_limit
-                ):
-                    message = self._create_breach_error_message(
-                        "token", self.usage_limits.total_tokens_limit, self.total_tokens
-                    )
-                    pipeline_result: PipelineResult[Any] = PipelineResult(
-                        step_history=[result] if result else [],
-                        total_cost_usd=self.total_cost,
-                    )
-                    self.limit_breach_error = UsageLimitExceededError(
-                        message, result=pipeline_result
-                    )
-                    self.limit_breached.set()
-            return self.limit_breached.is_set()
+                    if self.usage_limits is not None:
+                        breach_occurred = False
+                        
+                        if (
+                            self.usage_limits.total_cost_usd_limit is not None
+                            and self.total_cost > self.usage_limits.total_cost_usd_limit
+                        ):
+                            message = self._create_breach_error_message(
+                                "cost", self.usage_limits.total_cost_usd_limit, self.total_cost
+                            )
+                            pipeline_result_cost: PipelineResult[Any] = PipelineResult(
+                                step_history=[result] if result else [],
+                                total_cost_usd=self.total_cost,
+                            )
+                            self.limit_breach_error = UsageLimitExceededError(
+                                message, result=pipeline_result_cost
+                            )
+                            breach_occurred = True
+                        elif (
+                            self.usage_limits.total_tokens_limit is not None
+                            and self.total_tokens > self.usage_limits.total_tokens_limit
+                        ):
+                            message = self._create_breach_error_message(
+                                "token", self.usage_limits.total_tokens_limit, self.total_tokens
+                            )
+                            pipeline_result: PipelineResult[Any] = PipelineResult(
+                                step_history=[result] if result else [],
+                                total_cost_usd=self.total_cost,
+                            )
+                            self.limit_breach_error = UsageLimitExceededError(
+                                message, result=pipeline_result
+                            )
+                            breach_occurred = True
+                        
+                        if breach_occurred:
+                            self._breach_detected = True
+                            self.limit_breached.set()
+                            
+                    return self._breach_detected
+        except asyncio.TimeoutError:
+            # If we can't acquire the lock within timeout, assume breach to be safe
+            return True
 
     def breached(self) -> bool:
         """Check if a limit has been breached."""
-        return self.limit_breached.is_set()
+        return self._breach_detected or self.limit_breached.is_set()
 
     def get_error_message(self) -> Optional[str]:
         """Get the error message if a breach occurred."""

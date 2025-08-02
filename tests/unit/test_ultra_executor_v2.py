@@ -38,14 +38,11 @@ from flujo.exceptions import (
 )
 
 
-class TestContext(BaseModel):
+class UltraTestContext(BaseModel):
     """Test context model."""
 
     value: str = "test"
     count: int = 0
-
-    def __init__(self, **data):
-        super().__init__(**data)
 
 
 class MockAgent:
@@ -63,7 +60,7 @@ class MockAgent:
         return self.output
 
 
-class TestProcessor:
+class MockProcessor:
     """Mock processor for testing."""
 
     def __init__(self, transform_func=None):
@@ -73,7 +70,7 @@ class TestProcessor:
         return self.transform_func(data)
 
 
-class TestValidator:
+class MockValidator:
     """Mock validator for testing."""
 
     def __init__(self, should_fail: bool = False):
@@ -84,12 +81,12 @@ class TestValidator:
             return ValidationResult(
                 is_valid=False,
                 feedback="Validation failed",
-                validator_name="TestValidator",  # Add required field
+                validator_name="MockValidator",  # Add required field
             )
         return ValidationResult(
             is_valid=True,
             feedback="Validation passed",
-            validator_name="TestValidator",  # Add required field
+            validator_name="MockValidator",  # Add required field
         )
 
 
@@ -290,7 +287,7 @@ class TestCacheKeyGeneration:
         step.agent = None
 
         data = {"input": "test"}
-        context = TestContext(value="test")
+        context = UltraTestContext(value="test")
 
         # Generate key multiple times
         key1 = generator.generate_key(step, data, context)
@@ -509,8 +506,8 @@ class TestExecutorCore:
         step.config.max_retries = 3  # Ensure this is an integer, not a mock
         step.config.temperature = None
         step.processors = Mock()
-        step.processors.prompt_processors = [TestProcessor(lambda x: f"prompt_{x}")]
-        step.processors.output_processors = [TestProcessor(lambda x: f"output_{x}")]
+        step.processors.prompt_processors = [MockProcessor(lambda x: f"prompt_{x}")]
+        step.processors.output_processors = [MockProcessor(lambda x: f"output_{x}")]
         step.validators = []
         step.plugins = []  # Add missing plugins attribute
         step.fallback_step = None  # Ensure no fallback step
@@ -538,7 +535,7 @@ class TestExecutorCore:
         step.processors = Mock()
         step.processors.prompt_processors = []
         step.processors.output_processors = []
-        step.validators = [TestValidator(should_fail=True)]
+        step.validators = [MockValidator(should_fail=True)]
         step.plugins = []  # Add missing plugins attribute
         step.fallback_step = None  # Ensure no fallback step
         step.meta = {}  # Ensure meta is an empty dict, not a mock

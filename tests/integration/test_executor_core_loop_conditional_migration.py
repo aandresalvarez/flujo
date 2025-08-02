@@ -14,16 +14,13 @@ from flujo.application.core.ultra_executor import ExecutorCore
 from flujo.testing.utils import StubAgent
 
 
-class TestContext(BaseModel):
+class IntegrationTestContext(BaseModel):
     """Test context for integration tests."""
 
     counter: int = 0
     values: List[str] = []
     branch_executed: str = ""
     loop_iterations: int = 0
-
-    def __init__(self, **data):
-        super().__init__(**data)
 
 
 class TestExecutorCoreLoopConditionalMigration:
@@ -203,7 +200,7 @@ class TestExecutorCoreLoopConditionalMigration:
 
     async def test_loopstep_context_isolation(self, executor_core, increment_agent):
         """Test that LoopStep maintains proper context isolation through new architecture."""
-        context = TestContext()
+        context = IntegrationTestContext()
 
         # Create a LoopStep that modifies context
         body = Pipeline.from_step(Step.model_validate({"name": "step1", "agent": increment_agent}))
@@ -231,7 +228,7 @@ class TestExecutorCoreLoopConditionalMigration:
 
     async def test_conditionalstep_context_propagation(self, executor_core, echo_agent):
         """Test that ConditionalStep properly propagates context through new architecture."""
-        context = TestContext()
+        context = IntegrationTestContext()
 
         # Create a ConditionalStep that modifies context
         branches = {
@@ -601,7 +598,7 @@ class TestExecutorCoreLoopConditionalMigration:
             loop_output_mapper=output_mapper,
         )
 
-        context = TestContext()
+        context = IntegrationTestContext()
         result = await executor_core.execute(
             step=loop_step,
             data=1,  # Initial input
@@ -640,7 +637,7 @@ class TestExecutorCoreLoopConditionalMigration:
             branch_output_mapper=output_mapper,
         )
 
-        context = TestContext()
+        context = IntegrationTestContext()
         result = await executor_core.execute(
             step=conditional_step,
             data={"value": "test_input"},
@@ -675,7 +672,7 @@ class TestExecutorCoreLoopConditionalMigration:
             max_loops=3,
         )
 
-        context = TestContext()
+        context = IntegrationTestContext()
         result = await executor_core.execute(
             step=loop_step,
             data=0,
@@ -711,7 +708,7 @@ class TestExecutorCoreLoopConditionalMigration:
             branches=branches,
         )
 
-        context = TestContext()
+        context = IntegrationTestContext()
         result = await executor_core.execute(
             step=conditional_step,
             data={"value": "test"},

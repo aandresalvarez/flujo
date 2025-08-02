@@ -52,7 +52,7 @@ from ..domain.commands import AgentCommand
 from pydantic import TypeAdapter
 from ..domain.resources import AppResources
 from ..domain.types import HookCallable
-from ..domain.backends import ExecutionBackend, StepExecutionRequest
+from ..domain.backends import ExecutionBackend
 from ..console_tracer import ConsoleTracer
 from ..state import StateBackend, WorkflowState
 from ..registry import PipelineRegistry
@@ -61,8 +61,8 @@ from .context_manager import (
     _accepts_param,
     _extract_missing_fields,
 )
-from .core.step_logic import _run_step_logic
-from .core.context_adapter import _build_context_update, _inject_context
+
+
 from .core.hook_dispatcher import _dispatch_hook as _dispatch_hook_impl
 from .core.execution_manager import ExecutionManager
 from .core.state_manager import StateManager
@@ -367,144 +367,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
 
         await _dispatch_hook_impl(self.hooks, event_name, **kwargs)
 
-    async def _run_step(
-        self,
-        step: Step[Any, Any],
-        data: Any,
-        context: Optional[ContextT],
-        resources: Optional[AppResources],
-        breach_event: Optional[Any] = None,
-        *,
-        stream: bool = False,
-    ) -> AsyncIterator[Any]:
-        """Execute a single step and update context if required.
 
-        Parameters
-        ----------
-        step:
-            The :class:`Step` to execute.
-        data:
-            Input data for the step.
-        context:
-            Current pipeline context instance or ``None``.
-        resources:
-            Application resources passed to the step.
-
-        Returns
-        -------
-        StepResult
-            Result object describing the step outcome.
-
-        Notes
-        -----
-        If ``step`` is configured with ``updates_context=True`` the returned
-        output is merged into ``context`` and revalidated against the context
-        model. Validation errors are logged and cause the step to be marked as
-        failed.
-        """
-        q: asyncio.Queue[Any] | None = None
-
-        async def _capture(chunk: Any) -> None:
-            assert q is not None
-            await q.put(chunk)
-
-        request = StepExecutionRequest(
-            step=step,
-            input_data=data,
-            context=context,
-            resources=resources,
-            context_model_defined=self.context_model is not None,
-            usage_limits=self.usage_limits,
-            stream=stream,
-            on_chunk=_capture if stream else None,
-            breach_event=breach_event,
-        )
-
-        if stream:
-            q = asyncio.Queue()
-            task = asyncio.create_task(self.backend.execute_step(request))
-            result = None  # Initialize result variable
-            while True:
-                if not q.empty():
-                    yield q.get_nowait()
-                    continue
-                if task.done():
-                    while not q.empty():
-                        yield q.get_nowait()
-                    try:
-                        result = task.result()
-                    except (
-                        UsageLimitExceededError,
-                        PricingNotConfiguredError,
-                        InfiniteFallbackError,
-                        InfiniteRedirectError,
-                        PausedException,
-                        MissingAgentError,
-                        TypeMismatchError,
-                        TypeError,
-                        ValueError,
-                        RuntimeError,
-                        ContextInheritanceError,
-                    ):
-                        # Allow critical exceptions to propagate
-                        raise
-                    except Exception as e:  # pragma: no cover - defensive
-                        telemetry.logfire.error(
-                            f"Streaming task for step '{step.name}' failed: {e}"
-                        )
-                        result = StepResult(
-                            name=step.name,
-                            output=None,
-                            success=False,
-                            attempts=1,
-                            feedback=str(e),
-                        )
-                    break
-                try:
-                    item = await asyncio.wait_for(q.get(), timeout=0.1)
-                    yield item
-                except asyncio.TimeoutError:
-                    continue
-                except asyncio.CancelledError:
-                    # Handle cancellation gracefully during test cleanup
-                    telemetry.logfire.info(f"Step '{step.name}' streaming cancelled")
-                    # Create a result for cancelled execution
-                    result = StepResult(
-                        name=step.name,
-                        output=None,
-                        success=False,
-                        attempts=1,
-                        feedback="Step execution was cancelled",
-                    )
-                    break
-        else:
-            result = await self.backend.execute_step(request)
-        if getattr(step, "updates_context", False):
-            if self.context_model is not None and context is not None:
-                update_data = _build_context_update(result.output)
-                if update_data is None:
-                    telemetry.logfire.warn(
-                        f"Step '{step.name}' has updates_context=True but did not return a dict or Pydantic model. "
-                        "Skipping context update."
-                    )
-                    yield result
-                    return
-
-                err = _inject_context(context, update_data, self.context_model)
-                if err is not None:
-                    error_msg = (
-                        f"Context update by step '{step.name}' failed Pydantic validation: {err}"
-                    )
-                    telemetry.logfire.error(error_msg)
-                    result.success = False
-                    result.feedback = error_msg
-                    yield result
-                    return
-
-                telemetry.logfire.info(
-                    f"Context successfully updated and re-validated by step '{step.name}'."
-                )
-        yield result
 
     async def _execute_steps(
         self,
@@ -534,6 +397,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
 
         execution_manager = ExecutionManager(
             self.pipeline,
+            backend=self.backend,  # ✅ Pass the backend to the execution manager.
             state_manager=state_manager,
             usage_governor=usage_governor,
             step_coordinator=step_coordinator,
@@ -548,7 +412,6 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             stream_last=stream_last,
             run_id=run_id,
             state_created_at=state_created_at,
-            step_executor=self._run_step,
         ):
             yield item
 
@@ -768,7 +631,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     "cancelled",
                 ]
                 if cancelled:
-                    final_status = "cancelled"
+                    final_status = "failed"
                 elif pipeline_result_obj.step_history:
                     final_status = (
                         "completed"

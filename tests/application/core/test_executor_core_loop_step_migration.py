@@ -19,16 +19,13 @@ from flujo.exceptions import UsageLimitExceededError
 from flujo.testing.utils import StubAgent
 
 
-class TestContext(BaseModel):
+class LoopTestContext(BaseModel):
     """Test context for LoopStep tests."""
 
     counter: int = 0
     messages: list[str] = []
     data: dict[str, Any] = {}
     original_value: Optional[str] = None
-
-    def __init__(self, **data):
-        super().__init__(**data)
 
 
 def create_mock_step(
@@ -87,7 +84,7 @@ class TestLoopStepMigration:
     @pytest.fixture
     def context(self):
         """Create test context."""
-        return TestContext(counter=0, messages=[], data={})
+        return LoopTestContext(counter=0, messages=[], data={})
 
     # Phase 1: Basic Functionality Tests
 
@@ -692,7 +689,7 @@ class TestLoopStepMigration:
             )
 
         # Run multiple loops concurrently
-        contexts = [TestContext(counter=0, messages=[], data={}) for _ in range(3)]
+        contexts = [LoopTestContext(counter=0, messages=[], data={}) for _ in range(3)]
         results = await asyncio.gather(*[run_loop(ctx) for ctx in contexts])
 
         # Assert

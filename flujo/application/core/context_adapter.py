@@ -459,15 +459,9 @@ def _inject_context(
             deserialized_value = _deserialize_value(value, field_type, context_model)
             setattr(context, key, deserialized_value)
         elif not hasattr(context, key):
-            # Enhanced error handling with better messages
-            from flujo.exceptions import ContextFieldError
-
-            available_fields = (
-                list(context.__fields__.keys()) if hasattr(context, "__fields__") else []
-            )
-            if hasattr(context, "model_fields"):
-                available_fields = list(context.model_fields.keys())
-            raise ContextFieldError(key, context.__class__.__name__, available_fields)
+            # Skip fields that don't exist in the context model
+            # This allows for flexible context updates where not all fields need to be present
+            continue
         else:
             # If the field exists on the context but is not in the model, set it directly
             # This handles dynamic fields that may be added at runtime

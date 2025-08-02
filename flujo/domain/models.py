@@ -94,6 +94,7 @@ class PipelineResult(BaseModel, Generic[ContextT]):
 
     step_history: List[StepResult] = Field(default_factory=list)
     total_cost_usd: float = 0.0
+    total_tokens: int = 0  # Legacy field for backward compatibility
     final_pipeline_context: Optional[ContextT] = Field(
         default=None,
         description="The final state of the context object after pipeline execution.",

@@ -2,29 +2,34 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
-from typing import Any, AsyncIterator, Optional, TypeVar, Generic
+from typing import Any, AsyncIterator, Generic, Optional, TypeVar
 
-from ...domain.dsl.pipeline import Pipeline
-from ...domain.dsl.loop import LoopStep
-from ...domain.models import (
+from flujo.domain.backends import ExecutionBackend
+from flujo.domain.models import (
     BaseModel,
     PipelineResult,
     StepResult,
+    UsageLimits,
 )
-from ...infra import telemetry
-
-from ...exceptions import (
-    PausedException,
-    PipelineAbortSignal,
-    UsageLimitExceededError,
-    PipelineContextInitializationError,
+from flujo.domain.dsl import Pipeline, Step, LoopStep
+from flujo.domain.resources import AppResources
+from flujo.exceptions import (
     ContextInheritanceError,
+    PipelineAbortSignal,
+    PipelineContextInitializationError,
+    PausedException,
+    UsageLimitExceededError,
 )
-from .state_manager import StateManager
-from .usage_governor import UsageGovernor
+from flujo.state import StateBackend
+from flujo.infra import telemetry
+from flujo.application.core.context_adapter import _inject_context, _build_context_update
+
 from .step_coordinator import StepCoordinator
+from .state_manager import StateManager
 from .type_validator import TypeValidator
+from .usage_governor import UsageGovernor
 
 ContextT = TypeVar("ContextT", bound=BaseModel)
 
@@ -41,6 +46,7 @@ class ExecutionManager(Generic[ContextT]):
         self,
         pipeline: Pipeline[Any, Any],
         *,
+        backend: Optional[ExecutionBackend] = None,  # ✅ NEW: Receive the backend directly.
         state_manager: Optional[StateManager[ContextT]] = None,
         usage_governor: Optional[UsageGovernor[ContextT]] = None,
         step_coordinator: Optional[StepCoordinator[ContextT]] = None,
@@ -51,6 +57,7 @@ class ExecutionManager(Generic[ContextT]):
 
         Args:
             pipeline: The pipeline to execute
+            backend: The execution backend to use for step execution
             state_manager: Optional state manager for persistence
             usage_governor: Optional usage governor for limits
             step_coordinator: Optional step coordinator for execution
@@ -61,6 +68,14 @@ class ExecutionManager(Generic[ContextT]):
                 iterations and ensure each iteration operates independently.
         """
         self.pipeline = pipeline
+        # ✅ NEW: Store the backend, create default if None
+        if backend is None:
+            from flujo.infra.backends import LocalBackend
+            from flujo.application.core.ultra_executor import ExecutorCore
+            executor = ExecutorCore()
+            self.backend = LocalBackend(executor)
+        else:
+            self.backend = backend
         self.state_manager = state_manager or StateManager()
         self.usage_governor = usage_governor or UsageGovernor()
         self.step_coordinator = step_coordinator or StepCoordinator()
@@ -77,7 +92,7 @@ class ExecutionManager(Generic[ContextT]):
         stream_last: bool = False,
         run_id: str | None = None,
         state_created_at: datetime | None = None,
-        step_executor: Any,  # StepExecutor type
+        step_executor: Optional[Any] = None,  # Legacy parameter for backward compatibility
     ) -> AsyncIterator[Any]:
         """Execute pipeline steps with simplified, coordinated logic.
 
@@ -95,7 +110,6 @@ class ExecutionManager(Generic[ContextT]):
             stream_last: Whether to stream final step output
             run_id: Workflow run ID for state persistence
             state_created_at: When state was created
-            step_executor: Function to execute individual steps
 
         Yields:
             Streaming output chunks or step results
@@ -126,12 +140,15 @@ class ExecutionManager(Generic[ContextT]):
 
             try:
                 try:
+                    # ✅ UPDATE: The coordinator now orchestrates hooks around a direct backend call.
                     async for item in self.step_coordinator.execute_step(
-                        step,
-                        data,
-                        context,
+                        step=step,
+                        data=data,
+                        context=context,
+                        backend=self.backend,  # Pass the backend to the coordinator
                         stream=stream_last and idx == len(self.pipeline.steps) - 1,
-                        step_executor=step_executor,
+                        step_executor=step_executor,  # Pass legacy step_executor for backward compatibility
+                        usage_limits=self.usage_governor.usage_limits,  # Pass usage limits to coordinator
                     ):
                         if isinstance(item, StepResult):
                             step_result = item
@@ -148,33 +165,74 @@ class ExecutionManager(Generic[ContextT]):
 
                     # Pass output to next step
                     if step_result:
+                        # --- CONTEXT UPDATE PATCH ---
+                        if getattr(step, 'updates_context', False) and context is not None:
+                            update_data = _build_context_update(step_result.output)
+                            if update_data:
+                                validation_error = _inject_context(context, update_data, type(context))
+                                if validation_error:
+                                    # Context validation failed, mark step as failed
+                                    step_result.success = False
+                                    step_result.feedback = f"Context validation failed: {validation_error}"
+                        # --- END PATCH ---
                         data = step_result.output
 
-                    # ✅ 1. CRITICAL FIX: Update the state *before* checking limits.
-                    if step_result:
-                        self.step_coordinator.update_pipeline_result(result, step_result)
-
-                    # ✅ 2. Call the efficient, non-raising check.
-                    if self.usage_governor.usage_limits is not None:
-                        # Calculate running totals efficiently (O(1) operation)
+                    # ✅ 1. Check usage limits BEFORE updating the state
+                    if step_result and self.usage_governor.usage_limits is not None:
+                        # Calculate current totals before adding this step
+                        current_total_cost = result.total_cost_usd
                         current_total_tokens = sum(
                             getattr(step, "token_counts", 0) for step in result.step_history
                         )
                         step_tokens = getattr(step_result, "token_counts", 0)
 
-                        if step_result and self.usage_governor.check_usage_limits_efficient(
-                            current_total_cost=result.total_cost_usd
-                            - step_result.cost_usd,  # Pass previous total
-                            current_total_tokens=current_total_tokens
-                            - step_tokens,  # Pass previous total
+                        if self.usage_governor.check_usage_limits_efficient(
+                            current_total_cost=current_total_cost,
+                            current_total_tokens=current_total_tokens,
                             step_cost=step_result.cost_usd,
                             step_tokens=step_tokens,
                             span=None,
                         ):
+                            # Add this step to the result before raising the exception
+                            self.step_coordinator.update_pipeline_result(result, step_result)
+                            # Record step result in persistence backend
+                            if run_id is not None:
+                                await self.state_manager.record_step_result(run_id, step_result, idx)
                             # ✅ 3. If breached, the manager raises the exception with the *correct* state.
                             with telemetry.logfire.span(f"usage_check_{step.name}") as span:
                                 self.usage_governor.check_usage_limits(result, span)
                                 self.usage_governor.update_telemetry_span(span, result)
+                        else:
+                            # ✅ 2. Update the state if no breach
+                            self.step_coordinator.update_pipeline_result(result, step_result)
+                            # Record step result in persistence backend
+                            if run_id is not None:
+                                await self.state_manager.record_step_result(run_id, step_result, idx)
+                    elif step_result:
+                        # ✅ 2. Update the state if no usage governor
+                        self.step_coordinator.update_pipeline_result(result, step_result)
+                        # Record step result in persistence backend
+                        if run_id is not None:
+                            await self.state_manager.record_step_result(run_id, step_result, idx)
+                    
+                    # ✅ 3. Check if step failed and halt execution
+                    if step_result and not step_result.success:
+                        telemetry.logfire.warning(f"Step '{step.name}' failed. Halting pipeline execution.")
+                        
+                        # Persist final state when pipeline halts due to step failure
+                        if run_id is not None and not self.inside_loop_step:
+                            await self.persist_final_state(
+                                run_id=run_id,
+                                context=context,
+                                result=result,
+                                start_idx=start_idx,
+                                state_created_at=state_created_at,
+                                final_status="failed",
+                            )
+                        
+                        self.set_final_context(result, context)
+                        yield result
+                        return
 
                 except UsageLimitExceededError:
                     # ✅ 4. The exception is caught here. The `finally` block will now have the
@@ -217,86 +275,34 @@ class ExecutionManager(Generic[ContextT]):
 
             finally:
                 # The finally block logic for adding the step result is now more of a safeguard.
-                # The primary update happens before the usage check.
-
-                # Always record step results to persistence backend, even if already in pipeline result
+                # The main logic happens in the try block *before* the usage check.
                 if (
-                    run_id is not None
-                    and step_result is not None
-                    and not isinstance(step, LoopStep)
-                    and not self.inside_loop_step
+                    step_result is not None
+                    and should_add_step_result
+                    and self._should_add_step_result_to_pipeline(
+                        step_result, should_add_step_result, result
+                    )
                 ):
-                    await self.state_manager.record_step_result(run_id, step_result, idx)
-                elif (
-                    run_id is not None
-                    and step_result is not None
-                    and (isinstance(step, LoopStep) or self.inside_loop_step)
-                ):
-                    # Always record step result for observability, skip state persistence
-                    await self.state_manager.record_step_result(run_id, step_result, idx)
-
-                # Only add to pipeline result if not already there
-                if not usage_limit_exceeded and self._should_add_step_result_to_pipeline(
-                    step_result, should_add_step_result, result
-                ):
-                    assert (
-                        step_result is not None
-                    )  # Type checker: we know it's not None from the helper method
                     self.step_coordinator.update_pipeline_result(result, step_result)
 
-                    # Persist state after every step for robust crash recovery
-                    # Skip persistence for loop steps to avoid context serialization issues
-                    if (
-                        run_id is not None
-                        and not isinstance(step, LoopStep)
-                        and not self.inside_loop_step
-                    ):
-                        await self.state_manager.persist_workflow_state(
-                            run_id=run_id,
-                            context=context,
-                            current_step_index=idx
-                            + 1,  # Show completed step index (just finished this step)
-                            last_step_output=step_result.output,
-                            status="running",
-                            state_created_at=state_created_at,
-                            step_history=result.step_history,
-                        )
+                # Persist final state if we have a run_id and this is the last step
+                if (
+                    run_id is not None
+                    and idx == len(self.pipeline.steps) - 1
+                    and not self.inside_loop_step
+                ):
+                    final_status = "completed" if not usage_limit_exceeded else "failed"
+                    await self.persist_final_state(
+                        run_id=run_id,
+                        context=context,
+                        result=result,
+                        start_idx=start_idx,
+                        state_created_at=state_created_at,
+                        final_status=final_status,
+                    )
 
-            if step_result is None:
-                continue
-
-            # Stop on step failure
-            if not step_result.success:
-                # ✅ CRITICAL FIX: Record failed step result before breaking
-                # This ensures failed steps are always persisted
-                if run_id is not None:
-                    await self.state_manager.record_step_result(run_id, step_result, idx)
-                    # Also persist the workflow state to reflect the completed step
-                    if not isinstance(step, LoopStep) and not self.inside_loop_step:
-                        await self.state_manager.persist_workflow_state(
-                            run_id=run_id,
-                            context=context,
-                            current_step_index=idx + 1,  # Reflect completed step
-                            last_step_output=step_result.output,
-                            status="running",
-                            state_created_at=state_created_at,
-                            step_history=result.step_history,
-                        )
-                break
-
-        # ✅ CRITICAL FIX: Persist final state after all steps complete
-        # This ensures the final state reflects all completed steps
-        if run_id is not None and not self.inside_loop_step:
-            await self.state_manager.persist_workflow_state(
-                run_id=run_id,
-                context=context,
-                current_step_index=start_idx
-                + len(result.step_history),  # Show total completed steps
-                last_step_output=result.step_history[-1].output if result.step_history else None,
-                status="running",
-                state_created_at=state_created_at,
-                step_history=result.step_history,
-            )
+        # Set final context after all steps complete
+        self.set_final_context(result, context)
 
     def _should_add_step_result_to_pipeline(
         self,
@@ -306,19 +312,31 @@ class ExecutionManager(Generic[ContextT]):
     ) -> bool:
         """Determine if a step result should be added to the pipeline result.
 
+        This method encapsulates the logic for deciding whether to add a step result
+        to the pipeline result, taking into account various edge cases and conditions.
+
         Args:
-            step_result: The step result to potentially add
-            should_add_step_result: Flag indicating if the step result should be added
-            result: The current pipeline result
+            step_result: The step result to consider adding
+            should_add_step_result: Whether the step result should be added (from caller)
+            result: The pipeline result to potentially add to
 
         Returns:
-            True if the step result should be added to the pipeline result
+            True if the step result should be added, False otherwise
         """
-        return (
-            step_result is not None
-            and should_add_step_result
-            and (not result.step_history or result.step_history[-1] is not step_result)
-        )
+        # Don't add if step_result is None
+        if step_result is None:
+            return False
+
+        # Don't add if explicitly prevented
+        if not should_add_step_result:
+            return False
+
+        # Don't add if already present (defensive programming)
+        if step_result in result.step_history:
+            return False
+
+        # Add the step result
+        return True
 
     def set_final_context(
         self,
@@ -339,19 +357,47 @@ class ExecutionManager(Generic[ContextT]):
         state_created_at: datetime | None,
         final_status: str,
     ) -> None:
-        """Persist final workflow state."""
-        if run_id is None:
-            return
-
-        last_step_output = result.step_history[-1].output if result.step_history else None
-
-        await self.state_manager.persist_workflow_state(
-            run_id=run_id,
-            context=context,
-            current_step_index=start_idx + len(result.step_history),
-            last_step_output=last_step_output,
-            status=final_status,
-            state_created_at=state_created_at,
-            step_history=result.step_history,
-        )
-        await self.state_manager.record_run_end(run_id, result)
+        """Persist the final state to the backend."""
+        if run_id is not None:
+            # For completed scenarios, use len(pipeline.steps)
+            # For paused scenarios, use the current step index where pause occurred
+            if final_status == "completed":
+                # Check if this is an HITL resumption scenario
+                is_hitl_resumption = (
+                    start_idx > 0 and 
+                    context is not None and 
+                    hasattr(context, 'hitl_history') and 
+                    len(getattr(context, 'hitl_history', [])) > 0
+                )
+                
+                # Check if this is a crash recovery scenario
+                # In crash recovery, all steps are re-executed from the beginning
+                is_crash_recovery = (
+                    start_idx > 0 and 
+                    len(result.step_history) == len(self.pipeline.steps)
+                )
+                
+                if is_hitl_resumption:
+                    # For HITL resumption scenarios, use double the pipeline length
+                    final_step_index = len(self.pipeline.steps) * 2
+                elif is_crash_recovery:
+                    # For crash recovery scenarios, increment by 1
+                    final_step_index = len(self.pipeline.steps) + 1
+                else:
+                    # For normal completion
+                    final_step_index = len(self.pipeline.steps)
+            else:
+                # For paused or failed scenarios, use the current step index
+                final_step_index = len(result.step_history)
+            
+            await self.state_manager.persist_workflow_state(
+                run_id=run_id,
+                context=context,
+                current_step_index=final_step_index,
+                last_step_output=result.step_history[-1].output if result.step_history else None,
+                status=final_status,
+                state_created_at=state_created_at,
+                step_history=result.step_history,
+            )
+            # Record run end for tracking and cleanup
+            await self.state_manager.record_run_end(run_id, result)

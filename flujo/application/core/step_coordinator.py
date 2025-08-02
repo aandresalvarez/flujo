@@ -2,22 +2,23 @@
 
 from __future__ import annotations
 
-from typing import Any, AsyncIterator, Optional, TypeVar, Generic
+from typing import Any, AsyncIterator, Generic, Optional, TypeVar, Literal
 
-from ...domain.dsl.step import Step
-from ...domain.models import BaseModel, PipelineResult, StepResult, PipelineContext
-from ...domain.resources import AppResources
-from ...domain.types import HookCallable
-from typing import Literal
-from ...exceptions import (
-    PausedException,
+from flujo.domain.backends import ExecutionBackend, StepExecutionRequest
+from flujo.domain.models import BaseModel, StepResult, PipelineContext, PipelineResult, UsageLimits
+from flujo.domain.dsl import Step
+from flujo.domain.resources import AppResources
+from flujo.exceptions import (
+    ContextInheritanceError,
     PipelineAbortSignal,
     PipelineContextInitializationError,
+    PausedException,
     UsageLimitExceededError,
-    ContextInheritanceError,
 )
-from ...infra import telemetry
-from ..core.hook_dispatcher import _dispatch_hook as _dispatch_hook_impl
+from flujo.infra import telemetry
+
+from flujo.domain.types import HookCallable
+from flujo.application.core.hook_dispatcher import _dispatch_hook
 
 ContextT = TypeVar("ContextT", bound=BaseModel)
 
@@ -38,9 +39,11 @@ class StepCoordinator(Generic[ContextT]):
         step: Step[Any, Any],
         data: Any,
         context: Optional[ContextT],
+        backend: Optional[ExecutionBackend] = None,  # ✅ NEW: Receive the backend to call.
         *,
         stream: bool = False,
-        step_executor: Any,  # StepExecutor type
+        step_executor: Optional[Any] = None,  # Legacy parameter for backward compatibility
+        usage_limits: Optional[UsageLimits] = None,  # ✅ NEW: Usage limits for step execution
     ) -> AsyncIterator[Any]:
         """Execute a single step with telemetry and hook management.
 
@@ -48,8 +51,8 @@ class StepCoordinator(Generic[ContextT]):
             step: The step to execute
             data: Input data for the step
             context: Pipeline context
+            backend: The execution backend to call
             stream: Whether to stream output
-            step_executor: Function to execute the step
 
         Yields:
             Step results or streaming chunks
@@ -67,11 +70,59 @@ class StepCoordinator(Generic[ContextT]):
         step_result = None
         with telemetry.logfire.span(step.name) as span:
             try:
-                async for item in step_executor(step, data, context, self.resources, stream=stream):
-                    if isinstance(item, StepResult):
-                        step_result = item
+                # ✅ UPDATE: Support both new backend approach and legacy step_executor
+                # Prioritize step_executor for backward compatibility with tests
+                if step_executor is not None:
+                    # Legacy approach: use step_executor
+                    async for item in step_executor(step, data, context, self.resources, stream=stream):
+                        if isinstance(item, StepResult):
+                            step_result = item
+                            yield item  # Yield StepResult objects
+                        else:
+                            yield item
+                elif backend is not None:
+                    # New approach: call backend directly
+                    if stream:
+                        # For streaming, we need to collect chunks and yield them
+                        chunks = []
+                        
+                        async def on_chunk(chunk: Any) -> None:
+                            chunks.append(chunk)
+                        
+                        request = StepExecutionRequest(
+                            step=step,
+                            input_data=data,
+                            context=context,
+                            resources=self.resources,
+                            stream=stream,
+                            on_chunk=on_chunk,
+                            usage_limits=usage_limits,
+                        )
+                        
+                        # Call the backend directly
+                        step_result = await backend.execute_step(request)
+                        
+                        # Yield chunks first, then result
+                        for chunk in chunks:
+                            yield chunk
+                        yield step_result
                     else:
-                        yield item
+                        # Non-streaming case
+                        request = StepExecutionRequest(
+                            step=step,
+                            input_data=data,
+                            context=context,
+                            resources=self.resources,
+                            stream=stream,
+                            usage_limits=usage_limits,
+                        )
+                        
+                        # Call the backend directly
+                        step_result = await backend.execute_step(request)
+                        yield step_result
+                else:
+                    raise ValueError("Either backend or step_executor must be provided")
+                
             except PausedException as e:
                 # Handle pause for human input
                 if isinstance(context, PipelineContext):
@@ -122,26 +173,20 @@ class StepCoordinator(Generic[ContextT]):
                     raise
                 telemetry.logfire.warn(f"Step '{step.name}' failed. Halting pipeline execution.")
 
-            yield step_result
-
     async def _dispatch_hook(
         self,
         event_name: Literal["pre_run", "post_run", "pre_step", "post_step", "on_step_failure"],
         **kwargs: Any,
     ) -> None:
-        """Dispatch hooks for the given event."""
-        try:
-            await _dispatch_hook_impl(self.hooks, event_name, **kwargs)
-        except PipelineAbortSignal:
-            # Re-raise PipelineAbortSignal so it propagates up to ExecutionManager
-            raise
+        """Dispatch a hook to all registered hook functions."""
+        await _dispatch_hook(self.hooks, event_name, **kwargs)
 
     def update_pipeline_result(
         self,
         result: PipelineResult[ContextT],
         step_result: StepResult,
     ) -> None:
-        """Update pipeline result with step result."""
+        """Update the pipeline result with a step result."""
         result.step_history.append(step_result)
-        # Always recompute total_cost_usd for robustness
-        result.total_cost_usd = sum(s.cost_usd for s in result.step_history)
+        result.total_cost_usd += step_result.cost_usd
+        result.total_tokens += step_result.token_counts
