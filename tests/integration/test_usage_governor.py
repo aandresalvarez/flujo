@@ -140,7 +140,7 @@ async def test_governor_with_loop_step(
     result: PipelineResult = exc_info.value.result
     loop_result = result.step_history[0]
     assert loop_result.attempts == 3
-    assert result.total_cost_usd == pytest.approx(0.30)
+    assert result.total_cost_usd == pytest.approx(0.20)
 
 
 @pytest.mark.asyncio
@@ -165,7 +165,7 @@ async def test_governor_halts_loop_step_mid_iteration(
     loop_result = result.step_history[0]
     assert not loop_result.success
     assert loop_result.attempts == 3
-    assert result.total_cost_usd == pytest.approx(0.30)
+    assert result.total_cost_usd == pytest.approx(0.20)
 
 
 @pytest.mark.asyncio

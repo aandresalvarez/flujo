@@ -1760,13 +1760,13 @@ class ExecutorCore(Generic[TContext]):
             elif parallel_step.merge_strategy == MergeStrategy.OVERWRITE:
                 # For OVERWRITE, merge scratchpad from all successful branches, but use the last successful branch for other fields
                 last_successful_branch_ctx = None
-                for branch_result in branch_results.values():  # Process in order so later branches overwrite earlier ones
-                    if branch_result.success:
+                for key in parallel_step.branches:  # preserve declared order
+                    branch_result = branch_results.get(key)
+                    if branch_result and branch_result.success:
                         branch_ctx = getattr(branch_result, "branch_context", None)
                         if branch_ctx is not None:
                             # Store the last successful branch context for non-scratchpad fields
-                            if last_successful_branch_ctx is None:
-                                last_successful_branch_ctx = branch_ctx
+                            last_successful_branch_ctx = branch_ctx
                             
                             # Merge scratchpad from all successful branches
                             if hasattr(branch_ctx, "scratchpad"):
@@ -1782,6 +1782,11 @@ class ExecutorCore(Generic[TContext]):
                         if hasattr(last_successful_branch_ctx, "__dict__"):
                             for field_name, field_value in last_successful_branch_ctx.__dict__.items():
                                 if not field_name.startswith('_') and field_name != "scratchpad":
+                                    if field_name == "executed_branches":
+                                        ctx_value = getattr(context, field_name, [])
+                                        merged = list(set(ctx_value) | set(field_value))
+                                        setattr(context, field_name, merged)
+                                        continue
                                     telemetry.logfire.debug(f"OVERWRITE: Copying field {field_name} = {field_value}")
                                     setattr(context, field_name, copy.deepcopy(field_value))
                         else:
@@ -1791,6 +1796,9 @@ class ExecutorCore(Generic[TContext]):
                                     telemetry.logfire.debug(f"OVERWRITE: Copying field {field_name} = {field_value}")
                                     setattr(context, field_name, copy.deepcopy(field_value))
                         
+                        # Apply executed_branches from the last successful branch
+                        if last_successful_branch_ctx and hasattr(last_successful_branch_ctx, "executed_branches"):
+                            context.executed_branches = list(last_successful_branch_ctx.executed_branches)
                         telemetry.logfire.debug(f"OVERWRITE: Final context fields: {list(context.__dict__.keys()) if hasattr(context, '__dict__') else 'no __dict__'}")
                     except Exception as e:
                         telemetry.logfire.error(f"Failed to overwrite context: {e}")
@@ -2077,10 +2085,19 @@ class ExecutorCore(Generic[TContext]):
                                 raise
                         # Re-raise PausedException to propagate it up the call stack
                         raise
+                    except UsageLimitExceededError as limit_exc:
+                        # Capture usage limit breach within loop iteration
+                        loop_overall_result.success = False
+                        loop_overall_result.feedback = str(limit_exc)
+                        # attempts already set to i at loop start
+                        pr_loop: PipelineResult[Any] = PipelineResult(
+                            step_history=[loop_overall_result],
+                            total_cost_usd=loop_overall_result.cost_usd,
+                        )
+                        if context_setter:
+                            context_setter(pr_loop, context)
+                        raise UsageLimitExceededError(str(limit_exc), pr_loop)
                     except Exception as e:
-                        # Re-raise UsageLimitExceededError immediately
-                        if isinstance(e, UsageLimitExceededError):
-                            raise
                         iteration_succeeded_fully = False
                         final_body_output_of_last_iteration = None
                         loop_overall_result.feedback = f"Step execution error: {e}"
@@ -2743,6 +2760,7 @@ class ExecutorCore(Generic[TContext]):
                             name=step.name,
                             output=getattr(processed_output, "output", processed_output),
                             success=True,
+                            attempts=attempt,
                             cost_usd=cost_usd,
                             token_counts=prompt_tokens + completion_tokens,
                             latency_s=time_perf_ns_to_seconds(time_perf_ns() - start_time),
@@ -2751,6 +2769,7 @@ class ExecutorCore(Generic[TContext]):
                         self._step_history_so_far.append(current_result)
                         await self._usage_meter.guard(limits, step_history=self._step_history_so_far)
                     except UsageLimitExceededError as e:
+                        # Propagate usage limit errors; LoopStep will handle if needed
                         raise
 
                 # Accumulate token counts across all attempts
