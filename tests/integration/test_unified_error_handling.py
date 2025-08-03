@@ -31,7 +31,7 @@ class CriticalFailingAgent:
 
 class MockPlugin:
     async def validate(self, data: dict) -> PluginOutcome:
-        return PluginOutcome(valid=True, feedback="Mock validation passed")
+        return PluginOutcome(success=True, feedback="Mock validation passed")
 
 
 @pytest.mark.asyncio

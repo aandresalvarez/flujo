@@ -22,6 +22,11 @@ class CacheStep(Step[StepInT, StepOutT]):
 
     model_config = {"arbitrary_types_allowed": True}
 
+    @property
+    def is_complex(self) -> bool:
+        # ✅ Override to mark as complex.
+        return True
+
     @classmethod
     def cached(
         cls,

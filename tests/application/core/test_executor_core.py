@@ -11,11 +11,13 @@ from unittest.mock import AsyncMock, Mock
 
 from flujo.application.core.ultra_executor import ExecutorCore
 from flujo.domain.models import UsageLimits
+from flujo.domain.plugins import PluginOutcome
 from flujo.exceptions import (
     UsageLimitExceededError,
     MissingAgentError,
     PricingNotConfiguredError,
 )
+from flujo.testing.utils import DummyPlugin
 
 
 class TestExecutorCoreSimpleStep:
@@ -377,6 +379,46 @@ class TestExecutorCoreSimpleStep:
         )
 
     @pytest.mark.asyncio
+    async def test_plugin_failure_propagates(self, executor_core, mock_step):
+        """Test that a plugin failure re-raises the exception and marks step as failed."""
+        # Arrange
+        data = "test input"
+        context = None
+        resources = None
+        limits = None
+        stream = False
+        on_chunk = None
+        cache_key = "test_cache_key"
+        breach_event = None
+
+        # Create a DummyPlugin that fails
+        failing_plugin = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="Plugin execution error")])
+        mock_step.plugins = [(failing_plugin, 1)]  # Add the failing plugin to the step
+
+        # Override the plugin runner to use the real implementation
+        from flujo.application.core.ultra_executor import DefaultPluginRunner
+        executor_core._plugin_runner = DefaultPluginRunner()
+
+        # Act
+        result = await executor_core._execute_simple_step(
+            mock_step,
+            data,
+            context,
+            resources,
+            limits,
+            stream,
+            on_chunk,
+            cache_key,
+            breach_event,
+        )
+
+        # Assert
+        assert result.success is False
+        assert "Plugin validation failed: Plugin execution error" in result.feedback
+        assert result.attempts == 3  # 3 attempts total
+        assert failing_plugin.call_count == 3  # Plugin called on each attempt
+
+    @pytest.mark.asyncio
     async def test_plugin_runner_not_called_when_plugins_empty(self, executor_core, mock_step):
         """Test that plugin runner is not called when step.plugins is empty."""
         # Arrange
@@ -680,6 +722,46 @@ class TestExecutorCoreComplexStepClassification:
         )
 
     @pytest.mark.asyncio
+    async def test_is_complex_property_detection(self, executor_core):
+        """Test that _is_complex_step correctly uses the is_complex property."""
+        from flujo.domain.dsl.step import Step, HumanInTheLoopStep
+        from flujo.domain.dsl.loop import LoopStep
+        from flujo.domain.dsl.parallel import ParallelStep
+        from flujo.domain.dsl.conditional import ConditionalStep
+        from flujo.steps.cache_step import CacheStep
+        from flujo.domain.dsl.dynamic_router import DynamicParallelRouterStep
+        from flujo.testing.utils import StubAgent
+
+        # Test LoopStep
+        loop_step = LoopStep(
+            name="loop", 
+            loop_body_pipeline=Mock(), 
+            exit_condition_callable=Mock()
+        )
+        assert executor_core._is_complex_step(loop_step)
+
+        parallel_step = ParallelStep(name="parallel", branches={})
+        assert executor_core._is_complex_step(parallel_step)
+
+        conditional_step = ConditionalStep(
+            name="conditional", 
+            condition_callable=Mock(), 
+            branches={"true": Mock(), "false": Mock()}
+        )
+        assert executor_core._is_complex_step(conditional_step)
+
+        # Create a real step for the cache step test
+        real_step = Step(name="inner_step", agent=StubAgent(["test output"]))
+        cache_step = CacheStep(name="cache", wrapped_step=real_step)
+        assert executor_core._is_complex_step(cache_step)
+
+        hitl_step = HumanInTheLoopStep(name="hitl", agent=Mock())
+        assert executor_core._is_complex_step(hitl_step)
+
+        dynamic_router_step = DynamicParallelRouterStep(name="dynamic_router", router_agent=Mock(), branches={})
+        assert executor_core._is_complex_step(dynamic_router_step)
+
+    @pytest.mark.asyncio
     async def test_fallback_steps_are_simple(self, executor_core):
         """Test that steps with fallbacks are classified as simple."""
         # Arrange
@@ -691,6 +773,7 @@ class TestExecutorCoreComplexStepClassification:
         # Configure step to not have plugins or meta (which would make it complex)
         step.plugins = None  # Explicitly set to None
         step.meta = None  # Explicitly set to None
+        step.is_complex = False # Ensure the property is set for this test
 
         # Act
         is_complex = executor_core._is_complex_step(step)
@@ -707,11 +790,13 @@ class TestExecutorCoreComplexStepClassification:
         # Test LoopStep
         loop_step = Mock(spec=LoopStep)
         loop_step.name = "loop_step"
+        loop_step.is_complex = True # Ensure the property is set for this test
         assert executor_core._is_complex_step(loop_step)
 
         # Test ParallelStep
         parallel_step = Mock(spec=ParallelStep)
         parallel_step.name = "parallel_step"
+        parallel_step.is_complex = True # Ensure the property is set for this test
         assert executor_core._is_complex_step(parallel_step)
 
     @pytest.mark.asyncio
@@ -720,6 +805,7 @@ class TestExecutorCoreComplexStepClassification:
         step = Mock()
         step.name = "validation_step"
         step.meta = {"is_validation_step": True}
+        step.is_complex = True # Ensure the property is set for this test
 
         assert executor_core._is_complex_step(step)
 
@@ -729,6 +815,7 @@ class TestExecutorCoreComplexStepClassification:
         step = Mock()
         step.name = "plugin_step"
         step.plugins = [Mock(), Mock()]
+        step.is_complex = True # Ensure the property is set for this test
 
         assert executor_core._is_complex_step(step)
 
@@ -740,6 +827,7 @@ class TestExecutorCoreComplexStepClassification:
         # No fallback_step attribute
         step.plugins = None  # Explicitly set to None
         step.meta = None  # Explicitly set to None
+        step.is_complex = False # Ensure the property is set for this test
 
         is_complex = executor_core._is_complex_step(step)
         assert not is_complex
@@ -752,6 +840,7 @@ class TestExecutorCoreComplexStepClassification:
         step.fallback_step = None
         step.plugins = None  # Explicitly set to None
         step.meta = None  # Explicitly set to None
+        step.is_complex = False # Ensure the property is set for this test
 
         is_complex = executor_core._is_complex_step(step)
         assert not is_complex
@@ -763,6 +852,7 @@ class TestExecutorCoreComplexStepClassification:
 
         cache_step = Mock(spec=CacheStep)
         cache_step.name = "cache_step"
+        cache_step.is_complex = True # Ensure the property is set for this test
 
         assert executor_core._is_complex_step(cache_step)
 
@@ -773,6 +863,7 @@ class TestExecutorCoreComplexStepClassification:
 
         conditional_step = Mock(spec=ConditionalStep)
         conditional_step.name = "conditional_step"
+        conditional_step.is_complex = True # Ensure the property is set for this test
 
         assert executor_core._is_complex_step(conditional_step)
 
@@ -783,6 +874,7 @@ class TestExecutorCoreComplexStepClassification:
 
         hitl_step = Mock(spec=HumanInTheLoopStep)
         hitl_step.name = "hitl_step"
+        hitl_step.is_complex = True # Ensure the property is set for this test
 
         assert executor_core._is_complex_step(hitl_step)
 
@@ -793,6 +885,7 @@ class TestExecutorCoreComplexStepClassification:
 
         router_step = Mock(spec=DynamicParallelRouterStep)
         router_step.name = "router_step"
+        router_step.is_complex = True # Ensure the property is set for this test
 
         assert executor_core._is_complex_step(router_step)
 
@@ -804,6 +897,7 @@ class TestExecutorCoreComplexStepClassification:
         step.fallback_step = Mock()
         step.fallback_step.name = "fallback_step"
         step.plugins = [Mock()]
+        step.is_complex = True # Ensure the property is set for this test
 
         # Should be complex due to plugins, not fallback
         assert executor_core._is_complex_step(step)
@@ -816,6 +910,7 @@ class TestExecutorCoreComplexStepClassification:
         step.fallback_step = Mock()
         step.fallback_step.name = "fallback_step"
         step.meta = {"is_validation_step": True}
+        step.is_complex = True # Ensure the property is set for this test
 
         # Should be complex due to validation, not fallback
         assert executor_core._is_complex_step(step)

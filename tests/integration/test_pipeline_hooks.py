@@ -88,7 +88,7 @@ async def test_all_hooks_are_called_in_correct_order(
 async def test_on_step_failure_hook_is_called(
     call_recorder: List[HookPayload],
 ) -> None:
-    failing_plugin = DummyPlugin([PluginOutcome(success=False)])
+    failing_plugin = DummyPlugin(outcomes=[PluginOutcome(success=False)])
     pipeline = Step.model_validate(
         {"name": "s1", "agent": cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok"]))}
     ) >> Step.model_validate(
@@ -141,7 +141,7 @@ async def test_hook_receives_correct_arguments(
 async def test_pipeline_aborts_gracefully_from_hook(
     call_recorder: List[HookPayload],
 ) -> None:
-    failing_plugin = DummyPlugin([PluginOutcome(success=False)])
+    failing_plugin = DummyPlugin(outcomes=[PluginOutcome(success=False)])
     pipeline = (
         Step.model_validate(
             {"name": "s1", "agent": cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok"]))}

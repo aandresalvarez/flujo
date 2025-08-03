@@ -51,6 +51,10 @@ class DynamicParallelRouterStep(Step[Any, Any], Generic[TContext]):
         "Only used with CONTEXT_UPDATE merge strategy.",
     )
 
+    @property
+    def is_complex(self) -> bool:
+        return True
+
     model_config = {"arbitrary_types_allowed": True}
 
     @classmethod

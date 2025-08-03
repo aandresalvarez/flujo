@@ -38,6 +38,7 @@ from typing import (
     Type,
     Tuple,
     Union,
+    cast,
 )
 import types
 from types import SimpleNamespace
@@ -48,9 +49,12 @@ from weakref import WeakKeyDictionary
 from ...domain.dsl.step import HumanInTheLoopStep, Step, MergeStrategy, BranchFailureStrategy
 from ...domain.dsl.loop import LoopStep
 from ...domain.dsl.conditional import ConditionalStep
+from .types import TContext_w_Scratch
 from ...domain.dsl.dynamic_router import DynamicParallelRouterStep
 from ...domain.dsl.parallel import ParallelStep
 from ...domain.models import BaseModel, StepResult, UsageLimits, PipelineResult, PipelineContext
+from ...domain.processors import AgentProcessors
+from pydantic import Field
 from ...domain.validation import ValidationResult
 from ...exceptions import (
     UsageLimitExceededError,
@@ -98,7 +102,7 @@ from .step_logic import ParallelUsageGovernor, _should_pass_context
 # ★ Pipeline-to-Step Adapter
 # --------------------------------------------------------------------------- #
 
-class _PipelineStepAdapter(Step):
+class _PipelineStepAdapter(Step[Any, Any]):
     """
     Adapter that wraps a Pipeline object to satisfy the Step interface.
     
@@ -126,7 +130,7 @@ class _PipelineStepAdapter(Step):
     # --------------------------------------------------------------------- #
     # Agent interface used by DefaultAgentRunner
     # --------------------------------------------------------------------- #
-    async def run(self, payload, *, context=None, resources=None, **kwargs):
+    async def run(self, payload: Any, *, context: Any = None, resources: Any = None, **kwargs: Any) -> Any:
         """Execute the wrapped pipeline by executing its steps."""
         # Execute the pipeline by running its steps through the executor
         # This is a simplified approach - in practice, we'd need the executor
@@ -165,7 +169,7 @@ class _PipelineStepAdapter(Step):
     config: Any = SimpleNamespace(temperature=0.0, max_retries=1)
     validators: List[Any] = []
     plugins: List[Any] = []
-    processors: Optional[Any] = None
+    processors: AgentProcessors = Field(default_factory=AgentProcessors)
     persist_validation_results_to: Optional[str] = None
     persist_feedback_to_context: Optional[str] = None
     updates_context: bool = False
@@ -174,20 +178,20 @@ class _PipelineStepAdapter(Step):
     # --------------------------------------------------------------------- #
     # Attribute access delegation
     # --------------------------------------------------------------------- #
-    def __getattribute__(self, name):
+    def __getattribute__(self, name: str) -> Any:
         # Special handling for agent field
         if name == 'agent':
             return self
         return super().__getattribute__(name)
     
-    def __setattr__(self, name, value):
+    def __setattr__(self, name: str, value: Any) -> None:
         # Special handling for agent field
         if name == 'agent':
             # Ignore agent assignment as we're the agent
             return
         super().__setattr__(name, value)
     
-    def __getattr__(self, name):
+    def __getattr__(self, name: str) -> Any:
         # Fallback for any other attributes not found
         if name == 'agent':
             return self
@@ -393,7 +397,7 @@ class InMemoryLRUBackend:
     max_size: int = 1024
     ttl_s: int = 3600
     _lock: asyncio.Lock = field(init=False, default_factory=asyncio.Lock)
-    _store: OrderedDict[str, tuple[StepResult, float, int]] = field(
+    _store: OrderedDict[str, tuple[StepResult, float]] = field(
         init=False, default_factory=OrderedDict
     )
 
@@ -409,11 +413,11 @@ class InMemoryLRUBackend:
             if not item:
                 return None
 
-            result, timestamp, ttl = item
+            result, timestamp = item
             now = time.monotonic()
 
             # Check TTL (0 means never expire)
-            if ttl > 0 and now - timestamp > ttl:
+            if self.ttl_s > 0 and now - timestamp > self.ttl_s:
                 self._store.pop(key, None)
                 return None
 
@@ -431,7 +435,6 @@ class InMemoryLRUBackend:
             self._store[key] = (
                 value.model_copy(deep=True),
                 time.monotonic(),
-                ttl_s if ttl_s >= 0 else self.ttl_s,
                     )
 
     async def clear(self) -> None:
@@ -855,7 +858,7 @@ class DefaultPluginRunner:
                 # Handle PluginOutcome
                 if isinstance(result, PluginOutcome):
                     if not result.success:
-                        # Plugin validation failed - this should cause the step to fail
+                        # NEW: Raise an exception to fail the step
                         raise ValueError(f"Plugin validation failed: {result.feedback}")
                     if result.new_solution is not None:
                         processed_data = result.new_solution
@@ -864,7 +867,7 @@ class DefaultPluginRunner:
                     processed_data = result
 
             except Exception as e:
-                # Log error and re-raise to cause step failure
+                # Log error and re-raise to cause step failure (explicit plugin failure handling)
                 try:
                     from ...infra import telemetry
 
@@ -1363,11 +1366,12 @@ class ExecutorCore(Generic[TContext]):
             result = await self._handle_parallel_step(
                 step,
                 data,
-                context,
+                context,  # type: ignore
                 resources,
                 limits,
                 breach_event,
                 context_setter,
+                step_executor,
                     )
         elif isinstance(step, HumanInTheLoopStep):
             telemetry.logfire.debug("Handling HumanInTheLoopStep")
@@ -1429,9 +1433,9 @@ class ExecutorCore(Generic[TContext]):
 
     async def _handle_parallel_step(
         self,
-        parallel_step: ParallelStep[TContext],
+        parallel_step: ParallelStep[Any],
         data: Any,
-        context: Optional[TContext],
+        context: Optional[TContext_w_Scratch],
         resources: Optional[Any],
         limits: Optional[UsageLimits],
         breach_event: Optional[Any],
@@ -1465,7 +1469,7 @@ class ExecutorCore(Generic[TContext]):
             breach_event = asyncio.Event()
 
         # --- Wrap Pipeline branches as Step objects to maintain algebraic closure ---
-        wrapped_branches: Dict[str, Step] = {}
+        wrapped_branches: Dict[str, Step[Any, Any]] = {}
         for key, branch_pipe in parallel_step.branches.items():
             # Check if this is a Pipeline object by importing the Pipeline class
             from ...domain.dsl.pipeline import Pipeline
@@ -1526,9 +1530,9 @@ class ExecutorCore(Generic[TContext]):
                 total_cost = 0.0
                 total_tokens = 0
                 all_successful = True
-                step_outputs = []
+                step_outputs: List[StepResult] = []
                 # Execute the branch using step_executor
-                step_result = await step_executor(
+                step_result: Optional[StepResult] = await step_executor(
                     branch_pipe,
                     data,
                     branch_context,
@@ -1540,7 +1544,7 @@ class ExecutorCore(Generic[TContext]):
                 final_branch_context = copy.deepcopy(branch_context) if branch_context is not None else None
                 
                 # Preserve the original StepResult exactly; just attach branch_context
-                cloned = step_result.model_copy(deep=True)
+                cloned: StepResult = step_result.model_copy(deep=True) if step_result else StepResult(name="unknown")
                 cloned.branch_context = final_branch_context
 
                 # Feed usage metrics to the governor
@@ -1761,9 +1765,9 @@ class ExecutorCore(Generic[TContext]):
                 # For OVERWRITE, merge scratchpad from all successful branches, but use the last successful branch for other fields
                 last_successful_branch_ctx = None
                 for key in parallel_step.branches:  # preserve declared order
-                    branch_result = branch_results.get(key)
-                    if branch_result and branch_result.success:
-                        branch_ctx = getattr(branch_result, "branch_context", None)
+                    current_branch_result: Optional[StepResult] = branch_results.get(key)
+                    if current_branch_result and current_branch_result.success:
+                        branch_ctx = getattr(current_branch_result, "branch_context", None)
                         if branch_ctx is not None:
                             # Store the last successful branch context for non-scratchpad fields
                             last_successful_branch_ctx = branch_ctx
@@ -1785,19 +1789,22 @@ class ExecutorCore(Generic[TContext]):
                                     if field_name == "executed_branches":
                                         ctx_value = getattr(context, field_name, [])
                                         merged = list(set(ctx_value) | set(field_value))
-                                        setattr(context, field_name, merged)
+                                        if context is not None:
+                                            setattr(context, field_name, merged)
                                         continue
                                     telemetry.logfire.debug(f"OVERWRITE: Copying field {field_name} = {field_value}")
-                                    setattr(context, field_name, copy.deepcopy(field_value))
+                                    if context is not None:
+                                        setattr(context, field_name, copy.deepcopy(field_value))
                         else:
                             for field_name in dir(last_successful_branch_ctx):
                                 if not field_name.startswith('_') and field_name != "scratchpad":
                                     field_value = getattr(last_successful_branch_ctx, field_name)
                                     telemetry.logfire.debug(f"OVERWRITE: Copying field {field_name} = {field_value}")
-                                    setattr(context, field_name, copy.deepcopy(field_value))
+                                    if context is not None:
+                                        setattr(context, field_name, copy.deepcopy(field_value))
                         
                         # Apply executed_branches from the last successful branch
-                        if last_successful_branch_ctx and hasattr(last_successful_branch_ctx, "executed_branches"):
+                        if last_successful_branch_ctx and hasattr(last_successful_branch_ctx, "executed_branches") and context is not None:
                             context.executed_branches = list(last_successful_branch_ctx.executed_branches)
                         telemetry.logfire.debug(f"OVERWRITE: Final context fields: {list(context.__dict__.keys()) if hasattr(context, '__dict__') else 'no __dict__'}")
                     except Exception as e:
@@ -1930,15 +1937,16 @@ class ExecutorCore(Generic[TContext]):
         telemetry.logfire.debug(f"Context is None: {context is None}")
         telemetry.logfire.debug(f"Context type: {type(context) if context else 'None'}")
         from typing import cast
-
+        
         parallel_result = await self._handle_parallel_step(
-            cast(ParallelStep[TContext], parallel_step),
+            parallel_step,
             data,
-            context,
+            context,  # type: ignore
             resources,
             limits,
             None,  # breach_event - will be created if limits are provided
             context_setter,
+            None,  # step_executor - will use default if None
                 )
         telemetry.logfire.debug("Returned from _handle_parallel_step")
         telemetry.logfire.debug(f"Parallel result success: {parallel_result.success}")
@@ -2286,7 +2294,7 @@ class ExecutorCore(Generic[TContext]):
                             telemetry.logfire.error(f"Error setting span attribute: {e}")
 
                     # Execute the branch step
-                    branch_step_result = await step_executor(
+                    branch_step_result: Optional[StepResult] = await step_executor(
                         branch_step,
                         current_branch_data,
                         context,
@@ -2294,20 +2302,26 @@ class ExecutorCore(Generic[TContext]):
                         None,  # breach_event - not needed for conditional steps
                             )
 
-                # Optimized metrics accumulation with direct attribute access
-                conditional_overall_result.latency_s += branch_step_result.latency_s
-                conditional_overall_result.cost_usd += getattr(branch_step_result, "cost_usd", 0.0)
-                conditional_overall_result.token_counts += getattr(
-                    branch_step_result, "token_counts", 0
-                        )
+                # Optimized metrics accumulation with null checks
+                if branch_step_result is not None:
+                    conditional_overall_result.latency_s += branch_step_result.latency_s
+                    conditional_overall_result.cost_usd += getattr(branch_step_result, "cost_usd", 0.0)
+                    conditional_overall_result.token_counts += getattr(
+                        branch_step_result, "token_counts", 0
+                            )
 
-                if not branch_step_result.success:
+                    if not branch_step_result.success:
+                        branch_pipeline_failed_internally = True
+                        branch_output = branch_step_result.output
+                        conditional_overall_result.feedback = f"Failure in branch '{branch_key_to_execute}', step '{branch_step.name}': {branch_step_result.feedback}"
+                        break
+
+                    current_branch_data = branch_step_result.output
+                else:
+                    # Handle None case - this shouldn't happen in normal execution
                     branch_pipeline_failed_internally = True
-                    branch_output = branch_step_result.output
-                    conditional_overall_result.feedback = f"Failure in branch '{branch_key_to_execute}', step '{branch_step.name}': {branch_step_result.feedback}"
+                    conditional_overall_result.feedback = f"Branch step execution returned None for branch '{branch_key_to_execute}', step '{branch_step.name}'"
                     break
-
-                current_branch_data = branch_step_result.output
 
             # Optimized success path
             if not branch_pipeline_failed_internally:
@@ -2668,7 +2682,7 @@ class ExecutorCore(Generic[TContext]):
                 frame = frame.f_back
             
             # Create a dummy agent for backward compatibility with tests
-            async def dummy_agent(data, **kwargs):
+            async def dummy_agent(data: Any, **kwargs: Any) -> str:
                 return f"{step.name}_output"
             step.agent = dummy_agent
 

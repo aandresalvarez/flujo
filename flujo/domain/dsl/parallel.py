@@ -17,6 +17,7 @@ from pydantic import Field
 from ..models import BaseModel
 from .step import Step, MergeStrategy, BranchFailureStrategy
 from .pipeline import Pipeline  # Import for runtime use in normalization
+from ...application.core.types import TContext_w_Scratch
 
 TContext = TypeVar("TContext", bound=BaseModel)
 
@@ -40,7 +41,7 @@ class ParallelStep(Step[Any, Any], Generic[TContext]):
         description="If provided, only these top-level context fields will be copied to each branch. "
         "If None, the entire context is deep-copied (default behavior).",
     )
-    merge_strategy: Union[MergeStrategy, Callable[[TContext, Dict[str, Any]], None]] = Field(
+    merge_strategy: Union[MergeStrategy, Callable[[TContext_w_Scratch, Dict[str, Any]], None]] = Field(
         default=MergeStrategy.NO_MERGE,
         description="Strategy for merging successful branch contexts back into the main context.",
     )
@@ -59,6 +60,11 @@ class ParallelStep(Step[Any, Any], Generic[TContext]):
     )
 
     model_config = {"arbitrary_types_allowed": True}
+
+    @property
+    def is_complex(self) -> bool:
+        # ✅ Override to mark as complex.
+        return True
 
     @classmethod
     def model_validate(cls: type[Self], *args: Any, **kwargs: Any) -> Self:

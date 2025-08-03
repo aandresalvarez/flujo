@@ -1,6 +1,6 @@
-"""Main execution manager that orchestrates pipeline execution components."""
-
 from __future__ import annotations
+
+"""Main execution manager that orchestrates pipeline execution components."""
 
 import asyncio
 from datetime import datetime
@@ -44,7 +44,7 @@ class ExecutionManager(Generic[ContextT]):
 
     def __init__(
         self,
-        pipeline: Pipeline[Any, Any],
+        pipeline: Any,
         *,
         backend: Optional[ExecutionBackend] = None,  # ✅ NEW: Receive the backend directly.
         state_manager: Optional[StateManager[ContextT]] = None,
@@ -72,8 +72,8 @@ class ExecutionManager(Generic[ContextT]):
         if backend is None:
             from flujo.infra.backends import LocalBackend
             from flujo.application.core.ultra_executor import ExecutorCore
-            executor = ExecutorCore()
-            self.backend = LocalBackend(executor)
+            executor: ExecutorCore[Any] = ExecutorCore()
+            self.backend: Any = LocalBackend(executor)
         else:
             self.backend = backend
         self.state_manager = state_manager or StateManager()
@@ -210,12 +210,15 @@ class ExecutionManager(Generic[ContextT]):
                                 await self.state_manager.record_step_result(run_id, step_result, idx)
                     elif step_result:
                         # ✅ 2. Update the state if no usage governor
-                        self.step_coordinator.update_pipeline_result(result, step_result)
                         # Record step result in persistence backend
                         if run_id is not None:
                             await self.state_manager.record_step_result(run_id, step_result, idx)
                     
-                    # ✅ 3. Check if step failed and halt execution
+                    # ✅ 3. Update pipeline result with step result (only once)
+                    if step_result and step_result not in result.step_history:
+                        self.step_coordinator.update_pipeline_result(result, step_result)
+                    
+                    # ✅ 4. Check if step failed and halt execution
                     if step_result and not step_result.success:
                         telemetry.logfire.warning(f"Step '{step.name}' failed. Halting pipeline execution.")
                         
@@ -274,17 +277,6 @@ class ExecutionManager(Generic[ContextT]):
                     raise e
 
             finally:
-                # The finally block logic for adding the step result is now more of a safeguard.
-                # The main logic happens in the try block *before* the usage check.
-                if (
-                    step_result is not None
-                    and should_add_step_result
-                    and self._should_add_step_result_to_pipeline(
-                        step_result, should_add_step_result, result
-                    )
-                ):
-                    self.step_coordinator.update_pipeline_result(result, step_result)
-
                 # Persist final state if we have a run_id and this is the last step
                 if (
                     run_id is not None

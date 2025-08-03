@@ -76,7 +76,7 @@ class HighCostAgent:
 @pytest.mark.asyncio
 async def test_fallback_with_zero_cost_agents() -> None:
     """Test fallback behavior when agents return zero cost/tokens"""
-    plugin = DummyPlugin([PluginOutcome(success=False, feedback="primary failed")])
+    plugin = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="primary failed")])
     primary = Step.model_validate(
         {
             "name": "p",
@@ -100,7 +100,7 @@ async def test_fallback_with_zero_cost_agents() -> None:
 @pytest.mark.asyncio
 async def test_fallback_with_high_cost_agents() -> None:
     """Test fallback behavior with very high cost agents"""
-    plugin = DummyPlugin([PluginOutcome(success=False, feedback="primary failed")])
+    plugin = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="primary failed")])
     primary = Step.model_validate(
         {
             "name": "p",
@@ -123,7 +123,7 @@ async def test_fallback_with_high_cost_agents() -> None:
 @pytest.mark.asyncio
 async def test_fallback_with_exception_raising_agents() -> None:
     """Test fallback behavior when agents raise exceptions"""
-    plugin = DummyPlugin([PluginOutcome(success=False, feedback="primary failed")])
+    plugin = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="primary failed")])
     primary = Step.model_validate(
         {
             "name": "p",
@@ -148,7 +148,7 @@ async def test_fallback_with_exception_raising_agents() -> None:
 @pytest.mark.asyncio
 async def test_fallback_with_mixed_cost_scenarios() -> None:
     """Test fallback with mixed cost scenarios (zero primary, high fallback)"""
-    plugin = DummyPlugin([PluginOutcome(success=False, feedback="primary failed")])
+    plugin = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="primary failed")])
     primary = Step.model_validate(
         {
             "name": "p",
@@ -179,7 +179,7 @@ async def test_fallback_with_negative_metrics() -> None:
             )()
             return result
 
-    plugin = DummyPlugin([PluginOutcome(success=False, feedback="primary failed")])
+    plugin = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="primary failed")])
     primary = Step.model_validate(
         {
             "name": "p",
@@ -208,7 +208,7 @@ async def test_fallback_with_missing_metrics() -> None:
         async def run(self, data: Any) -> Any:
             return "no metrics"
 
-    plugin = DummyPlugin([PluginOutcome(success=False, feedback="primary failed")])
+    plugin = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="primary failed")])
     primary = Step.model_validate(
         {
             "name": "p",
@@ -235,7 +235,7 @@ async def test_fallback_with_very_long_feedback() -> None:
     """Test fallback behavior with very long feedback messages"""
     long_feedback = "x" * 10000  # Very long feedback
 
-    plugin_primary = DummyPlugin([PluginOutcome(success=False, feedback=long_feedback)])
+    plugin_primary = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback=long_feedback)])
     primary = Step.model_validate(
         {
             "name": "p",
@@ -244,7 +244,7 @@ async def test_fallback_with_very_long_feedback() -> None:
             "config": StepConfig(max_retries=1),
         }
     )
-    fb_plugin = DummyPlugin([PluginOutcome(success=False, feedback=long_feedback)])
+    fb_plugin = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback=long_feedback)])
     fb = Step.model_validate(
         {"name": "fb", "agent": StubAgent([CostlyOutput("oops")]), "plugins": [(fb_plugin, 0)]}
     )
@@ -262,7 +262,7 @@ async def test_fallback_with_very_long_feedback() -> None:
 @pytest.mark.asyncio
 async def test_fallback_with_none_feedback() -> None:
     """Test fallback behavior when feedback is None"""
-    plugin_primary = DummyPlugin([PluginOutcome(success=False, feedback=None)])
+    plugin_primary = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback=None)])
     primary = Step.model_validate(
         {
             "name": "p",
@@ -271,7 +271,7 @@ async def test_fallback_with_none_feedback() -> None:
             "config": StepConfig(max_retries=1),
         }
     )
-    fb_plugin = DummyPlugin([PluginOutcome(success=False, feedback=None)])
+    fb_plugin = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback=None)])
     fb = Step.model_validate(
         {"name": "fb", "agent": StubAgent([CostlyOutput("oops")]), "plugins": [(fb_plugin, 0)]}
     )
@@ -292,7 +292,7 @@ async def test_fallback_with_none_feedback() -> None:
 @pytest.mark.asyncio
 async def test_fallback_with_empty_string_feedback() -> None:
     """Test fallback behavior when feedback is empty string"""
-    plugin_primary = DummyPlugin([PluginOutcome(success=False, feedback="")])
+    plugin_primary = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="")])
     primary = Step.model_validate(
         {
             "name": "p",
@@ -301,7 +301,7 @@ async def test_fallback_with_empty_string_feedback() -> None:
             "config": StepConfig(max_retries=1),
         }
     )
-    fb_plugin = DummyPlugin([PluginOutcome(success=False, feedback="")])
+    fb_plugin = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="")])
     fb = Step.model_validate(
         {"name": "fb", "agent": StubAgent([CostlyOutput("oops")]), "plugins": [(fb_plugin, 0)]}
     )
@@ -322,7 +322,7 @@ async def test_fallback_with_unicode_feedback() -> None:
     """Test fallback behavior with unicode characters in feedback"""
     unicode_feedback = "🚀 Primary failed with unicode: ñáéíóú"
 
-    plugin_primary = DummyPlugin([PluginOutcome(success=False, feedback=unicode_feedback)])
+    plugin_primary = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback=unicode_feedback)])
     primary = Step.model_validate(
         {
             "name": "p",
@@ -331,7 +331,7 @@ async def test_fallback_with_unicode_feedback() -> None:
             "config": StepConfig(max_retries=1),
         }
     )
-    fb_plugin = DummyPlugin([PluginOutcome(success=False, feedback=unicode_feedback)])
+    fb_plugin = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback=unicode_feedback)])
     fb = Step.model_validate(
         {"name": "fb", "agent": StubAgent([CostlyOutput("oops")]), "plugins": [(fb_plugin, 0)]}
     )
@@ -353,7 +353,7 @@ async def test_fallback_with_very_small_latency() -> None:
         async def run(self, data: Any) -> Any:
             return "fast"
 
-    plugin = DummyPlugin([PluginOutcome(success=False, feedback="fast failed")])
+    plugin = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="fast failed")])
     primary = Step.model_validate(
         {
             "name": "p",
@@ -376,13 +376,11 @@ async def test_fallback_with_very_small_latency() -> None:
 @pytest.mark.asyncio
 async def test_fallback_with_retry_scenarios() -> None:
     """Test fallback behavior with retry scenarios"""
-    plugin = DummyPlugin(
-        [
-            PluginOutcome(success=False, feedback="attempt 1"),
-            PluginOutcome(success=False, feedback="attempt 2"),
-            PluginOutcome(success=False, feedback="attempt 3"),
-        ]
-    )
+    plugin = DummyPlugin(outcomes=[
+        PluginOutcome(success=False, feedback="attempt 1"),
+        PluginOutcome(success=False, feedback="attempt 2"),
+        PluginOutcome(success=False, feedback="attempt 3"),
+    ])
     primary = Step.model_validate(
         {
             "name": "p",
@@ -406,7 +404,7 @@ async def test_fallback_with_retry_scenarios() -> None:
 @pytest.mark.asyncio
 async def test_fallback_with_complex_metadata() -> None:
     """Test fallback behavior with complex metadata scenarios"""
-    plugin = DummyPlugin([PluginOutcome(success=False, feedback="complex failed")])
+    plugin = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="complex failed")])
     primary = Step.model_validate(
         {
             "name": "p",

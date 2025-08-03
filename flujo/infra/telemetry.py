@@ -1,6 +1,6 @@
 import logging
 import sys
-from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, List
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, List, cast
 from typing import Any as _TypeAny  # local alias to avoid name clash
 
 if TYPE_CHECKING:
@@ -133,15 +133,7 @@ class _SafeLogfireWrapper:
     def instrument(self, name: str, *args: Any, **kwargs: Any) -> Callable[[Any], Any]:
         try:
             result = self._real_logfire.instrument(name, *args, **kwargs)
-            # Ensure the result is a callable
-            if callable(result):
-                return result  # type: ignore
-            else:
-                # Fallback to no-op decorator if result is not callable
-                def decorator(func: Callable[[Any], Any]) -> Callable[[Any], Any]:
-                    return func
-
-                return decorator
+            return cast(Callable[[Any], Any], result)
         except (ValueError, OSError, RuntimeError) as e:
             if _is_cleanup_io_error(e):
                 # Return a no-op decorator during cleanup
@@ -209,8 +201,8 @@ class _MockLogfire:
             "Logfire.configure called, but Logfire is mocked. Using standard Python logging.",
         )
 
-    def instrument(self, name: str, *args: Any, **kwargs: Any) -> Callable[[Any], Any]:
-        def decorator(func: Callable[[Any], Any]) -> Callable[[Any], Any]:
+    def instrument(self, name: str, *args: Any, **kwargs: Any) -> Any:
+        def decorator(func: Callable[[Any], Any]) -> Any:
             return func
 
         return decorator

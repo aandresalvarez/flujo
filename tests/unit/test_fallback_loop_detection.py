@@ -144,7 +144,7 @@ class TestFallbackLoopDetection:
     @pytest.mark.asyncio
     async def test_fallback_loop_integration_object_identity(self):
         """Test fallback loop detection in actual pipeline execution."""
-        plugin = DummyPlugin([PluginOutcome(success=False, feedback="err")])
+        plugin = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="err")])
 
         # Create steps that will fail
         step_a = Step.model_validate(
@@ -175,7 +175,7 @@ class TestFallbackLoopDetection:
     @pytest.mark.asyncio
     async def test_fallback_loop_integration_step_name(self):
         """Test fallback loop detection with immediate name match."""
-        plugin = DummyPlugin([PluginOutcome(success=False, feedback="err")])
+        plugin = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="err")])
 
         # Create steps where the last step in chain has same name as current step
         step_a = Step.model_validate(
@@ -216,10 +216,8 @@ class TestFallbackLoopDetection:
     async def test_fallback_loop_healthcare_scenario(self):
         """Test fallback loop detection in a healthcare scenario."""
         # Simulate a healthcare pipeline with multiple validation steps
-        plugin_validation = DummyPlugin(
-            [PluginOutcome(success=False, feedback="validation failed")]
-        )
-        plugin_retry = DummyPlugin([PluginOutcome(success=False, feedback="retry failed")])
+        plugin_validation = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="validation failed")])
+        plugin_retry = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="retry failed")])
 
         # Medical record validation steps
         validate_record = Step.model_validate(
@@ -252,10 +250,8 @@ class TestFallbackLoopDetection:
     async def test_fallback_loop_legal_scenario(self):
         """Test fallback loop detection in a legal scenario."""
         # Simulate a legal document processing pipeline
-        plugin_legal = DummyPlugin([PluginOutcome(success=False, feedback="legal review failed")])
-        plugin_compliance = DummyPlugin(
-            [PluginOutcome(success=False, feedback="compliance check failed")]
-        )
+        plugin_legal = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="legal review failed")])
+        plugin_compliance = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="compliance check failed")])
 
         # Legal document review steps
         review_document = Step.model_validate(
@@ -288,10 +284,8 @@ class TestFallbackLoopDetection:
     async def test_fallback_loop_finance_scenario(self):
         """Test fallback loop detection in a finance scenario."""
         # Simulate a financial transaction processing pipeline
-        plugin_fraud = DummyPlugin(
-            [PluginOutcome(success=False, feedback="fraud detection failed")]
-        )
-        plugin_aml = DummyPlugin([PluginOutcome(success=False, feedback="AML check failed")])
+        plugin_fraud = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="fraud detection failed")])
+        plugin_aml = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="AML check failed")])
 
         # Financial transaction steps
         fraud_detection = Step.model_validate(
@@ -324,7 +318,7 @@ class TestFallbackLoopDetection:
     async def test_fallback_loop_logging_and_audit(self):
         """Test that fallback loops are properly logged for audit purposes."""
         # For healthcare/legal/finance, we ensure fallback loops are detected and logged
-        plugin = DummyPlugin([PluginOutcome(success=False, feedback="err")])
+        plugin = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="err")])
 
         step_a = Step.model_validate(
             {
@@ -370,7 +364,7 @@ class TestFallbackLoopDetection:
         """Test fallback loop detection by directly calling step logic with recursion."""
         from flujo.application.core.step_logic import _run_step_logic
 
-        plugin = DummyPlugin([PluginOutcome(success=False, feedback="err")])
+        plugin = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="err")])
 
         step_a = Step.model_validate(
             {
@@ -427,7 +421,7 @@ class TestFallbackLoopDetection:
     @pytest.mark.asyncio
     async def test_simple_fallback_loop_integration(self):
         """Test a simple fallback loop that should definitely be detected."""
-        plugin = DummyPlugin([PluginOutcome(success=False, feedback="err")])
+        plugin = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="err")])
 
         # Create a simple A -> B -> A loop
         step_a = Step.model_validate(

@@ -1,6 +1,6 @@
 """Tests for exhaustive accounting in step logic."""
 
-from typing import Any
+from typing import Any, Optional, List
 from unittest.mock import Mock
 
 import pytest
@@ -34,16 +34,21 @@ class CostlyOutput:
         self.cost_usd = cost_usd
 
 
-class DummyPlugin:
+from flujo.domain.plugins import ValidationPlugin
+
+from flujo.domain.plugins import ValidationPlugin
+
+class DummyPlugin(ValidationPlugin):
     """A dummy plugin for testing."""
 
-    def __init__(self, outcomes: list[PluginOutcome]) -> None:
+    def __init__(self, outcomes: List[PluginOutcome]):
         self.outcomes = outcomes
+        self.call_count = 0
 
     async def validate(self, data: dict[str, Any]) -> PluginOutcome:
-        if self.outcomes:
-            return self.outcomes.pop(0)
-        return PluginOutcome(success=True)
+        idx = min(self.call_count, len(self.outcomes) - 1)
+        self.call_count += 1
+        return self.outcomes[idx]
 
 
 class MockStepExecutor:
@@ -64,7 +69,7 @@ class MockStepExecutor:
 async def test_failed_primary_step_preserves_metrics() -> None:
     """Test that a failed primary step preserves metrics from the last attempt."""
     # Create a step that will fail after a costly agent run
-    plugin = DummyPlugin([PluginOutcome(success=False, feedback="Validation failed")])
+    plugin = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="Validation failed")])
     agent = StubAgent([CostlyOutput("expensive output", token_counts=10, cost_usd=0.5)])
 
     step = Step.model_validate(
@@ -103,7 +108,7 @@ async def test_failed_primary_step_preserves_metrics() -> None:
 async def test_successful_fallback_preserves_metrics() -> None:
     """Test that a successful fallback correctly aggregates metrics."""
     # Create a primary step that fails
-    plugin_primary = DummyPlugin([PluginOutcome(success=False, feedback="Primary failed")])
+    plugin_primary = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="Primary failed")])
     agent_primary = StubAgent([CostlyOutput("primary output", token_counts=8, cost_usd=0.3)])
 
     primary_step = Step.model_validate(
@@ -155,7 +160,7 @@ async def test_successful_fallback_preserves_metrics() -> None:
 async def test_failed_fallback_accumulates_metrics() -> None:
     """Test that a failed fallback correctly accumulates metrics from both primary and fallback."""
     # Create a primary step that fails
-    plugin_primary = DummyPlugin([PluginOutcome(success=False, feedback="Primary failed")])
+    plugin_primary = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="Primary failed")])
     agent_primary = StubAgent([CostlyOutput("primary output", token_counts=6, cost_usd=0.1)])
 
     primary_step = Step.model_validate(
@@ -206,13 +211,11 @@ async def test_failed_fallback_accumulates_metrics() -> None:
 @pytest.mark.asyncio
 async def test_multiple_retries_preserve_last_attempt_metrics() -> None:
     """Test that multiple retries preserve metrics from the last failed attempt."""
-    # Create a step that fails twice with different costs
-    plugin = DummyPlugin(
-        [
-            PluginOutcome(success=False, feedback="First attempt failed"),
-            PluginOutcome(success=False, feedback="Second attempt failed"),
-        ]
-    )
+    # Create a step that fails twice with different costs and feedback
+    plugin = DummyPlugin(outcomes=[
+        PluginOutcome(success=False, feedback="First attempt failed"),
+        PluginOutcome(success=False, feedback="Second attempt failed")
+    ])
 
     # Agent returns different costly outputs for each attempt
     agent = StubAgent(

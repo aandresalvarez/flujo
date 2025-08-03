@@ -179,7 +179,8 @@ class StepCoordinator(Generic[ContextT]):
                     # Yield the failed step result before aborting
                     yield step_result
                     raise
-                telemetry.logfire.warn(f"Step '{step.name}' failed. Halting pipeline execution.")
+                # Don't halt here - let the execution manager handle step failure
+                pass
 
     async def _dispatch_hook(
         self,

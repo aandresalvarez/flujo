@@ -72,7 +72,7 @@ docs = [
     "mkdocs-material", # Added for a professional theme
     "mkdocstrings[python]",
 ]
-opentelemetry = ["opentelemetry-sdk>=1.26"]
+opentelemetry = ["opentelemetry-sdk>=1.26", "opentelemetry-exporter-otlp-proto-http>=1.26"]
 lens = [
   "opentelemetry-sdk>=1.20,<2.0",
   "opentelemetry-exporter-otlp-proto-http>=1.20,<2.0",
@@ -118,7 +118,7 @@ exclude = [
 # Allow third-party libraries that do not ship type information.
 [[tool.mypy.overrides]]
 module = [
-    "pydantic_ai",
+    "pydantic_ai.*",
     "pydantic_evals",
     "tenacity",
     "yaml",
@@ -127,7 +127,10 @@ module = [
     "logfire",
     "numpy",
     "orjson",
-    "blake3"
+    "blake3",
+    "xxhash",
+    "opentelemetry.sdk.trace",
+    "opentelemetry.sdk.trace.export"
 ]
 ignore_missing_imports = true
 
@@ -211,3 +214,8 @@ include = [
 # Suppress LogfireNotConfiguredWarning for users who do not enable Logfire
 [tool.logfire]
 ignore_no_config = true
+
+[dependency-groups]
+dev = [
+    "types-psutil>=7.0.0.20250801",
+]

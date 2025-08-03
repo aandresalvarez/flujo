@@ -1,5 +1,4 @@
 import functools
-import vcr
 import pytest
 import httpx
 from flujo.application.eval_adapter import run_pipeline_async
@@ -58,7 +57,7 @@ class EchoAgent:
 
 @pytest.mark.e2e
 @pytest.mark.asyncio
-@vcr.use_cassette("tests/e2e/cassettes/self_improvement.yaml")
+
 async def test_e2e_self_improvement_workflow() -> None:
     solution_agent = StubAgent(
         [

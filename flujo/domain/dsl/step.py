@@ -145,6 +145,11 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
     __step_input_type__: type[Any] = Any
     __step_output_type__: type[Any] = Any
 
+    @property
+    def is_complex(self) -> bool:
+        # ✅ Base steps are not complex by default.
+        return False
+
     model_config: ClassVar[ConfigDict] = {
         "arbitrary_types_allowed": True,
     }
@@ -859,6 +864,11 @@ class HumanInTheLoopStep(Step[Any, Any]):
     input_schema: Any | None = Field(default=None)
 
     model_config = {"arbitrary_types_allowed": True}
+
+    @property
+    def is_complex(self) -> bool:
+        # ✅ Override to mark as complex.
+        return True
 
 
 __all__ = [

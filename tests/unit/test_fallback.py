@@ -35,7 +35,7 @@ async def test_fallback_not_triggered_on_success() -> None:
 @pytest.mark.asyncio
 async def test_fallback_triggered_on_failure() -> None:
     primary_agent = StubAgent(["bad"])
-    plugin = DummyPlugin([PluginOutcome(success=False, feedback="err")])
+    plugin = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="err")])
     primary = Step.model_validate(
         {
             "name": "p",
@@ -92,7 +92,7 @@ class SlowAgent:
 
 @pytest.mark.asyncio
 async def test_fallback_latency_accumulated() -> None:
-    plugin = DummyPlugin([PluginOutcome(success=False, feedback="err")])
+    plugin = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="err")])
     failing = Step.model_validate(
         {
             "name": "p",
@@ -144,7 +144,7 @@ async def test_failed_fallback_accumulates_metrics() -> None:
 @pytest.mark.asyncio
 async def test_successful_fallback_correctly_sets_metrics() -> None:
     """Test that successful fallbacks correctly set metrics according to FSD 5."""
-    plugin_primary = DummyPlugin([PluginOutcome(success=False, feedback="primary failed")])
+    plugin_primary = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="primary failed")])
     primary = Step.model_validate(
         {
             "name": "p",
@@ -172,7 +172,7 @@ async def test_successful_fallback_correctly_sets_metrics() -> None:
 
 @pytest.mark.asyncio
 async def test_infinite_fallback_loop_detected() -> None:
-    plugin = DummyPlugin([PluginOutcome(success=False, feedback="err")])
+    plugin = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="err")])
     a = Step.model_validate(
         {
             "name": "a",

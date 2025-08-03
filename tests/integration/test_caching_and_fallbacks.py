@@ -88,7 +88,7 @@ async def test_cache_keys_distinct_for_same_name_steps() -> None:
 @pytest.mark.asyncio
 async def test_pipeline_step_fallback() -> None:
     s1: Step[Any, Any] = Step.model_validate({"name": "s1", "agent": StubAgent(["a"])})
-    plugin: DummyPlugin = DummyPlugin([PluginOutcome(success=False, feedback="err")])
+    plugin: DummyPlugin = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="err")])
     failing: Step[Any, Any] = Step.model_validate(
         {
             "name": "s2",
@@ -110,9 +110,9 @@ async def test_pipeline_step_fallback() -> None:
 @pytest.mark.asyncio
 async def test_loop_step_fallback_continues() -> None:
     body_agent: StubAgent = StubAgent(["bad", "done"])
-    plugin: DummyPlugin = DummyPlugin(
-        [PluginOutcome(success=False, feedback="err"), PluginOutcome(success=True)]
-    )
+    plugin: DummyPlugin = DummyPlugin(outcomes=[
+        PluginOutcome(success=False, feedback="err"), PluginOutcome(success=True)
+    ])
     body: Step[Any, Any] = Step.model_validate(
         {
             "name": "body",
@@ -141,7 +141,7 @@ async def test_loop_step_fallback_continues() -> None:
 @pytest.mark.asyncio
 async def test_conditional_branch_with_fallback() -> None:
     branch_agent: StubAgent = StubAgent(["bad"])
-    plugin: DummyPlugin = DummyPlugin([PluginOutcome(success=False, feedback="err")])
+    plugin: DummyPlugin = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="err")])
     branch_step: Step[Any, Any] = Step.model_validate(
         {
             "name": "branch",

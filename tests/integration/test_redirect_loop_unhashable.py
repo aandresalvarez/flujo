@@ -23,12 +23,10 @@ class UnhashableAgent:
 async def test_redirect_loop_detected_with_unhashable_agents() -> None:
     a1 = UnhashableAgent(["a1"])
     a2 = UnhashableAgent(["a2"])
-    plugin = DummyPlugin(
-        [
-            PluginOutcome(success=False, redirect_to=a2),
-            PluginOutcome(success=False, redirect_to=a1),
-        ]
-    )
+    plugin = DummyPlugin(outcomes=[
+        PluginOutcome(success=False, redirect_to=a2),
+        PluginOutcome(success=False, redirect_to=a1),
+    ])
     step = Step.model_validate(
         {
             "name": "loop",

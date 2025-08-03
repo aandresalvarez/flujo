@@ -12,6 +12,7 @@ from unittest.mock import Mock
 from ...domain.dsl.loop import LoopStep
 from ...domain.dsl.conditional import ConditionalStep
 from ...domain.dsl.parallel import ParallelStep
+from .types import TContext_w_Scratch
 from ...domain.dsl.step import (
     Step,
     HumanInTheLoopStep,
@@ -550,7 +551,7 @@ async def _handle_dynamic_router_step(
 async def _handle_parallel_step(
     step: ParallelStep[TContext],
     data: Any,
-    context: Optional[TContext],
+    context: Optional[Any],
     resources: Optional[AppResources],
     step_executor: StepExecutor[TContext],
     context_model_defined: bool,
@@ -863,10 +864,7 @@ async def _run_step_logic(
                     if _accepts_param(func, "resources"):
                         plugin_kwargs["resources"] = resources
                 validated = await asyncio.wait_for(
-                    plugin.validate(
-                        {"output": last_unpacked_output, "feedback": last_feedback},
-                        **plugin_kwargs,
-                    ),
+                    plugin.validate(data={"output": unpacked_output}, **plugin_kwargs),
                     timeout=step.config.timeout_s,
                 )
             except asyncio.TimeoutError as e:
@@ -934,11 +932,10 @@ async def _run_step_logic(
         if plugin_failed_this_attempt:
             success = False
         # --- END FIX ---
-        # --- JOIN ALL FEEDBACKS ---
-        feedback = "\n".join(feedbacks).strip() if feedbacks else None
-        if feedback:
-            accumulated_feedbacks.extend(feedbacks)
-        # --- END JOIN ---
+        # Keep only the feedback from the last attempt, not accumulate all feedbacks
+        if feedbacks:
+            accumulated_feedbacks = feedbacks  # Replace with current attempt's feedback
+        feedback = "\n".join(accumulated_feedbacks).strip() if accumulated_feedbacks else None
         if not success and attempt == max_retries:
             pass  # Could use last_unpacked_output here if needed
         if success:
@@ -994,19 +991,23 @@ async def _run_step_logic(
             else:
                 data = f"{str(data)}\n{feedback}"
         # Store all feedback so far for the next iteration
-        last_feedback = "\n".join(accumulated_feedbacks).strip() if accumulated_feedbacks else None
+        last_feedback = feedback
 
     # If we get here, all retries failed
     if isinstance(last_exception, ContextInheritanceError):
         raise last_exception
     result.success = False
-    if accumulated_feedbacks:
-        result.feedback = "\n".join(accumulated_feedbacks).strip()
-    else:
-        # FR-36: Populate feedback with the actual error type and message
-        result.feedback = (
-            f"Agent execution failed with {type(last_exception).__name__}: {last_exception}"
-        )
+    
+    # Include agent exception in feedback for explicit error handling
+    final_feedbacks = list(accumulated_feedbacks)
+    if last_exception and str(last_exception) != "Unknown error":
+        agent_error = f"Agent execution failed with {type(last_exception).__name__}: {last_exception}"
+        final_feedbacks.append(agent_error)
+    elif not final_feedbacks:
+        # If no specific feedback but step failed, provide a default message
+        final_feedbacks.append("Agent execution failed")
+    
+    result.feedback = "\n".join(final_feedbacks)
     result.attempts = max_retries
     # FLUJO SPIRIT FIX: Preserve actual execution time for failed steps
     # result.latency_s is already accumulated from actual execution time above

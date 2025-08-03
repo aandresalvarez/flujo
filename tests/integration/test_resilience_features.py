@@ -12,7 +12,7 @@ from typing import Any
 async def test_cached_fallback_result_is_reused() -> None:
     # Primary step always fails via plugin
     primary_agent: StubAgent = StubAgent(["bad"])
-    failing_plugin: DummyPlugin = DummyPlugin([PluginOutcome(success=False, feedback="err")])
+    failing_plugin: DummyPlugin = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="err")])
     primary_step: Step[Any, Any] = Step.model_validate(
         {
             "name": "primary",
@@ -51,9 +51,9 @@ async def test_cached_fallback_result_is_reused() -> None:
 @pytest.mark.asyncio
 async def test_no_cache_when_fallback_fails() -> None:
     primary_agent: StubAgent = StubAgent(["bad", "bad"])
-    failing_plugin: DummyPlugin = DummyPlugin(
-        [PluginOutcome(success=False, feedback="err"), PluginOutcome(success=False, feedback="err")]
-    )
+    failing_plugin: DummyPlugin = DummyPlugin(outcomes=[
+        PluginOutcome(success=False, feedback="err"), PluginOutcome(success=False, feedback="err")
+    ])
     primary_step: Step[Any, Any] = Step.model_validate(
         {
             "name": "primary",
@@ -64,9 +64,7 @@ async def test_no_cache_when_fallback_fails() -> None:
     )
 
     fallback_agent: StubAgent = StubAgent(["fb_bad", "fb_bad"])
-    fallback_plugin: DummyPlugin = DummyPlugin(
-        [PluginOutcome(success=False, feedback="err"), PluginOutcome(success=False, feedback="err")]
-    )
+    fallback_plugin: DummyPlugin = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="err")])
     fallback_step: Step[Any, Any] = Step.model_validate(
         {
             "name": "fb",

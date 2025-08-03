@@ -60,14 +60,16 @@ class StubAgent:
         return await self.run(data, **kwargs)
 
 
-class DummyPlugin:
+from flujo.domain.plugins import ValidationPlugin
+
+class DummyPlugin(ValidationPlugin):
     """A validation plugin used for testing."""
 
     def __init__(self, outcomes: List[PluginOutcome]):
         self.outcomes = outcomes
         self.call_count = 0
 
-    async def validate(self, data: dict[str, Any]) -> PluginOutcome:
+    async def validate(self, data: dict[str, Any], *, context: Any = None) -> PluginOutcome:
         idx = min(self.call_count, len(self.outcomes) - 1)
         self.call_count += 1
         return self.outcomes[idx]

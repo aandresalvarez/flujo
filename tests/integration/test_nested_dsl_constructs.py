@@ -166,7 +166,7 @@ async def test_deeply_nested_context_modification_and_access() -> None:
 
 @pytest.mark.asyncio
 async def test_deeply_nested_error_propagation() -> None:
-    fail_plugin = DummyPlugin([PluginOutcome(success=False, feedback="bad")])
+    fail_plugin = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="bad")])
     bad_step = Step.model_validate(
         {"name": "bad", "agent": StubAgent(["oops"]), "plugins": [(fail_plugin, 0)]}
     )

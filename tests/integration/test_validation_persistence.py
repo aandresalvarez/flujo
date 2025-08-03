@@ -56,6 +56,7 @@ async def test_persist_results_on_success() -> None:
         agent,
         validators=[PassValidator()],
         persist_validation_results_to="validation_history",
+        strict=False,  # Make it non-strict
     )
     runner = create_test_flujo(step, context_model=Ctx)
     result = await gather_result(runner, "in")

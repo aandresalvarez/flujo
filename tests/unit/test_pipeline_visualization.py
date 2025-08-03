@@ -36,7 +36,7 @@ def test_simple_pipeline_visualization():
 
 def test_pipeline_with_validation_steps():
     """Test visualization of steps with plugins/validators."""
-    plugin = DummyPlugin([PluginOutcome(success=True, feedback="ok")])
+    plugin = DummyPlugin(outcomes=[PluginOutcome(success=True, feedback="ok")])
     step1 = Step.model_validate(
         {"name": "Validate", "agent": TestAgent(), "plugins": [(plugin, 0)]}
     )
@@ -219,7 +219,7 @@ def test_pipeline_with_mixed_configurations():
         {
             "name": "ValidatedStep",
             "agent": TestAgent(),
-            "plugins": [(DummyPlugin([PluginOutcome(success=True)]), 0)],
+            "plugins": [(DummyPlugin(outcomes=[PluginOutcome(success=True)]), 0)],
             "config": StepConfig(max_retries=3),
         }
     )

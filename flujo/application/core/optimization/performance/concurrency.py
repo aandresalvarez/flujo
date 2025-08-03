@@ -11,7 +11,7 @@ import multiprocessing
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple, Awaitable
+from typing import Any, Dict, List, Optional, Tuple, Awaitable, Union
 from asyncio import Task
 from threading import RLock
 from enum import Enum
@@ -447,7 +447,7 @@ class ConcurrencyOptimizations:
         self.enable_stats = enable_stats
 
         # Core components
-        self._semaphore = (
+        self._semaphore: Union[AdaptiveSemaphore, asyncio.Semaphore] = (
             AdaptiveSemaphore(initial_limit=self.initial_concurrency, enable_stats=enable_stats)
             if enable_adaptive_limits
             else asyncio.Semaphore(self.initial_concurrency)

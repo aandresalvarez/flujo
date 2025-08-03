@@ -287,19 +287,19 @@ class OptimizedHasher:
 
         except Exception:
             # Fallback
-            return self._hash_bytes(str(s).encode("utf-8", errors="ignore"))
+            return str(self._hash_bytes(str(s).encode("utf-8", errors="ignore")))
 
     def _hash_bytes(self, data: bytes) -> str:
         """Hash bytes using the selected algorithm."""
         if self.algorithm == "blake3" and HAS_BLAKE3:
-            return blake3.blake3(data).hexdigest()
+            return str(blake3.blake3(data).hexdigest())
         elif self.algorithm == "xxhash" and HAS_XXHASH:
-            return xxhash.xxh64(data).hexdigest()
+            return str(xxhash.xxh64(data).hexdigest())
         elif self.algorithm == "sha256":
-            return hashlib.sha256(data).hexdigest()
+            return str(hashlib.sha256(data).hexdigest())
         else:
             # Fallback to MD5 for speed (not cryptographically secure)
-            return hashlib.md5(data).hexdigest()
+            return str(hashlib.md5(data).hexdigest())
 
     def _cache_hash(self, obj_id: int, hash_value: str, obj: Any) -> None:
         """Cache hash result with LRU eviction."""

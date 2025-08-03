@@ -222,7 +222,7 @@ async def test_loop_step_error_in_loop_output_mapper() -> None:
 
 @pytest.mark.asyncio
 async def test_loop_step_body_failure_with_robust_exit_condition() -> None:
-    fail_plugin = DummyPlugin([PluginOutcome(success=False, feedback="bad")])
+    fail_plugin = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="bad")])
     bad_step = Step.model_validate(
         {"name": "bad", "agent": StubAgent(["oops"]), "plugins": [(fail_plugin, 0)]}
     )
@@ -242,7 +242,7 @@ async def test_loop_step_body_failure_with_robust_exit_condition() -> None:
 
 @pytest.mark.asyncio
 async def test_loop_step_body_failure_causing_exit_condition_error() -> None:
-    fail_plugin = DummyPlugin([PluginOutcome(success=False, feedback="bad")])
+    fail_plugin = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="bad")])
     bad_step = Step.model_validate(
         {"name": "bad", "agent": StubAgent([{}]), "plugins": [(fail_plugin, 0)]}
     )

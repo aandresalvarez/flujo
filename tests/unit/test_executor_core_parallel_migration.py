@@ -13,6 +13,7 @@ from flujo.domain.dsl.dynamic_router import DynamicParallelRouterStep
 from flujo.domain.dsl.step import Step, MergeStrategy, BranchFailureStrategy
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.models import StepResult
+from flujo.application.core.types import TContext_w_Scratch
 
 
 class TestExecutorCoreParallelMigration:

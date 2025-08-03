@@ -10,6 +10,7 @@ Tests cover:
 import pytest
 import asyncio
 from unittest.mock import Mock, AsyncMock
+from typing import Any
 
 from flujo.application.core.ultra_executor import (
     # Default implementations
@@ -374,11 +375,15 @@ class TestDefaultPluginRunner:
         """Test plugin execution."""
         runner = DefaultPluginRunner()
 
-        # Create a proper plugin function instead of a Mock
-        async def plugin_function(data, context=None):
-            return "processed data"
+        # Create a proper ValidationPlugin instance
+        from flujo.domain.plugins import ValidationPlugin, PluginOutcome
+        
+        class TestPlugin(ValidationPlugin):
+            async def validate(self, data: dict[str, Any], *, context: Any = None) -> PluginOutcome:
+                return PluginOutcome(success=True, new_solution="processed data")
 
-        plugins = [(plugin_function, 1)]  # (plugin, priority)
+        plugin = TestPlugin()
+        plugins = [(plugin, 1)]  # (plugin, priority)
         data = "original data"
         context = {"key": "value"}
 
@@ -391,13 +396,19 @@ class TestDefaultPluginRunner:
         """Test that plugins are executed in priority order."""
         runner = DefaultPluginRunner()
 
-        # Create plugins with different priorities
-        async def plugin1(data, context=None):
-            return "processed by plugin1"
+        # Create proper ValidationPlugin instances
+        from flujo.domain.plugins import ValidationPlugin, PluginOutcome
+        
+        class Plugin1(ValidationPlugin):
+            async def validate(self, data: dict[str, Any], *, context: Any = None) -> PluginOutcome:
+                return PluginOutcome(success=True, new_solution="processed by plugin1")
 
-        async def plugin2(data, context=None):
-            return "processed by plugin2"
+        class Plugin2(ValidationPlugin):
+            async def validate(self, data: dict[str, Any], *, context: Any = None) -> PluginOutcome:
+                return PluginOutcome(success=True, new_solution="processed by plugin2")
 
+        plugin1 = Plugin1()
+        plugin2 = Plugin2()
         plugins = [(plugin1, 1), (plugin2, 2)]  # plugin2 has higher priority
 
         data = "original data"
