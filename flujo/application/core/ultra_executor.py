@@ -1186,41 +1186,38 @@ class ExecutorCore(Generic[TContext]):
                 )
 
     def _is_complex_step(self, step: Any) -> bool:
-        """Check if step needs complex handling."""
+        """Check if step needs complex handling using an object-oriented approach.
+        
+        This method uses the `is_complex` property to determine step complexity,
+        following Flujo's architectural principles of algebraic closure and
+        the Open-Closed Principle. Every step type is a first-class citizen
+        in the execution graph, enabling extensibility without core changes.
+        
+        The method maintains backward compatibility by preserving existing logic
+        for validation steps and plugin steps that don't implement the `is_complex`
+        property.
+        
+        Args:
+            step: The step to check for complexity
+            
+        Returns:
+            True if the step requires complex handling, False otherwise
+        """
         telemetry.logfire.debug("=== IS COMPLEX STEP ===")
         telemetry.logfire.debug(f"Step type: {type(step)}")
         telemetry.logfire.debug(f"Step name: {step.name}")
 
-        # Check for specific step types
-        if isinstance(
-            step,
-            (
-                CacheStep,
-                LoopStep,
-                ConditionalStep,
-                DynamicParallelRouterStep,
-                ParallelStep,
-                HumanInTheLoopStep,
-                    ),
-                ):
-            if isinstance(step, ParallelStep):
-                telemetry.logfire.debug(f"ParallelStep detected: {step.name}")
-            elif isinstance(step, DynamicParallelRouterStep):
-                telemetry.logfire.debug(f"DynamicParallelRouterStep detected: {step.name}")
-            telemetry.logfire.debug(f"Complex step detected: {step.name}")
+        # Use the is_complex property if available (object-oriented approach)
+        if getattr(step, 'is_complex', False):
+            telemetry.logfire.debug(f"Complex step detected via is_complex property: {step.name}")
             return True
 
-        # Check for validation steps
+        # Check for validation steps (maintain existing logic for backward compatibility)
         if hasattr(step, "meta") and step.meta and step.meta.get("is_validation_step", False):
             telemetry.logfire.debug(f"Validation step detected: {step.name}")
             return True
 
-        # ✅ REMOVE: Steps with fallbacks should be handled by _execute_simple_step
-        # if hasattr(step, "fallback_step") and step.fallback_step is not None:
-        #     telemetry.logfire.debug(f"Step with fallback detected: {step.name}")
-        #     return True
-
-        # Check for steps with plugins (plugins can have redirects, feedback, etc.)
+        # Check for steps with plugins (maintain existing logic for backward compatibility)
         if hasattr(step, "plugins") and step.plugins:
             telemetry.logfire.debug(f"Step with plugins detected: {step.name}")
             return True

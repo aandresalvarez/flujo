@@ -539,6 +539,7 @@ class TestExecutorCore:
         step.plugins = []  # Add missing plugins attribute
         step.fallback_step = None  # Ensure no fallback step
         step.meta = {}  # Ensure meta is an empty dict, not a mock
+        step.is_complex = False  # Explicitly set to avoid Mock defaults
 
         result = await executor.execute(step, "input")
 
@@ -689,6 +690,7 @@ class TestErrorHandling:
         step.plugins = []  # Add missing plugins attribute
         step.fallback_step = None  # Ensure no fallback step
         step.meta = {}  # Ensure meta is an empty dict, not a mock
+        step.is_complex = False  # Explicitly set to avoid Mock defaults
 
         limits = UsageLimits(total_cost_usd_limit=5.0)
         with pytest.raises(UsageLimitExceededError):

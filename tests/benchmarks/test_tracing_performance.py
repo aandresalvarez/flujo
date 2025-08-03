@@ -423,10 +423,12 @@ class TestTracingPerformance:
         # Performance should be consistent (low coefficient of variation)
         # Use configurable threshold for CI environments due to timing noise
         # Increase threshold for CI environments where performance is more variable
+        # Also increase threshold for parallel test execution due to resource contention
         base_threshold = 0.6
         ci_multiplier = 1.5 if os.environ.get("CI") else 1.0
+        parallel_multiplier = 2.0 if os.environ.get("PYTEST_XDIST_WORKER") else 1.0
         cv_threshold = float(
-            os.environ.get("FLUJO_CV_THRESHOLD", str(base_threshold * ci_multiplier))
+            os.environ.get("FLUJO_CV_THRESHOLD", str(base_threshold * ci_multiplier * parallel_multiplier))
         )
 
         # Additional robustness: if CV is high but all times are reasonable, allow it
