@@ -62,6 +62,7 @@ class StubAgent:
 
 from flujo.domain.plugins import ValidationPlugin
 
+
 class DummyPlugin(ValidationPlugin):
     """A validation plugin used for testing."""
 

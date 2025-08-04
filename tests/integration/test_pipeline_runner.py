@@ -39,10 +39,12 @@ async def test_runner_respects_max_retries() -> None:
 
 async def test_feedback_enriches_prompt() -> None:
     sol_agent = StubAgent(["sol1", "sol2"])
-    plugin = DummyPlugin(outcomes=[
-        PluginOutcome(success=False, feedback="SQL Error: XYZ"),
-        PluginOutcome(success=True),
-    ])
+    plugin = DummyPlugin(
+        outcomes=[
+            PluginOutcome(success=False, feedback="SQL Error: XYZ"),
+            PluginOutcome(success=True),
+        ]
+    )
     step = Step.solution(sol_agent, max_retries=2, plugins=[(plugin, 0)])
     runner = create_test_flujo(step)
     await gather_result(runner, "SELECT *")
@@ -53,10 +55,12 @@ async def test_feedback_enriches_prompt() -> None:
 async def test_conditional_redirection() -> None:
     primary = StubAgent(["first"])
     fixit = StubAgent(["fixed"])
-    plugin = DummyPlugin(outcomes=[
-        PluginOutcome(success=False, redirect_to=fixit),
-        PluginOutcome(success=True),
-    ])
+    plugin = DummyPlugin(
+        outcomes=[
+            PluginOutcome(success=False, redirect_to=fixit),
+            PluginOutcome(success=True),
+        ]
+    )
     step = Step.model_validate(
         {
             "name": "s",
@@ -120,10 +124,12 @@ async def test_timeout_and_redirect_loop_detection() -> None:
     # Redirect loop
     a1 = StubAgent(["a1"])
     a2 = StubAgent(["a2"])
-    plugin_loop = DummyPlugin(outcomes=[
-        PluginOutcome(success=False, redirect_to=a2),
-        PluginOutcome(success=False, redirect_to=a1),
-    ])
+    plugin_loop = DummyPlugin(
+        outcomes=[
+            PluginOutcome(success=False, redirect_to=a2),
+            PluginOutcome(success=False, redirect_to=a1),
+        ]
+    )
     step_loop = Step.model_validate(
         {
             "name": "loop",

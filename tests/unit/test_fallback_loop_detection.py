@@ -216,7 +216,9 @@ class TestFallbackLoopDetection:
     async def test_fallback_loop_healthcare_scenario(self):
         """Test fallback loop detection in a healthcare scenario."""
         # Simulate a healthcare pipeline with multiple validation steps
-        plugin_validation = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="validation failed")])
+        plugin_validation = DummyPlugin(
+            outcomes=[PluginOutcome(success=False, feedback="validation failed")]
+        )
         plugin_retry = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="retry failed")])
 
         # Medical record validation steps
@@ -250,8 +252,12 @@ class TestFallbackLoopDetection:
     async def test_fallback_loop_legal_scenario(self):
         """Test fallback loop detection in a legal scenario."""
         # Simulate a legal document processing pipeline
-        plugin_legal = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="legal review failed")])
-        plugin_compliance = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="compliance check failed")])
+        plugin_legal = DummyPlugin(
+            outcomes=[PluginOutcome(success=False, feedback="legal review failed")]
+        )
+        plugin_compliance = DummyPlugin(
+            outcomes=[PluginOutcome(success=False, feedback="compliance check failed")]
+        )
 
         # Legal document review steps
         review_document = Step.model_validate(
@@ -284,8 +290,12 @@ class TestFallbackLoopDetection:
     async def test_fallback_loop_finance_scenario(self):
         """Test fallback loop detection in a finance scenario."""
         # Simulate a financial transaction processing pipeline
-        plugin_fraud = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="fraud detection failed")])
-        plugin_aml = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="AML check failed")])
+        plugin_fraud = DummyPlugin(
+            outcomes=[PluginOutcome(success=False, feedback="fraud detection failed")]
+        )
+        plugin_aml = DummyPlugin(
+            outcomes=[PluginOutcome(success=False, feedback="AML check failed")]
+        )
 
         # Financial transaction steps
         fraud_detection = Step.model_validate(

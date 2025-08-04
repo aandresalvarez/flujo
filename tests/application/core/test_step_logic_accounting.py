@@ -38,6 +38,7 @@ from flujo.domain.plugins import ValidationPlugin
 
 from flujo.domain.plugins import ValidationPlugin
 
+
 class DummyPlugin(ValidationPlugin):
     """A dummy plugin for testing."""
 
@@ -212,10 +213,12 @@ async def test_failed_fallback_accumulates_metrics() -> None:
 async def test_multiple_retries_preserve_last_attempt_metrics() -> None:
     """Test that multiple retries preserve metrics from the last failed attempt."""
     # Create a step that fails twice with different costs and feedback
-    plugin = DummyPlugin(outcomes=[
-        PluginOutcome(success=False, feedback="First attempt failed"),
-        PluginOutcome(success=False, feedback="Second attempt failed")
-    ])
+    plugin = DummyPlugin(
+        outcomes=[
+            PluginOutcome(success=False, feedback="First attempt failed"),
+            PluginOutcome(success=False, feedback="Second attempt failed"),
+        ]
+    )
 
     # Agent returns different costly outputs for each attempt
     agent = StubAgent(

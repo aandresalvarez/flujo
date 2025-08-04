@@ -77,7 +77,9 @@ class StepCoordinator(Generic[ContextT]):
                     # Handle both async generators and regular async functions
                     try:
                         # Try to use as async generator first
-                        async for item in step_executor(step, data, context, self.resources, stream=stream):
+                        async for item in step_executor(
+                            step, data, context, self.resources, stream=stream
+                        ):
                             if isinstance(item, StepResult):
                                 step_result = item
                                 yield item  # Yield StepResult objects
@@ -85,7 +87,9 @@ class StepCoordinator(Generic[ContextT]):
                                 yield item
                     except TypeError:
                         # If that fails, try as regular async function
-                        step_result = await step_executor(step, data, context, self.resources, stream=stream)
+                        step_result = await step_executor(
+                            step, data, context, self.resources, stream=stream
+                        )
                         if isinstance(step_result, StepResult):
                             yield step_result
                 elif backend is not None:
@@ -93,10 +97,10 @@ class StepCoordinator(Generic[ContextT]):
                     if stream:
                         # For streaming, we need to collect chunks and yield them
                         chunks = []
-                        
+
                         async def on_chunk(chunk: Any) -> None:
                             chunks.append(chunk)
-                        
+
                         request = StepExecutionRequest(
                             step=step,
                             input_data=data,
@@ -106,10 +110,10 @@ class StepCoordinator(Generic[ContextT]):
                             on_chunk=on_chunk,
                             usage_limits=usage_limits,
                         )
-                        
+
                         # Call the backend directly
                         step_result = await backend.execute_step(request)
-                        
+
                         # Yield chunks first, then result
                         for chunk in chunks:
                             yield chunk
@@ -124,13 +128,13 @@ class StepCoordinator(Generic[ContextT]):
                             stream=stream,
                             usage_limits=usage_limits,
                         )
-                        
+
                         # Call the backend directly
                         step_result = await backend.execute_step(request)
                         yield step_result
                 else:
                     raise ValueError("Either backend or step_executor must be provided")
-                
+
             except PausedException as e:
                 # Handle pause for human input
                 if isinstance(context, PipelineContext):

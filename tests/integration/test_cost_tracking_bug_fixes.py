@@ -137,11 +137,11 @@ class TestBug2FixParallelStepRaceCondition:
     async def test_fix_parallel_steps_with_atomic_usage_tracking(self):
         """Test that the ParallelUsageGovernor provides atomic tracking."""
 
-        from flujo.application.core.step_logic import ParallelUsageGovernor
+        from flujo.application.core.ultra_executor import ExecutorCore
 
         # Create a usage governor
         limits = UsageLimits(total_cost_usd_limit=0.10)
-        governor = ParallelUsageGovernor(limits)
+        governor = ExecutorCore._ParallelUsageGovernor(limits)
 
         # Create a proper StepResult for testing
         step_result = StepResult(name="test_step")

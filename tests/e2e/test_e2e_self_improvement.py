@@ -57,7 +57,6 @@ class EchoAgent:
 
 @pytest.mark.e2e
 @pytest.mark.asyncio
-
 async def test_e2e_self_improvement_workflow() -> None:
     solution_agent = StubAgent(
         [

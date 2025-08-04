@@ -72,6 +72,7 @@ class ExecutionManager(Generic[ContextT]):
         if backend is None:
             from flujo.infra.backends import LocalBackend
             from flujo.application.core.ultra_executor import ExecutorCore
+
             executor: ExecutorCore[Any] = ExecutorCore()
             self.backend: Any = LocalBackend(executor)
         else:
@@ -166,14 +167,18 @@ class ExecutionManager(Generic[ContextT]):
                     # Pass output to next step
                     if step_result:
                         # --- CONTEXT UPDATE PATCH ---
-                        if getattr(step, 'updates_context', False) and context is not None:
+                        if getattr(step, "updates_context", False) and context is not None:
                             update_data = _build_context_update(step_result.output)
                             if update_data:
-                                validation_error = _inject_context(context, update_data, type(context))
+                                validation_error = _inject_context(
+                                    context, update_data, type(context)
+                                )
                                 if validation_error:
                                     # Context validation failed, mark step as failed
                                     step_result.success = False
-                                    step_result.feedback = f"Context validation failed: {validation_error}"
+                                    step_result.feedback = (
+                                        f"Context validation failed: {validation_error}"
+                                    )
                         # --- END PATCH ---
                         data = step_result.output
 
@@ -197,7 +202,9 @@ class ExecutionManager(Generic[ContextT]):
                             self.step_coordinator.update_pipeline_result(result, step_result)
                             # Record step result in persistence backend
                             if run_id is not None:
-                                await self.state_manager.record_step_result(run_id, step_result, idx)
+                                await self.state_manager.record_step_result(
+                                    run_id, step_result, idx
+                                )
                             # ✅ 3. If breached, the manager raises the exception with the *correct* state.
                             with telemetry.logfire.span(f"usage_check_{step.name}") as span:
                                 self.usage_governor.check_usage_limits(result, span)
@@ -207,21 +214,25 @@ class ExecutionManager(Generic[ContextT]):
                             self.step_coordinator.update_pipeline_result(result, step_result)
                             # Record step result in persistence backend
                             if run_id is not None:
-                                await self.state_manager.record_step_result(run_id, step_result, idx)
+                                await self.state_manager.record_step_result(
+                                    run_id, step_result, idx
+                                )
                     elif step_result:
                         # ✅ 2. Update the state if no usage governor
                         # Record step result in persistence backend
                         if run_id is not None:
                             await self.state_manager.record_step_result(run_id, step_result, idx)
-                    
+
                     # ✅ 3. Update pipeline result with step result (only once)
                     if step_result and step_result not in result.step_history:
                         self.step_coordinator.update_pipeline_result(result, step_result)
-                    
+
                     # ✅ 4. Check if step failed and halt execution
                     if step_result and not step_result.success:
-                        telemetry.logfire.warning(f"Step '{step.name}' failed. Halting pipeline execution.")
-                        
+                        telemetry.logfire.warning(
+                            f"Step '{step.name}' failed. Halting pipeline execution."
+                        )
+
                         # Persist final state when pipeline halts due to step failure
                         if run_id is not None and not self.inside_loop_step:
                             await self.persist_final_state(
@@ -232,7 +243,7 @@ class ExecutionManager(Generic[ContextT]):
                                 state_created_at=state_created_at,
                                 final_status="failed",
                             )
-                        
+
                         self.set_final_context(result, context)
                         yield result
                         return
@@ -356,19 +367,18 @@ class ExecutionManager(Generic[ContextT]):
             if final_status == "completed":
                 # Check if this is an HITL resumption scenario
                 is_hitl_resumption = (
-                    start_idx > 0 and 
-                    context is not None and 
-                    hasattr(context, 'hitl_history') and 
-                    len(getattr(context, 'hitl_history', [])) > 0
+                    start_idx > 0
+                    and context is not None
+                    and hasattr(context, "hitl_history")
+                    and len(getattr(context, "hitl_history", [])) > 0
                 )
-                
+
                 # Check if this is a crash recovery scenario
                 # In crash recovery, all steps are re-executed from the beginning
-                is_crash_recovery = (
-                    start_idx > 0 and 
-                    len(result.step_history) == len(self.pipeline.steps)
+                is_crash_recovery = start_idx > 0 and len(result.step_history) == len(
+                    self.pipeline.steps
                 )
-                
+
                 if is_hitl_resumption:
                     # For HITL resumption scenarios, use double the pipeline length
                     final_step_index = len(self.pipeline.steps) * 2
@@ -381,7 +391,7 @@ class ExecutionManager(Generic[ContextT]):
             else:
                 # For paused or failed scenarios, use the current step index
                 final_step_index = len(result.step_history)
-            
+
             await self.state_manager.persist_workflow_state(
                 run_id=run_id,
                 context=context,

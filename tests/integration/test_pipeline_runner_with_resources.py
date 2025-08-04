@@ -46,7 +46,7 @@ class ResourceUsingPlugin(ValidationPlugin):
             output_value = data["output"]
         else:
             output_value = str(data)
-        
+
         resources.api_client.post("/validate", json=output_value)
         return PluginOutcome(success=True)
 

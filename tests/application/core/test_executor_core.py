@@ -400,11 +400,14 @@ class TestExecutorCoreSimpleStep:
         breach_event = None
 
         # Create a DummyPlugin that fails
-        failing_plugin = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="Plugin execution error")])
+        failing_plugin = DummyPlugin(
+            outcomes=[PluginOutcome(success=False, feedback="Plugin execution error")]
+        )
         mock_step.plugins = [(failing_plugin, 1)]  # Add the failing plugin to the step
 
         # Override the plugin runner to use the real implementation
         from flujo.application.core.ultra_executor import DefaultPluginRunner
+
         executor_core._plugin_runner = DefaultPluginRunner()
 
         # Act
@@ -558,7 +561,7 @@ class TestExecutorCoreSimpleStep:
         executor_core._usage_meter.guard.assert_called_once()
         call_args = executor_core._usage_meter.guard.call_args
         assert call_args[0][0] == limits  # First argument should be limits
-        assert 'step_history' in call_args[1]  # Should have step_history as keyword argument
+        assert "step_history" in call_args[1]  # Should have step_history as keyword argument
         executor_core._usage_meter.add.assert_called_once()
 
     @pytest.mark.asyncio
@@ -741,20 +744,16 @@ class TestExecutorCoreComplexStepClassification:
         from flujo.testing.utils import StubAgent
 
         # Test LoopStep
-        loop_step = LoopStep(
-            name="loop", 
-            loop_body_pipeline=Mock(), 
-            exit_condition_callable=Mock()
-        )
+        loop_step = LoopStep(name="loop", loop_body_pipeline=Mock(), exit_condition_callable=Mock())
         assert executor_core._is_complex_step(loop_step)
 
         parallel_step = ParallelStep(name="parallel", branches={})
         assert executor_core._is_complex_step(parallel_step)
 
         conditional_step = ConditionalStep(
-            name="conditional", 
-            condition_callable=Mock(), 
-            branches={"true": Mock(), "false": Mock()}
+            name="conditional",
+            condition_callable=Mock(),
+            branches={"true": Mock(), "false": Mock()},
         )
         assert executor_core._is_complex_step(conditional_step)
 
@@ -766,7 +765,9 @@ class TestExecutorCoreComplexStepClassification:
         hitl_step = HumanInTheLoopStep(name="hitl", agent=Mock())
         assert executor_core._is_complex_step(hitl_step)
 
-        dynamic_router_step = DynamicParallelRouterStep(name="dynamic_router", router_agent=Mock(), branches={})
+        dynamic_router_step = DynamicParallelRouterStep(
+            name="dynamic_router", router_agent=Mock(), branches={}
+        )
         assert executor_core._is_complex_step(dynamic_router_step)
 
     @pytest.mark.asyncio
@@ -781,7 +782,7 @@ class TestExecutorCoreComplexStepClassification:
         # Configure step to not have plugins or meta (which would make it complex)
         step.plugins = None  # Explicitly set to None
         step.meta = None  # Explicitly set to None
-        step.is_complex = False # Ensure the property is set for this test
+        step.is_complex = False  # Ensure the property is set for this test
 
         # Act
         is_complex = executor_core._is_complex_step(step)
@@ -798,13 +799,13 @@ class TestExecutorCoreComplexStepClassification:
         # Test LoopStep
         loop_step = Mock(spec=LoopStep)
         loop_step.name = "loop_step"
-        loop_step.is_complex = True # Ensure the property is set for this test
+        loop_step.is_complex = True  # Ensure the property is set for this test
         assert executor_core._is_complex_step(loop_step)
 
         # Test ParallelStep
         parallel_step = Mock(spec=ParallelStep)
         parallel_step.name = "parallel_step"
-        parallel_step.is_complex = True # Ensure the property is set for this test
+        parallel_step.is_complex = True  # Ensure the property is set for this test
         assert executor_core._is_complex_step(parallel_step)
 
     @pytest.mark.asyncio
@@ -813,7 +814,7 @@ class TestExecutorCoreComplexStepClassification:
         step = Mock()
         step.name = "validation_step"
         step.meta = {"is_validation_step": True}
-        step.is_complex = True # Ensure the property is set for this test
+        step.is_complex = True  # Ensure the property is set for this test
 
         assert executor_core._is_complex_step(step)
 
@@ -823,7 +824,7 @@ class TestExecutorCoreComplexStepClassification:
         step = Mock()
         step.name = "plugin_step"
         step.plugins = [Mock(), Mock()]
-        step.is_complex = True # Ensure the property is set for this test
+        step.is_complex = True  # Ensure the property is set for this test
 
         assert executor_core._is_complex_step(step)
 
@@ -835,7 +836,7 @@ class TestExecutorCoreComplexStepClassification:
         # No fallback_step attribute
         step.plugins = None  # Explicitly set to None
         step.meta = None  # Explicitly set to None
-        step.is_complex = False # Ensure the property is set for this test
+        step.is_complex = False  # Ensure the property is set for this test
 
         is_complex = executor_core._is_complex_step(step)
         assert not is_complex
@@ -848,7 +849,7 @@ class TestExecutorCoreComplexStepClassification:
         step.fallback_step = None
         step.plugins = None  # Explicitly set to None
         step.meta = None  # Explicitly set to None
-        step.is_complex = False # Ensure the property is set for this test
+        step.is_complex = False  # Ensure the property is set for this test
 
         is_complex = executor_core._is_complex_step(step)
         assert not is_complex
@@ -860,7 +861,7 @@ class TestExecutorCoreComplexStepClassification:
 
         cache_step = Mock(spec=CacheStep)
         cache_step.name = "cache_step"
-        cache_step.is_complex = True # Ensure the property is set for this test
+        cache_step.is_complex = True  # Ensure the property is set for this test
 
         assert executor_core._is_complex_step(cache_step)
 
@@ -871,7 +872,7 @@ class TestExecutorCoreComplexStepClassification:
 
         conditional_step = Mock(spec=ConditionalStep)
         conditional_step.name = "conditional_step"
-        conditional_step.is_complex = True # Ensure the property is set for this test
+        conditional_step.is_complex = True  # Ensure the property is set for this test
 
         assert executor_core._is_complex_step(conditional_step)
 
@@ -882,7 +883,7 @@ class TestExecutorCoreComplexStepClassification:
 
         hitl_step = Mock(spec=HumanInTheLoopStep)
         hitl_step.name = "hitl_step"
-        hitl_step.is_complex = True # Ensure the property is set for this test
+        hitl_step.is_complex = True  # Ensure the property is set for this test
 
         assert executor_core._is_complex_step(hitl_step)
 
@@ -893,7 +894,7 @@ class TestExecutorCoreComplexStepClassification:
 
         router_step = Mock(spec=DynamicParallelRouterStep)
         router_step.name = "router_step"
-        router_step.is_complex = True # Ensure the property is set for this test
+        router_step.is_complex = True  # Ensure the property is set for this test
 
         assert executor_core._is_complex_step(router_step)
 
@@ -905,7 +906,7 @@ class TestExecutorCoreComplexStepClassification:
         step.fallback_step = Mock()
         step.fallback_step.name = "fallback_step"
         step.plugins = [Mock()]
-        step.is_complex = True # Ensure the property is set for this test
+        step.is_complex = True  # Ensure the property is set for this test
 
         # Should be complex due to plugins, not fallback
         assert executor_core._is_complex_step(step)
@@ -918,7 +919,7 @@ class TestExecutorCoreComplexStepClassification:
         step.fallback_step = Mock()
         step.fallback_step.name = "fallback_step"
         step.meta = {"is_validation_step": True}
-        step.is_complex = True # Ensure the property is set for this test
+        step.is_complex = True  # Ensure the property is set for this test
 
         # Should be complex due to validation, not fallback
         assert executor_core._is_complex_step(step)
@@ -1424,16 +1425,34 @@ class TestExecutorCoreObjectOrientedComplexStep:
 
         # Test all complex step types using object-oriented approach
         test_cases = [
-            (LoopStep(name="loop", loop_body_pipeline=Mock(), exit_condition_callable=Mock()), "LoopStep"),
+            (
+                LoopStep(name="loop", loop_body_pipeline=Mock(), exit_condition_callable=Mock()),
+                "LoopStep",
+            ),
             (ParallelStep(name="parallel", branches={}), "ParallelStep"),
-            (ConditionalStep(name="conditional", condition_callable=Mock(), branches={"true": Mock(), "false": Mock()}), "ConditionalStep"),
-            (CacheStep(name="cache", wrapped_step=Step(name="inner", agent=StubAgent(["test"]))), "CacheStep"),
+            (
+                ConditionalStep(
+                    name="conditional",
+                    condition_callable=Mock(),
+                    branches={"true": Mock(), "false": Mock()},
+                ),
+                "ConditionalStep",
+            ),
+            (
+                CacheStep(name="cache", wrapped_step=Step(name="inner", agent=StubAgent(["test"]))),
+                "CacheStep",
+            ),
             (HumanInTheLoopStep(name="hitl", agent=Mock()), "HumanInTheLoopStep"),
-            (DynamicParallelRouterStep(name="dynamic_router", router_agent=Mock(), branches={}), "DynamicParallelRouterStep"),
+            (
+                DynamicParallelRouterStep(name="dynamic_router", router_agent=Mock(), branches={}),
+                "DynamicParallelRouterStep",
+            ),
         ]
 
         for step, step_type in test_cases:
-            assert executor_core._is_complex_step(step), f"{step_type} should be detected as complex via is_complex property"
+            assert executor_core._is_complex_step(step), (
+                f"{step_type} should be detected as complex via is_complex property"
+            )
 
     @pytest.mark.asyncio
     async def test_steps_without_is_complex_property(self, executor_core):
@@ -1446,7 +1465,7 @@ class TestExecutorCoreObjectOrientedComplexStep:
         step.meta = None
         # Explicitly set is_complex to False to avoid Mock defaults
         step.is_complex = False
-        
+
         # Should default to False via getattr(step, 'is_complex', False)
         assert not executor_core._is_complex_step(step)
 
@@ -1459,7 +1478,7 @@ class TestExecutorCoreObjectOrientedComplexStep:
         # Explicitly set plugins and meta to None to avoid Mock defaults
         step.plugins = None
         step.meta = None
-        
+
         assert not executor_core._is_complex_step(step)
 
     @pytest.mark.asyncio
@@ -1468,7 +1487,7 @@ class TestExecutorCoreObjectOrientedComplexStep:
         step = Mock()
         step.name = "step_with_true_is_complex"
         step.is_complex = True
-        
+
         assert executor_core._is_complex_step(step)
 
     @pytest.mark.asyncio
@@ -1479,7 +1498,7 @@ class TestExecutorCoreObjectOrientedComplexStep:
         step.name = "validation_step"
         step.meta = {"is_validation_step": True}
         # Don't set is_complex property
-        
+
         assert executor_core._is_complex_step(step)
 
         # Test validation step with is_complex property set to False (should still be complex due to validation)
@@ -1494,7 +1513,7 @@ class TestExecutorCoreObjectOrientedComplexStep:
         step.name = "plugin_step"
         step.plugins = [Mock(), Mock()]
         # Don't set is_complex property
-        
+
         assert executor_core._is_complex_step(step)
 
         # Test plugin step with is_complex property set to False (should still be complex due to plugins)
@@ -1512,7 +1531,7 @@ class TestExecutorCoreObjectOrientedComplexStep:
         # Explicitly set is_complex to False to avoid Mock defaults
         step.is_complex = False
         # No is_complex property, no plugins, no meta
-        
+
         assert not executor_core._is_complex_step(step)
 
     @pytest.mark.asyncio
@@ -1524,7 +1543,7 @@ class TestExecutorCoreObjectOrientedComplexStep:
         step.is_complex = False
         # Explicitly set meta to None to avoid Mock defaults
         step.meta = None
-        
+
         assert not executor_core._is_complex_step(step)
 
     @pytest.mark.asyncio
@@ -1536,7 +1555,7 @@ class TestExecutorCoreObjectOrientedComplexStep:
         step.is_complex = False
         # Explicitly set meta to None to avoid Mock defaults
         step.meta = None
-        
+
         assert not executor_core._is_complex_step(step)
 
     @pytest.mark.asyncio
@@ -1548,7 +1567,7 @@ class TestExecutorCoreObjectOrientedComplexStep:
         step.is_complex = False
         # Explicitly set plugins to None to avoid Mock defaults
         step.plugins = None
-        
+
         assert not executor_core._is_complex_step(step)
 
     @pytest.mark.asyncio
@@ -1560,7 +1579,7 @@ class TestExecutorCoreObjectOrientedComplexStep:
         step.is_complex = False
         # Explicitly set plugins to None to avoid Mock defaults
         step.plugins = None
-        
+
         assert not executor_core._is_complex_step(step)
 
     @pytest.mark.asyncio
@@ -1572,7 +1591,7 @@ class TestExecutorCoreObjectOrientedComplexStep:
         step.is_complex = False
         # Explicitly set plugins to None to avoid Mock defaults
         step.plugins = None
-        
+
         assert not executor_core._is_complex_step(step)
 
     @pytest.mark.asyncio
@@ -1584,7 +1603,7 @@ class TestExecutorCoreObjectOrientedComplexStep:
         step.is_complex = False
         # Explicitly set plugins to None to avoid Mock defaults
         step.plugins = None
-        
+
         assert not executor_core._is_complex_step(step)
 
     @pytest.mark.asyncio
@@ -1600,22 +1619,24 @@ class TestExecutorCoreObjectOrientedComplexStep:
         # Create a complex nested workflow
         inner_step = Step(name="inner", agent=StubAgent(["inner output"]))
         cache_step = CacheStep(name="cache", wrapped_step=inner_step)
-        
+
         # Loop containing parallel steps
-        parallel_step = ParallelStep(name="parallel", branches={"branch1": cache_step, "branch2": cache_step})
-        loop_step = LoopStep(
-            name="loop", 
-            loop_body_pipeline=parallel_step, 
-            exit_condition_callable=lambda data, context: len(data) > 3
+        parallel_step = ParallelStep(
+            name="parallel", branches={"branch1": cache_step, "branch2": cache_step}
         )
-        
+        loop_step = LoopStep(
+            name="loop",
+            loop_body_pipeline=parallel_step,
+            exit_condition_callable=lambda data, context: len(data) > 3,
+        )
+
         # Conditional containing loop
         conditional_step = ConditionalStep(
             name="conditional",
             condition_callable=lambda data, context: data.get("condition", False),
-            branches={"true": loop_step, "false": cache_step}
+            branches={"true": loop_step, "false": cache_step},
         )
-        
+
         # All should be detected as complex
         assert executor_core._is_complex_step(cache_step)
         assert executor_core._is_complex_step(parallel_step)
@@ -1628,7 +1649,7 @@ class TestExecutorCoreObjectOrientedComplexStep:
         step = Mock()
         # Don't set name attribute
         step.is_complex = True
-        
+
         # Should still work (getattr will handle missing name gracefully)
         assert executor_core._is_complex_step(step)
 
@@ -1642,14 +1663,14 @@ class TestExecutorCoreObjectOrientedComplexStep:
         step.meta = None
         # Explicitly set is_complex to False to avoid Mock defaults
         step.is_complex = False
-        
+
         # Initially no is_complex property (should be False)
         assert not executor_core._is_complex_step(step)
-        
+
         # Dynamically add is_complex property
         step.is_complex = True
         assert executor_core._is_complex_step(step)
-        
+
         # Dynamically remove is_complex property
         del step.is_complex
         # After deletion, Mock will create a new Mock object, so we need to set it again
@@ -1659,18 +1680,19 @@ class TestExecutorCoreObjectOrientedComplexStep:
     @pytest.mark.asyncio
     async def test_edge_case_step_with_property_descriptor(self, executor_core):
         """Test edge case with property descriptor instead of attribute."""
+
         class StepWithPropertyDescriptor:
             def __init__(self, name, is_complex):
                 self.name = name
                 self._is_complex = is_complex
-            
+
             @property
             def is_complex(self):
                 return self._is_complex
-        
+
         step = StepWithPropertyDescriptor("property_step", True)
         assert executor_core._is_complex_step(step)
-        
+
         step._is_complex = False
         assert not executor_core._is_complex_step(step)
 
@@ -1680,7 +1702,7 @@ class TestExecutorCoreObjectOrientedComplexStep:
         step = Mock()
         step.name = "callable_step"
         step.is_complex = lambda: True
-        
+
         # getattr should handle callable gracefully
         assert executor_core._is_complex_step(step)
 
@@ -1699,17 +1721,39 @@ class TestExecutorCoreObjectOrientedComplexStep:
         test_cases = [
             # (step, expected_complex, description)
             (Step(name="simple", agent=StubAgent(["output"])), False, "Simple Step"),
-            (LoopStep(name="loop", loop_body_pipeline=Mock(), exit_condition_callable=Mock()), True, "LoopStep"),
+            (
+                LoopStep(name="loop", loop_body_pipeline=Mock(), exit_condition_callable=Mock()),
+                True,
+                "LoopStep",
+            ),
             (ParallelStep(name="parallel", branches={}), True, "ParallelStep"),
-            (ConditionalStep(name="conditional", condition_callable=Mock(), branches={"true": Mock()}), True, "ConditionalStep"),
-            (CacheStep(name="cache", wrapped_step=Step(name="inner", agent=StubAgent(["output"]))), True, "CacheStep"),
+            (
+                ConditionalStep(
+                    name="conditional", condition_callable=Mock(), branches={"true": Mock()}
+                ),
+                True,
+                "ConditionalStep",
+            ),
+            (
+                CacheStep(
+                    name="cache", wrapped_step=Step(name="inner", agent=StubAgent(["output"]))
+                ),
+                True,
+                "CacheStep",
+            ),
             (HumanInTheLoopStep(name="hitl", agent=Mock()), True, "HumanInTheLoopStep"),
-            (DynamicParallelRouterStep(name="router", router_agent=Mock(), branches={}), True, "DynamicParallelRouterStep"),
+            (
+                DynamicParallelRouterStep(name="router", router_agent=Mock(), branches={}),
+                True,
+                "DynamicParallelRouterStep",
+            ),
         ]
 
         for step, expected_complex, description in test_cases:
             actual_complex = executor_core._is_complex_step(step)
-            assert actual_complex == expected_complex, f"{description}: expected {expected_complex}, got {actual_complex}"
+            assert actual_complex == expected_complex, (
+                f"{description}: expected {expected_complex}, got {actual_complex}"
+            )
 
     @pytest.mark.asyncio
     async def test_object_oriented_principle_verification(self, executor_core):
@@ -1721,11 +1765,11 @@ class TestExecutorCoreObjectOrientedComplexStep:
         # Explicitly set plugins and meta to None to avoid Mock defaults
         step.plugins = None
         step.meta = None
-        
+
         # The method should use getattr(step, 'is_complex', False)
         # This test verifies the object-oriented approach works
         assert executor_core._is_complex_step(step)
-        
+
         # Test with a step that doesn't have is_complex property
         step2 = Mock()
         step2.name = "test_step2"
@@ -1734,7 +1778,7 @@ class TestExecutorCoreObjectOrientedComplexStep:
         step2.meta = None
         # Explicitly set is_complex to False to avoid Mock defaults
         step2.is_complex = False
-        
+
         assert not executor_core._is_complex_step(step2)
 
 
@@ -1784,13 +1828,15 @@ class TestExecutorCoreFunctionalEquivalence:
         old_result = self._old_is_complex_step_implementation(basic_step)
         new_result = self.executor._is_complex_step(basic_step)
 
-        assert old_result == new_result == False, f"Basic step classification mismatch: old={old_result}, new={new_result}"
+        assert old_result == new_result == False, (
+            f"Basic step classification mismatch: old={old_result}, new={new_result}"
+        )
 
     def test_functional_equivalence_complex_step_types(self):
         """Test that all complex step types are classified identically."""
         # Test that the new implementation correctly identifies complex steps
         # by their is_complex property, which is the key improvement
-        
+
         # Create steps with is_complex=True (new object-oriented approach)
         complex_steps = [
             Mock(name="loop_step", is_complex=True, plugins=None, meta=None),
@@ -1804,7 +1850,9 @@ class TestExecutorCoreFunctionalEquivalence:
         for step in complex_steps:
             # The new implementation should return True because of is_complex=True
             new_result = self.executor._is_complex_step(step)
-            assert new_result == True, f"New implementation should identify {step.name} as complex via is_complex property"
+            assert new_result == True, (
+                f"New implementation should identify {step.name} as complex via is_complex property"
+            )
 
     def test_functional_equivalence_validation_steps(self):
         """Test that validation steps are classified identically."""
@@ -1819,7 +1867,9 @@ class TestExecutorCoreFunctionalEquivalence:
         old_result = self._old_is_complex_step_implementation(validation_step)
         new_result = self.executor._is_complex_step(validation_step)
 
-        assert old_result == new_result == True, f"Validation step classification mismatch: old={old_result}, new={new_result}"
+        assert old_result == new_result == True, (
+            f"Validation step classification mismatch: old={old_result}, new={new_result}"
+        )
 
     def test_functional_equivalence_plugin_steps(self):
         """Test that plugin steps are classified identically."""
@@ -1834,7 +1884,9 @@ class TestExecutorCoreFunctionalEquivalence:
         old_result = self._old_is_complex_step_implementation(plugin_step)
         new_result = self.executor._is_complex_step(plugin_step)
 
-        assert old_result == new_result == True, f"Plugin step classification mismatch: old={old_result}, new={new_result}"
+        assert old_result == new_result == True, (
+            f"Plugin step classification mismatch: old={old_result}, new={new_result}"
+        )
 
     def test_functional_equivalence_edge_cases(self):
         """Test edge cases to ensure identical behavior."""
@@ -1845,7 +1897,7 @@ class TestExecutorCoreFunctionalEquivalence:
                 "is_complex": False,
                 "plugins": [],
                 "meta": None,
-                "expected": False
+                "expected": False,
             },
             # Step with None plugins
             {
@@ -1853,7 +1905,7 @@ class TestExecutorCoreFunctionalEquivalence:
                 "is_complex": False,
                 "plugins": None,
                 "meta": None,
-                "expected": False
+                "expected": False,
             },
             # Step with empty meta
             {
@@ -1861,7 +1913,7 @@ class TestExecutorCoreFunctionalEquivalence:
                 "is_complex": False,
                 "plugins": None,
                 "meta": {},
-                "expected": False
+                "expected": False,
             },
             # Step with None meta
             {
@@ -1869,7 +1921,7 @@ class TestExecutorCoreFunctionalEquivalence:
                 "is_complex": False,
                 "plugins": None,
                 "meta": None,
-                "expected": False
+                "expected": False,
             },
             # Step with meta but no validation flag
             {
@@ -1877,7 +1929,7 @@ class TestExecutorCoreFunctionalEquivalence:
                 "is_complex": False,
                 "plugins": None,
                 "meta": {"other_flag": True},
-                "expected": False
+                "expected": False,
             },
             # Step with false validation flag
             {
@@ -1885,7 +1937,7 @@ class TestExecutorCoreFunctionalEquivalence:
                 "is_complex": False,
                 "plugins": None,
                 "meta": {"is_validation_step": False},
-                "expected": False
+                "expected": False,
             },
             # Step with explicit True is_complex - this is the key improvement!
             {
@@ -1894,8 +1946,8 @@ class TestExecutorCoreFunctionalEquivalence:
                 "plugins": None,
                 "meta": None,
                 "expected_old": False,  # Old implementation doesn't recognize this
-                "expected_new": True,   # New implementation recognizes is_complex property
-                "expected": True        # We expect the new behavior
+                "expected_new": True,  # New implementation recognizes is_complex property
+                "expected": True,  # We expect the new behavior
             },
             # Step with explicit False is_complex
             {
@@ -1903,7 +1955,7 @@ class TestExecutorCoreFunctionalEquivalence:
                 "is_complex": False,
                 "plugins": None,
                 "meta": None,
-                "expected": False
+                "expected": False,
             },
         ]
 
@@ -1920,9 +1972,15 @@ class TestExecutorCoreFunctionalEquivalence:
             # Handle the special case where old and new implementations differ
             if test_case["name"] == "step_with_true_is_complex":
                 # This is the key improvement: new implementation recognizes is_complex property
-                assert old_result == test_case["expected_old"], f"Old implementation should return {test_case['expected_old']} for {test_case['name']}"
-                assert new_result == test_case["expected_new"], f"New implementation should return {test_case['expected_new']} for {test_case['name']}"
-                print(f"✅ Key improvement confirmed: {test_case['name']} - old={old_result}, new={new_result}")
+                assert old_result == test_case["expected_old"], (
+                    f"Old implementation should return {test_case['expected_old']} for {test_case['name']}"
+                )
+                assert new_result == test_case["expected_new"], (
+                    f"New implementation should return {test_case['expected_new']} for {test_case['name']}"
+                )
+                print(
+                    f"✅ Key improvement confirmed: {test_case['name']} - old={old_result}, new={new_result}"
+                )
             else:
                 # For all other cases, both implementations should agree
                 assert old_result == new_result == test_case["expected"], (
@@ -1933,15 +1991,18 @@ class TestExecutorCoreFunctionalEquivalence:
     def test_functional_equivalence_comprehensive_coverage(self):
         """Test comprehensive coverage of all step types and combinations."""
         # Create comprehensive test cases using Mock objects
-        
+
         # Test cases where both implementations should agree
         basic_test_steps = [
             # Validation steps (should be True)
-            Mock(name="validation_step", is_complex=False, plugins=None, meta={"is_validation_step": True}),
-            
+            Mock(
+                name="validation_step",
+                is_complex=False,
+                plugins=None,
+                meta={"is_validation_step": True},
+            ),
             # Plugin steps (should be True)
             Mock(name="plugin_step", is_complex=False, plugins=["plugin1"], meta=None),
-            
             # Basic steps (should be False)
             Mock(name="basic_step", is_complex=False, plugins=None, meta=None),
             Mock(name="basic_step2", is_complex=False, plugins=[], meta={}),
@@ -1975,13 +2036,15 @@ class TestExecutorCoreFunctionalEquivalence:
             # New implementation recognizes them as complex (has is_complex=True)
             assert old_result == False, f"Old implementation should return False for {step.name}"
             assert new_result == True, f"New implementation should return True for {step.name}"
-            print(f"✅ Extensibility improvement confirmed: {step.name} - old={old_result}, new={new_result}")
+            print(
+                f"✅ Extensibility improvement confirmed: {step.name} - old={old_result}, new={new_result}"
+            )
 
     def test_functional_equivalence_no_behavioral_changes(self):
         """Test that no behavioral changes were introduced."""
         # Test that the new implementation maintains all existing behavior
         # This test ensures that the refactoring was purely internal
-        
+
         # Create a step that would have been complex in the old implementation
         complex_step = Mock()
         complex_step.name = "complex_step"
@@ -1991,7 +2054,9 @@ class TestExecutorCoreFunctionalEquivalence:
 
         # The new implementation should still return True
         new_result = self.executor._is_complex_step(complex_step)
-        assert new_result == True, "New implementation should still identify complex steps correctly"
+        assert new_result == True, (
+            "New implementation should still identify complex steps correctly"
+        )
 
         # Create a step that would have been simple in the old implementation
         simple_step = Mock()
@@ -2002,12 +2067,14 @@ class TestExecutorCoreFunctionalEquivalence:
 
         # The new implementation should still return False
         new_result = self.executor._is_complex_step(simple_step)
-        assert new_result == False, "New implementation should still identify simple steps correctly"
+        assert new_result == False, (
+            "New implementation should still identify simple steps correctly"
+        )
 
     def test_functional_equivalence_backward_compatibility(self):
         """Test that backward compatibility is maintained."""
         # Test that existing step types continue to work without changes
-        
+
         # Create a step that doesn't have the is_complex property (legacy step)
         # Use a custom class instead of Mock to avoid automatic attribute creation
         class LegacyStep:
@@ -2021,7 +2088,9 @@ class TestExecutorCoreFunctionalEquivalence:
 
         # The new implementation should gracefully handle missing is_complex property
         new_result = self.executor._is_complex_step(legacy_step)
-        assert new_result == False, "New implementation should handle missing is_complex property gracefully"
+        assert new_result == False, (
+            "New implementation should handle missing is_complex property gracefully"
+        )
 
         # Test legacy step with validation flag
         class LegacyValidationStep:
@@ -2054,7 +2123,7 @@ class TestExecutorCoreFunctionalEquivalence:
     def test_functional_equivalence_key_improvement(self):
         """Test the key improvement: object-oriented approach vs isinstance checks."""
         # This test demonstrates the key improvement of the refactoring
-        
+
         # Create a step that would NOT pass isinstance checks in old implementation
         # but DOES have is_complex=True (new approach)
         custom_complex_step = Mock()
@@ -2062,14 +2131,18 @@ class TestExecutorCoreFunctionalEquivalence:
         custom_complex_step.is_complex = True
         custom_complex_step.plugins = None
         custom_complex_step.meta = None
-        
+
         # Old implementation would return False (doesn't pass isinstance checks)
         old_result = self._old_is_complex_step_implementation(custom_complex_step)
         assert old_result == False, "Old implementation should return False for custom step types"
-        
+
         # New implementation should return True (uses is_complex property)
         new_result = self.executor._is_complex_step(custom_complex_step)
-        assert new_result == True, "New implementation should return True for steps with is_complex=True"
-        
+        assert new_result == True, (
+            "New implementation should return True for steps with is_complex=True"
+        )
+
         # This demonstrates the key improvement: extensibility without core changes
-        print(f"✅ Key improvement demonstrated: Custom step type correctly identified as complex via is_complex property")
+        print(
+            f"✅ Key improvement demonstrated: Custom step type correctly identified as complex via is_complex property"
+        )

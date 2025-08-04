@@ -891,16 +891,18 @@ async def _run_step_logic(
     if isinstance(last_exception, ContextInheritanceError):
         raise last_exception
     result.success = False
-    
+
     # Include agent exception in feedback for explicit error handling
     final_feedbacks = list(accumulated_feedbacks)
     if last_exception and str(last_exception) != "Unknown error":
-        agent_error = f"Agent execution failed with {type(last_exception).__name__}: {last_exception}"
+        agent_error = (
+            f"Agent execution failed with {type(last_exception).__name__}: {last_exception}"
+        )
         final_feedbacks.append(agent_error)
     elif not final_feedbacks:
         # If no specific feedback but step failed, provide a default message
         final_feedbacks.append("Agent execution failed")
-    
+
     result.feedback = "\n".join(final_feedbacks)
     result.attempts = max_retries
     # FLUJO SPIRIT FIX: Preserve actual execution time for failed steps

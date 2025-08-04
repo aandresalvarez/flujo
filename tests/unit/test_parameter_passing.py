@@ -23,15 +23,20 @@ class MockAgentWithContext:
 
 from flujo.domain.plugins import ValidationPlugin
 
+
 class MockPluginWithContext(ValidationPlugin):
     """Mock plugin that expects 'context' parameter."""
 
     def __init__(self, success: bool = True, feedback: Optional[str] = None):
         self.success = success
         self.feedback = feedback
-        self.mock = AsyncMock(return_value=PluginOutcome(success=self.success, feedback=self.feedback))
+        self.mock = AsyncMock(
+            return_value=PluginOutcome(success=self.success, feedback=self.feedback)
+        )
 
-    async def validate(self, data: dict[str, Any], *, context: PipelineContext | None = None, **kwargs) -> PluginOutcome:
+    async def validate(
+        self, data: dict[str, Any], *, context: PipelineContext | None = None, **kwargs
+    ) -> PluginOutcome:
         """Validate method that expects 'context' parameter."""
         await self.mock(data, context=context, **kwargs)
         return PluginOutcome(success=self.success, feedback=self.feedback)

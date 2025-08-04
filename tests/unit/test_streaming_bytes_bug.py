@@ -70,7 +70,7 @@ class TestStreamingBytesBug:
     def mock_step(self):
         """Create a mock step for testing."""
         from flujo.testing.utils import StubAgent
-        
+
         # Create a real Step instance instead of a mock
         step = Step(
             name="test_step",

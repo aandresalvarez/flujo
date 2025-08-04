@@ -376,11 +376,13 @@ async def test_fallback_with_very_small_latency() -> None:
 @pytest.mark.asyncio
 async def test_fallback_with_retry_scenarios() -> None:
     """Test fallback behavior with retry scenarios"""
-    plugin = DummyPlugin(outcomes=[
-        PluginOutcome(success=False, feedback="attempt 1"),
-        PluginOutcome(success=False, feedback="attempt 2"),
-        PluginOutcome(success=False, feedback="attempt 3"),
-    ])
+    plugin = DummyPlugin(
+        outcomes=[
+            PluginOutcome(success=False, feedback="attempt 1"),
+            PluginOutcome(success=False, feedback="attempt 2"),
+            PluginOutcome(success=False, feedback="attempt 3"),
+        ]
+    )
     primary = Step.model_validate(
         {
             "name": "p",

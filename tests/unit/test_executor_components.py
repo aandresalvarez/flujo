@@ -377,7 +377,7 @@ class TestDefaultPluginRunner:
 
         # Create a proper ValidationPlugin instance
         from flujo.domain.plugins import ValidationPlugin, PluginOutcome
-        
+
         class TestPlugin(ValidationPlugin):
             async def validate(self, data: dict[str, Any], *, context: Any = None) -> PluginOutcome:
                 return PluginOutcome(success=True, new_solution="processed data")
@@ -398,7 +398,7 @@ class TestDefaultPluginRunner:
 
         # Create proper ValidationPlugin instances
         from flujo.domain.plugins import ValidationPlugin, PluginOutcome
-        
+
         class Plugin1(ValidationPlugin):
             async def validate(self, data: dict[str, Any], *, context: Any = None) -> PluginOutcome:
                 return PluginOutcome(success=True, new_solution="processed by plugin1")

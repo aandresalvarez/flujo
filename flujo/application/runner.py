@@ -367,8 +367,6 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
 
         await _dispatch_hook_impl(self.hooks, event_name, **kwargs)
 
-
-
     async def _execute_steps(
         self,
         start_idx: int,

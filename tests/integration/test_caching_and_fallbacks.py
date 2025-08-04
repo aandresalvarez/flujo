@@ -110,9 +110,9 @@ async def test_pipeline_step_fallback() -> None:
 @pytest.mark.asyncio
 async def test_loop_step_fallback_continues() -> None:
     body_agent: StubAgent = StubAgent(["bad", "done"])
-    plugin: DummyPlugin = DummyPlugin(outcomes=[
-        PluginOutcome(success=False, feedback="err"), PluginOutcome(success=True)
-    ])
+    plugin: DummyPlugin = DummyPlugin(
+        outcomes=[PluginOutcome(success=False, feedback="err"), PluginOutcome(success=True)]
+    )
     body: Step[Any, Any] = Step.model_validate(
         {
             "name": "body",

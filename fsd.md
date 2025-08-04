@@ -1,151 +1,143 @@
-Of course. With all logic now migrated into the `ExecutorCore`, we can proceed with the final hardening and cleanup phases. This FSD focuses on making the architectural contracts explicit and provably safe, just as you outlined in your "Philosophical Shift" document.
+ 
 
----
-
-### **FSD 10 of 11: Hardening Contracts & Finalizing `ExecutorCore`**
+### **FSD 11 of 11: Final Deprecation and Cleanup**
 
 **1. Rationale & First Principles**
 
-*   **Goal:** To harden the internal contracts of the `ExecutorCore` and its related components, making them statically verifiable and more robust. This involves improving type safety and making failure modes more explicit.
-*   **Why:** This FSD directly implements the core of your "Philosophical Shift" document.
-    *   **Reliability & Maintainability:** By moving from runtime assumptions (e.g., "context probably has a scratchpad") to explicit, type-checked contracts, we eliminate an entire class of potential `AttributeError` and `TypeError` bugs. This makes the system more predictable and easier for future developers to reason about.
-    *   **Exhaustive Accounting:** Making plugin failures explicit by re-raising exceptions ensures that a step's failure is never silently ignored, upholding the principle that all outcomes must be accounted for.
-    *   **Open-Closed Principle:** Refactoring the `_is_complex_step` check to be an object-oriented property (`step.is_complex`) means we can add new complex step types in the future without modifying the `ExecutorCore`'s dispatch logic.
+*   **Goal:** To complete the refactor by removing all obsolete code, thereby simplifying the codebase, eliminating potential for confusion, and solidifying the new architecture as the single source of truth.
+*   **Why:** This upholds the **Maintainability** principle. Dead code is a significant source of technical debt. It adds cognitive load for developers, can be mistakenly used or "fixed" during future work, and clutters the project, making it harder to navigate and understand. This final step ensures the codebase is clean, lean, and reflects only the new, correct architecture.
 
 **2. Scope of Work**
 
-1.  **Harden `ParallelStep` Type Contracts:**
-    *   In a suitable location (e.g., a new `flujo/application/core/types.py` or at the top of `ultra_executor.py`), define a `ContextWithScratchpad` protocol and a bounded `TypeVar` (`TContext_w_Scratch`).
-    *   Update the signature of `ExecutorCore._handle_parallel_step` to use this new bounded `TypeVar` for its `context` parameter.
-    *   Update the `merge_strategy` callable signature in the `ParallelStep` class definition (`flujo/domain/dsl/parallel.py`) to also use this new type.
+This FSD is a "search and destroy" mission for all code that has been made redundant by the new `ExecutorCore`.
 
-2.  **Make Plugin Failures Explicit:**
-    *   Modify `DefaultPluginRunner.run_plugins` in `flujo/application/core/ultra_executor.py`.
-    *   It will be changed to **re-raise** any exception that occurs during a plugin's execution, instead of catching it and continuing.
+1.  **Delete `flujo/application/core/step_logic.py`:**
+    *   The file is now completely unused. The `ExecutorCore` contains all of its logic. It will be deleted from the repository.
 
-3.  **Simplify Complex Step Detection:**
-    *   Add a new property `is_complex: bool = False` to the base `Step` class in `flujo/domain/dsl/step.py`.
-    *   Override this property in each of the complex step subclasses (`LoopStep`, `ParallelStep`, `ConditionalStep`, `DynamicParallelRouterStep`, `CacheStep`, `HumanInTheLoopStep`) to return `True`.
-    *   Refactor `ExecutorCore._is_complex_step` to a simple one-line implementation: `return getattr(step, 'is_complex', False)`.
+2.  **Remove Backward Compatibility Wrappers:**
+    *   In `flujo/application/core/ultra_executor.py`, the following backward-compatibility classes at the bottom of the file will be deleted:
+        *   `UltraStepExecutor`
+        *   `_Frame`
+        *   `_LRUCache`
+        *   `_UsageTracker`
+
+3.  **Clean Up `flujo/application/runner.py`:**
+    *   The `_run_step` method is now a complex wrapper around the new `backend.execute_step` call. It can be significantly simplified or removed. The `_execute_steps` method in `ExecutionManager` is the primary loop.
+    *   Search for any remaining imports from `step_logic.py` and remove them.
+
+4.  **Clean Up `flujo/application/core/execution_manager.py`:**
+    *   The `step_executor` parameter in `execute_steps` is a legacy holdover. It can now be removed, as the manager will always use `self.backend`.
 
 **3. Implementation Details**
 
-#### **Task 1: Harden `ParallelStep` Contracts**
+#### **Task 1: Delete `step_logic.py`**
+
+*   **Action:** Delete the file `flujo/application/core/step_logic.py`.
+*   **Verification:** After deletion, run a project-wide search for `step_logic`. The only remaining references should be in `git` history, not in the active codebase.
+
+#### **Task 2: Remove Backward Compatibility Wrappers**
+
+*   **Action:** In `flujo/application/core/ultra_executor.py`, delete the class definitions for `UltraStepExecutor`, `_Frame`, `_LRUCache`, and `_UsageTracker`.
+*   **Verification:** Check for any import errors. Tests that specifically targeted these classes will need to be deleted or refactored to test the new components they were wrapping (e.g., `InMemoryLRUBackend`).
+
+#### **Task 3 & 4: Clean Up `runner.py` and `execution_manager.py`**
+
+The `Flujo` runner's `_execute_steps` method currently passes `self._run_step` as the `step_executor` to the `ExecutionManager`. This is an unnecessary layer of indirection. We can simplify this flow.
 
 ```python
-# Create a new file: flujo/application/core/types.py
-from typing import Protocol, TypeVar, Dict, Any
+# In flujo/application/runner.py
 
-class ContextWithScratchpad(Protocol):
-    """A contract ensuring a context object has a scratchpad attribute."""
-    scratchpad: Dict[str, Any]
+class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
+    # ...
 
-TContext_w_Scratch = TypeVar("TContext_w_Scratch", bound=ContextWithScratchpad)
-```
+    # ⛔️ DELETE this entire method. It is a legacy wrapper.
+    # async def _run_step(...):
+    #     ...
 
-```python
-# In flujo/application/core/ultra_executor.py
-from .types import TContext_w_Scratch # Import the new type
-
-class ExecutorCore(...):
-    async def _handle_parallel_step(
+    async def _execute_steps(
         self,
-        parallel_step: ParallelStep[TContext_w_Scratch], # ✅ Use the bounded TypeVar
+        start_idx: int,
         data: Any,
-        context: Optional[TContext_w_Scratch], # ✅ Use the bounded TypeVar
+        context: Optional[ContextT],
+        result: PipelineResult[ContextT],
         # ... other params
-    ) -> StepResult:
-        # ... implementation ...
+    ) -> AsyncIterator[Any]:
+        """Execute pipeline steps using the new execution manager."""
+        assert self.pipeline is not None
+
+        state_manager: StateManager[ContextT] = StateManager[ContextT](self.state_backend)
+        usage_governor: UsageGovernor[ContextT] = UsageGovernor[ContextT](self.usage_limits)
+        step_coordinator: StepCoordinator[ContextT] = StepCoordinator[ContextT](
+            self.hooks, self.resources
+        )
+
+        execution_manager = ExecutionManager(
+            self.pipeline,
+            backend=self.backend, # ✅ Pass the backend directly.
+            state_manager=state_manager,
+            usage_governor=usage_governor,
+            step_coordinator=step_coordinator,
+        )
+
+        # ✅ The `step_executor` parameter is no longer needed and is removed.
+        async for item in execution_manager.execute_steps(
+            start_idx=start_idx,
+            data=data,
+            context=context,
+            result=result,
+            stream_last=stream_last,
+            run_id=run_id,
+            state_created_at=state_created_at,
+        ):
+            yield item
 ```
 
 ```python
-# In flujo/domain/dsl/parallel.py
-from ...application.core.types import TContext_w_Scratch # Or wherever you define it
+# In flujo/application/core/execution_manager.py
 
-class ParallelStep(Step[Any, Any], Generic[TContext]):
-    # ...
-    # ✅ UPDATE: The signature is now explicit and type-safe.
-    merge_strategy: Union[MergeStrategy, Callable[[TContext_w_Scratch, Dict[str, StepResult]], None]] = Field(...)
-    # ...
-```
+class ExecutionManager(Generic[ContextT]):
+    def __init__(
+        self,
+        pipeline: Pipeline[Any, Any],
+        *,
+        backend: Optional[ExecutionBackend] = None, # ✅ This is now the source of execution
+        # ... other components
+    ):
+        # ...
+        self.backend = backend
+        # ...
 
-#### **Task 2: Make Plugin Failures Explicit**
-
-```python
-# In flujo/application/core/ultra_executor.py
-
-class DefaultPluginRunner:
-    async def run_plugins(self, plugins: List[tuple[Any, int]], data: Any, *, context: Any) -> Any:
-        processed_data = data
-        for plugin, priority in sorted(plugins, key=lambda x: x[1], reverse=True):
-            try:
-                # ... existing logic to call the plugin ...
-                result = await func(...) # The plugin call
-
-                if isinstance(result, PluginOutcome):
-                    if not result.success:
-                        # ✅ NEW: Raise an exception to fail the step.
-                        raise ValueError(f"Plugin validation failed: {result.feedback}")
-                    # ...
-            except Exception as e:
-                # ✅ NEW: Re-raise the exception to ensure the step fails.
-                telemetry.logfire.error(f"Plugin {type(plugin).__name__} failed: {e}")
-                raise e
-        return processed_data
-```
-
-#### **Task 3: Simplify Complex Step Detection**
-
-```python
-# In flujo/domain/dsl/step.py
-
-class Step(BaseModel, Generic[StepInT, StepOutT]):
-    # ... existing fields ...
-    
-    @property
-    def is_complex(self) -> bool:
-        # ✅ Base steps are not complex by default.
-        return False
-
-# In flujo/domain/dsl/loop.py
-class LoopStep(Step[Any, Any], Generic[TContext]):
-    # ... existing fields ...
-    
-    @property
-    def is_complex(self) -> bool:
-        # ✅ Override to mark as complex.
-        return True
-
-# ... Do the same for ParallelStep, ConditionalStep, CacheStep, etc. ...
-```
-
-```python
-# In flujo/application/core/ultra_executor.py
-
-class ExecutorCore(Generic[TContext]):
-    # ...
-    def _is_complex_step(self, step: Any) -> bool:
-        """Check if step needs complex handling using an object-oriented approach."""
-        # ✅ NEW: Simple, object-oriented, and extensible check.
-        return getattr(step, 'is_complex', False)
+    async def execute_steps(
+        self,
+        # ... other params
+        # ⛔️ DELETE the `step_executor` parameter.
+    ) -> AsyncIterator[Any]:
+        # ...
+        # Inside the loop over steps:
+        # ⛔️ OLD: async for item in self.step_coordinator.execute_step(..., step_executor=step_executor):
+        # ✅ NEW: The coordinator now gets the backend directly.
+        async for item in self.step_coordinator.execute_step(
+            step=step,
+            data=data,
+            context=context,
+            backend=self.backend, # Pass the backend to the coordinator
+            # ... other params
+        ):
+            # ...
 ```
 
 **4. Testing Strategy**
 
-*   **Unit Tests:**
-    *   **Static Analysis Test (for Task 1):** Create a new test file, `tests/static_analysis/test_contracts.py`. In this file, define a simple `BaseModel` context *without* a `scratchpad` attribute. Then, define a `ParallelStep` that uses a `merge_strategy` callable. In a test function, attempt to pass an instance of your simple context to a mock `_handle_parallel_step` function that is typed with `TContext_w_Scratch`. The test itself will do nothing but `pass`. The *real* test is running `mypy` over the codebase. The test passes if `mypy` reports a type error for that line, proving the contract is enforced.
-    *   **Plugin Failure Test (for Task 2):** In `tests/application/core/test_executor_core.py`, create a test for `_execute_simple_step`. Configure a step with a mock plugin that always raises an exception. Assert that the `StepResult` has `success=False` and that its `feedback` contains the exception message from the plugin.
-    *   **Complex Step Detection Test (for Task 3):** Write a simple unit test for `ExecutorCore._is_complex_step`. Create instances of a basic `Step`, a `LoopStep`, and a `ParallelStep`. Assert that the method returns `False` for the basic step and `True` for the complex ones.
-
+*   **Static Analysis:** After deleting the files and code, run linters (`ruff`, `flake8`) and type checkers (`mypy`). This is the most important step to catch any broken imports or dangling references to the deleted code.
 *   **Regression Tests (Existing):**
-    *   Run the entire existing test suite.
-    *   The change to plugin failure handling is the most likely to cause regressions if any existing tests relied on the old, forgiving behavior. Any failures here must be investigated. It's possible some tests may need to be updated to correctly `pytest.raises` an exception where they previously expected success.
-    *   A 100% pass rate is required.
+    *   This is the final, ultimate validation. Run the **entire test suite** one last time.
+    *   A 100% pass rate is the definitive sign-off that the refactor is complete, correct, and has not introduced any regressions. The system is now fully running on the new, clean architecture.
 
 **5. Acceptance Criteria**
 
-*   [ ] The `ParallelStep`'s `merge_strategy` contract is now statically verifiable via a `Protocol`.
-*   [ ] The `DefaultPluginRunner` correctly propagates failures by raising exceptions.
-*   [ ] The `is_complex` property is implemented on `Step` and its subclasses and is used by `ExecutorCore` for dispatching.
-*   [ ] All new unit tests, including the static analysis test, pass.
-*   [ ] **100% of the existing test suite passes**, confirming that the hardening has not introduced regressions.
+*   [ ] The file `flujo/application/core/step_logic.py` has been deleted.
+*   [ ] The backward-compatibility wrapper classes in `ultra_executor.py` have been deleted.
+*   [ ] The `_run_step` method in `runner.py` has been removed, and `_execute_steps` is simplified.
+*   [ ] The `step_executor` parameter has been removed from `ExecutionManager.execute_steps`.
+*   [ ] The project passes all static analysis checks (`mypy`, linters) with no errors related to the removed code.
+*   [ ] **100% of the entire test suite passes**, finalizing the refactor.

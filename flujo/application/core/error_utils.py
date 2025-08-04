@@ -14,4 +14,4 @@ def extract_original_error(exc: Exception) -> str:
     current_exc: BaseException = exc
     while current_exc.__cause__ is not None:
         current_exc = current_exc.__cause__
-    return str(current_exc) 
+    return str(current_exc)
