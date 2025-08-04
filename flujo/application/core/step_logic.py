@@ -134,23 +134,8 @@ def _default_set_final_context(result: PipelineResult[TContext], ctx: Optional[T
             setattr(ctx, field_name, field_value)
 
 
-def _should_pass_context(
-    spec: SignatureAnalysis, context: Optional[TContext], func: Callable[..., Any]
-) -> bool:
-    """Determine if context should be passed to a function based on signature analysis.
-
-    Args:
-        spec: Signature analysis result from analyze_signature()
-        context: The context object to potentially pass
-        func: The function to analyze
-
-    Returns:
-        True if context should be passed to the function, False otherwise
-    """
-    # Check if function accepts context parameter (either explicitly or via **kwargs)
-    # This is different from spec.needs_context which only checks if context is required
-    accepts_context = _accepts_param(func, "context")
-    return spec.needs_context or (context is not None and bool(accepts_context))
+# Import _should_pass_context from ultra_executor for internal usage
+from .ultra_executor import ExecutorCore
 
 
 def _should_pass_context_to_plugin(context: Optional[TContext], func: Callable[..., Any]) -> bool:
@@ -321,100 +306,7 @@ def _detect_fallback_loop(step: Step[Any, Any], chain: list[Step[Any, Any]]) -> 
     return False  # No loop detected or iteration limit reached
 
 
-class ParallelUsageGovernor:
-    """Helper to track and enforce usage limits atomically across parallel branches."""
-
-    def __init__(self, usage_limits: Optional[UsageLimits]) -> None:
-        self.usage_limits = usage_limits
-        self.lock = asyncio.Lock()
-        self.total_cost = 0.0
-        self.total_tokens = 0
-        self.limit_breached = asyncio.Event()
-        self.limit_breach_error: Optional[UsageLimitExceededError] = None
-        self._breach_detected = False  # Add explicit flag to prevent race conditions
-
-    def _create_breach_error_message(
-        self, limit_type: str, limit_value: Any, current_value: Any
-    ) -> str:
-        """Create a breach error message string."""
-        if limit_type == "cost":
-            return f"Cost limit of ${limit_value} exceeded. Current cost: ${current_value}"
-        else:  # token
-            return f"Token limit of {limit_value} exceeded. Current tokens: {current_value}"
-
-    async def add_usage(self, cost_delta: float, token_delta: int, result: StepResult) -> bool:
-        """Add usage and check for breach. Returns True if breach occurred."""
-        # Early return if breach already detected to prevent deadlocks
-        if self._breach_detected:
-            return True
-            
-        try:
-            # Add timeout to prevent infinite lock waits
-            async with asyncio.timeout(5.0):  # 5 second timeout
-                async with self.lock:
-                    # Double-check breach status after acquiring lock
-                    if self._breach_detected:
-                        return True
-                        
-                    self.total_cost += cost_delta
-                    self.total_tokens += token_delta
-
-                    if self.usage_limits is not None:
-                        breach_occurred = False
-                        
-                        if (
-                            self.usage_limits.total_cost_usd_limit is not None
-                            and self.total_cost > self.usage_limits.total_cost_usd_limit
-                        ):
-                            message = self._create_breach_error_message(
-                                "cost", self.usage_limits.total_cost_usd_limit, self.total_cost
-                            )
-                            pipeline_result_cost: PipelineResult[Any] = PipelineResult(
-                                step_history=[result] if result else [],
-                                total_cost_usd=self.total_cost,
-                            )
-                            self.limit_breach_error = UsageLimitExceededError(
-                                message, result=pipeline_result_cost
-                            )
-                            breach_occurred = True
-                        elif (
-                            self.usage_limits.total_tokens_limit is not None
-                            and self.total_tokens > self.usage_limits.total_tokens_limit
-                        ):
-                            message = self._create_breach_error_message(
-                                "token", self.usage_limits.total_tokens_limit, self.total_tokens
-                            )
-                            pipeline_result: PipelineResult[Any] = PipelineResult(
-                                step_history=[result] if result else [],
-                                total_cost_usd=self.total_cost,
-                            )
-                            self.limit_breach_error = UsageLimitExceededError(
-                                message, result=pipeline_result
-                            )
-                            breach_occurred = True
-                        
-                        if breach_occurred:
-                            self._breach_detected = True
-                            self.limit_breached.set()
-                            
-                    return self._breach_detected
-        except asyncio.TimeoutError:
-            # If we can't acquire the lock within timeout, assume breach to be safe
-            return True
-
-    def breached(self) -> bool:
-        """Check if a limit has been breached."""
-        return self._breach_detected or self.limit_breached.is_set()
-
-    def get_error_message(self) -> Optional[str]:
-        """Get the error message if a breach occurred."""
-        if self.limit_breach_error:
-            return self.limit_breach_error.args[0]
-        return None
-
-    def get_error(self) -> Optional[UsageLimitExceededError]:
-        """Get the error if a breach occurred."""
-        return self.limit_breach_error
+# ParallelUsageGovernor migrated to ExecutorCore._ParallelUsageGovernor
 
 
 # _execute_parallel_step_logic removed - migrated to ExecutorCore._handle_parallel_step
@@ -435,7 +327,7 @@ async def _handle_cache_step(
     data: Any,
     context: Optional[TContext],
     resources: Optional[AppResources],
-    step_executor: StepExecutor[TContext],
+    step_executor: StepExecutor,
 ) -> StepResult:
     key = _generate_cache_key(step.wrapped_step, data, context=context, resources=resources)
     cached: StepResult | None = None
@@ -481,7 +373,7 @@ async def _handle_loop_step(
     data: Any,
     context: Optional[TContext],
     resources: Optional[AppResources],
-    step_executor: StepExecutor[TContext],
+    step_executor: StepExecutor,
     context_model_defined: bool,
     usage_limits: UsageLimits | None,
     context_setter: Callable[[PipelineResult[TContext], Optional[TContext]], None],
@@ -505,7 +397,7 @@ async def _handle_conditional_step(
     data: Any,
     context: Optional[TContext],
     resources: Optional[AppResources],
-    step_executor: StepExecutor[TContext],
+    step_executor: StepExecutor,
     context_model_defined: bool,
     usage_limits: UsageLimits | None,
     context_setter: Callable[[PipelineResult[TContext], Optional[TContext]], None],
@@ -529,7 +421,7 @@ async def _handle_dynamic_router_step(
     data: Any,
     context: Optional[TContext],
     resources: Optional[AppResources],
-    step_executor: StepExecutor[TContext],
+    step_executor: StepExecutor,
     context_model_defined: bool,
     context_setter: Callable[[PipelineResult[TContext], Optional[TContext]], None],
     usage_limits: UsageLimits | None = None,
@@ -553,7 +445,7 @@ async def _handle_parallel_step(
     data: Any,
     context: Optional[Any],
     resources: Optional[AppResources],
-    step_executor: StepExecutor[TContext],
+    step_executor: StepExecutor,
     context_model_defined: bool,
     usage_limits: UsageLimits | None,
     context_setter: Callable[[PipelineResult[TContext], Optional[TContext]], None],
@@ -593,7 +485,7 @@ async def _run_step_logic(
     context: Optional[TContext],
     resources: Optional[AppResources],
     *,
-    step_executor: StepExecutor[TContext],
+    step_executor: StepExecutor,
     context_model_defined: bool,
     usage_limits: UsageLimits | None = None,
     context_setter: (Callable[[PipelineResult[TContext], Optional[TContext]], None] | None) = None,
@@ -733,7 +625,9 @@ async def _run_step_logic(
                     f"Component in step '{step.name}' requires a context, but no context model was provided to the Flujo runner."
                 )
             # Then check if we should pass context based on signature analysis
-            if _should_pass_context(spec, context, func):
+            # Create a temporary ExecutorCore instance to access the method
+            temp_executor: ExecutorCore[Any] = ExecutorCore()
+            if temp_executor._should_pass_context(spec, context, func):
                 agent_kwargs["context"] = context
 
             if resources is not None:
@@ -1097,7 +991,7 @@ async def _run_step_logic_iterative(
     context: Optional[TContext],
     resources: Optional[AppResources],
     *,
-    step_executor: StepExecutor[TContext],
+    step_executor: StepExecutor,
     context_model_defined: bool,
     usage_limits: UsageLimits | None = None,
     context_setter: (Callable[[PipelineResult[TContext], Optional[TContext]], None] | None) = None,
@@ -1138,13 +1032,9 @@ async def _run_step_logic_iterative(
     )
 
 
-# Alias used across step logic helpers
-StepExecutor = Callable[
-    [Step[Any, Any], Any, Optional[TContext], Optional[AppResources], Optional[Any]],
-    Awaitable[StepResult],
-]
+# Import StepExecutor from ultra_executor for internal usage
+from .ultra_executor import StepExecutor
 
 __all__ = [
-    "StepExecutor",
     "_run_step_logic",
 ]

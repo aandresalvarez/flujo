@@ -66,6 +66,12 @@ from ...exceptions import (
     MissingAgentError,
 )
 
+# Type alias for step executor function signature
+StepExecutor = Callable[
+    [Step[Any, Any], Any, Optional[Any], Optional[Any], Optional[Any]],
+    Awaitable[StepResult],
+]
+
 # Exception classification for retry logic
 class RetryableError(Exception):
     """Base class for errors that should trigger retries."""
@@ -96,7 +102,7 @@ from ...infra import telemetry
 from ...signature_tools import analyze_signature
 from ...application.context_manager import _accepts_param
 from ...utils.context import safe_merge_context_updates
-from .step_logic import ParallelUsageGovernor, _should_pass_context
+
 
 # --------------------------------------------------------------------------- #
 # ★ Pipeline-to-Step Adapter
@@ -504,7 +510,7 @@ class DefaultAgentRunner:
         """Run agent with proper parameter filtering and fallback strategies."""
         import inspect
         from unittest.mock import Mock, MagicMock, AsyncMock
-        from ..context_manager import _accepts_param, _should_pass_context
+        from ..context_manager import _accepts_param
         from ...signature_tools import analyze_signature
 
         if agent is None:
@@ -586,7 +592,13 @@ class DefaultAgentRunner:
                 spec = analyze_signature(executable_func)
 
                 # Add context if the function accepts it
-                if _should_pass_context(spec, context, executable_func):
+                if spec.needs_context:
+                    if context is None:
+                        raise TypeError(
+                            f"Agent requires a context, but no context was provided."
+                        )
+                    filtered_kwargs["context"] = context
+                elif context is not None and _accepts_param(executable_func, "context"):
                     filtered_kwargs["context"] = context
 
                 # Add resources if the function accepts it
@@ -604,21 +616,28 @@ class DefaultAgentRunner:
 
             except Exception:
                 # If signature analysis fails, try basic parameter passing
-                filtered_kwargs.update(options)
-                if context is not None:
+                # Pass all non-None options (legacy behavior for backward compatibility)
+                for key, value in options.items():
+                    if value is not None:
+                        filtered_kwargs[key] = value
+                # Use proper context filtering
+                if context is not None and (_accepts_param(executable_func, "context") is not False):
                     filtered_kwargs["context"] = context
-                if resources is not None:
+                if resources is not None and (_accepts_param(executable_func, "resources") is not False):
                     filtered_kwargs["resources"] = resources
-                if breach_event is not None:
+                if breach_event is not None and (_accepts_param(executable_func, "breach_event") is not False):
                     filtered_kwargs["breach_event"] = breach_event
         else:
-            # For mocks, pass all parameters
-            filtered_kwargs.update(options)
-            if context is not None:
+            # For mocks, pass all parameters but filter context properly
+            for key, value in options.items():
+                if value is not None:
+                    filtered_kwargs[key] = value
+            # Use proper context filtering for mocks too
+            if context is not None and (_accepts_param(executable_func, "context") is not False):
                 filtered_kwargs["context"] = context
-            if resources is not None:
+            if resources is not None and (_accepts_param(executable_func, "resources") is not False):
                 filtered_kwargs["resources"] = resources
-            if breach_event is not None:
+            if breach_event is not None and (_accepts_param(executable_func, "breach_event") is not False):
                 filtered_kwargs["breach_event"] = breach_event
 
         # Step 5: Execute the agent
@@ -799,32 +818,7 @@ class DefaultValidatorRunner:
                 raise ValueError(f"Validator {type(validator).__name__} failed: {e}")
 
 
-def _should_pass_context_to_plugin(context: Optional[Any], func: Callable[..., Any]) -> bool:
-    """Determine if context should be passed to a plugin based on signature analysis.
 
-    This is more conservative than _accepts_param - it only passes context
-    to plugins that explicitly declare a 'context' parameter, not to plugins
-    that accept it via **kwargs.
-
-    Args:
-        context: The context object to potentially pass
-        func: The function to analyze
-
-    Returns:
-        True if context should be passed to the plugin, False otherwise
-    """
-    if context is None:
-        return False
-
-    # Use inspect to check for explicit keyword-only 'context' parameter
-    import inspect
-
-    sig = inspect.signature(func)
-    has_explicit_context = any(
-        p.kind == inspect.Parameter.KEYWORD_ONLY and p.name == "context"
-        for p in sig.parameters.values()
-    )
-    return has_explicit_context
 
 
 class DefaultPluginRunner:
@@ -849,7 +843,9 @@ class DefaultPluginRunner:
                     func = plugin
 
                 # Check if plugin accepts context using conservative logic
-                if _should_pass_context_to_plugin(context, func):
+                # Create a temporary ExecutorCore instance to access the method
+                temp_executor: ExecutorCore[Any] = ExecutorCore()
+                if temp_executor._should_pass_context_to_plugin(context, func):
                     plugin_kwargs["context"] = context
 
                 # Call plugin
@@ -1061,11 +1057,153 @@ TContext = TypeVar("TContext", bound=BaseModel)
 
 class ExecutorCore(Generic[TContext]):
     """
-    Modular, policy-driven step executor with deterministic behavior.
-
-    This is the core implementation that orchestrates all concerns through
-    dependency injection. Each component is replaceable via interfaces.
+    Ultra-optimized step executor with modular, policy-driven architecture.
+    
+    This maintains the exact same API as the original UltraStepExecutor
+    while providing enhanced performance, reliability, and extensibility.
     """
+
+    class _ParallelUsageGovernor:
+        """Helper to track and enforce usage limits atomically across parallel branches."""
+
+        def __init__(self, usage_limits: Optional[UsageLimits]) -> None:
+            self.usage_limits = usage_limits
+            self.lock = asyncio.Lock()
+            self.total_cost = 0.0
+            self.total_tokens = 0
+            self.limit_breached = asyncio.Event()
+            self.limit_breach_error: Optional[UsageLimitExceededError] = None
+            self._breach_detected = False  # Add explicit flag to prevent race conditions
+
+        def _create_breach_error_message(
+            self, limit_type: str, limit_value: Any, current_value: Any
+        ) -> str:
+            """Create a breach error message string."""
+            if limit_type == "cost":
+                return f"Cost limit of ${limit_value} exceeded. Current cost: ${current_value}"
+            else:  # token
+                return f"Token limit of {limit_value} exceeded. Current tokens: {current_value}"
+
+        async def add_usage(self, cost_delta: float, token_delta: int, result: StepResult) -> bool:
+            """Add usage and check for breach. Returns True if breach occurred."""
+            # Early return if breach already detected to prevent deadlocks
+            if self._breach_detected:
+                return True
+                
+            try:
+                # Add timeout to prevent infinite lock waits
+                async with asyncio.timeout(5.0):  # 5 second timeout
+                    async with self.lock:
+                        # Double-check breach status after acquiring lock
+                        if self._breach_detected:
+                            return True
+                            
+                        self.total_cost += cost_delta
+                        self.total_tokens += token_delta
+
+                        if self.usage_limits is not None:
+                            breach_occurred = False
+                            
+                            if (
+                                self.usage_limits.total_cost_usd_limit is not None
+                                and self.total_cost > self.usage_limits.total_cost_usd_limit
+                            ):
+                                message = self._create_breach_error_message(
+                                    "cost", self.usage_limits.total_cost_usd_limit, self.total_cost
+                                )
+                                pipeline_result_cost: PipelineResult[Any] = PipelineResult(
+                                    step_history=[result] if result else [],
+                                    total_cost_usd=self.total_cost,
+                                )
+                                self.limit_breach_error = UsageLimitExceededError(
+                                    message, result=pipeline_result_cost
+                                )
+                                breach_occurred = True
+                            elif (
+                                self.usage_limits.total_tokens_limit is not None
+                                and self.total_tokens > self.usage_limits.total_tokens_limit
+                            ):
+                                message = self._create_breach_error_message(
+                                    "token", self.usage_limits.total_tokens_limit, self.total_tokens
+                                )
+                                pipeline_result: PipelineResult[Any] = PipelineResult(
+                                    step_history=[result] if result else [],
+                                    total_cost_usd=self.total_cost,
+                                )
+                                self.limit_breach_error = UsageLimitExceededError(
+                                    message, result=pipeline_result
+                                )
+                                breach_occurred = True
+                            
+                            if breach_occurred:
+                                self._breach_detected = True
+                                self.limit_breached.set()
+                                
+                        return self._breach_detected
+            except asyncio.TimeoutError:
+                # If we can't acquire the lock within timeout, assume breach to be safe
+                return True
+
+        def breached(self) -> bool:
+            """Check if a limit has been breached."""
+            return self._breach_detected or self.limit_breached.is_set()
+
+        def get_error_message(self) -> Optional[str]:
+            """Get the error message if a breach occurred."""
+            if self.limit_breach_error:
+                return self.limit_breach_error.args[0]
+            return None
+
+        def get_error(self) -> Optional[UsageLimitExceededError]:
+            """Get the error if a breach occurred."""
+            return self.limit_breach_error
+
+    def _should_pass_context(
+        self, spec: Any, context: Optional[Any], func: Callable[..., Any]
+    ) -> bool:
+        """Determine if context should be passed to a function based on signature analysis.
+
+        Args:
+            spec: Signature analysis result from analyze_signature()
+            context: The context object to potentially pass
+            func: The function to analyze
+
+        Returns:
+            True if context should be passed to the function, False otherwise
+        """
+        # Check if function accepts context parameter (either explicitly or via **kwargs)
+        # This is different from spec.needs_context which only checks if context is required
+        accepts_context = _accepts_param(func, "context")
+        return spec.needs_context or (context is not None and bool(accepts_context))
+
+    def _should_pass_context_to_plugin(
+        self, context: Optional[Any], func: Callable[..., Any]
+    ) -> bool:
+        """Determine if context should be passed to a plugin based on signature analysis.
+
+        This is more conservative than _should_pass_context - it only passes context
+        to plugins that explicitly declare a 'context' parameter, not to plugins
+        that accept it via **kwargs.
+
+        Args:
+            context: The context object to potentially pass
+            func: The function to analyze
+
+        Returns:
+            True if context should be passed to the plugin, False otherwise
+        """
+        if context is None:
+            return False
+
+        # Use inspect to check for explicit keyword-only 'context' parameter
+        import inspect
+
+        sig = inspect.signature(func)
+        has_explicit_context = any(
+            p.kind == inspect.Parameter.KEYWORD_ONLY and p.name == "context"
+            for p in sig.parameters.values()
+        )
+        return has_explicit_context
 
     def __init__(
         self,
@@ -1459,7 +1597,7 @@ class ExecutorCore(Generic[TContext]):
             return result
 
         # Create usage governor for parallel execution
-        usage_governor = ParallelUsageGovernor(limits)
+        usage_governor = self._ParallelUsageGovernor(limits)
 
         # Create breach event for immediate cancellation signaling
         if breach_event is None and limits is not None:
@@ -1883,7 +2021,7 @@ class ExecutorCore(Generic[TContext]):
                         f"Router agent in step '{router_step.name}' requires a context, but no context model was provided to the Flujo runner."
                             )
                 router_kwargs["context"] = context
-            elif _should_pass_context(spec, context, func):
+            elif context is not None and _accepts_param(func, "context"):
                 router_kwargs["context"] = context
 
             # Handle resources parameter passing
