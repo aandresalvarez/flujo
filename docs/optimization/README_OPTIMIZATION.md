@@ -38,7 +38,7 @@ This documentation provides comprehensive guidance for using and configuring Exe
 ### Basic Usage
 
 ```python
-from flujo.application.core.ultra_executor import OptimizedExecutorCore
+from flujo.application.core.ultra_executor import ExecutorCore as OptimizedExecutorCore
 
 # Create optimized executor with default settings
 executor = OptimizedExecutorCore()
@@ -244,7 +244,7 @@ from flujo.application.core.ultra_executor import ExecutorCore
 executor = ExecutorCore()
 
 # New optimized code
-from flujo.application.core.ultra_executor import OptimizedExecutorCore
+from flujo.application.core.ultra_executor import ExecutorCore as OptimizedExecutorCore
 executor = OptimizedExecutorCore()  # Drop-in replacement
 ```
 
