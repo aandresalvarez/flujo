@@ -7,6 +7,7 @@ from typing import Any, Optional, TypeVar, Generic
 from ...domain.models import BaseModel, PipelineResult, UsageLimits
 from ...exceptions import UsageLimitExceededError
 from ...infra import telemetry
+from flujo.utils.formatting import format_cost
 
 ContextT = TypeVar("ContextT", bound=BaseModel)
 
@@ -26,26 +27,41 @@ class UsageGovernor(Generic[ContextT]):
         span: Any | None,
     ) -> bool:
         """
-        ✅ NEW: Efficiently checks limits using running totals.
-        Returns True if a limit is breached, False otherwise.
+        Efficiently checks usage limits using running totals.
+        
+        This method calculates the prospective total usage (current + step) and compares
+        it against the configured limits. It returns True if any limit would be breached
+        by executing the step, False otherwise.
+        
+        Args:
+            current_total_cost: The total cost accumulated so far
+            current_total_tokens: The total tokens accumulated so far
+            step_cost: The cost of the step being considered
+            step_tokens: The tokens of the step being considered
+            span: Optional telemetry span (unused in this implementation)
+            
+        Returns:
+            True if executing the step would breach any limit, False otherwise
         """
+        # If no limits are configured, nothing can be breached
         if self.usage_limits is None:
             return False
 
-        # Check cost limits
-        if (
-            self.usage_limits.total_cost_usd_limit is not None
-            and (current_total_cost + step_cost) > self.usage_limits.total_cost_usd_limit
-        ):
-            return True
+        # Calculate prospective totals (current + step)
+        prospective_total_cost = current_total_cost + step_cost
+        prospective_total_tokens = current_total_tokens + step_tokens
 
-        # Check token limits
-        if (
-            self.usage_limits.total_tokens_limit is not None
-            and (current_total_tokens + step_tokens) > self.usage_limits.total_tokens_limit
-        ):
-            return True
+        # Check cost limit breach
+        if self.usage_limits.total_cost_usd_limit is not None:
+            if prospective_total_cost > self.usage_limits.total_cost_usd_limit:
+                return True
 
+        # Check token limit breach
+        if self.usage_limits.total_tokens_limit is not None:
+            if prospective_total_tokens > self.usage_limits.total_tokens_limit:
+                return True
+
+        # No limits breached
         return False
 
     def check_usage_limits(
@@ -65,8 +81,11 @@ class UsageGovernor(Generic[ContextT]):
             self.usage_limits.total_cost_usd_limit is not None
             and pipeline_result.total_cost_usd > self.usage_limits.total_cost_usd_limit
         ):
+            # ✅ TASK 7.4: FIX COST LIMIT ERROR MESSAGE FORMATTING
+            # Format cost values to remove trailing zeros (e.g., 0.5 instead of 0.50)
+            formatted_limit = format_cost(self.usage_limits.total_cost_usd_limit)
             error = UsageLimitExceededError(
-                f"Cost limit of ${self.usage_limits.total_cost_usd_limit} exceeded",
+                f"Cost limit of ${formatted_limit} exceeded",
                 pipeline_result,
             )
             if span is not None:

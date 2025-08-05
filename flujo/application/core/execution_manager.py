@@ -25,6 +25,7 @@ from flujo.exceptions import (
 from flujo.state import StateBackend
 from flujo.infra import telemetry
 from flujo.application.core.context_adapter import _inject_context, _build_context_update
+from flujo.utils.formatting import format_cost
 
 from .step_coordinator import StepCoordinator
 from .state_manager import StateManager
@@ -156,6 +157,35 @@ class ExecutionManager(Generic[ContextT]):
                         else:
                             yield item
 
+                    # ✅ TASK 7.1: FIX ORDER OF OPERATIONS
+                    # ✅ 2. Update pipeline result with step result FIRST
+                    if step_result and step_result not in result.step_history:
+                        self.step_coordinator.update_pipeline_result(result, step_result)
+
+                    # ✅ 3. Check usage limits AFTER step is added to history
+                    if step_result and self.usage_governor.usage_limits is not None:
+                        # Use the updated totals directly since the step is already added to the result
+                        if self.usage_governor.check_usage_limits_efficient(
+                            current_total_cost=result.total_cost_usd,
+                            current_total_tokens=result.total_tokens,
+                            step_cost=0.0,  # No additional cost since step is already included
+                            step_tokens=0,   # No additional tokens since step is already included
+                            span=None,
+                        ):
+                            # If breached, raise UsageLimitExceededError immediately
+                            # The step history now includes the breaching step
+                            
+                            # Create appropriate error message based on what was breached
+                            if self.usage_governor.usage_limits.total_cost_usd_limit is not None:
+                                formatted_limit = format_cost(self.usage_governor.usage_limits.total_cost_usd_limit)
+                                error_msg = f"Cost limit of ${formatted_limit} exceeded"
+                            elif self.usage_governor.usage_limits.total_tokens_limit is not None:
+                                error_msg = f"Token limit of {self.usage_governor.usage_limits.total_tokens_limit} exceeded"
+                            else:
+                                error_msg = "Usage limit exceeded"
+                            
+                            raise UsageLimitExceededError(error_msg, result)
+
                     # Validate type compatibility with next step - this may raise TypeMismatchError
                     # Only validate types if the step succeeded (to avoid TypeMismatchError for failed steps)
                     if step_result and step_result.success and idx < len(self.pipeline.steps) - 1:
@@ -182,53 +212,19 @@ class ExecutionManager(Generic[ContextT]):
                         # --- END PATCH ---
                         data = step_result.output
 
-                    # ✅ 1. Check usage limits BEFORE updating the state
-                    if step_result and self.usage_governor.usage_limits is not None:
-                        # Calculate current totals before adding this step
-                        current_total_cost = result.total_cost_usd
-                        current_total_tokens = sum(
-                            getattr(step, "token_counts", 0) for step in result.step_history
-                        )
-                        step_tokens = getattr(step_result, "token_counts", 0)
-
-                        if self.usage_governor.check_usage_limits_efficient(
-                            current_total_cost=current_total_cost,
-                            current_total_tokens=current_total_tokens,
-                            step_cost=step_result.cost_usd,
-                            step_tokens=step_tokens,
-                            span=None,
-                        ):
-                            # Add this step to the result before raising the exception
-                            self.step_coordinator.update_pipeline_result(result, step_result)
-                            # Record step result in persistence backend
-                            if run_id is not None:
-                                await self.state_manager.record_step_result(
-                                    run_id, step_result, idx
-                                )
-                            # ✅ 3. If breached, the manager raises the exception with the *correct* state.
-                            with telemetry.logfire.span(f"usage_check_{step.name}") as span:
-                                self.usage_governor.check_usage_limits(result, span)
-                                self.usage_governor.update_telemetry_span(span, result)
-                        else:
-                            # ✅ 2. Update the state if no breach
-                            self.step_coordinator.update_pipeline_result(result, step_result)
-                            # Record step result in persistence backend
-                            if run_id is not None:
-                                await self.state_manager.record_step_result(
-                                    run_id, step_result, idx
-                                )
-                    elif step_result:
-                        # ✅ 2. Update the state if no usage governor
+                    # Update the state (moved from the old usage check location)
+                    if step_result:
                         # Record step result in persistence backend
                         if run_id is not None:
                             await self.state_manager.record_step_result(run_id, step_result, idx)
 
-                    # ✅ 3. Update pipeline result with step result (only once)
-                    if step_result and step_result not in result.step_history:
-                        self.step_coordinator.update_pipeline_result(result, step_result)
-
                     # ✅ 4. Check if step failed and halt execution
                     if step_result and not step_result.success:
+                        # Raise UsageLimitExceededError if the failure was due to usage limits
+                        if step_result.feedback and "Usage limit exceeded" in step_result.feedback:
+                            # Create appropriate error message based on the feedback
+                            error_msg = step_result.feedback
+                            raise UsageLimitExceededError(error_msg, result)
                         telemetry.logfire.warning(
                             f"Step '{step.name}' failed. Halting pipeline execution."
                         )
@@ -249,10 +245,9 @@ class ExecutionManager(Generic[ContextT]):
                         return
 
                 except UsageLimitExceededError:
-                    # ✅ 4. The exception is caught here. The `finally` block will now have the
-                    # correct step_history because we updated it *before* the check.
-                    # We must add the breaching step result to the history before re-raising.
-                    if step_result and step_result not in result.step_history:
+                    # ✅ TASK 7.3: FIX STEP HISTORY POPULATION
+                    # Ensure the step result is added to history before re-raising the exception
+                    if step_result is not None and step_result not in result.step_history:
                         self.step_coordinator.update_pipeline_result(result, step_result)
                     should_add_step_result = False
                     usage_limit_exceeded = True
@@ -260,7 +255,7 @@ class ExecutionManager(Generic[ContextT]):
                 except PipelineAbortSignal:
                     # Update pipeline result before aborting
                     # Add current step result to pipeline result before yielding
-                    if step_result is not None:
+                    if step_result is not None and step_result not in result.step_history:
                         self.step_coordinator.update_pipeline_result(result, step_result)
                     should_add_step_result = False  # Prevent duplicate addition in finally block
                     self.set_final_context(result, context)
@@ -273,7 +268,7 @@ class ExecutionManager(Generic[ContextT]):
                             context.scratchpad["status"] = "paused"
                             context.scratchpad["pause_message"] = str(e)
                     # Add current step result to pipeline result before yielding
-                    if step_result is not None:
+                    if step_result is not None and step_result not in result.step_history:
                         self.step_coordinator.update_pipeline_result(result, step_result)
                     should_add_step_result = False  # Prevent duplicate addition in finally block
                     self.set_final_context(result, context)
