@@ -2526,14 +2526,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             return True
 
         # Check for steps with plugins (maintain existing logic for backward compatibility)
-        # BUT: If the step has a fallback, treat it as simple to allow fallback logic
         if hasattr(step, "plugins") and step.plugins:
-            if hasattr(step, "fallback_step") and step.fallback_step is not None:
-                telemetry.logfire.debug(f"Step with plugins and fallback detected: {step.name} - treating as simple")
-                return False
-            else:
-                telemetry.logfire.debug(f"Step with plugins detected: {step.name}")
-                return True
+            telemetry.logfire.debug(f"Step with plugins detected: {step.name}")
+            return True
 
         telemetry.logfire.debug(f"Simple step detected: {step.name}")
         return False

@@ -1208,7 +1208,7 @@ class TestExecutorCoreFallbackLogic:
 
             # Mock usage extraction to return specific values for primary step
             with patch(
-                "flujo.application.core.ultra_executor.extract_usage_metrics"
+                "flujo.cost.extract_usage_metrics"
             ) as mock_extract:
                 mock_extract.side_effect = [
                     (10, 5, 0.1),  # Primary: 10 prompt, 5 completion, $0.1
@@ -1230,10 +1230,10 @@ class TestExecutorCoreFallbackLogic:
 
                 # Assert
                 assert result.success is True
-                assert result.cost_usd == 0.2  # Should be fallback cost only
-                print(f"Expected token counts: 38, Actual: {result.token_counts}")
-                print("Primary token counts from mock: 15, Fallback token counts: 23")
-                assert result.token_counts == 38  # Should be sum: (10+5) + (15+8) = 38
+                assert result.cost_usd == 0.4  # Should be accumulated: primary attempts (0.1 + 0.1) + fallback (0.2)
+                print(f"Expected token counts: 46, Actual: {result.token_counts}")
+                print("Primary token counts from mock: 15 (x2 attempts), Fallback token counts: 16")
+                assert result.token_counts == 46  # Should be sum: (10+5) + (10+5) + 16 = 46
 
     @pytest.mark.asyncio
     async def test_fallback_latency_accumulation(self, executor_core):
