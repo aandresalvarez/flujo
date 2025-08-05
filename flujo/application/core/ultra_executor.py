@@ -510,10 +510,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         if step is None:
             raise ValueError("Step must be provided")
         
-        # --- 0. Pre-execution Validation ---
-        if step.agent is None:
-            raise MissingAgentError(f"Step '{step.name}' has no agent configured")
-        
         telemetry.logfire.debug("=== EXECUTOR CORE EXECUTE ===")
         telemetry.logfire.debug(f"Step type: {type(step)}")
         telemetry.logfire.debug(f"Step name: {getattr(step, 'name', 'unknown')}")
@@ -686,7 +682,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         """
         telemetry.logfire.debug(f"_execute_simple_step called for step '{step.name}' with fallback_depth={_fallback_depth}")
         
-        # --- 0. Pre-execution Validation ---
+        # --- 0. Pre-execution Validation for Agent Steps ---
         if step.agent is None:
             raise MissingAgentError(f"Step '{step.name}' has no agent configured")
         
@@ -1108,6 +1104,10 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         - Immediately fails step when plugins/validators/processors fail
         - Uses loop-based retry mechanism to avoid infinite recursion
         """
+        # --- 0. Pre-execution Validation for Agent Steps ---
+        if step.agent is None:
+            raise MissingAgentError(f"Step '{step.name}' has no agent configured")
+        
         # Initialize result with proper attempt tracking
         result = StepResult(
             name=step.name,
