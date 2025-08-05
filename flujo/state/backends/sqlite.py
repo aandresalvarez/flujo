@@ -32,16 +32,22 @@ from flujo.utils.serialization import robust_serialize, safe_deserialize
 # Try to import orjson for faster JSON serialization
 try:
     import orjson
+    from flujo.utils.serialization import safe_serialize
 
     def _fast_json_dumps(obj: Any) -> str:
-        """Use orjson for faster JSON serialization."""
-        return orjson.dumps(obj, option=orjson.OPT_SORT_KEYS).decode("utf-8")
+        """Use orjson for faster JSON serialization with robust serialization."""
+        # Use safe_serialize to handle Pydantic models and other complex objects
+        serialized_obj = safe_serialize(obj)
+        return orjson.dumps(serialized_obj, option=orjson.OPT_SORT_KEYS).decode("utf-8")
 
 except ImportError:
+    from flujo.utils.serialization import safe_serialize
 
     def _fast_json_dumps(obj: Any) -> str:
-        """Fallback to standard json for JSON serialization."""
-        return json.dumps(obj, sort_keys=True, separators=(",", ":"))
+        """Fallback to standard json for JSON serialization with robust serialization."""
+        # Use safe_serialize to handle Pydantic models and other complex objects
+        serialized_obj = safe_serialize(obj)
+        return json.dumps(serialized_obj, sort_keys=True, separators=(",", ":"))
 
 
 if TYPE_CHECKING:
@@ -355,7 +361,35 @@ class SQLiteBackend(StateBackend):
                     "CREATE INDEX IF NOT EXISTS idx_workflow_state_created_at ON workflow_state(created_at)"
                 )
                 
-                # Create the runs table for run tracking
+                # Create the workflow_state table for workflow state tracking
+                await db.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS workflow_state (
+                        run_id TEXT PRIMARY KEY,
+                        pipeline_id TEXT NOT NULL,
+                        pipeline_name TEXT NOT NULL,
+                        pipeline_version TEXT NOT NULL,
+                        current_step_index INTEGER NOT NULL,
+                        pipeline_context TEXT,
+                        last_step_output TEXT,
+                        step_history TEXT,
+                        status TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        total_steps INTEGER DEFAULT 0,
+                        error_message TEXT,
+                        execution_time_ms INTEGER,
+                        memory_usage_mb REAL
+                    )
+                    """
+                )
+                
+                # Create indexes for workflow_state table
+                await db.execute("CREATE INDEX IF NOT EXISTS idx_workflow_state_status ON workflow_state(status)")
+                await db.execute("CREATE INDEX IF NOT EXISTS idx_workflow_state_pipeline_id ON workflow_state(pipeline_id)")
+                await db.execute("CREATE INDEX IF NOT EXISTS idx_workflow_state_created_at ON workflow_state(created_at)")
+                
+                # Create the runs table for run tracking (for backward compatibility)
                 await db.execute(
                     """
                     CREATE TABLE IF NOT EXISTS runs (
@@ -438,6 +472,9 @@ class SQLiteBackend(StateBackend):
                 await db.execute("CREATE INDEX IF NOT EXISTS idx_spans_span_id ON spans(span_id)")
                 await db.execute("CREATE INDEX IF NOT EXISTS idx_spans_parent_span_id ON spans(parent_span_id)")
                 
+                # Run migration to ensure schema is up to date
+                await self._migrate_existing_schema(db)
+                
                 await db.commit()
                 telemetry.logfire.info(f"Initialized SQLite database at {self.db_path}")
                 
@@ -454,9 +491,13 @@ class SQLiteBackend(StateBackend):
 
     async def _migrate_existing_schema(self, db: aiosqlite.Connection) -> None:
         """Migrate existing database schema to the new optimized structure."""
-        cursor = await db.execute("PRAGMA table_info(workflow_state)")
-        existing_columns = {row[1] for row in await cursor.fetchall()}
-        await cursor.close()
+        try:
+            cursor = await db.execute("PRAGMA table_info(workflow_state)")
+            existing_columns = {row[1] for row in await cursor.fetchall()}
+            await cursor.close()
+        except sqlite3.OperationalError:
+            # Table doesn't exist yet, which is fine - it will be created with the new schema
+            existing_columns = set()
 
         # Add new columns if they don't exist
         new_columns = [
@@ -497,6 +538,23 @@ class SQLiteBackend(StateBackend):
             await db.execute(
                 "UPDATE workflow_state SET pipeline_name = pipeline_id WHERE pipeline_name = ''"
             )
+        
+        # Add other missing columns that might be needed
+        missing_columns = [
+            ("total_steps", "INTEGER DEFAULT 0"),
+            ("error_message", "TEXT"),
+            ("execution_time_ms", "INTEGER"),
+            ("memory_usage_mb", "REAL"),
+            ("step_history", "TEXT"),
+        ]
+        
+        for column_name, column_def in missing_columns:
+            if column_name not in existing_columns:
+                escaped_name = column_name.replace('"', '""')
+                quoted_column_name = f'"{escaped_name}"'
+                await db.execute(
+                    f"ALTER TABLE workflow_state ADD COLUMN {quoted_column_name} {column_def}"
+                )
 
         # Update any NULL values in required columns
         await db.execute(
@@ -1200,8 +1258,8 @@ class SQLiteBackend(StateBackend):
             async with aiosqlite.connect(self.db_path) as db:
                 cursor = await db.execute(
                     """
-                    SELECT step_name, step_index, status, start_time, end_time, duration_ms,
-                           cost, tokens, input_blob, output_blob, error_blob
+                    SELECT step_name, step_index, status, output, cost_usd, token_counts,
+                           execution_time_ms, created_at
                     FROM steps WHERE run_id = ? ORDER BY step_index
                     """,
                     (run_id,),
@@ -1215,14 +1273,11 @@ class SQLiteBackend(StateBackend):
                             "step_name": r[0],
                             "step_index": r[1],
                             "status": r[2],
-                            "start_time": r[3],
-                            "end_time": r[4],
-                            "duration_ms": r[5],
-                            "cost": r[6],
-                            "tokens": r[7],
-                            "input": safe_deserialize(json.loads(r[8])) if r[8] else None,
-                            "output": safe_deserialize(json.loads(r[9])) if r[9] else None,
-                            "error": safe_deserialize(json.loads(r[10])) if r[10] else None,
+                            "output": safe_deserialize(json.loads(r[3])) if r[3] else None,
+                            "cost_usd": r[4],
+                            "token_counts": r[5],
+                            "execution_time_ms": r[6],
+                            "created_at": r[7],
                         }
                     )
                 return results

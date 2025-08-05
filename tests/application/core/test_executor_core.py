@@ -10,7 +10,7 @@ import pytest
 from unittest.mock import AsyncMock, Mock, patch
 from typing import Any
 
-from flujo.application.core.ultra_executor import ExecutorCore
+from flujo.application.core.ultra_executor import ExecutorCore, MockDetectionError
 from flujo.domain.models import UsageLimits
 from flujo.domain.plugins import PluginOutcome
 from flujo.exceptions import (
@@ -331,7 +331,7 @@ class TestExecutorCoreSimpleStep:
         executor_core._agent_runner.run.return_value = Mock()
 
         # Act & Assert
-        with pytest.raises(TypeError, match="returned a Mock object"):
+        with pytest.raises(MockDetectionError, match="returned a Mock object"):
             await executor_core._execute_simple_step(
                 mock_step,
                 data,

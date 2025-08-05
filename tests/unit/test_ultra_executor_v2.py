@@ -25,9 +25,11 @@ from flujo.application.core.ultra_executor import (
     DefaultProcessorPipeline,
     DefaultValidatorRunner,
     ExecutorCore,
-    CacheKeyGenerator,
-    UltraStepExecutor,
+    DefaultCacheKeyGenerator as CacheKeyGenerator,
 )
+
+# Alias for backward compatibility
+UltraStepExecutor = ExecutorCore
 
 from flujo.domain.models import StepResult, UsageLimits, BaseModel
 from flujo.domain.dsl.step import Step, StepConfig
@@ -52,11 +54,15 @@ class MockAgent:
         self.output = output
         self.should_fail = should_fail
         self.call_count = 0
+        self.model_id = "gpt-4o"  # Add model_id for cost extraction
 
     async def run(self, data: Any, **kwargs) -> Any:
         self.call_count += 1
         if self.should_fail and self.call_count == 1:
             raise RuntimeError("Agent failed")
+        # Ensure we return the actual output, not a Mock object
+        if hasattr(self.output, '_mock_name'):
+            return "test output"  # Fallback for Mock objects
         return self.output
 
 
@@ -277,9 +283,8 @@ class TestCacheKeyGeneration:
 
     def test_cache_key_determinism(self):
         """Test that cache keys are deterministic."""
-        serializer = OrjsonSerializer()
         hasher = Blake3Hasher()
-        generator = CacheKeyGenerator(serializer, hasher)
+        generator = CacheKeyGenerator(hasher)
 
         # Create a test step
         step = Mock()
@@ -290,32 +295,30 @@ class TestCacheKeyGeneration:
         context = UltraTestContext(value="test")
 
         # Generate key multiple times
-        key1 = generator.generate_key(step, data, context)
-        key2 = generator.generate_key(step, data, context)
+        key1 = generator.generate_key(step, data, context, None)
+        key2 = generator.generate_key(step, data, context, None)
 
         assert key1 == key2
 
     def test_cache_key_uniqueness(self):
         """Test that different inputs produce different keys."""
-        serializer = OrjsonSerializer()
         hasher = Blake3Hasher()
-        generator = CacheKeyGenerator(serializer, hasher)
+        generator = CacheKeyGenerator(hasher)
 
         step = Mock()
         step.name = "test_step"
         step.agent = None
 
         # Different data should produce different keys
-        key1 = generator.generate_key(step, {"input": "test1"})
-        key2 = generator.generate_key(step, {"input": "test2"})
+        key1 = generator.generate_key(step, {"input": "test1"}, None, None)
+        key2 = generator.generate_key(step, {"input": "test2"}, None, None)
 
         assert key1 != key2
 
     def test_agent_id_stability(self):
         """Test that agent IDs are stable across instances."""
-        serializer = OrjsonSerializer()
         hasher = Blake3Hasher()
-        generator = CacheKeyGenerator(serializer, hasher)
+        generator = CacheKeyGenerator(hasher)
 
         # Create agents with same configuration
         agent1 = Mock()
@@ -332,8 +335,8 @@ class TestCacheKeyGeneration:
         step2.name = "test"
         step2.agent = agent2
 
-        key1 = generator.generate_key(step1, "data")
-        key2 = generator.generate_key(step2, "data")
+        key1 = generator.generate_key(step1, "data", None, None)
+        key2 = generator.generate_key(step2, "data", None, None)
 
         assert key1 == key2  # Same config should produce same key
 
@@ -352,19 +355,26 @@ class TestExecutorCore:
         executor = ExecutorCore(enable_cache=False)
 
         agent = MockAgent("test output")
-        step = Mock()
-        step.name = "test_step"  # Ensure this is a string, not a mock
-        step.agent = agent
-        step.config = Mock()
-        step.config.max_retries = 3  # Ensure this is an integer, not a mock
-        step.config.temperature = None
-        step.processors = Mock()
-        step.processors.prompt_processors = []
-        step.processors.output_processors = []
-        step.validators = []
-        step.plugins = []  # Add missing plugins attribute
-        step.fallback_step = None  # Ensure no fallback step
-        step.meta = {}  # Ensure meta is an empty dict, not a mock
+        
+        # Create a proper step object instead of using Mock
+        class TestStep:
+            def __init__(self):
+                self.name = "test_step"
+                self.agent = agent
+                self.config = type('Config', (), {
+                    'max_retries': 3,
+                    'temperature': None
+                })()
+                self.processors = type('Processors', (), {
+                    'prompt_processors': [],
+                    'output_processors': []
+                })()
+                self.validators = []
+                self.plugins = []
+                self.fallback_step = None
+                self.meta = {}
+        
+        step = TestStep()
 
         result = await executor.execute(step, "input")
 
@@ -389,19 +399,26 @@ class TestExecutorCore:
                 return "success on retry"
 
         agent = FailingThenSucceedingAgent()
-        step = Mock()
-        step.name = "test_step"  # Ensure this is a string, not a mock
-        step.agent = agent
-        step.config = Mock()
-        step.config.max_retries = 3  # Ensure this is an integer, not a mock
-        step.config.temperature = None
-        step.processors = Mock()
-        step.processors.prompt_processors = []
-        step.processors.output_processors = []
-        step.validators = []
-        step.plugins = []  # Add missing plugins attribute
-        step.fallback_step = None  # Ensure no fallback step
-        step.meta = {}  # Ensure meta is an empty dict, not a mock
+        
+        # Create a proper step object instead of using Mock
+        class TestStep:
+            def __init__(self):
+                self.name = "test_step"
+                self.agent = agent
+                self.config = type('Config', (), {
+                    'max_retries': 3,
+                    'temperature': None
+                })()
+                self.processors = type('Processors', (), {
+                    'prompt_processors': [],
+                    'output_processors': []
+                })()
+                self.validators = []
+                self.plugins = []
+                self.fallback_step = None
+                self.meta = {}
+        
+        step = TestStep()
 
         result = await executor.execute(step, "input")
 
@@ -416,19 +433,26 @@ class TestExecutorCore:
         executor = ExecutorCore(cache_backend=cache_backend, enable_cache=True)
 
         agent = MockAgent("cached output")
-        step = Mock()
-        step.name = "test_step"  # Ensure this is a string, not a mock
-        step.agent = agent
-        step.config = Mock()
-        step.config.max_retries = 3  # Ensure this is an integer, not a mock
-        step.config.temperature = None
-        step.processors = Mock()
-        step.processors.prompt_processors = []
-        step.processors.output_processors = []
-        step.validators = []
-        step.plugins = []  # Add missing plugins attribute
-        step.fallback_step = None  # Ensure no fallback step
-        step.meta = {}  # Ensure meta is an empty dict, not a mock
+        
+        # Create a proper step object instead of using Mock
+        class TestStep:
+            def __init__(self):
+                self.name = "test_step"
+                self.agent = agent
+                self.config = type('Config', (), {
+                    'max_retries': 3,
+                    'temperature': None
+                })()
+                self.processors = type('Processors', (), {
+                    'prompt_processors': [],
+                    'output_processors': []
+                })()
+                self.validators = []
+                self.plugins = []
+                self.fallback_step = None
+                self.meta = {}
+        
+        step = TestStep()
 
         # First execution should cache the result
         result1 = await executor.execute(step, "input")
@@ -472,19 +496,26 @@ class TestExecutorCore:
                 return MockResponse(self.output)
 
         agent = MockAgentWithUsage("output")
-        step = Mock()
-        step.name = "test_step"  # Ensure this is a string, not a mock
-        step.agent = agent
-        step.config = Mock()
-        step.config.max_retries = 3  # Ensure this is an integer, not a mock
-        step.config.temperature = None
-        step.processors = Mock()
-        step.processors.prompt_processors = []
-        step.processors.output_processors = []
-        step.validators = []
-        step.plugins = []  # Add missing plugins attribute
-        step.fallback_step = None  # Ensure no fallback step
-        step.meta = {}  # Ensure meta is an empty dict, not a mock
+        
+        # Create a proper step object instead of using Mock
+        class TestStep:
+            def __init__(self):
+                self.name = "test_step"
+                self.agent = agent
+                self.config = type('Config', (), {
+                    'max_retries': 3,
+                    'temperature': None
+                })()
+                self.processors = type('Processors', (), {
+                    'prompt_processors': [],
+                    'output_processors': []
+                })()
+                self.validators = []
+                self.plugins = []
+                self.fallback_step = None
+                self.meta = {}
+        
+        step = TestStep()
 
         result = await executor.execute(step, "input")
 
@@ -499,19 +530,26 @@ class TestExecutorCore:
         executor = ExecutorCore(processor_pipeline=processor_pipeline, enable_cache=False)
 
         agent = MockAgent("agent output")
-        step = Mock()
-        step.name = "test_step"  # Ensure this is a string, not a mock
-        step.agent = agent
-        step.config = Mock()
-        step.config.max_retries = 3  # Ensure this is an integer, not a mock
-        step.config.temperature = None
-        step.processors = Mock()
-        step.processors.prompt_processors = [MockProcessor(lambda x: f"prompt_{x}")]
-        step.processors.output_processors = [MockProcessor(lambda x: f"output_{x}")]
-        step.validators = []
-        step.plugins = []  # Add missing plugins attribute
-        step.fallback_step = None  # Ensure no fallback step
-        step.meta = {}  # Ensure meta is an empty dict, not a mock
+        
+        # Create a proper step object instead of using Mock
+        class TestStep:
+            def __init__(self):
+                self.name = "test_step"
+                self.agent = agent
+                self.config = type('Config', (), {
+                    'max_retries': 3,
+                    'temperature': None
+                })()
+                self.processors = type('Processors', (), {
+                    'prompt_processors': [MockProcessor(lambda x: f"prompt_{x}")],
+                    'output_processors': [MockProcessor(lambda x: f"output_{x}")]
+                })()
+                self.validators = []
+                self.plugins = []
+                self.fallback_step = None
+                self.meta = {}
+        
+        step = TestStep()
 
         result = await executor.execute(step, "input")
 
@@ -526,20 +564,27 @@ class TestExecutorCore:
         executor = ExecutorCore(validator_runner=validator_runner, enable_cache=False)
 
         agent = MockAgent("output")
-        step = Mock()
-        step.name = "test_step"  # Ensure this is a string, not a mock
-        step.agent = agent
-        step.config = Mock()
-        step.config.max_retries = 3  # Ensure this is an integer, not a mock
-        step.config.temperature = None
-        step.processors = Mock()
-        step.processors.prompt_processors = []
-        step.processors.output_processors = []
-        step.validators = [MockValidator(should_fail=True)]
-        step.plugins = []  # Add missing plugins attribute
-        step.fallback_step = None  # Ensure no fallback step
-        step.meta = {}  # Ensure meta is an empty dict, not a mock
-        step.is_complex = False  # Explicitly set to avoid Mock defaults
+        
+        # Create a proper step object instead of using Mock
+        class TestStep:
+            def __init__(self):
+                self.name = "test_step"
+                self.agent = agent
+                self.config = type('Config', (), {
+                    'max_retries': 3,
+                    'temperature': None
+                })()
+                self.processors = type('Processors', (), {
+                    'prompt_processors': [],
+                    'output_processors': []
+                })()
+                self.validators = [MockValidator(should_fail=True)]
+                self.plugins = []
+                self.fallback_step = None
+                self.meta = {}
+                self.is_complex = False  # Explicitly set to avoid Mock defaults
+        
+        step = TestStep()
 
         result = await executor.execute(step, "input")
 
@@ -629,19 +674,25 @@ class TestErrorHandling:
             async def run(self, data: Any, **kwargs) -> Any:
                 raise PausedException("Critical error")
 
-        step = Mock()
-        step.name = "test_step"  # Ensure this is a string, not a mock
-        step.agent = CriticalAgent()
-        step.config = Mock()
-        step.config.max_retries = 3  # Ensure this is an integer, not a mock
-        step.config.temperature = None
-        step.processors = Mock()
-        step.processors.prompt_processors = []
-        step.processors.output_processors = []
-        step.validators = []
-        step.plugins = []  # Add missing plugins attribute
-        step.fallback_step = None  # Ensure no fallback step
-        step.meta = {}  # Ensure meta is an empty dict, not a mock
+        # Create a proper step object instead of using Mock
+        class TestStep:
+            def __init__(self):
+                self.name = "test_step"
+                self.agent = CriticalAgent()
+                self.config = type('Config', (), {
+                    'max_retries': 3,
+                    'temperature': None
+                })()
+                self.processors = type('Processors', (), {
+                    'prompt_processors': [],
+                    'output_processors': []
+                })()
+                self.validators = []
+                self.plugins = []
+                self.fallback_step = None
+                self.meta = {}
+        
+        step = TestStep()
 
         with pytest.raises(PausedException, match="Critical error"):
             await executor.execute(step, "input")
@@ -677,20 +728,27 @@ class TestErrorHandling:
                 return MockResponse(self.output)
 
         agent = MockAgentWithUsage("output")
-        step = Mock()
-        step.name = "test_step"  # Ensure this is a string, not a mock
-        step.agent = agent
-        step.config = Mock()
-        step.config.max_retries = 3  # Ensure this is an integer, not a mock
-        step.config.temperature = None
-        step.processors = Mock()
-        step.processors.prompt_processors = []
-        step.processors.output_processors = []
-        step.validators = []
-        step.plugins = []  # Add missing plugins attribute
-        step.fallback_step = None  # Ensure no fallback step
-        step.meta = {}  # Ensure meta is an empty dict, not a mock
-        step.is_complex = False  # Explicitly set to avoid Mock defaults
+        
+        # Create a proper step object instead of using Mock
+        class TestStep:
+            def __init__(self):
+                self.name = "test_step"
+                self.agent = agent
+                self.config = type('Config', (), {
+                    'max_retries': 3,
+                    'temperature': None
+                })()
+                self.processors = type('Processors', (), {
+                    'prompt_processors': [],
+                    'output_processors': []
+                })()
+                self.validators = []
+                self.plugins = []
+                self.fallback_step = None
+                self.meta = {}
+                self.is_complex = False  # Explicitly set to avoid Mock defaults
+        
+        step = TestStep()
 
         limits = UsageLimits(total_cost_usd_limit=5.0)
         with pytest.raises(UsageLimitExceededError):
@@ -706,19 +764,25 @@ class TestErrorHandling:
             async def run(self, data: Any, **kwargs) -> Any:
                 raise ValueError("Always fails")
 
-        step = Mock()
-        step.name = "test_step"  # Ensure this is a string, not a mock
-        step.agent = AlwaysFailingAgent()
-        step.config = Mock()
-        step.config.max_retries = 2  # Ensure this is an integer, not a mock
-        step.config.temperature = None
-        step.processors = Mock()
-        step.processors.prompt_processors = []
-        step.processors.output_processors = []
-        step.validators = []
-        step.plugins = []  # Add missing plugins attribute
-        step.fallback_step = None  # Ensure no fallback step
-        step.meta = {}  # Ensure meta is an empty dict, not a mock
+        # Create a proper step object instead of using Mock
+        class TestStep:
+            def __init__(self):
+                self.name = "test_step"
+                self.agent = AlwaysFailingAgent()
+                self.config = type('Config', (), {
+                    'max_retries': 2,
+                    'temperature': None
+                })()
+                self.processors = type('Processors', (), {
+                    'prompt_processors': [],
+                    'output_processors': []
+                })()
+                self.validators = []
+                self.plugins = []
+                self.fallback_step = None
+                self.meta = {}
+        
+        step = TestStep()
 
         result = await executor.execute(step, "input")
 

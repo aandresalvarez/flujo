@@ -11,30 +11,7 @@
 
 ## **ERRORS BY CATEGORY**
 
-### **1. Missing Module: `flujo.application.core.step_logic` (5 tests)**
-
-**Issue:** Multiple tests are trying to import from a module that doesn't exist:
-```python
-ModuleNotFoundError: No module named 'flujo.application.core.step_logic'
-```
-
-**Affected Tests:**
-- `tests/application/core/test_step_logic_accounting.py`
-- `tests/benchmarks/test_legacy_cleanup_performance.py`
-- `tests/integration/test_legacy_cleanup_validation.py`
-- `tests/regression/test_legacy_cleanup_impact.py`
-- `tests/unit/test_fallback_loop_detection.py`
-
-**Root Cause:** These tests were written for a `step_logic` module that was either:
-1. Moved to a different location
-2. Renamed to something else
-3. Removed during refactoring
-
-**Recommended Action:** 
-- Locate where the step logic functionality moved to
-- Update import statements in all affected test files
-- Or create the missing module if it was accidentally removed
-
+ss
 ---
 
 ### **2. Missing Import: `CacheKeyGenerator` (1 test)**

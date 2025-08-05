@@ -479,21 +479,19 @@ def safe_serialize(
                 return str(obj)
         # Handle Pydantic models first
         if hasattr(obj, "model_dump"):
-            return safe_serialize(
-                obj.model_dump(),
-                default_serializer,
-                _seen,
-                _recursion_depth + 1,
-                circular_ref_placeholder,
-            )
+            # For Pydantic models, directly convert to dict without recursive serialization
+            # to avoid circular references
+            try:
+                return obj.model_dump()
+            except Exception:
+                return str(obj)
         if HAS_PYDANTIC and isinstance(obj, BaseModel):
-            return safe_serialize(
-                obj.model_dump(),
-                default_serializer,
-                _seen,
-                _recursion_depth + 1,
-                circular_ref_placeholder,
-            )
+            # For Pydantic models, directly convert to dict without recursive serialization
+            # to avoid circular references
+            try:
+                return obj.model_dump()
+            except Exception:
+                return str(obj)
         # Handle AgentResponse objects with proper field extraction
         if hasattr(obj, "output") and hasattr(obj, "usage"):
             # This looks like an AgentResponse object

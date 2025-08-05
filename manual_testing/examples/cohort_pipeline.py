@@ -89,6 +89,9 @@ async def assess_and_refine(definition_to_assess: str, *, context: CohortContext
         }
         return updates
 
+# Alias for backward compatibility with tests
+assess_clarity_step = assess_and_refine
+
 def _simulate_human_clarification(agent_question: str, clarification_count: int) -> str:
     """
     Simulate human clarifications based on the agent's questions.

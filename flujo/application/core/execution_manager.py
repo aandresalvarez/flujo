@@ -173,27 +173,9 @@ class ExecutionManager(Generic[ContextT]):
 
                     # ✅ 3. Check usage limits AFTER step is added to history
                     if step_result and self.usage_governor.usage_limits is not None:
-                        # Use the updated totals directly since the step is already added to the result
-                        if self.usage_governor.check_usage_limits_efficient(
-                            current_total_cost=result.total_cost_usd,
-                            current_total_tokens=result.total_tokens,
-                            step_cost=0.0,  # No additional cost since step is already included
-                            step_tokens=0,   # No additional tokens since step is already included
-                            span=None,
-                        ):
-                            # If breached, raise UsageLimitExceededError immediately
-                            # The step history now includes the breaching step
-                            
-                            # Create appropriate error message based on what was breached
-                            if self.usage_governor.usage_limits.total_cost_usd_limit is not None:
-                                formatted_limit = format_cost(self.usage_governor.usage_limits.total_cost_usd_limit)
-                                error_msg = f"Cost limit of ${formatted_limit} exceeded"
-                            elif self.usage_governor.usage_limits.total_tokens_limit is not None:
-                                error_msg = f"Token limit of {self.usage_governor.usage_limits.total_tokens_limit} exceeded"
-                            else:
-                                error_msg = "Usage limit exceeded"
-                            
-                            raise UsageLimitExceededError(error_msg, result)
+                        # Check usage limits using the complete pipeline result
+                        # This will raise UsageLimitExceededError if limits are breached
+                        self.usage_governor.check_usage_limits(result, None)
 
                     # Validate type compatibility with next step - this may raise TypeMismatchError
                     # Only validate types if the step succeeded (to avoid TypeMismatchError for failed steps)

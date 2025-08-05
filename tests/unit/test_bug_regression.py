@@ -177,23 +177,19 @@ class TestLambdaSerializationNullHandling:
         db_path = tmp_path / "test.db"
         backend = SQLiteBackend(db_path)
 
-        # Test data with None values - use datetime for required fields
+        # Test data with None values - use current schema fields
         from datetime import datetime
 
         step_data = {
-            "step_run_id": "test_step_1",
             "run_id": "test_run",
             "step_name": "test_step",
             "step_index": 0,
             "status": "completed",
-            "start_time": datetime.utcnow(),  # Required field
-            "end_time": None,  # This should be handled correctly
-            "duration_ms": None,
-            "cost": None,
-            "tokens": None,
-            "input": None,
-            "output": None,
-            "error": None,
+            "output": None,  # This should be handled correctly
+            "cost_usd": None,
+            "token_counts": None,
+            "execution_time_ms": None,
+            "created_at": datetime.utcnow().isoformat(),
         }
 
         # Save step result
@@ -205,10 +201,10 @@ class TestLambdaSerializationNullHandling:
         saved_step = steps[0]
 
         # Check that None values are preserved as None, not converted to "None" strings
-        assert saved_step["end_time"] is None
-        assert saved_step["input"] is None
         assert saved_step["output"] is None
-        assert saved_step["error"] is None
+        assert saved_step["cost_usd"] is None
+        assert saved_step["token_counts"] is None
+        assert saved_step["execution_time_ms"] is None
 
 
 class TestSerializationEdgeCases:
