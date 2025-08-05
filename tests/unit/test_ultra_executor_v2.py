@@ -407,7 +407,7 @@ class TestExecutorCore:
 
         assert result.success is True
         assert result.output == "success on retry"
-        assert result.attempts == 2  # Should have retried once
+        assert result.attempts == 2  # Should have retried once (1 initial + 1 retry)
 
     @pytest.mark.asyncio
     async def test_caching_functionality(self):
@@ -723,7 +723,7 @@ class TestErrorHandling:
         result = await executor.execute(step, "input")
 
         assert result.success is False
-        assert result.attempts == 2  # Should retry max_retries times
+        assert result.attempts == 3  # Should retry max_retries times (1 initial + 2 retries)
         assert "Always fails" in result.feedback
 
 

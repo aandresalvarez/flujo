@@ -409,8 +409,10 @@ class TestConditionalStepLogicMigration:
             # Verify that resources and limits were passed to execute
             mock_execute.assert_called_once()
             call_args = mock_execute.call_args
-            assert call_args[1]["resources"] == resources
-            assert call_args[1]["limits"] == limits
+            # The new API calls execute with an ExecutionFrame object
+            frame = call_args[0][0]  # First positional argument is the ExecutionFrame
+            assert frame.resources == resources
+            assert frame.limits == limits
 
     async def test_conditional_step_error_propagation(self, executor_core):
         """Test that errors in ConditionalStep are properly propagated."""

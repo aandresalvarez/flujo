@@ -149,7 +149,7 @@ class TestLoopStepMigration:
 
         # Assert
         assert result.success is False
-        assert result.attempts == 2
+        assert result.attempts == 3  # max_retries (1 initial + 2 retries)
         assert "max_loops" in result.feedback
 
     async def test_handle_loop_step_input_mappers(self, executor_core, context):

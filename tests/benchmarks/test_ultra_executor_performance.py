@@ -8,7 +8,7 @@ import statistics
 from unittest.mock import Mock, AsyncMock
 from contextlib import contextmanager
 
-from flujo.application.core.ultra_executor import UltraStepExecutor
+from flujo.application.core.ultra_executor import ExecutorCore as UltraStepExecutor
 from flujo.domain.dsl.step import Step
 from flujo.domain.models import StepResult
 

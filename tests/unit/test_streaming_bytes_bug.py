@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 from typing import AsyncIterator
 from typing import Any
 
-from flujo.application.core.ultra_executor import UltraStepExecutor
+from flujo.application.core.ultra_executor import ExecutorCore as UltraStepExecutor
 from flujo.domain.dsl.step import Step
 from flujo.domain.models import StepResult
 from flujo.domain.resources import AppResources

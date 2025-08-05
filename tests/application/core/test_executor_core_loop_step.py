@@ -144,7 +144,7 @@ class TestExecutorCoreLoopStep:
         """Test LoopStep handling with None parameters."""
         with pytest.MonkeyPatch().context() as m:
             m.setattr(
-                "flujo.application.core.step_logic._handle_loop_step",
+                "flujo.application.core.ultra_executor.ExecutorCore._handle_loop_step",
                 AsyncMock(return_value=StepResult(name="test_loop", success=True)),
             )
 
@@ -168,22 +168,16 @@ class TestExecutorCoreLoopStep:
             tokens_per_minute_limit=1000,
         )
 
-        with pytest.MonkeyPatch().context() as m:
-            m.setattr(
-                "flujo.application.core.step_logic._handle_loop_step",
-                AsyncMock(return_value=StepResult(name="test_loop", success=True)),
-            )
+        result = await executor_core._handle_loop_step(
+            mock_loop_step,
+            data="test_data",
+            context=None,
+            resources=None,
+            limits=complex_limits,
+            context_setter=None,
+        )
 
-            result = await executor_core._handle_loop_step(
-                mock_loop_step,
-                data="test_data",
-                context=None,
-                resources=None,
-                limits=complex_limits,
-                context_setter=None,
-            )
-
-            assert isinstance(result, StepResult)
+        assert isinstance(result, StepResult)
 
     async def test_handle_loop_step_step_executor_functionality(
         self, executor_core, mock_loop_step

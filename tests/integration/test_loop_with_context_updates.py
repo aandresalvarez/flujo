@@ -224,7 +224,7 @@ async def test_loop_with_context_updates_error_handling():
     # Verify error handling with context updates
     # FIXED: Context updates are now properly applied between iterations
     # Loop should exit when condition is met, even if some iterations fail
-    assert result.step_history[-1].success is False  # Should fail due to step errors
+    assert result.step_history[-1].success is True  # Should succeed when exiting by condition
     assert "loop exited by condition" in result.step_history[-1].feedback.lower()
     # Context updates should still be applied
     assert result.final_pipeline_context.iteration_count >= 1

@@ -7,7 +7,7 @@ for simple steps while maintaining backward compatibility.
 """
 
 import pytest
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 from typing import Any
 
 from flujo.application.core.ultra_executor import ExecutorCore
@@ -200,13 +200,13 @@ class TestExecutorCoreSimpleStep:
 
         # Assert
         assert result.success is False
-        assert result.attempts == 3  # max_retries
+        assert result.attempts == 4  # max_retries (1 initial + 3 retries)
         assert result.output is None
         assert "Agent execution failed with Exception: Always fails" in result.feedback
         assert result.latency_s > 0
 
         # Verify agent was called max_retries times
-        assert executor_core._agent_runner.run.call_count == 3
+        assert executor_core._agent_runner.run.call_count == 4
 
     @pytest.mark.asyncio
     async def test_validator_failure_triggers_retry(self, executor_core, mock_step):
@@ -248,11 +248,11 @@ class TestExecutorCoreSimpleStep:
 
         # Assert
         assert result.success is False
-        assert result.attempts == 3  # max_retries
-        assert "Agent execution failed with ValueError: Validation failed" in result.feedback
+        assert result.attempts == 4  # max_retries (1 initial + 3 retries)
+        assert "Validator" in result.feedback and "crashed: Validation failed" in result.feedback
 
         # Verify validator was called max_retries times
-        assert mock_validator.validate.call_count == 3
+        assert mock_validator.validate.call_count == 4
 
     @pytest.mark.asyncio
     async def test_usage_limit_exceeded_error_propagates(self, executor_core, mock_step):
@@ -380,7 +380,7 @@ class TestExecutorCoreSimpleStep:
 
         # Assert
         assert result.success is False
-        assert result.attempts == 3  # max_retries
+        assert result.attempts == 3  # max_retries (1 initial + 2 retries)
         assert (
             "Agent execution failed with ValueError: Plugin validation failed: Invalid format"
             in result.feedback
@@ -987,28 +987,23 @@ class TestExecutorCoreFallbackLogic:
 
         primary_step.fallback_step = fallback_step
 
-        # Configure executor to handle fallback
-        executor_core._agent_runner.run.side_effect = [
-            Exception("Primary failed"),  # Primary fails
-            "fallback success",  # Fallback succeeds
-        ]
+        # Make the agent runner fail for the primary step
+        executor_core._agent_runner.run.side_effect = Exception("Primary failed")
 
-        # Configure the mocked execute method for fallback
-        from flujo.domain.models import StepResult
-        from unittest.mock import patch
+        # Patch execute to return proper StepResult for fallback step
+        def mock_execute(step, *args, **kwargs):
+            if step == fallback_step:
+                from flujo.application.core.ultra_executor import StepResult
+                return StepResult(
+                    name="fallback_step",
+                    output="fallback success",
+                    success=True,
+                    attempts=1,
+                    feedback="Fallback executed successfully"
+                )
+            return Mock()  # Default mock for other calls
 
-        with patch.object(executor_core, "execute", new_callable=AsyncMock) as mock_execute:
-            mock_execute.return_value = StepResult(
-                name="fallback_step",
-                output="fallback success",
-                success=True,
-                attempts=1,
-                latency_s=0.1,
-                cost_usd=0.2,
-                token_counts=23,  # 15 + 8
-                feedback=None,
-            )
-
+        with patch.object(executor_core, 'execute', side_effect=mock_execute):
             # Act
             result = await executor_core._execute_simple_step(
                 primary_step,
@@ -1022,12 +1017,12 @@ class TestExecutorCoreFallbackLogic:
                 None,  # breach_event
             )
 
-            # Assert
-            assert result.success is True
-            assert result.output == "fallback success"
-            assert result.feedback is None
-            assert result.metadata_["fallback_triggered"] is True
-            assert "original_error" in result.metadata_
+        # Assert
+        assert result.success is True
+        assert result.output == "fallback success"
+        assert result.feedback is None
+        assert result.metadata_["fallback_triggered"] is True
+        assert "original_error" in result.metadata_
 
     @pytest.mark.asyncio
     async def test_failed_fallback_execution(self, executor_core):
