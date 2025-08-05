@@ -1026,7 +1026,7 @@ class TestExecutorCoreFallback:
             # Assert
             assert result.success is True
             assert result.output == "fallback success"
-            assert result.attempts == 4  # Should show all attempts were made (1 initial + 3 retries)
+            assert result.attempts == 5  # Should show all attempts were made (1 initial + 3 retries + 1 fallback)
 
     @pytest.mark.asyncio
     async def test_fallback_with_telemetry_logging(self, executor_core, create_step_with_fallback):

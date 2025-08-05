@@ -345,19 +345,15 @@ class TestHITLStepMigrationIntegration:
         data = "integration_test_data"
         mock_hitl_step.message_for_user = "Integration test message"
 
-        # Test through the complex step execution path
+        # Test through the direct HITL step handler
         with pytest.raises(PausedException) as exc_info:
-            await executor_core._execute_complex_step(
+            await executor_core._handle_hitl_step(
                 mock_hitl_step,
                 data,
                 mock_context,
                 mock_resources,
                 mock_limits,
-                False,  # stream
-                None,  # on_chunk
-                None,  # breach_event
                 mock_context_setter,
-                None,  # cache_key
             )
 
         # Verify the integration works correctly

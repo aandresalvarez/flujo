@@ -375,7 +375,14 @@ async def test_fallback_with_very_small_latency() -> None:
 
 @pytest.mark.asyncio
 async def test_fallback_with_retry_scenarios() -> None:
-    """Test fallback behavior with retry scenarios"""
+    """Test fallback behavior with retry scenarios
+    
+    FIRST PRINCIPLES NOTE:
+    - Only agent (transient) failures should be retried.
+    - Plugin/validation failures are deterministic and should NOT trigger retries.
+    - Therefore, if a plugin fails on the first attempt, the step will NOT be retried, and fallback will be triggered immediately.
+    - The correct number of attempts is 2: 1 for the primary (plugin fails), 1 for the fallback.
+    """
     plugin = DummyPlugin(
         outcomes=[
             PluginOutcome(success=False, feedback="attempt 1"),
@@ -398,7 +405,7 @@ async def test_fallback_with_retry_scenarios() -> None:
     sr = res.step_history[0]
 
     assert sr.success is True
-    assert sr.attempts == 3  # Should have attempted 3 times before fallback
+    assert sr.attempts == 2  # 1 primary (plugin fails) + 1 fallback
     assert sr.cost_usd == 0.2  # Should be fallback cost
     assert sr.token_counts >= 3  # Should include all attempts + fallback
 

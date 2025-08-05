@@ -477,6 +477,23 @@ def safe_serialize(
             except (AttributeError, TypeError):
                 # Fallback for edge cases where .value doesn't exist or is not serializable
                 return str(obj)
+        # Handle Pydantic models first
+        if hasattr(obj, "model_dump"):
+            return safe_serialize(
+                obj.model_dump(),
+                default_serializer,
+                _seen,
+                _recursion_depth + 1,
+                circular_ref_placeholder,
+            )
+        if HAS_PYDANTIC and isinstance(obj, BaseModel):
+            return safe_serialize(
+                obj.model_dump(),
+                default_serializer,
+                _seen,
+                _recursion_depth + 1,
+                circular_ref_placeholder,
+            )
         # Handle AgentResponse objects with proper field extraction
         if hasattr(obj, "output") and hasattr(obj, "usage"):
             # This looks like an AgentResponse object
@@ -511,22 +528,6 @@ def safe_serialize(
             raise TypeError(
                 f"Object of type {type(obj).__name__} is not serializable. "
                 f"Register a custom serializer using register_custom_serializer({type(obj).__name__}, lambda obj: obj.__dict__) or provide a default_serializer."
-            )
-        if hasattr(obj, "model_dump"):
-            return safe_serialize(
-                obj.model_dump(),
-                default_serializer,
-                _seen,
-                _recursion_depth + 1,
-                circular_ref_placeholder,
-            )
-        if HAS_PYDANTIC and isinstance(obj, BaseModel):
-            return safe_serialize(
-                obj.dict(),
-                default_serializer,
-                _seen,
-                _recursion_depth + 1,
-                circular_ref_placeholder,
             )
         if isinstance(obj, dict):
             return {

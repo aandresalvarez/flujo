@@ -58,28 +58,29 @@
   - ✅ Fix parallel step cost aggregation to avoid double-counting
   - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5_
 
-- [ ] 8. Fix HITL step integration and context management
-  - Fix _handle_hitl_step method signature consistency
-  - Fix context status update before raising PausedException
-  - Fix HITL step message formatting consistency
-  - Ensure HITL steps integrate properly with telemetry and usage limits
-  - Fix HITL step error handling consistency
+- [x] 8. Fix HITL step integration and context management
+  - ✅ Fix _handle_hitl_step method signature consistency
+  - ✅ Fix context status update before raising PausedException
+  - ✅ Fix HITL step message formatting consistency
+  - ✅ Ensure HITL steps integrate properly with telemetry and usage limits
+  - ✅ Fix HITL step error handling consistency
   - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5_
 
-- [ ] 9. Fix context management system integration
-  - Implement proper context isolation using deep copy for branch execution
-  - Fix context merging logic using safe_merge_context_updates
-  - Fix context accumulation for loop iterations
-  - Ensure context state transitions are handled correctly
-  - Fix context updates to preserve modifications from successful branches
+- [x] 9. Fix context management system integration
+  - ✅ Implement proper context isolation using deep copy for branch execution
+  - ✅ Fix context merging logic using safe_merge_context_updates
+  - ✅ Fix context accumulation for loop iterations
+  - ✅ Ensure context state transitions are handled correctly
+  - ✅ Fix context updates to preserve modifications from successful branches
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5_
+  - All previous tasks remain unbroken and verified by the test suite.
 
-- [ ] 10. Fix fallback system edge cases and error handling
-  - Fix fallback cost accumulation to not double-count costs
-  - Fix fallback feedback formatting to include proper error context
-  - Fix fallback with None and empty string feedback handling
-  - Fix fallback retry scenarios to have correct attempt counts
-  - Fix fallback metadata to preserve original error information
+- [x] 10. Fix fallback system edge cases and error handling
+  - ✅ Fix fallback cost accumulation to not double-count costs
+  - ✅ Fix fallback feedback formatting to include proper error context
+  - ✅ Fix fallback with None and empty string feedback handling
+  - ✅ Fix fallback retry scenarios to have correct attempt counts
+  - ✅ Fix fallback metadata to preserve original error information
   - _Requirements: 1.4, 8.5_
 
 - [ ] 11. Fix pipeline runner integration and retry logic

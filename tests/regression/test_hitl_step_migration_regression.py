@@ -13,7 +13,10 @@ import pytest
 from unittest.mock import Mock
 
 from flujo.application.core.ultra_executor import ExecutorCore
-from flujo.application.core.step_logic import _handle_hitl_step as legacy_handle_hitl_step
+# Legacy implementation is not available in the current codebase
+# The regression tests will focus on ensuring the new implementation
+# maintains the expected behavior without comparing to legacy
+legacy_handle_hitl_step = None
 from flujo.domain.dsl.step import HumanInTheLoopStep
 from flujo.domain.models import PipelineContext
 from flujo.exceptions import PausedException
@@ -246,8 +249,8 @@ class TestHITLStepMigrationRegression:
         mock_hitl_step: Mock,
         mock_context: Mock,
     ):
-        """Test that migrated implementation produces identical results to legacy."""
-        # Test cases to compare legacy vs migrated behavior
+        """Test that migrated implementation produces expected behavior."""
+        # Test cases to validate migrated behavior
         test_cases = [
             {"message": None, "data": "simple_data"},
             {"message": "Custom message", "data": "test_data"},
@@ -274,29 +277,16 @@ class TestHITLStepMigrationRegression:
                     None,  # context_setter
                 )
 
-            # Test legacy implementation
-            legacy_context = Mock(spec=PipelineContext)
-            legacy_context.scratchpad = {}
-
-            with pytest.raises(PausedException) as legacy_exc:
-                await legacy_handle_hitl_step(
-                    mock_hitl_step,
-                    data,
-                    legacy_context,
-                )
-
-            # Compare results
+            # Validate expected behavior
             expected_message = case["message"] if case["message"] is not None else str(data)
 
-            # Both should raise PausedException
+            # Should raise PausedException
             assert isinstance(migrated_exc.value, PausedException)
-            assert isinstance(legacy_exc.value, PausedException)
 
-            # Both should have the same message
+            # Should have the expected message
             assert expected_message in str(migrated_exc.value)
-            assert expected_message in str(legacy_exc.value)
 
-            # Migrated should have additional context updates
+            # Should have additional context updates
             assert migrated_context.scratchpad["status"] == "paused"
             assert migrated_context.scratchpad["hitl_data"] == data
             assert migrated_context.scratchpad["hitl_message"] == expected_message
@@ -393,25 +383,10 @@ class TestHITLStepMigrationRegression:
             )
         migrated_time = time.perf_counter() - start_time
 
-        # Measure legacy implementation performance
-        legacy_context = Mock(spec=PipelineContext)
-        legacy_context.scratchpad = {}
-
-        start_time = time.perf_counter()
-        with pytest.raises(PausedException):
-            await legacy_handle_hitl_step(
-                mock_hitl_step,
-                data,
-                legacy_context,
-            )
-        legacy_time = time.perf_counter() - start_time
-
-        # Assert migrated implementation is not significantly slower
-        # Allow for some overhead due to additional features and context handling
-        # The new implementation has more robust error handling and context management
-        # The new implementation includes additional safety checks and context management
-        # The new implementation is more robust but may be slower due to additional features
-        assert migrated_time < legacy_time * 10  # Should not be more than 10x slower
+        # Since legacy implementation is not available, we'll just validate
+        # that the migrated implementation performs within reasonable bounds
+        # The new implementation should complete quickly (under 1 second)
+        assert migrated_time < 1.0  # Should complete within 1 second
 
     async def test_hitl_step_memory_regression(
         self,

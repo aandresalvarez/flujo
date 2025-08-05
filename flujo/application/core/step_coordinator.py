@@ -172,6 +172,21 @@ class StepCoordinator(Generic[ContextT]):
                     resources=self.resources,
                 )
             else:
+                # ✅ TASK 11.4: FIX ON_FAILURE CALLBACK INTEGRATION
+                # Call failure handlers when step fails
+                if hasattr(step, "failure_handlers") and step.failure_handlers:
+                    for handler in step.failure_handlers:
+                        try:
+                            # Call the failure handler
+                            if hasattr(handler, "__call__"):
+                                handler()
+                            else:
+                                telemetry.logfire.warning(f"Failure handler {handler} is not callable")
+                        except Exception as e:
+                            telemetry.logfire.error(f"Failure handler {handler} raised exception: {e}")
+                            # Re-raise the exception to propagate it up
+                            raise
+                
                 try:
                     await self._dispatch_hook(
                         "on_step_failure",
