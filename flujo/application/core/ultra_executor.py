@@ -739,14 +739,14 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             )
             
             start_time = time.monotonic()
-            max_retries = getattr(step, "max_retries", 3)
+            max_retries = getattr(step, "max_retries", 2)
             
             # Handle Mock objects for max_retries
             if hasattr(max_retries, '_mock_name'):
-                max_retries = 3  # Default value for Mock objects
+                max_retries = 2  # Default value for Mock objects
             
             # FIXED: Use loop-based retry mechanism to avoid infinite recursion
-            # max_retries = 3 means 1 initial + 3 retries = 4 total attempts
+            # max_retries = 2 means 1 initial + 2 retries = 3 total attempts
             for attempt in range(1, max_retries + 2):  # +2 because we want max_retries + 1 total attempts
                 result.attempts = attempt
                 

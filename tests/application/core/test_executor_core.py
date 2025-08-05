@@ -62,12 +62,12 @@ class TestExecutorCoreSimpleStep:
         step = Mock()
         step.name = "test_step"
         step.agent = mock_agent
-        step.max_retries = 3  # Add max_retries directly to step to match code expectations
+        step.max_retries = 2  # Add max_retries directly to step to match code expectations
         
         # Create a proper config object instead of using a Mock
         class MockConfig:
             def __init__(self):
-                self.max_retries = 3
+                self.max_retries = 2
                 self.temperature = 0.7
         
         step.config = MockConfig()
@@ -238,13 +238,13 @@ class TestExecutorCoreSimpleStep:
 
         # Assert
         assert result.success is False
-        assert result.attempts == 4  # max_retries (1 initial + 3 retries)
+        assert result.attempts == 3  # max_retries (1 initial + 2 retries)
         assert result.output is None
         assert "Agent execution failed with Exception: Always fails" in result.feedback
         assert result.latency_s > 0
 
         # Verify agent was called max_retries times
-        assert executor_core._agent_runner.run.call_count == 4
+        assert executor_core._agent_runner.run.call_count == 3
 
     @pytest.mark.asyncio
     async def test_validator_failure_triggers_retry(self, executor_core, mock_step):
@@ -286,11 +286,11 @@ class TestExecutorCoreSimpleStep:
 
         # Assert
         assert result.success is False
-        assert result.attempts == 4  # max_retries (1 initial + 3 retries)
+        assert result.attempts == 3  # max_retries (1 initial + 2 retries)
         assert "Validation failed after max retries" in result.feedback
 
         # Verify validator was called max_retries times
-        assert mock_validator.validate.call_count == 4
+        assert mock_validator.validate.call_count == 3
 
     @pytest.mark.asyncio
     async def test_usage_limit_exceeded_error_propagates(self, executor_core, mock_step):
