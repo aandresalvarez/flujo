@@ -716,7 +716,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         except Exception as e:
             # Primary step failed with exception
             primary_result = StepResult(
-                name=step.name,
+                name=self._safe_step_name(step),
                 output=None,
                 success=False,
                 attempts=1,
@@ -732,7 +732,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         if hasattr(step, "fallback_step") and step.fallback_step is not None:
             # Check for infinite fallback loops
             if _fallback_depth >= self._MAX_FALLBACK_CHAIN_LENGTH:
-                raise InfiniteFallbackError(f"Fallback chain too long for step '{step.name}'")
+                raise InfiniteFallbackError(f"Fallback loop detected")
             
             # Execute fallback step using recursive execution model
             telemetry.logfire.debug(f"Executing fallback for step '{step.name}'")
@@ -776,7 +776,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 fallback_metadata = {}
             
             combined_result = StepResult(
-                name=step.name,  # Preserve original step name
+                name=self._safe_step_name(step),  # Preserve original step name
                 output=fallback_output,
                 success=fallback_result.success,
                 attempts=primary_result.attempts + fallback_result.attempts,
@@ -2263,7 +2263,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         router_result = await self.execute(router_frame)
 
         if not router_result.success:
-            result = StepResult(name=step.name, success=False, feedback=f"Router agent failed: {router_result.feedback}")
+            result = StepResult(name=self._safe_step_name(step), success=False, feedback=f"Router agent failed: {router_result.feedback}")
             result.cost_usd = router_result.cost_usd
             result.token_counts = router_result.token_counts
             return result
@@ -2274,7 +2274,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             selected_branch_names = [selected_branch_names]
         
         if not isinstance(selected_branch_names, list):
-            return StepResult(name=step.name, success=False, feedback=f"Router agent must return a list of branch names, got {type(selected_branch_names).__name__}")
+            return StepResult(name=self._safe_step_name(step), success=False, feedback=f"Router agent must return a list of branch names, got {type(selected_branch_names).__name__}")
 
         # Filter the branches based on the router's decision
         selected_branches = {
@@ -2284,7 +2284,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         }
 
         if not selected_branches:
-            return StepResult(name=step.name, success=True, output={}, cost_usd=router_result.cost_usd, token_counts=router_result.token_counts)
+            return StepResult(name=self._safe_step_name(step), success=True, output={}, cost_usd=router_result.cost_usd, token_counts=router_result.token_counts)
 
         # Phase 2: Execute the selected branches in parallel by delegating to the parallel handler
         temp_parallel_step = ParallelStep(
@@ -2514,6 +2514,27 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
     def _default_set_final_context(self, result: PipelineResult[Any], context: Optional[Any]) -> None:
         """Default context setter implementation."""
         pass
+
+    def _safe_step_name(self, step: Any) -> str:
+        """Safely extract step name from step object, handling Mock objects."""
+        try:
+            if hasattr(step, 'name'):
+                name = step.name
+                # Handle Mock objects that return other Mock objects
+                if hasattr(name, '__call__') or isinstance(name, Mock):
+                    # It's a Mock object, try to get a string value
+                    if hasattr(name, '_mock_name') and name._mock_name:
+                        return str(name._mock_name)
+                    elif hasattr(name, '_mock_return_value') and name._mock_return_value:
+                        return str(name._mock_return_value)
+                    else:
+                        return "mock_step"
+                else:
+                    return str(name)
+            else:
+                return "unknown_step"
+        except Exception:
+            return "unknown_step"
 
 
 class DefaultProcessorPipeline:

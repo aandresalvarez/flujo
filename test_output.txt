@@ -1,0 +1,108 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.11.0, pytest-8.4.1, pluggy-1.6.0
+benchmark: 5.1.0 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /Users/alvaro/Documents/Code/flujo
+configfile: pyproject.toml
+plugins: logfire-4.0.1, anyio-4.9.0, asyncio-1.1.0, xdist-3.8.0, cov-6.2.1, benchmark-5.1.0, hypothesis-6.136.6
+asyncio: mode=Mode.AUTO, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 2389 items / 8 errors / 2 skipped
+
+==================================== ERRORS ====================================
+__ ERROR collecting manual_testing/tests/automated/test_step1_core_agentic.py __
+ImportError while importing test module '/Users/alvaro/Documents/Code/flujo/manual_testing/tests/automated/test_step1_core_agentic.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/importlib/__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+manual_testing/tests/automated/test_step1_core_agentic.py:24: in <module>
+    from manual_testing.examples.cohort_pipeline import (
+E   ImportError: cannot import name 'assess_clarity_step' from 'manual_testing.examples.cohort_pipeline' (/Users/alvaro/Documents/Code/flujo/manual_testing/examples/cohort_pipeline.py)
+____ ERROR collecting tests/application/core/test_step_logic_accounting.py _____
+ImportError while importing test module '/Users/alvaro/Documents/Code/flujo/tests/application/core/test_step_logic_accounting.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/importlib/__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/application/core/test_step_logic_accounting.py:11: in <module>
+    from flujo.application.core.step_logic import _run_step_logic
+E   ModuleNotFoundError: No module named 'flujo.application.core.step_logic'
+_____ ERROR collecting tests/benchmarks/test_legacy_cleanup_performance.py _____
+ImportError while importing test module '/Users/alvaro/Documents/Code/flujo/tests/benchmarks/test_legacy_cleanup_performance.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/importlib/__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/benchmarks/test_legacy_cleanup_performance.py:15: in <module>
+    from flujo.application.core.step_logic import (
+E   ModuleNotFoundError: No module named 'flujo.application.core.step_logic'
+_____ ERROR collecting tests/integration/test_legacy_cleanup_validation.py _____
+ImportError while importing test module '/Users/alvaro/Documents/Code/flujo/tests/integration/test_legacy_cleanup_validation.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/importlib/__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/integration/test_legacy_cleanup_validation.py:12: in <module>
+    from flujo.application.core.step_logic import (
+E   ModuleNotFoundError: No module named 'flujo.application.core.step_logic'
+_______ ERROR collecting tests/regression/test_legacy_cleanup_impact.py ________
+ImportError while importing test module '/Users/alvaro/Documents/Code/flujo/tests/regression/test_legacy_cleanup_impact.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/importlib/__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/regression/test_legacy_cleanup_impact.py:13: in <module>
+    from flujo.application.core.step_logic import (
+E   ModuleNotFoundError: No module named 'flujo.application.core.step_logic'
+_________ ERROR collecting tests/unit/test_fallback_loop_detection.py __________
+ImportError while importing test module '/Users/alvaro/Documents/Code/flujo/tests/unit/test_fallback_loop_detection.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/importlib/__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/test_fallback_loop_detection.py:14: in <module>
+    from flujo.application.core.step_logic import _detect_fallback_loop
+E   ModuleNotFoundError: No module named 'flujo.application.core.step_logic'
+____________ ERROR collecting tests/unit/test_ultra_executor_v2.py _____________
+ImportError while importing test module '/Users/alvaro/Documents/Code/flujo/tests/unit/test_ultra_executor_v2.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/importlib/__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/test_ultra_executor_v2.py:19: in <module>
+    from flujo.application.core.ultra_executor import (
+E   ImportError: cannot import name 'CacheKeyGenerator' from 'flujo.application.core.ultra_executor' (/Users/alvaro/Documents/Code/flujo/flujo/application/core/ultra_executor.py)
+______________ ERROR collecting tests/utils/test_serialization.py ______________
+import file mismatch:
+imported module 'test_serialization' has this __file__ attribute:
+  /Users/alvaro/Documents/Code/flujo/tests/benchmarks/test_serialization.py
+which is not the same as the test file we want to collect:
+  /Users/alvaro/Documents/Code/flujo/tests/utils/test_serialization.py
+HINT: remove __pycache__ / .pyc files and/or use a unique basename for your test file modules
+=============================== warnings summary ===============================
+examples/test_pipeline.py:8
+  /Users/alvaro/Documents/Code/flujo/examples/test_pipeline.py:8: PytestCollectionWarning: cannot collect test class 'ExampleTestContext' because it has a __init__ constructor (from: examples/test_pipeline.py)
+    class ExampleTestContext(PipelineContext):
+
+scripts/test_health_monitor.py:18
+  /Users/alvaro/Documents/Code/flujo/scripts/test_health_monitor.py:18: PytestCollectionWarning: cannot collect test class 'TestHealthMonitor' because it has a __init__ constructor (from: scripts/test_health_monitor.py)
+    class TestHealthMonitor:
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+ERROR manual_testing/tests/automated/test_step1_core_agentic.py
+ERROR tests/application/core/test_step_logic_accounting.py
+ERROR tests/benchmarks/test_legacy_cleanup_performance.py
+ERROR tests/integration/test_legacy_cleanup_validation.py
+ERROR tests/regression/test_legacy_cleanup_impact.py
+ERROR tests/unit/test_fallback_loop_detection.py
+ERROR tests/unit/test_ultra_executor_v2.py
+ERROR tests/utils/test_serialization.py
+!!!!!!!!!!!!!!!!!!! Interrupted: 8 errors during collection !!!!!!!!!!!!!!!!!!!!
+=================== 2 skipped, 2 warnings, 8 errors in 1.02s ===================

@@ -68,6 +68,7 @@ class TestExecutorCoreFallback:
             primary_step.processors = Mock()
             primary_step.processors.prompt_processors = []
             primary_step.processors.output_processors = []
+            primary_step.processors.process = AsyncMock(return_value="processed output")
             primary_step.validators = []
             primary_step.plugins = []
 
@@ -83,6 +84,7 @@ class TestExecutorCoreFallback:
             fallback_step.processors = Mock()
             fallback_step.processors.prompt_processors = []
             fallback_step.processors.output_processors = []
+            fallback_step.processors.process = AsyncMock(return_value="processed output")
             fallback_step.validators = []
             fallback_step.plugins = []
 
