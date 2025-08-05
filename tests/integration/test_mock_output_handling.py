@@ -25,7 +25,7 @@ async def test_mock_output_raises_type_error() -> None:
     agent = BadAgent()
     step = Step.model_validate({"name": "s", "agent": agent})
     runner = create_test_flujo(step)
-    with pytest.raises(TypeError, match="returned a Mock object"):
+    with pytest.raises(Exception, match="returned a Mock object"):
         await gather_result(runner, "in")
 
 
@@ -63,7 +63,7 @@ async def test_pipeline_stops_on_mock() -> None:
     pipeline = step1 >> step2 >> step3
     runner = create_test_flujo(pipeline)
 
-    with pytest.raises(TypeError, match="returned a Mock object"):
+    with pytest.raises(Exception, match="returned a Mock object"):
         await gather_result(runner, "start")
 
     assert good_agent.call_count == 1

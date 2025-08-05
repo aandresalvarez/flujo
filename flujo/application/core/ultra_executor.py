@@ -102,6 +102,11 @@ class AgentError(RetryableError):
     pass
 
 
+class MockDetectionError(NonRetryableError):
+    """Error raised when Mock objects are detected in output."""
+    pass
+
+
 # Import required modules
 from ...steps.cache_step import CacheStep
 from ...utils.performance import time_perf_ns, time_perf_ns_to_seconds
@@ -537,7 +542,17 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         return getattr(output, attr)
             # If no unpacking needed, return as-is
             return output
-        
+
+        def _detect_mock_objects(obj: Any) -> None:
+            """Detect Mock objects and raise MockDetectionError if found."""
+            from unittest.mock import Mock, MagicMock, AsyncMock
+            
+            if isinstance(obj, (Mock, MagicMock, AsyncMock)):
+                raise MockDetectionError(f"Step '{step.name}' returned a Mock object. This is usually due to an unconfigured mock in a test.")
+            
+            # Only check direct Mock objects, not nested structures
+            # This matches the test expectation that nested mocks should not be detected
+
         # Try to execute the primary step
         primary_result = None
         try:
@@ -554,8 +569,10 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 _fallback_depth=_fallback_depth,
             )
             
-            # If primary step succeeded, return the result
+            # If primary step succeeded, check for Mock objects and return the result
             if primary_result.success:
+                # Detect Mock objects in the output
+                _detect_mock_objects(primary_result.output)
                 return primary_result
                 
         except Exception as e:
@@ -601,6 +618,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             
             # Unpack agent result if needed
             fallback_output = _unpack_agent_result(fallback_result.output)
+            
+            # Detect Mock objects in the fallback output
+            _detect_mock_objects(fallback_output)
             
             # Handle mock objects in test scenarios
             fallback_feedback = fallback_result.feedback
@@ -736,6 +756,16 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             # If no unpacking needed, return as-is
             return output
 
+        def _detect_mock_objects(obj: Any) -> None:
+            """Detect Mock objects and raise MockDetectionError if found."""
+            from unittest.mock import Mock, MagicMock, AsyncMock
+            
+            if isinstance(obj, (Mock, MagicMock, AsyncMock)):
+                raise MockDetectionError(f"Step '{step.name}' returned a Mock object. This is usually due to an unconfigured mock in a test.")
+            
+            # Only check direct Mock objects, not nested structures
+            # This matches the test expectation that nested mocks should not be detected
+
         agent = getattr(step, "agent", None)
         if agent is None:
             raise MissingAgentError(f"Step '{step.name}' has no agent")
@@ -795,6 +825,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     breach_event=breach_event,
                 )
 
+                # Detect Mock objects in the agent output BEFORE cost extraction
+                _detect_mock_objects(agent_output)
+
                 # Extract cost and token information from the output
                 from ...cost import extract_usage_metrics
                 prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
@@ -808,6 +841,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 InfiniteFallbackError,
                 InfiniteRedirectError,
                 ContextInheritanceError,
+                MockDetectionError,
             ) as e:
                 # Re-raise critical exceptions immediately
                 telemetry.logfire.error(f"Step '{step.name}' failed with critical error: {e}")
@@ -977,6 +1011,10 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
 
             # All processing succeeded
             result.output = _unpack_agent_result(processed_output)
+            
+            # Detect Mock objects in the output
+            _detect_mock_objects(result.output)
+            
             result.success = True
             result.latency_s = time.monotonic() - start_time
             result.feedback = ""  # Empty string for successful runs

@@ -83,19 +83,19 @@
   - ✅ Fix fallback metadata to preserve original error information
   - _Requirements: 1.4, 8.5_
 
-- [ ] 11. Fix pipeline runner integration and retry logic
-  - Fix pipeline runner retry logic to respect max_retries parameter
-  - Fix feedback enrichment to properly accumulate across retries
-  - Fix conditional redirection logic to trigger appropriate agent calls
-  - Fix on_failure callback integration to be called when expected
-  - Fix agent result unpacking to handle wrapped results correctly
+- [x] 11. Fix pipeline runner integration and retry logic
+  - ✅ Fix pipeline runner retry logic to respect max_retries parameter
+  - ✅ Fix feedback enrichment to properly accumulate across retries
+  - ✅ Fix conditional redirection logic to trigger appropriate agent calls
+  - ✅ Fix on_failure callback integration to be called when expected
+  - ✅ Fix agent result unpacking to handle wrapped results correctly
   - _Requirements: 10.1, 10.2, 10.3, 10.4, 10.5_
 
-- [ ] 12. Fix mock output handling and type error detection
-  - Fix mock output detection to properly identify Mock objects
-  - Fix error message patterns to match actual error messages from Mock operations
-  - Ensure pipeline stops correctly when Mock objects are detected
-  - Fix type error handling for Mock object operations
+- [x] 12. Fix mock output handling and type error detection
+  - ✅ Fix mock output detection to properly identify Mock objects
+  - ✅ Fix error message patterns to match actual error messages from Mock operations
+  - ✅ Ensure pipeline stops correctly when Mock objects are detected
+  - ✅ Fix type error handling for Mock object operations
   - _Requirements: 3.5, 10.4_
 
 - [ ] 13. Fix nested DSL construct error propagation
