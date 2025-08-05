@@ -318,6 +318,25 @@ class SQLiteBackend(StateBackend):
     async def _init_db(self, retry_count: int = 0, max_retries: int = 1) -> None:
         """Initialize the database with optimized schema and settings."""
         try:
+            # Check if database file exists and is corrupted
+            if self.db_path.exists():
+                try:
+                    # Check file size safely
+                    try:
+                        file_size = self.db_path.stat().st_size
+                        if file_size > 0:
+                            # Try to connect to check if database is valid
+                            async with aiosqlite.connect(self.db_path) as test_db:
+                                await test_db.execute("SELECT 1")
+                    except (OSError, TypeError) as e:
+                        # File stat failed or size check failed, assume corrupted
+                        telemetry.logfire.warning(f"File stat failed, assuming corrupted: {e}")
+                        await self._backup_corrupted_database()
+                except (sqlite3.DatabaseError, sqlite3.OperationalError) as e:
+                    # Database is corrupted, create backup
+                    telemetry.logfire.warning(f"Database appears to be corrupted, creating backup: {e}")
+                    await self._backup_corrupted_database()
+            
             async with aiosqlite.connect(self.db_path) as db:
                 # OPTIMIZATION: Use more efficient SQLite settings for performance
                 await db.execute("PRAGMA journal_mode = WAL")  # Write-Ahead Logging for better concurrency
@@ -360,34 +379,6 @@ class SQLiteBackend(StateBackend):
                 await db.execute(
                     "CREATE INDEX IF NOT EXISTS idx_workflow_state_created_at ON workflow_state(created_at)"
                 )
-                
-                # Create the workflow_state table for workflow state tracking
-                await db.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS workflow_state (
-                        run_id TEXT PRIMARY KEY,
-                        pipeline_id TEXT NOT NULL,
-                        pipeline_name TEXT NOT NULL,
-                        pipeline_version TEXT NOT NULL,
-                        current_step_index INTEGER NOT NULL,
-                        pipeline_context TEXT,
-                        last_step_output TEXT,
-                        step_history TEXT,
-                        status TEXT NOT NULL,
-                        created_at TEXT NOT NULL,
-                        updated_at TEXT NOT NULL,
-                        total_steps INTEGER DEFAULT 0,
-                        error_message TEXT,
-                        execution_time_ms INTEGER,
-                        memory_usage_mb REAL
-                    )
-                    """
-                )
-                
-                # Create indexes for workflow_state table
-                await db.execute("CREATE INDEX IF NOT EXISTS idx_workflow_state_status ON workflow_state(status)")
-                await db.execute("CREATE INDEX IF NOT EXISTS idx_workflow_state_pipeline_id ON workflow_state(pipeline_id)")
-                await db.execute("CREATE INDEX IF NOT EXISTS idx_workflow_state_created_at ON workflow_state(created_at)")
                 
                 # Create the runs table for run tracking (for backward compatibility)
                 await db.execute(
@@ -478,6 +469,22 @@ class SQLiteBackend(StateBackend):
                 await db.commit()
                 telemetry.logfire.info(f"Initialized SQLite database at {self.db_path}")
                 
+        except (sqlite3.DatabaseError, sqlite3.OperationalError) as e:
+            # If we get a database error during initialization, try to backup and retry
+            if "file is not a database" in str(e) and retry_count == 0:
+                telemetry.logfire.warning(f"Database corruption detected during initialization, creating backup: {e}")
+                await self._backup_corrupted_database()
+                # Retry once after backup
+                await self._init_db(retry_count + 1, max_retries)
+            elif retry_count < max_retries:
+                telemetry.logfire.warning(
+                    f"Database initialization failed, retrying ({retry_count + 1}/{max_retries}): {e}"
+                )
+                await asyncio.sleep(0.1 * (2 ** retry_count))  # Exponential backoff
+                await self._init_db(retry_count + 1, max_retries)
+            else:
+                telemetry.logfire.error(f"Failed to initialize database after {max_retries} retries: {e}")
+                raise
         except Exception as e:
             if retry_count < max_retries:
                 telemetry.logfire.warning(
@@ -488,6 +495,50 @@ class SQLiteBackend(StateBackend):
             else:
                 telemetry.logfire.error(f"Failed to initialize database after {max_retries} retries: {e}")
                 raise
+
+    async def _backup_corrupted_database(self) -> None:
+        """Backup a corrupted database file with a unique timestamp."""
+        import time
+        
+        try:
+            if not self.db_path.exists():
+                return
+        except (OSError, TypeError):
+            # File stat failed, assume it doesn't exist or is inaccessible
+            return
+            
+        # Generate unique backup filename
+        timestamp = int(time.time())
+        backup_path = self.db_path.parent / f"{self.db_path.name}.corrupt.{timestamp}"
+        
+        # Handle existing backup files with the same timestamp
+        counter = 1
+        while backup_path.exists():
+            backup_path = self.db_path.parent / f"{self.db_path.name}.corrupt.{timestamp}.{counter}"
+            counter += 1
+            if counter > 1000:  # Prevent infinite loop
+                break
+        
+        try:
+            # Try to move the corrupted file to backup location using Path.rename
+            self.db_path.rename(backup_path)
+            telemetry.logfire.warning(f"Corrupted database backed up to {backup_path}")
+        except (OSError, IOError) as e:
+            # If move fails, try to copy and then remove
+            try:
+                import shutil
+                shutil.copy2(str(self.db_path), str(backup_path))
+                self.db_path.unlink()
+                telemetry.logfire.warning(f"Corrupted database copied to {backup_path} and removed")
+            except (OSError, IOError) as copy_error:
+                # If all else fails, just remove the corrupted file
+                try:
+                    self.db_path.unlink()
+                    telemetry.logfire.warning(f"Corrupted database removed: {copy_error}")
+                except (OSError, IOError) as remove_error:
+                    telemetry.logfire.error(f"Failed to remove corrupted database: {remove_error}")
+                    # If all backup attempts fail, raise a DatabaseError
+                    raise sqlite3.DatabaseError("Database corruption recovery failed") from remove_error
 
     async def _migrate_existing_schema(self, db: aiosqlite.Connection) -> None:
         """Migrate existing database schema to the new optimized structure."""
@@ -520,10 +571,6 @@ class SQLiteBackend(StateBackend):
                     )
 
                 # Use proper SQLite quoting to prevent SQL injection
-                # Note: SQLite doesn't support parameterized DDL, so we use validation + proper quoting
-                # The validation functions ensure safety before this point
-                # Use proper SQLite identifier quoting for maximum security
-                # SQLite doesn't have a built-in quote_identifier, so we use our own implementation
                 escaped_name = column_name.replace('"', '""')
                 quoted_column_name = f'"{escaped_name}"'
                 await db.execute(
@@ -538,23 +585,6 @@ class SQLiteBackend(StateBackend):
             await db.execute(
                 "UPDATE workflow_state SET pipeline_name = pipeline_id WHERE pipeline_name = ''"
             )
-        
-        # Add other missing columns that might be needed
-        missing_columns = [
-            ("total_steps", "INTEGER DEFAULT 0"),
-            ("error_message", "TEXT"),
-            ("execution_time_ms", "INTEGER"),
-            ("memory_usage_mb", "REAL"),
-            ("step_history", "TEXT"),
-        ]
-        
-        for column_name, column_def in missing_columns:
-            if column_name not in existing_columns:
-                escaped_name = column_name.replace('"', '""')
-                quoted_column_name = f'"{escaped_name}"'
-                await db.execute(
-                    f"ALTER TABLE workflow_state ADD COLUMN {quoted_column_name} {column_def}"
-                )
 
         # Update any NULL values in required columns
         await db.execute(

@@ -96,10 +96,17 @@ class UsageGovernor(Generic[ContextT]):
                     pass
             raise error
 
-        # Check token limits - use pipeline_result.total_tokens which is updated by StepCoordinator
+        # Check token limits - calculate from step history if total_tokens is not set
+        total_tokens = pipeline_result.total_tokens
+        if total_tokens == 0 and pipeline_result.step_history:
+            # Aggregate tokens from step history if total_tokens is not set
+            total_tokens = sum(
+                getattr(step, "token_counts", 0) for step in pipeline_result.step_history
+            )
+        
         if (
             self.usage_limits.total_tokens_limit is not None
-            and pipeline_result.total_tokens > self.usage_limits.total_tokens_limit
+            and total_tokens > self.usage_limits.total_tokens_limit
         ):
             error = UsageLimitExceededError(
                 f"Token limit of {self.usage_limits.total_tokens_limit} exceeded",

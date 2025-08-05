@@ -5,6 +5,8 @@ from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.dsl import Step
 from flujo.state.backends.base import StateBackend
 from flujo.utils.serialization import register_custom_serializer, reset_custom_serializer_registry
+from collections import OrderedDict, Counter, defaultdict
+from enum import Enum
 import pytest
 
 # Set test mode environment variable
@@ -13,6 +15,16 @@ os.environ["FLUJO_TEST_MODE"] = "1"
 
 # Define mock classes that need serialization support
 # These are defined at module level to match the actual test implementations
+
+# MockEnum class (from test_serialization_edge_cases.py)
+class MockEnum(Enum):
+    """Mock enum for edge case testing."""
+    A = "a"
+    B = "b"
+    C = "c"
+
+# Register the MockEnum serializer at module level for all test runs
+register_custom_serializer(MockEnum, lambda obj: obj.value)
 
 # UsageResponse class (from test_usage_limits_enforcement.py)
 class UsageResponse:
@@ -106,6 +118,28 @@ def register_mock_serializers():
     register_custom_serializer(MockResponseWithBoth, lambda obj: obj.__dict__)
     register_custom_serializer(MockResponseWithNone, lambda obj: obj.__dict__)
     register_custom_serializer(MockResponseWithUsageOnly, lambda obj: obj.__dict__)
+    
+    # Register serializers for edge case types
+    register_custom_serializer(OrderedDict, lambda obj: dict(obj))
+    register_custom_serializer(Counter, lambda obj: dict(obj))
+    register_custom_serializer(defaultdict, lambda obj: dict(obj))
+    
+    # Register serializers for common types that should be preserved
+    import uuid
+    from datetime import datetime, date, time
+    from decimal import Decimal
+    register_custom_serializer(uuid.UUID, lambda obj: obj)  # Keep UUID objects as-is
+    register_custom_serializer(datetime, lambda obj: obj)   # Keep datetime objects as-is
+    register_custom_serializer(date, lambda obj: obj)       # Keep date objects as-is
+    register_custom_serializer(time, lambda obj: obj)       # Keep time objects as-is
+    register_custom_serializer(Decimal, lambda obj: obj)    # Keep Decimal objects as-is
+    
+    # Register fallback serializer for unknown types with __dict__
+    def fallback_dict_serializer(obj):
+        """Fallback serializer for objects with __dict__ attribute."""
+        if hasattr(obj, '__dict__'):
+            return obj.__dict__
+        return str(obj)
     
     # Note: The serialization system already handles objects with __dict__ automatically
     # in the safe_serialize function, so we don't need a fallback serializer

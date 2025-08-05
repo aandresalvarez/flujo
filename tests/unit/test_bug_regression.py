@@ -33,8 +33,8 @@ class CircularReferenceModel(BaseModel):
 
 CircularReferenceModel.model_rebuild()
 
-# Register custom serializers for test models (must be at the top, before any test code)
-register_custom_serializer(CircularReferenceModel, lambda obj: obj.__dict__)
+# Note: CircularReferenceModel should use BaseModel's built-in circular reference handling
+# Do not register a custom serializer that bypasses this logic
 
 # Register serializers for classes defined within test methods
 def register_test_serializers():

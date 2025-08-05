@@ -7,6 +7,7 @@ from typing import Any, Dict
 import pytest
 
 from flujo.application.core.ultra_executor import ExecutorCore
+from flujo.domain.models import BaseModel
 from flujo.domain.dsl.parallel import ParallelStep
 from flujo.domain.dsl.step import Step, BranchFailureStrategy, MergeStrategy
 from flujo.domain.dsl.pipeline import Pipeline
@@ -19,39 +20,42 @@ from flujo.monitor import global_monitor
 from flujo.testing.utils import StubAgent
 
 
-class MockContext:
-    """Mock context for testing, mimics a Pydantic model with flexible construction and attribute access."""
+class MockContext(BaseModel):
+    """Mock context for testing, inherits from BaseModel for proper validation."""
+
+    # Required PipelineContext attributes
+    initial_prompt: str = "test_prompt"
+    scratchpad: Dict[str, Any] = {}
+    
+    # Additional data storage for tests that expect it
+    data: Dict[str, Any] = {}
+    
+    model_config = {"extra": "allow", "arbitrary_types_allowed": True}
 
     def __init__(self, data: Dict[str, Any] = None, **kwargs):
-        # Accept both dict and kwargs for flexible construction
-        self.__dict__["data"] = dict(data) if data is not None else {}
-        self.__dict__["data"].update(kwargs)
-        # Set all keys as attributes
-        for k, v in self.__dict__["data"].items():
-            setattr(self, k, v)
-        # Only set scratchpad if present, else default
-        if hasattr(self, "scratchpad"):
-            pass
-        else:
-            self.scratchpad = self.__dict__["data"].get("scratchpad", {})
-
-    def model_dump(self) -> Dict[str, Any]:
-        out = self.__dict__["data"].copy()
-        if hasattr(self, "scratchpad"):
-            out["scratchpad"] = self.scratchpad
-        return out
+        # Merge data and kwargs
+        merged_data = dict(data) if data is not None else {}
+        merged_data.update(kwargs)
+        
+        # Extract known fields
+        initial_prompt = merged_data.pop("initial_prompt", "test_prompt")
+        scratchpad = merged_data.pop("scratchpad", {})
+        
+        # Store original data for tests that expect it
+        data_field = dict(data) if data is not None else {}
+        data_field.update(kwargs)
+        
+        # Initialize BaseModel with all fields
+        super().__init__(
+            initial_prompt=initial_prompt,
+            scratchpad=scratchpad,
+            data=data_field,
+            **merged_data
+        )
 
     @classmethod
     def model_validate(cls, data: Dict[str, Any]):
         return cls(data)
-
-    def __getattr__(self, item):
-        # Avoid recursion for 'data'
-        if item == "data":
-            return self.__dict__["data"]
-        if "data" in self.__dict__ and item in self.__dict__["data"]:
-            return self.__dict__["data"][item]
-        raise AttributeError(f"MockContext has no attribute '{item}'")
 
 
 class TestParallelStepExecution:
@@ -63,8 +67,15 @@ class TestParallelStepExecution:
 
         async def executor(step, input_data, context, resources, breach_event=None):
             # Simulate successful step execution
+            # Handle both Step and Pipeline objects
+            if hasattr(step, 'name'):
+                step_name = step.name
+            else:
+                # For Pipeline objects, use a default name
+                step_name = "pipeline_step"
+                
             return StepResult(
-                name=step.name,
+                name=step_name,
                 output=input_data,  # Return input_data as expected by tests
                 success=True,
                 attempts=1,
@@ -436,12 +447,24 @@ class TestParallelStepExecution:
         )
 
         # Use a context with no scratchpad attribute at all
-        class NoScratchpadContext:
-            def __init__(self, data):
-                self.data = data
+        class NoScratchpadContext(BaseModel):
+            initial_prompt: str = "test_prompt"
+            data: Dict[str, Any] = {}
+            
+            model_config = {"extra": "allow", "arbitrary_types_allowed": True}
 
-            def model_dump(self):
-                return self.data.copy()
+            def __init__(self, data: Dict[str, Any] = None, **kwargs):
+                merged_data = dict(data) if data is not None else {}
+                merged_data.update(kwargs)
+                
+                initial_prompt = merged_data.pop("initial_prompt", "test_prompt")
+                
+                super().__init__(
+                    initial_prompt=initial_prompt,
+                    data=merged_data,
+                    **merged_data
+                )
+                # Note: deliberately not setting scratchpad - the framework should create it
 
             @classmethod
             def model_validate(cls, data):
@@ -585,17 +608,26 @@ class TestParallelStepExecution:
         """Test parallel execution with context update merge strategy."""
 
         # Create a context that can be updated
-        class TestContext:
-            def __init__(self, value):
-                self.value = value
-                self.scratchpad = {}
+        class TestContext(BaseModel):
+            initial_prompt: str = "test_prompt"
+            value: str = "initial"
+            scratchpad: Dict[str, Any] = {}
+            
+            model_config = {"extra": "allow", "arbitrary_types_allowed": True}
 
-            def model_dump(self):
-                return {"value": self.value, "scratchpad": self.scratchpad}
+            def __init__(self, value: str = "initial", **kwargs):
+                super().__init__(
+                    initial_prompt="test_prompt",
+                    value=value,
+                    scratchpad={},
+                    **kwargs
+                )
 
             @classmethod
             def model_validate(cls, data):
-                return cls(data.get("value", ""))
+                if isinstance(data, dict):
+                    return cls(value=data.get("value", "initial"))
+                return cls(value=str(data))
 
         initial_context = TestContext("initial")
 
