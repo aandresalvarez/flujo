@@ -22,6 +22,8 @@ from flujo.exceptions import (
     PipelineContextInitializationError,
     PausedException,
     UsageLimitExceededError,
+    NonRetryableError,
+    MockDetectionError,
 )
 from flujo.state import StateBackend
 from flujo.infra import telemetry
@@ -235,6 +237,8 @@ class ExecutionManager(Generic[ContextT]):
                         yield result
                         return
 
+                except NonRetryableError as e:
+                    raise
                 except UsageLimitExceededError:
                     # ✅ TASK 7.3: FIX STEP HISTORY POPULATION
                     # Ensure the step result is added to history before re-raising the exception

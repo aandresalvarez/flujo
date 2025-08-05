@@ -204,24 +204,38 @@ def create_test_flujo(
 
 
 class NoOpStateBackend(StateBackend):
-    """A state backend that does nothing - used to disable state persistence in tests."""
+    """A state backend that simulates real backend behavior for testing while maintaining isolation."""
+
+    def __init__(self):
+        # Store serialized copies to mimic persistent backends (but in memory for tests)
+        self._store: Dict[str, Any] = {}
+        self._trace_store: Dict[str, Any] = {}
 
     async def save_state(self, run_id: str, state: Dict[str, Any]) -> None:
-        # Do nothing - no state persistence
-        pass
+        # Simulate real backend behavior by serializing and storing state
+        from flujo.utils.serialization import safe_serialize
+        self._store[run_id] = safe_serialize(state)
 
     async def load_state(self, run_id: str) -> Optional[Dict[str, Any]]:
-        # Return None - no state to load
-        return None
+        # Simulate real backend behavior by deserializing stored state
+        stored = self._store.get(run_id)
+        if stored is None:
+            return None
+        from flujo.utils.serialization import safe_deserialize
+        from copy import deepcopy
+        # Return a deserialized copy to avoid accidental mutation
+        return deepcopy(safe_deserialize(stored))
 
     async def delete_state(self, run_id: str) -> None:
-        # Do nothing
-        pass
+        # Simulate real backend behavior by removing stored state
+        self._store.pop(run_id, None)
+        self._trace_store.pop(run_id, None)
 
     async def get_trace(self, run_id: str) -> Any:
-        # Return None - no trace data
-        return None
+        # Simulate real backend behavior by returning stored trace data
+        return self._trace_store.get(run_id)
 
     async def save_trace(self, run_id: str, trace: Any) -> None:
-        # Do nothing - no trace persistence
-        pass
+        # Simulate real backend behavior by storing trace data
+        from flujo.utils.serialization import safe_serialize
+        self._trace_store[run_id] = safe_serialize(trace)

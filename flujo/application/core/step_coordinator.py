@@ -14,6 +14,8 @@ from flujo.exceptions import (
     PipelineContextInitializationError,
     PausedException,
     UsageLimitExceededError,
+    MockDetectionError,
+    NonRetryableError,
 )
 from flujo.infra import telemetry
 
@@ -152,6 +154,9 @@ class StepCoordinator(Generic[ContextT]):
                 raise
             except ContextInheritanceError:
                 # Re-raise context inheritance errors to be handled by ExecutionManager
+                raise
+            except (MockDetectionError, NonRetryableError):
+                # Re-raise mock detection and non-retryable errors immediately
                 raise
 
             # Update telemetry span with step metadata

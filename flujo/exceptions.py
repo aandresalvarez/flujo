@@ -142,6 +142,15 @@ class AgentIOValidationError(OrchestratorError):
     pass
 
 
+class NonRetryableError(Exception):
+    """Base class for errors that should not be retried in the pipeline."""
+    pass
+
+class MockDetectionError(NonRetryableError):
+    """Error raised when Mock objects are detected in output."""
+    pass
+
+
 class FlujoFrameworkError(Exception):
     """Base exception for Flujo framework with enhanced error messages."""
 

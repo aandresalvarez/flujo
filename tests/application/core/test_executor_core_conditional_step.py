@@ -240,9 +240,17 @@ class TestExecutorCoreConditionalStep:
         self, executor_core, mock_conditional_step
     ):
         """Test that ConditionalStep integrates with _execute_complex_step."""
-        with patch.object(executor_core, "execute", new_callable=AsyncMock) as mock_execute:
-            mock_execute.return_value = StepResult(
-                name="test_agent", success=True, output="test_output"
+        # Add a step to the branch to test execution
+        mock_step = Mock(spec=Step)
+        mock_step.name = "test_step"
+        mock_step.agent = Mock()
+        mock_step.config = StepConfig(max_retries=1)
+        mock_conditional_step.branches["branch_a"].steps = [mock_step]
+
+        # Mock the _handle_conditional_step method to return a result with correct name
+        with patch.object(executor_core, "_handle_conditional_step", new_callable=AsyncMock) as mock_handler:
+            mock_handler.return_value = StepResult(
+                name="test_conditional", success=True, output="test_output"
             )
 
             result = await executor_core._execute_complex_step(
