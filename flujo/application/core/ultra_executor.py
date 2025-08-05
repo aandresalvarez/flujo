@@ -786,9 +786,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     # Track usage metrics
                     await self._usage_meter.add(cost_usd, prompt_tokens, completion_tokens)
                     
-                    # --- 2.6. Usage Governance Check (After Usage Added) ---
-                    if limits is not None:
-                        await self._usage_meter.guard(limits, step_history=[])
+                    # Usage governance check moved to after successful execution
                     
                     # --- 3. Processor Pipeline (apply_output) ---
                     processed_output = agent_output
@@ -1034,6 +1032,13 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     return result
                     
                 except Exception as agent_error:
+                    # Check if this is a non-retryable error (like MockDetectionError)
+                    # Also check for specific configuration errors that should not be retried
+                    from ...exceptions import PricingNotConfiguredError
+                    if isinstance(agent_error, (NonRetryableError, PricingNotConfiguredError)):
+                        # Non-retryable errors should be raised immediately
+                        raise agent_error
+                    
                     # ONLY retry for actual agent failures
                     if attempt < max_retries + 1:
                         telemetry.logfire.warning(f"Step '{step.name}' agent execution attempt {attempt} failed: {agent_error}")
@@ -1044,9 +1049,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         result.output = None
                         result.latency_s = time.monotonic() - start_time
                         
-                                            # FIXED: Usage Governance Integration - Check limits even on failure
-                    if limits:
-                        await self._usage_meter.guard(limits, step_history=[result])
+                        # FIXED: Usage Governance Integration - Check limits even on failure
+                        if limits:
+                            await self._usage_meter.guard(limits, step_history=[result])
                     
                     telemetry.logfire.error(f"Step '{step.name}' agent failed after {result.attempts} attempts")
                     
@@ -1086,6 +1091,8 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                                 result.latency_s = fallback_result.latency_s
                                 result.metadata_ = fallback_result.metadata_
                                 return result
+                            # For successful fallbacks, set feedback to None to indicate success
+                            fallback_result.feedback = None
                             return fallback_result
                         except Exception as fallback_error:
                             telemetry.logfire.error(f"Fallback for step '{step.name}' also failed: {fallback_error}")
