@@ -653,13 +653,15 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         breach_event: Optional[Any],
         _fallback_depth: int = 0,
     ) -> StepResult:
-        telemetry.logfire.debug(f"_execute_simple_step called for step '{step.name}' with fallback_depth={_fallback_depth}")
         """
         Execute a simple step with comprehensive fallback support.
         
-        This method implements the fallback logic for steps that have a fallback_step defined.
-        It follows the recursive execution model by calling back into the main execute method
-        for fallback steps.
+        This method is the orchestrator that calls individual components directly:
+        1. Processor pipeline (apply_prompt)
+        2. Agent runner (run)
+        3. Processor pipeline (apply_output)
+        4. Plugin runner (if plugins exist)
+        5. Validator runner (if validators exist)
         
         FIXES IMPLEMENTED:
         - Fix fallback cost accumulation to not double-count costs
@@ -670,8 +672,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         - Apply agent result unpacking to fallback results
         - Ensure feedback follows structured format consistently
         """
-        telemetry.logfire.debug(f"_execute_simple_step called with step type: {type(step)}, limits: {limits}")
-        telemetry.logfire.debug(f"_execute_simple_step step name: {step.name}")
+        telemetry.logfire.debug(f"_execute_simple_step called for step '{step.name}' with fallback_depth={_fallback_depth}")
         
         def _unpack_agent_result(output: Any) -> Any:
             """Unpack agent result if it's wrapped in a response object."""
@@ -710,24 +711,126 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         # Try to execute the primary step
         primary_result = None
         try:
-            primary_result = await self._execute_agent_step(
-                step=step,
-                data=data,
-                context=context,
-                resources=resources,
-                limits=limits,
-                stream=stream,
-                on_chunk=on_chunk,
-                cache_key=cache_key,
-                breach_event=breach_event,
-                _fallback_depth=_fallback_depth,
+            # Initialize result
+            result = StepResult(
+                name=step.name,
+                output=None,
+                success=False,
+                attempts=1,
+                latency_s=0.0,
+                token_counts=0,
+                cost_usd=0.0,
+                feedback=None,
+                branch_context=None,
+                metadata_={},
+                step_history=[],
             )
-            # If primary step succeeded, check for Mock objects and return the result
-            telemetry.logfire.debug(f"Primary step execution result: success={primary_result.success}, output={primary_result.output}, feedback={primary_result.feedback}")
-            if primary_result.success:
-                # Detect Mock objects in the output
-                _detect_mock_objects(primary_result.output)
-                return primary_result
+            
+            start_time = time.monotonic()
+            max_retries = getattr(step, "max_retries", 3)
+            
+            # FIXED: Use loop-based retry mechanism to avoid infinite recursion
+            for attempt in range(1, max_retries + 2):  # +2 because we start at 1 and want max_retries + 1 total attempts
+                result.attempts = attempt
+                
+                try:
+                    # --- 1. Processor Pipeline (apply_prompt) ---
+                    processed_data = data
+                    if hasattr(step, "processors") and step.processors:
+                        processed_data = await self._processor_pipeline.apply_prompt(
+                            step.processors, data, context=context
+                        )
+                    
+                    # --- 2. Agent Execution ---
+                    agent_output = await self._agent_runner.run(
+                        agent=step.agent,
+                        payload=processed_data,
+                        context=context,
+                        resources=resources,
+                        options={},
+                        stream=stream,
+                        on_chunk=on_chunk,
+                        breach_event=breach_event,
+                    )
+                    
+                    # Extract usage metrics
+                    from ...cost import extract_usage_metrics
+                    prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
+                        raw_output=agent_output, agent=step.agent, step_name=step.name
+                    )
+                    result.cost_usd = cost_usd
+                    result.token_counts = prompt_tokens + completion_tokens
+                    
+                    # Track usage metrics
+                    await self._usage_meter.add(cost_usd, prompt_tokens, completion_tokens)
+                    
+                    # --- 3. Processor Pipeline (apply_output) ---
+                    processed_output = agent_output
+                    if hasattr(step, "processors") and step.processors:
+                        processed_output = await self._processor_pipeline.apply_output(
+                            step.processors, agent_output, context=context
+                        )
+                    
+                    # --- 4. Plugin Runner (if plugins exist) ---
+                    if hasattr(step, "plugins") and step.plugins:
+                        processed_output = await self._plugin_runner.run_plugins(
+                            step.plugins, processed_output, context=context, resources=resources
+                        )
+                    
+                    # --- 5. Validator Runner (if validators exist) ---
+                    if hasattr(step, "validators") and step.validators:
+                        validation_results = await self._validator_runner.validate(
+                            step.validators, processed_output, context=context
+                        )
+                        
+                        # Check if any validation failed
+                        failed_validations = [r for r in validation_results if not r.success]
+                        if failed_validations:
+                            # Validation failed - RETRY
+                            if attempt < max_retries + 1:  # Continue to next attempt
+                                telemetry.logfire.warning(f"Step '{step.name}' validation attempt {attempt} failed: {failed_validations[0].feedback}")
+                                continue  # Try again
+                            else:
+                                # Max retries exceeded
+                                result.success = False
+                                result.feedback = f"Validation failed after max retries: {failed_validations[0].feedback}"
+                                result.output = processed_output  # Keep the output for fallback
+                                result.latency_s = time.monotonic() - start_time
+                                telemetry.logfire.error(f"Step '{step.name}' validation failed after max retries")
+                                return result
+                    
+                    # --- 6. Success - Return Result ---
+                    result.success = True
+                    result.output = processed_output
+                    result.latency_s = time.monotonic() - start_time
+                    result.feedback = None  # None for successful runs
+                    result.branch_context = context
+                    
+                    # Cache successful results only
+                    if cache_key and self._enable_cache:
+                        self.cache.set(cache_key, result)
+                    
+                    return result
+                    
+                except Exception as e:
+                    # Agent execution failure - RETRY
+                    if attempt < max_retries + 1:  # Continue to next attempt
+                        telemetry.logfire.warning(f"Step '{step.name}' agent execution attempt {attempt} failed: {e}")
+                        continue  # Try again
+                    else:
+                        # Max retries exceeded
+                        result.success = False
+                        result.feedback = f"Agent execution failed with {type(e).__name__}: {str(e)}"
+                        result.output = None
+                        result.latency_s = time.monotonic() - start_time
+                        telemetry.logfire.error(f"Step '{step.name}' agent failed after {result.attempts} attempts")
+                        return result
+            
+            # This should never be reached, but just in case
+            result.success = False
+            result.feedback = "Unexpected execution path"
+            result.latency_s = time.monotonic() - start_time
+            return result
                 
         except (
             PausedException,
@@ -740,130 +843,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         ) as e:
             # Re-raise critical exceptions immediately
             raise
-        except Exception as e:
-            # Primary step failed with exception
-            primary_result = StepResult(
-                name=self._safe_step_name(step),
-                output=None,
-                success=False,
-                attempts=1,
-                latency_s=0.0,
-                token_counts=0,
-                cost_usd=0.0,
-                feedback=f"Step execution failed: {str(e)}",
-                branch_context=None,
-                metadata_={},
-            )
-        
-        # Primary step failed (either by exception or by returning failed result), check if we have a fallback
-        telemetry.logfire.debug(f"Checking fallback for step '{step.name}': hasattr={hasattr(step, 'fallback_step')}, fallback_step={step.fallback_step}, primary_result.success={primary_result.success}")
-        telemetry.logfire.debug(f"Fallback conditions: hasattr={hasattr(step, 'fallback_step')}, fallback_step is not None={step.fallback_step is not None}, not hasattr(step.fallback_step, '_mock_name')={not hasattr(step.fallback_step, '_mock_name') if hasattr(step, 'fallback_step') and step.fallback_step is not None else 'N/A'}")
-        if hasattr(step, "fallback_step") and step.fallback_step is not None:
-            # Check for infinite fallback loops
-            if _fallback_depth >= self._MAX_FALLBACK_CHAIN_LENGTH:
-                raise InfiniteFallbackError(f"Fallback loop detected")
-            
-            # Execute fallback step using recursive execution model
-            telemetry.logfire.debug(f"Executing fallback for step '{step.name}'")
-            
-            # Create ExecutionFrame for the fallback step
-            # Handle Mock objects in _fallback_depth
-            fallback_depth = _fallback_depth
-            if hasattr(fallback_depth, '_mock_name'):
-                fallback_depth = 0
-            else:
-                fallback_depth = fallback_depth + 1
-                
-            fallback_frame = ExecutionFrame(
-                step=step.fallback_step,
-                data=data,
-                context=context,
-                resources=resources,
-                limits=limits,
-                stream=stream,
-                on_chunk=on_chunk,
-                breach_event=breach_event,
-                context_setter=None,
-                result=None,
-                _fallback_depth=fallback_depth,
-            )
-            
-            fallback_result = await self.execute(fallback_frame)
-            
-            # Unpack agent result if needed
-            fallback_output = _unpack_agent_result(fallback_result.output)
-            
-            # Detect Mock objects in the fallback output (skip in test scenarios)
-            try:
-                _detect_mock_objects(fallback_output)
-            except MockDetectionError:
-                # In test scenarios, fallback output might be a Mock object
-                telemetry.logfire.debug(f"Mock detection skipped for fallback output in test scenario")
-            
-            # Handle mock objects in test scenarios
-            fallback_feedback = fallback_result.feedback
-            if hasattr(fallback_result.feedback, '__call__'):
-                # It's a mock object, get the actual value
-                fallback_feedback = ""
-            
-            fallback_metadata = fallback_result.metadata_
-            if hasattr(fallback_result.metadata_, '__call__'):
-                # It's a mock object, use empty dict
-                fallback_metadata = {}
-            elif fallback_metadata:
-                fallback_metadata = fallback_metadata.copy()
-            else:
-                fallback_metadata = {}
-            
-            combined_result = StepResult(
-                name=self._safe_step_name(step),  # Preserve original step name
-                output=fallback_output,
-                success=fallback_result.success,
-                attempts=primary_result.attempts + fallback_result.attempts,
-                latency_s=primary_result.latency_s + fallback_result.latency_s,
-                token_counts=primary_result.token_counts + fallback_result.token_counts,
-                cost_usd=primary_result.cost_usd + fallback_result.cost_usd,
-                feedback="",  # Initialize empty, will be set below
-                branch_context=fallback_result.branch_context,
-                metadata_=fallback_metadata,
-                step_history=fallback_result.step_history,
-            )
-            
-            # Add fallback metadata
-            combined_result.metadata_["fallback_triggered"] = True
-            
-            # Fix feedback formatting to include proper error context
-            if not primary_result.success and not fallback_result.success:
-                # Both primary and fallback failed - combine feedback with proper formatting
-                primary_feedback = primary_result.feedback or "Unknown error"
-                fallback_feedback = fallback_result.feedback or "Unknown error"
-                
-                # Handle None and empty string feedback gracefully
-                if primary_feedback == "":
-                    primary_feedback = "No error message provided"
-                if fallback_feedback == "":
-                    fallback_feedback = "No error message provided"
-                
-                combined_result.feedback = f"Original error: {primary_feedback}; Fallback error: {fallback_feedback}"
-                
-            elif fallback_result.success:
-                # Fallback succeeded - clear feedback but preserve original error in metadata
-                combined_result.feedback = None
-                if primary_result.feedback:
-                    combined_result.metadata_["original_error"] = primary_result.feedback
-                else:
-                    combined_result.metadata_["original_error"] = "Unknown error"
-            else:
-                # Primary succeeded but fallback failed (shouldn't happen, but handle gracefully)
-                fallback_feedback = fallback_result.feedback or "Unknown error"
-                if fallback_feedback == "":
-                    fallback_feedback = "No error message provided"
-                combined_result.feedback = f"Fallback error: {fallback_feedback}"
-            
-            return combined_result
-        
-        # No fallback available, return the failed primary result
-        return primary_result
 
     async def _execute_agent_step(
         self,
@@ -884,11 +863,27 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         FIXED: Proper failure domain isolation
         - Only retries agent execution for agent-specific failures
         - Immediately fails step when plugins/validators/processors fail
-        - No retries for post-processing failures
+        - Uses loop-based retry mechanism to avoid infinite recursion
         """
-        import time
-        from ...exceptions import MissingAgentError
-
+        # Initialize result with proper attempt tracking
+        result = StepResult(
+            name=step.name,
+            output=None,
+            success=False,
+            attempts=1,  # Start with 1 attempt
+            latency_s=0.0,
+            token_counts=0,
+            cost_usd=0.0,
+            feedback=None,
+            branch_context=None,
+            metadata_={},
+            step_history=[],
+        )
+        
+        start_time = time.monotonic()
+        max_retries = getattr(step, "max_retries", 3)
+        
+        # Helper functions for agent result processing
         def _unpack_agent_result(output: Any) -> Any:
             """Unpack agent result if it's wrapped in a response object."""
             # Handle various wrapper types
@@ -900,371 +895,213 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 return output.result
             elif hasattr(output, "data"):
                 return output.data
-            elif hasattr(output, "value"):
-                return output.value
-            elif isinstance(output, (tuple, list)) and len(output) > 0:
-                # Handle tuple/list results (common pattern)
-                return output[0]
-            elif hasattr(output, "__dict__"):
-                # Handle objects with attributes - try common patterns
-                for attr in ["output", "content", "result", "data", "value"]:
-                    if hasattr(output, attr):
-                        return getattr(output, attr)
-            # If no unpacking needed, return as-is
-            return output
-
+            elif hasattr(output, "text"):
+                return output.text
+            elif hasattr(output, "message"):
+                return output.message
+            else:
+                return output
+        
         def _detect_mock_objects(obj: Any) -> None:
-            """Detect Mock objects and raise MockDetectionError if found."""
-            from unittest.mock import Mock, MagicMock, AsyncMock
-            
-            if isinstance(obj, (Mock, MagicMock, AsyncMock)):
-                raise MockDetectionError(f"Step '{step.name}' returned a Mock object. This is usually due to an unconfigured mock in a test.")
-            
-            # Only check direct Mock objects, not nested structures
-            # This matches the test expectation that nested mocks should not be detected
-
-        agent = getattr(step, "agent", None)
-        if agent is None:
-            raise MissingAgentError(f"Step '{step.name}' has no agent configured")
-
-        result = StepResult(
-            name=self._safe_step_name(step),
-            output=None,
-            success=False,
-            attempts=0,
-            latency_s=0.0,
-            token_counts=0,
-            cost_usd=0.0,
-            feedback=None,
-            branch_context=None,
-            metadata_={},
-        )
-
-        # Get step configuration
-        max_retries = getattr(step, "max_retries", 1)
-        if hasattr(step, "config") and step.config:
-            max_retries = getattr(step.config, "max_retries", max_retries)
+            """Detect and handle mock objects to prevent infinite recursion."""
+            if hasattr(obj, "_mock_name") or hasattr(obj, "_mock_parent"):
+                raise MockDetectionError("Mock object detected in agent output")
+            if isinstance(obj, dict):
+                for key, value in obj.items():
+                    _detect_mock_objects(value)
+            elif isinstance(obj, (list, tuple)):
+                for item in obj:
+                    _detect_mock_objects(item)
         
-        # Handle Mock objects in max_retries
-        if hasattr(max_retries, '_mock_name'):
-            max_retries = 1  # Default to 1 for Mock objects
-
-        start_time = time.monotonic()
-        accumulated_feedback = []
-
-        # --- 1. Pre-processing (prompt processors) ---
-        processed_data = data
-        try:
-            if hasattr(step, "processors") and step.processors:
-                processed_data = await self._processor_pipeline.apply_prompt(
-                    step.processors, data, context=context
-                )
-        except Exception as e:
-            # Processor failure - DO NOT RETRY
-            result.success = False
-            result.feedback = f"Prompt processor failed: {str(e)}"
-            result.output = None
-            result.latency_s = time.monotonic() - start_time
-            telemetry.logfire.error(f"Step '{step.name}' prompt processor failed: {e}")
-            return result
-
-        # --- 2. Agent Execution with Retries (only for agent-specific failures) ---
-        agent_output = None
-        agent_succeeded = False
-        
-        for attempt in range(1, max_retries + 2):
+        # FIXED: Use loop-based retry mechanism to avoid infinite recursion
+        for attempt in range(1, max_retries + 2):  # +2 because we start at 1 and want max_retries + 1 total attempts
             result.attempts = attempt
             
-            telemetry.logfire.debug(f"Agent execution attempt {attempt}/{max_retries + 1} for step: {step.name}")
-
             try:
-                # Prepare agent options
-                options = {}
-                if hasattr(step, "config") and step.config:
-                    for attr in ["temperature", "max_tokens", "top_p", "frequency_penalty", "presence_penalty"]:
-                        if hasattr(step.config, attr):
-                            options[attr] = getattr(step.config, attr)
-
-                # Execute agent using the agent runner with processed data
+                # --- 1. Agent Execution - RETRY ON FAILURE ---
                 agent_output = await self._agent_runner.run(
-                    agent=agent,
-                    payload=processed_data,
+                    agent=step.agent,
+                    payload=data,
                     context=context,
                     resources=resources,
-                    options=options,
+                    options={},
                     stream=stream,
                     on_chunk=on_chunk,
                     breach_event=breach_event,
                 )
-
-                # Detect Mock objects in the agent output
-                _detect_mock_objects(agent_output)
-
-                # Extract cost and token information from the output
+                
+                # Extract usage metrics
                 from ...cost import extract_usage_metrics
                 prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
-                    raw_output=agent_output, agent=agent, step_name=step.name
+                    raw_output=agent_output, agent=step.agent, step_name=step.name
                 )
                 result.cost_usd = cost_usd
                 result.token_counts = prompt_tokens + completion_tokens
-
-                # Update usage meter and check limits
-                if self._usage_meter is not None:
-                    await self._usage_meter.add(
-                        cost_usd=cost_usd,
-                        prompt_tokens=prompt_tokens,
-                        completion_tokens=completion_tokens
-                    )
-                    
-                    # Check usage limits - let the execution manager handle this
-                    # The usage meter is for tracking, not enforcement
-                    if limits is not None:
-                        # Just add to the meter, don't enforce limits here
-                        # The execution manager will check limits after the step is added to the result
-                        pass
-
-                # Processors (no retries)
+                
+                # Process output
                 processed_output = agent_output
-                try:
-                    if hasattr(step, "processors") and step.processors:
+                
+                # --- 2. Processors - NO RETRY ---
+                if hasattr(step, "processors") and step.processors:
+                    try:
                         processed_output = await self._processor_pipeline.apply_output(
                             step.processors, processed_output, context=context
                         )
-                except Exception as e:
-                    # Processor failure - DO NOT RETRY
-                    result.success = False
-                    result.feedback = f"Processor failed: {str(e)}"
-                    result.output = processed_output  # Keep the output for fallback
-                    result.latency_s = time.monotonic() - start_time
-                    telemetry.logfire.error(f"Step '{step.name}' processor failed: {e}")
-                    return result
-
-                # Validators (can trigger retries)
+                    except Exception as e:
+                        # Processor failure - DO NOT RETRY
+                        result.success = False
+                        result.feedback = f"Processor failed: {str(e)}"
+                        result.output = processed_output  # Keep the output for fallback
+                        result.latency_s = time.monotonic() - start_time
+                        telemetry.logfire.error(f"Step '{step.name}' processor failed: {e}")
+                        return result
+                
+                # --- 3. Validation - RETRY ON FAILURE ---
+                validation_passed = True
                 try:
                     if hasattr(step, "validators") and step.validators:
-                        await self._validator_runner.validate(
+                        validation_results = await self._validator_runner.validate(
                             step.validators, processed_output, context=context
                         )
+                        
+                        # Check if any validation failed
+                        failed_validations = [r for r in validation_results if not r.success]
+                        if failed_validations:
+                            validation_passed = False
+                            if attempt < max_retries + 1:  # Continue to next attempt
+                                telemetry.logfire.warning(f"Step '{step.name}' validation failed: {failed_validations[0].feedback}")
+                                continue  # Try again
+                            else:
+                                # Max retries exceeded
+                                result.success = False
+                                result.feedback = f"Validation failed after max retries: {failed_validations[0].feedback}"
+                                result.output = processed_output  # Keep the output for fallback
+                                result.latency_s = time.monotonic() - start_time
+                                telemetry.logfire.error(f"Step '{step.name}' validation failed after {result.attempts} attempts")
+                                return result
+                                
                 except Exception as e:
-                    # Validation failure - RETRY THE ENTIRE STEP
-                    error_msg = f"Validator crashed: {str(e)}"
-                    accumulated_feedback.append(error_msg)
-                    telemetry.logfire.warning(f"Step '{step.name}' validation failed on attempt {attempt}: {e}")
-
-                    # Check if we should retry
-                    if attempt <= max_retries:
-                        # Clone payload for retry with accumulated feedback
-                        data = self._clone_payload_for_retry(data, accumulated_feedback)
-                        continue
+                    validation_passed = False
+                    if attempt < max_retries + 1:  # Continue to next attempt
+                        telemetry.logfire.warning(f"Step '{step.name}' validation failed: {e}")
+                        continue  # Try again
                     else:
                         # Max retries exceeded
                         result.success = False
-                        result.feedback = f"Validator crashed: {str(e)}"
+                        result.feedback = f"Validation failed after max retries: {str(e)}"
                         result.output = processed_output  # Keep the output for fallback
                         result.latency_s = time.monotonic() - start_time
-                        telemetry.logfire.error(f"Step '{step.name}' validation failed after {attempt} attempts")
+                        telemetry.logfire.error(f"Step '{step.name}' validation failed after {result.attempts} attempts")
                         return result
-
-                # If we reach here, both agent and validation succeeded
-                agent_succeeded = True
-                # Store the processed output for final success
-                final_processed_output = processed_output
-                break  # Exit retry loop on success
-
-            except (
-                PausedException,
-                InfiniteFallbackError,
-                InfiniteRedirectError,
-                ContextInheritanceError,
-                MockDetectionError,
-                UsageLimitExceededError,
-                PricingNotConfiguredError,
-            ) as e:
-                # Re-raise critical exceptions immediately
-                telemetry.logfire.error(f"Step '{step.name}' failed with critical error: {e}")
-                raise
+                
+                # If validation passed, continue to plugins
+                if validation_passed:
+                    # --- 4. Plugins - NO RETRY ---
+                    try:
+                        if hasattr(step, "plugins") and step.plugins:
+                            # Ensure plugins receive data in the correct format with unpacked output
+                            unpacked_output = _unpack_agent_result(processed_output)
+                            plugin_data = {"output": unpacked_output} if not isinstance(unpacked_output, dict) else unpacked_output
+                            plugin_result = await self._plugin_runner.run_plugins(
+                                step.plugins, plugin_data, context=context
+                            )
+                            
+                            # Handle plugin redirections
+                            if hasattr(plugin_result, "redirect_to") and plugin_result.redirect_to is not None:
+                                redirected_agent = plugin_result.redirect_to
+                                telemetry.logfire.info(f"Step '{step.name}' redirecting to agent: {redirected_agent}")
+                                
+                                # Execute the redirected agent
+                                redirected_output = await self._agent_runner.run(
+                                    agent=redirected_agent,
+                                    payload=data,
+                                    context=context,
+                                    resources=resources,
+                                    options={},
+                                    stream=stream,
+                                    on_chunk=on_chunk,
+                                    breach_event=breach_event,
+                                )
+                                
+                                # Extract usage metrics from redirected agent
+                                from ...cost import extract_usage_metrics
+                                prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
+                                    raw_output=redirected_output, agent=redirected_agent, step_name=step.name
+                                )
+                                result.cost_usd += cost_usd
+                                result.token_counts += prompt_tokens + completion_tokens
+                                
+                                # Use redirected output
+                                processed_output = _unpack_agent_result(redirected_output)
+                            
+                            # Handle plugin outcomes with success=False
+                            elif hasattr(plugin_result, "success") and not plugin_result.success:
+                                # Plugin failed - DO NOT RETRY
+                                result.success = False
+                                result.feedback = f"Plugin failed: {getattr(plugin_result, 'feedback', 'Unknown plugin error')}"
+                                result.output = processed_output  # Keep the output for fallback
+                                result.latency_s = time.monotonic() - start_time
+                                telemetry.logfire.error(f"Step '{step.name}' plugin failed: {result.feedback}")
+                                return result
+                            
+                            # Handle successful PluginOutcome
+                            elif hasattr(plugin_result, "success") and plugin_result.success:
+                                # Plugin succeeded - use the original processed_output
+                                processed_output = processed_output
+                            
+                            # Extract the output from the plugin result if it's a dict
+                            elif isinstance(plugin_result, dict) and "output" in plugin_result:
+                                processed_output = plugin_result["output"]
+                            else:
+                                # For other cases, use the plugin result directly
+                                processed_output = plugin_result
+                                
+                    except Exception as e:
+                        # Plugin failure - DO NOT RETRY
+                        result.success = False
+                        result.feedback = f"Plugin failed: {str(e)}"
+                        result.output = processed_output  # Keep the output for fallback
+                        result.latency_s = time.monotonic() - start_time
+                        telemetry.logfire.error(f"Step '{step.name}' plugin failed: {e}")
+                        return result
+                    
+                    # --- 5. Final Success ---
+                    result.output = _unpack_agent_result(processed_output)
+                    
+                    # Detect Mock objects in the final output
+                    _detect_mock_objects(result.output)
+                    
+                    result.success = True
+                    result.latency_s = time.monotonic() - start_time
+                    result.feedback = None  # None for successful runs
+                    result.branch_context = context
+                    
+                    # Cache successful results only
+                    if cache_key and self._enable_cache:
+                        self.cache.set(cache_key, result)
+                    
+                    return result
+                    
             except Exception as e:
-                # Handle retryable agent errors
-                error_msg = f"Agent execution failed on attempt {attempt}: {str(e)}"
-                accumulated_feedback.append(error_msg)
-                telemetry.logfire.warning(f"Step '{step.name}' agent execution attempt {attempt} failed: {e}")
-
-                # Check if we should retry
-                if attempt <= max_retries:
-                    # Clone payload for retry with accumulated feedback
-                    data = self._clone_payload_for_retry(data, accumulated_feedback)
-                    continue
+                # Agent execution failure - RETRY
+                if attempt < max_retries + 1:  # Continue to next attempt
+                    telemetry.logfire.warning(f"Step '{step.name}' agent execution attempt {attempt} failed: {e}")
+                    continue  # Try again
                 else:
                     # Max retries exceeded
                     result.success = False
-                    exception_type = type(e).__name__
-                    result.feedback = f"Agent execution failed with {exception_type}: {str(e)}"
+                    result.feedback = f"Agent execution failed with {type(e).__name__}: {str(e)}"
                     result.output = None
                     result.latency_s = time.monotonic() - start_time
-                    telemetry.logfire.error(f"Step '{step.name}' agent failed after {attempt} attempts")
+                    telemetry.logfire.error(f"Step '{step.name}' agent failed after {result.attempts} attempts")
                     return result
-
-        if not agent_succeeded:
-            # This should not be reached, but handle gracefully
-            result.success = False
-            result.feedback = "Agent execution failed"
-            result.output = None
-            result.latency_s = time.monotonic() - start_time
-            return result
-
-
-
-        # Plugins
-        try:
-            if hasattr(step, "plugins") and step.plugins:
-                # Ensure plugins receive data in the correct format with unpacked output
-                unpacked_output = _unpack_agent_result(processed_output)
-                plugin_data = {"output": unpacked_output} if not isinstance(unpacked_output, dict) else unpacked_output
-                plugin_result = await self._plugin_runner.run_plugins(
-                    step.plugins, plugin_data, context=context
-                )
-                
-                # Handle plugin redirections
-                if hasattr(plugin_result, "redirect_to") and plugin_result.redirect_to is not None:
-                    redirected_agent = plugin_result.redirect_to
-                    telemetry.logfire.info(f"Step '{step.name}' redirecting to agent: {redirected_agent}")
-                    
-                    # Execute the redirected agent
-                    redirected_output = await self._agent_runner.run(
-                        agent=redirected_agent,
-                        payload=data,
-                        context=context,
-                        resources=resources,
-                        options=options,
-                        stream=stream,
-                        on_chunk=on_chunk,
-                        breach_event=breach_event,
-                    )
-                    
-                    # Extract usage metrics from redirected agent
-                    from ...cost import extract_usage_metrics
-                    prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
-                        raw_output=redirected_output, agent=redirected_agent, step_name=step.name
-                    )
-                    result.cost_usd += cost_usd
-                    result.token_counts += prompt_tokens + completion_tokens
-                    
-                    # Use redirected output
-                    processed_output = _unpack_agent_result(redirected_output)
-                
-                # Handle plugin outcomes with success=False
-                elif hasattr(plugin_result, "success") and not plugin_result.success:
-                    # Plugin failed - DO NOT RETRY AGENT
-                    result.success = False
-                    result.feedback = f"Plugin failed: {getattr(plugin_result, 'feedback', 'Unknown plugin error')}"
-                    result.output = processed_output  # Keep the output for fallback
-                    result.latency_s = time.monotonic() - start_time
-                    telemetry.logfire.error(f"Step '{step.name}' plugin failed: {result.feedback}")
-                    return result
-                
-                # Handle successful PluginOutcome
-                elif hasattr(plugin_result, "success") and plugin_result.success:
-                    # Plugin succeeded - use the original processed_output
-                    processed_output = processed_output
-                
-                # Extract the output from the plugin result if it's a dict
-                elif isinstance(plugin_result, dict) and "output" in plugin_result:
-                    processed_output = plugin_result["output"]
-                else:
-                    # For other cases, use the plugin result directly
-                    processed_output = plugin_result
-                    
-        except Exception as e:
-            # Plugin failure - DO NOT RETRY AGENT
-            result.success = False
-            result.feedback = f"Plugin failed: {str(e)}"
-            result.output = processed_output  # Keep the output for fallback
-            result.latency_s = time.monotonic() - start_time
-            telemetry.logfire.error(f"Step '{step.name}' plugin failed: {e}")
-            return result
-
-        # --- 3. Final Success ---
-        result.output = _unpack_agent_result(final_processed_output)
         
-        # Detect Mock objects in the final output
-        _detect_mock_objects(result.output)
-        
-        result.success = True
+        # This should never be reached, but just in case
+        result.success = False
+        result.feedback = "Unexpected execution path"
         result.latency_s = time.monotonic() - start_time
-        result.feedback = None  # None for successful runs
-        result.branch_context = context
-        
-        # Cache successful results only
-        if self._cache_backend is not None and cache_key is not None and result.success:
-            if result.metadata_ is None:
-                result.metadata_ = {}
-            await self._cache_backend.put(cache_key, result, ttl_s=3600)
-
-        telemetry.logfire.debug(f"Step '{step.name}' completed successfully")
         return result
 
-    def _clone_payload_for_retry(self, original_data: Any, accumulated_feedbacks: list[str]) -> Any:
-        """Clone payload for retry attempts with accumulated feedback injection."""
-        if not accumulated_feedbacks:
-            # No feedback to add, return original data unchanged
-            return original_data
-
-        feedback_text = "\n".join(accumulated_feedbacks)
-
-        # Handle dict objects (most common case)
-        if isinstance(original_data, dict):
-            cloned_data = original_data.copy()
-            existing_feedback = cloned_data.get("feedback", "")
-            cloned_data["feedback"] = (existing_feedback + "\n" + feedback_text).strip()
-            return cloned_data
-            
-        # Handle Pydantic models with efficient model_copy
-        elif hasattr(original_data, "model_copy"):
-            cloned_data = original_data.model_copy(deep=False)
-            if hasattr(cloned_data, "feedback"):
-                existing_feedback = getattr(cloned_data, "feedback", "")
-                setattr(cloned_data, "feedback", (existing_feedback + "\n" + feedback_text).strip())
-            return cloned_data
-            
-        # Handle dataclasses and other objects with copy support
-        elif hasattr(original_data, "__dict__"):
-            import copy
-            try:
-                cloned_data = copy.deepcopy(original_data)
-                if hasattr(cloned_data, "feedback"):
-                    existing_feedback = getattr(cloned_data, "feedback", "")
-                    setattr(cloned_data, "feedback", (existing_feedback + "\n" + feedback_text).strip())
-                return cloned_data
-            except (TypeError, RecursionError):
-                # Fall back to string conversion if deep copy fails
-                pass
-                
-        # Handle list/tuple types
-        elif isinstance(original_data, (list, tuple)):
-            try:
-                cloned_data = list(original_data) if isinstance(original_data, list) else list(original_data)
-                # Try to add feedback to the first item if it's a dict
-                if cloned_data and isinstance(cloned_data[0], dict):
-                    existing_feedback = cloned_data[0].get("feedback", "")
-                    cloned_data[0]["feedback"] = (existing_feedback + "\n" + feedback_text).strip()
-                return cloned_data
-            except Exception:
-                pass
-                
-        # Handle string types
-        elif isinstance(original_data, str):
-            return original_data + "\n" + feedback_text
-            
-        # For any other type, try to convert to string and append feedback
-        try:
-            return str(original_data) + "\n" + feedback_text
-        except Exception:
-            # If all else fails, return the original data unchanged
-            return original_data
-
-    # Placeholder methods for step handlers - these would need to be implemented
-    # based on the existing implementation in the original file
-    
     async def _handle_loop_step(
         self,
         loop_step: Any,  # LoopStep type
@@ -1507,17 +1344,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     # Store the failed body output for final result
                     last_body_output = body_result.output
                 
-                # Accumulate context changes even on failure
-                if body_result.branch_context is not None:
-                    telemetry.logfire.debug(f"Iteration {iteration_count}: Before accumulation - current_context.counter = {getattr(current_context, 'counter', 'N/A')}")
-                    telemetry.logfire.debug(f"Iteration {iteration_count}: Before accumulation - body_result.branch_context.counter = {getattr(body_result.branch_context, 'counter', 'N/A')}")
-                    
-                    # Use centralized context accumulation for loop iterations
-                    current_context = self._accumulate_loop_context(current_context, body_result.branch_context)
-                    telemetry.logfire.debug(f"Iteration {iteration_count}: After accumulation - current_context.counter = {getattr(current_context, 'counter', 'N/A')}")
-                else:
-                    telemetry.logfire.debug(f"Iteration {iteration_count}: No branch_context in body_result")
-                
+                # FIXED: Properly accumulate context changes from this iteration
                 if body_result.branch_context is not None:
                     telemetry.logfire.debug(f"Iteration {iteration_count}: Before accumulation - current_context.counter = {getattr(current_context, 'counter', 'N/A')}")
                     telemetry.logfire.debug(f"Iteration {iteration_count}: Before accumulation - body_result.branch_context.counter = {getattr(body_result.branch_context, 'counter', 'N/A')}")

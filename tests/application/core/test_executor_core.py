@@ -35,7 +35,25 @@ class TestExecutorCoreSimpleStep:
     def mock_agent(self):
         """Create a mock agent for testing."""
         agent = Mock()
-        agent.run = AsyncMock(return_value="test output")
+        
+        # Create a proper mock response object that won't cause Mock object errors
+        class MockResponse:
+            def __init__(self):
+                self.output = "test output"
+                
+            def usage(self):
+                class MockUsage:
+                    def __init__(self):
+                        self.request_tokens = 10
+                        self.response_tokens = 5
+                return MockUsage()
+        
+        # Configure the agent to return a proper response object
+        agent.run = AsyncMock(return_value=MockResponse())
+        
+        # Ensure model_id returns a proper string value, not a Mock object
+        agent.model_id = "openai:gpt-4o"
+        
         return agent
 
     @pytest.fixture
@@ -44,8 +62,15 @@ class TestExecutorCoreSimpleStep:
         step = Mock()
         step.name = "test_step"
         step.agent = mock_agent
-        step.config.max_retries = 3
-        step.config.temperature = 0.7
+        step.max_retries = 3  # Add max_retries directly to step to match code expectations
+        
+        # Create a proper config object instead of using a Mock
+        class MockConfig:
+            def __init__(self):
+                self.max_retries = 3
+                self.temperature = 0.7
+        
+        step.config = MockConfig()
         step.processors = Mock()
         step.processors.prompt_processors = []
         step.processors.output_processors = []
@@ -70,8 +95,21 @@ class TestExecutorCoreSimpleStep:
         mock_processor_pipeline.apply_prompt.return_value = "processed data"
         mock_processor_pipeline.apply_output.return_value = "processed output"
         mock_plugin_runner.run_plugins.return_value = "final output"
-        # Configure agent runner to return a non-Mock object
-        mock_agent_runner.run.return_value = "raw output"
+        
+        # Create a proper mock response object that won't cause Mock object errors
+        class MockResponse:
+            def __init__(self):
+                self.output = "test output"
+                
+            def usage(self):
+                class MockUsage:
+                    def __init__(self):
+                        self.request_tokens = 10
+                        self.response_tokens = 5
+                return MockUsage()
+        
+        # Configure agent runner to return a proper response object
+        mock_agent_runner.run.return_value = MockResponse()
 
         executor = ExecutorCore(
             agent_runner=mock_agent_runner,
@@ -249,7 +287,7 @@ class TestExecutorCoreSimpleStep:
         # Assert
         assert result.success is False
         assert result.attempts == 4  # max_retries (1 initial + 3 retries)
-        assert "Validator" in result.feedback and "crashed: Validation failed" in result.feedback
+        assert "Validation failed after max retries" in result.feedback
 
         # Verify validator was called max_retries times
         assert mock_validator.validate.call_count == 4
@@ -944,8 +982,21 @@ class TestExecutorCoreFallbackLogic:
         mock_processor_pipeline.apply_prompt.return_value = "processed data"
         mock_processor_pipeline.apply_output.return_value = "processed output"
         mock_plugin_runner.run_plugins.return_value = "final output"
-        # Configure agent runner to return a non-Mock object
-        mock_agent_runner.run.return_value = "raw output"
+        
+        # Create a proper mock response object that won't cause Mock object errors
+        class MockResponse:
+            def __init__(self):
+                self.output = "test output"
+                
+            def usage(self):
+                class MockUsage:
+                    def __init__(self):
+                        self.request_tokens = 10
+                        self.response_tokens = 5
+                return MockUsage()
+        
+        # Configure agent runner to return a proper response object
+        mock_agent_runner.run.return_value = MockResponse()
 
         return ExecutorCore(
             agent_runner=mock_agent_runner,
