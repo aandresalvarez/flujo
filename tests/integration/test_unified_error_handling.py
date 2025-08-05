@@ -169,7 +169,7 @@ async def test_error_information_preservation():
 
     assert "RuntimeError" in result.feedback
     assert "Test failure" in result.feedback
-    assert result.attempts == 1
+    assert result.attempts == 2  # 1 initial + 1 retry (max_retries=1)
 
 
 @pytest.mark.asyncio

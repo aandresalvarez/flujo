@@ -34,6 +34,7 @@ class MockImageResult:
     def __init__(self, cost_usd: float, token_counts: int = 0):
         self.cost_usd = cost_usd
         self.token_counts = token_counts
+        self.output = f"Mock image result with cost ${cost_usd} and {token_counts} tokens"
 
 # WrappedResult class (from test_pipeline_runner.py and test_fallback.py)
 class WrappedResult:
@@ -54,6 +55,7 @@ class MockResponseWithBoth:
     def __init__(self):
         self.cost_usd = 0.1
         self.token_counts = 50
+        self.output = "Mock response with both protocol and usage method"
 
     def usage(self):
         class MockUsage:
@@ -69,6 +71,7 @@ class MockResponseWithNone:
     def __init__(self):
         self.cost_usd = None
         self.token_counts = None
+        self.output = "Mock response with None values"
 
 # MockResponseWithUsageOnly class (from test_explicit_cost_integration.py)
 class MockResponseWithUsageOnly:

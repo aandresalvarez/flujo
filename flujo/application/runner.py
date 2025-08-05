@@ -279,16 +279,18 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
 
         self.state_backend: StateBackend | None
         if state_backend is None:
-            # Use in-memory state backend in test mode to avoid SQLite file usage
-            if os.getenv("FLUJO_TEST_MODE"):
+            # OPTIMIZATION: Use in-memory state backend in test mode to avoid SQLite file usage
+            # This significantly reduces overhead in test scenarios
+            if os.getenv("FLUJO_TEST_MODE") or os.getenv("CI") == "true":
                 from ..state.backends.memory import InMemoryBackend
-
                 self.state_backend = InMemoryBackend()
             else:
                 from pathlib import Path
                 from ..state.backends.sqlite import SQLiteBackend
-
-                self.state_backend = SQLiteBackend(Path.cwd() / "flujo_ops.db")
+                
+                # OPTIMIZATION: Use a more efficient database path and configuration
+                db_path = Path.cwd() / "flujo_ops.db"
+                self.state_backend = SQLiteBackend(db_path)
         else:
             self.state_backend = state_backend
         self.delete_on_completion = delete_on_completion

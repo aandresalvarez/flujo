@@ -15,7 +15,7 @@ import os
 from typing import Any
 from unittest.mock import Mock
 
-from flujo.application.core.ultra_executor import ExecutorCore, OptimizationConfig
+from flujo.application.core.ultra_executor import ExecutorCore, OptimizationConfig, OptimizedExecutorCore
 from flujo.domain.dsl.step import Step, StepConfig
 from flujo.application.core.adaptive_resource_manager import (
     get_global_adaptive_resource_manager,

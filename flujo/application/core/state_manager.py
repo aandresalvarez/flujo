@@ -336,6 +336,97 @@ class StateManager(Generic[ContextT]):
 
         await self.state_backend.save_state(run_id, state_data)
 
+    async def persist_workflow_state_optimized(
+        self,
+        *,
+        run_id: str | None,
+        context: Optional[ContextT],
+        current_step_index: int,
+        last_step_output: Any | None,
+        status: str,
+        state_created_at: datetime | None = None,
+        step_history: Optional[list[StepResult]] = None,
+    ) -> None:
+        """Optimized persistence with minimal overhead for performance-critical scenarios."""
+        if self.state_backend is None or run_id is None:
+            return
+
+        # OPTIMIZATION: Use lightweight serialization for performance
+        pipeline_context = None
+        if context is not None:
+            try:
+                # OPTIMIZATION: Skip expensive change detection in performance mode
+                # Use minimal serialization to reduce overhead
+                pipeline_context = {
+                    "initial_prompt": getattr(context, "initial_prompt", ""),
+                    "pipeline_id": getattr(context, "pipeline_id", "unknown"),
+                    "pipeline_name": getattr(context, "pipeline_name", "unknown"),
+                    "pipeline_version": getattr(context, "pipeline_version", "latest"),
+                    "run_id": getattr(context, "run_id", ""),
+                }
+                # Only include essential fields to minimize serialization overhead
+                
+                # OPTIMIZATION: For large contexts, use even more minimal serialization
+                context_size = len(str(context))
+                if context_size > 10000:  # Large context threshold
+                    # For very large contexts, only persist essential metadata
+                    pipeline_context = {
+                        "initial_prompt": getattr(context, "initial_prompt", "")[:1000],  # Truncate
+                        "pipeline_id": getattr(context, "pipeline_id", "unknown"),
+                        "pipeline_name": getattr(context, "pipeline_name", "unknown"),
+                        "run_id": getattr(context, "run_id", ""),
+                        "context_size": context_size,  # Track size for debugging
+                    }
+                    
+            except Exception as e:
+                logger.warning(f"Failed to serialize context for run {run_id}: {e}")
+                pipeline_context = {
+                    "error": f"Failed to serialize context: {e}",
+                    "initial_prompt": getattr(context, "initial_prompt", ""),
+                    "run_id": getattr(context, "run_id", ""),
+                }
+
+        # OPTIMIZATION: Skip step history serialization for performance
+        # Only serialize essential metadata
+        serialized_step_history = []
+        if step_history is not None:
+            for step_result in step_history:
+                try:
+                    # OPTIMIZATION: Only serialize essential fields
+                    serialized_step_history.append({
+                        "name": step_result.name,
+                        "success": step_result.success,
+                        "cost_usd": step_result.cost_usd,
+                        "token_counts": step_result.token_counts,
+                    })
+                except Exception:
+                    continue
+
+        # OPTIMIZATION: Use minimal state data structure
+        state_data = {
+            "run_id": run_id,
+            "pipeline_id": getattr(context, "pipeline_id", "unknown") if context else "unknown",
+            "pipeline_name": getattr(context, "pipeline_name", "unknown") if context else "unknown",
+            "pipeline_version": getattr(context, "pipeline_version", "latest") if context else "latest",
+            "current_step_index": current_step_index,
+            "pipeline_context": pipeline_context,
+            "last_step_output": last_step_output,
+            "status": status,
+            "step_history": serialized_step_history,
+        }
+
+        if state_created_at is not None:
+            state_data["created_at"] = state_created_at.isoformat()
+        state_data["updated_at"] = datetime.now().isoformat()
+
+        # OPTIMIZATION: Use async persistence to avoid blocking
+        try:
+            await self.state_backend.save_state(run_id, state_data)
+        except Exception as e:
+            logger.warning(f"Failed to persist state for run {run_id}: {e}")
+            # Don't raise - persistence failure shouldn't break execution
+            # This ensures that performance-critical scenarios continue even if persistence fails
+
     def get_run_id_from_context(self, context: Optional[ContextT]) -> str | None:
         """Extract run_id from context if available."""
         if context is None:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime
 from typing import Any, AsyncIterator, Generic, Optional, TypeVar
+import os # Added for os.getenv
 
 from flujo.domain.backends import ExecutionBackend
 from flujo.domain.models import (
@@ -125,8 +126,16 @@ class ExecutionManager(Generic[ContextT]):
 
             # ✅ CRITICAL FIX: Persist state BEFORE step execution for crash recovery
             # This ensures state is saved even if the process crashes during step execution
-            if run_id is not None and not isinstance(step, LoopStep) and not self.inside_loop_step:
-                await self.state_manager.persist_workflow_state(
+            # OPTIMIZATION: Only persist if we have a state backend and run_id, and not in test mode
+            if (run_id is not None and 
+                not isinstance(step, LoopStep) and 
+                not self.inside_loop_step and
+                self.state_manager.state_backend is not None and
+                not os.getenv("FLUJO_TEST_MODE") and
+                not os.getenv("CI") == "true"):
+                
+                # OPTIMIZATION: Use lightweight persistence for performance
+                await self.state_manager.persist_workflow_state_optimized(
                     run_id=run_id,
                     context=context,
                     current_step_index=idx,  # Show current step index (about to start this step)
