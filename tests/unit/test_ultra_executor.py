@@ -6,7 +6,7 @@ from unittest.mock import Mock, AsyncMock
 from dataclasses import dataclass
 from typing import Any, Optional
 
-from flujo.application.core.ultra_executor import UltraStepExecutor, _LRUCache, _UsageTracker
+from flujo.application.core.ultra_executor import ExecutorCore as UltraStepExecutor, _LRUCache, _UsageTracker
 from flujo.domain.dsl.step import Step
 from flujo.domain.models import StepResult, UsageLimits
 from flujo.exceptions import UsageLimitExceededError
@@ -278,7 +278,7 @@ class TestUltraStepExecutor:
         assert result.name == "test_step"
         assert result.success is True
         assert result.output == "test_output"
-        assert result.attempts == 2
+        assert result.attempts == 2  # 1 initial + 1 retry (agent succeeds on second attempt)
 
     @pytest.mark.asyncio
     async def test_step_with_validation(self, executor, mock_step):
@@ -514,7 +514,7 @@ class TestUltraStepExecutor:
     @pytest.mark.asyncio
     async def test_caching_functionality(self):
         """Test that caching actually works in the executor."""
-        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.application.core.ultra_executor import ExecutorCore as UltraStepExecutor
         from flujo.domain.dsl import Step
         from flujo.testing.utils import StubAgent
 
@@ -543,7 +543,7 @@ class TestUltraStepExecutor:
     @pytest.mark.asyncio
     async def test_caching_with_context(self):
         """Test caching works correctly with context."""
-        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.application.core.ultra_executor import ExecutorCore as UltraStepExecutor
         from flujo.domain.dsl import Step
         from flujo.testing.utils import StubAgent
         from flujo.domain.models import BaseModel
@@ -579,7 +579,7 @@ class TestUltraStepExecutor:
     @pytest.mark.asyncio
     async def test_caching_disabled(self):
         """Test that caching is properly disabled when enable_cache=False."""
-        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.application.core.ultra_executor import ExecutorCore as UltraStepExecutor
         from flujo.domain.dsl import Step
         from flujo.testing.utils import StubAgent
 
@@ -603,7 +603,7 @@ class TestUltraStepExecutor:
     @pytest.mark.asyncio
     async def test_cache_key_stability(self):
         """Test that cache keys are stable and deterministic."""
-        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.application.core.ultra_executor import ExecutorCore as UltraStepExecutor
         from flujo.domain.dsl import Step
         from flujo.testing.utils import StubAgent
 
@@ -953,7 +953,7 @@ class TestUltraStepExecutor:
     @pytest.mark.asyncio
     async def test_regression_cache_integration_works(self):
         """REGRESSION: Ensure caching is actually integrated into execution flow."""
-        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.application.core.ultra_executor import ExecutorCore as UltraStepExecutor
         from flujo.domain.dsl import Step
         from flujo.testing.utils import StubAgent
 
@@ -980,7 +980,7 @@ class TestUltraStepExecutor:
     @pytest.mark.asyncio
     async def test_regression_cache_disabled_works(self):
         """REGRESSION: Ensure caching can be properly disabled."""
-        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.application.core.ultra_executor import ExecutorCore as UltraStepExecutor
         from flujo.domain.dsl import Step
         from flujo.testing.utils import StubAgent
 
@@ -1003,7 +1003,7 @@ class TestUltraStepExecutor:
 
     def test_regression_cache_key_stability(self):
         """REGRESSION: Ensure cache keys are stable and don't use memory addresses."""
-        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.application.core.ultra_executor import ExecutorCore as UltraStepExecutor
         from flujo.domain.dsl import Step
         from unittest.mock import Mock
 
@@ -1032,7 +1032,7 @@ class TestUltraStepExecutor:
 
     def test_regression_bytes_hashing_correct(self):
         """REGRESSION: Ensure bytes are hashed correctly without string conversion."""
-        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.application.core.ultra_executor import ExecutorCore as UltraStepExecutor
 
         executor = UltraStepExecutor(enable_cache=True)
 
@@ -1058,7 +1058,7 @@ class TestUltraStepExecutor:
     @pytest.mark.asyncio
     async def test_regression_cache_with_complex_steps(self):
         """REGRESSION: Ensure caching works with complex steps (plugins, validators, etc.)."""
-        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.application.core.ultra_executor import ExecutorCore as UltraStepExecutor
         from flujo.domain.dsl import Step
         from flujo.testing.utils import StubAgent
         from flujo.domain.plugins import PluginOutcome
@@ -1096,7 +1096,7 @@ class TestUltraStepExecutor:
     @pytest.mark.asyncio
     async def test_regression_cache_with_resources(self):
         """REGRESSION: Ensure caching works correctly with resources."""
-        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.application.core.ultra_executor import ExecutorCore as UltraStepExecutor
         from flujo.domain.dsl import Step
         from flujo.testing.utils import StubAgent
 
@@ -1127,7 +1127,7 @@ class TestUltraStepExecutor:
 
     def test_regression_cache_key_includes_all_components(self):
         """REGRESSION: Ensure cache keys include all relevant components."""
-        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.application.core.ultra_executor import ExecutorCore as UltraStepExecutor
         from flujo.domain.dsl import Step
         from unittest.mock import Mock
 
@@ -1160,7 +1160,7 @@ class TestUltraStepExecutor:
     @pytest.mark.asyncio
     async def test_regression_cache_persistence_across_executor_instances(self):
         """REGRESSION: Ensure cache keys are stable across different executor instances."""
-        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.application.core.ultra_executor import ExecutorCore as UltraStepExecutor
         from flujo.domain.dsl import Step
         from flujo.testing.utils import StubAgent
 
@@ -1188,7 +1188,7 @@ class TestUltraStepExecutor:
 
     def test_regression_cache_key_handles_edge_cases(self):
         """REGRESSION: Ensure cache key generation handles edge cases gracefully."""
-        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.application.core.ultra_executor import ExecutorCore as UltraStepExecutor
         from flujo.domain.dsl import Step
 
         executor = UltraStepExecutor(enable_cache=True)
@@ -1207,7 +1207,7 @@ class TestUltraStepExecutor:
     @pytest.mark.asyncio
     async def test_regression_cache_metadata_correct(self):
         """REGRESSION: Ensure cache hit metadata is set correctly."""
-        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.application.core.ultra_executor import ExecutorCore as UltraStepExecutor
         from flujo.domain.dsl import Step
         from flujo.testing.utils import StubAgent
 
@@ -1252,7 +1252,7 @@ class TestUltraStepExecutor:
 
     def test_regression_agent_identification_includes_module(self):
         """REGRESSION: Ensure agent identification includes module name to prevent collisions."""
-        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.application.core.ultra_executor import ExecutorCore as UltraStepExecutor
         from flujo.domain.dsl import Step
 
         executor = UltraStepExecutor(enable_cache=True)
@@ -1292,7 +1292,7 @@ class TestUltraStepExecutor:
 
     def test_regression_consistent_agent_config_hashing(self):
         """REGRESSION: Ensure agent config hashing uses _hash_obj for consistency."""
-        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.application.core.ultra_executor import ExecutorCore as UltraStepExecutor
         from flujo.domain.dsl import Step
 
         executor = UltraStepExecutor(enable_cache=True)
@@ -1333,7 +1333,7 @@ class TestUltraStepExecutor:
 
     def test_regression_cache_key_stability_across_python_runs(self):
         """REGRESSION: Ensure cache keys are stable across different Python runs."""
-        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.application.core.ultra_executor import ExecutorCore as UltraStepExecutor
         from flujo.domain.dsl import Step
 
         executor = UltraStepExecutor(enable_cache=True)
@@ -1366,7 +1366,7 @@ class TestUltraStepExecutor:
     @pytest.mark.asyncio
     async def test_regression_cache_performance_with_module_dataclasses(self):
         """REGRESSION: Ensure cache performance is not degraded by module-level dataclasses."""
-        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.application.core.ultra_executor import ExecutorCore as UltraStepExecutor
         from flujo.domain.dsl import Step
         from flujo.testing.utils import StubAgent
         import time
@@ -1398,7 +1398,7 @@ class TestUltraStepExecutor:
 
     def test_regression_agent_identification_handles_edge_cases(self):
         """REGRESSION: Ensure agent identification handles edge cases gracefully."""
-        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.application.core.ultra_executor import ExecutorCore as UltraStepExecutor
         from flujo.domain.dsl import Step
 
         executor = UltraStepExecutor(enable_cache=True)
@@ -1464,7 +1464,7 @@ class TestUltraStepExecutor:
     @pytest.mark.asyncio
     async def test_regression_cache_mutation_does_not_corrupt_cached_data(self):
         """REGRESSION: Ensure cache mutation doesn't corrupt the original cached data."""
-        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.application.core.ultra_executor import ExecutorCore as UltraStepExecutor
         from flujo.domain.dsl import Step
         from flujo.testing.utils import StubAgent
 
@@ -1504,7 +1504,7 @@ class TestUltraStepExecutor:
     @pytest.mark.asyncio
     async def test_regression_cache_copy_behavior(self):
         """REGRESSION: Ensure cached results are properly copied to prevent mutation."""
-        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.application.core.ultra_executor import ExecutorCore as UltraStepExecutor
         from flujo.domain.dsl import Step
         from flujo.testing.utils import StubAgent
 
@@ -1551,7 +1551,7 @@ class TestUltraStepExecutor:
     @pytest.mark.asyncio
     async def test_regression_cache_key_always_defined(self):
         """REGRESSION: Ensure cache_key is always defined to prevent NameError."""
-        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.application.core.ultra_executor import ExecutorCore as UltraStepExecutor
         from flujo.domain.dsl import Step
         from flujo.testing.utils import StubAgent
 
@@ -1573,7 +1573,7 @@ class TestUltraStepExecutor:
     @pytest.mark.asyncio
     async def test_regression_critical_exceptions_not_cached(self):
         """REGRESSION: Ensure critical exceptions are not cached when they occur."""
-        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.application.core.ultra_executor import ExecutorCore as UltraStepExecutor
         from flujo.domain.dsl import Step
         from flujo.exceptions import PausedException
 
@@ -1815,7 +1815,7 @@ class TestUltraStepExecutor:
 
     def test_regression_input_validation_ultra_executor(self):
         """REGRESSION TEST: Ensure input validation remains in UltraStepExecutor constructor."""
-        from flujo.application.core.ultra_executor import UltraStepExecutor
+        from flujo.application.core.ultra_executor import ExecutorCore as UltraStepExecutor
 
         # Test that invalid cache_size raises ValueError
         with pytest.raises(ValueError, match="cache_size must be positive"):

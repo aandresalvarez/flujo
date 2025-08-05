@@ -87,6 +87,10 @@ class StepResult(BaseModel):
         default_factory=dict,
         description="Optional metadata about the step execution.",
     )
+    step_history: List["StepResult"] = Field(
+        default_factory=list,
+        description="History of sub-steps executed within this step.",
+    )
 
 
 class PipelineResult(BaseModel, Generic[ContextT]):

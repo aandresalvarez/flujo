@@ -279,10 +279,16 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
 
         self.state_backend: StateBackend | None
         if state_backend is None:
-            from pathlib import Path
-            from ..state.backends.sqlite import SQLiteBackend
+            # Use in-memory state backend in test mode to avoid SQLite file usage
+            if os.getenv("FLUJO_TEST_MODE"):
+                from ..state.backends.memory import InMemoryBackend
 
-            self.state_backend = SQLiteBackend(Path.cwd() / "flujo_ops.db")
+                self.state_backend = InMemoryBackend()
+            else:
+                from pathlib import Path
+                from ..state.backends.sqlite import SQLiteBackend
+
+                self.state_backend = SQLiteBackend(Path.cwd() / "flujo_ops.db")
         else:
             self.state_backend = state_backend
         self.delete_on_completion = delete_on_completion
@@ -484,10 +490,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 raise PipelineContextInitializationError(msg) from e
 
         else:
-            current_context_instance = cast(
-                ContextT,
-                PipelineContext(initial_prompt=str(initial_input)),
-            )
+            current_context_instance = PipelineContext(initial_prompt=str(initial_input))
             if run_id is not None:
                 object.__setattr__(current_context_instance, "run_id", run_id)
 
@@ -977,7 +980,6 @@ __all__ = [
     "Flujo",
     "InfiniteRedirectError",
     "InfiniteFallbackError",
-    "_run_step_logic",
     "_accepts_param",
     "_extract_missing_fields",
 ]

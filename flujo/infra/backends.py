@@ -6,6 +6,7 @@ from typing import Any, Dict, TYPE_CHECKING
 from ..domain.backends import ExecutionBackend, StepExecutionRequest
 from ..domain.agent_protocol import AsyncAgentProtocol
 from ..domain.models import StepResult
+from ..application.core.types import ExecutionFrame
 
 if TYPE_CHECKING:
     from ..application.core.ultra_executor import ExecutorCore
@@ -36,7 +37,8 @@ class LocalBackend(ExecutionBackend):
         telemetry.logfire.debug(f"Step name: {step.name}")
         telemetry.logfire.debug(f"Step is ParallelStep: {hasattr(step, 'branches')}")
 
-        return await self._executor.execute(
+        # Create ExecutionFrame for the new ExecutorCore.execute signature
+        frame: ExecutionFrame[Any] = ExecutionFrame(
             step=step,
             data=request.input_data,
             context=request.context,
@@ -45,4 +47,7 @@ class LocalBackend(ExecutionBackend):
             stream=request.stream,
             on_chunk=request.on_chunk,
             breach_event=request.breach_event,
+            context_setter=lambda result, ctx: None,  # Default context setter for backend calls
         )
+        
+        return await self._executor.execute(frame)

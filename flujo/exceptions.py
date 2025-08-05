@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from flujo.domain.models import PipelineResult
@@ -99,7 +99,7 @@ class ContextInheritanceError(OrchestratorError):
 class UsageLimitExceededError(OrchestratorError):
     """Raised when a pipeline run exceeds its defined usage limits."""
 
-    def __init__(self, message: str, result: "PipelineResult[Any]") -> None:
+    def __init__(self, message: str, result: Optional["PipelineResult[Any]"] = None) -> None:
         super().__init__(message)
         self.result = result
 

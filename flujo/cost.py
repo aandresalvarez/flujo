@@ -64,8 +64,7 @@ def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[
     """
     Extract usage metrics from a pydantic-ai agent response.
 
-    This is a shared helper function to eliminate code duplication between
-    _run_step_logic.py and ultra_executor.py.
+    This is a shared helper function to eliminate code duplication in ultra_executor.py.
 
     Parameters
     ----------

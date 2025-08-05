@@ -1,7 +1,7 @@
 """Test cumulative usage limit enforcement in UltraStepExecutor."""
 
 import pytest
-from flujo.application.core.ultra_executor import UltraStepExecutor, _UsageTracker
+from flujo.application.core.ultra_executor import ExecutorCore as UltraStepExecutor, _UsageTracker
 from flujo.domain.models import UsageLimits
 from flujo.exceptions import UsageLimitExceededError
 

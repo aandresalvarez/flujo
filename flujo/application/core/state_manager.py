@@ -61,7 +61,13 @@ class StateManager(Generic[ContextT]):
                 # For small contexts, use the original JSON-based approach
                 import json
 
-                context_str = json.dumps(filtered_data, sort_keys=True, separators=(",", ":"))
+                # Custom default function to handle mock objects during hashing
+                def default_serializer(o: Any) -> Any:
+                    if hasattr(o, '__class__') and 'Mock' in o.__class__.__name__:
+                        return f"Mock({type(o).__name__})"
+                    raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
+
+                context_str = json.dumps(filtered_data, sort_keys=True, separators=(",", ":"), default=default_serializer)
 
             return hashlib.md5(context_str.encode()).hexdigest()
         except Exception as e:

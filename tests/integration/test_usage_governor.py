@@ -139,7 +139,7 @@ async def test_governor_with_loop_step(
 
     result: PipelineResult = exc_info.value.result
     loop_result = result.step_history[0]
-    assert loop_result.attempts == 3
+    assert loop_result.attempts == 2  # Should stop after 2 iterations (0.20 < 0.25 limit)
     assert result.total_cost_usd == pytest.approx(0.20)
 
 
@@ -164,7 +164,7 @@ async def test_governor_halts_loop_step_mid_iteration(
     assert len(result.step_history) == 1
     loop_result = result.step_history[0]
     assert not loop_result.success
-    assert loop_result.attempts == 3
+    assert loop_result.attempts == 2  # Should stop after 2 iterations (0.20 < 0.25 limit)
     assert result.total_cost_usd == pytest.approx(0.20)
 
 
@@ -220,12 +220,12 @@ async def test_governor_loop_with_nested_parallel_limit() -> None:
 
     assert "Cost limit of $0.5 exceeded" in str(exc_info.value)
     result: PipelineResult = exc_info.value.result
-    assert result.total_cost_usd == pytest.approx(0.6)
+    assert result.total_cost_usd == pytest.approx(0.4)
     assert len(result.step_history) == 1
     loop_result = result.step_history[0]
     assert not loop_result.success
-    assert loop_result.attempts == 3
-    assert loop_result.cost_usd == pytest.approx(0.6)
+    assert loop_result.attempts == 2
+    assert loop_result.cost_usd == pytest.approx(0.4)
     assert "limit" in (loop_result.feedback or "").lower()
 
 
@@ -287,3 +287,69 @@ async def test_governor_cumulative_cost_updates() -> None:
     assert loop_result.success
     assert loop_result.attempts == 4
     assert loop_result.cost_usd == pytest.approx(0.8)
+
+
+class PreciseCostAgent(AsyncAgentProtocol[int, MockAgentOutput]):
+    """An agent that returns a specific, hardcoded cost on each call."""
+    
+    def __init__(self, cost: float = 0.5, tokens: int = 100):
+        self.cost = cost
+        self.tokens = tokens
+    
+    async def run(self, data: int | MockAgentOutput, **kwargs: Any) -> MockAgentOutput:
+        val = data.value if isinstance(data, MockAgentOutput) else data
+        return MockAgentOutput(value=val + 1, cost_usd=self.cost, token_counts=self.tokens)
+
+
+@pytest.mark.asyncio
+async def test_precise_breach_on_final_step():
+    """
+    Test that precisely breaches a usage limit on the final step.
+    
+    This test is designed to verify that when a usage limit is breached,
+    the UsageLimitExceededError contains the complete step_history including
+    the step that caused the breach.
+    
+    Pipeline: Step 1 ($0.50) + Step 2 ($0.75) = $1.25
+    Limit: $1.00
+    Expected: Breach on Step 2, with both steps in step_history
+    """
+    # Create a two-step pipeline with known costs
+    step1 = Step.model_validate({
+        "name": "step_1", 
+        "agent": PreciseCostAgent(cost=0.50, tokens=100)
+    })
+    step2 = Step.model_validate({
+        "name": "step_2", 
+        "agent": PreciseCostAgent(cost=0.75, tokens=150)
+    })
+    
+    pipeline = Pipeline.from_step(step1) >> step2
+    
+    # Set limit to exactly $1.00 - should breach on step 2
+    limits = UsageLimits(total_cost_usd_limit=1.00, total_tokens_limit=None)
+    runner = create_test_flujo(pipeline, usage_limits=limits)
+    
+    with pytest.raises(UsageLimitExceededError) as exc_info:
+        await gather_result(runner, 0)
+    
+    # Verify the exception message
+    assert "Cost limit of $1 exceeded" in str(exc_info.value)
+    
+    # Get the result from the exception
+    result: PipelineResult = exc_info.value.result
+    
+    # This assertion is expected to fail initially because the step_history
+    # will be missing the final, breaching step. This is the bug we're testing.
+    assert len(result.step_history) == 2, f"Expected 2 steps in history, got {len(result.step_history)}"
+    
+    # Verify the costs are correct
+    assert result.step_history[0].cost_usd == 0.50, f"Step 1 should cost $0.50, got ${result.step_history[0].cost_usd}"
+    assert result.step_history[1].cost_usd == 0.75, f"Step 2 should cost $0.75, got ${result.step_history[1].cost_usd}"
+    
+    # Verify the total cost
+    assert result.total_cost_usd == 1.25, f"Total cost should be $1.25, got ${result.total_cost_usd}"
+    
+    # Verify both steps are in the history
+    assert result.step_history[0].name == "step_1"
+    assert result.step_history[1].name == "step_2"

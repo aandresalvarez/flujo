@@ -13,6 +13,7 @@ import uuid
 
 from flujo.testing.utils import SimpleDummyRemoteBackend as DummyRemoteBackend
 from flujo.utils.serialization import safe_serialize
+from flujo.utils.serialization import register_custom_serializer
 
 
 class MockEnum(Enum):
@@ -78,6 +79,7 @@ class EdgeCaseModel(BaseModel):
     list_of_dicts: List[Dict[str, Any]] = Field(default_factory=list)
     dict_of_lists: Dict[str, List[str]] = Field(default_factory=dict)
 
+register_custom_serializer(EdgeCaseModel, lambda obj: obj.__dict__)
 
 class CircularReferenceModel(BaseModel):
     """Model that could potentially create circular references."""
@@ -108,6 +110,12 @@ class RecursiveModel(BaseModel):
     value: str
     children: List["RecursiveModel"] = Field(default_factory=list)
     metadata: Dict[str, Any] = Field(default_factory=dict)
+
+register_custom_serializer(RecursiveModel, lambda obj: obj.__dict__)
+
+from collections import OrderedDict
+register_custom_serializer(OrderedDict, lambda obj: dict(obj))
+register_custom_serializer(Counter, lambda obj: dict(obj))
 
 
 @dataclass
