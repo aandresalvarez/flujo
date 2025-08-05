@@ -108,6 +108,9 @@ async def failing_cache_step(data: Any, *, context: CacheContext) -> Dict[str, A
         "result": f"success_result_{data}",
     }
 
+# Create a step configuration that disables retries for the failing step
+failing_cache_step.config.max_retries = 0
+
 
 # Utility function to create simplified steps
 def create_simple_step(step_type: str) -> Step:
