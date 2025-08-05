@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Union, cast, Literal
+from typing import Any, Dict, List, Optional, Union, cast
 import typer
 import click
 import json
@@ -41,7 +41,7 @@ from .lens import lens_app
 # Type definitions for CLI
 WeightsType = List[Dict[str, Union[str, float]]]
 MetadataType = Dict[str, Any]
-ScorerType = Literal["ratio", "weighted", "reward"]
+ScorerType = str  # Changed from Literal["ratio", "weighted", "reward"] to str for typer compatibility
 
 
 app: typer.Typer = typer.Typer(rich_markup_mode="markdown")
@@ -91,16 +91,16 @@ def apply_cli_defaults(
 @app.command()
 def solve(
     prompt: str,
-    max_iters: Annotated[Optional[int], typer.Option(help="Maximum number of iterations.")] = None,
+    max_iters: Annotated[Union[int, None], typer.Option(help="Maximum number of iterations.")] = None,
     k: Annotated[
-        Optional[int],
+        Union[int, None],
         typer.Option(help="Number of solution variants to generate per iteration."),
     ] = None,
     reflection: Annotated[
-        Optional[bool], typer.Option(help="Enable/disable reflection agent.")
+        Union[bool, None], typer.Option(help="Enable/disable reflection agent.")
     ] = None,
     scorer: Annotated[
-        Optional[ScorerType],
+        Union[ScorerType, None],
         typer.Option(
             help="Scoring strategy.",
             case_sensitive=False,
@@ -108,17 +108,17 @@ def solve(
         ),
     ] = None,
     weights_path: Annotated[
-        Optional[str], typer.Option(help="Path to weights file (JSON or YAML)")
+        Union[str, None], typer.Option(help="Path to weights file (JSON or YAML)")
     ] = None,
     solution_model: Annotated[
-        Optional[str], typer.Option(help="Model for the Solution agent.")
+        Union[str, None], typer.Option(help="Model for the Solution agent.")
     ] = None,
-    review_model: Annotated[Optional[str], typer.Option(help="Model for the Review agent.")] = None,
+    review_model: Annotated[Union[str, None], typer.Option(help="Model for the Review agent.")] = None,
     validator_model: Annotated[
-        Optional[str], typer.Option(help="Model for the Validator agent.")
+        Union[str, None], typer.Option(help="Model for the Validator agent.")
     ] = None,
     reflection_model: Annotated[
-        Optional[str], typer.Option(help="Model for the Reflection agent.")
+        Union[str, None], typer.Option(help="Model for the Reflection agent.")
     ] = None,
 ) -> None:
     """

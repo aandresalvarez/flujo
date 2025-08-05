@@ -961,36 +961,36 @@ class SQLiteBackend(StateBackend):
                 if status and not pipeline_name:
                     # Use status index for better performance
                     query = """
-                        SELECT run_id, pipeline_name, pipeline_version, status, start_time, end_time, total_cost
+                        SELECT run_id, pipeline_name, pipeline_version, status, created_at, updated_at, execution_time_ms
                         FROM runs
                         WHERE status = ?
-                        ORDER BY start_time DESC
+                        ORDER BY created_at DESC
                     """
                     params = [status]
                 elif pipeline_name and not status:
                     # Use pipeline_name index
                     query = """
-                        SELECT run_id, pipeline_name, pipeline_version, status, start_time, end_time, total_cost
+                        SELECT run_id, pipeline_name, pipeline_version, status, created_at, updated_at, execution_time_ms
                         FROM runs
                         WHERE pipeline_name = ?
-                        ORDER BY start_time DESC
+                        ORDER BY created_at DESC
                     """
                     params = [pipeline_name]
                 elif status and pipeline_name:
                     # Use both filters
                     query = """
-                        SELECT run_id, pipeline_name, pipeline_version, status, start_time, end_time, total_cost
+                        SELECT run_id, pipeline_name, pipeline_version, status, created_at, updated_at, execution_time_ms
                         FROM runs
                         WHERE status = ? AND pipeline_name = ?
-                        ORDER BY start_time DESC
+                        ORDER BY created_at DESC
                     """
                     params = [status, pipeline_name]
                 else:
-                    # No filters, use start_time index
+                    # No filters, use created_at index
                     query = """
-                        SELECT run_id, pipeline_name, pipeline_version, status, start_time, end_time, total_cost
+                        SELECT run_id, pipeline_name, pipeline_version, status, created_at, updated_at, execution_time_ms
                         FROM runs
-                        ORDER BY start_time DESC
+                        ORDER BY created_at DESC
                     """
                     params = []
 
@@ -1014,9 +1014,9 @@ class SQLiteBackend(StateBackend):
                             "pipeline_name": row[1],
                             "pipeline_version": row[2],
                             "status": row[3],
-                            "start_time": row[4],
-                            "end_time": row[5],
-                            "total_cost": row[6],
+                            "start_time": row[4],  # Map created_at to start_time for backward compatibility
+                            "end_time": row[5],    # Map updated_at to end_time for backward compatibility
+                            "total_cost": row[6] if row[6] is not None else 0.0,  # Map execution_time_ms to total_cost for backward compatibility
                         }
                     )
                 return result

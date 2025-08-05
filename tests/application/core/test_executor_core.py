@@ -420,7 +420,7 @@ class TestExecutorCoreSimpleStep:
         assert result.success is False
         assert result.attempts == 3  # max_retries (1 initial + 2 retries)
         assert (
-            "Agent execution failed with ValueError: Plugin validation failed: Invalid format"
+            "Plugin execution failed after max retries: Plugin validation failed: Invalid format"
             in result.feedback
         )
 
@@ -463,7 +463,7 @@ class TestExecutorCoreSimpleStep:
 
         # Assert
         assert result.success is False
-        assert "Plugin validation failed: Plugin execution error" in result.feedback
+        assert "Plugin validation failed after max retries: Plugin execution error" in result.feedback
         assert result.attempts == 3  # 3 attempts total
         assert failing_plugin.call_count == 3  # Plugin called on each attempt
 

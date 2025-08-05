@@ -1,6 +1,6 @@
 import typer
 import asyncio
-from typing import Optional
+from typing import Optional, Union
 from rich.table import Table
 from rich.console import Console
 from .config import load_backend_from_config
@@ -12,8 +12,8 @@ lens_app = typer.Typer(help="Operational inspection commands")
 
 @lens_app.command("list")
 def list_runs(
-    status: str | None = typer.Option(None),
-    pipeline: str | None = typer.Option(None),
+    status: Union[str, None] = typer.Option(None),
+    pipeline: Union[str, None] = typer.Option(None),
     limit: int = typer.Option(50, help="Maximum number of runs to display"),
 ) -> None:
     """List stored runs."""
