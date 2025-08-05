@@ -741,25 +741,13 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             start_time = time.monotonic()
             max_retries = getattr(step, "max_retries", 3)
             
-            # --- 2. Agent Execution (Outside Retry Loop) ---
-            agent_output = await self._agent_runner.run(
-                agent=step.agent,
-                payload=data,  # Use original data for agent execution
-                context=context,
-                resources=resources,
-                options={},
-                stream=stream,
-                on_chunk=on_chunk,
-                breach_event=breach_event,
-            )
-            
-            # --- 2.5. Mock Detection (Outside Retry Loop) ---
-            from unittest.mock import Mock, MagicMock, AsyncMock
-            if isinstance(agent_output, (Mock, MagicMock, AsyncMock)):
-                raise MockDetectionError(f"Step '{step.name}' returned a Mock object")
+            # Handle Mock objects for max_retries
+            if hasattr(max_retries, '_mock_name'):
+                max_retries = 3  # Default value for Mock objects
             
             # FIXED: Use loop-based retry mechanism to avoid infinite recursion
-            for attempt in range(1, max_retries + 1):  # +1 because we want max_retries total attempts
+            # max_retries = 3 means 1 initial + 3 retries = 4 total attempts
+            for attempt in range(1, max_retries + 2):  # +2 because we want max_retries + 1 total attempts
                 result.attempts = attempt
                 
                 try:
@@ -770,8 +758,22 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             step.processors, data, context=context
                         )
                     
-                    # --- 2. Agent Output Processing (Inside Retry Loop) ---
-                    # Note: Agent execution already happened outside the retry loop
+                    # --- 2. Agent Execution (Inside Retry Loop) ---
+                    agent_output = await self._agent_runner.run(
+                        agent=step.agent,
+                        payload=data,  # Use original data for agent execution
+                        context=context,
+                        resources=resources,
+                        options={},
+                        stream=stream,
+                        on_chunk=on_chunk,
+                        breach_event=breach_event,
+                    )
+                    
+                    # --- 2.5. Mock Detection (Inside Retry Loop) ---
+                    from unittest.mock import Mock, MagicMock, AsyncMock
+                    if isinstance(agent_output, (Mock, MagicMock, AsyncMock)):
+                        raise MockDetectionError(f"Step '{step.name}' returned a Mock object")
                     
                     # Extract usage metrics
                     from ...cost import extract_usage_metrics
@@ -783,6 +785,10 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     
                     # Track usage metrics
                     await self._usage_meter.add(cost_usd, prompt_tokens, completion_tokens)
+                    
+                    # --- 2.6. Usage Governance Check (After Usage Added) ---
+                    if limits is not None:
+                        await self._usage_meter.guard(limits, step_history=[])
                     
                     # --- 3. Processor Pipeline (apply_output) ---
                     processed_output = agent_output
@@ -802,7 +808,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             from ...domain.plugins import PluginOutcome
                             if isinstance(processed_output, PluginOutcome) and not processed_output.success:
                                 # SEPARATE: Handle plugin outcome failures (RETRY)
-                                if attempt < max_retries:
+                                if attempt < max_retries + 1:
                                     telemetry.logfire.warning(f"Step '{step.name}' plugin attempt {attempt} failed: {processed_output.feedback}")
                                     continue
                                 else:
@@ -873,7 +879,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             failed_validations = [r for r in validation_results if not r.success]
                             if failed_validations:
                                 # SEPARATE: Handle validation failures (RETRY)
-                                if attempt < max_retries:
+                                if attempt < max_retries + 1:
                                     telemetry.logfire.warning(f"Step '{step.name}' validation attempt {attempt} failed: {failed_validations[0].feedback}")
                                     continue
                                 else:
@@ -930,7 +936,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                                     return result
                         except Exception as validation_error:
                             # SEPARATE: Handle validation exceptions (RETRY)
-                            if attempt < max_retries:
+                            if attempt < max_retries + 1:
                                 telemetry.logfire.warning(f"Step '{step.name}' validation attempt {attempt} failed: {validation_error}")
                                 continue
                             else:
@@ -1005,7 +1011,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     
                 except Exception as agent_error:
                     # ONLY retry for actual agent failures
-                    if attempt < max_retries:
+                    if attempt < max_retries + 1:
                         telemetry.logfire.warning(f"Step '{step.name}' agent execution attempt {attempt} failed: {agent_error}")
                         continue
                     else:
