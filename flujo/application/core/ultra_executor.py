@@ -835,17 +835,25 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                                                 _fallback_depth=_fallback_depth + 1
                                             )
                                             
-                                            # Mark as fallback triggered
+                                            # Mark as fallback triggered and preserve original error
                                             if fallback_result.metadata_ is None:
                                                 fallback_result.metadata_ = {}
                                             fallback_result.metadata_["fallback_triggered"] = True
-                                            
+                                            fallback_result.metadata_["original_error"] = result.feedback
                                             # Accumulate metrics from primary step
                                             fallback_result.cost_usd += result.cost_usd
                                             fallback_result.token_counts += result.token_counts
                                             fallback_result.latency_s += result.latency_s
-                                            
-                                            return fallback_result
+                                            if fallback_result.success:
+                                                return fallback_result
+                                            else:
+                                                # If fallback step failed (not an exception), combine feedback
+                                                result.feedback = f"Original error: {result.feedback}; Fallback also failed: {fallback_result.feedback}"
+                                                result.cost_usd = fallback_result.cost_usd
+                                                result.token_counts = fallback_result.token_counts
+                                                result.latency_s = fallback_result.latency_s
+                                                result.metadata_ = fallback_result.metadata_
+                                                return result
                                         except Exception as fallback_error:
                                             telemetry.logfire.error(f"Fallback for step '{step.name}' also failed: {fallback_error}")
                                             # Return the original failure with fallback error info
@@ -907,17 +915,25 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                                                 _fallback_depth=_fallback_depth + 1
                                             )
                                             
-                                            # Mark as fallback triggered
+                                            # Mark as fallback triggered and preserve original error
                                             if fallback_result.metadata_ is None:
                                                 fallback_result.metadata_ = {}
                                             fallback_result.metadata_["fallback_triggered"] = True
-                                            
+                                            fallback_result.metadata_["original_error"] = result.feedback
                                             # Accumulate metrics from primary step
                                             fallback_result.cost_usd += result.cost_usd
                                             fallback_result.token_counts += result.token_counts
                                             fallback_result.latency_s += result.latency_s
-                                            
-                                            return fallback_result
+                                            if fallback_result.success:
+                                                return fallback_result
+                                            else:
+                                                # If fallback step failed (not an exception), combine feedback
+                                                result.feedback = f"Original error: {result.feedback}; Fallback also failed: {fallback_result.feedback}"
+                                                result.cost_usd = fallback_result.cost_usd
+                                                result.token_counts = fallback_result.token_counts
+                                                result.latency_s = fallback_result.latency_s
+                                                result.metadata_ = fallback_result.metadata_
+                                                return result
                                         except Exception as fallback_error:
                                             telemetry.logfire.error(f"Fallback for step '{step.name}' also failed: {fallback_error}")
                                             # Return the original failure with fallback error info
@@ -963,17 +979,25 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                                             _fallback_depth=_fallback_depth + 1
                                         )
                                         
-                                        # Mark as fallback triggered
+                                        # Mark as fallback triggered and preserve original error
                                         if fallback_result.metadata_ is None:
                                             fallback_result.metadata_ = {}
                                         fallback_result.metadata_["fallback_triggered"] = True
-                                        
+                                        fallback_result.metadata_["original_error"] = result.feedback
                                         # Accumulate metrics from primary step
                                         fallback_result.cost_usd += result.cost_usd
                                         fallback_result.token_counts += result.token_counts
                                         fallback_result.latency_s += result.latency_s
-                                        
-                                        return fallback_result
+                                        if fallback_result.success:
+                                            return fallback_result
+                                        else:
+                                            # If fallback step failed (not an exception), combine feedback
+                                            result.feedback = f"Original error: {result.feedback}; Fallback also failed: {fallback_result.feedback}"
+                                            result.cost_usd = fallback_result.cost_usd
+                                            result.token_counts = fallback_result.token_counts
+                                            result.latency_s = fallback_result.latency_s
+                                            result.metadata_ = fallback_result.metadata_
+                                            return result
                                     except Exception as fallback_error:
                                         telemetry.logfire.error(f"Fallback for step '{step.name}' also failed: {fallback_error}")
                                         # Return the original failure with fallback error info
@@ -1043,30 +1067,30 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                                 _fallback_depth=_fallback_depth + 1
                             )
                             
-                            # Mark as fallback triggered
+                            # Mark as fallback triggered and preserve original error
                             if fallback_result.metadata_ is None:
                                 fallback_result.metadata_ = {}
                             fallback_result.metadata_["fallback_triggered"] = True
+                            fallback_result.metadata_["original_error"] = result.feedback
                             
                             # Accumulate metrics from primary step
                             fallback_result.cost_usd += result.cost_usd
                             fallback_result.token_counts += result.token_counts
                             fallback_result.latency_s += result.latency_s
                             
+                            if not fallback_result.success:
+                                # If fallback step failed, combine feedback and return the original result object
+                                result.feedback = f"Original error: {result.feedback}; Fallback also failed: {fallback_result.feedback}"
+                                result.cost_usd = fallback_result.cost_usd
+                                result.token_counts = fallback_result.token_counts
+                                result.latency_s = fallback_result.latency_s
+                                result.metadata_ = fallback_result.metadata_
+                                return result
                             return fallback_result
                         except Exception as fallback_error:
                             telemetry.logfire.error(f"Fallback for step '{step.name}' also failed: {fallback_error}")
                             # Return the original failure with fallback error info
-                            result.feedback = f"Primary step failed: {result.feedback}; Fallback also failed: {str(fallback_error)}"
-                            return result
-                        
-                        # If fallback step failed (not an exception), combine feedback
-                        if not fallback_result.success:
-                            result.feedback = f"Primary step failed: {result.feedback}; Fallback also failed: {fallback_result.feedback}"
-                            result.cost_usd = fallback_result.cost_usd
-                            result.token_counts = fallback_result.token_counts
-                            result.latency_s = fallback_result.latency_s
-                            result.metadata_ = fallback_result.metadata_
+                            result.feedback = f"Original error: {result.feedback}; Fallback also failed: {str(fallback_error)}"
                             return result
                     
                     return result
