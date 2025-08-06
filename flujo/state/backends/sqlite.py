@@ -24,6 +24,7 @@ from typing import (
 )
 
 import aiosqlite
+import os
 
 from .base import StateBackend
 from flujo.infra import telemetry
@@ -318,24 +319,28 @@ class SQLiteBackend(StateBackend):
     async def _init_db(self, retry_count: int = 0, max_retries: int = 1) -> None:
         """Initialize the database with optimized schema and settings."""
         try:
-            # Check if database file exists and is corrupted
-            if self.db_path.exists():
-                try:
-                    # Check file size safely
+            # Check if database file exists and handle possible corrupt or inaccessible file
+            try:
+                # Use os.path.exists to avoid Path.stat side effects
+                exists = os.path.exists(self.db_path)
+            except OSError as e:
+                telemetry.logfire.warning(f"File existence check failed, skipping backup and proceeding: {e}")
+            else:
+                if exists:
                     try:
-                        file_size = self.db_path.stat().st_size
-                        if file_size > 0:
-                            # Try to connect to check if database is valid
-                            async with aiosqlite.connect(self.db_path) as test_db:
-                                await test_db.execute("SELECT 1")
-                    except (OSError, TypeError) as e:
-                        # File stat failed or size check failed, assume corrupted
-                        telemetry.logfire.warning(f"File stat failed, assuming corrupted: {e}")
+                        # Check file size safely
+                        try:
+                            file_size = self.db_path.stat().st_size
+                            if file_size > 0:
+                                # Try to connect to check if database is valid
+                                async with aiosqlite.connect(self.db_path) as test_db:
+                                    await test_db.execute("SELECT 1")
+                        except (OSError, TypeError) as e:
+                            telemetry.logfire.warning(f"File stat failed, assuming corrupted: {e}")
+                            await self._backup_corrupted_database()
+                    except (sqlite3.DatabaseError, sqlite3.OperationalError) as e:
+                        telemetry.logfire.warning(f"Database appears to be corrupted, creating backup: {e}")
                         await self._backup_corrupted_database()
-                except (sqlite3.DatabaseError, sqlite3.OperationalError) as e:
-                    # Database is corrupted, create backup
-                    telemetry.logfire.warning(f"Database appears to be corrupted, creating backup: {e}")
-                    await self._backup_corrupted_database()
             
             async with aiosqlite.connect(self.db_path) as db:
                 # OPTIMIZATION: Use more efficient SQLite settings for performance
@@ -500,23 +505,33 @@ class SQLiteBackend(StateBackend):
         """Backup a corrupted database file with a unique timestamp."""
         import time
         
+        # Determine if corrupted DB file exists using os.path.exists to avoid Path.stat side effects
+        import os
         try:
-            if not self.db_path.exists():
-                return
-        except (OSError, TypeError):
-            # File stat failed, assume it doesn't exist or is inaccessible
+            exists = os.path.exists(self.db_path)
+        except OSError:
+            exists = False
+        if not exists:
             return
             
         # Generate unique backup filename
         timestamp = int(time.time())
+        # Start counter for duplicate backup filenames
+        counter = 1
         backup_path = self.db_path.parent / f"{self.db_path.name}.corrupt.{timestamp}"
         
-        # Handle existing backup files with the same timestamp
-        counter = 1
-        while backup_path.exists():
+        # Resolve unique backup filename, skipping paths that raise stat errors
+        while True:
+            try:
+                exists = backup_path.exists()
+            except (OSError, TypeError):
+                # Cannot stat this path, assume it does not exist and proceed
+                break
+            if not exists:
+                break
             backup_path = self.db_path.parent / f"{self.db_path.name}.corrupt.{timestamp}.{counter}"
             counter += 1
-            if counter > 1000:  # Prevent infinite loop
+            if counter > 1000:
                 break
         
         try:

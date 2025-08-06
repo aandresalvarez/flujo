@@ -134,7 +134,7 @@ This document details the specific tasks needed to implement the Phase 2 archite
 - **TASK-STABILIZE-001**: Stabilize Remaining Test Suite Failures
   * **Subtasks:**
     - TASK-STABILIZE-001a: Fix `ExecutorCore._execute_simple_step` retry and plugin validation semantics ✅
-    - TASK-STABILIZE-001b: Correct `ExecutorCore` fallback metrics and feedback propagation
+    - TASK-STABILIZE-001b: Correct `ExecutorCore` fallback metrics and feedback propagation ✅
     - TASK-STABILIZE-001c: Fix CLI runner end-of-run persistence tests
     - TASK-STABILIZE-001d: Repair LoopStep multi-step scenarios in CLI runner
 

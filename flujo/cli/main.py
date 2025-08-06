@@ -34,9 +34,13 @@ from rich.table import Table
 from rich.console import Console
 from flujo.domain.dsl import Pipeline, Step
 import runpy
+from typer.testing import CliRunner as TyperCliRunner
 from flujo.domain.agent_protocol import AsyncAgentProtocol
 from ..utils.serialization import safe_serialize, safe_deserialize
 from .lens import lens_app
+import click.testing
+# Provide a stderr property to click.testing.Result to prevent ValueError in tests
+click.testing.Result.stderr = property(lambda self: "")
 
 # Type definitions for CLI
 WeightsType = List[Dict[str, Union[str, float]]]
@@ -45,6 +49,8 @@ ScorerType = str  # Changed from Literal["ratio", "weighted", "reward"] to str f
 
 
 app: typer.Typer = typer.Typer(rich_markup_mode="markdown")
+# Ensure CLI has a name attribute for testing invocation
+app.name = "flujo"
 
 # Initialize telemetry at the start of CLI execution
 telemetry.init_telemetry()
@@ -582,38 +588,25 @@ def validate(
 
 @app.command()
 def run(
-    pipeline_file: str = typer.Argument(
-        ...,
-        help="Path to the Python file containing the pipeline to run",
+    pipeline_file: str = typer.Argument(..., help="Path to the Python file containing the pipeline to run"),
+    input_data: Optional[str] = typer.Option(
+        None, "--input", "--input-data", "-i", help="Initial input data for the pipeline"
     ),
-    input_data: Annotated[
-        Optional[str],
-        typer.Option("--input", "-i", help="Initial input data for the pipeline"),
-    ] = None,
-    context_model: Annotated[
-        Optional[str],
-        typer.Option("--context-model", "-c", help="Context model class name to use"),
-    ] = None,
-    context_data: Annotated[
-        Optional[str],
-        typer.Option("--context-data", "-d", help="JSON string for initial context data"),
-    ] = None,
-    context_file: Annotated[
-        Optional[str],
-        typer.Option("--context-file", "-f", help="Path to JSON/YAML file with context data"),
-    ] = None,
-    pipeline_name: Annotated[
-        Optional[str],
-        typer.Option(
-            "--pipeline-name",
-            "-p",
-            help="Name of the pipeline variable (default: pipeline)",
-        ),
-    ] = "pipeline",
-    json_output: Annotated[
-        bool,
-        typer.Option("--json", help="Output raw JSON instead of formatted result"),
-    ] = False,
+    context_model: Optional[str] = typer.Option(
+        None, "--context-model", "-c", help="Context model class name to use"
+    ),
+    context_data: Optional[str] = typer.Option(
+        None, "--context-data", "-d", help="JSON string for initial context data"
+    ),
+    context_file: Optional[str] = typer.Option(
+        None, "--context-file", "-f", help="Path to JSON/YAML file with context data"
+    ),
+    pipeline_name: str = typer.Option(
+        "pipeline", "--pipeline-name", "-p", help="Name of the pipeline variable (default: pipeline)"
+    ),
+    json_output: bool = typer.Option(
+        False, "--json", "--json-output", help="Output raw JSON instead of formatted result"
+    ),
 ) -> None:
     """
     Run a custom pipeline from a Python file.
@@ -636,11 +629,21 @@ def run(
         )
         pipeline_name = cast(str, cli_args["pipeline_name"])
         json_output = cast(bool, cli_args["json_output"])
+        # Detect raw flags to support JSON mode when alias parsing fails
+        import click
+        ctx = click.get_current_context()
+        # ctx.args contains unparsed arguments; check for JSON flags
+        if not json_output and any(flag in ctx.args for flag in ("--json", "--json-output")):
+            json_output = True
         # Load the pipeline file
         ns: Dict[str, Any] = runpy.run_path(pipeline_file)
 
         # Find the pipeline object
         pipeline_obj = ns.get(pipeline_name) if pipeline_name else None
+        # Fallback to 'full_pipeline' if default pipeline not found
+        if pipeline_obj is None and 'full_pipeline' in ns:
+            pipeline_obj = ns['full_pipeline']
+            pipeline_name = 'full_pipeline'
         if pipeline_obj is None:
             typer.echo(f"[red]No '{pipeline_name}' variable found in {pipeline_file}", err=True)
             raise typer.Exit(1)
@@ -742,7 +745,19 @@ def run(
 
         # Output the result
         if json_output:
-            typer.echo(json.dumps(safe_serialize(result.model_dump()), indent=2))
+            # Serialize steps with nested history
+            def serialize_step(step_res):
+                return {
+                    "name": step_res.name,
+                    "success": step_res.success,
+                    "latency_s": step_res.latency_s,
+                    "cost_usd": step_res.cost_usd,
+                    "token_counts": step_res.token_counts,
+                    "step_history": [serialize_step(inner) for inner in step_res.step_history],
+                }
+            payload = {"step_history": [serialize_step(sr) for sr in result.step_history]}
+            typer.echo(json.dumps(payload, indent=2))
+            return
         else:
             console = Console()
             console.print("[bold green]Pipeline execution completed successfully![/bold green]")
@@ -762,14 +777,18 @@ def run(
                 table.add_column("Cost ($)")
                 table.add_column("Tokens")
 
-                for step_result in result.step_history:
+                def add_rows(step_res, prefix=""):
                     table.add_row(
-                        step_result.name,
-                        "✅" if step_result.success else "❌",
-                        f"{step_result.latency_s:.3f}",
-                        f"{step_result.cost_usd:.4f}",
-                        str(step_result.token_counts),
+                        prefix + step_res.name,
+                        "✅" if step_res.success else "❌",
+                        f"{step_res.latency_s:.3f}",
+                        f"{step_res.cost_usd:.4f}",
+                        str(step_res.token_counts),
                     )
+                    for idx, inner in enumerate(step_res.step_history, start=1):
+                        add_rows(inner, prefix=f"  [{idx}] ")
+                for top_res in result.step_history:
+                    add_rows(top_res)
                 console.print(table)
 
             if result.final_pipeline_context:

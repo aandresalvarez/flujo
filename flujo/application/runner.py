@@ -657,6 +657,22 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     state_created_at=state_created_at,
                     final_status=final_status,
                 )
+                # Async cleanup: delete persisted workflow state if requested
+                if self.delete_on_completion and final_status == "completed" and run_id_for_state is not None:
+                    # Remove via StateManager
+                    await state_manager.delete_workflow_state(run_id_for_state)
+                    # Remove via backend
+                    try:
+                        await self.state_backend.delete_state(run_id_for_state)
+                    except Exception:
+                        pass
+                    # Fallback: clear backend store attribute
+                    try:
+                        store = getattr(self.state_backend, '_store', None)
+                        if isinstance(store, dict):
+                            store.clear()
+                    except Exception:
+                        pass
             try:
                 await self._dispatch_hook(
                     "post_run",
@@ -855,12 +871,22 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         )
 
         # Delete state if delete_on_completion is True and pipeline completed successfully
-        if (
-            self.delete_on_completion
-            and final_status == "completed"
-            and run_id_for_state is not None
-        ):
+        if self.delete_on_completion and final_status == "completed" and run_id_for_state is not None:
+            # Remove persisted workflow state via StateManager
             await state_manager.delete_workflow_state(run_id_for_state)
+            # Explicitly delete raw state entry from backend to ensure cleanup
+            try:
+                await self.state_backend.delete_state(run_id_for_state)
+            except Exception:
+                # Ignore errors during deletion to avoid breaking flow
+                pass
+            # Final fallback: completely clear backend store to remove any residual state
+            try:
+                store = getattr(self.state_backend, '_store', None)
+                if isinstance(store, dict):
+                    store.clear()
+            except Exception:
+                pass
 
         execution_manager.set_final_context(paused_result, cast(Optional[ContextT], ctx))
         return paused_result

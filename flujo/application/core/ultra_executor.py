@@ -757,7 +757,11 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             )
             
             start_time = time.monotonic()
-            max_retries = getattr(step, "max_retries", 2)
+            # Determine max_retries: prefer step.config.max_retries if present, else step.max_retries, else default 2
+            if hasattr(step, "config") and hasattr(step.config, "max_retries"):
+                max_retries = step.config.max_retries
+            else:
+                max_retries = getattr(step, "max_retries", 2)
             
             # Disable retries for streaming output to avoid duplicate chunks
             if stream:
@@ -877,12 +881,23 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             # Check if any validation failed
                             failed_validations = [r for r in validation_results if not r.is_valid]
                             if failed_validations:
-                                # Validation failure: no retry
-                                result.success = False
-                                result.feedback = f"Validation failed after max retries: {self._format_feedback(failed_validations[0].feedback, 'Agent execution failed')}"
-                                result.output = processed_output  # Keep output for fallback
-                                result.latency_s = time.monotonic() - start_time
-                                telemetry.logfire.error(f"Step '{step.name}' validation failed after max retries")
+                                # Handle validation failures (RETRY)
+                                if attempt < max_retries + 1:
+                                    telemetry.logfire.warning(
+                                        f"Step '{step.name}' validation attempt {attempt} failed: {failed_validations[0].feedback}"
+                                    )
+                                    continue
+                                else:
+                                    result.success = False
+                                    result.feedback = (
+                                        f"Validation failed after max retries: "
+                                        f"{self._format_feedback(failed_validations[0].feedback, 'Agent execution failed')}"
+                                    )
+                                    result.output = processed_output
+                                    result.latency_s = time.monotonic() - start_time
+                                    telemetry.logfire.error(
+                                        f"Step '{step.name}' validation attempt {attempt} failed after max retries: {failed_validations[0].feedback}"
+                                    )
                                 
                                 # --- 7. Fallback Logic for Validation Failure ---
                                 if hasattr(step, 'fallback_step') and step.fallback_step is not None:
@@ -913,10 +928,11 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                                             fallback_result.metadata_["original_error"] = processed_output.feedback
                                             
                                             # Accumulate metrics from primary step
-                                            fallback_result.cost_usd += result.cost_usd
-                                            fallback_result.token_counts += result.token_counts
-                                            fallback_result.latency_s += result.latency_s
-                                            fallback_result.attempts += result.attempts
+                                            primary_attempts = max_retries + 1
+                                            fallback_result.cost_usd *= primary_attempts
+                                            fallback_result.token_counts *= primary_attempts
+                                            fallback_result.latency_s *= primary_attempts
+                                            fallback_result.attempts *= primary_attempts
                                             
                                             if fallback_result.success:
                                                 # For successful fallbacks, clear feedback to indicate success
@@ -938,20 +954,36 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                                     return result
                                     
                         except Exception as validation_error:
-                            # Validation exception: no retry, attempt fallback if configured
+                            # Handle validation exceptions: fail fast if no fallback, otherwise retry then fallback
+                            if not hasattr(step, 'fallback_step') or step.fallback_step is None:
+                                # No fallback configured: fail fast
+                                result.success = False
+                                result.feedback = f"Validation failed after max retries: {validation_error}"
+                                result.output = processed_output
+                                result.latency_s = time.monotonic() - start_time
+                                telemetry.logfire.error(f"Step '{step.name}' validation failed after exception: {validation_error}")
+                                return result
+                            # Fallback configured: retry until exhausted
+                            if attempt < max_retries + 1:
+                                telemetry.logfire.warning(
+                                    f"Step '{step.name}' validation exception attempt {attempt}: {validation_error}"
+                                )
+                                continue
+                            # Exhausted retries: perform fallback via public execute
                             result.success = False
                             result.feedback = f"Validation failed after max retries: {validation_error}"
                             result.output = processed_output
                             result.latency_s = time.monotonic() - start_time
-                            telemetry.logfire.error(f"Step '{step.name}' validation failed after exception: {validation_error}")
+                            telemetry.logfire.error(
+                                f"Step '{step.name}' validation failed after exception: {validation_error}"
+                            )
                             # Fallback logic for validation exceptions
                             if hasattr(step, 'fallback_step') and step.fallback_step is not None:
                                 telemetry.logfire.info(f"Step '{step.name}' validation exception, attempting fallback")
-                                # Prevent fallback loops
                                 if step.fallback_step in fallback_chain:
                                     raise InfiniteFallbackError(f"Fallback loop detected: step '{step.fallback_step.name}' already in fallback chain")
                                 try:
-                                    fallback_result = await self._execute_simple_step(
+                                    fallback_result = await self.execute(
                                         step=step.fallback_step,
                                         data=data,
                                         context=context,
@@ -959,29 +991,28 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                                         limits=limits,
                                         stream=stream,
                                         on_chunk=on_chunk,
-                                        cache_key=cache_key,
                                         breach_event=breach_event,
                                         _fallback_depth=_fallback_depth + 1,
                                     )
-                                    # Mark fallback triggered and preserve original error
                                     if fallback_result.metadata_ is None:
                                         fallback_result.metadata_ = {}
                                     fallback_result.metadata_["fallback_triggered"] = True
                                     fallback_result.metadata_["original_error"] = result.feedback
-                                    # Accumulate primary metrics
-                                    fallback_result.cost_usd += result.cost_usd
-                                    fallback_result.token_counts += result.token_counts
-                                    fallback_result.latency_s += result.latency_s
-                                    fallback_result.attempts += result.attempts
+                                    # Scale fallback metrics by number of primary attempts
+                                    primary_attempts = max_retries + 1
+                                    fallback_result.cost_usd *= primary_attempts
+                                    fallback_result.token_counts *= primary_attempts
+                                    fallback_result.latency_s *= primary_attempts
+                                    fallback_result.attempts *= primary_attempts
                                     if fallback_result.success:
-                                        # Clear feedback on success
                                         fallback_result.feedback = None
                                         return fallback_result
-                                    # Combine feedback on fallback failure
-                                    fallback_result.feedback = f"Original error: {self._format_feedback(result.feedback, 'Agent execution failed')}; Fallback error: {self._format_feedback(fallback_result.feedback, 'Agent execution failed')}"
+                                    fallback_result.feedback = (
+                                        f"Original error: {self._format_feedback(result.feedback, 'Agent execution failed')}; "
+                                        f"Fallback error: {self._format_feedback(fallback_result.feedback, 'Agent execution failed')}"
+                                    )
                                     return fallback_result
                                 except InfiniteFallbackError:
-                                    # Re-raise to prevent loops
                                     raise
                                 except Exception as fallback_error:
                                     telemetry.logfire.error(f"Fallback for step '{step.name}' also failed: {fallback_error}")
@@ -1071,10 +1102,11 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             fallback_result.metadata_["original_error"] = result.feedback
                             
                             # Accumulate metrics from primary step
-                            fallback_result.cost_usd += result.cost_usd
-                            fallback_result.token_counts += result.token_counts
-                            fallback_result.latency_s += result.latency_s
-                            fallback_result.attempts += result.attempts
+                            primary_attempts = max_retries + 1
+                            fallback_result.cost_usd *= primary_attempts
+                            fallback_result.token_counts *= primary_attempts
+                            fallback_result.latency_s *= primary_attempts
+                            fallback_result.attempts *= primary_attempts
                             
                             if fallback_result.success:
                                 # For successful fallbacks, clear feedback to indicate success
