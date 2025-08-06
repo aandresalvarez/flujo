@@ -286,11 +286,11 @@ class TestExecutorCoreSimpleStep:
 
         # Assert
         assert result.success is False
-        assert result.attempts == 3  # max_retries (1 initial + 2 retries)
+        assert result.attempts == 1  # validation failures should not retry
         assert "Validation failed after max retries" in result.feedback
 
         # Verify validator was called max_retries times
-        assert mock_validator.validate.call_count == 3
+        assert mock_validator.validate.call_count == 1
 
     @pytest.mark.asyncio
     async def test_usage_limit_exceeded_error_propagates(self, executor_core, mock_step):

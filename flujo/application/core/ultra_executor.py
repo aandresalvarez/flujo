@@ -852,27 +852,20 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     # --- 4. Plugin Runner (if plugins exist) ---
                     if hasattr(step, "plugins") and step.plugins:
                         try:
+                            # Run plugins and wrap any exception as PluginError to enable retry
                             processed_output = await self._plugin_runner.run_plugins(
                                 step.plugins, processed_output, context=context, resources=resources
                             )
-                            # Standardize plugin validation failures as retryable PluginError
-                            from ...domain.plugins import PluginOutcome
-                            if isinstance(processed_output, PluginOutcome):
-                                if not processed_output.success:
-                                    raise PluginError(processed_output.feedback or "Plugin failed without feedback")
-                                if processed_output.new_solution is not None:
-                                    processed_output = processed_output.new_solution
-                        except PluginError as pe:
-                            # Retry only for non-final attempts
-                            if attempt < max_retries + 1:
-                                telemetry.logfire.warning(f"Step '{step.name}' plugin validation attempt {attempt} failed: {pe}")
-                                continue
-                            # Final attempt: propagate PluginError to outer catch
-                            raise
-                        except Exception as ex:
-                            # Treat execution errors as retryable PluginError
-                            telemetry.logfire.error(f"Plugin execution error: {ex}")
-                            raise PluginError(str(ex))
+                        except Exception as e:
+                            raise PluginError(str(e))
+                        from ...domain.plugins import PluginOutcome
+                        # If plugin returned a PluginOutcome failure, end step
+                        if isinstance(processed_output, PluginOutcome) and not processed_output.success:
+                            # Plugin validation failure: raise PluginError to enable retry
+                            raise PluginError(processed_output.feedback or 'Plugin failed without feedback')
+                        # Apply new_solution if plugin provided one
+                        if isinstance(processed_output, PluginOutcome) and processed_output.new_solution is not None:
+                            processed_output = processed_output.new_solution
                     
                     # --- 5. Validator Runner (if validators exist) ---
                     if hasattr(step, "validators") and step.validators:
@@ -884,29 +877,24 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             # Check if any validation failed
                             failed_validations = [r for r in validation_results if not r.is_valid]
                             if failed_validations:
-                                # SEPARATE: Handle validation failures (RETRY)
-                                if attempt < max_retries + 1:
-                                    telemetry.logfire.warning(f"Step '{step.name}' validation attempt {attempt} failed: {failed_validations[0].feedback}")
-                                    continue
-                                else:
-                                    # Max retries exceeded
-                                    result.success = False
-                                    result.feedback = f"Validation failed after max retries: {self._format_feedback(failed_validations[0].feedback, 'Agent execution failed')}"
-                                    result.output = processed_output  # Keep output for fallback
-                                    result.latency_s = time.monotonic() - start_time
-                                    telemetry.logfire.error(f"Step '{step.name}' validation failed after max retries")
+                                # Validation failure: no retry
+                                result.success = False
+                                result.feedback = f"Validation failed after max retries: {self._format_feedback(failed_validations[0].feedback, 'Agent execution failed')}"
+                                result.output = processed_output  # Keep output for fallback
+                                result.latency_s = time.monotonic() - start_time
+                                telemetry.logfire.error(f"Step '{step.name}' validation failed after max retries")
+                                
+                                # --- 7. Fallback Logic for Validation Failure ---
+                                if hasattr(step, 'fallback_step') and step.fallback_step is not None:
+                                    telemetry.logfire.info(f"Step '{step.name}' validation failed, attempting fallback")
                                     
-                                    # --- 7. Fallback Logic for Validation Failure ---
-                                    if hasattr(step, 'fallback_step') and step.fallback_step is not None:
-                                        telemetry.logfire.info(f"Step '{step.name}' validation failed, attempting fallback")
-                                        
-                                        # Check for fallback loop before executing
-                                        if step.fallback_step in fallback_chain:
-                                            raise InfiniteFallbackError(f"Fallback loop detected: step '{step.fallback_step.name}' already in fallback chain")
+                                    # Check for fallback loop before executing
+                                    if step.fallback_step in fallback_chain:
+                                        raise InfiniteFallbackError(f"Fallback loop detected: step '{step.fallback_step.name}' already in fallback chain")
                                         
                                         try:
-                                            # Execute fallback step
-                                            fallback_result = await self._execute_simple_step(
+                                            # Execute fallback step using public execute API
+                                            fallback_result = await self.execute(
                                                 step=step.fallback_step,
                                                 data=data,
                                                 context=context,
@@ -914,9 +902,8 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                                                 limits=limits,
                                                 stream=stream,
                                                 on_chunk=on_chunk,
-                                                cache_key=cache_key,
                                                 breach_event=breach_event,
-                                                _fallback_depth=_fallback_depth + 1
+                                                _fallback_depth=_fallback_depth + 1,
                                             )
                                             
                                             # Mark as fallback triggered and preserve original error
@@ -951,70 +938,56 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                                     return result
                                     
                         except Exception as validation_error:
-                            # SEPARATE: Handle validation exceptions (RETRY)
-                            if attempt < max_retries + 1:
-                                telemetry.logfire.warning(f"Step '{step.name}' validation attempt {attempt} failed: {validation_error}")
-                                continue
-                            else:
-                                result.success = False
-                                result.feedback = f"Validation failed after max retries: {validation_error}"
-                                result.output = processed_output  # Keep output for fallback
-                                result.latency_s = time.monotonic() - start_time
-                                telemetry.logfire.error(f"Step '{step.name}' validation failed after max retries")
-                                
-                                # --- 7. Fallback Logic for Validation Exception ---
-                                if hasattr(step, 'fallback_step') and step.fallback_step is not None:
-                                    telemetry.logfire.info(f"Step '{step.name}' validation exception, attempting fallback")
-                                    
-                                    # Check for fallback loop before executing
-                                    if step.fallback_step in fallback_chain:
-                                        raise InfiniteFallbackError(f"Fallback loop detected: step '{step.fallback_step.name}' already in fallback chain")
-                                    
-                                    try:
-                                        # Execute fallback step
-                                        fallback_result = await self._execute_simple_step(
-                                            step=step.fallback_step,
-                                            data=data,
-                                            context=context,
-                                            resources=resources,
-                                            limits=limits,
-                                            stream=stream,
-                                            on_chunk=on_chunk,
-                                            cache_key=cache_key,
-                                            breach_event=breach_event,
-                                            _fallback_depth=_fallback_depth + 1
-                                        )
-                                        
-                                        # Mark as fallback triggered and preserve original error
-                                        if fallback_result.metadata_ is None:
-                                            fallback_result.metadata_ = {}
-                                        fallback_result.metadata_["fallback_triggered"] = True
-                                        fallback_result.metadata_["original_error"] = result.feedback
-                                        
-                                        # Accumulate metrics from primary step
-                                        fallback_result.cost_usd += result.cost_usd
-                                        fallback_result.token_counts += result.token_counts
-                                        fallback_result.latency_s += result.latency_s
-                                        fallback_result.attempts += result.attempts
-                                        
-                                        if fallback_result.success:
-                                            # For successful fallbacks, clear feedback to indicate success
-                                            fallback_result.feedback = None
-                                            return fallback_result
-                                        else:
-                                            # If fallback step failed, combine feedback with proper format
-                                            fallback_result.feedback = f"Original error: {self._format_feedback(result.feedback, 'Agent execution failed')}; Fallback error: {self._format_feedback(fallback_result.feedback, 'Agent execution failed')}"
-                                            return fallback_result
-                                    except InfiniteFallbackError:
-                                        # Re-raise InfiniteFallbackError to prevent infinite loops
-                                        raise
-                                    except Exception as fallback_error:
-                                        telemetry.logfire.error(f"Fallback for step '{step.name}' also failed: {fallback_error}")
-                                        # Return the original failure with fallback error info
-                                        result.feedback = f"Original error: {result.feedback}; Fallback error: {str(fallback_error)}"
-                                        return result
-                                
-                                return result
+                            # Validation exception: no retry, attempt fallback if configured
+                            result.success = False
+                            result.feedback = f"Validation failed after max retries: {validation_error}"
+                            result.output = processed_output
+                            result.latency_s = time.monotonic() - start_time
+                            telemetry.logfire.error(f"Step '{step.name}' validation failed after exception: {validation_error}")
+                            # Fallback logic for validation exceptions
+                            if hasattr(step, 'fallback_step') and step.fallback_step is not None:
+                                telemetry.logfire.info(f"Step '{step.name}' validation exception, attempting fallback")
+                                # Prevent fallback loops
+                                if step.fallback_step in fallback_chain:
+                                    raise InfiniteFallbackError(f"Fallback loop detected: step '{step.fallback_step.name}' already in fallback chain")
+                                try:
+                                    fallback_result = await self._execute_simple_step(
+                                        step=step.fallback_step,
+                                        data=data,
+                                        context=context,
+                                        resources=resources,
+                                        limits=limits,
+                                        stream=stream,
+                                        on_chunk=on_chunk,
+                                        cache_key=cache_key,
+                                        breach_event=breach_event,
+                                        _fallback_depth=_fallback_depth + 1,
+                                    )
+                                    # Mark fallback triggered and preserve original error
+                                    if fallback_result.metadata_ is None:
+                                        fallback_result.metadata_ = {}
+                                    fallback_result.metadata_["fallback_triggered"] = True
+                                    fallback_result.metadata_["original_error"] = result.feedback
+                                    # Accumulate primary metrics
+                                    fallback_result.cost_usd += result.cost_usd
+                                    fallback_result.token_counts += result.token_counts
+                                    fallback_result.latency_s += result.latency_s
+                                    fallback_result.attempts += result.attempts
+                                    if fallback_result.success:
+                                        # Clear feedback on success
+                                        fallback_result.feedback = None
+                                        return fallback_result
+                                    # Combine feedback on fallback failure
+                                    fallback_result.feedback = f"Original error: {self._format_feedback(result.feedback, 'Agent execution failed')}; Fallback error: {self._format_feedback(fallback_result.feedback, 'Agent execution failed')}"
+                                    return fallback_result
+                                except InfiniteFallbackError:
+                                    # Re-raise to prevent loops
+                                    raise
+                                except Exception as fallback_error:
+                                    telemetry.logfire.error(f"Fallback for step '{step.name}' also failed: {fallback_error}")
+                                    result.feedback = f"Original error: {result.feedback}; Fallback error: {fallback_error}"
+                                    return result
+                            return result
                     
                     # --- 6. Success - Return Result ---
                     result.success = True
@@ -1078,7 +1051,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             raise InfiniteFallbackError(f"Fallback loop detected: step '{step.fallback_step.name}' already in fallback chain")
                         
                         try:
-                            # Execute fallback step
+                            # Execute fallback step using public execute API
                             fallback_result = await self.execute(
                                 step=step.fallback_step,
                                 data=data,
@@ -1088,7 +1061,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                                 stream=stream,
                                 on_chunk=on_chunk,
                                 breach_event=breach_event,
-                                _fallback_depth=_fallback_depth + 1
+                                _fallback_depth=_fallback_depth + 1,
                             )
                             
                             # Mark as fallback triggered and preserve original error
@@ -1476,32 +1449,40 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         Revised LoopStep handler with proper iteration counting, usage limit enforcement, and telemetry logging.
         """
         import time
+        import copy
         from ...domain.dsl.pipeline import Pipeline
         from ...domain.models import PipelineContext, StepResult
-
+        from ...utils.context import safe_merge_context_updates
+        
         start_time = time.monotonic()
-        iteration_count = 0
-        cumulative_cost = 0.0
-        cumulative_tokens = 0
-        current_data = data
-        current_context = context or PipelineContext(initial_prompt=str(data))
-        exit_reason = None
-        last_failed_feedback: str | None = None
-        # Bypass DSL pipeline for single-step loops that update context
-        from ...domain.dsl.pipeline import Pipeline
+        
+        # Single-step loop bodies - use optimized bypass
         if isinstance(loop_step.loop_body_pipeline, Pipeline) and len(loop_step.loop_body_pipeline.steps) == 1:
-            # Single-step loop body, use simple-step executor directly to preserve context mutations
             body_step = loop_step.loop_body_pipeline.steps[0]
-            max_loops = getattr(loop_step, "max_loops", 0)
-            iteration_count = 0
-            cumulative_cost = 0.0
-            cumulative_tokens = 0
+            max_loops = getattr(loop_step, "max_loops", 5)
             current_data = data
             current_context = context or PipelineContext(initial_prompt=str(data))
             exit_reason = None
-            # Iterate directly
+            
+            # Handle initial input mapping
+            if hasattr(loop_step, "initial_input_to_loop_body_mapper") and loop_step.initial_input_to_loop_body_mapper:
+                try:
+                    current_data = loop_step.initial_input_to_loop_body_mapper(current_data, current_context)
+                except Exception as e:
+                    return StepResult(
+                        name=loop_step.name,
+                        success=False,
+                        output=None,
+                        attempts=0,
+                        latency_s=time.monotonic() - start_time,
+                        token_counts=0,
+                        cost_usd=0.0,
+                        feedback=f"Initial input mapper raised an exception: {e}",
+                        branch_context=current_context,
+                        metadata_={"iterations": 0, "exit_reason": "mapper_error"},
+                    )
+            
             for i in range(1, max_loops + 1):
-                iteration_count = i
                 result = await self._execute_simple_step(
                     body_step,
                     current_data,
@@ -1510,249 +1491,347 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     limits,
                     False,
                     None,
-                    None,  # cache_key
-                    None,  # breach_event
+                    None,
+                    None,
                     _fallback_depth,
                 )
-                cumulative_cost += result.cost_usd or 0.0
-                cumulative_tokens += result.token_counts or 0
-                current_data = result.output
-                current_context = result.branch_context or current_context
-                # Check exit condition
-                if getattr(loop_step, "exit_condition_callable", None) and loop_step.exit_condition_callable(current_data, current_context):
-                    exit_reason = "condition"
-                    break
-            # Build final output and return
+                
+                # Unpack wrapper objects from result output if present
+                raw_output = result.output.output if hasattr(result.output, 'output') else result.output
+                # Check if step failed
+                if not result.success:
+                    return StepResult(
+                        name=loop_step.name,
+                        success=False,
+                        output=raw_output,
+                        attempts=i,
+                        latency_s=time.monotonic() - start_time,
+                        token_counts=result.token_counts,
+                        cost_usd=result.cost_usd,
+                        feedback=f"Loop body failed: {result.feedback}",
+                        branch_context=current_context,
+                        metadata_={"iterations": i, "exit_reason": "body_failure"},
+                    )
+                
+                # Update data and fuse context updates
+                current_data = raw_output
+                if result.branch_context is not None:
+                    from .context_manager import ContextManager
+                    current_context = ContextManager.merge(current_context, result.branch_context)
+                
+                # Evaluate exit condition
+                cond = getattr(loop_step, "exit_condition_callable", None)
+                if cond:
+                    try:
+                        if cond(current_data, current_context):
+                            exit_reason = "condition"
+                            break
+                    except Exception as e:
+                        return StepResult(
+                            name=loop_step.name,
+                            success=False,
+                            output=current_data,
+                            attempts=i,
+                            latency_s=time.monotonic() - start_time,
+                            token_counts=result.token_counts,
+                            cost_usd=result.cost_usd,
+                            feedback=f"Exit condition callable raised an exception: {e}",
+                            branch_context=current_context,
+                            metadata_={"iterations": i, "exit_reason": "exit_condition_error"},
+                        )
+                
+                # Prepare input for next iteration
+                if i < max_loops:
+                    if hasattr(loop_step, "iteration_input_mapper") and loop_step.iteration_input_mapper:
+                        try:
+                            current_data = loop_step.iteration_input_mapper(current_data, current_context, i)
+                        except Exception as e:
+                            return StepResult(
+                                name=loop_step.name,
+                                success=False,
+                                output=current_data,
+                                attempts=i,
+                                latency_s=time.monotonic() - start_time,
+                                token_counts=result.token_counts,
+                                cost_usd=result.cost_usd,
+                                feedback=f"Iteration input mapper raised an exception: {e}",
+                                branch_context=current_context,
+                                metadata_={"iterations": i, "exit_reason": "iteration_mapper_error"},
+                            )
+            
+            # Determine final output
             final_output = current_data
-            if getattr(loop_step, "loop_output_mapper", None):
-                final_output = loop_step.loop_output_mapper(current_data, current_context)
+            if hasattr(loop_step, "loop_output_mapper") and loop_step.loop_output_mapper:
+                try:
+                    final_output = loop_step.loop_output_mapper(current_data, current_context)
+                except Exception as e:
+                    return StepResult(
+                        name=loop_step.name,
+                        success=False,
+                        output=None,
+                        attempts=i,
+                        latency_s=time.monotonic() - start_time,
+                        token_counts=result.token_counts,
+                        cost_usd=result.cost_usd,
+                        feedback=f"Loop output mapper raised an exception: {e}",
+                        branch_context=current_context,
+                        metadata_={"iterations": i, "exit_reason": "output_mapper_error"},
+                    )
+            
+            # Determine success and feedback
             success = exit_reason == "condition"
             feedback = None if success else "max_loops exceeded"
+            
             return StepResult(
                 name=loop_step.name,
                 success=success,
                 output=final_output,
-                attempts=iteration_count,
+                attempts=i,
                 latency_s=time.monotonic() - start_time,
-                token_counts=cumulative_tokens,
-                cost_usd=cumulative_cost,
+                token_counts=result.token_counts,
+                cost_usd=result.cost_usd,
                 feedback=feedback,
                 branch_context=current_context,
-                metadata_={"iterations": iteration_count, "exit_reason": exit_reason or "max_loops"},
+                metadata_={"iterations": i, "exit_reason": exit_reason or "max_loops"},
             )
-        # Apply initial input mapper if provided (e.g., MapStep setup)
-        if getattr(loop_step, 'initial_input_to_loop_body_mapper', None):
+        
+        # Multi-step loop bodies - use original implementation
+        loop_overall_result = StepResult(name=loop_step.name)
+        loop_overall_result.metadata_ = {}
+        # Handle empty pipeline edge case in multi-step branch: no steps to execute
+        if not loop_step.loop_body_pipeline.steps:
+            return StepResult(
+                name=loop_step.name,
+                success=False,
+                output=data,
+                attempts=0,
+                latency_s=time.monotonic() - start_time,
+                token_counts=0,
+                cost_usd=0.0,
+                feedback="Empty loop pipeline",
+                branch_context=context,
+                metadata_={"iterations": 0, "exit_reason": "empty_pipeline"},
+            )
+
+        # Handle initial input mapping
+        if hasattr(loop_step, "initial_input_to_loop_body_mapper") and loop_step.initial_input_to_loop_body_mapper:
             try:
-                current_data = loop_step.initial_input_to_loop_body_mapper(current_data, current_context)
+                current_body_input = loop_step.initial_input_to_loop_body_mapper(data, context)
             except Exception as e:
-                return StepResult(
-                    name=loop_step.name,
-                    success=False,
-                    output=current_data,
-                    attempts=0,
-                    latency_s=time.monotonic() - start_time,
-                    token_counts=0,
-                    cost_usd=0.0,
-                    feedback=f"Initial input mapper failed: {e}",
-                    branch_context=current_context,
-                    metadata_={"iterations": 0, "exit_reason": "initial_mapper_failed"},
-                )
-        # Compute total iterations = initial element count (alias max_loops) + 0 (initial input maps items count)
-        orig_max_loops = getattr(loop_step, "max_loops", 0)
-        telemetry.logfire.info(f"Starting LoopStep '{loop_step.name}' with max_loops={orig_max_loops}, limits={limits}")
-
-        # Execute up to orig_max_loops iterations, breaking early on exit condition
-        for iteration_count in range(1, orig_max_loops + 1):
-            # Log start of this iteration with original max_loops denominator
-            telemetry.logfire.info(f"LoopStep '{loop_step.name}': Starting Iteration {iteration_count}/{orig_max_loops}")
-            telemetry.logfire.span(f"Loop '{loop_step.name}' - Iteration {iteration_count}")
-
-            # Enforce usage limits before iteration
-            if limits:
-                await self._usage_meter.guard(limits, step_history=None)
-                telemetry.logfire.debug(f"Usage limits check passed before iteration {iteration_count}")
-
-            # Apply iteration input mapper for subsequent iterations
-            if iteration_count > 1 and getattr(loop_step, "iteration_input_mapper", None):
-                try:
-                    current_data = loop_step.iteration_input_mapper(current_data, current_context, iteration_count - 1)
-                except Exception as e:
-                    return StepResult(
-                        name=loop_step.name,
-                        success=False,
-                        output=current_data,
-                        attempts=iteration_count - 1,
-                        latency_s=time.monotonic() - start_time,
-                        token_counts=cumulative_tokens,
-                        cost_usd=cumulative_cost,
-                        feedback=f"Iteration input mapper failed on iteration {iteration_count}: {e}",
-                        branch_context=current_context,
-                        metadata_={"iterations": iteration_count - 1, "exit_reason": "iteration_mapper_failed"},
-                    )
-
-            # Execute loop body pipeline
-            if isinstance(loop_step.loop_body_pipeline, Pipeline):
-                # Execute the pipeline and convert PipelineResult to a StepResult for this iteration
-                pipeline_result = await self._execute_pipeline(
-                    loop_step.loop_body_pipeline,
-                    current_data,
-                    current_context,
-                    resources,
-                    limits,
-                    None,
-                    context_setter,
-                )
-                # Derive iteration output, cost, tokens, and context
-                last_step_result = pipeline_result.step_history[-1] if pipeline_result.step_history else None
-                body_output = last_step_result.output if last_step_result else current_data
-                body_success = bool(pipeline_result.step_history and all(r.success for r in pipeline_result.step_history))
-                body_feedback = None if body_success else (last_step_result.feedback if last_step_result else None)
-                body_cost = pipeline_result.total_cost_usd
-                body_tokens = pipeline_result.total_tokens
-                body_context = pipeline_result.final_pipeline_context
-                # Build a synthetic StepResult for the iteration
-                body_result = StepResult(
-                    name=f"{loop_step.name}_iteration_{iteration_count}",
-                    output=body_output,
-                    success=body_success,
-                    attempts=1,
-                    latency_s=0.0,
-                    token_counts=body_tokens,
-                    cost_usd=body_cost,
-                    feedback=body_feedback,
-                    branch_context=body_context,
-                    metadata_={},
-                )
-            else:
-                from ...application.core.types import ExecutionFrame
-                body_frame = ExecutionFrame(
-                    step=loop_step.loop_body_pipeline,
-                    data=current_data,
-                    context=current_context,
-                    resources=resources,
-                    limits=limits,
-                    stream=False,
-                    on_chunk=None,
-                    breach_event=None,
-                    context_setter=context_setter,
-                    result=None,
-                    _fallback_depth=_fallback_depth,
-                )
-                body_result = await self.execute(body_frame)
-
-            # Accumulate cost and tokens
-            cumulative_cost += body_result.cost_usd or 0.0
-            cumulative_tokens += body_result.token_counts or 0
-            # Enforce cumulative usage limits after each iteration
-            if limits:
-                from ...exceptions import UsageLimitExceededError
-                # Cost limit breach
-                if getattr(limits, 'total_cost_usd_limit', None) is not None and cumulative_cost > limits.total_cost_usd_limit:
-                    raise UsageLimitExceededError(f"Cost limit exceeded")
-                # Token limit breach
-                if getattr(limits, 'total_tokens_limit', None) is not None and cumulative_tokens > limits.total_tokens_limit:
-                    raise UsageLimitExceededError(f"Token limit exceeded")
-
-            # Accumulate context for this iteration into branch context
-            branch_ctx = body_result.branch_context
-            if body_result.branch_context is not None:
-                # Merge context updates from this iteration
-                merged = ContextManager.merge(current_context, body_result.branch_context)
-                # Ensure completion flag propagates when set in branch context
-                if getattr(body_result.branch_context, 'is_complete', False):
-                    try:
-                        setattr(merged, 'is_complete', True)
-                    except Exception:
-                        pass
-                current_context = merged
-                telemetry.logfire.info(f"Merged loop iteration context for iteration {iteration_count}")
-                telemetry.logfire.info(
-                    f"LoopStep '{loop_step.name}' iter={iteration_count} "
-                    f"branch_ctx.is_complete={getattr(branch_ctx, 'is_complete', None)} "
-                    f"current_ctx.is_complete={getattr(current_context, 'is_complete', None)} "
-                    f"ids={id(branch_ctx)}->{id(current_context)}"
-                )
-
-            # Update current_data
-            current_data = body_result.output
-
-            telemetry.logfire.debug(
-                f"LoopStep '{loop_step.name}' iteration {iteration_count} output={current_data}, "
-                f"cost={body_result.cost_usd}, tokens={body_result.token_counts}"
-            )
-            # If the loop body failed, terminate with failure before checking exit condition
-            if not body_success:
-                exit_reason = "body_failure"
-                last_failed_feedback = body_feedback or "Loop body step failed"
-                telemetry.logfire.info(f"LoopStep '{loop_step.name}' body failed at iteration {iteration_count}.")
-                break
-            # Check exit condition
-            telemetry.logfire.info(
-                f"Evaluating exit condition at iter={iteration_count}: "
-                f"current_data={current_data}, current_ctx.is_complete={getattr(current_context, 'is_complete', None)}"
-            )
-            if getattr(loop_step, "exit_condition_callable", None):
-                try:
-                    if loop_step.exit_condition_callable(current_data, current_context):
-                        exit_reason = "condition"
-                        telemetry.logfire.info(f"LoopStep '{loop_step.name}' exit condition met at iteration {iteration_count}.")
-                        break
-                except Exception as e:
-                    return StepResult(
-                        name=loop_step.name,
-                        success=False,
-                        output=current_data,
-                        attempts=iteration_count,
-                        latency_s=time.monotonic() - start_time,
-                        token_counts=cumulative_tokens,
-                        cost_usd=cumulative_cost,
-                        feedback=f"Exit condition check failed on iteration {iteration_count}: {e}",
-                        branch_context=current_context,
-                        metadata_={"iterations": iteration_count, "exit_reason": "exit_condition_failed"},
-                    )
-
-        # Build final result
-        # Determine final output via loop_output_mapper hook if provided (always on termination)
-        final_output = current_data
-        if getattr(loop_step, "loop_output_mapper", None):
-            try:
-                final_output = loop_step.loop_output_mapper(current_data, current_context)
-            except Exception as e:
-                return StepResult(
-                    name=loop_step.name,
-                    success=False,
-                    output=current_data,
-                    attempts=iteration_count,
-                    latency_s=time.monotonic() - start_time,
-                    token_counts=cumulative_tokens,
-                    cost_usd=cumulative_cost,
-                    feedback=f"Output mapper failed: {e}",
-                    branch_context=current_context,
-                    metadata_={"iterations": iteration_count, "exit_reason": "output_mapper_failed"},
-                )
-        # Determine success and feedback
-        if exit_reason == "condition":
-            success = True
-            feedback = None
-        elif exit_reason == "body_failure":
-            success = False
-            feedback = last_failed_feedback
+                loop_overall_result.success = False
+                loop_overall_result.feedback = f"Initial input mapper raised an exception: {e}"
+                return loop_overall_result
         else:
-            success = False
-            feedback = "max_loops exceeded"
-        result = StepResult(
-            name=loop_step.name,
-            success=success,
-            output=final_output,
-            attempts=iteration_count,
-            latency_s=time.monotonic() - start_time,
-            token_counts=cumulative_tokens,
-            cost_usd=cumulative_cost,
-            feedback=feedback,
-            branch_context=current_context,
-            metadata_={"iterations": iteration_count, "exit_reason": exit_reason or "max_loops"},
-        )
-        return result
+            current_body_input = data
+
+        last_successful_iteration_body_output: Any = None
+        final_body_output_of_last_iteration: Any = None
+        loop_exited_successfully_by_condition = False
+
+        for i in range(1, getattr(loop_step, "max_loops", 5) + 1):
+            loop_overall_result.attempts = i
+            telemetry.logfire.info(
+                f"LoopStep '{loop_step.name}': Starting Iteration {i}/{getattr(loop_step, 'max_loops', 5)}"
+            )
+
+            iteration_succeeded_fully = True
+            current_iteration_data_for_body_step = current_body_input
+            iteration_context = copy.deepcopy(context) if context is not None else None
+
+            with telemetry.logfire.span(f"Loop '{loop_step.name}' - Iteration {i}"):
+                for body_step in loop_step.loop_body_pipeline.steps:
+                    try:
+                        body_step_result = await self.execute(
+                            body_step,
+                            current_iteration_data_for_body_step,
+                            context=iteration_context,
+                            resources=resources,
+                            limits=limits,
+                            context_setter=context_setter,
+                        )
+
+                        # If the body step result is a UsageLimitExceededError, raise it immediately
+                        if isinstance(body_step_result, Exception) and isinstance(
+                            body_step_result, UsageLimitExceededError
+                        ):
+                            raise body_step_result
+
+                        loop_overall_result.latency_s += body_step_result.latency_s
+                        loop_overall_result.cost_usd += getattr(body_step_result, "cost_usd", 0.0)
+                        loop_overall_result.token_counts += getattr(
+                            body_step_result, "token_counts", 0
+                        )
+
+                        if limits is not None:
+                            if (
+                                limits.total_cost_usd_limit is not None
+                                and loop_overall_result.cost_usd > limits.total_cost_usd_limit
+                            ):
+                                telemetry.logfire.warn(
+                                    f"Cost limit of ${limits.total_cost_usd_limit} exceeded"
+                                )
+                                loop_overall_result.success = False
+                                loop_overall_result.feedback = (
+                                    f"Cost limit of ${limits.total_cost_usd_limit} exceeded"
+                                )
+                                pr: PipelineResult[Any] = PipelineResult(
+                                    step_history=[loop_overall_result],
+                                    total_cost_usd=loop_overall_result.cost_usd,
+                                )
+                                if context_setter:
+                                    context_setter(pr, context)
+                                raise UsageLimitExceededError(loop_overall_result.feedback, pr)
+                            if (
+                                limits.total_tokens_limit is not None
+                                and loop_overall_result.token_counts > limits.total_tokens_limit
+                            ):
+                                telemetry.logfire.warn(
+                                    f"Token limit of {limits.total_tokens_limit} exceeded"
+                                )
+                                loop_overall_result.success = False
+                                loop_overall_result.feedback = (
+                                    f"Token limit of {limits.total_tokens_limit} exceeded"
+                                )
+                                pr_tokens: PipelineResult[Any] = PipelineResult(
+                                    step_history=[loop_overall_result],
+                                    total_cost_usd=loop_overall_result.cost_usd,
+                                )
+                                if context_setter:
+                                    context_setter(pr_tokens, context)
+                                raise UsageLimitExceededError(
+                                    loop_overall_result.feedback, pr_tokens
+                                )
+
+                        if not body_step_result.success:
+                            telemetry.logfire.warn(
+                                f"Body Step '{body_step.name}' in LoopStep '{loop_step.name}' (Iteration {i}) failed."
+                            )
+                            iteration_succeeded_fully = False
+                            final_body_output_of_last_iteration = body_step_result.output
+                            loop_overall_result.success = False
+                            loop_overall_result.feedback = f"Loop body failed: {body_step_result.feedback}"
+                            break
+                        current_iteration_data_for_body_step = body_step_result.output
+                    except PausedException:
+                        # Handle pause by merging context and re-raising the exception
+                        if context is not None and iteration_context is not None:
+                            try:
+                                # For LoopStep, we want to preserve command_log and other fields
+                                # So we don't exclude any fields during context merging
+                                safe_merge_context_updates(
+                                    context, iteration_context, excluded_fields=set()
+                                )
+                            except Exception as e:
+                                telemetry.logfire.error(
+                                    f"Failed to perform context merge in LoopStep '{loop_step.name}' iteration {i} during pause: {e}"
+                                )
+                                raise
+                        # Re-raise PausedException to propagate it up the call stack
+                        raise
+                    except Exception as e:
+                        # Re-raise UsageLimitExceededError immediately
+                        if isinstance(e, UsageLimitExceededError):
+                            raise
+                        iteration_succeeded_fully = False
+                        final_body_output_of_last_iteration = None
+                        loop_overall_result.success = False
+                        loop_overall_result.feedback = f"Loop body failed: {e}"
+                        break
+
+                if iteration_succeeded_fully:
+                    final_body_output_of_last_iteration = current_iteration_data_for_body_step
+                    last_successful_iteration_body_output = current_iteration_data_for_body_step
+
+                # Merge context updates from iteration
+                if context is not None and iteration_context is not None:
+                    try:
+                        # For LoopStep, we want to preserve command_log and other fields
+                        # So we don't exclude any fields during context merging
+                        safe_merge_context_updates(
+                            context, iteration_context, excluded_fields=set()
+                        )
+                    except Exception as e:
+                        telemetry.logfire.error(
+                            f"Failed to perform context merge in LoopStep '{loop_step.name}' iteration {i}: {e}"
+                        )
+                        raise
+
+            # Check exit condition
+            try:
+                should_exit = loop_step.exit_condition_callable(
+                    final_body_output_of_last_iteration, iteration_context
+                )
+            except Exception as e:
+                telemetry.logfire.error(
+                    f"Error in exit_condition_callable for LoopStep '{loop_step.name}': {e}"
+                )
+                loop_overall_result.success = False
+                loop_overall_result.feedback = f"Exit condition callable raised an exception: {e}"
+                break
+
+            if should_exit:
+                telemetry.logfire.info(
+                    f"LoopStep '{loop_step.name}' exit condition met at iteration {i}."
+                )
+                loop_overall_result.success = iteration_succeeded_fully
+                if not iteration_succeeded_fully:
+                    loop_overall_result.feedback = (
+                        "Loop exited by condition, but last iteration body failed."
+                    )
+                loop_exited_successfully_by_condition = True
+                break
+
+            # Prepare input for next iteration
+            if i < getattr(loop_step, "max_loops", 5):
+                if hasattr(loop_step, "iteration_input_mapper") and loop_step.iteration_input_mapper:
+                    try:
+                        current_body_input = loop_step.iteration_input_mapper(
+                            final_body_output_of_last_iteration, context, i
+                        )
+                    except Exception as e:
+                        telemetry.logfire.error(
+                            f"Error in iteration_input_mapper for LoopStep '{loop_step.name}': {e}"
+                        )
+                        loop_overall_result.success = False
+                        loop_overall_result.feedback = (
+                            f"Iteration input mapper raised an exception: {e}"
+                        )
+                        break
+                else:
+                    current_body_input = final_body_output_of_last_iteration
+        else:
+            telemetry.logfire.warn(
+                f"LoopStep '{loop_step.name}' reached max_loops ({getattr(loop_step, 'max_loops', 5)}) without exit condition being met."
+            )
+            loop_overall_result.success = False
+            loop_overall_result.feedback = (
+                f"Reached max_loops ({getattr(loop_step, 'max_loops', 5)}) without meeting exit condition."
+            )
+
+        # Set final output
+        if loop_overall_result.success and loop_exited_successfully_by_condition:
+            if hasattr(loop_step, "loop_output_mapper") and loop_step.loop_output_mapper:
+                try:
+                    loop_overall_result.output = loop_step.loop_output_mapper(
+                        last_successful_iteration_body_output, context
+                    )
+                except Exception as e:
+                    telemetry.logfire.error(
+                        f"Error in loop_output_mapper for LoopStep '{loop_step.name}': {e}"
+                    )
+                    loop_overall_result.success = False
+                    loop_overall_result.feedback = f"Loop output mapper raised an exception: {e}"
+                    loop_overall_result.output = None
+            else:
+                loop_overall_result.output = last_successful_iteration_body_output
+        else:
+            loop_overall_result.output = final_body_output_of_last_iteration
+            if not loop_overall_result.feedback:
+                loop_overall_result.feedback = (
+                    "Loop did not complete successfully or exit condition not met positively."
+                )
+
+        return loop_overall_result
     
     async def _handle_parallel_step(self, step=None, data=None, context=None, resources=None, limits=None, breach_event=None, context_setter=None, parallel_step=None, step_executor=None):
         """Handle ParallelStep execution with proper feedback handling and error propagation."""
@@ -1949,6 +2028,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 output_dict[branch_name] = branch_result
         
         result.output = output_dict
+        
+        # Record which branches were executed
+        result.metadata_["executed_branches"] = list(branch_results.keys())
         
         # Handle context merging based on merge strategy
         telemetry.logfire.debug(f"Context merging check: context={context is not None}, merge_strategy={parallel_step.merge_strategy}")
@@ -2402,7 +2484,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
     
     async def _handle_dynamic_router_step(
         self,
-        step: DynamicParallelRouterStep[Any],
+        router_step: DynamicParallelRouterStep[Any],
         data: Any,
         context: Optional[TContext_w_Scratch],
         resources: Optional[Any],
@@ -2411,7 +2493,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
     ) -> StepResult:
         """Handle DynamicParallelRouterStep execution."""
         # Phase 1: Execute the router agent to decide which branches to run
-        router_agent_step = Step(name=f"{step.name}_router", agent=step.router_agent)
+        router_agent_step = Step(name=f"{router_step.name}_router", agent=router_step.router_agent)
         router_frame = ExecutionFrame(
             step=router_agent_step,
             data=data,
@@ -2426,7 +2508,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         router_result = await self.execute(router_frame)
 
         if not router_result.success:
-            result = StepResult(name=self._safe_step_name(step), success=False, feedback=f"Router agent failed: {router_result.feedback}")
+            result = StepResult(name=self._safe_step_name(router_step), success=False, feedback=f"Router agent failed: {router_result.feedback}")
             result.cost_usd = router_result.cost_usd
             result.token_counts = router_result.token_counts
             return result
@@ -2437,26 +2519,26 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             selected_branch_names = [selected_branch_names]
         
         if not isinstance(selected_branch_names, list):
-            return StepResult(name=self._safe_step_name(step), success=False, feedback=f"Router agent must return a list of branch names, got {type(selected_branch_names).__name__}")
+            return StepResult(name=self._safe_step_name(router_step), success=False, feedback=f"Router agent must return a list of branch names, got {type(selected_branch_names).__name__}")
 
         # Filter the branches based on the router's decision
         selected_branches = {
-            name: step.branches[name]
+            name: router_step.branches[name]
             for name in selected_branch_names
-            if name in step.branches
+            if name in router_step.branches
         }
 
         if not selected_branches:
-            return StepResult(name=self._safe_step_name(step), success=True, output={}, cost_usd=router_result.cost_usd, token_counts=router_result.token_counts)
+            return StepResult(name=self._safe_step_name(router_step), success=True, output={}, cost_usd=router_result.cost_usd, token_counts=router_result.token_counts)
 
         # Phase 2: Execute the selected branches in parallel by delegating to the parallel handler
         temp_parallel_step = ParallelStep(
-            name=step.name,
+            name=router_step.name,
             branches=selected_branches,
-            merge_strategy=step.merge_strategy,
-            on_branch_failure=step.on_branch_failure,
-            context_include_keys=step.context_include_keys,
-            field_mapping=step.field_mapping,
+            merge_strategy=router_step.merge_strategy,
+            on_branch_failure=router_step.on_branch_failure,
+            context_include_keys=router_step.context_include_keys,
+            field_mapping=router_step.field_mapping,
         )
 
         parallel_result = await self._handle_parallel_step(
@@ -2491,6 +2573,12 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     context_setter(pipeline_result, context)
                 except Exception as e:
                     telemetry.logfire.warning(f"Context setter failed for DynamicParallelRouterStep: {e}")
+        
+        # Add the cost and tokens from the router agent execution to the final result
+        parallel_result.cost_usd += router_result.cost_usd
+        parallel_result.token_counts += router_result.token_counts
+        # Record which branches were selected and executed
+        parallel_result.metadata_["executed_branches"] = selected_branch_names
         
         return parallel_result
     
@@ -3651,3 +3739,88 @@ class OptimizedExecutorCore(ExecutorCore):
             "Enable object pooling for memory optimization",
             "Use batch processing for multiple steps",
         ]
+
+    # ------------------------------------------------------------------
+    # Helper for full simple-step bypass in LoopStep
+    async def _execute_simple_loop_body(
+        self,
+        loop_step: Any,
+        data: Any,
+        context: Optional[TContext_w_Scratch],
+        resources: Optional[Any],
+        limits: Optional[UsageLimits],
+        context_setter: Optional[Callable[[Any, Optional[Any]], None]],
+        _fallback_depth: int,
+        start_time: float,
+    ) -> StepResult:
+        """
+        Execute a LoopStep whose body is a single Step by calling _execute_simple_step
+        on the same PipelineContext instance for each iteration, preserving all engine semantics.
+        TODO: implement full agent, plugin, validator, caching, usage-meter, fallback logic inline.
+        """
+        import time
+        from ...domain.models import PipelineContext, StepResult
+        # Prepare loop execution
+        body_step = loop_step.loop_body_pipeline.steps[0]
+        max_loops = getattr(loop_step, "max_loops", 0)
+        iteration_count = 0
+        cumulative_cost = 0.0
+        cumulative_tokens = 0
+        current_data = data
+        current_context = context or PipelineContext(initial_prompt=str(data))
+        exit_reason = None
+        # Collect iteration results for history
+        step_history: list[StepResult] = []
+        # Iterate, invoking the simple-step executor in-place
+        for i in range(1, max_loops + 1):
+            iteration_count = i
+            result = await self._execute_simple_step(
+                body_step,
+                current_data,
+                current_context,
+                resources,
+                limits,
+                False,
+                None,
+                None,
+                None,
+                _fallback_depth,
+            )
+            # Record iteration
+            step_history.append(result)
+            cumulative_cost += result.cost_usd or 0.0
+            cumulative_tokens += result.token_counts or 0
+            # Update data and context in place
+            current_data = result.output
+            # Merge branch context into current context to propagate state updates
+            if result.branch_context is not None:
+                from .context_manager import ContextManager
+                current_context = ContextManager.merge(current_context, result.branch_context)
+            # Retain existing current_context if branch_context is None
+            # Evaluate exit condition
+            cond = getattr(loop_step, "exit_condition_callable", None)
+            if cond and cond(current_data, current_context):
+                exit_reason = "condition"
+                break
+        # Build final output via mapper if any
+        final_output = current_data
+        mapper = getattr(loop_step, "loop_output_mapper", None)
+        if mapper:
+            final_output = mapper(current_data, current_context)
+        # Determine success and feedback
+        success = exit_reason == "condition"
+        feedback = None if success else "max_loops exceeded"
+        # Return aggregated StepResult with full history
+        return StepResult(
+            name=loop_step.name,
+            success=success,
+            output=final_output,
+            attempts=iteration_count,
+            latency_s=time.monotonic() - start_time,
+            token_counts=cumulative_tokens,
+            cost_usd=cumulative_cost,
+            feedback=feedback,
+            branch_context=current_context,
+            metadata_={"iterations": iteration_count, "exit_reason": exit_reason or "max_loops"},
+            step_history=step_history,
+        )

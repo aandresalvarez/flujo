@@ -37,5 +37,8 @@ class ContextManager:
             return branch_context
         if branch_context is None:
             return main_context
+        # If contexts are the same object, no merge needed
+        if main_context is branch_context:
+            return main_context
         safe_merge_context_updates(main_context, branch_context)
         return main_context

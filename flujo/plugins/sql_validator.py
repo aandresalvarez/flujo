@@ -2,7 +2,17 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlvalidator import parse
+try:
+    from sqlvalidator import parse
+except ImportError:
+    # Fallback stub when sqlvalidator is not installed
+    def parse(query: str):
+        class DummyResult:
+            def __init__(self, query: str):
+                self.errors = ["invalid SQL"]
+            def is_valid(self) -> bool:
+                return False
+        return DummyResult(query)
 
 from ..domain.plugins import PluginOutcome
 

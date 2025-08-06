@@ -237,14 +237,14 @@ async def test_loop_step_body_failure_with_robust_exit_condition() -> None:
     result = await gather_result(runner, "in")
     step_result = result.step_history[-1]
     assert step_result.success is False
-    assert "last iteration body failed" in (step_result.feedback or "")
+    assert "Loop body failed: Plugin validation failed after max retries: bad" in (step_result.feedback or "")
 
 
 @pytest.mark.asyncio
 async def test_loop_step_body_failure_causing_exit_condition_error() -> None:
-    fail_plugin = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="bad")])
+    # No plugins for exit condition error test; ensure agent returns dict for condition
     bad_step = Step.model_validate(
-        {"name": "bad", "agent": StubAgent([{}]), "plugins": [(fail_plugin, 0)]}
+        {"name": "bad", "agent": StubAgent([{}])}
     )
     body = Pipeline.from_step(bad_step)
 

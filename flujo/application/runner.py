@@ -628,8 +628,11 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 pipeline_result_obj.trace_tree = self._trace_manager._root_span
             if current_context_instance is not None:
                 assert self.pipeline is not None
-                # Persist final state using ExecutionManager to handle crash recovery and final index logic
-                exec_manager = ExecutionManager[ContextT](self.pipeline)
+                # Persist final state using ExecutionManager with the state_manager from this run
+                exec_manager = ExecutionManager(
+                    self.pipeline,
+                    state_manager=state_manager,
+                )
                 exec_manager.set_final_context(
                     pipeline_result_obj,
                     cast(Optional[ContextT], current_context_instance),
