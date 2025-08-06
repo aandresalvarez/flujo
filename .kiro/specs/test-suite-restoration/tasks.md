@@ -1,96 +1,74 @@
+---
 
 ### `tasks.md`
 
-# Engineering Tasks for Flujo Architectural Stabilization
+# Engineering Tasks for Flujo Architectural Refinement (Phase 2)
 
 ## Introduction
 
-This document lists the specific, actionable engineering tasks required to implement the architectural requirements outlined in `requirements.md`. Each task includes a clear description, a link to the corresponding requirement, and precise acceptance criteria that are directly verifiable through the test suite.
+This document details the specific tasks needed to implement the Phase 2 architectural requirements. These tasks focus on refining the `ExecutorCore`'s handling of failure semantics, state propagation at recursive boundaries, and ensuring the completion of the observability pipeline.
 
 ---
 
-### **Prerequisite Task**
+### **Tasks for REQ-STATE-002: Consistent State Propagation**
 
-*   **Task ID:** `TASK-ENV-001`
-*   **Title:** Resolve Test Collection Error for `test_serialization.py`
-*   **Status:** Completed
-*   **Description:** The test runner is failing to collect tests due to a filename collision between `tests/benchmarks/test_serialization.py` and `tests/utils/test_serialization.py`. This must be resolved to ensure the full test suite runs.
+*   **Task ID:** `TASK-STATE-003`
+*   **Title:** Ensure `LoopStep` Output Mapper is Always Invoked on Termination
+*   **Requirement:** `REQ-STATE-002`
+*   **Description:** Refactor the `_handle_loop_step` method in `ultra_executor.py`. Add logic to ensure that the `loop_output_mapper` callable is invoked on the loop's final internal output, *especially* when the loop terminates by reaching its `max_loops` limit.
 *   **Acceptance Criteria:**
-    1.  The `import file mismatch` error is eliminated from the `pytest` output.
-    2.  All tests in both `test_serialization.py` files are collected and executed by the test runner.
+    1.  When a `refine_until` loop (a specialized `LoopStep`) terminates due to `max_refinements`, its final output must be an instance of `RefinementCheck`, as produced by its output mapper.
+    2.  The test `test_golden_transcript_refine_max_iterations` must pass.
 
 ---
 
-### **Tasks for REQ-STATE-001: State Accumulation and Propagation**
+### **Tasks for REQ-CONTEXT-002: Context Integrity**
 
-*   **Task ID:** `TASK-STATE-001`
-*   **Title:** Fix State Accumulation in Fallback Step Execution
-*   **Status:** Completed
-*   **Requirement:** `REQ-STATE-001`
-*   **Description:** Modify the fallback logic within `_execute_simple_step` in `ultra_executor.py`. When a primary step fails and its fallback is executed, the metrics from the final attempt of the primary step must be added to the metrics of the fallback step's result.
+*   **Task ID:** `TASK-CONTEXT-003`
+*   **Title:** Fix Context Propagation from `DynamicParallelRouterStep`
+*   **Requirement:** `REQ-CONTEXT-002`
+*   **Description:** In `_handle_dynamic_router_step` within `ultra_executor.py`, after the internal, temporary `ParallelStep` completes, its final `branch_context` (which contains the merged results) must be correctly assigned as the `branch_context` of the `DynamicParallelRouterStep`'s own `StepResult`.
 *   **Acceptance Criteria:**
-    1.  When a fallback succeeds, the final `StepResult`'s `cost_usd`, `token_counts`, and `latency_s` must be the *sum* of the primary step's final failed attempt and the fallback step's execution.
-    2.  The final `attempts` count must be the sum of attempts from the primary and fallback steps.
-    3.  The final `StepResult` metadata must contain a `fallback_triggered: True` flag and an `original_error` field preserving the primary step's failure feedback.
-    4.  The tests `test_successful_fallback_preserves_metrics` and `test_failed_fallback_accumulates_metrics` must pass.
+    1.  Context modifications made within the dynamically selected parallel branches must be reflected in the final pipeline context.
+    2.  The `executed_branches` list in the final context must be correctly populated after a `DynamicParallelRouterStep` run.
+    3.  The tests `test_golden_transcript_dynamic_parallel` and `test_golden_transcript_dynamic_parallel_selective` must pass.
 
-*   **Task ID:** `TASK-STATE-002`
-*   **Title:** Correct Iteration Counting and Termination in `LoopStep` Handler
-*   **Status:** Completed
-*   **Requirement:** `REQ-STATE-001`
-*   **Description:** The `while` loop condition in `_handle_loop_step` is incorrect, causing one more iteration than specified by `max_loops`. Adjust the loop termination logic to strictly adhere to the `max_loops` parameter.
+*   **Task ID:** `TASK-CONTEXT-004`
+*   **Title:** Optimize High-Load Context Merging
+*   **Requirement:** `REQ-CONTEXT-002`
+*   **Description:** Analyze and optimize the performance of the `safe_merge_context_updates` function in `flujo/utils/context.py`. Investigate replacing expensive deep-copy or full model validation operations with more efficient, delta-based updates, especially within loops. The goal is to reduce the overhead of context merging in high-iteration scenarios.
 *   **Acceptance Criteria:**
-    1.  A `LoopStep` with `max_loops=N` must execute its body *at most* `N` times.
-    2.  If the loop terminates because `max_loops` is reached, the final `StepResult.success` must be `False` and its `feedback` must be `"max_loops exceeded"`.
-    3.  The `attempts` field of the final `StepResult` must equal the number of iterations performed.
-    4.  The tests `test_loop_context_updates_max_loops` and `test_loop_max_loops_reached` must pass.
+    1.  The `test_regression_performance_under_load` integration test, which simulates high-frequency context updates in a loop, must pass without timing out or failing its final assertion.
 
 ---
 
-### **Tasks for REQ-CONTEXT-001: Context Integrity**
+### **Tasks for REQ-FAILURE-002: Failure Domain Semantics**
 
-*   **Task ID:** `TASK-CONTEXT-001`
-*   **Title:** Implement Context Merging for `ParallelStep` and `DynamicParallelRouterStep`
-*   **Status:** Completed
-*   **Requirement:** `REQ-CONTEXT-001`
-*   **Description:** Refactor `_handle_parallel_step` and `_handle_dynamic_router_step`. After executing branches in parallel with isolated (deep-copied) contexts, the modifications from *successful* branch contexts must be merged back into the main context according to the step's `merge_strategy`.
+*   **Task ID:** `TASK-FAILURE-003`
+*   **Title:** Correct Retry Logic for Validator Failures
+*   **Requirement:** `REQ-FAILURE-002`
+*   **Description:** The test `test_validator_failure_triggers_retry` incorrectly assumes that a validation failure should trigger a retry. This assumption is architecturally incorrect. Modify the test to assert that a validation failure results in *exactly one* attempt and an immediate failure of the step. The `ExecutorCore`'s current behavior of failing fast is correct and should be preserved.
 *   **Acceptance Criteria:**
-    1.  The `branch_context` field of the `ParallelStep`'s final `StepResult` must reflect the merged state from all successful branches.
-    2.  Context modifications from failed branches must be discarded and not affect the final merged context.
-    3.  The `executed_branches` list in the final context must be correctly populated.
-    4.  The tests `test_golden_transcript_dynamic_parallel` and `test_golden_transcript_dynamic_parallel_selective` must pass.
+    1.  The test `test_validator_failure_triggers_retry` is updated to assert that `result.attempts == 1`.
+    2.  The test `test_validator_failure_triggers_retry` must pass with the corrected assertion.
 
-*   **Task ID:** `TASK-CONTEXT-002`
-*   **Title:** Implement Context Merging for `ConditionalStep`
-*   **Status:** Completed
-*   **Requirement:** `REQ-CONTEXT-001`
-*   **Description:** Refactor `_handle_conditional_step`. After the selected branch pipeline is executed with an isolated context, its final context state must be correctly merged back into the main pipeline's context.
+*   **Task ID:** `TASK-FAILURE-004`
+*   **Title:** Improve Feedback Propagation from Failed Loop Body
+*   **Requirement:** `REQ-FAILURE-002`
+*   **Description:** In `_handle_loop_step`, when a loop terminates because its body fails, the feedback message for the parent `LoopStep`'s `StepResult` should be standardized. It should clearly state that the loop failed and include the specific feedback from the failed inner step.
 *   **Acceptance Criteria:**
-    1.  The `branch_context` of the `ConditionalStep`'s `StepResult` must contain the modifications made within the executed branch.
-    2.  The test `test_regression_conditional_step_context_updates` must pass.
+    1.  The final `feedback` string for a failed `LoopStep` must be in the format: `"Loop body failed: [Original Feedback from Inner Step]"`.
+    2.  The tests `test_loop_step_body_failure_with_robust_exit_condition` and `test_loop_step_body_failure_causing_exit_condition_error` must pass.
 
 ---
 
-### **Tasks for REQ-FAILURE-001: Failure Handling**
+### **Tasks for REQ-OBSERVABILITY-001: Trace Persistence**
 
-*   **Task ID:** `TASK-FAILURE-001`
-*   **Title:** Isolate Failure Domains within Step Execution Logic
-*   **Status:** Completed
-*   **Requirement:** `REQ-FAILURE-001`
-*   **Description:** Refactor the `try...except` blocks in `_execute_agent_step` and `_execute_simple_step` to create separate, granular error handling for processors, plugins, validators, and the agent itself. A failure in a processor, plugin, or validator should not be retried and should immediately result in a failed step.
+*   **Task ID:** `TASK-OBSERVABILITY-001`
+*   **Title:** Implement End-to-End Trace Persistence and Retrieval
+*   **Requirement:** `REQ-OBSERVABILITY-001`
+*   **Description:** In `ExecutionManager`, at the end of a pipeline run, extract the `trace_tree` from the `PipelineResult` object. If the trace exists, call the `StateManager`'s `record_run_end` method, which should in turn call the `StateBackend`'s `save_trace` method to persist it. Ensure `SQLiteBackend.get_trace` can correctly retrieve and reconstruct the trace.
 *   **Acceptance Criteria:**
-    1.  A failed `ValidationPlugin` must produce a `StepResult` where the `feedback` string is derived from the `PluginOutcome.feedback`.
-    2.  A failed `Validator` must produce a `StepResult` where the `feedback` string is derived from the `ValidationResult.feedback`.
-    3.  A direct agent execution failure should only be retried up to `max_retries`.
-    4.  The tests `test_plugin_validation_failure_with_feedback`, `test_plugin_failure_propagates`, and `test_hybrid_validation.py` failures must pass.
-
-*   **Task ID:** `TASK-FAILURE-002`
-*   **Title:** Ensure Failure Propagation from Nested Executions in `LoopStep`
-*   **Status:** Pending
-*   **Requirement:** `REQ-FAILURE-001`
-*   **Description:** Modify `_handle_loop_step` to inspect the `success` flag of the `StepResult` returned from its recursive execution of the loop body. If the body execution fails, the loop must terminate immediately and the parent `LoopStep` must be marked as failed.
-*   **Acceptance Criteria:**
-    1.  If any step in the `loop_body_pipeline` fails, the `LoopStep` must immediately terminate.
-    2.  The final `StepResult` for the `LoopStep` must have `success=False`.
-    3.  The `feedback` from the failed inner step must be propagated as the `feedback` for the `LoopStep`.
-    4.  The test `test_handle_loop_step_body_step_failures` must pass.
+    1.  After a pipeline run with tracing enabled, a call to `backend.get_trace(run_id)` must return a non-None, valid trace tree structure.
+    2.  The `flujo lens trace <run_id>` CLI command must successfully display the trace.
+    3.  All tests in `tests/integration/test_fsd_12_tracing_complete.py` must pass.

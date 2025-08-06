@@ -377,8 +377,9 @@ class TestLoopStepMigration:
         )
 
         # Assert
-        assert result.success is True  # failed body step currently treated as exit_condition
+        assert result.success is False  # failed body step should cause LoopStep to fail
         assert result.attempts == 1  # Should stop after first failed iteration
+        assert result.feedback is not None  # Should have feedback from the failed step
 
     # Phase 1.4: Usage Limits Tests
 
@@ -592,8 +593,9 @@ class TestLoopStepMigration:
         )
 
         # Assert
-        assert result.success is True
+        assert result.success is False  # Empty pipeline should be considered a failure
         assert result.output == "initial_data"  # Should pass through input
+        assert result.feedback is not None  # Should have feedback about the failure
 
     async def test_loopstep_error_scenarios_regression(self, executor_core, context):
         """Test error scenarios that existed before migration."""

@@ -1663,6 +1663,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             # If the loop body failed, terminate with failure before checking exit condition
             if not body_success:
                 exit_reason = "body_failure"
+                last_failed_feedback = body_feedback or "Loop body step failed"
                 telemetry.logfire.info(f"LoopStep '{loop_step.name}' body failed at iteration {iteration_count}.")
                 break
             # Check exit condition
