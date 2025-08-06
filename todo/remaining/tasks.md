@@ -352,3 +352,7 @@
   - Acceptance Criteria:
     1. `test_golden_transcript_dynamic_parallel` and `test_golden_transcript_dynamic_parallel_selective` pass with correct `executed_branches` in the final context.
     2. Failures in branch execution properly populate `executed_branches` with failed branch keys.
+
+* Task ID: TASK-STATE-003
+  - **Status:** ✅
+  - **Note:** Implemented direct simple-step bypass for single-step loops to preserve context updates in place

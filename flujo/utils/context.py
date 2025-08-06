@@ -165,14 +165,17 @@ def safe_merge_context_updates(
         return result
 
     try:
-        # Get field values using Pydantic's model_dump() method
-        # This works for both Pydantic v1 and v2
+        # Use Pydantic model_dump or dict to get source fields, excluding defaults and None for efficiency
         if hasattr(source_context, "model_dump"):
-            # Pydantic v2 - use model_dump() for better performance and type safety
-            source_fields = source_context.model_dump()
+            try:
+                source_fields = source_context.model_dump(exclude_defaults=True, exclude_none=True)
+            except TypeError:
+                source_fields = source_context.model_dump()
         elif hasattr(source_context, "dict"):
-            # Pydantic v1
-            source_fields = source_context.dict()
+            try:
+                source_fields = source_context.dict(exclude_defaults=True, exclude_none=True)
+            except TypeError:
+                source_fields = source_context.dict()
         else:
             # Fallback for non-Pydantic objects
             source_fields = {

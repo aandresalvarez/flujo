@@ -370,34 +370,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         # Use the merge function to combine contexts
         merged_context = self._merge_context_updates(current_context, iteration_context)
         
-        # If merge didn't work, try direct field copying for loop accumulation
-        if merged_context == current_context:
-            # Create a deep copy of the iteration context and merge manually
-            import copy
-            try:
-                # Create a new context of the same type
-                new_context = type(current_context)(initial_prompt=current_context.initial_prompt)
-                
-                # Copy all fields from current context
-                for field_name in dir(current_context):
-                    if not field_name.startswith('_'):
-                        if hasattr(current_context, field_name):
-                            setattr(new_context, field_name, getattr(current_context, field_name))
-                
-                # Update with iteration context values
-                for field_name in dir(iteration_context):
-                    if not field_name.startswith('_'):
-                        if hasattr(iteration_context, field_name):
-                            setattr(new_context, field_name, getattr(iteration_context, field_name))
-                
-                return new_context
-            except Exception as e:
-                # Fallback to iteration context if manual merge fails
-                if hasattr(self, '_telemetry') and self._telemetry:
-                    if hasattr(self._telemetry, 'logfire'):
-                        self._telemetry.logfire.warning(f"Manual context accumulation failed: {e}")
-                return iteration_context
-        
+        # Accumulate context changes using safe_merge_context_updates
         return merged_context
     
     def _update_context_state(
@@ -586,22 +559,22 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         elif hasattr(step, "meta") and step.meta.get("is_validation_step", False):
             telemetry.logfire.debug(f"Routing validation step to simple handler: {step.name}")
             result = await self._execute_simple_step(
-                step, data, context, resources, limits, stream, on_chunk, cache_key, breach_event, _fallback_depth
+                step, data, context, resources, limits, stream, on_chunk, cache_key, None, _fallback_depth
             )
         elif stream:
             telemetry.logfire.debug(f"Routing streaming step to simple handler: {step.name}")
             result = await self._execute_simple_step(
-                step, data, context, resources, limits, stream, on_chunk, cache_key, breach_event, _fallback_depth
+                step, data, context, resources, limits, stream, on_chunk, cache_key, None, _fallback_depth
             )
         elif hasattr(step, 'fallback_step') and step.fallback_step is not None and not hasattr(step.fallback_step, '_mock_name'):
             telemetry.logfire.debug(f"Routing to simple step with fallback: {step.name}")
             result = await self._execute_simple_step(
-                step, data, context, resources, limits, stream, on_chunk, cache_key, breach_event, _fallback_depth
+                step, data, context, resources, limits, stream, on_chunk, cache_key, None, _fallback_depth
             )
         else:
             telemetry.logfire.debug(f"Routing to agent step handler: {step.name}")
             result = await self._execute_agent_step(
-                step, data, context, resources, limits, stream, on_chunk, cache_key, breach_event, _fallback_depth
+                step, data, context, resources, limits, stream, on_chunk, cache_key, None, _fallback_depth
             )
         
         # Cache successful results
@@ -1514,6 +1487,59 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         current_context = context or PipelineContext(initial_prompt=str(data))
         exit_reason = None
         last_failed_feedback: str | None = None
+        # Bypass DSL pipeline for single-step loops that update context
+        from ...domain.dsl.pipeline import Pipeline
+        if isinstance(loop_step.loop_body_pipeline, Pipeline) and len(loop_step.loop_body_pipeline.steps) == 1:
+            # Single-step loop body, use simple-step executor directly to preserve context mutations
+            body_step = loop_step.loop_body_pipeline.steps[0]
+            max_loops = getattr(loop_step, "max_loops", 0)
+            iteration_count = 0
+            cumulative_cost = 0.0
+            cumulative_tokens = 0
+            current_data = data
+            current_context = context or PipelineContext(initial_prompt=str(data))
+            exit_reason = None
+            # Iterate directly
+            for i in range(1, max_loops + 1):
+                iteration_count = i
+                result = await self._execute_simple_step(
+                    body_step,
+                    current_data,
+                    current_context,
+                    resources,
+                    limits,
+                    False,
+                    None,
+                    None,  # cache_key
+                    None,  # breach_event
+                    _fallback_depth,
+                )
+                cumulative_cost += result.cost_usd or 0.0
+                cumulative_tokens += result.token_counts or 0
+                current_data = result.output
+                current_context = result.branch_context or current_context
+                # Check exit condition
+                if getattr(loop_step, "exit_condition_callable", None) and loop_step.exit_condition_callable(current_data, current_context):
+                    exit_reason = "condition"
+                    break
+            # Build final output and return
+            final_output = current_data
+            if getattr(loop_step, "loop_output_mapper", None):
+                final_output = loop_step.loop_output_mapper(current_data, current_context)
+            success = exit_reason == "condition"
+            feedback = None if success else "max_loops exceeded"
+            return StepResult(
+                name=loop_step.name,
+                success=success,
+                output=final_output,
+                attempts=iteration_count,
+                latency_s=time.monotonic() - start_time,
+                token_counts=cumulative_tokens,
+                cost_usd=cumulative_cost,
+                feedback=feedback,
+                branch_context=current_context,
+                metadata_={"iterations": iteration_count, "exit_reason": exit_reason or "max_loops"},
+            )
         # Apply initial input mapper if provided (e.g., MapStep setup)
         if getattr(loop_step, 'initial_input_to_loop_body_mapper', None):
             try:
@@ -1628,9 +1654,24 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     raise UsageLimitExceededError(f"Token limit exceeded")
 
             # Accumulate context for this iteration into branch context
+            branch_ctx = body_result.branch_context
             if body_result.branch_context is not None:
-                current_context = ContextManager.merge(current_context, body_result.branch_context)
-                telemetry.logfire.debug(f"Merged loop iteration context for iteration {iteration_count}")
+                # Merge context updates from this iteration
+                merged = ContextManager.merge(current_context, body_result.branch_context)
+                # Ensure completion flag propagates when set in branch context
+                if getattr(body_result.branch_context, 'is_complete', False):
+                    try:
+                        setattr(merged, 'is_complete', True)
+                    except Exception:
+                        pass
+                current_context = merged
+                telemetry.logfire.info(f"Merged loop iteration context for iteration {iteration_count}")
+                telemetry.logfire.info(
+                    f"LoopStep '{loop_step.name}' iter={iteration_count} "
+                    f"branch_ctx.is_complete={getattr(branch_ctx, 'is_complete', None)} "
+                    f"current_ctx.is_complete={getattr(current_context, 'is_complete', None)} "
+                    f"ids={id(branch_ctx)}->{id(current_context)}"
+                )
 
             # Update current_data
             current_data = body_result.output
@@ -1646,6 +1687,10 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 telemetry.logfire.info(f"LoopStep '{loop_step.name}' body failed at iteration {iteration_count}.")
                 break
             # Check exit condition
+            telemetry.logfire.info(
+                f"Evaluating exit condition at iter={iteration_count}: "
+                f"current_data={current_data}, current_ctx.is_complete={getattr(current_context, 'is_complete', None)}"
+            )
             if getattr(loop_step, "exit_condition_callable", None):
                 try:
                     if loop_step.exit_condition_callable(current_data, current_context):
