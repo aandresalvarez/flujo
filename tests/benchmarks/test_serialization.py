@@ -1,5 +1,8 @@
 import json
 import pytest
+
+pytest.importorskip("pytest_benchmark")
+
 from flujo.domain.models import Candidate, Checklist, ChecklistItem
 from flujo.utils.serialization import safe_serialize
 
