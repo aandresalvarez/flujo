@@ -1,0 +1,249 @@
+tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_handle_loop_step_context_isolation 
+[gw1] [  3%] PASSED tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_handle_loop_step_context_isolation 
+tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_handle_loop_step_context_merge 
+[gw1] [  3%] PASSED tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_handle_loop_step_context_merge 
+tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_handle_loop_step_context_preservation 
+[gw1] [  3%] PASSED tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_handle_loop_step_context_preservation 
+tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_handle_loop_step_mapper_errors 
+[gw1] [  3%] PASSED tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_handle_loop_step_mapper_errors 
+tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_handle_loop_step_exit_condition_errors 
+[gw1] [  3%] PASSED tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_handle_loop_step_exit_condition_errors 
+tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_handle_loop_step_body_step_failures 
+[gw0] [  3%] FAILED tests/application/core/test_executor_core.py::TestExecutorCoreSimpleStep::test_plugin_validation_failure_with_feedback 
+tests/application/core/test_executor_core.py::TestExecutorCoreSimpleStep::test_plugin_failure_propagates 
+[gw0] [  3%] FAILED tests/application/core/test_executor_core.py::TestExecutorCoreSimpleStep::test_plugin_failure_propagates 
+tests/application/core/test_executor_core.py::TestExecutorCoreSimpleStep::test_plugin_runner_not_called_when_plugins_empty 
+[gw0] [  4%] PASSED tests/application/core/test_executor_core.py::TestExecutorCoreSimpleStep::test_plugin_runner_not_called_when_plugins_empty 
+tests/application/core/test_executor_core.py::TestExecutorCoreSimpleStep::test_plugin_runner_not_called_when_plugins_none 
+[gw0] [  4%] PASSED tests/application/core/test_executor_core.py::TestExecutorCoreSimpleStep::test_plugin_runner_not_called_when_plugins_none 
+tests/application/core/test_executor_core.py::TestExecutorCoreSimpleStep::test_caching_behavior 
+[gw1] [  4%] FAILED tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_handle_loop_step_body_step_failures 
+tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_handle_loop_step_cost_limits 
+[gw1] [  4%] PASSED tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_handle_loop_step_cost_limits 
+tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_handle_loop_step_token_limits 
+[gw1] [  4%] PASSED tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_handle_loop_step_token_limits 
+tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_handle_loop_step_limits_accumulation 
+[gw1] [  4%] PASSED tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_handle_loop_step_limits_accumulation 
+tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_loopstep_complex_pipeline_integration 
+[gw1] [  4%] PASSED tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_loopstep_complex_pipeline_integration 
+tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_loopstep_nested_control_flow 
+[gw1] [  4%] PASSED tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_loopstep_nested_control_flow 
+tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_loopstep_with_caching 
+[gw1] [  4%] PASSED tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_loopstep_with_caching 
+tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_loopstep_with_telemetry 
+[gw1] [  4%] PASSED tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_loopstep_with_telemetry 
+tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_loopstep_existing_behavior_preservation 
+[gw1] [  4%] PASSED tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_loopstep_existing_behavior_preservation 
+tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_loopstep_edge_cases_regression 
+[gw1] [  4%] PASSED tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_loopstep_edge_cases_regression 
+tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_loopstep_error_scenarios_regression 
+[gw0] [  4%] PASSED tests/application/core/test_executor_core.py::TestExecutorCoreSimpleStep::test_caching_behavior 
+--
+tests/integration/test_local_tracer.py::test_default_local_tracer_added 
+[gw1] [ 94%] PASSED tests/integration/test_local_tracer.py::test_default_local_tracer_added 
+tests/integration/test_local_tracer.py::test_custom_console_tracer_instance 
+[gw1] [ 94%] PASSED tests/integration/test_local_tracer.py::test_custom_console_tracer_instance 
+tests/integration/test_local_tracer.py::test_tracer_outputs_info_level 
+[gw1] [ 94%] PASSED tests/integration/test_local_tracer.py::test_tracer_outputs_info_level 
+tests/integration/test_local_tracer.py::test_tracer_outputs_debug_level 
+[gw1] [ 94%] PASSED tests/integration/test_local_tracer.py::test_tracer_outputs_debug_level 
+tests/integration/test_loop_context_update_regression.py::test_regression_first_principles_guarantee 
+[gw1] [ 94%] PASSED tests/integration/test_loop_context_update_regression.py::test_regression_first_principles_guarantee 
+tests/integration/test_loop_context_update_regression.py::test_regression_assertion_catches_merge_failures 
+[gw1] [ 94%] PASSED tests/integration/test_loop_context_update_regression.py::test_regression_assertion_catches_merge_failures 
+tests/integration/test_loop_context_update_regression.py::test_regression_parallel_step_context_updates 
+[gw1] [ 94%] PASSED tests/integration/test_loop_context_update_regression.py::test_regression_parallel_step_context_updates 
+tests/integration/test_loop_context_update_regression.py::test_regression_conditional_step_context_updates 
+[gw1] [ 94%] FAILED tests/integration/test_loop_context_update_regression.py::test_regression_conditional_step_context_updates 
+tests/integration/test_loop_context_update_regression.py::test_regression_edge_case_deep_copy_isolation 
+[gw1] [ 94%] PASSED tests/integration/test_loop_context_update_regression.py::test_regression_edge_case_deep_copy_isolation 
+tests/integration/test_loop_context_update_regression.py::test_regression_serialization_edge_cases 
+[gw1] [ 94%] PASSED tests/integration/test_loop_context_update_regression.py::test_regression_serialization_edge_cases 
+tests/integration/test_loop_context_update_regression.py::test_regression_performance_under_load 
+[gw1] [ 94%] FAILED tests/integration/test_loop_context_update_regression.py::test_regression_performance_under_load 
+tests/integration/test_loop_context_updates_fix.py::test_loop_context_updates_basic 
+[gw1] [ 94%] PASSED tests/integration/test_loop_context_updates_fix.py::test_loop_context_updates_basic 
+tests/integration/test_loop_context_updates_fix.py::test_loop_context_updates_multiple_iterations 
+[gw1] [ 94%] PASSED tests/integration/test_loop_context_updates_fix.py::test_loop_context_updates_multiple_iterations 
+tests/integration/test_loop_context_updates_fix.py::test_loop_context_updates_max_loops 
+[gw1] [ 94%] FAILED tests/integration/test_loop_context_updates_fix.py::test_loop_context_updates_max_loops 
+tests/integration/test_loop_context_updates_fix.py::test_loop_context_updates_complex_state 
+[gw1] [ 94%] PASSED tests/integration/test_loop_context_updates_fix.py::test_loop_context_updates_complex_state 
+tests/integration/test_loop_context_updates_fix.py::test_loop_context_updates_error_handling 
+[gw1] [ 94%] PASSED tests/integration/test_loop_context_updates_fix.py::test_loop_context_updates_error_handling 
+--
+[gw3] [100%] PASSED tests/unit/test_cost_tracking.py::TestProviderPricing::test_provider_pricing_creation 
+
+==================================== ERRORS ====================================
+______________ ERROR collecting tests/utils/test_serialization.py ______________
+import file mismatch:
+imported module 'test_serialization' has this __file__ attribute:
+  /Users/alvaro/Documents/Code/flujo/tests/benchmarks/test_serialization.py
+which is not the same as the test file we want to collect:
+  /Users/alvaro/Documents/Code/flujo/tests/utils/test_serialization.py
+HINT: remove __pycache__ / .pyc files and/or use a unique basename for your test file modules
+=================================== FAILURES ===================================
+______________ test_golden_transcript_dynamic_parallel_selective _______________
+[gw2] darwin -- Python 3.11.0 /Users/alvaro/Documents/Code/flujo/.venv/bin/python3
+tests/e2e/test_golden_transcript_dynamic_parallel.py:204: in test_golden_transcript_dynamic_parallel_selective
+    assert len(final_context.executed_branches) == 1
+E   AssertionError: assert 0 == 1
+E    +  where 0 = len([])
+E    +    where [] = DynamicParallelContext(run_id='run_302e0d95b25f4e9cbfb964060d78afcd', initial_prompt='test', scratchpad={'status': 'running'}, hitl_history=[], command_log=[], executed_branches=[], branch_results={}, total_failures=0).executed_branches
+----------------------------- Captured stdout call -----------------------------
+[DEBUG] Branch branch1 called with data: selective_input
+[DEBUG] Branch branch1 context is None: False
+[DEBUG] Branch branch1 context.executed_branches before: []
+[DEBUG] Branch branch1 context.executed_branches after: ['branch1']
+[DEBUG] Branch branch1 context.branch_results: {'branch1': 'branch1_processed_selective_input'}
+2025-08-05 22:09:43,790 - flujo - INFO - Counting string output as 1 token for step 'branch1': 'branch1_processed_selective_input'
+[DEBUG] Branch branch3 called with data: selective_input
+[DEBUG] Branch branch3 context is None: False
+[DEBUG] Branch branch3 context.executed_branches before: []
+[DEBUG] Branch branch3 context.executed_branches after: ['branch3']
+[DEBUG] Branch branch3 context.branch_results: {'branch3': 'branch3_processed_selective_input'}
+2025-08-05 22:09:43,791 - flujo - INFO - Counting string output as 1 token for step 'branch3': 'branch3_processed_selective_input'
+------------------------------ Captured log call -------------------------------
+INFO     flujo:telemetry.py:54 Counting string output as 1 token for step 'branch1': 'branch1_processed_selective_input'
+INFO     flujo:telemetry.py:54 Counting string output as 1 token for step 'branch3': 'branch3_processed_selective_input'
+_________________ test_golden_transcript_refine_max_iterations _________________
+[gw2] darwin -- Python 3.11.0 /Users/alvaro/Documents/Code/flujo/.venv/bin/python3
+tests/e2e/test_golden_transcript_refine.py:142: in test_golden_transcript_refine_max_iterations
+    assert isinstance(final_output, RefinementCheck)
+--
+INFO     flujo:telemetry.py:54 Extracted tokens for step 'test_step': prompt=10, completion=5
+INFO     flujo:telemetry.py:54 CostCalculator: provider=openai, model=gpt-4o, pricing=prompt_tokens_per_1k=0.005 completion_tokens_per_1k=0.015 price_per_image_standard_1024x1024=None price_per_image_hd_1024x1024=None price_per_image_standard_1792x1024=None price_per_image_hd_1792x1024=None price_per_image_standard_1024x1792=None price_per_image_hd_1024x1792=None
+INFO     flujo:telemetry.py:54 Cost calculation: prompt_cost=5e-05, completion_cost=7.5e-05, total=0.000125
+INFO     flujo:telemetry.py:54 Calculated cost for step 'test_step': 0.000125 USD for model gpt-4o
+INFO     flujo:telemetry.py:54 Step 'test_step' plugin validation failed, attempting fallback
+INFO     flujo:telemetry.py:54 Extracted tokens for step 'test_step': prompt=10, completion=5
+INFO     flujo:telemetry.py:54 CostCalculator: provider=openai, model=gpt-4o, pricing=prompt_tokens_per_1k=0.005 completion_tokens_per_1k=0.015 price_per_image_standard_1024x1024=None price_per_image_hd_1024x1024=None price_per_image_standard_1792x1024=None price_per_image_hd_1792x1024=None price_per_image_standard_1024x1792=None price_per_image_hd_1024x1792=None
+INFO     flujo:telemetry.py:54 Cost calculation: prompt_cost=5e-05, completion_cost=7.5e-05, total=0.000125
+INFO     flujo:telemetry.py:54 Calculated cost for step 'test_step': 0.000125 USD for model gpt-4o
+INFO     flujo:telemetry.py:54 Step 'test_step' plugin validation failed, attempting fallback
+________ TestLoopStepMigration.test_handle_loop_step_body_step_failures ________
+[gw1] darwin -- Python 3.11.0 /Users/alvaro/Documents/Code/flujo/.venv/bin/python3
+tests/application/core/test_executor_core_loop_step_migration.py:380: in test_handle_loop_step_body_step_failures
+    assert result.success is False
+E   AssertionError: assert True is False
+E    +  where True = StepResult(name='test_loop', output=None, success=True, attempts=1, latency_s=0.0009379170369356871, token_counts=0, cost_usd=0.0, feedback=None, branch_context=LoopTestContext(counter=0, messages=[], data={}, original_value=None), metadata_={'iterations': 1, 'exit_reason': 'condition'}, step_history=[]).success
+----------------------------- Captured stdout call -----------------------------
+2025-08-05 22:09:44,037 - flujo - INFO - Starting LoopStep 'test_loop' with max_loops=2, limits=None
+2025-08-05 22:09:44,037 - flujo - INFO - LoopStep 'test_loop': Starting Iteration 1/2
+2025-08-05 22:09:44,037 - flujo - WARNING - Step 'failing_step' agent execution attempt 1 failed: No more outputs available
+2025-08-05 22:09:44,038 - flujo - INFO - LoopStep 'test_loop' exit condition met at iteration 1.
+----------------------------- Captured stderr call -----------------------------
+2025-08-05 22:09:44,038 - flujo - ERROR - Step 'failing_step' agent failed after 2 attempts
+------------------------------ Captured log call -------------------------------
+INFO     flujo:telemetry.py:54 Starting LoopStep 'test_loop' with max_loops=2, limits=None
+INFO     flujo:telemetry.py:54 LoopStep 'test_loop': Starting Iteration 1/2
+WARNING  flujo:telemetry.py:54 Step 'failing_step' agent execution attempt 1 failed: No more outputs available
+ERROR    flujo:telemetry.py:54 Step 'failing_step' agent failed after 2 attempts
+INFO     flujo:telemetry.py:54 LoopStep 'test_loop' exit condition met at iteration 1.
+________ TestLoopStepMigration.test_loopstep_error_scenarios_regression ________
+[gw1] darwin -- Python 3.11.0 /Users/alvaro/Documents/Code/flujo/.venv/bin/python3
+tests/application/core/test_executor_core_loop_step_migration.py:617: in test_loopstep_error_scenarios_regression
+    assert result.success is False
+--
+INFO     flujo:telemetry.py:54 LoopStep 'AgenticExplorationLoop': Starting Iteration 1/5
+INFO     flujo:telemetry.py:54 LoopStep 'AgenticExplorationLoop': Starting Iteration 2/5
+ERROR    flujo:telemetry.py:54 Step 'command_executor_step' encountered a non-retryable exception: PausedException
+WARNING  flujo:telemetry.py:54 Step 'AgenticExplorationLoop' failed. Halting pipeline execution.
+___________________ test_golden_transcript_dynamic_parallel ____________________
+[gw1] darwin -- Python 3.11.0 /Users/alvaro/Documents/Code/flujo/.venv/bin/python3
+tests/e2e/test_golden_transcript_dynamic_parallel.py:128: in test_golden_transcript_dynamic_parallel
+    assert len(final_context.executed_branches) == 1
+E   AssertionError: assert 0 == 1
+E    +  where 0 = len([])
+E    +    where [] = DynamicParallelContext(run_id='run_ffa846f3ec2a48408a338040e64bd7fb', initial_prompt='test', scratchpad={'status': 'running'}, hitl_history=[], command_log=[], executed_branches=[], branch_results={}, total_failures=0).executed_branches
+----------------------------- Captured stdout call -----------------------------
+[DEBUG] Branch branch1 called with data: test_input
+[DEBUG] Branch branch1 context is None: False
+[DEBUG] Branch branch1 context.executed_branches before: []
+[DEBUG] Branch branch1 context.executed_branches after: ['branch1']
+[DEBUG] Branch branch1 context.branch_results: {'branch1': 'branch1_processed_test_input'}
+2025-08-05 22:10:07,342 - flujo - INFO - Counting string output as 1 token for step 'branch1': 'branch1_processed_test_input'
+[DEBUG] Branch branch2 called with data: test_input
+[DEBUG] Branch branch2 context is None: False
+[DEBUG] Branch branch2 context.executed_branches before: []
+[DEBUG] Branch branch2 context.executed_branches after: ['branch2']
+[DEBUG] Branch branch2 context.branch_results: {'branch2': 'branch2_processed_test_input'}
+2025-08-05 22:10:07,342 - flujo - INFO - Counting string output as 1 token for step 'branch2': 'branch2_processed_test_input'
+[DEBUG] Branch branch3 called with data: test_input
+[DEBUG] Branch branch3 context is None: False
+[DEBUG] Branch branch3 will fail intentionally
+2025-08-05 22:10:07,342 - flujo - WARNING - Step 'branch3' agent execution attempt 1 failed: Intentional failure in branch3
+[DEBUG] Branch branch3 called with data: test_input
+[DEBUG] Branch branch3 context is None: False
+[DEBUG] Branch branch3 will fail intentionally
+--
+WARNING  flujo:telemetry.py:54 Step 'loop_exit_err' failed. Halting pipeline execution.
+__________________ test_loop_step_error_logging_in_callables ___________________
+[gw1] darwin -- Python 3.11.0 /Users/alvaro/Documents/Code/flujo/.venv/bin/python3
+tests/integration/test_loop_step_execution.py:508: in test_loop_step_error_logging_in_callables
+    assert any("Error in iteration_input_mapper for LoopStep 'loop_err_log'" in m for m in errors)
+E   assert False
+E    +  where False = any(<generator object test_loop_step_error_logging_in_callables.<locals>.<genexpr> at 0x1279df2a0>)
+=========================== short test summary info ============================
+FAILED tests/e2e/test_golden_transcript_dynamic_parallel.py::test_golden_transcript_dynamic_parallel_selective - AssertionError: assert 0 == 1
+ +  where 0 = len([])
+ +    where [] = DynamicParallelContext(run_id='run_302e0d95b25f4e9cbfb964060d78afcd', initial_prompt='test', scratchpad={'status': 'running'}, hitl_history=[], command_log=[], executed_branches=[], branch_results={}, total_failures=0).executed_branches
+FAILED tests/e2e/test_golden_transcript_refine.py::test_golden_transcript_refine_max_iterations - AssertionError: assert False
+ +  where False = isinstance({'value': 3}, <class 'flujo.domain.models.RefinementCheck'>)
+FAILED tests/application/core/test_executor_core.py::TestExecutorCoreSimpleStep::test_plugin_validation_failure_with_feedback - assert 'Plugin execution failed after max retries: Plugin validation failed: Invalid format' in "Agent execution failed with NameError: name 'plugin' is not defined"
+ +  where "Agent execution failed with NameError: name 'plugin' is not defined" = StepResult(name='test_step', output=None, success=False, attempts=3, latency_s=0.008982667000964284, token_counts=15, cost_usd=0.000125, feedback="Agent execution failed with NameError: name 'plugin' is not defined", branch_context=None, metadata_={}, step_history=[]).feedback
+FAILED tests/application/core/test_executor_core.py::TestExecutorCoreSimpleStep::test_plugin_failure_propagates - AssertionError: assert 'Plugin validation failed after max retries: Plugin execution error' in 'Unexpected execution path'
+ +  where 'Unexpected execution path' = StepResult(name='test_step', output=None, success=False, attempts=3, latency_s=0.0037715419894084334, token_counts=15, cost_usd=0.000125, feedback='Unexpected execution path', branch_context=None, metadata_={}, step_history=[]).feedback
+FAILED tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_handle_loop_step_body_step_failures - AssertionError: assert True is False
+ +  where True = StepResult(name='test_loop', output=None, success=True, attempts=1, latency_s=0.0009379170369356871, token_counts=0, cost_usd=0.0, feedback=None, branch_context=LoopTestContext(counter=0, messages=[], data={}, original_value=None), metadata_={'iterations': 1, 'exit_reason': 'condition'}, step_history=[]).success
+FAILED tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_loopstep_error_scenarios_regression - AssertionError: assert True is False
+ +  where True = StepResult(name='error_loop', output=None, success=True, attempts=1, latency_s=0.0017430829466320574, token_counts=0, cost_usd=0.0, feedback=None, branch_context=LoopTestContext(counter=0, messages=[], data={}, original_value=None), metadata_={'iterations': 1, 'exit_reason': 'condition'}, step_history=[]).success
+FAILED tests/application/core/test_step_logic_accounting.py::test_successful_fallback_preserves_metrics - AssertionError: assert False is True
+ +  where False = StepResult(name='primary', output=None, success=False, attempts=3, latency_s=0.00041995802894234657, token_counts=1, cost_usd=0.0, feedback='Unexpected execution path', branch_context=None, metadata_={}, step_history=[]).success
+FAILED tests/application/core/test_step_logic_accounting.py::test_failed_fallback_accumulates_metrics - AssertionError: assert False is True
+ +  where False = StepResult(name='primary', output=None, success=False, attempts=3, latency_s=0.000725042016711086, token_counts=1, cost_usd=0.0, feedback='Unexpected execution path', branch_context=None, metadata_={}, step_history=[]).success
+FAILED tests/application/core/test_executor_core.py::TestExecutorCoreSimpleStep::test_usage_tracking - AssertionError: Expected 'guard' to have been called once. Called 2 times.
+Calls: [call(UsageLimits(total_cost_usd_limit=10.0, total_tokens_limit=None), []),
+ call(UsageLimits(total_cost_usd_limit=10.0, total_tokens_limit=None), step_history=[StepResult(name='test_step', output='processed output', success=True, attempts=1, latency_s=0.004080750048160553, token_counts=15, cost_usd=0.000125, feedback=None, branch_context=None, metadata_={}, step_history=[])])].
+FAILED tests/application/core/test_executor_core_fallback.py::TestExecutorCoreFallback::test_fallback_with_none_feedback - AssertionError: assert <AsyncMock name='mock.get().success' id='4453987600'> is True
+ +  where <AsyncMock name='mock.get().success' id='4453987600'> = <AsyncMock name='mock.get()' id='4453425488'>.success
+FAILED tests/integration/test_crash_recovery.py::test_resume_after_crash_file_backend - assert 0 == 1
+FAILED tests/application/core/test_executor_core_fallback.py::TestExecutorCoreFallback::test_fallback_with_usage_limits - AssertionError: assert <AsyncMock name='mock.get().success' id='4452435344'> is True
+ +  where <AsyncMock name='mock.get().success' id='4452435344'> = <AsyncMock name='mock.get()' id='4452709520'>.success
+FAILED tests/application/core/test_executor_core_fallback.py::TestExecutorCoreFallback::test_fallback_metadata_preservation - AssertionError: assert <AsyncMock name='mock.get().success' id='4450021392'> is True
+ +  where <AsyncMock name='mock.get().success' id='4450021392'> = <AsyncMock name='mock.get()' id='4452315024'>.success
+FAILED tests/application/core/test_executor_core_fallback.py::TestExecutorCoreFallback::test_fallback_with_critical_exceptions - Failed: DID NOT RAISE <class 'flujo.exceptions.UsageLimitExceededError'>
+FAILED tests/application/core/test_executor_core_fallback.py::TestExecutorCoreFallback::test_fallback_with_multiple_retries - AssertionError: assert 4 == 5
+ +  where 4 = StepResult(name='fallback_step', output='fallback success', success=True, attempts=4, latency_s=0.10028541701612995, token_counts=23, cost_usd=0.2, feedback=None, branch_context=None, metadata_={'fallback_triggered': True, 'original_error': 'Agent execution failed with Exception: Primary failed attempt 3'}, step_history=[]).attempts
+--
+FAILED tests/integration/test_sqlite_backend_edge_cases.py::TestSQLiteBackendEdgeCases::test_backup_all_slots_undeletable_fallback - sqlite3.DatabaseError: Database corruption recovery failed
+FAILED tests/integration/test_sqlite_backend_edge_cases.py::TestSQLiteBackendEdgeCases::test_backup_stat_always_raises - OSError: stat failed
+FAILED tests/integration/test_sqlite_backend_edge_cases.py::TestSQLiteBackendEdgeCases::test_backup_permission_and_race_conditions - OSError: stat failed
+FAILED tests/integration/test_stateful_runner.py::test_delete_on_completion_removes_state - AssertionError: assert {'created_at': '2025-08-05T22:09:57.125615', 'current_step_index': 2, 'error_message': None, 'execution_time_ms': None, ...} is None
+FAILED tests/e2e/test_golden_transcript_agentic_loop.py::test_golden_transcript_agentic_loop - AssertionError: assert 'running' == 'paused'
+  
+  - paused
+  + running
+FAILED tests/e2e/test_golden_transcript_dynamic_parallel.py::test_golden_transcript_dynamic_parallel - AssertionError: assert 0 == 1
+ +  where 0 = len([])
+ +    where [] = DynamicParallelContext(run_id='run_ffa846f3ec2a48408a338040e64bd7fb', initial_prompt='test', scratchpad={'status': 'running'}, hitl_history=[], command_log=[], executed_branches=[], branch_results={}, total_failures=0).executed_branches
+FAILED tests/integration/test_fsd_12_tracing_complete.py::TestFSD12TracingComplete::test_trace_generation_and_persistence - assert None is not None
+FAILED tests/integration/test_fsd_12_tracing_complete.py::TestFSD12TracingComplete::test_trace_persistence_recovery - assert None is not None
+FAILED tests/integration/test_fsd_12_tracing_complete.py::TestFSD12TracingComplete::test_trace_large_pipeline - assert None is not None
+FAILED tests/integration/test_hybrid_validation.py::test_programmatic_check_failure - AssertionError: assert 'FailValidator' in 'Validation failed after max retries: bad output'
+ +  where 'Validation failed after max retries: bad output' = StepResult(name='validate', output='bad', success=False, attempts=1, latency_s=0.0001153330085799098, token_counts=1, cost_usd=0.0, feedback='Validation failed after max retries: bad output', branch_context=None, metadata_={}, step_history=[]).feedback
+FAILED tests/integration/test_hybrid_validation.py::test_aggregated_feedback - AssertionError: assert 'plugin fail' in 'Unexpected execution path'
+FAILED tests/integration/test_legacy_cleanup_validation.py::TestLegacyCleanupSafety::test_error_handling_preserved - assert False
+ +  where False = any(<generator object TestLegacyCleanupSafety.test_error_handling_preserved.<locals>.<genexpr> at 0x125faf060>)
+FAILED tests/integration/test_loop_context_update_regression.py::test_regression_conditional_step_context_updates - AssertionError: assert 0 >= 1
+ +  where 0 = RegressionTestContext(run_id='run_560cc7a1c63446308ce715af0586fe9c', initial_prompt='test', scratchpad={'status': 'running'}, hitl_history=[], command_log=[], iteration_count=0, accumulated_value=0, is_complete=False, debug_data={'conditional_executed': True}).accumulated_value
+FAILED tests/integration/test_loop_context_update_regression.py::test_regression_performance_under_load - AssertionError: assert False is True
+ +  where False = RegressionTestContext(run_id='run_81ab6bbd9afb4830a0c8665a85f23fa1', initial_prompt='test', scratchpad={'status': 'running'}, hitl_history=[], command_log=[], iteration_count=2, accumulated_value=2, is_complete=False, debug_data={'performance_item_1_0': 0, 'performance_item_1_1': 1, 'performance_item_1_2': 2, 'performance_item_1_3': 3, 'performance_item_1_4': 4, 'performance_item_1_5': 5, 'performance_item_1_6': 6, 'performance_item_1_7': 7, 'performance_item_1_8': 8, 'performance_item_1_9': 9, 'performance_item_1_10': 10, 'performance_item_1_11': 11, 'performance_item_1_12': 12, 'performance_item_1_13': 13, 'performance_item_1_14': 14, 'performance_item_1_15': 15, 'performance_item_1_16': 16, 'performance_item_1_17': 17, 'performance_item_1_18': 18, 'performance_item_1_19': 19, 'performance_item_1_20': 20, 'performance_item_1_21': 21, 'performance_item_1_22': 22, 'performance_item_1_23': 23, 'performance_item_1_24': 24, 'performance_item_1_25': 25, 'performance_item_1_26': 26, 'performance_item_1_27': 27, 'performance_item_1_28': 28, 'performance_item_1_29': 29, 'performance_item_1_30': 30, 'performance_item_1_31': 31, 'performance_item_1_32': 32, 'performance_item_1_33': 33, 'p...ce_item_2_961': 961, 'performance_item_2_962': 962, 'performance_item_2_963': 963, 'performance_item_2_964': 964, 'performance_item_2_965': 965, 'performance_item_2_966': 966, 'performance_item_2_967': 967, 'performance_item_2_968': 968, 'performance_item_2_969': 969, 'performance_item_2_970': 970, 'performance_item_2_971': 971, 'performance_item_2_972': 972, 'performance_item_2_973': 973, 'performance_item_2_974': 974, 'performance_item_2_975': 975, 'performance_item_2_976': 976, 'performance_item_2_977': 977, 'performance_item_2_978': 978, 'performance_item_2_979': 979, 'performance_item_2_980': 980, 'performance_item_2_981': 981, 'performance_item_2_982': 982, 'performance_item_2_983': 983, 'performance_item_2_984': 984, 'performance_item_2_985': 985, 'performance_item_2_986': 986, 'performance_item_2_987': 987, 'performance_item_2_988': 988, 'performance_item_2_989': 989, 'performance_item_2_990': 990, 'performance_item_2_991': 991, 'performance_item_2_992': 992, 'performance_item_2_993': 993, 'performance_item_2_994': 994, 'performance_item_2_995': 995, 'performance_item_2_996': 996, 'performance_item_2_997': 997, 'performance_item_2_998': 998, 'performance_item_2_999': 999}).is_complete
+FAILED tests/integration/test_loop_context_updates_fix.py::test_loop_context_updates_max_loops - AssertionError: assert 3 == 2
+ +  where 3 = LoopTestContext(run_id='run_d2e1df598c9b452ebf8dffd64c4cffc8', initial_prompt='test', scratchpad={'status': 'running'}, hitl_history=[], command_log=[], iteration_count=3, is_clear=True, current_value='very ambiguous definition (clarified) (clarified)', accumulated_data={'iteration_1': 'very ambiguous definition', 'iteration_2': 'very ambiguous definition (clarified)'}).iteration_count
+FAILED tests/integration/test_loop_step_execution.py::test_loop_max_loops_reached - AssertionError: assert 3 == 2
+ +  where 3 = StepResult(name='loop', output=3, success=False, attempts=3, latency_s=0.00045954197412356734, token_counts=0, cost_usd=0.0, feedback='max_loops exceeded', branch_context=PipelineContext(run_id='run_a4c45e5ad0b8403ba5b2bddcb2d8ef77', initial_prompt='0', scratchpad={'status': 'running'}, hitl_history=[], command_log=[]), metadata_={'iterations': 3, 'exit_reason': 'max_loops'}, step_history=[]).attempts
+FAILED tests/integration/test_loop_step_execution.py::test_iteration_mapper_not_called_on_max_loops - assert [1, 2] == [1]
+  
+  Left contains one more item: 2
+  

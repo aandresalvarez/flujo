@@ -87,6 +87,10 @@ class StepResult(BaseModel):
         default_factory=dict,
         description="Optional metadata about the step execution.",
     )
+    @property
+    def metadata(self) -> dict[str, Any]:
+        """Alias for metadata_ for backward compatibility and test expectations."""
+        return self.metadata_
     step_history: List["StepResult"] = Field(
         default_factory=list,
         description="History of sub-steps executed within this step.",

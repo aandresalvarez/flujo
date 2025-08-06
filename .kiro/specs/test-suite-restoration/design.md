@@ -1,204 +1,54 @@
-# Design Document
+ ### Analysis of Flujo Test Failures: A First-Principles Architectural Review
 
-## Overview
+This analysis examines the root causes of the widespread test failures by applying first principles derived from the Flujo architecture document. The core issue is not a collection of disparate bugs but a systemic drift between the elegant design of the **Declarative Shell** and the complex realities of its implementation within the **Execution Core**. The recursive execution model, while architecturally sound, exhibits flaws in state management and failure propagation, leading to the observed failures.
 
-The test suite restoration will follow a systematic, first-principles approach to diagnose and fix the 241 failing tests. The design focuses on identifying root causes rather than symptoms, ensuring that fixes address fundamental issues while maintaining backward compatibility and test integrity.
+---
 
-## Architecture
+#### **Primary Finding: Breakdown in the Recursive Execution Model's State Management**
 
-### Diagnostic Framework
+The Flujo architecture is predicated on a recursive execution model where higher-order steps like `LoopStep` and `ParallelStep` recursively call `ExecutorCore.execute()`. This model promises consistent, instrumented execution at every level. However, the failures reveal a critical flaw: **the state (context, metrics, and attempts) is not being correctly accumulated and propagated back up the recursive call stack.**
 
-The restoration process will use a layered diagnostic approach:
+1.  **Faulty State Accumulation in Fallback Logic:**
+    *   **Symptom:** Tests like `test_successful_fallback_preserves_metrics` and `test_failed_fallback_accumulates_metrics` are failing because the final `StepResult` does not contain the combined cost, tokens, and attempts from both the initial failed attempt and the subsequent successful fallback.
+    *   **Architectural Analysis:** This points to a flaw in `_execute_simple_step`. When a primary step fails, its `StepResult` (containing its cost and attempt count) is discarded. The method then makes a recursive call to `self.execute()` for the `fallback_step`. The `StepResult` from this recursive call *overwrites* the original result instead of *accumulating* its metrics. This violates the principle of exhaustive accounting. The `ExecutorCore` is losing the history of the failed primary attempt, leading to incorrect metrics and a failed assertion. The feedback message `Unexpected execution path` in `test_plugin_failure_propagates` further confirms that the execution flow is not terminating as expected after a failure, likely due to this flawed state handling.
 
-1. **Pattern Analysis Layer**: Group failures by common patterns and root causes
-2. **Dependency Analysis Layer**: Identify cascading failures and fix order dependencies  
-3. **Validation Layer**: Ensure fixes don't introduce regressions
-4. **Integration Layer**: Verify fixes work together harmoniously
+2.  **Incorrect Iteration Counting in `LoopStep`:**
+    *   **Symptom:** Failures in `test_loop_context_updates_max_loops` and `test_loop_max_loops_reached` show incorrect final iteration counts (e.g., `assert 3 == 2`).
+    *   **Architectural Analysis:** The `_handle_loop_step` implementation is mismanaging the iteration state. The test assumes a loop configured with `max_loops=2` should execute exactly twice before exiting with a "max_loops exceeded" failure. The fact that it runs three times indicates an off-by-one error in the loop's termination logic. This is another manifestation of flawed state management within a recursive execution context; the loop's internal counter is not being respected by the execution logic.
 
-### Core Problem Categories
+---
 
-Based on the failure analysis, the issues fall into these categories:
+#### **Secondary Finding: Failure of Context Isolation and Merging in Control Flow Steps**
 
-1. **Contract Violations**: Tests expect specific behavior that has changed
-2. **State Management Issues**: Improper handling of test isolation and cleanup
-3. **Type System Mismatches**: Serialization and validation inconsistencies
-4. **Infrastructure Drift**: Database schema and CLI interface changes
+The "pipeline algebra" relies on the principle that complex steps are self-contained but can modify a shared context. The failures in parallel and conditional execution reveal that context modifications made within isolated branches are being lost.
 
-## Components and Interfaces
+1.  **`ParallelStep` and `DynamicParallelRouterStep` Context Isolation Failure:**
+    *   **Symptom:** Tests like `test_golden_transcript_dynamic_parallel` fail with `AssertionError: assert 0 == 1` on `len(final_context.executed_branches)`. The test's `stdout` clearly shows the branches are executing and attempting to modify the context.
+    *   **Architectural Analysis:** This is a critical breakdown of the **context isolation and merging** mechanism within `_handle_parallel_step`. The architecture dictates that each branch receives an *isolated copy* of the main context. Upon completion, modifications from successful branches should be merged back according to the `merge_strategy`. The failure proves this merge is not happening. The `ExecutorCore` is correctly dispatching the parallel executions but is failing to reintegrate their state. The final context returned is the *original, unmodified context*, not the merged result, causing the assertion to fail.
 
-### 1. Usage Governor Fixes
+2.  **`ConditionalStep` Context Propagation Failure:**
+    *   **Symptom:** `test_regression_conditional_step_context_updates` fails because a value accumulated within a conditionally executed branch is not present in the final pipeline context.
+    *   **Architectural Analysis:** This is the same root cause as the parallel step failure, but in a conditional context. The `_handle_conditional_step` method executes the correct branch in an isolated context, but the final, modified branch context is not being merged back into the main execution flow's context. The result is that the side effects of the branch execution are lost.
 
-**Problem**: Format inconsistencies and token aggregation issues
+---
 
-**Solution Design**:
-- Fix cost formatting to match test expectations (preserve decimal places when needed)
-- Implement proper token aggregation from step history to `total_tokens`
-- Ensure error messages match expected patterns exactly
+#### **Tertiary Finding: Inconsistent Handling of Failure Domains**
 
-**Interface Changes**:
-```python
-# In UsageGovernor.check_usage_limits()
-# Before: format_cost(10.0) -> "10" 
-# After: format_cost(10.0) -> "10.0" (when test expects it)
+The pluggable architecture allows a `Step` to fail in multiple ways: agent error, plugin failure, or validator failure. The `ExecutorCore` is conflating these distinct failure domains, leading to incorrect feedback and flawed control flow.
 
-# Before: Check pipeline_result.total_tokens (may be 0)
-# After: Aggregate from step_history if total_tokens is 0
-```
+1.  **Plugin Failures Misclassified as Agent Failures:**
+    *   **Symptom:** Tests like `test_plugin_validation_failure_with_feedback` fail because the feedback string is incorrect. It reports a generic `NameError: name 'plugin' is not defined` instead of the specific feedback from the `PluginOutcome`.
+    *   **Architectural Analysis:** This indicates that the `try...except` block within `_execute_agent_step` or `_execute_simple_step` is too broad. It's catching the `PluginOutcome` or exceptions from the `PluginRunner` but is not correctly inspecting the outcome to extract the specific feedback. Instead, it falls through to a generic exception handler that masks the true source of the failure. This violates the observability pillar by obscuring critical diagnostic information.
 
-### 2. Parallel Step Context Handling
+2.  **Failure Propagation from Nested Pipelines:**
+    *   **Symptom:** In `test_handle_loop_step_body_step_failures`, a step inside a loop's body fails, but the parent `LoopStep` is incorrectly marked as successful (`assert True is False`).
+    *   **Architectural Analysis:** This demonstrates a failure to propagate the failure state up the recursive execution stack. The `ExecutorCore` executes the loop body pipeline, which fails. However, `_handle_loop_step` does not correctly interpret the failed `PipelineResult` from its recursive `execute` call. It appears to be checking the loop's own exit condition (`exit_condition_met`) and marking the `LoopStep` as successful based on that, ignoring the failure state of its child execution. This is a fundamental violation of how failure states should be handled in a compositional system.
 
-**Problem**: Context validation failures and attribute access issues
+#### **Minor Issues & Environmental Factors**
 
-**Solution Design**:
-- Implement proper context validation for parallel branches
-- Add missing attributes to mock context objects
-- Fix context merging logic to handle edge cases
+*   **Collection Error:** The `import file mismatch` for `test_serialization.py` is a test environment configuration issue, likely due to non-unique test filenames across different directories. It does not indicate a flaw in the Flujo source code.
+*   **Type Assertion Failure:** `test_golden_transcript_refine_max_iterations` fails on `isinstance(..., RefinementCheck)`. This suggests that when the refinement loop terminates due to `max_iterations`, the `loop_output_mapper` is not being correctly invoked to return the last generated artifact, which should be a `RefinementCheck` object.
 
-**Interface Changes**:
-```python
-# Add missing attributes to test contexts
-class MockContext:
-    def __init__(self):
-        self.initial_prompt = "test"  # Add missing attribute
-        self.scratchpad = {}
-        # ... other required attributes
-```
+### **Conclusion: An Execution Core in Need of Realignment**
 
-### 3. Serialization System Hardening
-
-**Problem**: Unregistered types and edge case handling
-
-**Solution Design**:
-- Extend custom serializer registry for all test mock objects
-- Implement robust fallback serialization for unknown types
-- Add proper handling for circular references and edge cases
-
-**Interface Changes**:
-```python
-# In conftest.py - extend serializer registration
-register_custom_serializer(MockEnum, lambda obj: obj.value)
-register_custom_serializer(OrderedDict, lambda obj: dict(obj))
-# Add fallback for unknown types
-```
-
-### 4. Database Schema Alignment
-
-**Problem**: Column name mismatches and schema drift
-
-**Solution Design**:
-- Identify schema differences between test expectations and actual schema
-- Implement migration logic or update tests to match current schema
-- Add proper error handling for schema mismatches
-
-**Interface Changes**:
-```python
-# Update column references
-# Before: SELECT start_time FROM runs
-# After: SELECT created_at FROM runs (or add migration)
-```
-
-### 5. Test Infrastructure Improvements
-
-**Problem**: Inadequate test isolation and mock object handling
-
-**Solution Design**:
-- Enhance NoOpStateBackend to better simulate real backends
-- Improve test fixture consistency
-- Add proper cleanup mechanisms
-
-## Data Models
-
-### Test Execution Context
-```python
-@dataclass
-class TestExecutionContext:
-    """Context for tracking test execution and fixes"""
-    test_name: str
-    failure_category: str
-    root_cause: str
-    fix_applied: bool
-    regression_risk: str
-```
-
-### Fix Tracking
-```python
-@dataclass
-class FixRecord:
-    """Record of applied fixes for regression tracking"""
-    component: str
-    issue_type: str
-    fix_description: str
-    affected_tests: List[str]
-    validation_status: str
-```
-
-## Error Handling
-
-### Regression Prevention Strategy
-
-1. **Incremental Fixing**: Fix one category at a time to isolate impacts
-2. **Validation Gates**: Run test subsets after each fix to catch regressions
-3. **Rollback Capability**: Maintain ability to revert changes if needed
-4. **Impact Analysis**: Document which tests are affected by each fix
-
-### Error Classification
-
-- **Critical**: Breaks core functionality (usage limits, parallel execution)
-- **High**: Affects user-facing features (CLI, serialization)
-- **Medium**: Infrastructure issues (database, test setup)
-- **Low**: Edge cases and minor inconsistencies
-
-## Testing Strategy
-
-### Fix Validation Process
-
-1. **Unit Test Validation**: Ensure individual components work correctly
-2. **Integration Test Validation**: Verify components work together
-3. **Regression Test Suite**: Run full test suite after each major fix
-4. **Performance Impact Assessment**: Ensure fixes don't degrade performance
-
-### Test Categories for Validation
-
-- **Fast Tests**: Core functionality that must always pass
-- **Integration Tests**: Cross-component interactions
-- **Edge Case Tests**: Boundary conditions and error scenarios
-- **Performance Tests**: Ensure no degradation
-
-### Validation Checkpoints
-
-1. After Usage Governor fixes: Validate cost/token limit enforcement
-2. After Parallel Step fixes: Validate concurrent execution
-3. After Serialization fixes: Validate object persistence
-4. After Database fixes: Validate state management
-5. After CLI fixes: Validate command-line tools
-6. Final validation: Full test suite pass
-
-## Implementation Phases
-
-### Phase 1: Critical Infrastructure (Usage Governor, Parallel Steps)
-- Fix usage limit enforcement
-- Resolve parallel execution context issues
-- Validate core pipeline functionality
-
-### Phase 2: Data Layer (Serialization, Database)
-- Fix serialization edge cases
-- Resolve database schema issues
-- Ensure proper state persistence
-
-### Phase 3: User Interface (CLI, Error Messages)
-- Fix CLI command failures
-- Standardize error message formats
-- Improve user-facing diagnostics
-
-### Phase 4: Edge Cases and Polish
-- Handle remaining edge cases
-- Optimize test performance
-- Document fixes and prevention strategies
-
-## Success Criteria
-
-- All 241 failing tests pass
-- No new test failures introduced
-- Test execution time remains acceptable
-- Core functionality verified through manual testing
-- Comprehensive documentation of fixes applied
+The Flujo architecture remains sound, but its implementation in the `ExecutorCore` has drifted from its own core principles. The recursive execution model is not consistently managing state, the context isolation mechanism is incomplete without a proper merge-back strategy, and failure domains are not being handled with sufficient granularity. The path forward requires refactoring the `ExecutorCore`'s handlers to strictly adhere to a **"recursive-accumulate-merge"** pattern, ensuring that the state, metrics, and context modifications from every execution—whether primary, fallback, or nested—are correctly propagated and integrated back into the parent execution frame.

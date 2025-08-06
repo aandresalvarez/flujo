@@ -146,10 +146,10 @@ def safe_merge_context_updates(
     if excluded_fields is None:
         excluded_fields = get_excluded_fields()
 
-    print("[DEBUG] safe_merge_context_updates called")
-    print(f"[DEBUG] target_context type: {type(target_context)}")
-    print(f"[DEBUG] source_context type: {type(source_context)}")
-    print(f"[DEBUG] excluded_fields: {excluded_fields}")
+    logger.debug("safe_merge_context_updates called")
+    logger.debug("target_context type: %s", type(target_context))
+    logger.debug("source_context type: %s", type(source_context))
+    logger.debug("excluded_fields: %s", excluded_fields)
 
     def deep_merge_dict(target_dict: dict[str, Any], source_dict: dict[str, Any]) -> dict[str, Any]:
         """Recursively merge source dictionary into target dictionary."""
@@ -181,7 +181,7 @@ def safe_merge_context_updates(
                 if not key.startswith("_")
             }
 
-        print(f"[DEBUG] source_fields: {source_fields}")
+        logger.debug("source_fields: %s", source_fields)
 
         # Update only changed fields using setattr to trigger validation
         updated_count = 0
@@ -195,42 +195,42 @@ def safe_merge_context_updates(
 
                 # Skip excluded fields to prevent duplication during loop merging
                 if field_name in excluded_fields:
-                    print(f"[DEBUG] Skipping excluded field: {field_name}")
+                    logger.debug("Skipping excluded field: %s", field_name)
                     continue
 
                 # Check if field exists in target
                 if not hasattr(target_context, field_name):
-                    print(f"[DEBUG] Field not found in target: {field_name}")
+                    logger.debug(f"Field not found in target: {field_name}")
                     continue
 
                 # Always get the actual value from the source context for merging
                 actual_source_value = getattr(source_context, field_name)
                 current_value = getattr(target_context, field_name)
 
-                print(f"[DEBUG] Processing field: {field_name}")
-                print(f"[DEBUG] current_value: {current_value}")
-                print(f"[DEBUG] actual_source_value: {actual_source_value}")
+                logger.debug(f"Processing field: {field_name}")
+                logger.debug(f"current_value: {current_value}")
+                logger.debug(f"actual_source_value: {actual_source_value}")
 
                 # Perform deep merge for dictionaries and lists
                 if isinstance(current_value, dict) and isinstance(actual_source_value, dict):
-                    print(f"[DEBUG] Merging dictionaries for field: {field_name}")
+                    logger.debug(f"Merging dictionaries for field: {field_name}")
                     merged_value = deep_merge_dict(current_value, actual_source_value)
                     if merged_value != current_value:
                         setattr(target_context, field_name, merged_value)
                         updated_count += 1
-                        print(f"[DEBUG] Updated dict field: {field_name}")
+                        logger.debug(f"Updated dict field: {field_name}")
                 elif isinstance(current_value, list) and isinstance(actual_source_value, list):
-                    print(f"[DEBUG] Merging lists for field: {field_name}")
+                    logger.debug(f"Merging lists for field: {field_name}")
                     # For lists, extend with new items to avoid duplicates
                     new_items = [item for item in actual_source_value if item not in current_value]
                     if new_items:
                         current_value.extend(new_items)
                         updated_count += 1
-                        print(
-                            f"[DEBUG] Updated list field: {field_name} with new items: {new_items}"
+                        logger.debug(
+                            f"Updated list field: {field_name} with new items: {new_items}"
                         )
                     else:
-                        print(f"[DEBUG] No new items to add to list field: {field_name}")
+                        logger.debug(f"No new items to add to list field: {field_name}")
                 else:
                     # For other types, use simple replacement
                     try:
@@ -238,9 +238,9 @@ def safe_merge_context_updates(
                             # Use setattr to trigger Pydantic validation
                             setattr(target_context, field_name, actual_source_value)
                             updated_count += 1
-                            print(f"[DEBUG] Updated simple field: {field_name}")
+                            logger.debug(f"Updated simple field: {field_name}")
                         else:
-                            print(f"[DEBUG] Field unchanged: {field_name}")
+                            logger.debug(f"Field unchanged: {field_name}")
                     except (
                         TypeError,
                         ValueError,
@@ -260,8 +260,8 @@ def safe_merge_context_updates(
                 validation_errors.append(error_msg)
                 continue
 
-        print(f"[DEBUG] Total fields updated: {updated_count}")
-        print(f"[DEBUG] Validation errors: {validation_errors}")
+        logger.debug(f"Total fields updated: {updated_count}")
+        logger.debug(f"Validation errors: {validation_errors}")
 
         if updated_count > 0:
             # Note: We don't validate the entire context after updates to allow for more flexible handling

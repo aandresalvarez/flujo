@@ -49,6 +49,7 @@ class TestExecutorCoreConditionalStep:
             "resources",
             "limits",
             "context_setter",
+            "_fallback_depth",
         ]
 
         assert params == expected_params

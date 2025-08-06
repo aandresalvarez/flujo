@@ -28,6 +28,7 @@ from flujo.exceptions import (
 from flujo.state import StateBackend
 from flujo.infra import telemetry
 from flujo.application.core.context_adapter import _inject_context, _build_context_update
+from .context_manager import ContextManager
 from flujo.utils.formatting import format_cost
 
 from .step_coordinator import StepCoordinator
@@ -189,6 +190,9 @@ class ExecutionManager(Generic[ContextT]):
 
                     # Pass output to next step
                     if step_result:
+                        # Merge branch context from complex step handlers
+                        if step_result.branch_context is not None and context is not None:
+                            context = ContextManager.merge(context, step_result.branch_context)
                         # --- CONTEXT UPDATE PATCH ---
                         if getattr(step, "updates_context", False) and context is not None:
                             update_data = _build_context_update(step_result.output)
@@ -265,6 +269,17 @@ class ExecutionManager(Generic[ContextT]):
                     # Add current step result to pipeline result before yielding
                     if step_result is not None and step_result not in result.step_history:
                         self.step_coordinator.update_pipeline_result(result, step_result)
+                    # Persist paused state for stateful HITL
+                    if run_id is not None:
+                        await self.state_manager.persist_workflow_state(
+                            run_id=run_id,
+                            context=context,
+                            current_step_index=idx,
+                            last_step_output=(step_result.output if step_result is not None else data),
+                            status="paused",
+                            state_created_at=state_created_at,
+                            step_history=result.step_history,
+                        )
                     should_add_step_result = False  # Prevent duplicate addition in finally block
                     self.set_final_context(result, context)
                     yield result
@@ -363,10 +378,11 @@ class ExecutionManager(Generic[ContextT]):
                     and len(getattr(context, "hitl_history", [])) > 0
                 )
 
-                # Check if this is a crash recovery scenario
+                # Check if this is a crash recovery scenario (state existed before execution)
                 # In crash recovery, all steps are re-executed from the beginning
-                is_crash_recovery = start_idx > 0 and len(result.step_history) == len(
-                    self.pipeline.steps
+                is_crash_recovery = (
+                    state_created_at is not None
+                    and len(result.step_history) == len(self.pipeline.steps)
                 )
 
                 if is_hitl_resumption:

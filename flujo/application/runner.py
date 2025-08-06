@@ -628,18 +628,16 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 pipeline_result_obj.trace_tree = self._trace_manager._root_span
             if current_context_instance is not None:
                 assert self.pipeline is not None
-                execution_manager = ExecutionManager[ContextT](self.pipeline)
-                execution_manager.set_final_context(
+                # Persist final state using ExecutionManager to handle crash recovery and final index logic
+                exec_manager = ExecutionManager[ContextT](self.pipeline)
+                exec_manager.set_final_context(
                     pipeline_result_obj,
                     cast(Optional[ContextT], current_context_instance),
                 )
+                # Initialize final_status default for cases with no step history
                 final_status: Literal[
-                    "running",
-                    "paused",
-                    "completed",
-                    "failed",
-                    "cancelled",
-                ]
+                    "running", "paused", "completed", "failed", "cancelled"
+                ] = "failed"
                 if cancelled:
                     final_status = "failed"
                 elif pipeline_result_obj.step_history:
@@ -648,43 +646,14 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                         if all(s.success for s in pipeline_result_obj.step_history)
                         else "failed"
                     )
-                else:
-                    final_status = "failed"
-                if isinstance(current_context_instance, PipelineContext):
-                    if current_context_instance.scratchpad.get("status") == "paused":
-                        final_status = "paused"
-                    current_context_instance.scratchpad["status"] = final_status
-
-                # Use execution manager to persist final state
-                try:
-                    execution_manager = ExecutionManager[ContextT](
-                        self.pipeline,
-                        state_manager=state_manager,
-                    )
-                    await execution_manager.persist_final_state(
-                        run_id=state_manager.get_run_id_from_context(current_context_instance),
-                        context=current_context_instance,
-                        result=pipeline_result_obj,
-                        start_idx=start_idx,
-                        state_created_at=state_created_at,
-                        final_status=final_status,
-                    )
-                except asyncio.CancelledError:
-                    # Don't persist state if we're being cancelled
-                    telemetry.logfire.info("Skipping state persistence due to cancellation")
-                except Exception as e:
-                    # Log but don't fail the pipeline for persistence errors
-                    telemetry.logfire.error(f"Failed to persist final state: {e}")
-
-                # Delete state if delete_on_completion is True and pipeline completed successfully
-                if (
-                    self.delete_on_completion
-                    and final_status == "completed"
-                    and state_manager.get_run_id_from_context(current_context_instance) is not None
-                ):
-                    await state_manager.delete_workflow_state(
-                        state_manager.get_run_id_from_context(current_context_instance)
-                    )
+                await exec_manager.persist_final_state(
+                    run_id=run_id_for_state,
+                    context=current_context_instance,
+                    result=pipeline_result_obj,
+                    start_idx=start_idx,
+                    state_created_at=state_created_at,
+                    final_status=final_status,
+                )
             try:
                 await self._dispatch_hook(
                     "post_run",
@@ -707,8 +676,27 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         *,
         initial_context_data: Optional[Dict[str, Any]] = None,
     ) -> AsyncIterator[Any]:
-        async for item in self.run_async(initial_input, initial_context_data=initial_context_data):
-            yield item
+        # Determine if the pipeline supports streaming by checking the last step's agent
+        pipeline = self._ensure_pipeline()
+        last_step = pipeline.steps[-1]
+        has_stream = hasattr(last_step.agent, "stream")
+        if not has_stream:
+            # Non-streaming pipeline: yield only the final PipelineResult
+            final_result: PipelineResult[ContextT] | None = None
+            async for item in self.run_async(
+                initial_input,
+                initial_context_data=initial_context_data
+            ):
+                final_result = item
+            if final_result is not None:
+                yield final_result
+        else:
+            # Streaming pipeline: yield all items (chunks and final result)
+            async for item in self.run_async(
+                initial_input,
+                initial_context_data=initial_context_data
+            ):
+                yield item
 
     def run(
         self,

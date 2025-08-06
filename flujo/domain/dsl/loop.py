@@ -41,7 +41,7 @@ class LoopStep(Step[Any, Any], Generic[TContext]):
             "Callable that takes (last_body_output, pipeline_context) and returns True to exit loop."
         )
     )
-    max_loops: int = Field(default=5, gt=0, description="Maximum number of iterations.")
+    max_retries: int = Field(default=5, ge=0, description="Number of retries after initial iteration.", alias="max_loops")
 
     initial_input_to_loop_body_mapper: Optional[Callable[[Any, Optional[TContext]], Any]] = Field(
         default=None,
@@ -56,7 +56,11 @@ class LoopStep(Step[Any, Any], Generic[TContext]):
         description=("Callable to map the final successful output to the LoopStep's output."),
     )
 
-    model_config = {"arbitrary_types_allowed": True}
+    model_config = {"arbitrary_types_allowed": True, "populate_by_name": True}
+
+    @property
+    def max_loops(self) -> int:
+        return self.max_retries
 
     @property
     def is_complex(self) -> bool:

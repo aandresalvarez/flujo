@@ -91,11 +91,17 @@ class StepConfig(BaseModel):
         Optional timeout in seconds for the agent execution.
     temperature:
         Optional temperature setting for LLM based agents.
+    top_k:
+        Optional top-k sampling parameter for LLM based agents.
+    top_p:
+        Optional nucleus sampling parameter for LLM based agents.
     """
 
     max_retries: int = 1
     timeout_s: float | None = None
     temperature: float | None = None
+    top_k: int | None = None
+    top_p: float | None = None
 
 
 class Step(BaseModel, Generic[StepInT, StepOutT]):

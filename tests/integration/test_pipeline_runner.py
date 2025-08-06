@@ -240,6 +240,55 @@ async def test_pipeline_with_temperature_setting() -> None:
     assert agent.kwargs.get("temperature") == 0.8
 
 
+async def test_step_config_top_k_passed() -> None:
+    class CaptureAgent:
+        def __init__(self):
+            self.kwargs: dict[str, Any] | None = None
+        async def run(self, data: Any, **kwargs: Any) -> str:
+            self.kwargs = kwargs
+            return "ok"
+
+    agent = CaptureAgent()
+    step = Step.model_validate({"name": "s_top_k", "agent": agent, "config": StepConfig(top_k=5)})
+    runner = create_test_flujo(step)
+    await gather_result(runner, "in")
+    assert agent.kwargs is not None
+    assert agent.kwargs.get("top_k") == 5
+    assert "top_p" not in agent.kwargs
+
+async def test_step_config_top_p_passed() -> None:
+    class CaptureAgent:
+        def __init__(self):
+            self.kwargs: dict[str, Any] | None = None
+        async def run(self, data: Any, **kwargs: Any) -> str:
+            self.kwargs = kwargs
+            return "ok"
+
+    agent = CaptureAgent()
+    step = Step.model_validate({"name": "s_top_p", "agent": agent, "config": StepConfig(top_p=0.9)})
+    runner = create_test_flujo(step)
+    await gather_result(runner, "in")
+    assert agent.kwargs is not None
+    assert agent.kwargs.get("top_p") == 0.9
+    assert "top_k" not in agent.kwargs
+
+async def test_step_config_sampling_parameters_passed() -> None:
+    class CaptureAgent:
+        def __init__(self):
+            self.kwargs: dict[str, Any] | None = None
+        async def run(self, data: Any, **kwargs: Any) -> str:
+            self.kwargs = kwargs
+            return "ok"
+
+    agent = CaptureAgent()
+    step = Step.model_validate({"name": "s_sampling", "agent": agent, "config": StepConfig(top_k=4, top_p=0.8)})
+    runner = create_test_flujo(step)
+    await gather_result(runner, "in")
+    assert agent.kwargs is not None
+    assert agent.kwargs.get("top_k") == 4
+    assert agent.kwargs.get("top_p") == 0.8
+
+
 @pytest.mark.asyncio
 async def test_failure_handler_exception_propagates() -> None:
     agent = StubAgent(["bad"])

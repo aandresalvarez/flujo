@@ -132,6 +132,7 @@ from ...infra import telemetry
 from ...signature_tools import analyze_signature
 from ...application.context_manager import _accepts_param
 from ...utils.context import safe_merge_context_updates
+from flujo.application.core.context_manager import ContextManager
 
 
 class ExecutorCore(Generic[TContext_w_Scratch]):
@@ -551,12 +552,12 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         # Consistent step routing following the recursive execution model
         # Route to appropriate handler based on step type
         if isinstance(step, LoopStep):
-            telemetry.logfire.debug(f"Routing to loop step handler: {step.name}")
+            telemetry.logfire.debug(f"Handling LoopStep: {step.name}")
             result = await self._handle_loop_step(
                 step, data, context, resources, limits, context_setter, _fallback_depth
             )
         elif isinstance(step, ParallelStep):
-            telemetry.logfire.debug(f"Routing to parallel step handler: {step.name}")
+            telemetry.logfire.debug(f"Handling ParallelStep: {step.name}")
             result = await self._handle_parallel_step(
                 step, data, context, resources, limits, breach_event, context_setter
             )
@@ -580,6 +581,12 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             result = await self._handle_cache_step(
                 step, data, context, resources, limits, breach_event, context_setter, None
             )
+        # For streaming agents, use simple step handler to process streaming without retries
+        elif stream:
+            telemetry.logfire.debug(f"Routing streaming step to simple handler: {step.name}")
+            result = await self._execute_simple_step(
+                step, data, context, resources, limits, stream, on_chunk, cache_key, breach_event, _fallback_depth
+            )
         elif hasattr(step, 'fallback_step') and step.fallback_step is not None and not hasattr(step.fallback_step, '_mock_name'):
             telemetry.logfire.debug(f"Routing to simple step with fallback: {step.name}")
             result = await self._execute_simple_step(
@@ -592,7 +599,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             )
         
         # Cache successful results
-        if cache_key and self._enable_cache and result is not None:
+        if cache_key and self._enable_cache and result is not None and result.success:
             await self._cache_backend.put(cache_key, result, ttl_s=3600)  # 1 hour TTL
             telemetry.logfire.debug(f"Cached result for step: {step.name}")
         
@@ -717,6 +724,10 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         
         def _unpack_agent_result(output: Any) -> Any:
             """Unpack agent result if it's wrapped in a response object."""
+            # Preserve Pydantic models directly
+            from pydantic import BaseModel
+            if isinstance(output, BaseModel):
+                return output
             # Handle various wrapper types
             if hasattr(output, "output"):
                 return output.output
@@ -769,11 +780,21 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             start_time = time.monotonic()
             max_retries = getattr(step, "max_retries", 2)
             
+            # Disable retries for streaming output to avoid duplicate chunks
+            if stream:
+                max_retries = 0
+            
             # Handle Mock objects for max_retries
             if hasattr(max_retries, '_mock_name') or isinstance(max_retries, (Mock, MagicMock, AsyncMock)):
                 max_retries = 2  # Default value for Mock objects
             
-
+            # Usage limit enforcement before each attempt
+            if limits is not None:
+                try:
+                    await self._usage_meter.guard(limits, result.step_history)
+                except UsageLimitExceededError:
+                    # Propagate immediately if pre-existing usage exceeds limits
+                    raise
             
             # FIXED: Use loop-based retry mechanism to avoid infinite recursion
             # max_retries = 2 means 1 initial + 2 retries = 3 total attempts
@@ -791,7 +812,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     # --- 2. Agent Execution (Inside Retry Loop) ---
                     agent_output = await self._agent_runner.run(
                         agent=step.agent,
-                        payload=data,  # Use original data for agent execution
+                        payload=processed_data,  # Use processed_data from apply_prompt
                         context=context,
                         resources=resources,
                         options={},
@@ -846,138 +867,52 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             # Check if the plugin runner returned a PluginOutcome with success=False
                             from ...domain.plugins import PluginOutcome
                             if isinstance(processed_output, PluginOutcome) and not processed_output.success:
-                                # Plugin failures should be retried, not immediately trigger fallback
-                                if attempt < max_retries + 1:
-                                    telemetry.logfire.warning(f"Step '{step.name}' plugin attempt {attempt} failed: {self._format_feedback(processed_output.feedback, 'Plugin failed')}")
-                                    continue
-                                else:
-                                    # Max retries exceeded
-                                    result.success = False
-                                    result.feedback = f"Plugin validation failed after max retries: {self._format_feedback(processed_output.feedback, 'Agent execution failed')}"
-                                    result.output = processed_output  # Keep output for fallback
-                                    result.latency_s = time.monotonic() - start_time
-                                    telemetry.logfire.error(f"Step '{step.name}' plugin failed after max retries")
-                                    
-                                    # --- 7. Fallback Logic for Plugin Failure ---
-                                    if hasattr(step, 'fallback_step') and step.fallback_step is not None:
-                                        telemetry.logfire.info(f"Step '{step.name}' plugin validation failed, attempting fallback")
-                                        
-                                        # Check for fallback loop before executing
-                                        if step.fallback_step in fallback_chain:
-                                            raise InfiniteFallbackError(f"Fallback loop detected: step '{step.fallback_step.name}' already in fallback chain")
-                                        
-                                        try:
-                                            # Execute fallback step
-                                            fallback_result = await self._execute_simple_step(
-                                                step=step.fallback_step,
-                                                data=data,
-                                                context=context,
-                                                resources=resources,
-                                                limits=limits,
-                                                stream=stream,
-                                                on_chunk=on_chunk,
-                                                cache_key=cache_key,
-                                                breach_event=breach_event,
-                                                _fallback_depth=_fallback_depth + 1
-                                            )
-                                            
-                                            # Mark as fallback triggered and preserve original error
-                                            if fallback_result.metadata_ is None:
-                                                fallback_result.metadata_ = {}
-                                            fallback_result.metadata_["fallback_triggered"] = True
-                                            fallback_result.metadata_["original_error"] = result.feedback
-                                            
-                                            # Accumulate metrics from primary step
-                                            fallback_result.cost_usd += result.cost_usd
-                                            fallback_result.token_counts += result.token_counts
-                                            fallback_result.latency_s += result.latency_s
-                                            fallback_result.attempts += result.attempts
-                                            
-                                            if fallback_result.success:
-                                                # For successful fallbacks, clear feedback to indicate success
-                                                fallback_result.feedback = None
-                                                return fallback_result
-                                            else:
-                                                # If fallback step failed, combine feedback with proper format
-                                                fallback_result.feedback = f"Original error: {self._format_feedback(result.feedback, 'Agent execution failed')}; Fallback error: {self._format_feedback(fallback_result.feedback, 'Agent execution failed')}"
-                                                return fallback_result
-                                        except InfiniteFallbackError:
-                                            # Re-raise InfiniteFallbackError to prevent infinite loops
-                                            raise
-                                        except Exception as fallback_error:
-                                            telemetry.logfire.error(f"Fallback for step '{step.name}' also failed: {fallback_error}")
-                                            # Return the original failure with fallback error info
-                                            result.feedback = f"Original error: {result.feedback}; Fallback error: {str(fallback_error)}"
-                                            return result
-                                    
-                                    return result
-                                    
-                        except Exception as plugin_error:
-                            # Plugin runner exceptions should be retried, not immediately trigger fallback
-                            if attempt < max_retries + 1:
-                                telemetry.logfire.warning(f"Step '{step.name}' plugin attempt {attempt} failed: {plugin_error}")
-                                continue
-                            else:
-                                # Max retries exceeded, treat as agent failure
-                                result.success = False
-                                result.feedback = f"Plugin execution failed after max retries: {str(plugin_error)}"
-                                result.output = processed_output  # Keep output for fallback
-                                result.latency_s = time.monotonic() - start_time
-                                telemetry.logfire.error(f"Step '{step.name}' plugin execution failed after max retries")
-                                
-                                # --- 7. Fallback Logic for Plugin Exception ---
+                                telemetry.logfire.info(f"Step '{step.name}' plugin validation failed, attempting fallback")
+                                # --- Fallback Logic for Plugin Validation Failure ---
                                 if hasattr(step, 'fallback_step') and step.fallback_step is not None:
-                                    telemetry.logfire.info(f"Step '{step.name}' plugin execution failed, attempting fallback")
-                                    
                                     # Check for fallback loop before executing
                                     if step.fallback_step in fallback_chain:
                                         raise InfiniteFallbackError(f"Fallback loop detected: step '{step.fallback_step.name}' already in fallback chain")
-                                    
-                                    try:
-                                        # Execute fallback step
-                                        fallback_result = await self._execute_simple_step(
-                                            step=step.fallback_step,
-                                            data=data,
-                                            context=context,
-                                            resources=resources,
-                                            limits=limits,
-                                            stream=stream,
-                                            on_chunk=on_chunk,
-                                            cache_key=cache_key,
-                                            breach_event=breach_event,
-                                            _fallback_depth=_fallback_depth + 1
-                                        )
-                                        
-                                        # Mark as fallback triggered and preserve original error
-                                        if fallback_result.metadata_ is None:
-                                            fallback_result.metadata_ = {}
-                                        fallback_result.metadata_["fallback_triggered"] = True
-                                        fallback_result.metadata_["original_error"] = result.feedback
-                                        
-                                        # Accumulate metrics from primary step
-                                        fallback_result.cost_usd += result.cost_usd
-                                        fallback_result.token_counts += result.token_counts
-                                        fallback_result.latency_s += result.latency_s
-                                        fallback_result.attempts += result.attempts
-                                        
-                                        if fallback_result.success:
-                                            # For successful fallbacks, clear feedback to indicate success
-                                            fallback_result.feedback = None
-                                            return fallback_result
-                                        else:
-                                            # If fallback step failed, combine feedback with proper format
-                                            fallback_result.feedback = f"Original error: {self._format_feedback(result.feedback, 'Agent execution failed')}; Fallback error: {self._format_feedback(fallback_result.feedback, 'Agent execution failed')}"
-                                            return fallback_result
-                                    except InfiniteFallbackError:
-                                        # Re-raise InfiniteFallbackError to prevent infinite loops
-                                        raise
-                                    except Exception as fallback_error:
-                                        telemetry.logfire.error(f"Fallback for step '{step.name}' also failed: {fallback_error}")
-                                        # Return the original failure with fallback error info
-                                        result.feedback = f"Original error: {result.feedback}; Fallback error: {str(fallback_error)}"
-                                        return result
-                                
+                                    # Execute fallback step
+                                    fallback_result = await self._execute_simple_step(
+                                        step=step.fallback_step,
+                                        data=data,
+                                        context=context,
+                                        resources=resources,
+                                        limits=limits,
+                                        stream=stream,
+                                        on_chunk=on_chunk,
+                                        cache_key=cache_key,
+                                        breach_event=breach_event,
+                                        _fallback_depth=_fallback_depth + 1
+                                    )
+                                    # Mark fallback triggered and preserve original error feedback
+                                    if fallback_result.metadata_ is None:
+                                        fallback_result.metadata_ = {}
+                                    fallback_result.metadata_["fallback_triggered"] = True
+                                    fallback_result.metadata_["original_error"] = processed_output.feedback
+                                    # Accumulate metrics from primary step result
+                                    fallback_result.cost_usd += result.cost_usd
+                                    fallback_result.token_counts += result.token_counts
+                                    fallback_result.latency_s += result.latency_s
+                                    fallback_result.attempts += result.attempts
+                                    return fallback_result
+                                # No fallback configured: return primary failure result
+                                result.success = False
+                                result.feedback = processed_output.feedback
+                                result.output = processed_output
+                                result.latency_s = result.latency_s
                                 return result
+                            # On success, apply new_solution if provided, otherwise preserve input data
+                            if result.new_solution is not None:
+                                processed_output = result.new_solution
+                            # Continue to next plugin
+                            continue
+                        except Exception as plugin_error:
+                            # Plugin execution failed - raise exception for step logic to handle
+                            plugin_name = type(plugin_error).__name__
+                            telemetry.logfire.error(f"Plugin {plugin_name} failed: {plugin_error}")
+                            raise ValueError(f"Plugin {plugin_name} failed: {plugin_error}")
                     
                     # --- 5. Validator Runner (if validators exist) ---
                     if hasattr(step, "validators") and step.validators:
@@ -987,7 +922,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             )
                             
                             # Check if any validation failed
-                            failed_validations = [r for r in validation_results if not r.success]
+                            failed_validations = [r for r in validation_results if not r.is_valid]
                             if failed_validations:
                                 # SEPARATE: Handle validation failures (RETRY)
                                 if attempt < max_retries + 1:
@@ -997,7 +932,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                                     # Max retries exceeded
                                     result.success = False
                                     result.feedback = f"Validation failed after max retries: {self._format_feedback(failed_validations[0].feedback, 'Agent execution failed')}"
-                                    result.output = processed_output  # Keep the output for fallback
+                                    result.output = processed_output  # Keep output for fallback
                                     result.latency_s = time.monotonic() - start_time
                                     telemetry.logfire.error(f"Step '{step.name}' validation failed after max retries")
                                     
@@ -1052,8 +987,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                                             # Return the original failure with fallback error info
                                             result.feedback = f"Original error: {result.feedback}; Fallback error: {str(fallback_error)}"
                                             return result
-                                
-                                return result
+                                    
+                                    return result
+                                    
                         except Exception as validation_error:
                             # SEPARATE: Handle validation exceptions (RETRY)
                             if attempt < max_retries + 1:
@@ -1094,37 +1030,29 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                                             fallback_result.metadata_ = {}
                                         fallback_result.metadata_["fallback_triggered"] = True
                                         fallback_result.metadata_["original_error"] = result.feedback
+                                        
                                         # Accumulate metrics from primary step
                                         fallback_result.cost_usd += result.cost_usd
                                         fallback_result.token_counts += result.token_counts
                                         fallback_result.latency_s += result.latency_s
+                                        fallback_result.attempts += result.attempts
+                                        
                                         if fallback_result.success:
+                                            # For successful fallbacks, clear feedback to indicate success
+                                            fallback_result.feedback = None
                                             return fallback_result
                                         else:
-                                            # If fallback step failed (not an exception), combine feedback
-                                            result.feedback = f"Original error: {self._format_feedback(result.feedback, 'Agent execution failed')}; Fallback error: {self._format_feedback(fallback_result.feedback, 'Agent execution failed')}"
-                                            result.cost_usd = fallback_result.cost_usd
-                                            result.token_counts = fallback_result.token_counts
-                                            result.latency_s = fallback_result.latency_s
-                                            result.metadata_ = fallback_result.metadata_
-                                            return result
+                                            # If fallback step failed, combine feedback with proper format
+                                            fallback_result.feedback = f"Original error: {self._format_feedback(result.feedback, 'Agent execution failed')}; Fallback error: {self._format_feedback(fallback_result.feedback, 'Agent execution failed')}"
+                                            return fallback_result
                                     except InfiniteFallbackError:
                                         # Re-raise InfiniteFallbackError to prevent infinite loops
                                         raise
                                     except Exception as fallback_error:
                                         telemetry.logfire.error(f"Fallback for step '{step.name}' also failed: {fallback_error}")
                                         # Return the original failure with fallback error info
-                                        result.feedback = f"Original error: {self._format_feedback(result.feedback, 'Agent execution failed')}; Fallback error: {self._format_feedback(fallback_result.feedback, 'Agent execution failed')}"
+                                        result.feedback = f"Original error: {result.feedback}; Fallback error: {str(fallback_error)}"
                                         return result
-                                        
-                                        # If fallback step failed (not an exception), combine feedback
-                                        if not fallback_result.success:
-                                            result.feedback = f"Original error: {self._format_feedback(result.feedback, 'Agent execution failed')}; Fallback error: {self._format_feedback(fallback_result.feedback, 'Agent execution failed')}"
-                                            result.cost_usd = fallback_result.cost_usd
-                                            result.token_counts = fallback_result.token_counts
-                                            result.latency_s = fallback_result.latency_s
-                                            result.metadata_ = fallback_result.metadata_
-                                            return result
                                 
                                 return result
                     
@@ -1285,11 +1213,19 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         )
         
         overall_start_time = time.monotonic()
-        max_retries = getattr(step, "max_retries", 3)
+        max_retries = step.config.max_retries
+        
+        # Disable retries for streaming output to avoid duplicate chunks
+        if stream:
+            max_retries = 0
         
         # Helper functions for agent result processing
         def _unpack_agent_result(output: Any) -> Any:
             """Unpack agent result if it's wrapped in a response object."""
+            # Preserve Pydantic models directly
+            from pydantic import BaseModel
+            if isinstance(output, BaseModel):
+                return output
             # Handle various wrapper types
             if hasattr(output, "output"):
                 return output.output
@@ -1318,21 +1254,35 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             max_retries = 3  # Default value for Mock objects
         
         # FIXED: Use loop-based retry mechanism to avoid infinite recursion
-        for attempt in range(1, max_retries + 1):  # +1 because we want max_retries total attempts
+        for attempt in range(1, max_retries + 2):  # +2 because we want max_retries total attempts
             result.attempts = attempt
+            # Enforce usage limits before agent invocation
+            if limits is not None:
+                await self._usage_meter.guard(limits, result.step_history)
             start_time = time_perf_ns()  # Track time for this specific attempt
             
             try:
-                # --- 1. Agent Execution - RETRY ON FAILURE ---
+                # --- 1. Processor Pipeline (apply_prompt) ---
+                processed_data = data
+                if hasattr(step, 'processors') and getattr(step, 'processors', None):
+                    processed_data = await self._processor_pipeline.apply_prompt(
+                        step.processors, data, context=context
+                    )
+                
+                # --- 2. Agent Execution - RETRY ON FAILURE ---
                 # Build options from step configuration
                 options = {}
                 if hasattr(step, 'config') and step.config:
                     if hasattr(step.config, 'temperature') and step.config.temperature is not None:
                         options['temperature'] = step.config.temperature
+                    if hasattr(step.config, 'top_k') and step.config.top_k is not None:
+                        options['top_k'] = step.config.top_k
+                    if hasattr(step.config, 'top_p') and step.config.top_p is not None:
+                        options['top_p'] = step.config.top_p
                 
                 agent_output = await self._agent_runner.run(
                     agent=step.agent,
-                    payload=data,
+                    payload=processed_data,  # Use processed_data from apply_prompt
                     context=context,
                     resources=resources,
                     options=options,
@@ -1517,7 +1467,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     raise e
                 
                 # Agent execution failure - RETRY
-                if attempt < max_retries:
+                if attempt < max_retries + 1:
                     telemetry.logfire.warning(f"Step '{step.name}' agent execution attempt {attempt} failed: {e}")
                     continue  # Try again
                 else:
@@ -1546,393 +1496,213 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         _fallback_depth: int = 0,
     ) -> StepResult:
         """
-        Handle loop step execution with proper context propagation and iteration management.
-        
-        This implementation fixes:
-        - Context accumulation across loop iterations in _handle_loop_step
-        - Accurate iteration counting logic
-        - Exit condition evaluation that works even when iterations fail
-        - Max iterations logic that stops at the correct count
-        - Proper timing of iteration input/output mappers
-        - Loop step attempt counting for usage governance integration
+        Revised LoopStep handler with proper iteration counting, usage limit enforcement, and telemetry logging.
         """
         import time
         from ...domain.dsl.pipeline import Pipeline
-
-        print(f"[KIRO DEBUG] === HANDLE LOOP STEP === {loop_step.name}")
-        telemetry.logfire.debug("=== HANDLE LOOP STEP ===")
-        telemetry.logfire.debug(f"Loop step name: {loop_step.name}")
-        telemetry.logfire.debug(f"Loop step limits: {limits}")
-
-        # Initialize result with proper metadata
-        result = StepResult(
-            name=loop_step.name,
-            output=None,
-            success=False,
-            attempts=0,  # Will be set to actual iteration count
-            latency_s=0.0,
-            token_counts=0,
-            cost_usd=0.0,
-            feedback="",
-            branch_context=None,
-            metadata_={"iterations": 0, "exit_reason": None},
-        )
+        from ...domain.models import PipelineContext, StepResult
 
         start_time = time.monotonic()
+        iteration_count = 0
         cumulative_cost = 0.0
         cumulative_tokens = 0
-        iteration_count = 0  # Accurate iteration counting
-        max_iterations = getattr(loop_step, "max_loops", 10)
         current_data = data
+        current_context = context or PipelineContext(initial_prompt=str(data))
+        exit_reason = None
+        last_failed_feedback: str | None = None
+        # Apply initial input mapper if provided (e.g., MapStep setup)
+        if getattr(loop_step, 'initial_input_to_loop_body_mapper', None):
+            try:
+                current_data = loop_step.initial_input_to_loop_body_mapper(current_data, current_context)
+            except Exception as e:
+                return StepResult(
+                    name=loop_step.name,
+                    success=False,
+                    output=current_data,
+                    attempts=0,
+                    latency_s=time.monotonic() - start_time,
+                    token_counts=0,
+                    cost_usd=0.0,
+                    feedback=f"Initial input mapper failed: {e}",
+                    branch_context=current_context,
+                    metadata_={"iterations": 0, "exit_reason": "initial_mapper_failed"},
+                )
+        # Compute total iterations = initial element count (alias max_loops) + 0 (initial input maps items count)
+        orig_max_loops = getattr(loop_step, "max_loops", 0)
+        telemetry.logfire.info(f"Starting LoopStep '{loop_step.name}' with max_loops={orig_max_loops}, limits={limits}")
 
-        telemetry.logfire.debug(f"Loop step max_iterations: {max_iterations}")
+        # Execute up to orig_max_loops iterations, breaking early on exit condition
+        for iteration_count in range(1, orig_max_loops + 1):
+            # Log start of this iteration with original max_loops denominator
+            telemetry.logfire.info(f"LoopStep '{loop_step.name}': Starting Iteration {iteration_count}/{orig_max_loops}")
+            telemetry.logfire.span(f"Loop '{loop_step.name}' - Iteration {iteration_count}")
 
-        try:
-            telemetry.logfire.debug(f"Starting LoopStep: max_iterations={max_iterations}, limits={limits}")
-            
-            # Initialize context for loop iterations with proper accumulation
-            current_context = context
-            if current_context is None:
-                from flujo.domain.models import PipelineContext
-                current_context = PipelineContext(initial_prompt=str(current_data))
-            
-            # Apply initial input mapper if provided (called at the correct time)
-            if hasattr(loop_step, "initial_input_to_loop_body_mapper") and loop_step.initial_input_to_loop_body_mapper:
+            # Enforce usage limits before iteration
+            if limits:
+                await self._usage_meter.guard(limits, step_history=None)
+                telemetry.logfire.debug(f"Usage limits check passed before iteration {iteration_count}")
+
+            # Apply iteration input mapper for subsequent iterations
+            if iteration_count > 1 and getattr(loop_step, "iteration_input_mapper", None):
                 try:
-                    current_data = loop_step.initial_input_to_loop_body_mapper(data, current_context)
-                    telemetry.logfire.debug(f"Initial input mapper applied: {current_data}")
+                    current_data = loop_step.iteration_input_mapper(current_data, current_context, iteration_count - 1)
                 except Exception as e:
-                    result.success = False
-                    result.feedback = f"Initial input mapper failed: {str(e)}"
-                    result.latency_s = time.monotonic() - start_time
-                    result.attempts = 0  # No iterations attempted
-                    result.metadata_["exit_reason"] = "initial_mapper_failed"
-                    telemetry.logfire.error(f"Error in initial input mapper for LoopStep '{loop_step.name}': {str(e)}")
-                    return result
-            
-            # Track loop state
-            loop_exit_reason = None
-            last_body_output = None
-            body_failed = False
-            
-            # Main loop with accurate iteration counting
-            while iteration_count < max_iterations:
-                iteration_count += 1
-                telemetry.logfire.info(f"LoopStep '{loop_step.name}': Starting Iteration {iteration_count}/{max_iterations}")
-                telemetry.logfire.debug(f"Starting iteration {iteration_count}, current_data={current_data}")
-                telemetry.logfire.debug(f"Iteration {iteration_count}: current_context.counter = {getattr(current_context, 'counter', 'N/A')}")
-                telemetry.logfire.debug(f"Loop body type: {type(loop_step.loop_body_pipeline)}")
-
-                # Check usage limits before starting the iteration
-                if limits is not None:
-                    # Estimate the cost of the next iteration based on previous iterations
-                    if iteration_count == 1:
-                        # For the first iteration, we can't estimate, so allow it to proceed
-                        estimated_next_iteration_cost = 0.0
-                    else:
-                        # Calculate average cost per iteration from previous iterations
-                        estimated_next_iteration_cost = cumulative_cost / (iteration_count - 1)
-                    
-                    prospective_cost = cumulative_cost + estimated_next_iteration_cost
-                    print(f"[DEBUG] Iteration {iteration_count}: Checking usage limits before iteration - current cost: {cumulative_cost}, prospective cost: {prospective_cost}, limit: {limits.total_cost_usd_limit}")
-                    
-                    if limits.total_cost_usd_limit is not None and prospective_cost > limits.total_cost_usd_limit:
-                        print(f"[DEBUG] Iteration {iteration_count}: Usage limits would be breached - stopping before iteration")
-                        # Create a pipeline result with the current state to raise the proper exception
-                        from ...domain.models import PipelineResult
-                        temp_result = PipelineResult(
-                            step_history=[],  # Will be populated by the exception
-                            total_cost_usd=cumulative_cost,
-                            total_tokens=cumulative_tokens,
-                            final_pipeline_context=current_context
-                        )
-                        # Use the same format as UsageGovernor
-                        from flujo.utils.formatting import format_cost
-                        formatted_limit = format_cost(limits.total_cost_usd_limit)
-                        error = UsageLimitExceededError(
-                            f"Cost limit of ${formatted_limit} exceeded",
-                            temp_result,
-                        )
-                        telemetry.logfire.error(f"UsageLimitExceededError in LoopStep '{loop_step.name}': Cost limit would be exceeded")
-                        raise error
-                    
-                    print(f"[DEBUG] Iteration {iteration_count}: Usage limits check passed before iteration")
-                    telemetry.logfire.debug(f"Iteration {iteration_count}: Usage limits check passed before iteration")
-
-                # Apply iteration input mapper if provided (for iterations after the first)
-                if iteration_count > 1 and hasattr(loop_step, "iteration_input_mapper") and loop_step.iteration_input_mapper:
-                    try:
-                        # Use last_body_output for iteration input mapper (correct timing)
-                        iteration_input = loop_step.iteration_input_mapper(last_body_output, current_context, iteration_count - 1)
-                        current_data = iteration_input
-                        telemetry.logfire.debug(f"Iteration input mapper applied: {current_data}")
-                    except Exception as e:
-                        result.success = False
-                        result.feedback = f"Iteration input mapper failed on iteration {iteration_count}: {str(e)}"
-                        result.latency_s = time.monotonic() - start_time
-                        result.attempts = iteration_count - 1  # Count completed iterations
-                        result.metadata_["iterations"] = iteration_count - 1
-                        result.metadata_["exit_reason"] = "iteration_mapper_failed"
-                        telemetry.logfire.error(f"Error in iteration input mapper for LoopStep '{loop_step.name}': {str(e)}")
-                        return result
-
-                # Execute the loop body using recursive execution model
-                body_result = None
-                if isinstance(loop_step.loop_body_pipeline, Pipeline):
-                    # Execute pipeline by executing each step in sequence
-                    current_body_data = current_data
-                    
-                    # FIXED: Use the accumulated current_context directly for this iteration
-                    # This ensures context changes from previous iterations are preserved
-                    body_context = current_context
-                    telemetry.logfire.debug(f"Iteration {iteration_count}: body_context.counter before execution = {getattr(body_context, 'counter', 'N/A')}")
-                    telemetry.logfire.debug(f"Iteration {iteration_count}: current_body_data = {current_body_data}")
-                    telemetry.logfire.debug(f"Iteration {iteration_count}: Pipeline steps count = {len(loop_step.loop_body_pipeline.steps)}")
-                    
-                    # Execute each step in the pipeline
-                    all_successful = True
-                    total_cost = 0.0
-                    total_tokens = 0
-                    body_error_message = None
-                    
-                    for step_idx, step in enumerate(loop_step.loop_body_pipeline.steps):
-                        telemetry.logfire.debug(f"Iteration {iteration_count}: Executing step {step_idx + 1}/{len(loop_step.loop_body_pipeline.steps)}: {step.name}")
-                        with telemetry.logfire.span(step.name) as step_span:
-                            # Create ExecutionFrame for the step
-                            step_frame = ExecutionFrame(
-                                step=step,
-                                data=current_body_data,
-                                context=body_context,
-                                resources=resources,
-                                limits=limits,
-                                stream=False,
-                                on_chunk=None,
-                                breach_event=None,
-                                context_setter=context_setter,
-                                result=None,
-                                _fallback_depth=_fallback_depth,
-                            )
-                            step_result = await self.execute(step_frame)
-                            telemetry.logfire.debug(f"Iteration {iteration_count}: Step {step.name} result - success: {step_result.success}, output: {step_result.output}")
-                            telemetry.logfire.debug(f"Iteration {iteration_count}: Step {step.name} result - branch_context: {step_result.branch_context}")
-                            if step_result.branch_context:
-                                telemetry.logfire.debug(f"Iteration {iteration_count}: Step {step.name} result - branch_context.counter: {getattr(step_result.branch_context, 'counter', 'N/A')}")
-                            else:
-                                telemetry.logfire.debug(f"Iteration {iteration_count}: Step {step.name} result - branch_context is None!")
-                        
-                        telemetry.logfire.debug(f"Iteration {iteration_count}: Step {step.name} result - success: {step_result.success}, output: {step_result.output}")
-                        telemetry.logfire.debug(f"Iteration {iteration_count}: Step {step.name} result - branch_context: {step_result.branch_context}")
-                        if step_result.branch_context:
-                            telemetry.logfire.debug(f"Iteration {iteration_count}: Step {step.name} result - branch_context.counter: {getattr(step_result.branch_context, 'counter', 'N/A')}")
-                        
-                        total_cost += step_result.cost_usd
-                        total_tokens += step_result.token_counts
-                        
-                        if not step_result.success:
-                            all_successful = False
-                            body_error_message = step_result.feedback
-                            # Continue to capture context updates even on failure
-                        
-                        # Use output as input for next step
-                        current_body_data = step_result.output
-                        
-                        # Update body_context with any context changes from the step
-                        if step_result.branch_context is not None:
-                            body_context = step_result.branch_context
-                            telemetry.logfire.debug(f"Iteration {iteration_count}: body_context.counter after step execution = {getattr(body_context, 'counter', 'N/A')}")
-                    
-                    telemetry.logfire.debug(f"Iteration {iteration_count}: Pipeline execution completed - all_successful: {all_successful}")
-                    # Create body result
-                    body_result = StepResult(
-                        name=f"{loop_step.name}_iteration_{iteration_count}",
-                        output=current_body_data,
-                        success=all_successful,
-                        attempts=1,
-                        latency_s=0.0,  # Individual iteration timing not tracked here
-                        token_counts=total_tokens,
-                        cost_usd=total_cost,
-                        feedback="Loop body executed successfully" if all_successful else f"Loop body failed: {body_error_message}",
-                        branch_context=body_context,
-                        metadata_={},
-                    )
-                else:
-                    # Execute as a regular step using recursive execution model
-                    # FIXED: Use the accumulated current_context directly for this iteration
-                    telemetry.logfire.debug(f"Iteration {iteration_count}: current_context.counter before execution = {getattr(current_context, 'counter', 'N/A')}")
-                    body_frame = ExecutionFrame(
-                        step=loop_step.loop_body_pipeline,
-                        data=current_data,
-                        context=current_context,
-                        resources=resources,
-                        limits=limits,
-                        stream=False,
-                        on_chunk=None,
-                        breach_event=None,
-                        context_setter=context_setter,
-                        result=None,
-                        _fallback_depth=_fallback_depth,
-                    )
-                    body_result = await self.execute(body_frame)
-                    telemetry.logfire.debug(f"Iteration {iteration_count}: body_result.branch_context.counter after execution = {getattr(body_result.branch_context, 'counter', 'N/A') if body_result.branch_context else 'None'}")
-
-                # FIXED: Properly accumulate context changes from this iteration using centralized context management
-                telemetry.logfire.debug(f"Iteration {iteration_count}: body_result.success = {body_result.success}")
-                telemetry.logfire.debug(f"Iteration {iteration_count}: body_result.branch_context = {body_result.branch_context}")
-                telemetry.logfire.debug(f"Iteration {iteration_count}: body_result.output = {body_result.output}")
-                
-                # FIXED: Track body failure but continue to check exit condition
-                body_failed = not body_result.success
-                if body_failed:
-                    telemetry.logfire.debug(f"Iteration {iteration_count}: Body failed, but continuing to check exit condition")
-                    # Store the failed body output for final result
-                    last_body_output = body_result.output
-                
-                # FIXED: Properly accumulate context changes from this iteration
-                if body_result.branch_context is not None:
-                    telemetry.logfire.debug(f"Iteration {iteration_count}: Before accumulation - current_context.counter = {getattr(current_context, 'counter', 'N/A')}")
-                    telemetry.logfire.debug(f"Iteration {iteration_count}: Before accumulation - body_result.branch_context.counter = {getattr(body_result.branch_context, 'counter', 'N/A')}")
-                    
-                    # Use centralized context accumulation for loop iterations
-                    current_context = self._accumulate_loop_context(current_context, body_result.branch_context)
-                    telemetry.logfire.debug(f"Iteration {iteration_count}: After accumulation - current_context.counter = {getattr(current_context, 'counter', 'N/A')}")
-                else:
-                    telemetry.logfire.debug(f"Iteration {iteration_count}: No branch_context in body_result")
-
-                # Add to cumulative totals
-                cumulative_cost += body_result.cost_usd or 0
-                cumulative_tokens += body_result.token_counts or 0
-
-                # Store the body output for exit condition and next iteration
-                last_body_output = body_result.output
-                
-                # FIXED: Use the body output as input for the next iteration
-                # This ensures that the loop properly chains data between iterations
-                current_data = last_body_output
-                telemetry.logfire.debug(f"Iteration {iteration_count}: Updated current_data to {current_data} for next iteration")
-
-                # Update usage meter with actual costs from this iteration (proper usage governance)
-                if self._usage_meter is not None:
-                    await self._usage_meter.add(
-                        cost_usd=body_result.cost_usd,
-                        prompt_tokens=body_result.token_counts,
-                        completion_tokens=0  # Assuming all tokens are prompt tokens for simplicity
+                    return StepResult(
+                        name=loop_step.name,
+                        success=False,
+                        output=current_data,
+                        attempts=iteration_count - 1,
+                        latency_s=time.monotonic() - start_time,
+                        token_counts=cumulative_tokens,
+                        cost_usd=cumulative_cost,
+                        feedback=f"Iteration input mapper failed on iteration {iteration_count}: {e}",
+                        branch_context=current_context,
+                        metadata_={"iterations": iteration_count - 1, "exit_reason": "iteration_mapper_failed"},
                     )
 
-                telemetry.logfire.debug(f"Iteration {iteration_count} completed, checking exit condition")
-
-                # Check exit condition (works even when iterations fail)
-                if hasattr(loop_step, "exit_condition_callable") and loop_step.exit_condition_callable:
-                    try:
-                        telemetry.logfire.debug(f"Checking exit condition: output={last_body_output}")
-                        should_exit = loop_step.exit_condition_callable(last_body_output, current_context)
-                        telemetry.logfire.debug(f"Exit condition result: {should_exit}")
-                        if should_exit:
-                            loop_exit_reason = "condition"
-                            telemetry.logfire.debug(f"Loop exiting due to condition after {iteration_count} iterations")
-                            break
-                    except Exception as e:
-                        telemetry.logfire.warning(f"Exit condition evaluation failed: {e}")
-                        # FIXED: Propagate exit condition exceptions to fail the loop
-                        result.success = False
-                        result.feedback = f"Exit condition evaluation failed with exception: {str(e)}"
-                        result.latency_s = time.monotonic() - start_time
-                        result.attempts = iteration_count
-                        result.metadata_["iterations"] = iteration_count
-                        result.metadata_["exit_reason"] = "exit_condition_exception"
-                        result.branch_context = current_context
-                        telemetry.logfire.error(f"Error in exit condition for LoopStep '{loop_step.name}': {str(e)}")
-                        return result
-                
-
-
-            # Determine final output using output mapper (called at the correct time)
-            final_output = last_body_output
-            if hasattr(loop_step, "loop_output_mapper") and loop_step.loop_output_mapper:
-                try:
-                    final_output = loop_step.loop_output_mapper(last_body_output, current_context)
-                    telemetry.logfire.debug(f"Loop output mapper applied: {final_output}")
-                except Exception as e:
-                    result.success = False
-                    result.feedback = f"Loop output mapper failed: {str(e)}"
-                    result.latency_s = time.monotonic() - start_time
-                    result.attempts = iteration_count
-                    result.metadata_["iterations"] = iteration_count
-                    result.metadata_["exit_reason"] = "output_mapper_failed"
-                    telemetry.logfire.error(f"Error in loop output mapper for LoopStep '{loop_step.name}': {str(e)}")
-                    return result
-
-            # Set final result based on loop completion (proper success determination)
-            if loop_exit_reason == "condition":
-                # Check if the last iteration body failed even though exit condition was met
-                if body_failed:
-                    result.success = False
-                    result.feedback = f"Loop exited by condition, but last iteration body failed: {body_result.feedback}"
-                    result.metadata_["exit_reason"] = "condition_with_body_failure"
-                else:
-                    result.success = True
-                    result.feedback = f"Loop completed successfully after {iteration_count} iterations (exit condition met)"
-                    result.metadata_["exit_reason"] = "condition"
-            elif iteration_count >= max_iterations:
-                # Max iterations reached - check if any iteration failed
-                if body_failed:
-                    result.success = False
-                    result.feedback = f"Loop terminated after reaching max_loops ({max_iterations}), but last iteration body failed: {body_result.feedback}"
-                    result.metadata_["exit_reason"] = "max_iterations_with_body_failure"
-                else:
-                    result.success = False
-                    result.feedback = f"Loop terminated after reaching max_loops ({max_iterations})"
-                    result.metadata_["exit_reason"] = "max_iterations"
-            elif body_failed:
-                # Loop exited due to body failure
-                result.success = False
-                result.feedback = f"last iteration body failed: {body_result.feedback}"
-                result.metadata_["exit_reason"] = "body_failure"
+            # Execute loop body pipeline
+            if isinstance(loop_step.loop_body_pipeline, Pipeline):
+                # Execute the pipeline and convert PipelineResult to a StepResult for this iteration
+                pipeline_result = await self._execute_pipeline(
+                    loop_step.loop_body_pipeline,
+                    current_data,
+                    current_context,
+                    resources,
+                    limits,
+                    None,
+                    context_setter,
+                )
+                # Derive iteration output, cost, tokens, and context
+                last_step_result = pipeline_result.step_history[-1] if pipeline_result.step_history else None
+                body_output = last_step_result.output if last_step_result else current_data
+                body_success = bool(pipeline_result.step_history and all(r.success for r in pipeline_result.step_history))
+                body_feedback = None if body_success else (last_step_result.feedback if last_step_result else None)
+                body_cost = pipeline_result.total_cost_usd
+                body_tokens = pipeline_result.total_tokens
+                body_context = pipeline_result.final_pipeline_context
+                # Build a synthetic StepResult for the iteration
+                body_result = StepResult(
+                    name=f"{loop_step.name}_iteration_{iteration_count}",
+                    output=body_output,
+                    success=body_success,
+                    attempts=1,
+                    latency_s=0.0,
+                    token_counts=body_tokens,
+                    cost_usd=body_cost,
+                    feedback=body_feedback,
+                    branch_context=body_context,
+                    metadata_={},
+                )
             else:
-                # Should not reach here, but handle gracefully
-                result.success = False
-                result.feedback = "Loop terminated unexpectedly"
-                result.metadata_["exit_reason"] = "unexpected"
-            
-            # Set final result values
-            result.output = final_output
-            result.cost_usd = cumulative_cost
-            result.token_counts = cumulative_tokens
-            result.latency_s = time.monotonic() - start_time
-            result.metadata_["iterations"] = iteration_count
-            result.attempts = iteration_count  # Accurate attempt counting for usage governance
-            result.branch_context = current_context  # Preserve accumulated context changes
-            
-            telemetry.logfire.debug(f"Loop completed: iterations={iteration_count}, success={result.success}, exit_reason={result.metadata_['exit_reason']}")
-            return result
-            
-        except UsageLimitExceededError as e:
-            # ✅ TASK 7.2: FIX LOOP STEP EXCEPTION HANDLING
-            # Mark the result as failed when usage limits are exceeded
-            result.success = False
-            result.feedback = f"Usage limit exceeded: {str(e)}"
-            result.output = last_body_output if 'last_body_output' in locals() else None
-            result.cost_usd = cumulative_cost
-            result.token_counts = cumulative_tokens
-            result.latency_s = time.monotonic() - start_time
-            result.attempts = iteration_count - 1  # Don't count the iteration that didn't complete
-            result.metadata_["iterations"] = iteration_count - 1
-            result.metadata_["exit_reason"] = "usage_limit_exceeded"
-            result.branch_context = current_context
-            telemetry.logfire.error(f"UsageLimitExceededError in LoopStep '{loop_step.name}': {str(e)}")
-            return result
-        except Exception as e:
-            result.success = False
-            result.feedback = f"Loop step failed: {str(e)}"
-            result.output = last_body_output if 'last_body_output' in locals() else None
-            result.cost_usd = cumulative_cost
-            result.token_counts = cumulative_tokens
-            result.latency_s = time.monotonic() - start_time
-            result.attempts = iteration_count
-            result.metadata_["iterations"] = iteration_count
-            result.metadata_["exit_reason"] = "exception"
-            result.branch_context = current_context
-            telemetry.logfire.error(f"Error in LoopStep '{loop_step.name}': {str(e)}")
-            return result
+                from ...application.core.types import ExecutionFrame
+                body_frame = ExecutionFrame(
+                    step=loop_step.loop_body_pipeline,
+                    data=current_data,
+                    context=current_context,
+                    resources=resources,
+                    limits=limits,
+                    stream=False,
+                    on_chunk=None,
+                    breach_event=None,
+                    context_setter=context_setter,
+                    result=None,
+                    _fallback_depth=_fallback_depth,
+                )
+                body_result = await self.execute(body_frame)
+
+            # Accumulate cost and tokens
+            cumulative_cost += body_result.cost_usd or 0.0
+            cumulative_tokens += body_result.token_counts or 0
+            # Enforce cumulative usage limits after each iteration
+            if limits:
+                from ...exceptions import UsageLimitExceededError
+                # Cost limit breach
+                if getattr(limits, 'total_cost_usd_limit', None) is not None and cumulative_cost > limits.total_cost_usd_limit:
+                    raise UsageLimitExceededError(f"Cost limit exceeded")
+                # Token limit breach
+                if getattr(limits, 'total_tokens_limit', None) is not None and cumulative_tokens > limits.total_tokens_limit:
+                    raise UsageLimitExceededError(f"Token limit exceeded")
+
+            # Accumulate context for this iteration into branch context
+            if body_result.branch_context is not None:
+                current_context = ContextManager.merge(current_context, body_result.branch_context)
+                telemetry.logfire.debug(f"Merged loop iteration context for iteration {iteration_count}")
+
+            # Update current_data
+            current_data = body_result.output
+
+            telemetry.logfire.debug(
+                f"LoopStep '{loop_step.name}' iteration {iteration_count} output={current_data}, "
+                f"cost={body_result.cost_usd}, tokens={body_result.token_counts}"
+            )
+            # If the loop body failed, terminate with failure before checking exit condition
+            if not body_success:
+                exit_reason = "body_failure"
+                telemetry.logfire.info(f"LoopStep '{loop_step.name}' body failed at iteration {iteration_count}.")
+                break
+            # Check exit condition
+            if getattr(loop_step, "exit_condition_callable", None):
+                try:
+                    if loop_step.exit_condition_callable(current_data, current_context):
+                        exit_reason = "condition"
+                        telemetry.logfire.info(f"LoopStep '{loop_step.name}' exit condition met at iteration {iteration_count}.")
+                        break
+                except Exception as e:
+                    return StepResult(
+                        name=loop_step.name,
+                        success=False,
+                        output=current_data,
+                        attempts=iteration_count,
+                        latency_s=time.monotonic() - start_time,
+                        token_counts=cumulative_tokens,
+                        cost_usd=cumulative_cost,
+                        feedback=f"Exit condition check failed on iteration {iteration_count}: {e}",
+                        branch_context=current_context,
+                        metadata_={"iterations": iteration_count, "exit_reason": "exit_condition_failed"},
+                    )
+
+        # Build final result
+        # Determine final output via loop_output_mapper hook if provided
+        final_output = current_data
+        if getattr(loop_step, "loop_output_mapper", None):
+            try:
+                final_output = loop_step.loop_output_mapper(current_data, current_context)
+            except Exception as e:
+                return StepResult(
+                    name=loop_step.name,
+                    success=False,
+                    output=current_data,
+                    attempts=iteration_count,
+                    latency_s=time.monotonic() - start_time,
+                    token_counts=cumulative_tokens,
+                    cost_usd=cumulative_cost,
+                    feedback=f"Output mapper failed: {e}",
+                    branch_context=current_context,
+                    metadata_={"iterations": iteration_count, "exit_reason": "output_mapper_failed"},
+                )
+        # Determine success and feedback
+        if exit_reason == "condition":
+            success = True
+            feedback = None
+        elif exit_reason == "body_failure":
+            success = False
+            feedback = last_failed_feedback
+        else:
+            success = False
+            feedback = "max_loops exceeded"
+        result = StepResult(
+            name=loop_step.name,
+            success=success,
+            output=final_output,
+            attempts=iteration_count,
+            latency_s=time.monotonic() - start_time,
+            token_counts=cumulative_tokens,
+            cost_usd=cumulative_cost,
+            feedback=feedback,
+            branch_context=current_context,
+            metadata_={"iterations": iteration_count, "exit_reason": exit_reason or "max_loops"},
+        )
+        return result
     
     async def _handle_parallel_step(self, step=None, data=None, context=None, resources=None, limits=None, breach_event=None, context_setter=None, parallel_step=None, step_executor=None):
         """Handle ParallelStep execution with proper feedback handling and error propagation."""
@@ -1981,25 +1751,11 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         all_successful = True
         failure_messages = []
         
-        # Prepare context for each branch using centralized context isolation
+        # Prepare context for each branch using centralized context isolation with include_keys
+        from flujo.application.core.context_manager import ContextManager
         for branch_name, branch_pipeline in parallel_step.branches.items():
-            # Create isolated context for each branch
-            if context is not None:
-                if parallel_step.context_include_keys:
-                    # Create a new context with only the specified keys
-                    from flujo.domain.models import PipelineContext
-                    # Create a new context instance of the same type with required fields
-                    branch_context = type(context)(initial_prompt=context.initial_prompt)
-                    # Copy only the specified fields
-                    for field_name in parallel_step.context_include_keys:
-                        if hasattr(context, field_name):
-                            setattr(branch_context, field_name, getattr(context, field_name))
-                else:
-                    # Use centralized context isolation
-                    branch_context = self._isolate_context(context)
-            else:
-                branch_context = None
-            
+            # Isolate context for each branch, optionally filtering fields
+            branch_context = ContextManager.isolate(context, include_keys=parallel_step.context_include_keys) if context is not None else None
             branch_contexts[branch_name] = branch_context
         
         # Execute branches in parallel
@@ -2037,13 +1793,15 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         metadata_={},
                     )
                 
-                # Track usage if governor is available
+                # Track usage if governor is available and trigger proactive cancellation
                 if usage_governor is not None:
-                    await usage_governor.add_usage(
+                    breached_usage = await usage_governor.add_usage(
                         branch_result.cost_usd,
                         branch_result.token_counts,
                         branch_result
                     )
+                    if breached_usage and breach_event is not None:
+                        breach_event.set()
                 
                 telemetry.logfire.debug(f"Branch {branch_name} completed: success={branch_result.success}")
                 return branch_name, branch_result
@@ -2060,7 +1818,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     token_counts=0,
                     cost_usd=0.0,
                     feedback=f"Branch execution failed: {str(e)}",
-                    branch_context=branch_context,
+                    branch_context=context,
                     metadata_={},
                 )
                 return branch_name, failure_result
@@ -2166,7 +1924,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                                     setattr(context, field_name, getattr(branch_context, field_name))
                         else:
                             # Use centralized context merging for proper field handling
-                            context = self._merge_context_updates(context, branch_context)
+                            context = ContextManager.merge(context, branch_context)
                 
                 elif parallel_step.merge_strategy == MergeStrategy.MERGE_SCRATCHPAD:
                     # Merge scratchpad dictionaries from all successful branches
@@ -2206,15 +1964,20 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                                     except (AttributeError, TypeError):
                                         pass  # Skip read-only fields
                         else:
-                            # If no context_include_keys, overwrite all fields from the last branch
-                            # Copy specific known fields from the last successful branch
-                            known_fields = ['scratchpad', 'initial_prompt', 'run_id', 'hitl_history', 'command_log', 'val']
-                            for field_name in known_fields:
+                            # Overwrite: merge scratchpad keys from all branches (last write wins), then overwrite other fields from last branch
+                            # Merge scratchpad across all successful branches
+                            if hasattr(context, 'scratchpad'):
+                                for bn in sorted(successful_contexts.keys()):
+                                    bc = successful_contexts[bn]
+                                    if hasattr(bc, 'scratchpad'):
+                                        for key, val in bc.scratchpad.items():
+                                            context.scratchpad[key] = val
+                            # Overwrite other known fields from the last branch
+                            other_fields = ['initial_prompt', 'run_id', 'hitl_history', 'command_log', 'val']
+                            for field_name in other_fields:
                                 if hasattr(last_branch_context, field_name) and hasattr(context, field_name):
                                     try:
                                         telemetry.logfire.debug(f"OVERWRITE: Setting {field_name} from {last_branch_name}")
-                                        if field_name == 'scratchpad':
-                                            telemetry.logfire.debug(f"OVERWRITE: Last branch scratchpad: {getattr(last_branch_context, field_name)}")
                                         setattr(context, field_name, getattr(last_branch_context, field_name))
                                     except (AttributeError, TypeError):
                                         pass  # Skip read-only fields
@@ -2359,7 +2122,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             """Get the breach error if any."""
             return self.limit_breach_error
     
-    async def _handle_conditional_step(self, conditional_step, data, context, resources, limits, context_setter):
+    async def _handle_conditional_step(self, conditional_step, data, context, resources, limits, context_setter, _fallback_depth: int = 0):
         """Handle ConditionalStep execution with proper context isolation and merging.
         
         This implementation fixes:
@@ -2437,9 +2200,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             result.latency_s = time.monotonic() - start_time
                             return result
                     
-                    # Use original context for backward compatibility with tests
-                    branch_context = context
-                    telemetry.logfire.debug(f"Using original context for branch execution")
+                    # Isolate context for branch execution
+                    branch_context = ContextManager.isolate(context)
+                    telemetry.logfire.debug("Isolated context for branch execution")
                     
                     # Execute each step in the pipeline
                     current_data = branch_data
@@ -2460,9 +2223,12 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                                 resources=resources,
                                 limits=limits,
                                 context_setter=context_setter,
+                                _fallback_depth=_fallback_depth + 1
                             )
                         
                         step_results.append(step_result)
+                        if step_result.branch_context is not None:
+                            branch_context = step_result.branch_context
                         total_cost += step_result.cost_usd
                         total_tokens += step_result.token_counts
                         
@@ -2489,16 +2255,14 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             return result
                     
                     # Capture the final state of branch_context
-                    final_branch_context = (
-                        copy.deepcopy(branch_context) if branch_context is not None else None
-                    )
+                    final_branch_context = branch_context
                     
                     # Merge branch context back into main context using centralized context management
                     # But only if no mappers are used, since mappers modify the main context directly
                     if (final_branch_context is not None and context is not None and 
                         conditional_step.branch_input_mapper is None and 
                         conditional_step.branch_output_mapper is None):
-                        context = self._merge_context_updates(context, final_branch_context)
+                        context = ContextManager.merge(context, final_branch_context)
                         telemetry.logfire.debug("Merged branch context back to main context using centralized context management")
                     
                     result.success = all_successful
@@ -2542,6 +2306,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         resources=resources,
                         limits=limits,
                         context_setter=context_setter,
+                        _fallback_depth=_fallback_depth + 1
                     )
 
                     result.success = branch_result.success
@@ -2692,19 +2457,27 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
 
         start_time = time.monotonic()
 
-        # Update context state using centralized context management
-        self._update_context_state(context, "paused")
-        
-        # Update context scratchpad if available
-        if isinstance(context, PipelineContext):
+        # Update context state using centralized context management (preserve existing scratchpad entries)
+        if context is not None:
             try:
-                # Handle message generation safely
+                if hasattr(context, 'scratchpad') and isinstance(context.scratchpad, dict):
+                    context.scratchpad['status'] = 'paused'
+                    context.scratchpad['last_state_update'] = time.monotonic()
+                else:
+                    self._update_context_state(context, 'paused')
+            except Exception as e:
+                telemetry.logfire.error(f"Failed to update context state: {e}")
+
+        # Update context scratchpad if available
+        if context is not None and hasattr(context, 'scratchpad'):
+            try:
+                # Safely generate message_for_user (fallback on conversion errors)
                 try:
                     hitl_message = step.message_for_user if step.message_for_user is not None else str(data)
                 except Exception:
                     hitl_message = "Data conversion failed"
-                context.scratchpad["hitl_message"] = hitl_message
-                context.scratchpad["hitl_data"] = data
+                context.scratchpad['hitl_message'] = hitl_message
+                context.scratchpad['hitl_data'] = data
             except Exception as e:
                 telemetry.logfire.error(f"Failed to update context scratchpad: {e}")
 
@@ -3083,12 +2856,15 @@ class DefaultPluginRunner:
                 result = await plugin.validate(processed_data, **plugin_kwargs)
 
                 if isinstance(result, PluginOutcome):
-                    # ✅ TASK 11.3: FIX CONDITIONAL REDIRECTION LOGIC
-                    # Return the PluginOutcome directly for the step logic to handle
-                    # This allows the step logic to check for redirect_to and handle accordingly
-                    return result
+                    if not result.success:
+                        # On failure, return PluginOutcome for retry or fallback
+                        return result
+                    # On success, apply new_solution if provided, otherwise preserve input data
+                    if result.new_solution is not None:
+                        processed_data = result.new_solution
+                    # Continue to next plugin
+                    continue
                 else:
-                    # Plugin returned non-PluginOutcome - treat as processed data
                     processed_data = result
                     
             except Exception as e:
@@ -3225,6 +3001,17 @@ class _UsageTracker:
             total_tokens = self.prompt_tokens + self.completion_tokens
             if limits.total_tokens_limit is not None and total_tokens > limits.total_tokens_limit:
                 raise UsageLimitExceededError(f"Token limit exceeded")
+
+    async def snapshot(self) -> tuple[float, int, int]:
+        async with self._lock:
+            return self.total_cost_usd, self.prompt_tokens, self.completion_tokens
+    
+    async def get_current_totals(self) -> tuple[float, int]:
+        """Return current cost and token totals for backward compatibility with tests."""
+        async with self._lock:
+            # Return total_cost_usd and total tokens (prompt_tokens + completion_tokens)
+            total_tokens = self.prompt_tokens + self.completion_tokens
+            return self.total_cost_usd, total_tokens
 
 
 # --------------------------------------------------------------------------- #
@@ -3738,49 +3525,11 @@ class DefaultCacheKeyGenerator:
         self._hasher = hasher or Blake3Hasher()
     
     def generate_key(self, step: Any, data: Any, context: Any, resources: Any) -> str:
-        """Generate a cache key for the given step and inputs."""
-        # FIXED: Include context in cache key to handle loop iterations properly
-        # This ensures that different iterations with different contexts get different cache keys
+        """Generate a simple deterministic cache key based on step name and input."""
         step_name = getattr(step, 'name', str(type(step).__name__))
         data_str = str(data) if data is not None else ""
-        
-        # Include agent information to distinguish between different step objects
-        agent_info = ""
-        if hasattr(step, 'agent') and step.agent is not None:
-            # Use a stable identifier for the agent based on its configuration
-            agent = step.agent
-            if hasattr(agent, 'outputs'):  # StubAgent
-                agent_info = f"{type(agent).__name__}:{str(agent.outputs)}"
-            elif hasattr(agent, '__class__'):
-                # For other agents, use class name and any stable configuration
-                config_info = ""
-                if hasattr(agent, 'config') and agent.config:
-                    config_info = str(agent.config)
-                elif hasattr(agent, 'model'):
-                    config_info = str(agent.model)
-                agent_info = f"{type(agent).__name__}:{config_info}"
-            else:
-                agent_info = str(type(agent).__name__)
-        
-        # Include context state in the cache key
-        context_str = ""
-        if context is not None:
-            # For Pydantic models, use model_dump() to get all fields
-            if hasattr(context, 'model_dump'):
-                context_str = str(context.model_dump())
-            elif hasattr(context, 'dict'):
-                context_str = str(context.dict())
-            else:
-                # For other objects, use __dict__ or str representation
-                context_str = str(getattr(context, '__dict__', str(context)))
-        
-        # Include resources in the cache key
-        resources_str = ""
-        if resources is not None:
-            resources_str = str(resources)
-        
-        key_data = f"{step_name}:{agent_info}:{data_str}:{context_str}:{resources_str}".encode('utf-8')
-        return self._hasher.digest(key_data)
+        key_bytes = f"{step_name}:{data_str}".encode('utf-8')
+        return self._hasher.digest(key_bytes)
 
 
 # Alias for backward compatibility
