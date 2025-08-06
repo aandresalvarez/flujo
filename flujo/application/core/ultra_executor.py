@@ -133,6 +133,7 @@ from ...signature_tools import analyze_signature
 from ...application.context_manager import _accepts_param
 from ...utils.context import safe_merge_context_updates
 from flujo.application.core.context_manager import ContextManager
+from flujo.application.core.hybrid_check import run_hybrid_check
 
 
 class ExecutorCore(Generic[TContext_w_Scratch]):
@@ -582,6 +583,11 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 step, data, context, resources, limits, breach_event, context_setter, None
             )
         # For streaming agents, use simple step handler to process streaming without retries
+        elif hasattr(step, "meta") and step.meta.get("is_validation_step", False):
+            telemetry.logfire.debug(f"Routing validation step to simple handler: {step.name}")
+            result = await self._execute_simple_step(
+                step, data, context, resources, limits, stream, on_chunk, cache_key, breach_event, _fallback_depth
+            )
         elif stream:
             telemetry.logfire.debug(f"Routing streaming step to simple handler: {step.name}")
             result = await self._execute_simple_step(
@@ -857,6 +863,25 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             step.processors, agent_output, context=context
                         )
                     
+                    # --- Hybrid Plugin + Validator Check for validation steps ---
+                    if getattr(step, "meta", {}).get("is_validation_step", False):
+                        processed_output, hybrid_feedback = await run_hybrid_check(
+                            processed_output,
+                            getattr(step, "plugins", []),
+                            getattr(step, "validators", []),
+                            context=context,
+                            resources=resources,
+                        )
+                        if hybrid_feedback:
+                            result.success = False
+                            result.feedback = hybrid_feedback
+                            result.output = processed_output
+                            result.latency_s = time.monotonic() - start_time
+                            return result
+                        result.success = True
+                        result.output = processed_output
+                        result.latency_s = time.monotonic() - start_time
+                        return result
                     # --- 4. Plugin Runner (if plugins exist) ---
                     if hasattr(step, "plugins") and step.plugins:
                         try:
@@ -1907,7 +1932,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 # Collect successful branch contexts
                 successful_contexts = {}
                 for branch_name, branch_result in branch_results.items():
-                    if branch_result.success and branch_result.branch_context is not None:
+                    if branch_result.branch_context is not None:
                         successful_contexts[branch_name] = branch_result.branch_context
                         telemetry.logfire.debug(f"Successful branch: {branch_name}")
                 
@@ -1947,25 +1972,24 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                                     context.scratchpad[key] = branch_context.scratchpad[key]
                 
                 elif parallel_step.merge_strategy == MergeStrategy.OVERWRITE:
-                    # Overwrite context with the last successful branch context
+                    # Overwrite: replace main context with the last successful branch context
                     if successful_contexts:
                         last_branch_name = sorted(successful_contexts.keys())[-1]
-                        last_branch_context = successful_contexts[last_branch_name]
+                        context = successful_contexts[last_branch_name]
                         # Only overwrite fields that were included in the branch contexts
                         if parallel_step.context_include_keys:
-                            # Only overwrite the fields that were included in the branch contexts
+                            # Use explicit field mapping
                             for field_name in parallel_step.context_include_keys:
-                                if hasattr(last_branch_context, field_name) and hasattr(context, field_name):
+                                if hasattr(context, field_name) and hasattr(context, field_name):
                                     try:
                                         telemetry.logfire.debug(f"OVERWRITE: Setting {field_name} from {last_branch_name}")
                                         if field_name == 'scratchpad':
-                                            telemetry.logfire.debug(f"OVERWRITE: Last branch scratchpad: {getattr(last_branch_context, field_name)}")
-                                        setattr(context, field_name, getattr(last_branch_context, field_name))
+                                            telemetry.logfire.debug(f"OVERWRITE: Last branch scratchpad: {getattr(context, field_name)}")
+                                        setattr(context, field_name, getattr(context, field_name))
                                     except (AttributeError, TypeError):
                                         pass  # Skip read-only fields
                         else:
-                            # Overwrite: merge scratchpad keys from all branches (last write wins), then overwrite other fields from last branch
-                            # Merge scratchpad across all successful branches
+                            # Overwrite: merge scratchpad keys from all successful branches
                             if hasattr(context, 'scratchpad'):
                                 for bn in sorted(successful_contexts.keys()):
                                     bc = successful_contexts[bn]
@@ -1975,10 +1999,10 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             # Overwrite other known fields from the last branch
                             other_fields = ['initial_prompt', 'run_id', 'hitl_history', 'command_log', 'val']
                             for field_name in other_fields:
-                                if hasattr(last_branch_context, field_name) and hasattr(context, field_name):
+                                if hasattr(context, field_name) and hasattr(context, field_name):
                                     try:
                                         telemetry.logfire.debug(f"OVERWRITE: Setting {field_name} from {last_branch_name}")
-                                        setattr(context, field_name, getattr(last_branch_context, field_name))
+                                        setattr(context, field_name, getattr(context, field_name))
                                     except (AttributeError, TypeError):
                                         pass  # Skip read-only fields
                 

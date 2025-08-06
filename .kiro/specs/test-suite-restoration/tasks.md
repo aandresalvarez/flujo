@@ -13,6 +13,7 @@ This document lists the specific, actionable engineering tasks required to imple
 
 *   **Task ID:** `TASK-ENV-001`
 *   **Title:** Resolve Test Collection Error for `test_serialization.py`
+*   **Status:** Pending
 *   **Description:** The test runner is failing to collect tests due to a filename collision between `tests/benchmarks/test_serialization.py` and `tests/utils/test_serialization.py`. This must be resolved to ensure the full test suite runs.
 *   **Acceptance Criteria:**
     1.  The `import file mismatch` error is eliminated from the `pytest` output.
@@ -24,6 +25,7 @@ This document lists the specific, actionable engineering tasks required to imple
 
 *   **Task ID:** `TASK-STATE-001`
 *   **Title:** Fix State Accumulation in Fallback Step Execution
+*   **Status:** Completed
 *   **Requirement:** `REQ-STATE-001`
 *   **Description:** Modify the fallback logic within `_execute_simple_step` in `ultra_executor.py`. When a primary step fails and its fallback is executed, the metrics from the final attempt of the primary step must be added to the metrics of the fallback step's result.
 *   **Acceptance Criteria:**
@@ -34,6 +36,7 @@ This document lists the specific, actionable engineering tasks required to imple
 
 *   **Task ID:** `TASK-STATE-002`
 *   **Title:** Correct Iteration Counting and Termination in `LoopStep` Handler
+*   **Status:** Completed
 *   **Requirement:** `REQ-STATE-001`
 *   **Description:** The `while` loop condition in `_handle_loop_step` is incorrect, causing one more iteration than specified by `max_loops`. Adjust the loop termination logic to strictly adhere to the `max_loops` parameter.
 *   **Acceptance Criteria:**
@@ -48,6 +51,7 @@ This document lists the specific, actionable engineering tasks required to imple
 
 *   **Task ID:** `TASK-CONTEXT-001`
 *   **Title:** Implement Context Merging for `ParallelStep` and `DynamicParallelRouterStep`
+*   **Status:** Completed
 *   **Requirement:** `REQ-CONTEXT-001`
 *   **Description:** Refactor `_handle_parallel_step` and `_handle_dynamic_router_step`. After executing branches in parallel with isolated (deep-copied) contexts, the modifications from *successful* branch contexts must be merged back into the main context according to the step's `merge_strategy`.
 *   **Acceptance Criteria:**
@@ -58,6 +62,7 @@ This document lists the specific, actionable engineering tasks required to imple
 
 *   **Task ID:** `TASK-CONTEXT-002`
 *   **Title:** Implement Context Merging for `ConditionalStep`
+*   **Status:** Completed
 *   **Requirement:** `REQ-CONTEXT-001`
 *   **Description:** Refactor `_handle_conditional_step`. After the selected branch pipeline is executed with an isolated context, its final context state must be correctly merged back into the main pipeline's context.
 *   **Acceptance Criteria:**
@@ -70,6 +75,7 @@ This document lists the specific, actionable engineering tasks required to imple
 
 *   **Task ID:** `TASK-FAILURE-001`
 *   **Title:** Isolate Failure Domains within Step Execution Logic
+*   **Status:** Completed
 *   **Requirement:** `REQ-FAILURE-001`
 *   **Description:** Refactor the `try...except` blocks in `_execute_agent_step` and `_execute_simple_step` to create separate, granular error handling for processors, plugins, validators, and the agent itself. A failure in a processor, plugin, or validator should not be retried and should immediately result in a failed step.
 *   **Acceptance Criteria:**
@@ -80,6 +86,7 @@ This document lists the specific, actionable engineering tasks required to imple
 
 *   **Task ID:** `TASK-FAILURE-002`
 *   **Title:** Ensure Failure Propagation from Nested Executions in `LoopStep`
+*   **Status:** Pending
 *   **Requirement:** `REQ-FAILURE-001`
 *   **Description:** Modify `_handle_loop_step` to inspect the `success` flag of the `StepResult` returned from its recursive execution of the loop body. If the body execution fails, the loop must terminate immediately and the parent `LoopStep` must be marked as failed.
 *   **Acceptance Criteria:**
