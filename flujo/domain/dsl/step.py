@@ -590,19 +590,25 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                     object.__setattr__(ctx, key, value)
             return result
 
-        def _output_mapper(_out: Any, ctx: BaseModel | None) -> Any:
-            return last_artifact_var.get()
-
-        return LoopStep[ContextModelT](
+        # Build the core loop step without output mapping
+        core_loop = LoopStep[ContextModelT](
             name=name,
             loop_body_pipeline=generator_then_save >> critic_pipeline,
             exit_condition_callable=_exit_condition,
             max_loops=max_refinements,
             initial_input_to_loop_body_mapper=_initial_mapper,
             iteration_input_mapper=_iteration_mapper,
-            loop_output_mapper=_output_mapper,
             **config_kwargs,
         )
+        # Post-loop mapper that only maps on successful refinement (exit condition)
+        async def _post_output_mapper(out: Any, *, context: BaseModel | None = None) -> Any:
+            # If the critic indicates completion, return the last captured artifact; otherwise, return the check
+            if isinstance(out, RefinementCheck) and out.is_complete:
+                return last_artifact_var.get()
+            return out
+        mapper_step = cls.from_callable(_post_output_mapper, name=f"{name}_output_mapper")
+        # Compose pipeline: loop then post mapping step
+        return core_loop >> mapper_step
 
     @classmethod
     def branch_on(

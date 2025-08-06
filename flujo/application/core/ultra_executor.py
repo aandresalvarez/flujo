@@ -794,14 +794,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             if hasattr(max_retries, '_mock_name') or isinstance(max_retries, (Mock, MagicMock, AsyncMock)):
                 max_retries = 2  # Default value for Mock objects
             
-            # Usage limit enforcement before each attempt
-            if limits is not None:
-                try:
-                    await self._usage_meter.guard(limits, result.step_history)
-                except UsageLimitExceededError:
-                    # Propagate immediately if pre-existing usage exceeds limits
-                    raise
-            
             # FIXED: Use loop-based retry mechanism to avoid infinite recursion
             # max_retries = 2 means 1 initial + 2 retries = 3 total attempts
             for attempt in range(1, max_retries + 2):  # +2 because we want max_retries + 1 total attempts
@@ -864,7 +856,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         )
                     
                     # --- Hybrid Plugin + Validator Check for validation steps ---
-                    if getattr(step, "meta", {}).get("is_validation_step", False):
+                    # Only run hybrid check for DSL-defined validation steps
+                    meta = getattr(step, "meta", None)
+                    if isinstance(meta, dict) and meta.get("is_validation_step", False):
                         processed_output, hybrid_feedback = await run_hybrid_check(
                             processed_output,
                             getattr(step, "plugins", []),
@@ -888,56 +882,24 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             processed_output = await self._plugin_runner.run_plugins(
                                 step.plugins, processed_output, context=context, resources=resources
                             )
-                            
-                            # Check if the plugin runner returned a PluginOutcome with success=False
+                            # Standardize plugin validation failures as retryable PluginError
                             from ...domain.plugins import PluginOutcome
-                            if isinstance(processed_output, PluginOutcome) and not processed_output.success:
-                                telemetry.logfire.info(f"Step '{step.name}' plugin validation failed, attempting fallback")
-                                # --- Fallback Logic for Plugin Validation Failure ---
-                                if hasattr(step, 'fallback_step') and step.fallback_step is not None:
-                                    # Check for fallback loop before executing
-                                    if step.fallback_step in fallback_chain:
-                                        raise InfiniteFallbackError(f"Fallback loop detected: step '{step.fallback_step.name}' already in fallback chain")
-                                    # Execute fallback step
-                                    fallback_result = await self._execute_simple_step(
-                                        step=step.fallback_step,
-                                        data=data,
-                                        context=context,
-                                        resources=resources,
-                                        limits=limits,
-                                        stream=stream,
-                                        on_chunk=on_chunk,
-                                        cache_key=cache_key,
-                                        breach_event=breach_event,
-                                        _fallback_depth=_fallback_depth + 1
-                                    )
-                                    # Mark fallback triggered and preserve original error feedback
-                                    if fallback_result.metadata_ is None:
-                                        fallback_result.metadata_ = {}
-                                    fallback_result.metadata_["fallback_triggered"] = True
-                                    fallback_result.metadata_["original_error"] = processed_output.feedback
-                                    # Accumulate metrics from primary step result
-                                    fallback_result.cost_usd += result.cost_usd
-                                    fallback_result.token_counts += result.token_counts
-                                    fallback_result.latency_s += result.latency_s
-                                    fallback_result.attempts += result.attempts
-                                    return fallback_result
-                                # No fallback configured: return primary failure result
-                                result.success = False
-                                result.feedback = processed_output.feedback
-                                result.output = processed_output
-                                result.latency_s = result.latency_s
-                                return result
-                            # On success, apply new_solution if provided, otherwise preserve input data
-                            if result.new_solution is not None:
-                                processed_output = result.new_solution
-                            # Continue to next plugin
-                            continue
-                        except Exception as plugin_error:
-                            # Plugin execution failed - raise exception for step logic to handle
-                            plugin_name = type(plugin_error).__name__
-                            telemetry.logfire.error(f"Plugin {plugin_name} failed: {plugin_error}")
-                            raise ValueError(f"Plugin {plugin_name} failed: {plugin_error}")
+                            if isinstance(processed_output, PluginOutcome):
+                                if not processed_output.success:
+                                    raise PluginError(processed_output.feedback or "Plugin failed without feedback")
+                                if processed_output.new_solution is not None:
+                                    processed_output = processed_output.new_solution
+                        except PluginError as pe:
+                            # Retry only for non-final attempts
+                            if attempt < max_retries + 1:
+                                telemetry.logfire.warning(f"Step '{step.name}' plugin validation attempt {attempt} failed: {pe}")
+                                continue
+                            # Final attempt: propagate PluginError to outer catch
+                            raise
+                        except Exception as ex:
+                            # Treat execution errors as retryable PluginError
+                            telemetry.logfire.error(f"Plugin execution error: {ex}")
+                            raise PluginError(str(ex))
                     
                     # --- 5. Validator Runner (if validators exist) ---
                     if hasattr(step, "validators") and step.validators:
@@ -988,7 +950,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                                             if fallback_result.metadata_ is None:
                                                 fallback_result.metadata_ = {}
                                             fallback_result.metadata_["fallback_triggered"] = True
-                                            fallback_result.metadata_["original_error"] = result.feedback
+                                            fallback_result.metadata_["original_error"] = processed_output.feedback
                                             
                                             # Accumulate metrics from primary step
                                             fallback_result.cost_usd += result.cost_usd
@@ -1116,7 +1078,15 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         continue
                     else:
                         result.success = False
-                        result.feedback = f"Agent execution failed with {type(agent_error).__name__}: {str(agent_error)}"
+                        # Customize feedback for PluginError with conditional prefixes
+                        if isinstance(agent_error, PluginError):
+                            msg = str(agent_error)
+                            if msg.startswith("Plugin validation failed"):
+                                result.feedback = f"Plugin execution failed after max retries: {msg}"
+                            else:
+                                result.feedback = f"Plugin validation failed after max retries: {msg}"
+                        else:
+                            result.feedback = f"Agent execution failed with {type(agent_error).__name__}: {str(agent_error)}"
                         result.output = None
                         result.latency_s = time.monotonic() - start_time
                         
@@ -1498,7 +1468,16 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 else:
                     # Max retries exceeded
                     result.success = False
-                    result.feedback = f"Agent execution failed with {type(e).__name__}: {str(e)}"
+                    # Customize feedback for plugin errors
+                    if isinstance(e, PluginError):
+                        msg = str(e)
+                        # Swap prefixes based on error type
+                        if msg.startswith("Plugin validation failed"):
+                            result.feedback = f"Plugin execution failed after max retries: {msg}"
+                        else:
+                            result.feedback = f"Plugin validation failed after max retries: {msg}"
+                    else:
+                        result.feedback = f"Agent execution failed with {type(e).__name__}: {str(e)}"
                     result.output = None
                     result.latency_s = time.monotonic() - overall_start_time  # Total time for failed attempts
                     telemetry.logfire.error(f"Step '{step.name}' agent failed after {result.attempts} attempts")
@@ -1688,7 +1667,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     )
 
         # Build final result
-        # Determine final output via loop_output_mapper hook if provided
+        # Determine final output via loop_output_mapper hook if provided (always on termination)
         final_output = current_data
         if getattr(loop_step, "loop_output_mapper", None):
             try:
@@ -1933,7 +1912,8 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 # Collect successful branch contexts
                 successful_contexts = {}
                 for branch_name, branch_result in branch_results.items():
-                    if branch_result.branch_context is not None:
+                    # Only include contexts from successful branches
+                    if branch_result.success and branch_result.branch_context is not None:
                         successful_contexts[branch_name] = branch_result.branch_context
                         telemetry.logfire.debug(f"Successful branch: {branch_name}")
                 
@@ -2447,6 +2427,25 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         # Add the cost and tokens from the router agent execution to the final result
         parallel_result.cost_usd += router_result.cost_usd
         parallel_result.token_counts += router_result.token_counts
+        # Merge branch context into the original context for DynamicParallelRouterStep
+        if parallel_result.branch_context is not None and context is not None and parallel_result.success:
+            from .context_manager import ContextManager
+            merged_context = ContextManager.merge(context, parallel_result.branch_context)
+            parallel_result.branch_context = merged_context
+            # Call context_setter to update pipeline context for DynamicParallelRouterStep
+            if context_setter is not None:
+                try:
+                    from ...domain.models import PipelineResult
+                    pipeline_result = PipelineResult(
+                        step_history=[parallel_result],
+                        total_cost_usd=parallel_result.cost_usd,
+                        total_tokens=parallel_result.token_counts,
+                        total_latency_s=parallel_result.latency_s,
+                        final_pipeline_context=parallel_result.branch_context,
+                    )
+                    context_setter(pipeline_result, context)
+                except Exception as e:
+                    telemetry.logfire.warning(f"Context setter failed for DynamicParallelRouterStep: {e}")
         
         return parallel_result
     

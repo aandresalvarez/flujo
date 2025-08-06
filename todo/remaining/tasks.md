@@ -315,3 +315,40 @@
   - [x] The retry loop in the main agent execution method uses the encapsulated method.
   - [x] `make test-fast` passes.
 - **Requirements Met:** Code Readability and Encapsulation
+
+### Tasks for Execution Core Simple Step Refactoring
+
+* Task ID: TASK-EXEC-001
+  - **Status:** ✅
+  - Title: Enable Validator Retrying in Simple Steps
+  - Description: Refactor `_execute_simple_step` in `ultra_executor.py` to run `validator_runner.validate` inside the retry loop, so `ValueError` from validators triggers retries up to `step.config.max_retries`.
+  - Acceptance Criteria:
+    1. In `test_validator_failure_triggers_retry`, a failing validator will be called `1 + step.config.max_retries` times.
+    2. The final `result.attempts` matches `1 + step.config.max_retries`.
+    3. Feedback contains "Validation failed after max retries".
+
+* Task ID: TASK-EXEC-002
+  - **Status:** ✅
+  - Title: Standardize Plugin Failure Feedback
+  - Description: Adjust `_execute_simple_step` to run plugin runner prior to agent execution with correct error handling and to format plugin failures as "Plugin execution failed after max retries: {message}".
+  - Acceptance Criteria:
+    1. In `test_plugin_validation_failure_with_feedback`, plugin failures produce feedback matching expectations.
+    2. In `test_plugin_failure_propagates`, plugin errors respect retry settings and preserve success semantics.
+
+* Task ID: TASK-EXEC-003
+  - **Status:** ✅
+  - Title: Restore Caching and Usage Tracking in Simple Steps
+  - Description: Ensure `_execute_simple_step` calls `cache_backend.put` on cache miss and `usage_meter.add` on each successful invocation, matching tests in `test_caching_behavior` and `test_usage_tracking`.
+  - Acceptance Criteria:
+    1. `test_caching_behavior` sees `cache_backend.put` invoked exactly once.
+    2. `test_usage_tracking` observes `step_history` populated and usage metrics recorded.
+
+### Tasks for Dynamic Router Context Propagation
+
+* Task ID: TASK-CONTEXT-003
+  - **Status:** ✅
+  - Title: Fix Context Propagation from DynamicParallelRouterStep
+  - Description: Ensure that the merged `branch_context` from the internal parallel execution is correctly assigned as the `branch_context` of the `DynamicParallelRouterStep` and that `context_setter` receives the updated context.
+  - Acceptance Criteria:
+    1. `test_golden_transcript_dynamic_parallel` and `test_golden_transcript_dynamic_parallel_selective` pass with correct `executed_branches` in the final context.
+    2. Failures in branch execution properly populate `executed_branches` with failed branch keys.
