@@ -147,8 +147,9 @@ This document details the specific tasks needed to implement the Phase 2 archite
 
 ## Next Steps
 
-1. **Immediate**: Address TASK-FAILURE-004 for failure semantics
-2. **Final**: Implement TASK-OBSERVABILITY-001 for trace persistence
+1. **Immediate**: Complete all pending subtasks under **TASK-STABILIZE-001** to stabilize the test suite failures
+2. **Secondary**: Re-run the full integration suite and iteratively resolve any remaining regressions (TASK-STABILIZE-001i)
+3. **Final**: Implement **TASK-OBSERVABILITY-001** for end-to-end trace persistence and retrieval
 
 ## Notes
 

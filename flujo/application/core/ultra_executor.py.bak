@@ -148,6 +148,7 @@ from .step_policies import (
     LoopStepExecutor, DefaultLoopStepExecutor,
     ParallelStepExecutor, DefaultParallelStepExecutor,
 )
+from .parallel_executor import _handle_parallel_step as _handle_parallel_step_fn
 
 
 class ExecutorCore(Generic[TContext_w_Scratch]):
@@ -1240,9 +1241,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
     # --- Policy-driven ParallelStep handler ---
     async def _handle_parallel_step(
         self,
-        *args,
-        parallel_step: Any = None,
-        data: Any = None,
+        *,
+        parallel_step: Any,
+        data: Any,
         context: Optional[TContext_w_Scratch] = None,
         resources: Optional[Any] = None,
         limits: Optional[UsageLimits] = None,
@@ -1250,30 +1251,17 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         context_setter: Optional[Callable[[Any, Optional[Any]], None]] = None,
         step_executor: Optional[Callable[..., Awaitable[StepResult]]] = None,
     ) -> StepResult:
-        """Delegate to DefaultParallelStepExecutor, supporting both positional and keyword args."""
-        if args:
-            # positional: (step, data, context, resources, limits, breach_event, context_setter)
-            step_arg, data_arg, context_arg, resources_arg, limits_arg, breach_event_arg, context_setter_arg = args
-            parallel = parallel_step or step_arg
-        else:
-            # keyword-only invocation
-            parallel = parallel_step
-            data_arg = data
-            context_arg = context
-            resources_arg = resources
-            limits_arg = limits
-            breach_event_arg = breach_event
-            context_setter_arg = context_setter
+        """Execute a ParallelStep by delegating to the injected ParallelStepExecutor policy."""
         return await self.parallel_step_executor.execute(
             self,
-            parallel,
-            data_arg,
-            context_arg,
-            resources_arg,
-            limits_arg,
-            breach_event_arg,
-            context_setter_arg,
-            parallel,
+            parallel_step,
+            data,
+            context,
+            resources,
+            limits,
+            breach_event,
+            context_setter,
+            parallel_step,
             step_executor,
         )
     
@@ -3246,5 +3234,3 @@ ExecutorCore._handle_loop_step = _handle_loop_step_fn
 # Add wrapper delegating to policy
 async def _execute_simple_step(self, step: Any, data: Any, context: Optional[TContext_w_Scratch], resources: Optional[Any], limits: Optional[UsageLimits], stream: bool = False, on_chunk: Optional[Callable[[Any], Awaitable[None]]] = None, cache_key: Optional[str] = None, breach_event: Optional[Any] = None, _fallback_depth: int = 0) -> StepResult:
     return await self.simple_step_executor.execute(step, data, context, resources, limits, stream, on_chunk, cache_key, breach_event, _fallback_depth)
-
-# ExecutorCore._handle_parallel_step = _handle_parallel_step_fn  # noqa: F821
