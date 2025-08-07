@@ -603,23 +603,23 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         # For streaming agents, use simple step handler to process streaming without retries
         elif hasattr(step, "meta") and step.meta.get("is_validation_step", False):
             telemetry.logfire.debug(f"Routing validation step to simple handler: {step.name}")
-            result = await self._execute_simple_step(
-                step, data, context, resources, limits, stream, on_chunk, cache_key, None, _fallback_depth
+            result = await self.simple_step_executor.execute(
+                self, step, data, context, resources, limits, stream, on_chunk, cache_key, None, _fallback_depth
             )
         elif stream:
             telemetry.logfire.debug(f"Routing streaming step to simple handler: {step.name}")
-            result = await self._execute_simple_step(
-                step, data, context, resources, limits, stream, on_chunk, cache_key, None, _fallback_depth
+            result = await self.simple_step_executor.execute(
+                self, step, data, context, resources, limits, stream, on_chunk, cache_key, None, _fallback_depth
             )
         elif hasattr(step, 'fallback_step') and step.fallback_step is not None and not hasattr(step.fallback_step, '_mock_name'):
             telemetry.logfire.debug(f"Routing to simple step with fallback: {step.name}")
-            result = await self._execute_simple_step(
-                step, data, context, resources, limits, stream, on_chunk, cache_key, None, _fallback_depth
+            result = await self.simple_step_executor.execute(
+                self, step, data, context, resources, limits, stream, on_chunk, cache_key, None, _fallback_depth
             )
         else:
             telemetry.logfire.debug(f"Routing to agent step handler: {step.name}")
-            result = await self._execute_agent_step(
-                step, data, context, resources, limits, stream, on_chunk, cache_key, None, _fallback_depth
+            result = await self.agent_step_executor.execute(
+                self, step, data, context, resources, limits, stream, on_chunk, cache_key, None, _fallback_depth
             )
         
         # Cache successful results
@@ -702,6 +702,8 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         cache_key: Optional[str],
         breach_event: Optional[Any],
         _fallback_depth: int = 0,
+        # Internal flag to avoid recursion when delegating via policy
+        _from_policy: bool = False,
     ) -> StepResult:
         """
         Execute a simple step with comprehensive fallback support.
@@ -724,6 +726,22 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         - FIXED: Exception classification logic to distinguish between validation, plugin, and agent failures
         - FIXED: Fallback loop detection to prevent infinite recursion
         """
+        # Delegate to policy unless explicitly called by the policy itself
+        if not _from_policy:
+            return await self.simple_step_executor.execute(
+                self,
+                step,
+                data,
+                context,
+                resources,
+                limits,
+                stream,
+                on_chunk,
+                cache_key,
+                breach_event,
+                _fallback_depth,
+            )
+
         telemetry.logfire.debug(f"_execute_simple_step called for step '{step.name}' with fallback_depth={_fallback_depth}")
         
         # --- 0. Fallback Loop Detection ---
@@ -823,22 +841,26 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 
                 try:
                     # --- 1. Processor Pipeline (apply_prompt) ---
-                    processed_data = data
-                    if hasattr(step, "processors") and step.processors:
+                    # If policy provided preprocessed payload, prefer it
+                    processed_data = getattr(step, "_policy_processed_payload", data)
+                    if processed_data is data and hasattr(step, "processors") and step.processors:
                         processed_data = await self._processor_pipeline.apply_prompt(
                             step.processors, data, context=context
                         )
                     
                     # --- 2. Build sampling options from StepConfig ---
-                    options = {}
-                    cfg = getattr(step, "config", None)
-                    if cfg is not None:
-                        if getattr(cfg, "temperature", None) is not None:
-                            options["temperature"] = cfg.temperature
-                        if getattr(cfg, "top_k", None) is not None:
-                            options["top_k"] = cfg.top_k
-                        if getattr(cfg, "top_p", None) is not None:
-                            options["top_p"] = cfg.top_p
+                    # If policy provided agent options, prefer them
+                    options = getattr(step, "_policy_agent_options", None)
+                    if options is None:
+                        options = {}
+                        cfg = getattr(step, "config", None)
+                        if cfg is not None:
+                            if getattr(cfg, "temperature", None) is not None:
+                                options["temperature"] = cfg.temperature
+                            if getattr(cfg, "top_k", None) is not None:
+                                options["top_k"] = cfg.top_k
+                            if getattr(cfg, "top_p", None) is not None:
+                                options["top_p"] = cfg.top_p
                     
                     # --- 3. Agent Execution (Inside Retry Loop) ---
                     agent_output = await self._agent_runner.run(
@@ -892,13 +914,19 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     # Only run hybrid check for DSL-defined validation steps
                     meta = getattr(step, "meta", None)
                     if isinstance(meta, dict) and meta.get("is_validation_step", False):
-                        processed_output, hybrid_feedback = await run_hybrid_check(
-                            processed_output,
-                            getattr(step, "plugins", []),
-                            getattr(step, "validators", []),
-                            context=context,
-                            resources=resources,
-                        )
+                        # Prefer precomputed hybrid results from the policy if present
+                        hybrid_checked = getattr(step, "_policy_hybrid_checked_output", None)
+                        hybrid_feedback = getattr(step, "_policy_hybrid_feedback", None)
+                        if hybrid_checked is None:
+                            processed_output, hybrid_feedback = await run_hybrid_check(
+                                processed_output,
+                                getattr(step, "plugins", []),
+                                getattr(step, "validators", []),
+                                context=context,
+                                resources=resources,
+                            )
+                        else:
+                            processed_output = hybrid_checked
                         if hybrid_feedback:
                             result.success = False
                             result.feedback = hybrid_feedback
@@ -909,23 +937,19 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         result.output = processed_output
                         result.latency_s = time.monotonic() - start_time
                         return result
-                    # --- 4. Plugin Runner (if plugins exist) ---
+                    # --- 4. Plugin Runner (policy delegate) ---
                     if hasattr(step, "plugins") and step.plugins:
                         try:
-                            # Run plugins and wrap any exception as PluginError to enable retry
-                            processed_output = await self._plugin_runner.run_plugins(
-                                step.plugins, processed_output, context=context, resources=resources
+                            processed_output = await self.plugin_redirector.run(
+                                initial=processed_output,
+                                step=step,
+                                data=data,
+                                context=context,
+                                resources=resources,
+                                timeout_s=None,
                             )
                         except Exception as e:
                             raise PluginError(str(e))
-                        from ...domain.plugins import PluginOutcome
-                        # If plugin returned a PluginOutcome failure, end step
-                        if isinstance(processed_output, PluginOutcome) and not processed_output.success:
-                            # Plugin validation failure: raise PluginError to enable retry
-                            raise PluginError(processed_output.feedback or 'Plugin failed without feedback')
-                        # Apply new_solution if plugin provided one
-                        if isinstance(processed_output, PluginOutcome) and processed_output.new_solution is not None:
-                            processed_output = processed_output.new_solution
                     
                     # --- 5. Validator Runner (if validators exist) ---
                     if hasattr(step, "validators") and step.validators:
@@ -1214,6 +1238,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         breach_event: Optional[Any],
         _fallback_depth: int = 0,
     ) -> StepResult:
+        # Delegate entirely to policy
         return await self.agent_step_executor.execute(
             self,
             step,
@@ -1230,7 +1255,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
 
     async def _handle_loop_step(
         self,
-        step: Any,
+        loop_step: Any,
         data: Any,
         context: Optional[TContext_w_Scratch],
         resources: Optional[Any],
@@ -1240,7 +1265,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
     ) -> StepResult:
         # Use built-in loop implementation to ensure fallback behavior
         return await self._execute_loop(
-            step,
+            loop_step,
             data,
             context,
             resources,
@@ -1446,6 +1471,8 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         resources: Optional[Any],
         limits: Optional[UsageLimits],
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
+        # Backward-compatibility: expose 'step' param for legacy inspection
+        step: Optional[Any] = None,
     ) -> StepResult:
         """Delegate to the injected DynamicRouterStepExecutor policy."""
         return await self.dynamic_router_step_executor.execute(
@@ -1456,6 +1483,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             resources,
             limits,
             context_setter,
+            step=step,
         )
     
     async def _handle_hitl_step(
@@ -2933,12 +2961,10 @@ def _build_agent_options(self, cfg: Any) -> dict[str, Any]:
             opts[key] = val
     return opts
 
-# ... inside ExecutorCore class or after all definitions ...
-ExecutorCore._execute_agent_step = _execute_agent_step_fn
-ExecutorCore._handle_loop_step = _handle_loop_step_fn
+# Legacy monkey-patching removed: policies now own execution logic
 
 # Add wrapper delegating to policy
 async def _execute_simple_step(self, step: Any, data: Any, context: Optional[TContext_w_Scratch], resources: Optional[Any], limits: Optional[UsageLimits], stream: bool = False, on_chunk: Optional[Callable[[Any], Awaitable[None]]] = None, cache_key: Optional[str] = None, breach_event: Optional[Any] = None, _fallback_depth: int = 0) -> StepResult:
-    return await self.simple_step_executor.execute(step, data, context, resources, limits, stream, on_chunk, cache_key, breach_event, _fallback_depth)
+    return await self.simple_step_executor.execute(self, step, data, context, resources, limits, stream, on_chunk, cache_key, breach_event, _fallback_depth)
 
 # ExecutorCore._handle_parallel_step = _handle_parallel_step_fn  # noqa: F821

@@ -3,7 +3,7 @@ import asyncio
 from typing import Any, Awaitable, Optional, Protocol, Callable, Dict, List
 from pydantic import BaseModel
 from flujo.domain.models import StepResult, UsageLimits
-from flujo.exceptions import MissingAgentError, InfiniteFallbackError, UsageLimitExceededError, NonRetryableError, MockDetectionError
+from flujo.exceptions import MissingAgentError, InfiniteFallbackError, UsageLimitExceededError, NonRetryableError, MockDetectionError, PausedException, InfiniteRedirectError
 from flujo.cost import extract_usage_metrics
 from flujo.utils.performance import time_perf_ns, time_perf_ns_to_seconds
 from flujo.infra import telemetry
@@ -69,7 +69,7 @@ class DefaultPluginRedirector:
         resources: Any,
         timeout_s: Optional[float]
     ) -> Any:
-        from flujo.exceptions import InfiniteRedirectError, PluginError
+        from flujo.exceptions import InfiniteRedirectError
         redirect_chain: list[Any] = []
         processed = initial
         unpacker = DefaultAgentResultUnpacker()
@@ -98,7 +98,9 @@ class DefaultPluginRedirector:
                 continue
             # Failure
             if hasattr(outcome, 'success') and not outcome.success:
-                raise PluginError(outcome.feedback or "Plugin failed without feedback")
+                # Core will wrap generic exceptions as its own PluginError and add retry semantics
+                fb = outcome.feedback or "Plugin failed without feedback"
+                raise Exception(f"Plugin validation failed: {fb}")
             # New solution
             if hasattr(outcome, 'new_solution') and outcome.new_solution is not None:
                 processed = outcome.new_solution
@@ -115,7 +117,6 @@ class DefaultValidatorInvoker:
         self._validator_runner = validator_runner
 
     async def validate(self, output: Any, step: Any, context: Any, timeout_s: Optional[float]) -> None:
-        from flujo.exceptions import ValidationError
         # No validators
         if not getattr(step, 'validators', []):
             return
@@ -125,12 +126,14 @@ class DefaultValidatorInvoker:
         )
         for r in results:
             if not getattr(r, 'is_valid', False):
-                raise ValidationError(r.feedback)
+                # Raise a generic exception; core wraps/handles uniformly for retries/fallback
+                raise Exception(r.feedback)
 
 # --- Simple Step Executor policy ---
 class SimpleStepExecutor(Protocol):
     async def execute(
         self,
+        core: Any,
         step: Any,
         data: Any,
         context: Optional[Any],
@@ -147,6 +150,7 @@ class SimpleStepExecutor(Protocol):
 class DefaultSimpleStepExecutor:
     async def execute(
         self,
+        core,
         step: Any,
         data: Any,
         context: Optional[Any],
@@ -158,11 +162,57 @@ class DefaultSimpleStepExecutor:
         breach_event: Optional[Any],
         _fallback_depth: int = 0,
     ) -> StepResult:
-        # Delegate to the original ExecutorCore's implementation for legacy behavior
-        from flujo.application.core.ultra_executor import ExecutorCore as _OriginalExecutorCore
-        return await _OriginalExecutorCore._execute_simple_step(
-            self,
-            step,
+        # Phase-1: transplant behavior-neutral parts; fallback to core for the rest
+        telemetry.logfire.debug(f"[Policy] SimpleStep: {getattr(step, 'name', '<unnamed>')} depth={_fallback_depth}")
+
+        # Build processed_data and options here to consolidate responsibility in policy
+        processed_data = data
+        if hasattr(step, "processors") and step.processors:
+            try:
+                processed_data = await core._processor_pipeline.apply_prompt(
+                    step.processors, data, context=context
+                )
+            except Exception:
+                # Defer to core logic for full error handling semantics
+                return await core._execute_simple_step(
+                    step,
+                    data,
+                    context,
+                    resources,
+                    limits,
+                    stream,
+                    on_chunk,
+                    cache_key,
+                    breach_event,
+                    _fallback_depth,
+                    _from_policy=True,
+                )
+
+        options: Dict[str, Any] = {}
+        cfg = getattr(step, "config", None)
+        if cfg is not None:
+            if getattr(cfg, "temperature", None) is not None:
+                options["temperature"] = cfg.temperature
+            if getattr(cfg, "top_k", None) is not None:
+                options["top_k"] = cfg.top_k
+            if getattr(cfg, "top_p", None) is not None:
+                options["top_p"] = cfg.top_p
+
+        # Pass preprocessed inputs and options via a temporary shim on the step object
+        # to avoid altering public signatures as we migrate incrementally
+        shim_step = step
+        try:
+            # Use a shallow copy to avoid mutating original step across retries
+            shim_step = copy.copy(step)
+            setattr(shim_step, "_policy_processed_payload", processed_data)
+            setattr(shim_step, "_policy_agent_options", options)
+            # Do not pre-run hybrid validation here; it depends on agent output.
+        except Exception:
+            shim_step = step
+
+        # Execute via core (policy-origin) to preserve fallback/validator/plugin semantics
+        return await core._execute_simple_step(
+            shim_step,
             data,
             context,
             resources,
@@ -172,6 +222,7 @@ class DefaultSimpleStepExecutor:
             cache_key,
             breach_event,
             _fallback_depth,
+            _from_policy=True,
         )
 
 # --- Agent Step Executor policy ---
@@ -207,9 +258,9 @@ class DefaultAgentStepExecutor:
         breach_event,
         _fallback_depth: int = 0,
     ) -> StepResult:
-        # Delegate to the original ExecutorCore implementation for legacy behavior
-        from flujo.application.core.ultra_executor import ExecutorCore as _OriginalExecutorCore
-        return await _OriginalExecutorCore._execute_agent_step(
+        # Preserve exact behavior by delegating to the proven implementation
+        from .step_executor import _execute_agent_step as _agent_fn
+        return await _agent_fn(
             core,
             step,
             data,
@@ -658,6 +709,8 @@ class DynamicRouterStepExecutor(Protocol):
         resources: Optional[Any],
         limits: Optional[UsageLimits],
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
+        # Backward-compat: expose 'step' in signature for legacy inspection
+        step: Optional[Any] = None,
     ) -> StepResult:
         ...
 
@@ -671,6 +724,7 @@ class DefaultDynamicRouterStepExecutor:
         resources,
         limits,
         context_setter,
+        step=None,
     ) -> StepResult:
         """Handle DynamicParallelRouterStep execution with proper branch selection and parallel delegation."""
         import time
@@ -726,15 +780,15 @@ class DefaultDynamicRouterStepExecutor:
             context_include_keys=router_step.context_include_keys,
             field_mapping=router_step.field_mapping,
         )
-        parallel_result = await core.parallel_step_executor.execute(
-            core,
-            temp_parallel_step,
-            data,
-            context,
-            resources,
-            limits,
-            None,
-            context_setter,
+        # Delegate via core's parallel handler to satisfy legacy expectations
+        parallel_result = await core._handle_parallel_step(
+            parallel_step=temp_parallel_step,
+            data=data,
+            context=context,
+            resources=resources,
+            limits=limits,
+            breach_event=None,
+            context_setter=context_setter,
         )
 
         # Add router usage metrics
