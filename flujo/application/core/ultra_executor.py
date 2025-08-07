@@ -280,6 +280,31 @@ class UltraStepExecutor(Generic[TContext]):
         from weakref import WeakKeyDictionary
 
         self._seen_hashes: "WeakKeyDictionary[Any,str]" = WeakKeyDictionary()
+        
+        # Initialize policy executors for FSD-002 migration
+        from .step_policies import (
+            DefaultSimpleStepExecutor,
+            DefaultAgentStepExecutor, 
+            DefaultLoopStepExecutor,
+            DefaultParallelStepExecutor,
+            DefaultConditionalStepExecutor,
+            DefaultDynamicRouterStepExecutor,
+            DefaultCacheStepExecutor,
+            DefaultHitlStepExecutor,
+            DefaultPluginRedirector,
+            DefaultValidatorInvoker,
+        )
+        
+        self.simple_step_executor = DefaultSimpleStepExecutor()
+        self.agent_step_executor = DefaultAgentStepExecutor()
+        self.loop_step_executor = DefaultLoopStepExecutor()
+        self.parallel_step_executor = DefaultParallelStepExecutor()
+        self.conditional_step_executor = DefaultConditionalStepExecutor()
+        self.dynamic_router_step_executor = DefaultDynamicRouterStepExecutor()
+        self.cache_step_executor = DefaultCacheStepExecutor()
+        self.hitl_step_executor = DefaultHitlStepExecutor()
+        self.plugin_redirector = DefaultPluginRedirector()
+        self.validator_invoker = DefaultValidatorInvoker()
 
     # -------------------------- fast helpers ------------------------------- #
 
@@ -843,90 +868,36 @@ class UltraStepExecutor(Generic[TContext]):
                 on_chunk=on_chunk,
             )
 
-        # Handle different step types
+        # Handle different step types using policy executors (FSD-002)
         try:
             if isinstance(step, CacheStep):
-                result = await _handle_cache_step(step, data, context, resources, step_executor)
+                result = await self.cache_step_executor.execute(
+                    self, step, data, context, resources, usage_limits, stream, on_chunk, breach_event, context_setter
+                )
             elif isinstance(step, LoopStep):
-                result = await _handle_loop_step(
-                    step,
-                    data,
-                    context,
-                    resources,
-                    loop_step_executor,  # Use special executor for loop steps
-                    context_model_defined=True,
-                    usage_limits=usage_limits,
-                    context_setter=context_setter,
+                result = await self.loop_step_executor.execute(
+                    self, step, data, context, resources, usage_limits, stream, on_chunk, breach_event, context_setter
                 )
             elif isinstance(step, ConditionalStep):
-                result = await _handle_conditional_step(
-                    step,
-                    data,
-                    context,
-                    resources,
-                    step_executor,
-                    context_model_defined=True,
-                    usage_limits=usage_limits,
-                    context_setter=context_setter,
+                result = await self.conditional_step_executor.execute(
+                    self, step, data, context, resources, usage_limits, stream, on_chunk, breach_event, context_setter
                 )
             elif isinstance(step, DynamicParallelRouterStep):
-                result = await _handle_dynamic_router_step(
-                    step,
-                    data,
-                    context,
-                    resources,
-                    step_executor,
-                    context_model_defined=True,
-                    usage_limits=usage_limits,
-                    context_setter=context_setter,
+                result = await self.dynamic_router_step_executor.execute(
+                    self, step, data, context, resources, usage_limits, stream, on_chunk, breach_event, context_setter
                 )
             elif isinstance(step, ParallelStep):
-                result = await _handle_parallel_step(
-                    step,
-                    data,
-                    context,
-                    resources,
-                    step_executor,
-                    context_model_defined=True,
-                    usage_limits=usage_limits,
-                    context_setter=context_setter,
+                result = await self.parallel_step_executor.execute(
+                    self, step, data, context, resources, usage_limits, stream, on_chunk, breach_event, context_setter
                 )
             elif isinstance(step, HumanInTheLoopStep):
-                result = await _handle_hitl_step(step, data, context)
+                result = await self.hitl_step_executor.execute(
+                    self, step, data, context, resources, usage_limits, stream, on_chunk, breach_event, context_setter
+                )
             else:
-                # For other complex steps, use step logic directly
-                from .step_logic import _run_step_logic
-
-                async def step_executor_wrapper(
-                    step: Any,
-                    data: Any,
-                    context: Optional[Any],
-                    resources: Optional[Any],
-                    breach_event: Optional[Any] = None,
-                ) -> StepResult:
-                    return await self.execute_step(
-                        step,
-                        data,
-                        context,
-                        resources,
-                        usage_limits,
-                        stream,
-                        on_chunk,
-                        breach_event,
-                        context_setter=context_setter,
-                    )
-
-                result = await _run_step_logic(
-                    step=step,
-                    data=data,
-                    context=context,
-                    resources=resources,
-                    step_executor=step_executor_wrapper,
-                    context_model_defined=True,
-                    usage_limits=usage_limits,
-                    context_setter=context_setter,
-                    stream=stream,
-                    on_chunk=on_chunk,
+                # For other complex steps, use simple step executor
+                result = await self.simple_step_executor.execute(
+                    self, step, data, context, resources, usage_limits, stream, on_chunk, breach_event, context_setter
                 )
         except Exception as e:
             # Use helper method to handle exception classification
