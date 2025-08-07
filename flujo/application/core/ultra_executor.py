@@ -784,13 +784,24 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             step.processors, data, context=context
                         )
                     
-                    # --- 2. Agent Execution (Inside Retry Loop) ---
+                    # --- 2. Build sampling options from StepConfig ---
+                    options = {}
+                    cfg = getattr(step, "config", None)
+                    if cfg is not None:
+                        if getattr(cfg, "temperature", None) is not None:
+                            options["temperature"] = cfg.temperature
+                        if getattr(cfg, "top_k", None) is not None:
+                            options["top_k"] = cfg.top_k
+                        if getattr(cfg, "top_p", None) is not None:
+                            options["top_p"] = cfg.top_p
+                    
+                    # --- 3. Agent Execution (Inside Retry Loop) ---
                     agent_output = await self._agent_runner.run(
                         agent=step.agent,
                         payload=processed_data,  # Use processed_data from apply_prompt
                         context=context,
                         resources=resources,
-                        options={},
+                        options=options,
                         stream=stream,
                         on_chunk=on_chunk,
                         breach_event=breach_event,
@@ -1242,7 +1253,18 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         step.processors, data, context=context
                     )
                 
-                # --- 2. Agent Execution - RETRY ON FAILURE ---
+                # --- 2. Build sampling options from StepConfig ---
+                options = {}
+                cfg = getattr(step, "config", None)
+                if cfg is not None:
+                    if getattr(cfg, "temperature", None) is not None:
+                        options["temperature"] = cfg.temperature
+                    if getattr(cfg, "top_k", None) is not None:
+                        options["top_k"] = cfg.top_k
+                    if getattr(cfg, "top_p", None) is not None:
+                        options["top_p"] = cfg.top_p
+                
+                # --- 3. Agent Execution - RETRY ON FAILURE ---
                 # Build options from step configuration
                 options = {}
                 if hasattr(step, 'config') and step.config:
@@ -1353,7 +1375,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             unpacked_output = _unpack_agent_result(processed_output)
                             plugin_data = {"output": unpacked_output} if not isinstance(unpacked_output, dict) else unpacked_output
                             plugin_result = await self._plugin_runner.run_plugins(
-                                step.plugins, plugin_data, context=context
+                                step.plugins, plugin_data, context=context, resources=resources
                             )
                             
                             # Handle plugin redirections
@@ -1386,13 +1408,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             
                             # Handle plugin outcomes with success=False
                             elif hasattr(plugin_result, "success") and not plugin_result.success:
-                                # Plugin failed - DO NOT RETRY
-                                result.success = False
-                                result.feedback = f"Plugin failed: {getattr(plugin_result, 'feedback', 'Unknown plugin error')}"
-                                result.output = processed_output  # Keep the output for fallback
-                                result.latency_s = time.monotonic() - start_time
-                                telemetry.logfire.error(f"Step '{step.name}' plugin failed: {result.feedback}")
-                                return result
+                                # Plugin validation failure - trigger retry via PluginError
+                                from ...application.core.ultra_executor import PluginError
+                                raise PluginError(plugin_result.feedback or 'Plugin failed without feedback')
                             
                             # Handle successful PluginOutcome
                             elif hasattr(plugin_result, "success") and plugin_result.success:
@@ -3494,43 +3512,127 @@ class OptimizedExecutorCore(ExecutorCore):
         """Execute a LoopStep by iterating its body, collecting results, and wrapping them."""
         import time, copy
         from ...domain.dsl.pipeline import Pipeline
-        from ...domain.models import PipelineContext, StepResult
-
+        from ...domain.models import PipelineContext, StepResult, PipelineResult
+        from flujo.exceptions import UsageLimitExceededError
+        
+        # Initialization
         start_time = time.monotonic()
         iteration_results: list[StepResult] = []
         current_data = data
         current_context = context or PipelineContext(initial_prompt=str(data))
-        exit_reason = None
         max_loops = getattr(loop_step, 'max_loops', 5)
 
-        for i in range(1, max_loops + 1):
-            iteration_count = i
-            result = await self._execute_simple_step(
-                loop_step.loop_body_pipeline.steps[0],
+        # Apply initial input mapper if provided
+        initial_mapper = getattr(loop_step, 'initial_input_to_loop_body_mapper', None)
+        if initial_mapper:
+            try:
+                current_data = initial_mapper(current_data, current_context)
+            except Exception as e:
+                return StepResult(
+                    name=loop_step.name,
+                    success=False,
+                    output=None,
+                    attempts=0,
+                    latency_s=time.monotonic() - start_time,
+                    token_counts=0,
+                    cost_usd=0.0,
+                    feedback=str(e),
+                    branch_context=current_context,
+                    metadata_={'iterations': 0, 'exit_reason': 'initial_input_mapper_error'},
+                    step_history=[],
+                )
+
+        # Handle empty pipeline
+        if not getattr(loop_step.loop_body_pipeline, 'steps', []):
+            return StepResult(
+                name=loop_step.name,
+                success=False,
+                output=data,
+                attempts=0,
+                latency_s=time.monotonic() - start_time,
+                token_counts=0,
+                cost_usd=0.0,
+                feedback='LoopStep has empty pipeline',
+                branch_context=current_context,
+                metadata_={'iterations': 0, 'exit_reason': 'empty_pipeline'},
+                step_history=[],
+            )
+
+        # Loop execution
+        exit_reason = None
+        cumulative_cost = 0.0
+        cumulative_tokens = 0
+        for iteration_count in range(1, max_loops + 1):
+            # Execute the full loop body pipeline
+            pipeline_result = await self._execute_pipeline(
+                loop_step.loop_body_pipeline,
                 current_data,
                 current_context,
                 resources,
                 limits,
-                False,
                 None,
-                None,
-                None,
-                _fallback_depth,
+                context_setter,
             )
-            iteration_results.append(result)
-            cumulative_cost = sum(step.cost_usd for step in iteration_results)
-            cumulative_tokens = sum(step.token_counts for step in iteration_results)
-            current_data = result.output
-            if result.branch_context is not None:
-                from .context_manager import ContextManager
-                current_context = ContextManager.merge(current_context, result.branch_context)
-            cond = getattr(loop_step, "exit_condition_callable", None)
-            if cond and cond(current_data, current_context):
-                exit_reason = "condition"
-                break
+            # Handle loop body step failures
+            if any(not sr.success for sr in pipeline_result.step_history):
+                failed = next(sr for sr in pipeline_result.step_history if not sr.success)
+                return StepResult(
+                    name=loop_step.name,
+                    success=False,
+                    output=None,
+                    attempts=iteration_count,
+                    latency_s=time.monotonic() - start_time,
+                    token_counts=cumulative_tokens,
+                    cost_usd=cumulative_cost,
+                    feedback=failed.feedback or "LoopStep body step failed",
+                    branch_context=current_context,
+                    metadata_={'iterations': iteration_count, 'exit_reason': 'body_step_error'},
+                    step_history=iteration_results,
+                )
 
-            # Wire up iteration input mapper for next iteration
-            iter_mapper = getattr(loop_step, "iteration_input_mapper", None)
+            # Collect each iteration's step history and update data/context
+            iteration_results.extend(pipeline_result.step_history)
+            if pipeline_result.step_history:
+                last = pipeline_result.step_history[-1]
+                current_data = last.output
+            if pipeline_result.final_pipeline_context is not None:
+                current_context = pipeline_result.final_pipeline_context
+
+            # Accumulate usage
+            cumulative_cost += pipeline_result.total_cost_usd
+            cumulative_tokens += pipeline_result.total_tokens
+
+            # Enforce usage limits
+            if limits:
+                if limits.total_cost_usd_limit is not None and cumulative_cost > limits.total_cost_usd_limit:
+                    raise UsageLimitExceededError('Cost limit exceeded')
+                if limits.total_tokens_limit is not None and cumulative_tokens > limits.total_tokens_limit:
+                    raise UsageLimitExceededError('Token limit exceeded')
+
+            # Check exit condition
+            cond = getattr(loop_step, 'exit_condition_callable', None)
+            if cond:
+                try:
+                    if cond(current_data, current_context):
+                        exit_reason = 'condition'
+                        break
+                except Exception as e:
+                    return StepResult(
+                        name=loop_step.name,
+                        success=False,
+                        output=None,
+                        attempts=iteration_count,
+                        latency_s=time.monotonic() - start_time,
+                        token_counts=cumulative_tokens,
+                        cost_usd=cumulative_cost,
+                        feedback=str(e),
+                        branch_context=current_context,
+                        metadata_={'iterations': iteration_count, 'exit_reason': 'exit_condition_error'},
+                        step_history=iteration_results,
+                    )
+
+            # Apply iteration input mapper
+            iter_mapper = getattr(loop_step, 'iteration_input_mapper', None)
             if iter_mapper:
                 try:
                     current_data = iter_mapper(current_data, current_context, iteration_count)
@@ -3545,27 +3647,133 @@ class OptimizedExecutorCore(ExecutorCore):
                         cost_usd=cumulative_cost,
                         feedback=str(e),
                         branch_context=current_context,
-                        metadata_={"iterations": iteration_count, "exit_reason": "iteration_input_mapper_error"},
+                        metadata_={'iterations': iteration_count, 'exit_reason': 'iteration_input_mapper_error'},
                         step_history=iteration_results,
                     )
 
+        # Determine final output and apply output mapper
         final_output = current_data
-        if getattr(loop_step, "loop_output_mapper", None):
-            final_output = loop_step.loop_output_mapper(current_data, current_context)
+        output_mapper = getattr(loop_step, 'loop_output_mapper', None)
+        if output_mapper:
+            try:
+                final_output = output_mapper(current_data, current_context)
+            except Exception as e:
+                return StepResult(
+                    name=loop_step.name,
+                    success=False,
+                    output=None,
+                    attempts=iteration_count,
+                    latency_s=time.monotonic() - start_time,
+                    token_counts=cumulative_tokens,
+                    cost_usd=cumulative_cost,
+                    feedback=str(e),
+                    branch_context=current_context,
+                    metadata_={'iterations': iteration_count, 'exit_reason': 'loop_output_mapper_error'},
+                    step_history=iteration_results,
+                )
 
         return StepResult(
             name=loop_step.name,
-            success=exit_reason == "condition",
+            success=(exit_reason == 'condition'),
             output=final_output,
             attempts=iteration_count,
             latency_s=time.monotonic() - start_time,
             token_counts=cumulative_tokens,
             cost_usd=cumulative_cost,
-            feedback=None if exit_reason else "max_loops exceeded",
+            feedback=None if exit_reason else 'max_loops exceeded',
             branch_context=current_context,
-            metadata_={"iterations": iteration_count, "exit_reason": exit_reason or "max_loops"},
+            metadata_={'iterations': iteration_count, 'exit_reason': exit_reason or 'max_loops'},
             step_history=iteration_results,
         )
 
 # Expose unified loop helper on base ExecutorCore
 ExecutorCore._execute_loop = OptimizedExecutorCore._execute_loop
+
+# ----------------------------------------------------------------------
+# Helper methods for agent-step orchestration (Separation of Concerns)
+# ----------------------------------------------------------------------
+async def _run_with_timeout(self, coro: Awaitable[Any], timeout_s: float | None) -> Any:
+    """Run a coroutine with an optional timeout."""
+    if timeout_s is None:
+        return await coro
+    import asyncio
+    return await asyncio.wait_for(coro, timeout_s)
+
+def _unpack_agent_output(self, output: Any) -> Any:
+    """Unpack wrapped agent outputs (models, result fields, etc.)."""
+    from pydantic import BaseModel
+    if isinstance(output, BaseModel):
+        return output
+    for attr in ("output", "content", "result", "data", "text", "message", "value"):  # common wrappers
+        if hasattr(output, attr):
+            return getattr(output, attr)
+    return output
+
+async def _execute_plugins_with_redirects(
+    self,
+    initial: Any,
+    step: Any,
+    data: Any,
+    context: Any,
+    resources: Any,
+    timeout_s: float | None,
+) -> Any:
+    """Run plugins, handle redirects (with loop detection), apply new_solution."""
+    from ...domain.plugins import PluginOutcome
+    redirect_chain: list[Any] = []
+    processed = initial
+    while True:
+        outcome = await self._run_with_timeout(
+            self._plugin_runner.run_plugins(step.plugins, processed, context=context, resources=resources),
+            timeout_s,
+        )
+        if isinstance(outcome, PluginOutcome):
+            if outcome.redirect_to is not None:
+                if outcome.redirect_to in redirect_chain:
+                    from ...exceptions import InfiniteRedirectError
+                    raise InfiniteRedirectError(f"Redirect loop detected at agent {outcome.redirect_to}")
+                redirect_chain.append(outcome.redirect_to)
+                raw = await self._run_with_timeout(
+                    self._agent_runner.run(agent=outcome.redirect_to, payload=data, context=context, resources=resources, options={}, stream=False),
+                    timeout_s,
+                )
+                processed = self._unpack_agent_output(raw)
+                continue
+            if not outcome.success:
+                from ...exceptions import PluginError
+                raise PluginError(outcome.feedback or "Plugin failed without feedback")
+            if outcome.new_solution is not None:
+                processed = outcome.new_solution
+        else:
+            processed = outcome
+        return processed
+
+async def _execute_validators(
+    self,
+    output: Any,
+    step: Any,
+    context: Any,
+    timeout_s: float | None,
+) -> None:
+    """Run validators and raise ValidationError on first failure."""
+    from ...exceptions import ValidationError
+    from ...domain.validation import ValidationResult
+    if not getattr(step, 'validators', []):
+        return
+    results = await self._run_with_timeout(
+        self._validator_runner.validate(step.validators, output, context=context),
+        timeout_s,
+    )
+    for r in results:
+        if not getattr(r, 'is_valid', False):
+            raise ValidationError(r.feedback)
+
+def _build_agent_options(self, cfg: Any) -> dict[str, Any]:
+    """Extract sampling options from StepConfig."""
+    opts: dict[str, Any] = {}
+    if cfg is None: return opts
+    for key in ('temperature', 'top_k', 'top_p'):
+        val = getattr(cfg, key, None)
+        if val is not None:
+            opts[key] = val
+    return opts

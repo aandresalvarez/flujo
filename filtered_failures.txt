@@ -1,0 +1,165 @@
+tests/application/core/test_executor_core_conditional_step.py::TestExecutorCoreConditionalStep::test_handle_conditional_step_signature 
+[gw0] [  6%] PASSED tests/application/core/test_executor_core_conditional_step.py::TestExecutorCoreConditionalStep::test_handle_conditional_step_signature 
+tests/application/core/test_executor_core_conditional_step.py::TestExecutorCoreConditionalStep::test_handle_conditional_step_basic_execution 
+[gw0] [  6%] PASSED tests/application/core/test_executor_core_conditional_step.py::TestExecutorCoreConditionalStep::test_handle_conditional_step_basic_execution 
+tests/application/core/test_executor_core_conditional_step.py::TestExecutorCoreConditionalStep::test_handle_conditional_step_error_handling 
+[gw0] [  6%] PASSED tests/application/core/test_executor_core_conditional_step.py::TestExecutorCoreConditionalStep::test_handle_conditional_step_error_handling 
+tests/application/core/test_executor_core_conditional_step.py::TestExecutorCoreConditionalStep::test_handle_conditional_step_recursive_execution 
+[gw0] [  6%] PASSED tests/application/core/test_executor_core_conditional_step.py::TestExecutorCoreConditionalStep::test_handle_conditional_step_recursive_execution 
+tests/application/core/test_executor_core_conditional_step.py::TestExecutorCoreConditionalStep::test_handle_conditional_step_parameter_passing 
+[gw1] [  6%] FAILED tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_handle_loop_step_exit_condition_errors 
+tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_handle_loop_step_body_step_failures 
+[gw1] [  6%] FAILED tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_handle_loop_step_body_step_failures 
+tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_handle_loop_step_cost_limits 
+[gw1] [  6%] PASSED tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_handle_loop_step_cost_limits 
+tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_handle_loop_step_token_limits 
+[gw1] [  6%] PASSED tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_handle_loop_step_token_limits 
+tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_handle_loop_step_limits_accumulation 
+[gw1] [  7%] FAILED tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_handle_loop_step_limits_accumulation 
+tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_loopstep_complex_pipeline_integration 
+[gw1] [  7%] FAILED tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_loopstep_complex_pipeline_integration 
+tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_loopstep_nested_control_flow 
+[gw0] [  7%] FAILED tests/application/core/test_executor_core_conditional_step.py::TestExecutorCoreConditionalStep::test_handle_conditional_step_parameter_passing 
+tests/application/core/test_executor_core_conditional_step.py::TestExecutorCoreConditionalStep::test_handle_conditional_step_step_executor_functionality 
+[gw1] [  7%] FAILED tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_loopstep_nested_control_flow 
+tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_loopstep_with_caching 
+[gw0] [  7%] PASSED tests/application/core/test_executor_core_conditional_step.py::TestExecutorCoreConditionalStep::test_handle_conditional_step_step_executor_functionality 
+tests/application/core/test_executor_core_conditional_step.py::TestExecutorCoreConditionalStep::test_handle_conditional_step_with_limits_and_context_setter 
+[gw0] [  7%] PASSED tests/application/core/test_executor_core_conditional_step.py::TestExecutorCoreConditionalStep::test_handle_conditional_step_with_limits_and_context_setter 
+tests/application/core/test_executor_core_conditional_step.py::TestExecutorCoreConditionalStep::test_handle_conditional_step_null_parameters 
+[gw0] [  7%] PASSED tests/application/core/test_executor_core_conditional_step.py::TestExecutorCoreConditionalStep::test_handle_conditional_step_null_parameters 
+[gw1] [  7%] FAILED tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_loopstep_with_caching 
+tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_loopstep_with_telemetry 
+--
+tests/integration/test_conditional_step_execution.py::test_conditional_step_error_in_branch_input_mapper 
+[gw2] [ 19%] PASSED tests/integration/test_conditional_step_execution.py::test_conditional_step_error_in_branch_input_mapper 
+tests/integration/test_conditional_step_execution.py::test_conditional_step_error_in_branch_output_mapper 
+[gw0] [ 19%] PASSED tests/integration/test_local_tracer.py::test_tracer_outputs_debug_level 
+tests/integration/test_loop_context_update_regression.py::test_regression_first_principles_guarantee 
+[gw2] [ 19%] PASSED tests/integration/test_conditional_step_execution.py::test_conditional_step_error_in_branch_output_mapper 
+tests/integration/test_conditional_step_execution.py::test_conditional_step_branch_input_mapper_flow 
+[gw2] [ 19%] PASSED tests/integration/test_conditional_step_execution.py::test_conditional_step_branch_input_mapper_flow 
+tests/integration/test_conditional_step_execution.py::test_conditional_step_branch_output_mapper_flow 
+[gw0] [ 19%] PASSED tests/integration/test_loop_context_update_regression.py::test_regression_first_principles_guarantee 
+tests/integration/test_loop_context_update_regression.py::test_regression_assertion_catches_merge_failures 
+[gw2] [ 19%] PASSED tests/integration/test_conditional_step_execution.py::test_conditional_step_branch_output_mapper_flow 
+tests/integration/test_conditional_step_execution.py::test_conditional_step_mappers_with_context_modification 
+[gw0] [ 19%] PASSED tests/integration/test_loop_context_update_regression.py::test_regression_assertion_catches_merge_failures 
+tests/integration/test_loop_context_update_regression.py::test_regression_parallel_step_context_updates 
+[gw2] [ 19%] FAILED tests/integration/test_conditional_step_execution.py::test_conditional_step_mappers_with_context_modification 
+tests/integration/test_conditional_step_execution.py::test_conditional_step_default_mapper_behavior 
+[gw2] [ 19%] PASSED tests/integration/test_conditional_step_execution.py::test_conditional_step_default_mapper_behavior 
+[gw0] [ 20%] PASSED tests/integration/test_loop_context_update_regression.py::test_regression_parallel_step_context_updates 
+tests/integration/test_conditional_step_execution.py::test_conditional_step_overall_span 
+tests/integration/test_loop_context_update_regression.py::test_regression_conditional_step_context_updates 
+[gw2] [ 20%] PASSED tests/integration/test_conditional_step_execution.py::test_conditional_step_overall_span 
+tests/integration/test_conditional_step_execution.py::test_conditional_step_branch_selection_logging_and_span_attributes 
+[gw0] [ 20%] PASSED tests/integration/test_loop_context_update_regression.py::test_regression_conditional_step_context_updates 
+[gw2] [ 20%] PASSED tests/integration/test_conditional_step_execution.py::test_conditional_step_branch_selection_logging_and_span_attributes 
+tests/integration/test_loop_context_update_regression.py::test_regression_edge_case_deep_copy_isolation 
+tests/integration/test_conditional_step_execution.py::test_conditional_step_no_branch_match_logging 
+[gw2] [ 20%] PASSED tests/integration/test_conditional_step_execution.py::test_conditional_step_no_branch_match_logging 
+[gw0] [ 20%] PASSED tests/integration/test_loop_context_update_regression.py::test_regression_edge_case_deep_copy_isolation 
+tests/integration/test_conditional_step_execution.py::test_conditional_step_error_logging_in_callables 
+tests/integration/test_loop_context_update_regression.py::test_regression_serialization_edge_cases 
+[gw2] [ 20%] PASSED tests/integration/test_conditional_step_execution.py::test_conditional_step_error_logging_in_callables 
+tests/integration/test_conditional_step_logic_migration.py::TestConditionalStepLogicMigration::test_conditional_step_integration_with_real_agents 
+[gw0] [ 20%] PASSED tests/integration/test_loop_context_update_regression.py::test_regression_serialization_edge_cases 
+--
+[gw1] [ 99%] FAILED tests/integration/test_pipeline_runner.py::test_runner_unpacks_agent_result 
+tests/integration/test_pipeline_runner.py::test_step_config_temperature_passed 
+[gw1] [ 99%] FAILED tests/integration/test_pipeline_runner.py::test_step_config_temperature_passed 
+tests/integration/test_pipeline_runner.py::test_step_config_temperature_omitted 
+[gw1] [ 99%] PASSED tests/integration/test_pipeline_runner.py::test_step_config_temperature_omitted 
+tests/integration/test_pipeline_runner.py::test_pipeline_with_temperature_setting 
+[gw1] [ 99%] FAILED tests/integration/test_pipeline_runner.py::test_pipeline_with_temperature_setting 
+tests/integration/test_pipeline_runner.py::test_step_config_top_k_passed 
+[gw1] [100%] FAILED tests/integration/test_pipeline_runner.py::test_step_config_top_k_passed 
+
+=================================== FAILURES ===================================
+________________________ test_golden_transcript_refine _________________________
+[gw2] darwin -- Python 3.11.0 /Users/alvaro/Documents/Code/flujo/.venv/bin/python3
+tests/e2e/test_golden_transcript_refine.py:93: in test_golden_transcript_refine
+    assert final_output["value"] == 3  # Should reach the target value
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   assert 1 == 3
+_________________ test_golden_transcript_refine_max_iterations _________________
+[gw2] darwin -- Python 3.11.0 /Users/alvaro/Documents/Code/flujo/.venv/bin/python3
+tests/e2e/test_golden_transcript_refine.py:142: in test_golden_transcript_refine_max_iterations
+    assert isinstance(final_output, RefinementCheck)
+E   AssertionError: assert False
+E    +  where False = isinstance({'value': 1}, <class 'flujo.domain.models.RefinementCheck'>)
+_________________ test_golden_transcript_refine_feedback_flow __________________
+[gw2] darwin -- Python 3.11.0 /Users/alvaro/Documents/Code/flujo/.venv/bin/python3
+tests/e2e/test_golden_transcript_refine.py:195: in test_golden_transcript_refine_feedback_flow
+    assert final_output["value"] == 2  # Should reach the target value
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   assert 1 == 2
+______ TestExecutorCoreLoopStep.test_handle_loop_step_with_complex_limits ______
+[gw1] darwin -- Python 3.11.0 /Users/alvaro/Documents/Code/flujo/.venv/bin/python3
+--
+flujo/application/core/ultra_executor.py:3528: in _execute_loop
+    if cond and cond(current_data, current_context):
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/application/core/test_executor_core_loop_step_migration.py:343: in failing_exit_condition
+    raise RuntimeError("Exit condition error")
+E   RuntimeError: Exit condition error
+----------------------------- Captured stdout call -----------------------------
+2025-08-06 17:53:41,904 - flujo - INFO - Using explicit cost from 'CostlyOutput' for step 'test_step': cost=$0.1, tokens=10
+------------------------------ Captured log call -------------------------------
+INFO     flujo:telemetry.py:54 Using explicit cost from 'CostlyOutput' for step 'test_step': cost=$0.1, tokens=10
+________ TestLoopStepMigration.test_handle_loop_step_body_step_failures ________
+[gw1] darwin -- Python 3.11.0 /Users/alvaro/Documents/Code/flujo/.venv/bin/python3
+tests/application/core/test_executor_core_loop_step_migration.py:380: in test_handle_loop_step_body_step_failures
+    assert result.success is False  # failed body step should cause LoopStep to fail
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: assert True is False
+E    +  where True = StepResult(name='test_loop', output=None, success=True, attempts=1, latency_s=0.00032304198248311877, token_counts=0, cost_usd=0.0, feedback=None, branch_context=LoopTestContext(counter=0, messages=[], data={}, original_value=None), metadata_={'iterations': 1, 'exit_reason': 'condition'}, step_history=[StepResult(name='failing_step', output=None, success=False, attempts=2, latency_s=0.0002566250041127205, token_counts=0, cost_usd=0.0, feedback='Agent execution failed with IndexError: No more outputs available', branch_context=None, metadata_={}, step_history=[])]).success
+----------------------------- Captured stdout call -----------------------------
+2025-08-06 17:53:42,009 - flujo - WARNING - Step 'failing_step' agent execution attempt 1 failed: No more outputs available
+----------------------------- Captured stderr call -----------------------------
+2025-08-06 17:53:42,009 - flujo - ERROR - Step 'failing_step' agent failed after 2 attempts
+------------------------------ Captured log call -------------------------------
+WARNING  flujo:telemetry.py:54 Step 'failing_step' agent execution attempt 1 failed: No more outputs available
+ERROR    flujo:telemetry.py:54 Step 'failing_step' agent failed after 2 attempts
+_______ TestLoopStepMigration.test_handle_loop_step_limits_accumulation ________
+[gw1] darwin -- Python 3.11.0 /Users/alvaro/Documents/Code/flujo/.venv/bin/python3
+tests/application/core/test_executor_core_loop_step_migration.py:451: in test_handle_loop_step_limits_accumulation
+    assert result.success is True
+E   AssertionError: assert False is True
+E    +  where False = StepResult(name='test_loop', output=<test_executor_core_loop_step_migration.create_mock_step.<locals>.CostlyOutput object at 0x11cd8fb90>, success=False, attempts=2, latency_s=0.00019841600442305207, token_counts=20, cost_usd=0.2, feedback='max_loops exceeded', branch_context=LoopTestContext(counter=0, messages=[], data={}, original_value=None), metadata_={'iterations': 2, 'exit_reason': 'max_loops'}, step_history=[StepResult(name='test_step', output=<test_executor_core_loop_step_migration.create_mock_step.<locals>.CostlyOutput object at 0x11cd8fb90>, success=True, attempts=1, latency_s=0.00010699999984353781, token_counts=10, cost_usd=0.1, feedback=None, branch_context=LoopTestContext(counter=0, messages=[], data={}, original_value=None), metadata_={}, step_history=[]), StepResult(name='test_step', output=<test_executor_core_loop_step_migration.create_mock_step.<locals>.CostlyOutput object at 0x11cd8fb90>, success=True, attempts=1, latency_s=6.704195402562618e-05, token_counts=10, cost_usd=0.1, feedback=None, branch_context=LoopTestContext(counter=0, messages=[], data={}, original_value=None), metadata_={}, step_history=[])]).success
+----------------------------- Captured stdout call -----------------------------
+2025-08-06 17:53:42,019 - flujo - INFO - Using explicit cost from 'CostlyOutput' for step 'test_step': cost=$0.1, tokens=10
+2025-08-06 17:53:42,019 - flujo - INFO - Using explicit cost from 'CostlyOutput' for step 'test_step': cost=$0.1, tokens=10
+--
+  
+  - final_body_output
+  + final_<test_executor_core_loop_step_migration.create_mock_step.<locals>.CostlyOutput object at 0x11cd84410>
+FAILED tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_handle_loop_step_context_isolation - AssertionError: assert False is True
+ +  where False = StepResult(name='test_loop', output=<test_executor_core_loop_step_migration.create_mock_step.<locals>.CostlyOutput object at 0x11c9381d0>, success=False, attempts=2, latency_s=0.0002969999914057553, token_counts=20, cost_usd=0.2, feedback='max_loops exceeded', branch_context=LoopTestContext(counter=0, messages=[], data={}, original_value=None), metadata_={'iterations': 2, 'exit_reason': 'max_loops'}, step_history=[StepResult(name='test_step', output=<test_executor_core_loop_step_migration.create_mock_step.<locals>.CostlyOutput object at 0x11c9381d0>, success=True, attempts=1, latency_s=0.00018224999075755477, token_counts=10, cost_usd=0.1, feedback=None, branch_context=LoopTestContext(counter=0, messages=[], data={}, original_value=None), metadata_={}, step_history=[]), StepResult(name='test_step', output=<test_executor_core_loop_step_migration.create_mock_step.<locals>.CostlyOutput object at 0x11c9381d0>, success=True, attempts=1, latency_s=7.858400931581855e-05, token_counts=10, cost_usd=0.1, feedback=None, branch_context=LoopTestContext(counter=0, messages=[], data={}, original_value=None), metadata_={}, step_history=[])]).success
+FAILED tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_handle_loop_step_context_merge - AssertionError: assert False is True
+ +  where False = StepResult(name='test_loop', output=<test_executor_core_loop_step_migration.create_mock_step.<locals>.CostlyOutput object at 0x11cd80750>, success=False, attempts=2, latency_s=0.00032233301317319274, token_counts=20, cost_usd=0.2, feedback='max_loops exceeded', branch_context=LoopTestContext(counter=0, messages=[], data={}, original_value=None), metadata_={'iterations': 2, 'exit_reason': 'max_loops'}, step_history=[StepResult(name='test_step', output=<test_executor_core_loop_step_migration.create_mock_step.<locals>.CostlyOutput object at 0x11cd80750>, success=True, attempts=1, latency_s=0.00020670803496614099, token_counts=10, cost_usd=0.1, feedback=None, branch_context=LoopTestContext(counter=0, messages=[], data={}, original_value=None), metadata_={}, step_history=[]), StepResult(name='test_step', output=<test_executor_core_loop_step_migration.create_mock_step.<locals>.CostlyOutput object at 0x11cd80750>, success=True, attempts=1, latency_s=7.637502858415246e-05, token_counts=10, cost_usd=0.1, feedback=None, branch_context=LoopTestContext(counter=0, messages=[], data={}, original_value=None), metadata_={}, step_history=[])]).success
+FAILED tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_handle_loop_step_mapper_errors - AssertionError: assert True is False
+ +  where True = StepResult(name='test_loop', output=<test_executor_core_loop_step_migration.create_mock_step.<locals>.CostlyOutput object at 0x11bcfcb90>, success=True, attempts=1, latency_s=0.0001778329606167972, token_counts=10, cost_usd=0.1, feedback=None, branch_context=LoopTestContext(counter=0, messages=[], data={}, original_value=None), metadata_={'iterations': 1, 'exit_reason': 'condition'}, step_history=[StepResult(name='test_step', output=<test_executor_core_loop_step_migration.create_mock_step.<locals>.CostlyOutput object at 0x11bcfcb90>, success=True, attempts=1, latency_s=0.00015637499745935202, token_counts=10, cost_usd=0.1, feedback=None, branch_context=LoopTestContext(counter=0, messages=[], data={}, original_value=None), metadata_={}, step_history=[])]).success
+FAILED tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_handle_loop_step_exit_condition_errors - RuntimeError: Exit condition error
+FAILED tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_handle_loop_step_body_step_failures - AssertionError: assert True is False
+ +  where True = StepResult(name='test_loop', output=None, success=True, attempts=1, latency_s=0.00032304198248311877, token_counts=0, cost_usd=0.0, feedback=None, branch_context=LoopTestContext(counter=0, messages=[], data={}, original_value=None), metadata_={'iterations': 1, 'exit_reason': 'condition'}, step_history=[StepResult(name='failing_step', output=None, success=False, attempts=2, latency_s=0.0002566250041127205, token_counts=0, cost_usd=0.0, feedback='Agent execution failed with IndexError: No more outputs available', branch_context=None, metadata_={}, step_history=[])]).success
+FAILED tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_handle_loop_step_limits_accumulation - AssertionError: assert False is True
+ +  where False = StepResult(name='test_loop', output=<test_executor_core_loop_step_migration.create_mock_step.<locals>.CostlyOutput object at 0x11cd8fb90>, success=False, attempts=2, latency_s=0.00019841600442305207, token_counts=20, cost_usd=0.2, feedback='max_loops exceeded', branch_context=LoopTestContext(counter=0, messages=[], data={}, original_value=None), metadata_={'iterations': 2, 'exit_reason': 'max_loops'}, step_history=[StepResult(name='test_step', output=<test_executor_core_loop_step_migration.create_mock_step.<locals>.CostlyOutput object at 0x11cd8fb90>, success=True, attempts=1, latency_s=0.00010699999984353781, token_counts=10, cost_usd=0.1, feedback=None, branch_context=LoopTestContext(counter=0, messages=[], data={}, original_value=None), metadata_={}, step_history=[]), StepResult(name='test_step', output=<test_executor_core_loop_step_migration.create_mock_step.<locals>.CostlyOutput object at 0x11cd8fb90>, success=True, attempts=1, latency_s=6.704195402562618e-05, token_counts=10, cost_usd=0.1, feedback=None, branch_context=LoopTestContext(counter=0, messages=[], data={}, original_value=None), metadata_={}, step_history=[])]).success
+FAILED tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_loopstep_complex_pipeline_integration - AssertionError: assert False is True
+ +  where False = StepResult(name='complex_loop', output=<test_executor_core_loop_step_migration.create_mock_step.<locals>.CostlyOutput object at 0x11cdb8cd0>, success=False, attempts=2, latency_s=0.00031708297319710255, token_counts=20, cost_usd=0.2, feedback='max_loops exceeded', branch_context=LoopTestContext(counter=0, messages=[], data={}, original_value=None), metadata_={'iterations': 2, 'exit_reason': 'max_loops'}, step_history=[StepResult(name='step1', output=<test_executor_core_loop_step_migration.create_mock_step.<locals>.CostlyOutput object at 0x11cdb8cd0>, success=True, attempts=1, latency_s=0.000198375026229769, token_counts=10, cost_usd=0.1, feedback=None, branch_context=LoopTestContext(counter=0, messages=[], data={}, original_value=None), metadata_={}, step_history=[]), StepResult(name='step1', output=<test_executor_core_loop_step_migration.create_mock_step.<locals>.CostlyOutput object at 0x11cdb8cd0>, success=True, attempts=1, latency_s=8.195795817300677e-05, token_counts=10, cost_usd=0.1, feedback=None, branch_context=LoopTestContext(counter=0, messages=[], data={}, original_value=None), metadata_={}, step_history=[])]).success
+FAILED tests/application/core/test_executor_core_conditional_step.py::TestExecutorCoreConditionalStep::test_handle_conditional_step_parameter_passing - AssertionError: assert <Mock name='mock.model_copy()' id='4441865936'> == <Mock id='4435569424'>
+FAILED tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_loopstep_nested_control_flow - AssertionError: assert <test_executor_core_loop_step_migration.create_mock_step.<locals>.CostlyOutput object at 0x11cdaf890> == 'nested_output'
+ +  where <test_executor_core_loop_step_migration.create_mock_step.<locals>.CostlyOutput object at 0x11cdaf890> = StepResult(name='nested_loop', output=<test_executor_core_loop_step_migration.create_mock_step.<locals>.CostlyOutput object at 0x11cdaf890>, success=True, attempts=1, latency_s=0.00022208300651982427, token_counts=10, cost_usd=0.1, feedback=None, branch_context=LoopTestContext(counter=0, messages=[], data={}, original_value=None), metadata_={'iterations': 1, 'exit_reason': 'condition'}, step_history=[StepResult(name='nested_step', output=<test_executor_core_loop_step_migration.create_mock_step.<locals>.CostlyOutput object at 0x11cdaf890>, success=True, attempts=1, latency_s=0.00018241599900647998, token_counts=10, cost_usd=0.1, feedback=None, branch_context=LoopTestContext(counter=0, messages=[], data={}, original_value=None), metadata_={}, step_history=[])]).output
+FAILED tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_loopstep_with_caching - AssertionError: assert <test_executor_core_loop_step_migration.create_mock_step.<locals>.CostlyOutput object at 0x11c8d53d0> == 'cached_output'
+ +  where <test_executor_core_loop_step_migration.create_mock_step.<locals>.CostlyOutput object at 0x11c8d53d0> = StepResult(name='cached_loop', output=<test_executor_core_loop_step_migration.create_mock_step.<locals>.CostlyOutput object at 0x11c8d53d0>, success=True, attempts=1, latency_s=0.0001818749587982893, token_counts=10, cost_usd=0.1, feedback=None, branch_context=LoopTestContext(counter=0, messages=[], data={}, original_value=None), metadata_={'iterations': 1, 'exit_reason': 'condition'}, step_history=[StepResult(name='cached_step', output=<test_executor_core_loop_step_migration.create_mock_step.<locals>.CostlyOutput object at 0x11c8d53d0>, success=True, attempts=1, latency_s=0.0001584590063430369, token_counts=10, cost_usd=0.1, feedback=None, branch_context=LoopTestContext(counter=0, messages=[], data={}, original_value=None), metadata_={}, step_history=[])]).output
+FAILED tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_loopstep_existing_behavior_preservation - AssertionError: assert <test_executor_core_loop_step_migration.create_mock_step.<locals>.CostlyOutput object at 0x11be696d0> == 'preserved_output'
+ +  where <test_executor_core_loop_step_migration.create_mock_step.<locals>.CostlyOutput object at 0x11be696d0> = StepResult(name='preserved_loop', output=<test_executor_core_loop_step_migration.create_mock_step.<locals>.CostlyOutput object at 0x11be696d0>, success=True, attempts=1, latency_s=0.00020458298968151212, token_counts=10, cost_usd=0.1, feedback=None, branch_context=LoopTestContext(counter=0, messages=[], data={}, original_value=None), metadata_={'iterations': 1, 'exit_reason': 'condition'}, step_history=[StepResult(name='preserved_step', output=<test_executor_core_loop_step_migration.create_mock_step.<locals>.CostlyOutput object at 0x11be696d0>, success=True, attempts=1, latency_s=0.00017933303024619818, token_counts=10, cost_usd=0.1, feedback=None, branch_context=LoopTestContext(counter=0, messages=[], data={}, original_value=None), metadata_={}, step_history=[])]).output
+FAILED tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_loopstep_edge_cases_regression - IndexError: list index out of range
+FAILED tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_loopstep_error_scenarios_regression - AssertionError: assert True is False
+ +  where True = StepResult(name='error_loop', output=None, success=True, attempts=1, latency_s=0.0002966250176541507, token_counts=0, cost_usd=0.0, feedback=None, branch_context=LoopTestContext(counter=0, messages=[], data={}, original_value=None), metadata_={'iterations': 1, 'exit_reason': 'condition'}, step_history=[StepResult(name='error_step', output=None, success=False, attempts=2, latency_s=0.00022895797155797482, token_counts=0, cost_usd=0.0, feedback='Agent execution failed with IndexError: No more outputs available', branch_context=None, metadata_={}, step_history=[])]).success
+FAILED tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_loopstep_migration_performance_improvement - AssertionError: assert False is True
+ +  where False = StepResult(name='perf_loop', output=<test_executor_core_loop_step_migration.create_mock_step.<locals>.CostlyOutput object at 0x11a570b90>, success=False, attempts=10, latency_s=0.0008896250510588288, token_counts=100, cost_usd=0.9999999999999999, feedback='max_loops exceeded', branch_context=LoopTestContext(counter=0, messages=[], data={}, original_value=None), metadata_={'iterations': 10, 'exit_reason': 'max_loops'}, step_history=[StepResult(name='perf_step', output=<test_executor_core_loop_step_migration.create_mock_step.<locals>.CostlyOutput object at 0x11a570b90>, success=True, attempts=1, latency_s=0.00021558301523327827, token_counts=10, cost_usd=0.1, feedback=None, branch_context=LoopTestContext(counter=0, messages=[], data={}, original_value=None), metadata_={}, step_history=[]), StepResult(name='perf_step', output=<test_executor_core_loop_step_migration.create_mock_step.<locals>.CostlyOutput object at 0x11a570b90>, success=True, attempts=1, latency_s=7.795804413035512e-05, token_counts=10, cost_usd=0.1, feedback=None, branch_context=LoopTestContext(counter=0, messages=[], data={}, original_value=None), metadata_={}, step_history=[]), StepResult(name='perf_step', output=<...anch_context=LoopTestContext(counter=0, messages=[], data={}, original_value=None), metadata_={}, step_history=[]), StepResult(name='perf_step', output=<test_executor_core_loop_step_migration.create_mock_step.<locals>.CostlyOutput object at 0x11a570b90>, success=True, attempts=1, latency_s=6.24579843133688e-05, token_counts=10, cost_usd=0.1, feedback=None, branch_context=LoopTestContext(counter=0, messages=[], data={}, original_value=None), metadata_={}, step_history=[]), StepResult(name='perf_step', output=<test_executor_core_loop_step_migration.create_mock_step.<locals>.CostlyOutput object at 0x11a570b90>, success=True, attempts=1, latency_s=5.841598613187671e-05, token_counts=10, cost_usd=0.1, feedback=None, branch_context=LoopTestContext(counter=0, messages=[], data={}, original_value=None), metadata_={}, step_history=[]), StepResult(name='perf_step', output=<test_executor_core_loop_step_migration.create_mock_step.<locals>.CostlyOutput object at 0x11a570b90>, success=True, attempts=1, latency_s=6.1208033002913e-05, token_counts=10, cost_usd=0.1, feedback=None, branch_context=LoopTestContext(counter=0, messages=[], data={}, original_value=None), metadata_={}, step_history=[])]).success
+FAILED tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_loopstep_memory_usage - AssertionError: assert False is True
+ +  where False = StepResult(name='memory_loop', output=<test_executor_core_loop_step_migration.create_mock_step.<locals>.CostlyOutput object at 0x11cd81fd0>, success=False, attempts=5, latency_s=0.0005855829804204404, token_counts=50, cost_usd=0.5, feedback='max_loops exceeded', branch_context=LoopTestContext(counter=0, messages=[], data={}, original_value=None), metadata_={'iterations': 5, 'exit_reason': 'max_loops'}, step_history=[StepResult(name='memory_step', output=<test_executor_core_loop_step_migration.create_mock_step.<locals>.CostlyOutput object at 0x11cd81fd0>, success=True, attempts=1, latency_s=0.00021216704044491053, token_counts=10, cost_usd=0.1, feedback=None, branch_context=LoopTestContext(counter=0, messages=[], data={}, original_value=None), metadata_={}, step_history=[]), StepResult(name='memory_step', output=<test_executor_core_loop_step_migration.create_mock_step.<locals>.CostlyOutput object at 0x11cd81fd0>, success=True, attempts=1, latency_s=7.599999662488699e-05, token_counts=10, cost_usd=0.1, feedback=None, branch_context=LoopTestContext(counter=0, messages=[], data={}, original_value=None), metadata_={}, step_history=[]), StepResult(name='memory_step', output=<test_executor_core_loop_step_migration.create_mock_step.<locals>.CostlyOutput object at 0x11cd81fd0>, success=True, attempts=1, latency_s=6.866594776511192e-05, token_counts=10, cost_usd=0.1, feedback=None, branch_context=LoopTestContext(counter=0, messages=[], data={}, original_value=None), metadata_={}, step_history=[]), StepResult(name='memory_step', output=<test_executor_core_loop_step_migration.create_mock_step.<locals>.CostlyOutput object at 0x11cd81fd0>, success=True, attempts=1, latency_s=6.391701754182577e-05, token_counts=10, cost_usd=0.1, feedback=None, branch_context=LoopTestContext(counter=0, messages=[], data={}, original_value=None), metadata_={}, step_history=[]), StepResult(name='memory_step', output=<test_executor_core_loop_step_migration.create_mock_step.<locals>.CostlyOutput object at 0x11cd81fd0>, success=True, attempts=1, latency_s=9.91669949144125e-05, token_counts=10, cost_usd=0.1, feedback=None, branch_context=LoopTestContext(counter=0, messages=[], data={}, original_value=None), metadata_={}, step_history=[])]).success
+FAILED tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_loopstep_concurrent_execution - AssertionError: assert False is True
