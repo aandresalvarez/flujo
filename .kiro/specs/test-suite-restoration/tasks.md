@@ -143,7 +143,7 @@ This document details the specific tasks needed to implement the Phase 2 archite
     - TASK-STABILIZE-001h: Update CLI `run` command JSON mode to serialize and output the full `PipelineResult` including nested loops ⏳ In Progress
     - TASK-STABILIZE-001i: Re-run the full integration suite and iteratively resolve any regressions introduced by the refactor ⏳ In Progress
     - TASK-STABILIZE-001j: Wire `initial_input_to_loop_body_mapper` semantics ⏳ In Progress
-    - TASK-STABILIZE-001k: Wire `iteration_input_mapper` semantics
+    - TASK-STABILIZE-001k: Wire `iteration_input_mapper` semantics ✅ Completed
 
 ## Next Steps
 

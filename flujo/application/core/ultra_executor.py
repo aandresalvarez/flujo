@@ -3529,6 +3529,26 @@ class OptimizedExecutorCore(ExecutorCore):
                 exit_reason = "condition"
                 break
 
+            # Wire up iteration input mapper for next iteration
+            iter_mapper = getattr(loop_step, "iteration_input_mapper", None)
+            if iter_mapper:
+                try:
+                    current_data = iter_mapper(current_data, current_context, iteration_count)
+                except Exception as e:
+                    return StepResult(
+                        name=loop_step.name,
+                        success=False,
+                        output=None,
+                        attempts=iteration_count,
+                        latency_s=time.monotonic() - start_time,
+                        token_counts=cumulative_tokens,
+                        cost_usd=cumulative_cost,
+                        feedback=str(e),
+                        branch_context=current_context,
+                        metadata_={"iterations": iteration_count, "exit_reason": "iteration_input_mapper_error"},
+                        step_history=iteration_results,
+                    )
+
         final_output = current_data
         if getattr(loop_step, "loop_output_mapper", None):
             final_output = loop_step.loop_output_mapper(current_data, current_context)
