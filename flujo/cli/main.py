@@ -604,6 +604,7 @@ def run(
     pipeline_name: str = typer.Option(
         "pipeline", "--pipeline-name", "-p", help="Name of the pipeline variable (default: pipeline)"
     ),
+    run_id: Optional[str] = typer.Option(None, "--run-id", help="Unique run ID for state persistence"),
     json_output: bool = typer.Option(
         False, "--json", "--json-output", help="Output raw JSON instead of formatted result"
     ),
@@ -635,21 +636,38 @@ def run(
         # ctx.args contains unparsed arguments; check for JSON flags
         if not json_output and any(flag in ctx.args for flag in ("--json", "--json-output")):
             json_output = True
+        # If JSON mode, silence all logging to ensure valid JSON output
+        if json_output:
+            import logging
+            logging.disable(logging.CRITICAL)
         # Load the pipeline file
         ns: Dict[str, Any] = runpy.run_path(pipeline_file)
 
         # Find the pipeline object
         pipeline_obj = ns.get(pipeline_name) if pipeline_name else None
-        # Fallback to 'full_pipeline' if default pipeline not found
-        if pipeline_obj is None and 'full_pipeline' in ns:
-            pipeline_obj = ns['full_pipeline']
-            pipeline_name = 'full_pipeline'
+        # If default name missing, locate any Pipeline instance (prefer multi-step pipelines)
         if pipeline_obj is None:
-            typer.echo(f"[red]No '{pipeline_name}' variable found in {pipeline_file}", err=True)
-            raise typer.Exit(1)
+            # Collect all Pipeline instances
+            pipeline_candidates = [(name, val) for name, val in ns.items() if isinstance(val, Pipeline)]
+            if pipeline_candidates:
+                # Prefer the first pipeline with more than one step
+                selected = None
+                for name, val in pipeline_candidates:
+                    if hasattr(val, 'steps') and len(val.steps) > 1:
+                        selected = (name, val)
+                        break
+                if selected:
+                    pipeline_name, pipeline_obj = selected
+                else:
+                    pipeline_name, pipeline_obj = pipeline_candidates[0]
+            else:
+                typer.echo(f"[red]No Pipeline instance found in {pipeline_file}", err=True)
+                raise typer.Exit(1)
+        # pipeline_obj is now set
 
+        # Validate that we got a Pipeline instance
         if not isinstance(pipeline_obj, Pipeline):
-            typer.echo(f"[red]Variable '{pipeline_name}' is not a Pipeline instance", err=True)
+            typer.echo(f"[red]Object '{pipeline_name}' is not a Pipeline instance", err=True)
             raise typer.Exit(1)
 
         # Parse input data
@@ -741,64 +759,66 @@ def run(
                 initial_context_data=initial_context_data,
             )
 
-        result = runner.run(input_data)
-
-        # Output the result
+        # Run and display JSON if requested (suppress prints and warnings)
         if json_output:
-            # Serialize steps with nested history
-            def serialize_step(step_res):
-                return {
-                    "name": step_res.name,
-                    "success": step_res.success,
-                    "latency_s": step_res.latency_s,
-                    "cost_usd": step_res.cost_usd,
-                    "token_counts": step_res.token_counts,
-                    "step_history": [serialize_step(inner) for inner in step_res.step_history],
-                }
-            payload = {"step_history": [serialize_step(sr) for sr in result.step_history]}
-            typer.echo(json.dumps(payload, indent=2))
+            import warnings, logging
+            warnings.filterwarnings("ignore")
+            logging.disable(logging.CRITICAL)
+            import sys, io
+            buf = io.StringIO()
+            old_stdout = sys.stdout
+            sys.stdout = buf
+            try:
+                result = runner.run(input_data, run_id=run_id)
+            finally:
+                sys.stdout = old_stdout
+            from flujo.utils.serialization import serialize_to_json_robust
+            typer.echo(serialize_to_json_robust(result, indent=2))
             return
-        else:
-            console = Console()
-            console.print("[bold green]Pipeline execution completed successfully![/bold green]")
-            final_output = result.step_history[-1].output if result.step_history else None
-            console.print(f"[bold]Final output:[/bold] {final_output}")
-            console.print(f"[bold]Total cost:[/bold] ${result.total_cost_usd:.4f}")
-            total_tokens = sum(s.token_counts for s in result.step_history)
-            console.print(f"[bold]Total tokens:[/bold] {total_tokens}")
-            console.print(f"[bold]Steps executed:[/bold] {len(result.step_history)}")
+        # Normal run and console output
+        result = runner.run(input_data, run_id=run_id)
+        # Output the result
+        console = Console()
+        console.print("[bold green]Pipeline execution completed successfully![/bold green]")
+        final_output = result.step_history[-1].output if result.step_history else None
+        console.print(f"[bold]Final output:[/bold] {final_output}")
+        console.print(f"[bold]Total cost:[/bold] ${result.total_cost_usd:.4f}")
+        total_tokens = sum(s.token_counts for s in result.step_history)
+        console.print(f"[bold]Total tokens:[/bold] {total_tokens}")
+        console.print(f"[bold]Steps executed:[/bold] {len(result.step_history)}")
+        console.print(f"[bold]Run ID:[/bold] {run_id}")
 
-            if result.step_history:
-                console.print("\n[bold]Step Results:[/bold]")
-                table = Table(show_header=True, header_style="bold magenta")
-                table.add_column("Step")
-                table.add_column("Success")
-                table.add_column("Latency (s)")
-                table.add_column("Cost ($)")
-                table.add_column("Tokens")
+        if result.step_history:
+            console.print("\n[bold]Step Results:[/bold]")
+            table = Table(show_header=True, header_style="bold magenta")
+            table.add_column("Step")
+            table.add_column("Success")
+            table.add_column("Latency (s)")
+            table.add_column("Cost ($)")
+            table.add_column("Tokens")
 
-                def add_rows(step_res, prefix=""):
-                    table.add_row(
-                        prefix + step_res.name,
-                        "✅" if step_res.success else "❌",
-                        f"{step_res.latency_s:.3f}",
-                        f"{step_res.cost_usd:.4f}",
-                        str(step_res.token_counts),
-                    )
-                    for idx, inner in enumerate(step_res.step_history, start=1):
-                        add_rows(inner, prefix=f"  [{idx}] ")
-                for top_res in result.step_history:
-                    add_rows(top_res)
-                console.print(table)
-
-            if result.final_pipeline_context:
-                console.print("\n[bold]Final Context:[/bold]")
-                console.print(
-                    json.dumps(
-                        safe_serialize(result.final_pipeline_context.model_dump()),
-                        indent=2,
-                    )
+            def add_rows(step_res, prefix=""):
+                table.add_row(
+                    prefix + step_res.name,
+                    "✅" if step_res.success else "❌",
+                    f"{step_res.latency_s:.3f}",
+                    f"{step_res.cost_usd:.4f}",
+                    str(step_res.token_counts),
                 )
+                for idx, inner in enumerate(step_res.step_history, start=1):
+                    add_rows(inner, prefix=f"  [{idx}] ")
+            for top_res in result.step_history:
+                add_rows(top_res)
+            console.print(table)
+
+        if result.final_pipeline_context:
+            console.print("\n[bold]Final Context:[/bold]")
+            console.print(
+                json.dumps(
+                    safe_serialize(result.final_pipeline_context.model_dump()),
+                    indent=2,
+                )
+            )
 
     except Exception as e:
         typer.echo(f"[red]Error running pipeline: {e}", err=True)

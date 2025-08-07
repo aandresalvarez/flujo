@@ -55,7 +55,7 @@ This document details the specific tasks needed to implement the Phase 2 archite
        * **Status:** ✅
     8. **TASK-STATE-004h**: Validate against migration and execution tests
        * Run `test_executor_core_loop_step_migration.py` and `test_loop_step_execution.py` to certify correctness and performance.
-       * **Status:** ✅
+       * **Status:** ✅q34d1     
     9. **TASK-STATE-004i**: Restore multi-step loop handler
        * Re-inject the original multi-step loop handler implementation below the single-step bypass logic.
        * **Status:** ✅
@@ -137,6 +137,13 @@ This document details the specific tasks needed to implement the Phase 2 archite
     - TASK-STABILIZE-001b: Correct `ExecutorCore` fallback metrics and feedback propagation ✅
     - TASK-STABILIZE-001c: Fix CLI runner end-of-run persistence tests
     - TASK-STABILIZE-001d: Repair LoopStep multi-step scenarios in CLI runner
+    - TASK-STABILIZE-001e: Extract unified loop helper `_execute_loop` to centralize all loop logic from first principles ⏳ In Progress
+    - TASK-STABILIZE-001f: Refactor `_handle_loop_step` to delegate to the unified `_execute_loop` helper ✅ Completed
+    - TASK-STABILIZE-001g: Write unit tests for `_execute_loop` validating iteration history, mappers, and metadata ✅ Completed
+    - TASK-STABILIZE-001h: Update CLI `run` command JSON mode to serialize and output the full `PipelineResult` including nested loops ⏳ In Progress
+    - TASK-STABILIZE-001i: Re-run the full integration suite and iteratively resolve any regressions introduced by the refactor ⏳ In Progress
+    - TASK-STABILIZE-001j: Wire `initial_input_to_loop_body_mapper` semantics ⏳ In Progress
+    - TASK-STABILIZE-001k: Wire `iteration_input_mapper` semantics
 
 ## Next Steps
 

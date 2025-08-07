@@ -590,6 +590,8 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 state_created_at=state_created_at,
             ):
                 yield chunk
+            # After streaming, yield the final PipelineResult for sync runners
+            yield pipeline_result_obj
         except asyncio.CancelledError:
             telemetry.logfire.info("Pipeline cancelled")
             cancelled = True
