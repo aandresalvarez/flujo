@@ -10,6 +10,8 @@ from flujo.infra import telemetry
 from flujo.application.core.context_manager import ContextManager
 from flujo.domain.dsl.parallel import ParallelStep
 from flujo.domain.models import PipelineResult
+from flujo.domain.dsl.conditional import ConditionalStep
+from flujo.domain.dsl.pipeline import Pipeline
 
 import copy
 import time
@@ -248,10 +250,8 @@ class DefaultLoopStepExecutor:
         context_setter,
         _fallback_depth: int = 0,
     ) -> StepResult:
-        # Delegate to the original ExecutorCore's loop implementation
-        from flujo.application.core.ultra_executor import ExecutorCore as _OriginalExecutorCore
-        return await _OriginalExecutorCore._execute_loop(
-            core,
+        # Delegate to the core instance's loop implementation
+        return await core._execute_loop(
             loop_step,
             data,
             context,
@@ -474,3 +474,404 @@ class DefaultParallelStepExecutor:
         else:
             result.feedback = f"Parallel step failed with {len(failure_messages)} branch failures"
         return result
+
+class ConditionalStepExecutor(Protocol):
+    async def execute(
+        self,
+        core: Any,
+        conditional_step: Any,
+        data: Any,
+        context: Optional[Any],
+        resources: Optional[Any],
+        limits: Optional[UsageLimits],
+        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
+        _fallback_depth: int = 0,
+    ) -> StepResult:
+        ...
+
+class DefaultConditionalStepExecutor:
+    async def execute(
+        self,
+        core,
+        conditional_step,
+        data,
+        context,
+        resources,
+        limits,
+        context_setter,
+        _fallback_depth: int = 0,
+    ) -> StepResult:
+        """Handle ConditionalStep execution with proper context isolation and merging."""
+        import time
+        import copy
+        from flujo.domain.dsl.pipeline import Pipeline
+        from flujo.application.core.context_manager import ContextManager
+        from ...utils.context import safe_merge_context_updates
+
+        telemetry.logfire.debug("=== HANDLE CONDITIONAL STEP ===")
+        telemetry.logfire.debug(f"Conditional step name: {conditional_step.name}")
+
+        # Initialize result
+        result = StepResult(
+            name=conditional_step.name,
+            output=None,
+            success=False,
+            attempts=1,
+            latency_s=0.0,
+            token_counts=0,
+            cost_usd=0.0,
+            feedback="",
+            branch_context=None,
+            metadata_={},
+        )
+        start_time = time.monotonic()
+        try:
+            branch_key = conditional_step.condition_callable(data, context)
+            telemetry.logfire.debug(f"Condition evaluated to branch key: {branch_key}")
+            # Determine branch
+            branch_to_execute = None
+            if branch_key in conditional_step.branches:
+                branch_to_execute = conditional_step.branches[branch_key]
+                result.metadata_["executed_branch_key"] = branch_key
+            elif conditional_step.default_branch_pipeline is not None:
+                branch_to_execute = conditional_step.default_branch_pipeline
+                result.metadata_["executed_branch_key"] = "default"
+            else:
+                telemetry.logfire.warn(f"No branch matches condition '{branch_key}' and no default branch provided")
+            # Execute selected branch
+            if branch_to_execute:
+                branch_data = data
+                if conditional_step.branch_input_mapper:
+                    branch_data = conditional_step.branch_input_mapper(data, context)
+                branch_context = ContextManager.isolate(context) if context is not None else None
+                # Execute pipeline
+                total_cost = 0.0
+                total_tokens = 0
+                step_history = []
+                for pipeline_step in (branch_to_execute.steps if isinstance(branch_to_execute, Pipeline) else [branch_to_execute]):
+                    step_result = await core.execute(
+                        pipeline_step,
+                        branch_data,
+                        context=branch_context,
+                        resources=resources,
+                        limits=limits,
+                        context_setter=context_setter,
+                        _fallback_depth=_fallback_depth,
+                    )
+                    total_cost += step_result.cost_usd
+                    total_tokens += step_result.token_counts
+                    branch_data = step_result.output
+                    if not step_result.success:
+                        result.feedback = step_result.feedback
+                        result.success = False
+                        result.latency_s = time.monotonic() - start_time
+                        result.token_counts = total_tokens
+                        result.cost_usd = total_cost
+                        return result
+                    step_history.append(step_result)
+                result.success = True
+                result.output = branch_data
+                result.latency_s = time.monotonic() - start_time
+                result.token_counts = total_tokens
+                result.cost_usd = total_cost
+                # Update branch context
+                result.branch_context = safe_merge_context_updates(context, branch_context)
+                return result
+        except Exception as e:
+            result.feedback = f"Error executing conditional step: {e}"
+        result.latency_s = time.monotonic() - start_time
+        return result
+
+# --- Dynamic Router Step Executor policy ---
+from flujo.domain.models import StepResult, PipelineResult
+from flujo.domain.dsl.step import Step
+from flujo.domain.dsl.parallel import ParallelStep
+from .types import ExecutionFrame
+from .context_manager import ContextManager
+
+class DynamicRouterStepExecutor(Protocol):
+    async def execute(
+        self,
+        core: Any,
+        router_step: Any,
+        data: Any,
+        context: Optional[Any],
+        resources: Optional[Any],
+        limits: Optional[UsageLimits],
+        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
+    ) -> StepResult:
+        ...
+
+class DefaultDynamicRouterStepExecutor:
+    async def execute(
+        self,
+        core,
+        router_step,
+        data,
+        context,
+        resources,
+        limits,
+        context_setter,
+    ) -> StepResult:
+        """Handle DynamicParallelRouterStep execution with proper branch selection and parallel delegation."""
+        import time
+        import asyncio
+        telemetry.logfire.debug("=== HANDLE DYNAMIC ROUTER STEP ===")
+        telemetry.logfire.debug(f"Dynamic router step name: {router_step.name}")
+
+        # Phase 1: Execute the router agent to decide which branches to run
+        router_agent_step = Step(name=f"{router_step.name}_router", agent=router_step.router_agent)
+        router_frame = ExecutionFrame(
+            step=router_agent_step,
+            data=data,
+            context=context,
+            resources=resources,
+            limits=limits,
+            stream=False,
+            on_chunk=None,
+            breach_event=None,
+            context_setter=context_setter,
+        )
+        router_result = await core.execute(router_frame)
+
+        # Handle router failure
+        if not router_result.success:
+            result = StepResult(name=core._safe_step_name(router_step), success=False, feedback=f"Router agent failed: {router_result.feedback}")
+            result.cost_usd = router_result.cost_usd
+            result.token_counts = router_result.token_counts
+            return result
+
+        # Process router output to get branch names
+        selected_branch_names = router_result.output
+        if isinstance(selected_branch_names, str):
+            selected_branch_names = [selected_branch_names]
+        if not isinstance(selected_branch_names, list):
+            return StepResult(name=core._safe_step_name(router_step), success=False, feedback=f"Router agent must return a list of branch names, got {type(selected_branch_names).__name__}")
+
+        # Filter branches based on router's decision
+        selected_branches = {
+            name: router_step.branches[name]
+            for name in selected_branch_names
+            if name in router_step.branches
+        }
+        # Handle no selected branches
+        if not selected_branches:
+            return StepResult(name=core._safe_step_name(router_step), success=True, output={}, cost_usd=router_result.cost_usd, token_counts=router_result.token_counts)
+
+        # Phase 2: Execute selected branches in parallel via policy
+        temp_parallel_step = ParallelStep(
+            name=router_step.name,
+            branches=selected_branches,
+            merge_strategy=router_step.merge_strategy,
+            on_branch_failure=router_step.on_branch_failure,
+            context_include_keys=router_step.context_include_keys,
+            field_mapping=router_step.field_mapping,
+        )
+        parallel_result = await core.parallel_step_executor.execute(
+            core,
+            temp_parallel_step,
+            data,
+            context,
+            resources,
+            limits,
+            None,
+            context_setter,
+        )
+
+        # Add router usage metrics
+        parallel_result.cost_usd += router_result.cost_usd
+        parallel_result.token_counts += router_result.token_counts
+
+        # Merge branch context into original context
+        if parallel_result.branch_context is not None and context is not None:
+            merged_ctx = ContextManager.merge(context, parallel_result.branch_context)
+            parallel_result.branch_context = merged_ctx
+            if context_setter is not None:
+                try:
+                    pipeline_result = PipelineResult(
+                        step_history=[parallel_result],
+                        total_cost_usd=parallel_result.cost_usd,
+                        total_tokens=parallel_result.token_counts,
+                        total_latency_s=parallel_result.latency_s,
+                        final_pipeline_context=parallel_result.branch_context,
+                    )
+                    context_setter(pipeline_result, context)
+                except Exception as e:
+                    telemetry.logfire.warning(f"Context setter failed for DynamicParallelRouterStep: {e}")
+
+        # Record executed branches
+        parallel_result.metadata_["executed_branches"] = selected_branch_names
+        return parallel_result
+
+# --- End Dynamic Router Step Executor policy ---
+
+# --- Human-In-The-Loop Step Executor policy ---
+from flujo.domain.dsl.step import HumanInTheLoopStep
+from flujo.exceptions import PausedException
+
+class HitlStepExecutor(Protocol):
+    async def execute(
+        self,
+        core: Any,
+        step: HumanInTheLoopStep,
+        data: Any,
+        context: Optional[Any],
+        resources: Optional[Any],
+        limits: Optional[UsageLimits],
+        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
+    ) -> StepResult:
+        ...
+
+class DefaultHitlStepExecutor:
+    async def execute(
+        self,
+        core,
+        step,
+        data,
+        context,
+        resources,
+        limits,
+        context_setter,
+    ) -> StepResult:
+        """Handle Human-In-The-Loop step execution."""
+        import time
+
+        telemetry.logfire.debug("=== HANDLE HITL STEP ===")
+        telemetry.logfire.debug(f"HITL step name: {step.name}")
+
+        result = StepResult(
+            name=step.name,
+            output=None,
+            success=False,
+            attempts=1,
+            latency_s=0.0,
+            token_counts=0,
+            cost_usd=0.0,
+            feedback="",
+            branch_context=None,
+            metadata_={},
+        )
+        start_time = time.monotonic()
+
+        if context is not None:
+            try:
+                if hasattr(context, 'scratchpad') and isinstance(context.scratchpad, dict):
+                    context.scratchpad['status'] = 'paused'
+                    context.scratchpad['last_state_update'] = time.monotonic()
+                else:
+                    core._update_context_state(context, 'paused')
+            except Exception as e:
+                telemetry.logfire.error(f"Failed to update context state: {e}")
+
+        if context is not None and hasattr(context, 'scratchpad'):
+            try:
+                try:
+                    hitl_message = step.message_for_user if step.message_for_user is not None else str(data)
+                except Exception:
+                    hitl_message = "Data conversion failed"
+                context.scratchpad['hitl_message'] = hitl_message
+                context.scratchpad['hitl_data'] = data
+            except Exception as e:
+                telemetry.logfire.error(f"Failed to update context scratchpad: {e}")
+
+        try:
+            message = step.message_for_user if step.message_for_user is not None else str(data)
+        except Exception:
+            message = "Data conversion failed"
+        raise PausedException(message)
+# --- End Human-In-The-Loop Step Executor policy ---
+
+# --- Cache Step Executor policy ---
+from flujo.steps.cache_step import CacheStep, _generate_cache_key
+from .types import ExecutionFrame
+from flujo.application.core.context_adapter import _build_context_update, _inject_context
+import asyncio
+
+class CacheStepExecutor(Protocol):
+    async def execute(
+        self,
+        core: Any,
+        cache_step: CacheStep[Any, Any],
+        data: Any,
+        context: Optional[Any],
+        resources: Optional[Any],
+        limits: Optional[UsageLimits],
+        breach_event: Optional[Any],
+        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
+        step_executor: Optional[Callable[..., Awaitable[StepResult]]],
+    ) -> StepResult:
+        ...
+
+class DefaultCacheStepExecutor:
+    async def execute(
+        self,
+        core,
+        cache_step,
+        data,
+        context,
+        resources,
+        limits,
+        breach_event,
+        context_setter,
+        step_executor=None,
+    ) -> StepResult:
+        """Handle CacheStep execution with concurrency control and resilience."""
+        try:
+            cache_key = _generate_cache_key(cache_step.wrapped_step, data, context, resources)
+        except Exception as e:
+            telemetry.logfire.warning(f"Cache key generation failed for step '{cache_step.name}': {e}. Skipping cache.")
+            cache_key = None
+        if cache_key:
+            async with core._cache_locks_lock:
+                if cache_key not in core._cache_locks:
+                    core._cache_locks[cache_key] = asyncio.Lock()
+            async with core._cache_locks[cache_key]:
+                try:
+                    cached_result = await cache_step.cache_backend.get(cache_key)
+                    if cached_result is not None:
+                        if cached_result.metadata_ is None:
+                            cached_result.metadata_ = {}
+                        cached_result.metadata_["cache_hit"] = True
+                        if cached_result.branch_context is not None and context is not None:
+                            update_data = _build_context_update(cached_result.output)
+                            if update_data:
+                                validation_error = _inject_context(context, update_data, type(context))
+                                if validation_error:
+                                    cached_result.success = False
+                                    cached_result.feedback = f"Context validation failed: {validation_error}"
+                        return cached_result
+                except Exception as e:
+                    telemetry.logfire.error(f"Cache backend GET failed for step '{cache_step.name}': {e}")
+                frame = ExecutionFrame(
+                    step=cache_step.wrapped_step,
+                    data=data,
+                    context=context,
+                    resources=resources,
+                    limits=limits,
+                    stream=False,
+                    on_chunk=None,
+                    breach_event=breach_event,
+                    context_setter=context_setter,
+                    _fallback_depth=0,
+                )
+                result = await core.execute(frame)
+                if result.success:
+                    try:
+                        await cache_step.cache_backend.set(cache_key, result)
+                    except Exception as e:
+                        telemetry.logfire.error(f"Cache backend SET failed for step '{cache_step.name}': {e}")
+                return result
+        frame = ExecutionFrame(
+            step=cache_step.wrapped_step,
+            data=data,
+            context=context,
+            resources=resources,
+            limits=limits,
+            stream=False,
+            on_chunk=None,
+            breach_event=breach_event,
+            context_setter=context_setter,
+            _fallback_depth=0,
+        )
+        return await core.execute(frame)
+# --- End Cache Step Executor policy ---

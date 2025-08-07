@@ -147,6 +147,10 @@ from .step_policies import (
     AgentStepExecutor, DefaultAgentStepExecutor,
     LoopStepExecutor, DefaultLoopStepExecutor,
     ParallelStepExecutor, DefaultParallelStepExecutor,
+    ConditionalStepExecutor, DefaultConditionalStepExecutor,
+    DynamicRouterStepExecutor, DefaultDynamicRouterStepExecutor,
+    HitlStepExecutor, DefaultHitlStepExecutor,
+    CacheStepExecutor, DefaultCacheStepExecutor
 )
 
 
@@ -211,6 +215,10 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         agent_step_executor: Optional[AgentStepExecutor] = None,
         loop_step_executor: Optional[LoopStepExecutor] = None,
         parallel_step_executor: Optional[ParallelStepExecutor] = None,
+        conditional_step_executor: Optional[ConditionalStepExecutor] = None,
+        dynamic_router_step_executor: Optional[DynamicRouterStepExecutor] = None,
+        hitl_step_executor: Optional[HitlStepExecutor] = None,
+        cache_step_executor: Optional[CacheStepExecutor] = None,
     ):
         """Initialize ExecutorCore with dependency injection."""
         # Validate parameters for compatibility
@@ -249,6 +257,10 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         self.agent_step_executor = agent_step_executor or DefaultAgentStepExecutor()
         self.loop_step_executor = loop_step_executor or DefaultLoopStepExecutor()
         self.parallel_step_executor = parallel_step_executor or DefaultParallelStepExecutor()
+        self.conditional_step_executor = conditional_step_executor or DefaultConditionalStepExecutor()
+        self.dynamic_router_step_executor = dynamic_router_step_executor or DefaultDynamicRouterStepExecutor()
+        self.hitl_step_executor = hitl_step_executor or DefaultHitlStepExecutor()
+        self.cache_step_executor = cache_step_executor or DefaultCacheStepExecutor()
         
     @property
     def cache(self) -> _LRUCache:
@@ -1226,8 +1238,8 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         context_setter: Optional[Callable[[Any, Optional[Any]], None]],
         _fallback_depth: int = 0,
     ) -> StepResult:
-        return await self.loop_step_executor.execute(
-            self,
+        # Use built-in loop implementation to ensure fallback behavior
+        return await self._execute_loop(
             step,
             data,
             context,
@@ -1388,233 +1400,27 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             """Get the breach error if any."""
             return self.limit_breach_error
     
-    async def _handle_conditional_step(self, conditional_step, data, context, resources, limits, context_setter, _fallback_depth: int = 0):
-        """Handle ConditionalStep execution with proper context isolation and merging.
-        
-        This implementation fixes:
-        - Branch execution logic in _handle_conditional_step
-        - Context isolation for branch execution using deep copy
-        - Context capture and merging logic to preserve branch modifications
-        - Mapper context handling to call mappers on main context, not branch context
-        - Conditional step error handling to properly propagate branch failures
-        - Feedback messages to accurately reflect what actually happened
-        """
-        import time
-        import copy
-        from ...domain.dsl.pipeline import Pipeline
-        from ...utils.context import safe_merge_context_updates
-
-        telemetry.logfire.debug("=== HANDLE CONDITIONAL STEP ===")
-        telemetry.logfire.debug(f"Conditional step name: {conditional_step.name}")
-
-        # Initialize result
-        result = StepResult(
-            name=conditional_step.name,
-            output=None,
-            success=False,
-            attempts=1,
-            latency_s=0.0,
-            token_counts=0,
-            cost_usd=0.0,
-            feedback="",
-            branch_context=None,
-            metadata_={},
-        )
-
-        start_time = time.monotonic()
-
-        try:
-            # Execute condition callable
-            branch_key = conditional_step.condition_callable(data, context)
-            telemetry.logfire.debug(f"Condition evaluated to branch key: {branch_key}")
-
-            # Determine which branch to execute
-            branch_to_execute = None
-            if branch_key in conditional_step.branches:
-                branch_to_execute = conditional_step.branches[branch_key]
-                result.metadata_["executed_branch_key"] = branch_key
-                telemetry.logfire.info(f"Condition evaluated to branch key '{branch_key}'")
-                telemetry.logfire.info(f"Executing branch for key '{branch_key}'")
-                # Set span attribute for tracing
-                with telemetry.logfire.span(f"branch_{branch_key}") as span:
-                    span.set_attribute("executed_branch_key", branch_key)
-            elif conditional_step.default_branch_pipeline is not None:
-                branch_to_execute = conditional_step.default_branch_pipeline
-                result.metadata_["executed_branch_key"] = "default"
-                telemetry.logfire.info(f"Condition evaluated to branch key '{branch_key}', using default branch")
-                telemetry.logfire.info("Executing default branch")
-                # Set span attribute for tracing
-                with telemetry.logfire.span("branch_default") as span:
-                    span.set_attribute("executed_branch_key", "default")
-            else:
-                telemetry.logfire.warn(f"No branch matches condition '{branch_key}' and no default branch provided")
-
-            if branch_to_execute:
-                # Execute the selected branch using the executor's own methods
-                if isinstance(branch_to_execute, Pipeline):
-                    # Execute pipeline branch by executing each step in the pipeline
-                    branch_data = data
-                    
-                    # Apply input mapper if provided (on main context, not branch context)
-                    if conditional_step.branch_input_mapper:
-                        try:
-                            branch_data = conditional_step.branch_input_mapper(data, context)
-                            telemetry.logfire.debug(f"Branch input mapper applied: {branch_data}")
-                        except Exception as e:
-                            result.success = False
-                            result.feedback = f"Branch input mapper raised an exception: {str(e)}"
-                            result.latency_s = time.monotonic() - start_time
-                            return result
-                    
-                    # Isolate context for branch execution
-                    branch_context = ContextManager.isolate(context)
-                    telemetry.logfire.debug("Isolated context for branch execution")
-                    
-                    # Execute each step in the pipeline
-                    current_data = branch_data
-                    total_cost = 0.0
-                    total_tokens = 0
-                    all_successful = True
-                    step_results = []
-                    branch_error_message = None
-                    
-                    for step_idx, pipeline_step in enumerate(branch_to_execute.steps):
-                        telemetry.logfire.debug(f"Executing step {step_idx + 1}/{len(branch_to_execute.steps)}: {pipeline_step.name}")
-                        with telemetry.logfire.span(pipeline_step.name) as step_span:
-                            # Use old signature for backward compatibility with tests
-                            step_result = await self.execute(
-                                pipeline_step,
-                                current_data,
-                                context=branch_context,
-                                resources=resources,
-                                limits=limits,
-                                context_setter=context_setter,
-                                _fallback_depth=_fallback_depth + 1
-                            )
-                        
-                        step_results.append(step_result)
-                        if step_result.branch_context is not None:
-                            branch_context = step_result.branch_context
-                        total_cost += step_result.cost_usd
-                        total_tokens += step_result.token_counts
-                        
-                        if not step_result.success:
-                            all_successful = False
-                            branch_error_message = step_result.feedback
-                            telemetry.logfire.debug(f"Step {pipeline_step.name} failed: {branch_error_message}")
-                            break
-                        
-                        # Use output as input for next step
-                        current_data = step_result.output
-                        telemetry.logfire.debug(f"Step {pipeline_step.name} output: {current_data}")
-                    
-                    # Apply output mapper if provided (on main context, not branch context)
-                    final_output = current_data
-                    if conditional_step.branch_output_mapper:
-                        try:
-                            final_output = conditional_step.branch_output_mapper(current_data, branch_key, context)
-                            telemetry.logfire.debug(f"Branch output mapper applied: {final_output}")
-                        except Exception as e:
-                            result.success = False
-                            result.feedback = f"Branch output mapper raised an exception: {str(e)}"
-                            result.latency_s = time.monotonic() - start_time
-                            return result
-                    
-                    # Capture the final state of branch_context
-                    final_branch_context = branch_context
-                    
-                    # Merge branch context back into main context using centralized context management
-                    # But only if no mappers are used, since mappers modify the main context directly
-                    if (final_branch_context is not None and context is not None and 
-                        conditional_step.branch_input_mapper is None and 
-                        conditional_step.branch_output_mapper is None):
-                        context = ContextManager.merge(context, final_branch_context)
-                        telemetry.logfire.debug("Merged branch context back to main context using centralized context management")
-                    
-                    result.success = all_successful
-                    result.output = final_output
-                    result.cost_usd = total_cost
-                    result.token_counts = total_tokens
-                    # Accumulate latency from branch execution, not just the conditional step overhead
-                    result.latency_s = sum(step_result.latency_s for step_result in step_results) if step_results else (time.monotonic() - start_time)
-                    result.metadata_["executed_branch_key"] = branch_key
-                    result.branch_context = final_branch_context
-                    # Ensure result name is always the conditional step name
-                    result.name = conditional_step.name
-                    
-                    if all_successful:
-                        result.feedback = f"Branch '{branch_key}' executed successfully"
-                        # Call context setter if provided and execution was successful
-                        if context_setter is not None:
-                            try:
-                                # Create a PipelineResult for the context setter
-                                from ...domain.models import PipelineResult
-                                pipeline_result = PipelineResult(
-                                    step_history=step_results,
-                                    total_cost_usd=total_cost,
-                                    total_tokens=total_tokens,
-                                    total_latency_s=result.latency_s,
-                                    final_pipeline_context=final_branch_context,
-                                )
-                                context_setter(pipeline_result, context)
-                            except Exception as e:
-                                telemetry.logfire.warning(f"Context setter failed: {str(e)}")
-                    else:
-                        result.feedback = f"Failure in branch '{branch_key}': {branch_error_message}"
-                        
-                else:
-                    # Execute as a regular step using recursive execution model
-                    telemetry.logfire.debug(f"Executing branch as regular step")
-                    branch_result = await self.execute(
-                        branch_to_execute,
+    async def _handle_conditional_step(
+        self,
+        conditional_step,
                         data,
-                        context=context,
-                        resources=resources,
-                        limits=limits,
-                        context_setter=context_setter,
-                        _fallback_depth=_fallback_depth + 1
-                    )
-
-                    result.success = branch_result.success
-                    result.output = branch_result.output
-                    result.feedback = branch_result.feedback
-                    result.cost_usd = branch_result.cost_usd
-                    result.token_counts = branch_result.token_counts
-                    result.latency_s = time.monotonic() - start_time
-                    result.metadata_.update(branch_result.metadata_ or {})
-                    result.branch_context = branch_result.branch_context
-                    # Ensure result name is always the conditional step name
-                    result.name = conditional_step.name
-                    
-                    # Call context setter if provided and execution was successful
-                    if context_setter is not None and result.success:
-                        try:
-                            # Create a PipelineResult for the context setter
-                            from ...domain.models import PipelineResult
-                            pipeline_result = PipelineResult(
-                                step_history=[branch_result],
-                                total_cost_usd=branch_result.cost_usd,
-                                total_tokens=branch_result.token_counts,
-                                total_latency_s=branch_result.latency_s,
-                                final_pipeline_context=branch_result.branch_context,
-                            )
-                            context_setter(pipeline_result, context)
-                        except Exception as e:
-                            telemetry.logfire.warning(f"Context setter failed: {str(e)}")
-            else:
-                # No branch to execute and no default branch
-                result.success = False
-                result.output = data
-                result.latency_s = time.monotonic() - start_time
-                result.feedback = f"No branch found for key '{branch_key}'"
-
-        except Exception as e:
-            result.success = False
-            result.feedback = f"Error executing conditional logic or branch: {str(e)}"
-            result.latency_s = time.monotonic() - start_time
-            telemetry.logfire.error(f"Error in conditional step '{conditional_step.name}': {str(e)}")
-
-        return result
+        context,
+        resources,
+        limits,
+        context_setter,
+        _fallback_depth: int = 0,
+    ) -> StepResult:
+        """Delegate to the injected ConditionalStepExecutor policy."""
+        return await self.conditional_step_executor.execute(
+            self,
+            conditional_step,
+            data,
+            context,
+            resources,
+            limits,
+            context_setter,
+            _fallback_depth,
+        )
     
     async def _handle_dynamic_router_step(
         self,
@@ -1625,96 +1431,16 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         limits: Optional[UsageLimits],
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
     ) -> StepResult:
-        """Handle DynamicParallelRouterStep execution."""
-        # Phase 1: Execute the router agent to decide which branches to run
-        router_agent_step = Step(name=f"{router_step.name}_router", agent=router_step.router_agent)
-        router_frame = ExecutionFrame(
-            step=router_agent_step,
-            data=data,
-            context=context,
-            resources=resources,
-            limits=limits,
-            stream=False,
-            on_chunk=None,
-            breach_event=None,
-            context_setter=context_setter,
+        """Delegate to the injected DynamicRouterStepExecutor policy."""
+        return await self.dynamic_router_step_executor.execute(
+            self,
+            router_step,
+            data,
+            context,
+            resources,
+            limits,
+            context_setter,
         )
-        router_result = await self.execute(router_frame)
-
-        if not router_result.success:
-            result = StepResult(name=self._safe_step_name(router_step), success=False, feedback=f"Router agent failed: {router_result.feedback}")
-            result.cost_usd = router_result.cost_usd
-            result.token_counts = router_result.token_counts
-            return result
-
-        # Process the router's output to get the list of branch names
-        selected_branch_names = router_result.output
-        if isinstance(selected_branch_names, str):
-            selected_branch_names = [selected_branch_names]
-        
-        if not isinstance(selected_branch_names, list):
-            return StepResult(name=self._safe_step_name(router_step), success=False, feedback=f"Router agent must return a list of branch names, got {type(selected_branch_names).__name__}")
-
-        # Filter the branches based on the router's decision
-        selected_branches = {
-            name: router_step.branches[name]
-            for name in selected_branch_names
-            if name in router_step.branches
-        }
-
-        if not selected_branches:
-            return StepResult(name=self._safe_step_name(router_step), success=True, output={}, cost_usd=router_result.cost_usd, token_counts=router_result.token_counts)
-
-        # Phase 2: Execute the selected branches in parallel by delegating to the parallel handler
-        temp_parallel_step = ParallelStep(
-            name=router_step.name,
-            branches=selected_branches,
-            merge_strategy=router_step.merge_strategy,
-            on_branch_failure=router_step.on_branch_failure,
-            context_include_keys=router_step.context_include_keys,
-            field_mapping=router_step.field_mapping,
-        )
-
-        parallel_result = await self._handle_parallel_step(
-            step=temp_parallel_step,
-            data=data,
-            context=context,
-            resources=resources,
-            limits=limits,
-            breach_event=None,
-            context_setter=context_setter,
-        )
-
-        # Add the cost and tokens from the router agent execution to the final result
-        parallel_result.cost_usd += router_result.cost_usd
-        parallel_result.token_counts += router_result.token_counts
-        # Merge branch context into the original context for DynamicParallelRouterStep (always preserve context updates)
-        if parallel_result.branch_context is not None and context is not None:
-            from .context_manager import ContextManager
-            merged_context = ContextManager.merge(context, parallel_result.branch_context)
-            parallel_result.branch_context = merged_context
-            # Call context_setter to update pipeline context for DynamicParallelRouterStep
-            if context_setter is not None:
-                try:
-                    from ...domain.models import PipelineResult
-                    pipeline_result = PipelineResult(
-                        step_history=[parallel_result],
-                        total_cost_usd=parallel_result.cost_usd,
-                        total_tokens=parallel_result.token_counts,
-                        total_latency_s=parallel_result.latency_s,
-                        final_pipeline_context=parallel_result.branch_context,
-                    )
-                    context_setter(pipeline_result, context)
-                except Exception as e:
-                    telemetry.logfire.warning(f"Context setter failed for DynamicParallelRouterStep: {e}")
-        
-        # Add the cost and tokens from the router agent execution to the final result
-        parallel_result.cost_usd += router_result.cost_usd
-        parallel_result.token_counts += router_result.token_counts
-        # Record which branches were selected and executed
-        parallel_result.metadata_["executed_branches"] = selected_branch_names
-        
-        return parallel_result
     
     async def _handle_hitl_step(
         self,
@@ -1725,61 +1451,16 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         limits: Optional[UsageLimits],
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
     ) -> StepResult:
-        """Handle Human-in-the-Loop step execution."""
-        import time
-        from ...exceptions import PausedException
-
-        telemetry.logfire.debug("=== HANDLE HITL STEP ===")
-        telemetry.logfire.debug(f"HITL step name: {step.name}")
-
-        # Initialize result
-        result = StepResult(
-            name=step.name,
-            output=None,
-            success=False,
-            attempts=1,
-            latency_s=0.0,
-            token_counts=0,
-            cost_usd=0.0,
-            feedback="",
-            branch_context=None,
-            metadata_={},
+        """Delegate to the injected HitlStepExecutor policy."""
+        return await self.hitl_step_executor.execute(
+            self,
+            step,
+            data,
+            context,
+            resources,
+            limits,
+            context_setter,
         )
-
-        start_time = time.monotonic()
-
-        # Update context state using centralized context management (preserve existing scratchpad entries)
-        if context is not None:
-            try:
-                if hasattr(context, 'scratchpad') and isinstance(context.scratchpad, dict):
-                    context.scratchpad['status'] = 'paused'
-                    context.scratchpad['last_state_update'] = time.monotonic()
-                else:
-                    self._update_context_state(context, 'paused')
-            except Exception as e:
-                telemetry.logfire.error(f"Failed to update context state: {e}")
-
-        # Update context scratchpad if available
-        if context is not None and hasattr(context, 'scratchpad'):
-            try:
-                # Safely generate message_for_user (fallback on conversion errors)
-                try:
-                    hitl_message = step.message_for_user if step.message_for_user is not None else str(data)
-                except Exception:
-                    hitl_message = "Data conversion failed"
-                context.scratchpad['hitl_message'] = hitl_message
-                context.scratchpad['hitl_data'] = data
-            except Exception as e:
-                telemetry.logfire.error(f"Failed to update context scratchpad: {e}")
-
-        # HITL steps pause execution for human input
-        # The actual human input handling is done by the orchestrator
-        # For now, we'll just pause the execution
-        try:
-            message = step.message_for_user if step.message_for_user is not None else str(data)
-        except Exception:
-            message = "Data conversion failed"
-        raise PausedException(message)
     
     def _is_complex_step(self, step: Any) -> bool:
         """Check if step needs complex handling using an object-oriented approach.
@@ -1853,86 +1534,18 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
         step_executor: Optional[Callable[..., Awaitable[StepResult]]],
     ) -> StepResult:
-        """Handle CacheStep execution with concurrency control and resilience."""
-        try:
-            cache_key = _generate_cache_key(step.wrapped_step, data, context, resources)
-        except Exception as e:
-            telemetry.logfire.warning(f"Cache key generation failed for step '{step.name}': {e}. Skipping cache.")
-            cache_key = None
-
-        if cache_key:
-            # ENHANCEMENT: Concurrency control to prevent thundering herd
-            async with self._cache_locks_lock:
-                if cache_key not in self._cache_locks:
-                    self._cache_locks[cache_key] = asyncio.Lock()
-            
-            async with self._cache_locks[cache_key]:
-                try: # ENHANCEMENT: Resilience to cache backend failures
-                    cached_result = await step.cache_backend.get(cache_key)
-                    if cached_result is not None:
-                        # Ensure metadata_ is always a dict
-                        if cached_result.metadata_ is None:
-                            cached_result.metadata_ = {}
-                        cached_result.metadata_["cache_hit"] = True
-                        
-                        # ENHANCEMENT: Apply context updates from cached result
-                        if cached_result.branch_context is not None and context is not None:
-                            # Apply context updates using the same mechanism as ExecutionManager
-                            from flujo.application.core.context_adapter import _build_context_update, _inject_context
-                            
-                            # Build context update from the cached result's output
-                            update_data = _build_context_update(cached_result.output)
-                            if update_data:
-                                validation_error = _inject_context(
-                                    context, update_data, type(context)
-                                )
-                                if validation_error:
-                                    # Context validation failed, mark step as failed
-                                    cached_result.success = False
-                                    cached_result.feedback = (
-                                        f"Context validation failed: {validation_error}"
-                                    )
-                        
-                        return cached_result
-                except Exception as e:
-                    telemetry.logfire.error(f"Cache backend GET failed for step '{step.name}': {e}")
-
-                # Cache miss: execute the wrapped step
-                frame = ExecutionFrame(
-                    step=step.wrapped_step,
-                    data=data,
-                    context=context,
-                    resources=resources,
-                    limits=limits,
-                    stream=False,  # Caching does not support streaming directly
-                    on_chunk=None,
-                    breach_event=breach_event,
-                    context_setter=context_setter,
-                )
-                result = await self.execute(frame)
-
-                # Cache successful results
-                if result.success:
-                    try: # ENHANCEMENT: Resilience to cache backend failures
-                        await step.cache_backend.set(cache_key, result)
-                    except Exception as e:
-                        telemetry.logfire.error(f"Cache backend SET failed for step '{step.name}': {e}")
-                
-                return result
-        
-        # Fallback if cache key generation fails
-        frame = ExecutionFrame(
-            step=step.wrapped_step,
-            data=data,
-            context=context,
-            resources=resources,
-            limits=limits,
-            stream=False,
-            on_chunk=None,
-            breach_event=breach_event,
-            context_setter=context_setter,
+        """Delegate to the injected CacheStepExecutor policy."""
+        return await self.cache_step_executor.execute(
+            self,
+            step,
+            data,
+            context,
+            resources,
+            limits,
+            breach_event,
+            context_setter,
+            step_executor,
         )
-        return await self.execute(frame)
 
     def _default_set_final_context(self, result: PipelineResult[Any], context: Optional[Any]) -> None:
         """Default context setter implementation."""
@@ -3025,17 +2638,67 @@ class OptimizedExecutorCore(ExecutorCore):
         cumulative_tokens = 0
         for iteration_count in range(1, max_loops + 1):
             # Execute the full loop body pipeline
-            pipeline_result = await self._execute_pipeline(
-                loop_step.loop_body_pipeline,
-                current_data,
-                current_context,
-                resources,
-                limits,
-                None,
-                context_setter,
-            )
+            # If body step has fallback, disable its retries for immediate fallback semantics
+            body_pipeline = loop_step.loop_body_pipeline
+            body_step = body_pipeline.steps[0]
+            config = getattr(body_step, 'config', None)
+            if config is not None and hasattr(body_step, 'fallback_step') and body_step.fallback_step is not None:
+                # Temporarily set max_retries to 0 to force fallback on first failure
+                original_retries = config.max_retries
+                config.max_retries = 0
+                pipeline_result = await self._execute_pipeline(
+                    body_pipeline,
+                    current_data,
+                    current_context,
+                    resources,
+                    limits,
+                    None,
+                    context_setter,
+                )
+                # Restore original retry configuration
+                config.max_retries = original_retries
+            else:
+                pipeline_result = await self._execute_pipeline(
+                    loop_step.loop_body_pipeline,
+                    current_data,
+                    current_context,
+                    resources,
+                    limits,
+                    None,
+                    context_setter,
+                )
             # Handle loop body step failures
             if any(not sr.success for sr in pipeline_result.step_history):
+                # Attempt fallback for the loop body if configured
+                from ...domain.dsl.step import Step as DslStep
+                # The body is the first step of the body pipeline
+                body_step = loop_step.loop_body_pipeline.steps[0]
+                if hasattr(body_step, 'fallback_step') and body_step.fallback_step is not None:
+                    # Execute the fallback step for this iteration
+                    fallback_step = body_step.fallback_step
+                    fallback_result = await self.execute(
+                        step=fallback_step,
+                        data=current_data,
+                        context=current_context,
+                        resources=resources,
+                        limits=limits,
+                        stream=False,
+                        on_chunk=None,
+                        breach_event=None,
+                        _fallback_depth=_fallback_depth + 1,
+                    )
+                    # Mark fallback invocation in history and update state
+                    iteration_results.append(fallback_result)
+                    # Update data and context for next iteration
+                    current_data = fallback_result.output
+                    if fallback_result.branch_context is not None:
+                        current_context = fallback_result.branch_context
+                    # Accumulate fallback usage metrics
+                    cumulative_cost += fallback_result.cost_usd or 0.0
+                    cumulative_tokens += fallback_result.token_counts or 0
+                    # Continue to next iteration
+                    continue
+                # No fallback: abort loop
                 failed = next(sr for sr in pipeline_result.step_history if not sr.success)
                 return StepResult(
                     name=loop_step.name,
