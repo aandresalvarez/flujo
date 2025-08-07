@@ -57,7 +57,7 @@ from ..console_tracer import ConsoleTracer
 from ..state import StateBackend, WorkflowState
 from ..registry import PipelineRegistry
 
-from .context_manager import (
+from .core.context_manager import (
     _accepts_param,
     _extract_missing_fields,
 )

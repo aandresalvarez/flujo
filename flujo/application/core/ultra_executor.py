@@ -130,9 +130,9 @@ from ...utils.performance import time_perf_ns, time_perf_ns_to_seconds
 from ...cost import extract_usage_metrics
 from ...infra import telemetry
 from ...signature_tools import analyze_signature
-from ...application.context_manager import _accepts_param
+from .context_manager import _accepts_param
 from ...utils.context import safe_merge_context_updates
-from flujo.application.core.context_manager import ContextManager
+from .context_manager import ContextManager
 from flujo.application.core.hybrid_check import run_hybrid_check
 
 # ... existing imports ...
@@ -1292,6 +1292,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
     async def _execute_pipeline(self, pipeline, data, context, resources, limits, breach_event, context_setter):
         """Execute a pipeline and return a PipelineResult."""
         from flujo.domain.models import PipelineResult
+        from .context_adapter import _build_context_update, _inject_context
         
         # Execute each step in the pipeline sequentially
         current_data = data
@@ -1340,6 +1341,21 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 # Update context if available
                 if step_result.branch_context is not None:
                     current_context = step_result.branch_context
+                
+                # Handle context updates from steps with updates_context=True
+                if getattr(step, "updates_context", False) and current_context is not None:
+                    update_data = _build_context_update(step_result.output)
+                    if update_data:
+                        validation_error = _inject_context(
+                            current_context, update_data, type(current_context)
+                        )
+                        if validation_error:
+                            # Context validation failed, mark step as failed
+                            step_result.success = False
+                            step_result.feedback = f"Context validation failed: {validation_error}"
+                            all_successful = False
+                            feedback = step_result.feedback
+                            break
                     
             except Exception as e:
                 all_successful = False
@@ -2203,7 +2219,7 @@ class DefaultAgentRunner:
     ) -> Any:
         """Run agent with proper parameter filtering and fallback strategies."""
         import inspect
-        from ...application.context_manager import _accepts_param, _should_pass_context
+        from .context_manager import _accepts_param, _should_pass_context
         from ...signature_tools import analyze_signature
 
         if agent is None:
@@ -2588,6 +2604,7 @@ class OptimizedExecutorCore(ExecutorCore):
         from ...domain.dsl.pipeline import Pipeline
         from ...domain.models import PipelineContext, StepResult, PipelineResult
         from flujo.exceptions import UsageLimitExceededError
+        from .context_manager import ContextManager
         
         # Initialization
         start_time = time.monotonic()
@@ -2632,11 +2649,13 @@ class OptimizedExecutorCore(ExecutorCore):
                 step_history=[],
             )
 
-        # Loop execution
+        # Loop execution with proper context isolation
         exit_reason = None
         cumulative_cost = 0.0
         cumulative_tokens = 0
         for iteration_count in range(1, max_loops + 1):
+            # Isolate context for each iteration to prevent cross-iteration contamination
+            iteration_context = ContextManager.isolate(current_context) if current_context is not None else None
             # Execute the full loop body pipeline
             # If body step has fallback, disable its retries for immediate fallback semantics
             body_pipeline = loop_step.loop_body_pipeline
@@ -2649,7 +2668,7 @@ class OptimizedExecutorCore(ExecutorCore):
                 pipeline_result = await self._execute_pipeline(
                     body_pipeline,
                     current_data,
-                    current_context,
+                    iteration_context,  # Use isolated context for this iteration
                     resources,
                     limits,
                     None,
@@ -2661,7 +2680,7 @@ class OptimizedExecutorCore(ExecutorCore):
                 pipeline_result = await self._execute_pipeline(
                     loop_step.loop_body_pipeline,
                     current_data,
-                    current_context,
+                    iteration_context,  # Use isolated context for this iteration
                     resources,
                     limits,
                     None,
@@ -2679,7 +2698,7 @@ class OptimizedExecutorCore(ExecutorCore):
                     fallback_result = await self.execute(
                         step=fallback_step,
                         data=current_data,
-                        context=current_context,
+                        context=iteration_context,  # Use isolated context for fallback
                         resources=resources,
                         limits=limits,
                         stream=False,
@@ -2692,7 +2711,7 @@ class OptimizedExecutorCore(ExecutorCore):
                     # Update data and context for next iteration
                     current_data = fallback_result.output
                     if fallback_result.branch_context is not None:
-                        current_context = fallback_result.branch_context
+                        current_context = ContextManager.merge(current_context, fallback_result.branch_context)
                     # Accumulate fallback usage metrics
                     cumulative_cost += fallback_result.cost_usd or 0.0
                     cumulative_tokens += fallback_result.token_counts or 0
@@ -2719,7 +2738,19 @@ class OptimizedExecutorCore(ExecutorCore):
             if pipeline_result.step_history:
                 last = pipeline_result.step_history[-1]
                 current_data = last.output
-            if pipeline_result.final_pipeline_context is not None:
+            
+            # CRITICAL FIX: Merge iteration context back to main context using ContextManager
+            # This ensures that context updates from each iteration are properly propagated back
+            if pipeline_result.final_pipeline_context is not None and current_context is not None:
+                # Use ContextManager.merge to properly merge the iteration context back to the main context
+                merged_context = ContextManager.merge(current_context, pipeline_result.final_pipeline_context)
+                if merged_context is not None:
+                    current_context = merged_context
+                else:
+                    # If merge fails, use the iteration context as fallback
+                    current_context = pipeline_result.final_pipeline_context
+            elif pipeline_result.final_pipeline_context is not None:
+                # If main context is None, use the iteration context
                 current_context = pipeline_result.final_pipeline_context
 
             # Accumulate usage

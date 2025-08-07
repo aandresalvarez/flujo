@@ -423,7 +423,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                     callable_kwargs[first_param.name] = data
 
                 # Add the injected arguments if the callable needs them
-                from flujo.application.context_manager import _accepts_param
+                from flujo.application.core.context_manager import _accepts_param
 
                 if _accepts_param(func, "context") and context is not None:
                     callable_kwargs["context"] = context

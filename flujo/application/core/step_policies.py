@@ -321,8 +321,9 @@ class DefaultParallelStepExecutor:
         total_tokens = 0
         all_successful = True
         failure_messages: List[str] = []
-        # Prepare branch contexts
+        # Prepare branch contexts with proper isolation
         for branch_name, branch_pipeline in parallel_step.branches.items():
+            # Use ContextManager for proper deep isolation
             branch_context = ContextManager.isolate(context, include_keys=parallel_step.context_include_keys) if context is not None else None
             branch_contexts[branch_name] = branch_context
         # Branch executor
@@ -418,7 +419,7 @@ class DefaultParallelStepExecutor:
             output_dict[bn] = br.output if br.success else br
         result.output = output_dict
         result.metadata_["executed_branches"] = list(branch_results.keys())
-        # Context merging
+        # Context merging using ContextManager
         if context is not None and parallel_step.merge_strategy != MergeStrategy.NO_MERGE:
             try:
                 branch_ctxs = {n: br.branch_context for n, br in branch_results.items() if br.branch_context is not None}
@@ -429,6 +430,7 @@ class DefaultParallelStepExecutor:
                                 if hasattr(bc, f):
                                     setattr(context, f, getattr(bc, f))
                         else:
+                            # Use ContextManager for safe merging
                             context = ContextManager.merge(context, bc)
                 elif parallel_step.merge_strategy == MergeStrategy.MERGE_SCRATCHPAD:
                     if not hasattr(context, "scratchpad"):
@@ -457,6 +459,62 @@ class DefaultParallelStepExecutor:
                                         context.scratchpad[key] = val
                 elif callable(parallel_step.merge_strategy):
                     parallel_step.merge_strategy(context, branch_ctxs)
+                
+                # Special handling for executed_branches field - merge it back to context
+                if hasattr(context, "executed_branches"):
+                    # Get all executed branches from branch contexts
+                    all_executed_branches = []
+                    for bc in branch_ctxs.values():
+                        if hasattr(bc, "executed_branches") and bc.executed_branches:
+                            all_executed_branches.extend(bc.executed_branches)
+                    
+                    # Handle executed_branches based on merge strategy
+                    if parallel_step.merge_strategy == MergeStrategy.OVERWRITE:
+                        # For OVERWRITE, only keep the last successful branch
+                        successful_branches = [name for name, br in branch_results.items() if br.success]
+                        if successful_branches:
+                            # Get the last successful branch (alphabetically sorted)
+                            last_successful_branch = sorted(successful_branches)[-1]
+                            context.executed_branches = [last_successful_branch]
+                            
+                            # Also handle branch_results for OVERWRITE strategy
+                            if hasattr(context, "branch_results"):
+                                # Get the branch_results from the last successful branch context
+                                last_branch_ctx = branch_ctxs.get(last_successful_branch)
+                                if last_branch_ctx and hasattr(last_branch_ctx, "branch_results"):
+                                    context.branch_results = last_branch_ctx.branch_results.copy()
+                                else:
+                                    # If no branch_results in context, create from current results
+                                    context.branch_results = {last_successful_branch: branch_results[last_successful_branch].output}
+                        else:
+                            context.executed_branches = []
+                            if hasattr(context, "branch_results"):
+                                context.branch_results = {}
+                    else:
+                        # For other strategies, add all successful branches
+                        successful_branches = [name for name, br in branch_results.items() if br.success]
+                        all_executed_branches.extend(successful_branches)
+                        
+                        # Remove duplicates while preserving order
+                        seen = set()
+                        unique_branches = []
+                        for branch in all_executed_branches:
+                            if branch not in seen:
+                                seen.add(branch)
+                                unique_branches.append(branch)
+                        
+                        # Update context with merged executed_branches
+                        context.executed_branches = unique_branches
+                        
+                        # Handle branch_results for other strategies
+                        if hasattr(context, "branch_results"):
+                            # Merge branch_results from all successful branches
+                            merged_branch_results = {}
+                            for bc in branch_ctxs.values():
+                                if hasattr(bc, "branch_results") and bc.branch_results:
+                                    merged_branch_results.update(bc.branch_results)
+                            context.branch_results = merged_branch_results
+                
                 result.branch_context = context
             except Exception as e:
                 telemetry.logfire.error(f"Context merging failed: {e}")
@@ -543,6 +601,7 @@ class DefaultConditionalStepExecutor:
                 branch_data = data
                 if conditional_step.branch_input_mapper:
                     branch_data = conditional_step.branch_input_mapper(data, context)
+                # Use ContextManager for proper deep isolation
                 branch_context = ContextManager.isolate(context) if context is not None else None
                 # Execute pipeline
                 total_cost = 0.0
@@ -574,8 +633,8 @@ class DefaultConditionalStepExecutor:
                 result.latency_s = time.monotonic() - start_time
                 result.token_counts = total_tokens
                 result.cost_usd = total_cost
-                # Update branch context
-                result.branch_context = safe_merge_context_updates(context, branch_context)
+                # Update branch context using ContextManager
+                result.branch_context = ContextManager.merge(context, branch_context) if context is not None else branch_context
                 return result
         except Exception as e:
             result.feedback = f"Error executing conditional step: {e}"

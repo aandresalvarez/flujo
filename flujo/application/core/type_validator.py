@@ -6,7 +6,7 @@ from typing import Any, Type, TypeVar, get_args, get_origin, Union
 
 from ...domain.dsl.step import Step
 from ...exceptions import TypeMismatchError
-from ..context_manager import _types_compatible
+from .context_manager import _types_compatible
 
 T = TypeVar("T")
 

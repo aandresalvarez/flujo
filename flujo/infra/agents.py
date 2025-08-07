@@ -165,7 +165,7 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
         """Invoke the underlying agent with arbitrary arguments."""
 
         # Check if the underlying agent accepts context parameters
-        from flujo.application.context_manager import _accepts_param
+        from flujo.application.core.context_manager import _accepts_param
 
         filtered_kwargs = {}
         for k, v in kwargs.items():
@@ -202,7 +202,7 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
 
         # FR-35.2: Filter kwargs before processing to avoid passing unwanted parameters
         # This is the core fix for FSD-11 - only pass context if the underlying agent accepts it
-        from flujo.application.context_manager import _accepts_param
+        from flujo.application.core.context_manager import _accepts_param
 
         filtered_kwargs = {}
         for key, value in kwargs.items():

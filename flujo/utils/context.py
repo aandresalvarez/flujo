@@ -165,15 +165,30 @@ def safe_merge_context_updates(
         return result
 
     try:
-        # Use Pydantic model_dump or dict to get source fields, excluding defaults and None for efficiency
+        # Use Pydantic model_dump or dict to get source fields, excluding None for efficiency
+        # But don't exclude defaults for boolean fields as False is a meaningful value
         if hasattr(source_context, "model_dump"):
             try:
-                source_fields = source_context.model_dump(exclude_defaults=True, exclude_none=True)
+                # Get all fields including boolean fields with False values
+                source_fields = source_context.model_dump(exclude_none=True)
+                # Add boolean fields that might have been excluded
+                model_class = type(source_context)
+                if hasattr(model_class, "model_fields"):
+                    for field_name, field_info in model_class.model_fields.items():
+                        if field_info.annotation == bool and field_name not in source_fields:
+                            source_fields[field_name] = getattr(source_context, field_name)
             except TypeError:
                 source_fields = source_context.model_dump()
         elif hasattr(source_context, "dict"):
             try:
-                source_fields = source_context.dict(exclude_defaults=True, exclude_none=True)
+                # Get all fields including boolean fields with False values
+                source_fields = source_context.dict(exclude_none=True)
+                # Add boolean fields that might have been excluded
+                model_class = type(source_context)
+                if hasattr(model_class, "__fields__"):
+                    for field_name, field_info in model_class.__fields__.items():
+                        if field_info.type_ == bool and field_name not in source_fields:
+                            source_fields[field_name] = getattr(source_context, field_name)
             except TypeError:
                 source_fields = source_context.dict()
         else:
