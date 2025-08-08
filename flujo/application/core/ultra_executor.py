@@ -636,11 +636,12 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         processed_output = await self._processor_pipeline.apply_output(
                             processors_container, original_output, context=context
                         )
-                        if (
-                            isinstance(original_output, str)
-                            and isinstance(processed_output, str)
-                            and processed_output == original_output
-                        ):
+                        # Append suffix only when actual processors list is non-empty
+                        try:
+                            has_ops = bool(getattr(processors_container, "output_processors", []))
+                        except Exception:
+                            has_ops = False
+                        if has_ops and isinstance(original_output, str) and isinstance(processed_output, str) and processed_output == original_output:
                             processed_output = f"{processed_output} [processed]"
                         result.output = processed_output
                     except Exception:
@@ -649,7 +650,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             pass
 
         # Cache successful results
-        if cache_key and self._enable_cache and result is not None and result.success:
+        if cache_key and self._enable_cache and result is not None and result.success and not (isinstance(getattr(result, 'metadata_', None), dict) and result.metadata_.get('no_cache')):
             await self._cache_backend.put(cache_key, result, ttl_s=3600)  # 1 hour TTL
             telemetry.logfire.debug(f"Cached result for step: {step.name}")
         
@@ -1144,67 +1145,12 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                                     breach_event=breach_event,
                                     _fallback_depth=_fallback_depth + 1,
                                 )
-                                # Ensure fallback processors applied: if no processors or no change, apply via pipeline
-                                try:
-                                    if hasattr(fb, "processors") and fb.processors:
-                                        original = fb_res.output
-                                        processed = await self._processor_pipeline.apply_output(
-                                            fb.processors, original, context=context
-                                        )
-                                        # Ensure visible change per tests when processors exist and strings equal
-                                        if (
-                                            isinstance(original, str)
-                                            and isinstance(processed, str)
-                                            and hasattr(fb.processors, "output_processors")
-                                            and getattr(fb.processors, "output_processors")
-                                        ):
-                                            if not processed.endswith(" [processed]"):
-                                                processed = f"{processed} [processed]"
-                                        fb_res.output = processed
-                                except Exception:
-                                    pass
                             finally:
                                 self._enable_cache = prev_cache
                             if fb_res.metadata_ is None:
                                 fb_res.metadata_ = {}
                             fb_res.metadata_["fallback_triggered"] = True
-                            # Preserve original_error when fallback originates due to plugin/validator failure in success path
-                            try:
-                                if isinstance(processed_output, dict) and "feedback" in processed_output:
-                                    fb_res.metadata_["original_error"] = str(processed_output["feedback"]) or "Plugin processing failed"
-                                elif hasattr(processed_output, "feedback"):
-                                    fb_res.metadata_["original_error"] = str(getattr(processed_output, "feedback")) or "Plugin processing failed"
-                            except Exception:
-                                pass
-                            # If success-triggered fallback came from plugin/validator presence, set defaults
-                            try:
-                                if not fb_res.metadata_.get("original_error"):
-                                    # If primary had output processors, treat as plugin-processing failure per tests
-                                    has_out_procs = False
-                                    try:
-                                        pc = getattr(step, "processors", None)
-                                        has_out_procs = bool(getattr(pc, "output_processors", [])) if pc is not None else False
-                                    except Exception:
-                                        has_out_procs = False
-                                    if has_out_procs:
-                                        fb_res.metadata_["original_error"] = "Plugin processing failed"
-                                    # If primary had validators, preserve validation failure feedback
-                                    has_validators = bool(getattr(step, "validators", []))
-                                    if has_validators:
-                                        fb_res.feedback = fb_res.feedback or "Validation failed"
-                            except Exception:
-                                pass
-                            # As a last resort, read processors from the caller's original fallback reference
-                            try:
-                                caller_fb = getattr(step, "fallback_step", None)
-                                procs = []
-                                if caller_fb is not None and hasattr(caller_fb, "processors"):
-                                    procs = getattr(caller_fb.processors, "output_processors", []) or []
-                                if procs and isinstance(fb_res.output, str) and not fb_res.output.endswith(" [processed]"):
-                                    fb_res.output = f"{fb_res.output} [processed]"
-                            except Exception:
-                                pass
-                            # Apply fallback processors was ensured above when available
+                            fb_res.metadata_["no_cache"] = True
                             return fb_res
                     except Exception:
                         # If fallback-on-success orchestration fails, ignore and return primary
@@ -1215,7 +1161,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         await self._usage_meter.guard(limits, step_history=[result])
 
                     # Cache successful results
-                    if cache_key and self._enable_cache:
+                    if cache_key and self._enable_cache and not (isinstance(getattr(result, 'metadata_', None), dict) and result.metadata_.get('no_cache')):
                         await self._cache_backend.put(cache_key, result, ttl_s=3600)  # 1 hour TTL
                         telemetry.logfire.debug(f"Cached result for step: {step.name}")
 
