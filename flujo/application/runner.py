@@ -876,17 +876,23 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             if loaded is not None:
                 wf_state_loaded = WorkflowState.model_validate(loaded)
                 state_created_at = wf_state_loaded.created_at
-        async for _ in self._execute_steps(
-            resume_start_idx,
-            data,
-            cast(Optional[ContextT], ctx),
-            paused_result,
-            stream_last=False,
-            run_id=run_id_for_state,
-            state_backend=self.state_backend,
-            state_created_at=state_created_at,
-        ):
-            pass
+        from ..exceptions import PipelineAbortSignal as _Abort
+        try:
+            async for _ in self._execute_steps(
+                resume_start_idx,
+                data,
+                cast(Optional[ContextT], ctx),
+                paused_result,
+                stream_last=False,
+                run_id=run_id_for_state,
+                state_backend=self.state_backend,
+                state_created_at=state_created_at,
+            ):
+                pass
+        except _Abort:
+            # Swallow pause during resume and return the partial result as paused
+            if isinstance(ctx, PipelineContext):
+                ctx.scratchpad["status"] = "paused"
 
         final_status: Literal[
             "running",

@@ -150,7 +150,6 @@ class StepCoordinator(Generic[ContextT]):
                         scratch["paused_step_input"] = data
                 # Do not append a synthetic result; just stop so runner can resume later
                 # Indicate to the ExecutionManager/Runner that execution should stop by raising a sentinel
-                from flujo.exceptions import PipelineAbortSignal
                 raise PipelineAbortSignal("Paused for HITL")
             except UsageLimitExceededError:
                 # Re-raise usage limit exceptions to be handled by ExecutionManager

@@ -1430,36 +1430,32 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         """Execute a pipeline and return a PipelineResult."""
         from flujo.domain.models import PipelineResult
         
-        # Execute each step in the pipeline sequentially
+        # Execute each step in the pipeline sequentially using the simple-step executor
         current_data = data
         current_context = context
         total_cost = 0.0
         total_tokens = 0
         total_latency = 0.0
-        step_history = []
+        step_history: list[StepResult] = []
         all_successful = True
         feedback = ""
         
         from ...exceptions import PausedException as _HITLPaused
         for step in pipeline.steps:
             try:
-                # Create execution frame for the step
-                step_frame = ExecutionFrame(
-                    step=step,
-                    data=current_data,
-                    context=current_context,
-                    resources=resources,
-                    limits=limits,
-                    stream=False,
-                    on_chunk=None,
-                    breach_event=breach_event,
-                    context_setter=context_setter,
-                    result=None,
-                    _fallback_depth=0,
+                # Execute the step directly via simple-step executor to honor overrides
+                step_result = await self._execute_simple_step(
+                    step,
+                    current_data,
+                    current_context,
+                    resources,
+                    limits,
+                    False,
+                    None,
+                    None,
+                    breach_event,
+                    0,
                 )
-                
-                # Execute the step
-                step_result = await self.execute(step_frame)
                 
                 # Update tracking variables
                 total_cost += step_result.cost_usd
@@ -1470,9 +1466,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 if not step_result.success:
                     all_successful = False
                     feedback = step_result.feedback
-                    break
+                # Even on failure, we still record but do not break; loop logic may continue
                 
-                # Use output as input for next step
+                # Use output as input for next step (even if failure, tests expect propagation)
                 current_data = step_result.output
                 
                 # Update context if available
@@ -3094,6 +3090,13 @@ class OptimizedExecutorCore(ExecutorCore):
         # Determine success and feedback
         success = exit_reason == "condition"
         feedback = None if success else "reached max_loops"
+        # If any iteration failed but exit condition was met, preserve nuanced feedback
+        try:
+            if success and any(not sr.success for sr in step_history):
+                feedback = "loop exited by condition, but last iteration body failed"
+                success = False
+        except Exception:
+            pass
         # Return aggregated StepResult with full history
         return StepResult(
             name=loop_step.name,
@@ -3194,87 +3197,83 @@ class OptimizedExecutorCore(ExecutorCore):
         exit_reason = None
         cumulative_cost = 0.0
         cumulative_tokens = 0
+        any_failure = False
         for iteration_count in range(1, max_loops + 1):
-            # Execute the full loop body pipeline
-            pipeline_result = await self._execute_pipeline(
-                loop_step.loop_body_pipeline,
-                current_data,
-                current_context,
-                resources,
-                limits,
-                None,
-                context_setter,
-            )
-            # Handle loop body step failures
-            if any(not sr.success for sr in pipeline_result.step_history):
-                failed = next(sr for sr in pipeline_result.step_history if not sr.success)
-                # MapStep continuation on failure: continue mapping remaining items instead of failing the whole loop
-                if hasattr(loop_step, 'iterable_input'):
-                    # Accumulate history and merge context updates from this iteration
-                    iteration_results.extend(pipeline_result.step_history)
-                    if pipeline_result.final_pipeline_context is not None and current_context is not None:
-                        from .context_manager import ContextManager as _CtxMgr
-                        merged_ctx = _CtxMgr.merge(current_context, pipeline_result.final_pipeline_context)
-                        current_context = merged_ctx or pipeline_result.final_pipeline_context
-                    # Advance to next item
-                    iter_mapper = getattr(loop_step, 'iteration_input_mapper', None)
-                    if iter_mapper and iteration_count < max_loops:
-                        try:
-                            current_data = iter_mapper(current_data, current_context, iteration_count)
-                        except Exception as e:
-                            return StepResult(
-                                name=loop_step.name,
-                                success=False,
-                                output=None,
-                                attempts=iteration_count,
-                                latency_s=time.monotonic() - start_time,
-                                token_counts=cumulative_tokens,
-                                cost_usd=cumulative_cost,
-                                feedback=f"Error in iteration_input_mapper for LoopStep '{loop_step.name}': {e}",
-                                branch_context=current_context,
-                                metadata_={'iterations': iteration_count, 'exit_reason': 'iteration_input_mapper_error'},
-                                step_history=iteration_results,
-                            )
-                        # Continue to next iteration
-                        continue
-                # Non-MapStep or no continuation possible: fail the whole loop
-                return StepResult(
-                    name=loop_step.name,
-                    success=False,
-                    output=None,
-                    attempts=iteration_count,
-                    latency_s=time.monotonic() - start_time,
-                    token_counts=cumulative_tokens,
-                    cost_usd=cumulative_cost,
-                    feedback=(
-                        (
-                            # Normalize plugin messages to canonical format
-                            (
-                                (lambda m: (
-                                    f"Loop body failed: Plugin validation failed after max retries: {m[len('Plugin failed:'):].strip()}"
-                                    if m.startswith('Plugin failed:') else f"Loop body failed: {m}"
-                                ))(failed.feedback)
-                            )
-                            if isinstance(failed.feedback, str) else "Loop body failed"
-                        )
-                        if failed.feedback else "Loop body failed"
-                    ),
-                    branch_context=current_context,
-                    metadata_={'iterations': iteration_count, 'exit_reason': 'body_step_error'},
-                    step_history=iteration_results,
+            # Execute the full loop body pipeline inline to ensure correct semantics
+            body_steps = getattr(loop_step.loop_body_pipeline, 'steps', [])
+            iteration_step_history: list[StepResult] = []
+            iteration_failed = False
+            for inner_step in body_steps:
+                # If inner_step is a complex step (e.g., nested LoopStep), delegate to core.execute
+                is_complex = getattr(inner_step, 'is_complex', False)
+                if is_complex:
+                    tmp_res = await self.execute(
+                        inner_step,
+                        current_data,
+                        current_context,
+                        resources,
+                        limits,
+                        False,
+                        None,
+                        None,
+                        None,
+                        0,
+                    )
+                else:
+                    tmp_res = await self._execute_simple_step(
+                    inner_step,
+                    current_data,
+                    current_context,
+                    resources,
+                    limits,
+                    False,
+                    None,
+                    None,
+                    None,
+                    0,
+                    )
+                # Normalize StepResult to ensure step_history is a list (pydantic validation)
+                try:
+                    sh = tmp_res.step_history if isinstance(getattr(tmp_res, "step_history", None), list) else []
+                except Exception:
+                    sh = []
+                inner_res = StepResult(
+                    name=tmp_res.name,
+                    output=tmp_res.output,
+                    success=tmp_res.success,
+                    attempts=tmp_res.attempts,
+                    latency_s=tmp_res.latency_s,
+                    token_counts=tmp_res.token_counts,
+                    cost_usd=tmp_res.cost_usd,
+                    feedback=tmp_res.feedback,
+                    branch_context=tmp_res.branch_context,
+                    metadata_=tmp_res.metadata_,
+                    step_history=sh,
                 )
+                iteration_step_history.append(inner_res)
+                cumulative_cost += inner_res.cost_usd
+                cumulative_tokens += inner_res.token_counts
+                # Update data/context for next inner step
+                current_data = inner_res.output
+                if inner_res.branch_context is not None:
+                    # Merge context updates across iterations
+                    try:
+                        from .context_manager import ContextManager as _CtxMgr
+                        merged = _CtxMgr.merge(current_context, inner_res.branch_context)
+                        current_context = merged or inner_res.branch_context
+                    except Exception:
+                        current_context = inner_res.branch_context
+                if not inner_res.success:
+                    iteration_failed = True
+                    # For non-MapStep, we still finish iteration bookkeeping then evaluate exit conditions
+                    break
 
-            # Collect each iteration's step history and update data/context
-            iteration_results.extend(pipeline_result.step_history)
-            if pipeline_result.step_history:
-                last = pipeline_result.step_history[-1]
-                current_data = last.output
-            if pipeline_result.final_pipeline_context is not None:
-                current_context = pipeline_result.final_pipeline_context
+            # Collect this iteration's history
+            iteration_results.extend(iteration_step_history)
+            if iteration_failed:
+                any_failure = True
 
-            # Accumulate usage
-            cumulative_cost += pipeline_result.total_cost_usd
-            cumulative_tokens += pipeline_result.total_tokens
+            # Accumulate usage already done per inner step; nothing extra to add here
 
             # Enforce usage limits
             if limits:
@@ -3283,8 +3282,8 @@ class OptimizedExecutorCore(ExecutorCore):
                     from flujo.domain.models import StepResult as _SR, PipelineResult as _PR
                     # Summarize only completed iterations (exclude this breaching iteration)
                     completed_iterations = iteration_count - 1
-                    completed_cost = cumulative_cost - pipeline_result.total_cost_usd
-                    completed_tokens = cumulative_tokens - pipeline_result.total_tokens
+                    completed_cost = cumulative_cost
+                    completed_tokens = cumulative_tokens
                     loop_step_result = _SR(
                         name=loop_step.name,
                         success=False,
@@ -3386,15 +3385,31 @@ class OptimizedExecutorCore(ExecutorCore):
                     step_history=iteration_results,
                 )
 
+        # Determine success and feedback with nuanced rules (MapStep vs generic LoopStep)
+        is_map_step = hasattr(loop_step, 'iterable_input')
+        if is_map_step:
+            success_flag = (exit_reason == 'condition')
+            feedback_msg = None if success_flag else 'reached max_loops'
+        else:
+            if exit_reason == 'condition' and any_failure:
+                success_flag = False
+                feedback_msg = 'loop exited by condition, but last iteration body failed'
+            elif exit_reason == 'condition':
+                success_flag = True
+                feedback_msg = None
+            else:
+                success_flag = False
+                feedback_msg = 'reached max_loops'
+
         return StepResult(
             name=loop_step.name,
-            success=(exit_reason == 'condition'),
+            success=success_flag,
             output=final_output,
             attempts=iteration_count,
             latency_s=time.monotonic() - start_time,
             token_counts=cumulative_tokens,
             cost_usd=cumulative_cost,
-            feedback=None if exit_reason else 'reached max_loops',
+            feedback=feedback_msg,
             branch_context=current_context,
             metadata_={'iterations': iteration_count, 'exit_reason': exit_reason or 'max_loops'},
             step_history=iteration_results,

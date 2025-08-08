@@ -1,7 +1,7 @@
 """Domain models for flujo."""
 
 from typing import Any, List, Optional, Literal, Dict, Generic
-from pydantic import Field, ConfigDict
+from pydantic import Field, ConfigDict, field_validator
 from typing import ClassVar
 from datetime import datetime, timezone
 import uuid
@@ -95,6 +95,12 @@ class StepResult(BaseModel):
         default_factory=list,
         description="History of sub-steps executed within this step.",
     )
+
+    @field_validator("step_history", mode="before")
+    @classmethod
+    def _normalize_step_history(cls, v):
+        # Accept None and coerce to empty list for backward compatibility in tests
+        return [] if v is None else v
 
 
 class PipelineResult(BaseModel, Generic[ContextT]):

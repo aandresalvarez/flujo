@@ -39,8 +39,7 @@ from flujo.domain.agent_protocol import AsyncAgentProtocol
 from ..utils.serialization import safe_serialize, safe_deserialize
 from .lens import lens_app
 import click.testing
-# Provide a stderr property to click.testing.Result to prevent ValueError in tests
-click.testing.Result.stderr = property(lambda self: "")
+# Removed override that blanked stderr; tests expect real stderr content
 
 # Type definitions for CLI
 WeightsType = List[Dict[str, Union[str, float]]]
@@ -769,14 +768,21 @@ def run(
             old_stdout = sys.stdout
             sys.stdout = buf
             try:
-                result = runner.run(input_data, run_id=run_id)
+                if run_id is not None:
+                    result = runner.run(input_data, run_id=run_id)
+                else:
+                    # Avoid passing run_id to keep compatibility with tests that monkeypatch Flujo.run
+                    result = runner.run(input_data)
             finally:
                 sys.stdout = old_stdout
             from flujo.utils.serialization import serialize_to_json_robust
             typer.echo(serialize_to_json_robust(result, indent=2))
             return
         # Normal run and console output
-        result = runner.run(input_data, run_id=run_id)
+        if run_id is not None:
+            result = runner.run(input_data, run_id=run_id)
+        else:
+            result = runner.run(input_data)
         # Output the result
         console = Console()
         console.print("[bold green]Pipeline execution completed successfully![/bold green]")
