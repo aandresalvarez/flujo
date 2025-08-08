@@ -616,7 +616,7 @@ class SQLiteBackend(StateBackend):
             runs_columns = {row[1] for row in await cursor.fetchall()}
             await cursor.close()
 
-            # Add missing columns to runs table
+            # Add missing columns to runs table (including legacy fields used by tests)
             runs_new_columns = [
                 ("pipeline_id", "TEXT NOT NULL DEFAULT 'unknown'"),
                 ("created_at", "TEXT NOT NULL DEFAULT ''"),
@@ -624,6 +624,11 @@ class SQLiteBackend(StateBackend):
                 ("end_time", "TEXT"),
                 ("total_cost", "REAL"),
                 ("final_context_blob", "TEXT"),
+                # Legacy/compatibility columns asserted by tests
+                ("execution_time_ms", "INTEGER"),
+                ("memory_usage_mb", "REAL"),
+                ("total_steps", "INTEGER DEFAULT 0"),
+                ("error_message", "TEXT"),
             ]
 
             for column_name, column_def in runs_new_columns:

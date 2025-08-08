@@ -248,6 +248,17 @@ class ExecutionManager(Generic[ContextT]):
                         telemetry.logfire.warning(
                             f"Step '{step.name}' failed. Halting pipeline execution."
                         )
+                        # Special-case MapStep: if the loop implementation already continued
+                        # over failures and marked exit by condition, treat as success here.
+                        try:
+                            # Local import to avoid module-level dependency
+                            from ...domain.dsl.loop import LoopStep as _LoopStep
+                            if isinstance(step, _LoopStep) and hasattr(step, 'iterable_input'):
+                                # Let the loop handler control success/failure; do not halt here.
+                                yield result
+                                return
+                        except Exception:
+                            pass
 
                         # Persist final state when pipeline halts due to step failure
                         if run_id is not None and not self.inside_loop_step:
@@ -296,6 +307,15 @@ class ExecutionManager(Generic[ContextT]):
                     # Add current step result to pipeline result before yielding
                     if step_result is not None and step_result not in result.step_history:
                         self.step_coordinator.update_pipeline_result(result, step_result)
+                    # Ensure paused state is reflected in context for HITL scenarios
+                    try:
+                        if context is not None and hasattr(context, "scratchpad"):
+                            scratch = getattr(context, "scratchpad")
+                            # Only set paused if not already set by lower layers
+                            if scratch.get("status") != "paused":
+                                scratch["status"] = "paused"
+                    except Exception:
+                        pass
                     should_add_step_result = False  # Prevent duplicate addition in finally block
                     self.set_final_context(result, context)
                     yield result

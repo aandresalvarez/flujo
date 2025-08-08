@@ -688,7 +688,13 @@ async def _execute_simple_step_policy_impl(
                             fallback_result.attempts = 1 + (fallback_result.attempts or 0)
                             # Do NOT multiply fallback metrics here; they are accounted once in tests
                             if fallback_result.success:
-                                fallback_result.feedback = None
+                                # Preserve validation failure message in feedback on successful fallback
+                                try:
+                                    fallback_result.feedback = (
+                                        f"Validation failed after max retries: {validation_error}"
+                                    )
+                                except Exception:
+                                    fallback_result.feedback = None
                                 # Cache successful fallback result for future runs
                                 try:
                                     if cache_key and getattr(core, "_enable_cache", False):
@@ -1144,8 +1150,9 @@ class DefaultAgentStepExecutor:
                                         result.metadata_["fallback_triggered"] = True
                                         result.metadata_["original_error"] = fb_msg
                                         if fb_res.success:
-                                            # Adopt fallback success output
+                                            # Adopt fallback success output but preserve original validation failure in feedback
                                             fb_res.metadata_ = {**(fb_res.metadata_ or {}), **result.metadata_}
+                                            fb_res.feedback = fb_msg
                                             return fb_res
                                         else:
                                             # Compose failure feedback
@@ -1202,6 +1209,7 @@ class DefaultAgentStepExecutor:
                                 result.metadata_["original_error"] = fb_msg
                                 if fb_res.success:
                                     fb_res.metadata_ = {**(fb_res.metadata_ or {}), **result.metadata_}
+                                    fb_res.feedback = fb_msg
                                     return fb_res
                                 else:
                                     result.success = False
@@ -1408,11 +1416,23 @@ class DefaultLoopStepExecutor:
         from flujo.exceptions import UsageLimitExceededError
         from .context_manager import ContextManager
         from flujo.infra import telemetry
+        telemetry.logfire.info(f"[POLICY] DefaultLoopStepExecutor executing '{getattr(loop_step,'name','<unnamed>')}'")
         from flujo.domain.dsl.pipeline import Pipeline
         start_time = time.monotonic()
         iteration_results: list[StepResult] = []
         current_data = data
         current_context = context or PipelineContext(initial_prompt=str(data))
+        # Reset MapStep internal state between runs to ensure reusability (no-op for plain LoopStep)
+        try:
+            if hasattr(loop_step, "_results_var") and hasattr(loop_step, "_items_var"):
+                getattr(loop_step, "_results_var").set([])
+                getattr(loop_step, "_items_var").set([])
+            if hasattr(loop_step, "_body_var") and hasattr(loop_step, "_original_body_pipeline"):
+                getattr(loop_step, "_body_var").set(getattr(loop_step, "_original_body_pipeline"))
+            if hasattr(loop_step, "_max_loops_var"):
+                getattr(loop_step, "_max_loops_var").set(1)
+        except Exception:
+            pass
         # Apply initial input mapper
         initial_mapper = getattr(loop_step, 'initial_input_to_loop_body_mapper', None)
         if initial_mapper:
@@ -1448,7 +1468,13 @@ class DefaultLoopStepExecutor:
                 metadata_={'iterations': 0, 'exit_reason': 'empty_pipeline'},
                 step_history=[],
             )
+        # Determine max_loops after initial mapper (MapStep sets it dynamically)
         max_loops = getattr(loop_step, 'max_loops', 5)
+        try:
+            items_len = len(getattr(loop_step, "_items_var").get()) if hasattr(loop_step, "_items_var") else -1
+            telemetry.logfire.info(f"LoopStep '{loop_step.name}': configured max_loops={max_loops}, items_len={items_len}")
+        except Exception:
+            pass
         exit_reason = None
         cumulative_cost = 0.0
         cumulative_tokens = 0
@@ -1529,7 +1555,7 @@ class DefaultLoopStepExecutor:
                     cumulative_tokens += fallback_result.token_counts or 0
                     continue
                 failed = next(sr for sr in pipeline_result.step_history if not sr.success)
-                # MapStep continuation on failure
+                # MapStep continuation on failure: continue mapping remaining items
                 if hasattr(loop_step, 'iterable_input'):
                     iteration_results.extend(pipeline_result.step_history)
                     if pipeline_result.final_pipeline_context is not None and current_context is not None:
@@ -1553,6 +1579,7 @@ class DefaultLoopStepExecutor:
                                 metadata_={'iterations': iteration_count, 'exit_reason': 'iteration_input_mapper_error'},
                                 step_history=iteration_results,
                             )
+                        # Continue to next iteration without failing the whole loop
                         continue
                 # Before failing the entire loop, merge context and check if the
                 # exit condition is already satisfied due to earlier updates.
@@ -1585,26 +1612,27 @@ class DefaultLoopStepExecutor:
 
                 fb = failed.feedback or ''
                 try:
-                    # Only normalize when feedback indicates a plugin failure
-                    if isinstance(fb, str) and (
-                        'Plugin validation failed' in fb or 'Plugin execution failed' in fb
-                    ):
-                        exec_prefix = 'Plugin execution failed after max retries: '
-                        if fb.startswith(exec_prefix):
-                            fb = fb[len(exec_prefix):]
-                        # Extract original validation message
-                        val_prefix = 'Plugin validation failed: '
-                        # Strip repeated validation prefixes
-                        while fb.startswith(val_prefix):
-                            fb = fb[len(val_prefix):]
-                        # Remove any agent wrapper inside the plugin feedback (keep the trailing detail)
-                        agent_prefix = 'Agent execution failed with '
-                        if fb.startswith(agent_prefix):
-                            # Attempt to keep the portion after the first colon
-                            idx = fb.find(':')
-                            if idx != -1:
-                                fb = fb[idx + 1 :].strip()
-                        fb = f"Plugin validation failed after max retries: {fb}"
+                    # Normalize plugin-related failures into the canonical message
+                    if isinstance(fb, str):
+                        raw = fb.strip()
+                        # Convert generic 'Plugin failed: X' to canonical form
+                        if raw.startswith('Plugin failed:'):
+                            raw = raw[len('Plugin failed:'):].strip()
+                            fb = f"Plugin validation failed after max retries: {raw}"
+                        elif 'Plugin validation failed' in raw or 'Plugin execution failed' in raw:
+                            exec_prefix = 'Plugin execution failed after max retries: '
+                            if raw.startswith(exec_prefix):
+                                raw = raw[len(exec_prefix):]
+                            # Extract original validation message
+                            val_prefix = 'Plugin validation failed: '
+                            while raw.startswith(val_prefix):
+                                raw = raw[len(val_prefix):]
+                            agent_prefix = 'Agent execution failed with '
+                            if raw.startswith(agent_prefix):
+                                idx = raw.find(':')
+                                if idx != -1:
+                                    raw = raw[idx + 1 :].strip()
+                            fb = f"Plugin validation failed after max retries: {raw}"
                 except Exception:
                     pass
                 return StepResult(
@@ -1766,25 +1794,30 @@ class DefaultLoopStepExecutor:
                 is_refine_pattern = any(getattr(s, 'name', '') == '_capture_artifact' for s in bp.steps)
         except Exception:
             is_refine_pattern = False
-        # Messaging rules:
-        # - If exited by condition and any iteration failed → mixed message
-        # - If exited by max_loops → 'reached max_loops' (even for refine pattern)
-        # - Else, simple condition message
-        if exit_reason == 'condition' and any_failure:
-            fail_msg = 'loop exited by condition, but last iteration body failed'
-        elif exit_reason != 'condition':
-            fail_msg = 'reached max_loops'
+        # Messaging and success rules:
+        # - MapStep: success if exited by condition regardless of per-item failures (we continued mapping)
+        # - Generic LoopStep: success only if exited by condition and no failures
+        is_map_step = hasattr(loop_step, 'iterable_input')
+        if is_map_step:
+            success_flag = (exit_reason == 'condition')
+            feedback_msg = None if success_flag else 'reached max_loops'
         else:
-            fail_msg = 'loop exited by condition'
+            if exit_reason == 'condition' and any_failure:
+                feedback_msg = 'loop exited by condition, but last iteration body failed'
+            elif exit_reason != 'condition':
+                feedback_msg = 'reached max_loops'
+            else:
+                feedback_msg = 'loop exited by condition'
+            success_flag = (exit_reason == 'condition') and not any_failure
         return StepResult(
             name=loop_step.name,
-            success=(exit_reason == 'condition') and not any_failure,
+            success=success_flag,
             output=final_output,
             attempts=iteration_count,
             latency_s=time.monotonic() - start_time,
             token_counts=cumulative_tokens,
             cost_usd=cumulative_cost,
-            feedback=fail_msg,
+            feedback=feedback_msg,
             branch_context=current_context,
             metadata_={'iterations': iteration_count, 'exit_reason': exit_reason or 'max_loops'},
             step_history=iteration_results,

@@ -857,9 +857,18 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                         ctx.command_log.append(log_entry)
                     except Exception:
                         pass
-        paused_result.step_history.append(paused_step_result)
+        # Only append a synthetic success for HumanInTheLoopStep; for other steps we
+        # should re-run the paused step with the provided human_input as its data.
+        from ..domain.dsl.step import HumanInTheLoopStep as _HITL
+        if isinstance(paused_step, _HITL):
+            paused_result.step_history.append(paused_step_result)
+            data = human_input
+            resume_start_idx = start_idx + 1
+        else:
+            # Re-execute the paused step with the human input as data
+            data = human_input
+            resume_start_idx = start_idx
 
-        data = human_input
         run_id_for_state = getattr(ctx, "run_id", None)
         state_created_at: datetime | None = None
         if self.state_backend is not None and run_id_for_state is not None:
@@ -868,7 +877,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 wf_state_loaded = WorkflowState.model_validate(loaded)
                 state_created_at = wf_state_loaded.created_at
         async for _ in self._execute_steps(
-            start_idx + 1,
+            resume_start_idx,
             data,
             cast(Optional[ContextT], ctx),
             paused_result,
