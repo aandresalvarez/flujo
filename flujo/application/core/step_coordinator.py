@@ -96,7 +96,10 @@ class StepCoordinator(Generic[ContextT]):
                             yield step_result
                 elif backend is not None:
                     # New approach: call backend directly
-                    if stream:
+                    # Only enable streaming when the agent actually supports it
+                    has_agent_stream = hasattr(step, "agent") and hasattr(getattr(step, "agent", None), "stream")
+                    effective_stream = bool(stream and has_agent_stream)
+                    if effective_stream:
                         # For streaming, we need to collect chunks and yield them
                         chunks = []
 
@@ -108,7 +111,7 @@ class StepCoordinator(Generic[ContextT]):
                             input_data=data,
                             context=context,
                             resources=self.resources,
-                            stream=stream,
+                            stream=effective_stream,
                             on_chunk=on_chunk,
                             usage_limits=usage_limits,
                         )
@@ -127,7 +130,7 @@ class StepCoordinator(Generic[ContextT]):
                             input_data=data,
                             context=context,
                             resources=self.resources,
-                            stream=stream,
+                            stream=False,
                             usage_limits=usage_limits,
                         )
 
@@ -157,6 +160,24 @@ class StepCoordinator(Generic[ContextT]):
                 raise
             except (MockDetectionError, NonRetryableError):
                 # Re-raise mock detection and non-retryable errors immediately
+                raise
+            except Exception as e:
+                # Propagate critical redirect-loop exceptions instead of swallowing into a StepResult
+                if e.__class__.__name__ == "InfiniteRedirectError":
+                    raise
+                try:
+                    from flujo.exceptions import InfiniteRedirectError as CoreIRE
+                    if isinstance(e, CoreIRE):
+                        raise
+                except Exception:
+                    pass
+                try:
+                    from flujo.application.runner import InfiniteRedirectError as RunnerIRE
+                    if isinstance(e, RunnerIRE):
+                        raise
+                except Exception:
+                    pass
+                # For all other exceptions, let the manager/pipeline handling proceed (will produce failure result)
                 raise
 
             # Update telemetry span with step metadata

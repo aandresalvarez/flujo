@@ -70,8 +70,9 @@ class DefaultPluginRedirector:
         timeout_s: Optional[float]
     ) -> Any:
         from flujo.exceptions import InfiniteRedirectError
-        telemetry.logfire.debug("[Redirector] Start plugin redirect loop")
+        telemetry.logfire.info("[Redirector] Start plugin redirect loop")
         redirect_chain: list[Any] = []
+        original_agent = getattr(step, 'agent', None)
         processed = initial
         unpacker = DefaultAgentResultUnpacker()
         while True:
@@ -93,16 +94,24 @@ class DefaultPluginRedirector:
             )
             try:
                 rt = getattr(outcome, 'redirect_to', None)
-                telemetry.logfire.debug(f"[Redirector] Plugin outcome: redirect_to={rt}, success={getattr(outcome, 'success', None)}")
+                telemetry.logfire.info(f"[Redirector] Plugin outcome: redirect_to={rt}, success={getattr(outcome, 'success', None)}")
             except Exception:
                 pass
             # Handle redirect_to
             if hasattr(outcome, 'redirect_to') and outcome.redirect_to is not None:
-                if outcome.redirect_to in redirect_chain:
-                    telemetry.logfire.debug(f"[Redirector] Loop detected for agent {outcome.redirect_to}")
+                # Early detection: redirecting back to original agent indicates a loop
+                if original_agent is not None and outcome.redirect_to is original_agent:
+                    telemetry.logfire.warning("[Redirector] Loop detected: redirecting back to original agent")
                     raise InfiniteRedirectError(f"Redirect loop detected at agent {outcome.redirect_to}")
+                if outcome.redirect_to in redirect_chain:
+                    telemetry.logfire.warning(
+                        f"[Redirector] Loop detected for agent {getattr(outcome.redirect_to, 'name', str(outcome.redirect_to))}"
+                    )
+                    raise InfiniteRedirectError(
+                        f"Redirect loop detected at agent {outcome.redirect_to}"
+                    )
                 redirect_chain.append(outcome.redirect_to)
-                telemetry.logfire.debug(f"[Redirector] Redirecting to agent {outcome.redirect_to}")
+                telemetry.logfire.info(f"[Redirector] Redirecting to agent {outcome.redirect_to}")
                 raw = await asyncio.wait_for(
                     self._agent_runner.run(
                         agent=outcome.redirect_to,
@@ -273,17 +282,19 @@ async def _execute_simple_step_policy_impl(
 
     # retries
     if hasattr(step, "config") and hasattr(step.config, "max_retries"):
-        max_retries = step.config.max_retries
+        max_retries = int(step.config.max_retries) if step.config.max_retries is not None else 1
     else:
         max_retries = getattr(step, "max_retries", 2)
     if stream:
-        max_retries = 0
+        max_retries = 1
     if hasattr(max_retries, "_mock_name") or isinstance(
         max_retries, (Mock, MagicMock, AsyncMock)
     ):
         max_retries = 2
 
-    for attempt in range(1, max_retries + 2):
+    telemetry.logfire.info(f"[Policy] SimpleStep max_retries (total attempts): {max_retries}")
+    # Attempt count semantics: max_retries equals total attempts expected by tests
+    for attempt in range(1, max_retries + 1):
         result.attempts = attempt
         start_ns = time_perf_ns()
         try:
@@ -373,6 +384,7 @@ async def _execute_simple_step_policy_impl(
 
             # plugins
             if hasattr(step, "plugins") and step.plugins:
+                telemetry.logfire.info(f"[Policy] Running plugins for step '{step.name}' with redirect handling")
                 # Determine timeout for plugin/redirect operations from step config
                 timeout_s = None
                 try:
@@ -390,21 +402,88 @@ async def _execute_simple_step_policy_impl(
                         resources=resources,
                         timeout_s=timeout_s,
                     )
+                    telemetry.logfire.info(f"[Policy] Plugins completed for step '{step.name}'")
                 except Exception as e:
                     # Propagate redirect-loop and timeout errors without wrapping
-                    # Propagate redirect-loop detection without wrapping
+                    # Match by name to avoid alias/import edge cases
+                    if e.__class__.__name__ == "InfiniteRedirectError":
+                        raise
                     try:
-                        from flujo.exceptions import InfiniteRedirectError
-                        if isinstance(e, InfiniteRedirectError):
+                        from flujo.exceptions import InfiniteRedirectError as CoreIRE
+                        if isinstance(e, CoreIRE):
                             raise
                     except Exception:
-                        # If import or isinstance fails, fall back to wrapping
                         pass
                     if isinstance(e, asyncio.TimeoutError):
                         raise
-                    class _PluginError(Exception):
-                        pass
-                    raise _PluginError(str(e))
+                    # Retry plugin-originated errors here to ensure agent is re-run on next loop iteration
+                    # Only continue when there is another attempt available
+                    if attempt < max_retries:
+                        telemetry.logfire.warning(
+                            f"Step '{step.name}' plugin execution attempt {attempt}/{max_retries} failed: {e}"
+                        )
+                        # Enrich next attempt input with feedback signal
+                        try:
+                            feedback_text = str(e)
+                            if isinstance(data, str):
+                                data = f"{data}\n{feedback_text}"
+                            else:
+                                data = f"{str(data)}\n{feedback_text}"
+                        except Exception:
+                            pass
+                        continue
+                    # Exhausted retries: finalize as plugin error and allow fallback
+                    result.success = False
+                    msg = f"Plugin validation failed: {str(e)}"
+                    result.feedback = f"Plugin execution failed after max retries: {msg}"
+                    result.output = None
+                    result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
+                    if limits:
+                        await core._usage_meter.guard(limits, step_history=[result])
+                    telemetry.logfire.error(
+                        f"Step '{step.name}' plugin failed after {result.attempts} attempts"
+                    )
+                    if hasattr(step, "fallback_step") and step.fallback_step is not None:
+                        telemetry.logfire.info(
+                            f"Step '{step.name}' failed, attempting fallback"
+                        )
+                        if step.fallback_step in fallback_chain:
+                            raise InfiniteFallbackError(
+                                f"Fallback loop detected: step '{step.fallback_step.name}' already in fallback chain"
+                            )
+                        try:
+                            fallback_result = await core.execute(
+                                step=step.fallback_step,
+                                data=data,
+                                context=context,
+                                resources=resources,
+                                limits=limits,
+                                stream=stream,
+                                on_chunk=on_chunk,
+                                breach_event=breach_event,
+                                _fallback_depth=_fallback_depth + 1,
+                            )
+                            if fallback_result.metadata_ is None:
+                                fallback_result.metadata_ = {}
+                            fallback_result.metadata_["fallback_triggered"] = True
+                            fallback_result.metadata_["original_error"] = result.feedback
+                            if fallback_result.success:
+                                fallback_result.feedback = None
+                                return fallback_result
+                            fallback_result.feedback = (
+                                f"Original error: {core._format_feedback(result.feedback, 'Agent execution failed')}; "
+                                f"Fallback error: {core._format_feedback(fallback_result.feedback, 'Agent execution failed')}"
+                            )
+                            return fallback_result
+                        except InfiniteFallbackError:
+                            raise
+                        except Exception as fb_err:
+                            telemetry.logfire.error(
+                                f"Fallback for step '{step.name}' also failed: {fb_err}"
+                            )
+                            result.feedback = f"Original error: {result.feedback}; Fallback error: {fb_err}"
+                            return result
+                    return result
                 # Normalize dict-based outputs from plugins
                 if isinstance(processed_output, dict) and "output" in processed_output:
                     processed_output = processed_output["output"]
@@ -437,7 +516,8 @@ async def _execute_simple_step_policy_impl(
                             f"Step '{step.name}' validation failed after exception: {validation_error}"
                         )
                         return result
-                    if attempt < max_retries + 1:
+                    # Only continue when there is another attempt available
+                    if attempt < max_retries:
                         telemetry.logfire.warning(
                             f"Step '{step.name}' validation exception attempt {attempt}: {validation_error}"
                         )
@@ -535,6 +615,26 @@ async def _execute_simple_step_policy_impl(
                 raise agent_error
             # Do not retry for plugin-originated errors; proceed to fallback handling
             if agent_error.__class__.__name__ in {"PluginError", "_PluginError"}:
+                # Retry plugin-originated errors up to max_retries, then handle fallback/failure
+                # Only continue when there is another attempt available
+                if attempt < max_retries:
+                    telemetry.logfire.warning(
+                        f"Step '{step.name}' plugin execution attempt {attempt}/{max_retries} failed: {agent_error}"
+                    )
+                    telemetry.logfire.info(
+                        f"[Policy] Retrying after plugin failure: next attempt will be {attempt + 1}"
+                    )
+                    # Enrich next attempt input with feedback signal
+                    try:
+                        feedback_text = str(agent_error)
+                        if isinstance(data, str):
+                            data = f"{data}\n{feedback_text}"
+                        else:
+                            # Fallback: coerce to string for prompt-like agents
+                            data = f"{str(data)}\n{feedback_text}"
+                    except Exception:
+                        pass
+                    continue
                 result.success = False
                 msg = str(agent_error)
                 if msg.startswith("Plugin validation failed"):
@@ -546,7 +646,7 @@ async def _execute_simple_step_policy_impl(
                 if limits:
                     await core._usage_meter.guard(limits, step_history=[result])
                 telemetry.logfire.error(
-                    f"Step '{step.name}' agent failed after {result.attempts} attempts"
+                    f"Step '{step.name}' plugin failed after {result.attempts} attempts"
                 )
                 if hasattr(step, "fallback_step") and step.fallback_step is not None:
                     telemetry.logfire.info(
@@ -752,7 +852,8 @@ class DefaultAgentStepExecutor:
         if hasattr(max_retries, "_mock_name") or isinstance(max_retries, (Mock, MagicMock, AsyncMock)):
             max_retries = 3
 
-        for attempt in range(1, max_retries + 2):
+        # Attempt count semantics: max_retries equals total attempts
+        for attempt in range(1, max_retries + 1):
             result.attempts = attempt
             if limits is not None:
                 await core._usage_meter.guard(limits, result.step_history)
@@ -1297,7 +1398,7 @@ class DefaultConditionalStepExecutor:
         start_time = time.monotonic()
         try:
             branch_key = conditional_step.condition_callable(data, context)
-            telemetry.logfire.debug(f"Condition evaluated to branch key: {branch_key}")
+            telemetry.logfire.info(f"Condition evaluated to branch key '{branch_key}'")
             # Determine branch
             branch_to_execute = None
             if branch_key in conditional_step.branches:
@@ -1307,7 +1408,13 @@ class DefaultConditionalStepExecutor:
                 branch_to_execute = conditional_step.default_branch_pipeline
                 result.metadata_["executed_branch_key"] = "default"
             else:
-                telemetry.logfire.warn(f"No branch matches condition '{branch_key}' and no default branch provided")
+                telemetry.logfire.warn(
+                    f"No branch found for key '{branch_key}' and no default branch provided"
+                )
+                result.success = False
+                result.feedback = f"No branch found for key '{branch_key}'"
+                result.latency_s = time.monotonic() - start_time
+                return result
             # Execute selected branch
             if branch_to_execute:
                 branch_data = data
@@ -1318,6 +1425,7 @@ class DefaultConditionalStepExecutor:
                 # Execute pipeline
                 total_cost = 0.0
                 total_tokens = 0
+                total_latency = 0.0
                 step_history = []
                 for pipeline_step in (branch_to_execute.steps if isinstance(branch_to_execute, Pipeline) else [branch_to_execute]):
                     step_result = await core.execute(
@@ -1331,25 +1439,59 @@ class DefaultConditionalStepExecutor:
                     )
                     total_cost += step_result.cost_usd
                     total_tokens += step_result.token_counts
+                    total_latency += getattr(step_result, "latency_s", 0.0)
                     branch_data = step_result.output
                     if not step_result.success:
-                        result.feedback = step_result.feedback
+                        result.feedback = (
+                            f"Failure in branch '{branch_key}'"
+                            if branch_key in conditional_step.branches
+                            else step_result.feedback or "Step execution failed"
+                        )
                         result.success = False
-                        result.latency_s = time.monotonic() - start_time
+                        result.latency_s = total_latency
                         result.token_counts = total_tokens
                         result.cost_usd = total_cost
                         return result
                     step_history.append(step_result)
+                # Apply optional branch_output_mapper
+                final_output = branch_data
+                if getattr(conditional_step, "branch_output_mapper", None):
+                    try:
+                        final_output = conditional_step.branch_output_mapper(
+                            data, branch_key, branch_context
+                        )
+                    except Exception as e:
+                        result.success = False
+                        result.feedback = f"Branch output mapper raised an exception: {e}"
+                        result.latency_s = total_latency
+                        result.token_counts = total_tokens
+                        result.cost_usd = total_cost
+                        return result
                 result.success = True
-                result.output = branch_data
-                result.latency_s = time.monotonic() - start_time
+                result.output = final_output
+                result.latency_s = total_latency
                 result.token_counts = total_tokens
                 result.cost_usd = total_cost
                 # Update branch context using ContextManager
                 result.branch_context = ContextManager.merge(context, branch_context) if context is not None else branch_context
+                # Invoke context setter on success when provided
+                if context_setter is not None:
+                    try:
+                        from flujo.domain.models import PipelineResult
+                        pipeline_result = PipelineResult(
+                            step_history=step_history,
+                            total_cost_usd=total_cost,
+                            total_tokens=total_tokens,
+                            total_latency_s=total_latency,
+                            final_pipeline_context=result.branch_context,
+                        )
+                        context_setter(pipeline_result, context)
+                    except Exception:
+                        pass
                 return result
         except Exception as e:
-            result.feedback = f"Error executing conditional step: {e}"
+            result.feedback = f"Error executing conditional logic or branch: {e}"
+            result.success = False
         result.latency_s = time.monotonic() - start_time
         return result
 
