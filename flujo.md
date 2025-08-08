@@ -1,6 +1,8 @@
  ### **The Flujo Architecture: A Deep Dive (Post-Refactor)**
 
-> **📖 For practical development guidance**, see [`DEVELOPER_GUIDE.md`](./DEVELOPER_GUIDE.md) which provides best practices, anti-patterns, and debugging strategies.
+> **📖 Documentation Guide:**
+> - **End Users**: See [`DEVELOPER_GUIDE.md`](./DEVELOPER_GUIDE.md) for building applications with Flujo
+> - **Core Team**: See [`FLUJO_TEAM_GUIDE.md`](./FLUJO_TEAM_GUIDE.md) for contributing to the framework itself
 
 #### **Core Philosophy: A Dual Architecture for Simplicity and Power**
 
