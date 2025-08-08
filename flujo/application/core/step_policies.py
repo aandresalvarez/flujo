@@ -771,6 +771,22 @@ async def _execute_simple_step_policy_impl(
             # Preserve timeout semantics (non-retryable for plugin/validator phases)
             raise
         except Exception as agent_error:
+            # Use Flujo's sophisticated error classification system
+            from flujo.application.core.optimized_error_handler import ErrorClassifier, ErrorContext, ErrorCategory
+            
+            error_context = ErrorContext.from_exception(
+                agent_error, 
+                step_name=getattr(step, 'name', '<unnamed>'),
+                attempt_number=attempt
+            )
+            
+            classifier = ErrorClassifier()
+            classifier.classify_error(error_context)
+            
+            # Control flow exceptions should never be converted to StepResult
+            if error_context.category == ErrorCategory.CONTROL_FLOW:
+                telemetry.logfire.info(f"Re-raising control flow exception: {type(agent_error).__name__}")
+                raise agent_error
             from flujo.exceptions import PricingNotConfiguredError
             # Strict pricing surfacing: treat pricing errors as non-retryable and re-raise immediately
             try:

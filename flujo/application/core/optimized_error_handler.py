@@ -40,6 +40,7 @@ class ErrorCategory(Enum):
     CONFIGURATION = "configuration"
     DATA_CORRUPTION = "data_corruption"
     SYSTEM = "system"
+    CONTROL_FLOW = "control_flow"  # For PausedException, etc.
     UNKNOWN = "unknown"
 
 
@@ -260,6 +261,10 @@ class ErrorClassifier:
             "ConfigurationError": ErrorCategory.CONFIGURATION,
             "KeyError": ErrorCategory.CONFIGURATION,
             "AttributeError": ErrorCategory.CONFIGURATION,
+            # Control flow exceptions
+            "PausedException": ErrorCategory.CONTROL_FLOW,
+            "InfiniteFallbackError": ErrorCategory.CONTROL_FLOW,
+            "InfiniteRedirectError": ErrorCategory.CONTROL_FLOW,
         }
 
         self._severity_mappings = {
@@ -297,6 +302,7 @@ class ErrorClassifier:
             ],
             ErrorCategory.EXTERNAL_SERVICE: ["service", "api", "endpoint", "server", "upstream"],
             ErrorCategory.CONFIGURATION: ["config", "setting", "parameter", "missing", "not found"],
+            ErrorCategory.CONTROL_FLOW: ["pause", "hitl", "human input", "workflow control", "execution pause"],
         }
 
     def classify_error(self, error_context: ErrorContext) -> None:
@@ -390,6 +396,9 @@ class ErrorClassifier:
             suggestions.extend([RecoveryAction.FALLBACK, RecoveryAction.ESCALATE])
         elif error_context.category == ErrorCategory.RESOURCE_EXHAUSTION:
             suggestions.extend([RecoveryAction.CIRCUIT_BREAK, RecoveryAction.ESCALATE])
+        elif error_context.category == ErrorCategory.CONTROL_FLOW:
+            # Control flow exceptions should never be retried - they need immediate escalation
+            suggestions.append(RecoveryAction.ESCALATE)
         else:
             suggestions.append(RecoveryAction.RETRY)
 
@@ -825,6 +834,18 @@ class OptimizedErrorHandler:
             applies_to_categories={ErrorCategory.RESOURCE_EXHAUSTION},
         )
         self.register_strategy(resource_strategy)
+
+        # Control flow strategy - for PausedException and similar
+        from flujo.exceptions import PausedException, InfiniteFallbackError, InfiniteRedirectError
+        control_flow_strategy = RecoveryStrategy(
+            name="control_flow",
+            error_types={PausedException, InfiniteFallbackError, InfiniteRedirectError},
+            error_patterns=["pause", "hitl", "human input", "workflow control"],
+            max_retries=0,  # Never retry control flow exceptions
+            primary_action=RecoveryAction.ESCALATE,  # Always escalate immediately
+            applies_to_categories={ErrorCategory.CONTROL_FLOW},
+        )
+        self.register_strategy(control_flow_strategy)
 
     def get_stats(self) -> Optional[ErrorStats]:
         """Get error handling statistics."""

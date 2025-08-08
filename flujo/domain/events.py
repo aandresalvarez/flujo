@@ -87,10 +87,24 @@ class OnStepFailurePayload(BaseModel):
     resources: Optional[AppResources] = None
 
 
+class OnPauseRequestedPayload(BaseModel):
+    """Payload for pause request hooks.
+    
+    Contains information about a pause request from a HITL step.
+    """
+    
+    event_name: Literal["on_pause_requested"]
+    step_name: str
+    pause_message: str
+    context: Optional[BaseModel] = None
+    resources: Optional[AppResources] = None
+
+
 HookPayload = Union[
     PreRunPayload,
     PostRunPayload,
     PreStepPayload,
     PostStepPayload,
     OnStepFailurePayload,
+    OnPauseRequestedPayload,
 ]

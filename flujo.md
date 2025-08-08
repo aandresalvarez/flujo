@@ -1,5 +1,4 @@
- 
-### **The Flujo Architecture: A Deep Dive**
+ ### **The Flujo Architecture: A Deep Dive (Post-Refactor)**
 
 #### **Core Philosophy: A Dual Architecture for Simplicity and Power**
 
@@ -28,19 +27,24 @@ The most foundational feature of Flujo is its compositional DSL (`flujo/domain/d
 
 ---
 
-### **Section II: The Execution Core — The Modular, Recursive Engine**
+### **Section II: The Execution Core — The Policy-Driven Engine**
 
-While the DSL defines the *what*, the `flujo/application/core/` directory defines the *how*. This layer is a high-performance engine that recursively traverses and executes the pipeline graph.
+While the DSL defines the *what*, the `flujo/application/core/` directory defines the *how*. This layer has been refactored into a high-performance, modular engine that recursively executes the pipeline graph.
 
-*   **The Central Nervous System (`ExecutionManager`)**: The user-facing `Flujo` runner (`.../runner.py`) immediately delegates to an `ExecutionManager` (`.../execution_manager.py`). This manager acts as a coordinator, orchestrating a set of specialized, single-responsibility components:
-    *   `StepCoordinator`: Manages the lifecycle of a single step, including hooks.
-    *   `StateManager`: Handles durable, resumable workflows via a `StateBackend`.
-    *   `UsageGovernor`: Enforces cost and token limits to prevent runaways.
-    *   `TypeValidator`: Ensures runtime type safety between steps.
+*   **The Central Dispatcher (`ExecutorCore`)**: The heart of execution, `ExecutorCore` (`.../ultra_executor.py`), no longer contains monolithic business logic. It now acts as a pure **dispatcher**. Its primary role is to inspect an incoming `Step` and delegate the execution to the appropriate, specialized "policy" class.
 
-*   **The Heart of Execution (`ExecutorCore`)**: The actual execution logic resides within the `ExecutorCore` (`.../ultra_executor.py`). It is assembled via dependency injection, taking pluggable implementations for serialization (`ISerializer`), hashing (`IHasher`), caching (`ICacheBackend`), and agent execution (`IAgentRunner`).
+*   **Specialized Execution Policies (`.../core/step_policies.py`)**: The logic for *how* to execute each type of step is now encapsulated in small, single-responsibility policy classes. This is the **core of the new architecture**:
+    *   `DefaultAgentStepExecutor`: Handles the lifecycle of a simple, single-agent step, including retries and fallback logic.
+    *   `DefaultLoopStepExecutor`: Manages the state and context for `LoopStep` iterations.
+    *   `DefaultParallelStepExecutor`: Orchestrates the concurrent execution of branches in a `ParallelStep`.
+    *   *(... and so on for each step type.)*
 
-*   **Key Insight: Recursive Execution**: The `ExecutorCore`'s handlers for higher-order steps (`_handle_parallel_step`, `_handle_loop_step`) **recursively call `self.execute()`**. This mirrors the DSL's algebraic closure at runtime, ensuring that all steps—whether top-level or deeply nested—pass through the exact same optimized, instrumented, and resilient execution path.
+*   **Key Insight: Recursive, Policy-Driven Execution**: The `ExecutorCore.execute()` method is still recursive. However, when it encounters a nested step (e.g., a `ParallelStep` inside a `LoopStep`), it correctly dispatches to the right policy (`DefaultParallelStepExecutor`). This ensures that all steps, whether top-level or deeply nested, are handled by their dedicated, fully-featured, and isolated logic. This fulfills the promise of algebraic closure at runtime, eliminating a whole class of context and state-related bugs.
+
+*   **Guidance for Developers:**
+    *   **To understand how a `LoopStep` works:** Read the `DefaultLoopStepExecutor` in `step_policies.py`.
+    *   **To modify retry behavior:** Change the logic inside `DefaultAgentStepExecutor`.
+    *   **To add a new custom step type:** Create a new policy class for it and update the dispatcher in `ExecutorCore.execute`. You will not need to touch any of the other policies.
 
 ---
 
@@ -51,8 +55,8 @@ While the DSL defines the *what*, the `flujo/application/core/` directory define
 Flujo is architected for production with a deep focus on reliability under load.
 
 *   **Proactive Resilience (`flujo/application/core/`)**:
+    *   **Centralized Context Management:** The `ContextManager` (`.../context_manager.py`) provides the canonical implementation for context **isolation** (ensuring branches don't interfere) and **merging** (ensuring state is correctly propagated). All execution policies use this central utility.
     *   **Circuit Breaker:** Prevents cascading failures by temporarily halting calls to failing services (`.../circuit_breaker.py`).
-    *   **Graceful Degradation:** Automatically disables non-essential features (e.g., detailed telemetry) under heavy system load to preserve core functionality (`.../graceful_degradation.py`).
     *   **Error Recovery Strategies:** A system for classifying errors (`ErrorCategory`) and applying targeted recovery actions, like retries with exponential backoff (`RetryStrategy`) or providing a default value (`FallbackStrategy`).
 
 *   **Deep Performance Optimization (`flujo/application/core/optimization/`)**:
@@ -87,4 +91,4 @@ Flujo provides a suite of tools for monitoring, debugging, and managing pipeline
 
 ### **Conclusion**
 
-Flujo’s architecture presents a mature and robust solution for modern AI engineering. The clean separation between its intuitive **declarative shell** and its powerful **execution core** delivers both an excellent developer experience and the resilience required for production systems. By integrating a compositional DSL, a decoupled and modular core, and built-in primitives for performance, resilience, and observability, Flujo provides a comprehensive and transparent framework for building, managing, and improving complex AI applications.
+Flujo’s architecture presents a mature and robust solution for modern AI engineering. The clean separation between its intuitive **declarative shell** and its powerful, now **policy-driven execution core** delivers both an excellent developer experience and the resilience required for production systems. By integrating a compositional DSL, a decoupled and modular core, and built-in primitives for performance, resilience, and observability, Flujo provides a comprehensive and transparent framework for building, managing, and improving complex AI applications.
