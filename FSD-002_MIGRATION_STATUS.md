@@ -62,7 +62,7 @@ Migrate step-execution logic out of the monolithic `ExecutorCore` in `flujo/appl
 ### Current State (high level)
 - Policies are in place and own SimpleStep orchestration end-to-end (preprocessing, options, agent run, plugins, validators, retries, fallback, metrics, cache), implemented in `_execute_simple_step_policy_impl` and wired via `DefaultSimpleStepExecutor`.
 - Core remains the dispatcher and retains loop execution; Loop policy still delegates to core during migration.
-  - HITL tests pass on pause/resume paths; fallback and validation persistence suites pass. Loop suite parity achieved for logging, iteration bounds, and feedback; Conditional/Map suites identified for parity alignment next.
+  - HITL tests pass on pause/resume paths; fallback and validation persistence suites pass. Loop/Conditional/Map suites parity achieved (logging, iteration bounds, feedback; branch metadata/default handling; map accumulation/isolation).
 
 Additional updates:
 - Introduced a fast targeted test runner `scripts/run_targeted_tests.py` to run specific nodeids with strict per-test timeouts and detailed logging to `output/targeted_tests.log`.
@@ -102,10 +102,11 @@ Additional updates:
  - tests/integration/test_stateful_hitl.py::test_stateful_hitl_resume — PASS
  - tests/integration/test_validation_persistence.py::{test_persist_feedback_and_results,test_persist_results_on_success} — PASS
  - tests/unit/test_fallback.py and tests/unit/test_fallback_edge_cases.py — PASS
-  - Loop/Conditional/Map focus:
-    - tests/integration/test_loop_step_execution.py — PASS (iteration mapper bounds, failure feedback prefix, iteration logging aligned)
-    - tests/integration/test_map_over_step.py — FAIL (truncated outputs, accumulation issues in sequential/parallel)
-    - tests/integration/test_conditional_step_execution.py — FAIL (branch key metadata, default/no-default feedback text, output mapper application, logging)
+  - Loop/Conditional/Map:
+    - tests/integration/test_loop_step_execution.py — PASS
+    - tests/integration/test_map_over_step.py — PASS
+    - tests/integration/test_map_over_with_context_updates.py — PASS
+    - tests/integration/test_conditional_step_execution.py — PASS
 
 Notes:
 - Redirect loop detection now raises `InfiniteRedirectError` which propagates through the runner as expected.
@@ -123,12 +124,8 @@ Notes:
 - Hybrid validation: `flujo/application/core/hybrid_check.py`
 
 ### Next Execution Slice
-- Focus on Conditional/Map parity fixes in core (Loop parity complete; migrate Loop to policy after these):
-  - ConditionalStep:
-    - Ensure `executed_branch_key` reflects actual selection; apply branch output mapper; align feedback for no-match/no-default case to include "no default"; emit expected info/error logs.
-  - MapOver:
-    - Fix accumulation semantics for sequential/parallel; ensure context isolation per item and gather full outputs.
-  - Re-run:
-    - `pytest -q tests/integration/test_map_over_step.py`
-    - `pytest -q tests/integration/test_conditional_step_execution.py`
-  - Once green, proceed with Task 2.1 (migrate `_execute_loop` body into `DefaultLoopStepExecutor.execute`) and switch core to delegate to the policy.
+- Migrate Loop to policy and finalize handler purity:
+  - Move `_execute_loop` body into `DefaultLoopStepExecutor.execute` (parameterize internal calls via `core`).
+  - Switch `ExecutorCore._execute_loop` to delegate to the policy.
+  - Audit handlers for purity and remove residual logic.
+  - Re-run fast tests.

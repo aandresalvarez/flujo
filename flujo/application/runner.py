@@ -443,6 +443,12 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         It yields any streaming output from the final step and then the final
         ``PipelineResult`` object.
         """
+        # Debug: log provided initial_context_data for visibility in map-over tests
+        try:
+            from flujo.infra import telemetry
+            telemetry.logfire.info(f"Runner.run_async received initial_context_data keys={list(initial_context_data.keys()) if isinstance(initial_context_data, dict) else None}")
+        except Exception:
+            pass
         current_context_instance: Optional[ContextT] = None
         if self.context_model is not None:
             try:
@@ -480,7 +486,15 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     else:
                         processed_context_data[key] = value
 
+                try:
+                    telemetry.logfire.info(f"Runner.run_async building context with data: {processed_context_data}")
+                except Exception:
+                    pass
                 current_context_instance = self.context_model(**processed_context_data)
+                try:
+                    telemetry.logfire.info(f"Runner.run_async created context: {self.context_model.__name__}.nums={getattr(current_context_instance, 'nums', None)!r}")
+                except Exception:
+                    pass
             except ValidationError as e:
                 telemetry.logfire.error(
                     f"Context initialization failed for model {self.context_model.__name__}: {e}"

@@ -2440,10 +2440,24 @@ class DefaultCacheKeyGenerator:
         self._hasher = hasher or Blake3Hasher()
     
     def generate_key(self, step: Any, data: Any, context: Any, resources: Any) -> str:
-        """Generate a simple deterministic cache key based on step name and input."""
+        """Generate a deterministic cache key based on step name, input, and relevant context.
+
+        For steps that depend on context fields (e.g., MapStep uses `iterable_input`),
+        include that field's value in the key to avoid stale cache hits across runs with
+        different contexts.
+        """
         step_name = getattr(step, 'name', str(type(step).__name__))
-        data_str = str(data) if data is not None else ""
-        key_bytes = f"{step_name}:{data_str}".encode('utf-8')
+        parts: list[str] = [step_name]
+        parts.append(str(data) if data is not None else "")
+        try:
+            iterable_name = getattr(step, 'iterable_input', None)
+            if iterable_name and context is not None:
+                if hasattr(context, iterable_name):
+                    iterable_val = getattr(context, iterable_name)
+                    parts.append(f"{iterable_name}={str(list(iterable_val)) if hasattr(iterable_val, '__iter__') and not isinstance(iterable_val, (str, bytes, bytearray)) else str(iterable_val)}")
+        except Exception:
+            pass
+        key_bytes = ":".join(parts).encode('utf-8')
         return self._hasher.digest(key_bytes)
 
 
@@ -2607,13 +2621,32 @@ class OptimizedExecutorCore(ExecutorCore):
         iteration_results: list[StepResult] = []
         current_data = data
         current_context = context or PipelineContext(initial_prompt=str(data))
-        max_loops = getattr(loop_step, 'max_loops', 5)
+        # For steps like MapStep, max_loops can be determined dynamically by the
+        # initial input mapper. Defer reading max_loops until after applying it.
 
         # Apply initial input mapper if provided
         initial_mapper = getattr(loop_step, 'initial_input_to_loop_body_mapper', None)
         if initial_mapper:
             try:
+                try:
+                    from pydantic import BaseModel as _BM
+                    if isinstance(current_context, _BM):
+                        from flujo.infra import telemetry as _t
+                        _t.logfire.info(f"LoopStep '{loop_step.name}': context nums={getattr(current_context, getattr(loop_step, 'iterable_input', 'n/a'), None)!r}")
+                except Exception:
+                    pass
                 current_data = initial_mapper(current_data, current_context)
+                # Debug logging for MapStep initial mapping
+                try:
+                    if hasattr(loop_step, 'iterable_input'):
+                        iterable_name = getattr(loop_step, 'iterable_input')
+                        raw_items_dbg = getattr(current_context, iterable_name, []) if current_context is not None else []
+                        from collections.abc import Iterable as _Iterable
+                        n_items = len(list(raw_items_dbg)) if isinstance(raw_items_dbg, _Iterable) and not isinstance(raw_items_dbg, (str, bytes, bytearray)) else -1
+                        from flujo.infra import telemetry as _t
+                        _t.logfire.info(f"LoopStep '{loop_step.name}': initial mapped first item={current_data!r}, items_len={n_items}")
+                except Exception:
+                    pass
             except Exception as e:
                 return StepResult(
                     name=loop_step.name,
@@ -2628,6 +2661,8 @@ class OptimizedExecutorCore(ExecutorCore):
                     metadata_={'iterations': 0, 'exit_reason': 'initial_input_mapper_error'},
                     step_history=[],
                 )
+
+        # Rely on MapStep's own initial/iteration/output mappers to set per-run state.
 
         # Handle empty pipeline
         if not getattr(loop_step.loop_body_pipeline, 'steps', []):
@@ -2644,6 +2679,10 @@ class OptimizedExecutorCore(ExecutorCore):
                 metadata_={'iterations': 0, 'exit_reason': 'empty_pipeline'},
                 step_history=[],
             )
+
+        # Now that initial mapper may have configured dynamic loop bounds (e.g. MapStep),
+        # read the effective max_loops value (MapStep exposes a dynamic property).
+        max_loops = getattr(loop_step, 'max_loops', 5)
 
         # Loop execution with proper context isolation
         exit_reason = None
@@ -2716,8 +2755,37 @@ class OptimizedExecutorCore(ExecutorCore):
                     cumulative_tokens += fallback_result.token_counts or 0
                     # Continue to next iteration
                     continue
-                # No fallback: abort loop
+                # No fallback: for MapStep, continue processing remaining items capturing failure;
+                # for generic LoopStep, abort.
                 failed = next(sr for sr in pipeline_result.step_history if not sr.success)
+                if hasattr(loop_step, 'iterable_input'):
+                    # Record iteration history including failure
+                    iteration_results.extend(pipeline_result.step_history)
+                    # Merge iteration context to preserve attempt logs
+                    if pipeline_result.final_pipeline_context is not None and current_context is not None:
+                        merged_ctx = ContextManager.merge(current_context, pipeline_result.final_pipeline_context)
+                        current_context = merged_ctx or pipeline_result.final_pipeline_context
+                    # Try to advance to next item via iteration mapper if available
+                    iter_mapper = getattr(loop_step, 'iteration_input_mapper', None)
+                    if iter_mapper and iteration_count < max_loops:
+                        try:
+                            current_data = iter_mapper(current_data, current_context, iteration_count)
+                        except Exception:
+                            return StepResult(
+                                name=loop_step.name,
+                                success=False,
+                                output=None,
+                                attempts=iteration_count,
+                                latency_s=time.monotonic() - start_time,
+                                token_counts=cumulative_tokens,
+                                cost_usd=cumulative_cost,
+                                feedback=(failed.feedback or "Loop body failed"),
+                                branch_context=current_context,
+                                metadata_={'iterations': iteration_count, 'exit_reason': 'iteration_input_mapper_error'},
+                                step_history=iteration_results,
+                            )
+                        # Continue MapStep processing
+                        continue
                 # Normalize plugin failure feedback to match legacy expectations
                 fb = failed.feedback or ""
                 try:
@@ -2859,8 +2927,8 @@ class OptimizedExecutorCore(ExecutorCore):
             step_history=iteration_results,
         )
 
-# Restore OptimizedExecutorCore loop implementation to ExecutorCore for parity
-ExecutorCore._execute_loop = OptimizedExecutorCore._execute_loop
+# Switch core to delegate loop execution to policy executor
+ExecutorCore._execute_loop = lambda self, *args, **kwargs: self.loop_step_executor.execute(self, *args, **kwargs)
 
 # ----------------------------------------------------------------------
 # Helper methods for agent-step orchestration (Separation of Concerns)

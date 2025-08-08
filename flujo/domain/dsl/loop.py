@@ -158,6 +158,8 @@ class MapStep(LoopStep[TContext]):
             items_var.set(items)
             results_var.set([])
             if items:
+                # Ensure we allow exactly len(items) iterations so the exit condition
+                # (len(results)+1 >= len(items)) triggers after processing the last item.
                 self._max_loops_var.set(len(items))
                 self._body_var.set(self._original_body_pipeline)
                 return items[0]
@@ -182,6 +184,14 @@ class MapStep(LoopStep[TContext]):
             if not items:
                 return []
             res.append(out)
+            # Reset internal state to support reusability across runs
+            try:
+                items_var.set([])
+                results_var.set([])
+                self._max_loops_var.set(1)
+                self._body_var.set(self._noop_pipeline)
+            except Exception:
+                pass
             return list(res)
 
         object.__setattr__(self, "initial_input_to_loop_body_mapper", _initial_mapper)
