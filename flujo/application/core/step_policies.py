@@ -383,6 +383,17 @@ async def _execute_simple_step_policy_impl(
             # output processors
             processed_output = agent_output
             if hasattr(step, "processors") and step.processors:
+                try:
+                    proc_list = (
+                        step.processors
+                        if isinstance(step.processors, list)
+                        else getattr(step.processors, "output_processors", [])
+                    )
+                    telemetry.logfire.info(
+                        f"[AgentStepExecutor] Applying {len(proc_list) if proc_list else 0} output processor(s) for step '{getattr(step, 'name', 'unknown')}'"
+                    )
+                except Exception:
+                    pass
                 processed_output = await core._processor_pipeline.apply_output(
                     step.processors, agent_output, context=context
                 )
