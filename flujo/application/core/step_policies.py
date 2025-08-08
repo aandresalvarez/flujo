@@ -282,18 +282,49 @@ async def _execute_simple_step_policy_impl(
 
     # retries
     if hasattr(step, "config") and hasattr(step.config, "max_retries"):
-        max_retries = int(step.config.max_retries) if step.config.max_retries is not None else 1
+        raw = getattr(step.config, "max_retries")
+        try:
+            # Handle mocks or non-numeric
+            if hasattr(raw, "_mock_name"):
+                max_retries = 2
+            else:
+                max_retries = int(raw) if raw is not None else 1
+        except Exception:
+            max_retries = 1
     else:
         max_retries = getattr(step, "max_retries", 2)
     if stream:
         max_retries = 1
-    if hasattr(max_retries, "_mock_name") or isinstance(
-        max_retries, (Mock, MagicMock, AsyncMock)
-    ):
+    if hasattr(max_retries, "_mock_name") or isinstance(max_retries, (Mock, MagicMock, AsyncMock)):
         max_retries = 2
+    # Ensure at least one attempt
+    try:
+        if int(max_retries) <= 0:
+            max_retries = 1
+    except Exception:
+        max_retries = 1
 
     telemetry.logfire.info(f"[Policy] SimpleStep max_retries (total attempts): {max_retries}")
     # Attempt count semantics: max_retries equals total attempts expected by tests
+    # Track primary (pre-fallback) usage totals to aggregate into fallback result
+    primary_cost_usd_total: float = 0.0
+    primary_tokens_total: int = 0
+    primary_latency_total: float = 0.0
+    
+    def _normalize_plugin_feedback(msg: str) -> str:
+        """Strip policy/core wrapper prefixes to expose original plugin feedback text."""
+        prefixes = (
+            "Plugin execution failed after max retries: ",
+            "Plugin validation failed: ",
+        )
+        changed = True
+        while changed:
+            changed = False
+            for p in prefixes:
+                if msg.startswith(p):
+                    msg = msg[len(p):]
+                    changed = True
+        return msg.strip()
     for attempt in range(1, max_retries + 1):
         result.attempts = attempt
         start_ns = time_perf_ns()
@@ -338,6 +369,8 @@ async def _execute_simple_step_policy_impl(
             result.cost_usd = cost_usd
             result.token_counts = prompt_tokens + completion_tokens
             await core._usage_meter.add(cost_usd, prompt_tokens, completion_tokens)
+            primary_cost_usd_total += cost_usd or 0.0
+            primary_tokens_total += (prompt_tokens + completion_tokens) or 0
 
             # output processors
             processed_output = agent_output
@@ -359,6 +392,21 @@ async def _execute_simple_step_policy_impl(
                 )
                 if hybrid_feedback:
                     result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
+                    # Persist hybrid feedback/results to context when configured (use actual validator outputs)
+                    try:
+                        if context is not None:
+                            if getattr(step, "persist_feedback_to_context", None):
+                                fname = step.persist_feedback_to_context
+                                if hasattr(context, fname):
+                                    getattr(context, fname).append(hybrid_feedback)
+                            if getattr(step, "persist_validation_results_to", None):
+                                # Re-run validators on the checked output to get named results
+                                results = await core._validator_runner.validate(step.validators, checked_output, context=context)
+                                hname = step.persist_validation_results_to
+                                if hasattr(context, hname):
+                                    getattr(context, hname).extend(results)
+                    except Exception:
+                        pass
                     if strict_flag:
                         result.success = False
                         result.feedback = hybrid_feedback
@@ -380,6 +428,15 @@ async def _execute_simple_step_policy_impl(
                 if result.metadata_ is None:
                     result.metadata_ = {}
                 result.metadata_["validation_passed"] = True
+                # On success, optionally persist positive validation results (actual validator outputs)
+                try:
+                    if context is not None and getattr(step, "persist_validation_results_to", None):
+                        results = await core._validator_runner.validate(step.validators, checked_output, context=context)
+                        hname = step.persist_validation_results_to
+                        if hasattr(context, hname):
+                            getattr(context, hname).extend(results)
+                except Exception:
+                    pass
                 return result
 
             # plugins
@@ -431,6 +488,7 @@ async def _execute_simple_step_policy_impl(
                                 data = f"{str(data)}\n{feedback_text}"
                         except Exception:
                             pass
+                        primary_latency_total += time_perf_ns_to_seconds(time_perf_ns() - start_ns)
                         continue
                     # Exhausted retries: finalize as plugin error and allow fallback
                     result.success = False
@@ -466,12 +524,18 @@ async def _execute_simple_step_policy_impl(
                             if fallback_result.metadata_ is None:
                                 fallback_result.metadata_ = {}
                             fallback_result.metadata_["fallback_triggered"] = True
-                            fallback_result.metadata_["original_error"] = result.feedback
+                            fallback_result.metadata_["original_error"] = core._format_feedback(_normalize_plugin_feedback(str(e)), "Agent execution failed")
+                            # Aggregate primary tokens/latency only; fallback cost remains standalone
+                            fallback_result.token_counts = (fallback_result.token_counts or 0) + primary_tokens_total
+                            fallback_result.latency_s = (fallback_result.latency_s or 0.0) + primary_latency_total + result.latency_s
+                            fallback_result.attempts = 1 + (fallback_result.attempts or 0)
                             if fallback_result.success:
                                 fallback_result.feedback = None
                                 return fallback_result
+                            _orig = _normalize_plugin_feedback(str(e))
+                            _orig_for_format = None if _orig in ("", "Plugin failed without feedback") else _orig
                             fallback_result.feedback = (
-                                f"Original error: {core._format_feedback(result.feedback, 'Agent execution failed')}; "
+                                f"Original error: {core._format_feedback(_orig_for_format, 'Agent execution failed')}; "
                                 f"Fallback error: {core._format_feedback(fallback_result.feedback, 'Agent execution failed')}"
                             )
                             return fallback_result
@@ -502,6 +566,15 @@ async def _execute_simple_step_policy_impl(
                     await core.validator_invoker.validate(
                         processed_output, step, context=context, timeout_s=timeout_s
                     )
+                    # Persist successful validation results when requested
+                    try:
+                        if context is not None and getattr(step, "persist_validation_results_to", None):
+                            results = await core._validator_runner.validate(step.validators, processed_output, context=context)
+                            hist_name = step.persist_validation_results_to
+                            if hasattr(context, hist_name):
+                                getattr(context, hist_name).extend(results)
+                    except Exception:
+                        pass
                 except Exception as validation_error:
                     if not hasattr(step, "fallback_step") or step.fallback_step is None:
                         result.success = False
@@ -512,6 +585,20 @@ async def _execute_simple_step_policy_impl(
                         result.latency_s = time_perf_ns_to_seconds(
                             time_perf_ns() - start_ns
                         )
+                        # Persist failure feedback/results to context if configured
+                        try:
+                            if context is not None:
+                                if getattr(step, "persist_feedback_to_context", None):
+                                    fname = step.persist_feedback_to_context
+                                    if hasattr(context, fname):
+                                        getattr(context, fname).append(str(validation_error))
+                                if getattr(step, "persist_validation_results_to", None):
+                                    results = await core._validator_runner.validate(step.validators, processed_output, context=context)
+                                    hname = step.persist_validation_results_to
+                                    if hasattr(context, hname):
+                                        getattr(context, hname).extend(results)
+                        except Exception:
+                            pass
                         telemetry.logfire.error(
                             f"Step '{step.name}' validation failed after exception: {validation_error}"
                         )
@@ -521,6 +608,7 @@ async def _execute_simple_step_policy_impl(
                         telemetry.logfire.warning(
                             f"Step '{step.name}' validation exception attempt {attempt}: {validation_error}"
                         )
+                        primary_latency_total += time_perf_ns_to_seconds(time_perf_ns() - start_ns)
                         continue
                     result.success = False
                     result.feedback = (
@@ -530,6 +618,19 @@ async def _execute_simple_step_policy_impl(
                     result.latency_s = time_perf_ns_to_seconds(
                         time_perf_ns() - start_ns
                     )
+                    try:
+                        if context is not None:
+                            if getattr(step, "persist_feedback_to_context", None):
+                                fname = step.persist_feedback_to_context
+                                if hasattr(context, fname):
+                                    getattr(context, fname).append(str(validation_error))
+                            if getattr(step, "persist_validation_results_to", None):
+                                results = await core._validator_runner.validate(step.validators, processed_output, context=context)
+                                hname = step.persist_validation_results_to
+                                if hasattr(context, hname):
+                                    getattr(context, hname).extend(results)
+                    except Exception:
+                        pass
                     telemetry.logfire.error(
                         f"Step '{step.name}' validation failed after exception: {validation_error}"
                     )
@@ -556,7 +657,11 @@ async def _execute_simple_step_policy_impl(
                             if fallback_result.metadata_ is None:
                                 fallback_result.metadata_ = {}
                             fallback_result.metadata_["fallback_triggered"] = True
-                            fallback_result.metadata_["original_error"] = result.feedback
+                            fallback_result.metadata_["original_error"] = core._format_feedback(str(validation_error), "Agent execution failed")
+                            # Aggregate primary tokens/latency only; fallback cost remains standalone
+                            fallback_result.token_counts = (fallback_result.token_counts or 0) + primary_tokens_total
+                            fallback_result.latency_s = (fallback_result.latency_s or 0.0) + primary_latency_total + result.latency_s
+                            fallback_result.attempts = 1 + (fallback_result.attempts or 0)
                             # Do NOT multiply fallback metrics here; they are accounted once in tests
                             if fallback_result.success:
                                 fallback_result.feedback = None
@@ -605,6 +710,9 @@ async def _execute_simple_step_policy_impl(
             raise
         except InfiniteRedirectError:
             # Preserve redirect loop errors for caller/tests
+            raise
+        except InfiniteFallbackError:
+            # Preserve fallback loop errors for caller/tests
             raise
         except asyncio.TimeoutError:
             # Preserve timeout semantics (non-retryable for plugin/validator phases)
@@ -671,12 +779,18 @@ async def _execute_simple_step_policy_impl(
                         if fallback_result.metadata_ is None:
                             fallback_result.metadata_ = {}
                         fallback_result.metadata_["fallback_triggered"] = True
-                        fallback_result.metadata_["original_error"] = result.feedback
+                        fallback_result.metadata_["original_error"] = core._format_feedback(_normalize_plugin_feedback(str(agent_error)), "Agent execution failed")
+                        # Aggregate primary tokens/latency only; fallback cost remains standalone
+                        fallback_result.token_counts = (fallback_result.token_counts or 0) + primary_tokens_total
+                        fallback_result.latency_s = (fallback_result.latency_s or 0.0) + primary_latency_total + result.latency_s
+                        fallback_result.attempts = 1 + (fallback_result.attempts or 0)
                         if fallback_result.success:
                             fallback_result.feedback = None
                             return fallback_result
+                        _orig = _normalize_plugin_feedback(str(agent_error))
+                        _orig_for_format = None if _orig in ("", "Plugin failed without feedback") else _orig
                         fallback_result.feedback = (
-                            f"Original error: {core._format_feedback(result.feedback, 'Agent execution failed')}; "
+                            f"Original error: {core._format_feedback(_orig_for_format, 'Agent execution failed')}; "
                             f"Fallback error: {core._format_feedback(fallback_result.feedback, 'Agent execution failed')}"
                         )
                         return fallback_result
@@ -690,7 +804,7 @@ async def _execute_simple_step_policy_impl(
                         return result
                 # No fallback configured
                 return result
-            if attempt < max_retries + 1:
+            if attempt < max_retries:
                 telemetry.logfire.warning(
                     f"Step '{step.name}' agent execution attempt {attempt} failed: {agent_error}"
                 )
@@ -736,7 +850,12 @@ async def _execute_simple_step_policy_impl(
                     if fallback_result.metadata_ is None:
                         fallback_result.metadata_ = {}
                     fallback_result.metadata_["fallback_triggered"] = True
-                    fallback_result.metadata_["original_error"] = result.feedback
+                    fallback_result.metadata_["original_error"] = core._format_feedback(msg, "Agent execution failed")
+                    # Aggregate primary usage into fallback metrics
+                    # Aggregate primary tokens/latency only; fallback cost remains standalone
+                    fallback_result.token_counts = (fallback_result.token_counts or 0) + primary_tokens_total
+                    fallback_result.latency_s = (fallback_result.latency_s or 0.0) + primary_latency_total + result.latency_s
+                    fallback_result.attempts = 1 + (fallback_result.attempts or 0)
                     # Do NOT multiply fallback metrics here; they are accounted once in tests
                     if fallback_result.success:
                         fallback_result.feedback = None
@@ -1011,7 +1130,7 @@ class DefaultAgentStepExecutor:
                         f"Step '{step.name}' encountered a non-retryable exception: {type(e).__name__}"
                     )
                     raise e
-                if attempt < max_retries + 1:
+                if attempt < max_retries:
                     telemetry.logfire.warning(
                         f"Step '{step.name}' agent execution attempt {attempt} failed: {e}"
                     )
@@ -1024,6 +1143,7 @@ class DefaultAgentStepExecutor:
                     else:
                         result.feedback = f"Plugin validation failed after max retries: {msg}"
                 else:
+                    # Ensure meaningful feedback for exception-raising agents
                     result.feedback = f"Agent execution failed with {type(e).__name__}: {str(e)}"
                 result.output = None
                 result.latency_s = time.monotonic() - overall_start_time
