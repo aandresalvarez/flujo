@@ -3397,7 +3397,10 @@ class OptimizedExecutorCore(ExecutorCore):
         if output_mapper:
             try:
                 telemetry.logfire.info(f"LoopStep '{loop_step.name}': calling loop_output_mapper")
-                final_output = output_mapper(current_data, current_context)
+                # 1. Unpack the final data from the loop before mapping.
+                unpacked_data = self.unpacker.unpack(current_data)
+                # 2. Pass the UNPACKED data to the mapper.
+                final_output = output_mapper(unpacked_data, current_context)
                 try:
                     items_len = len(getattr(loop_step, "_items_var").get()) if hasattr(loop_step, "_items_var") else -1
                     telemetry.logfire.info(f"LoopStep '{loop_step.name}': output mapper after call items_len={items_len}")
@@ -3446,7 +3449,7 @@ class OptimizedExecutorCore(ExecutorCore):
         return StepResult(
             name=loop_step.name,
             success=success_flag,
-            output=final_output,
+            output=self.unpacker.unpack(final_output),
             attempts=iteration_count,
             latency_s=time.monotonic() - start_time,
             token_counts=cumulative_tokens,
