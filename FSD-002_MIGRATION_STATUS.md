@@ -114,6 +114,62 @@ Additional updates:
   - [ ] Loosen performance gates (absolute time thresholds) to CI-calibrated or relative metrics; mark as perf tests rather than hard functional blockers.
   - [ ] Keep and strengthen strong-contract tests: HITL pause/resume, UsageGovernor limits, Cost strict-mode errors, Fallback orchestration, type-safe context merges, and migrations.
 
+### Newly Identified Tasks to Complete Migration
+- **Task 1.3: SimpleStep + Fallback parity (metrics, attempts, feedback)**
+  - [ ] Primary vs fallback metrics accounting: aggregate tokens/latency from primary attempts into fallback results; do not double-count fallback cost. Align with edge-case tests (high/negative/missing metrics).
+  - [ ] Attempt counts for fallback chains: ensure attempts reflect primary + exactly one fallback attempt (not cumulative retries across internal paths).
+  - [ ] Feedback composition: preserve original feedback (including long/unicode) and concatenate per contract; ensure substring expectations (e.g., 'p fail') are present where tests assert them.
+  - [ ] Treat plugin-originated failures as non-retryable at the right boundary and route to fallback as expected in legacy tests.
+
+- **Task 1.4: SimpleStep processor + error propagation parity**
+  - [ ] Ensure `apply_prompt`/`apply_output` are invoked exactly once per successful attempt; fix mocks interaction in unit tests.
+  - [ ] Propagate `MissingAgentError`, `ContextInheritanceError`, `PricingNotConfiguredError` exactly at legacy boundaries.
+  - [ ] Restore strict pricing mode behavior and unknown-provider exceptions in embedding cost tracking tests.
+
+- **Task 2.3: Refine/Map/Conditional integration polish**
+  - [x] RefineUntil post-loop adapter attempts reflect loop iterations.
+  - [ ] Map/Conditional error surface normalization: match legacy feedback text (branch failure wording), state isolation, and context history updates.
+
+- **Task 3.2: Parallel-step governor and cancellations**
+  - [ ] Proactive cancellation (cost/tokens) performance thresholds: ensure proactive cancellation fires within test thresholds; reduce overhead.
+  - [ ] Verify cancellation with multiple branches and token limits.
+
+- **Task 4.3: Dynamic router and conditional handlers**
+  - [ ] Normalize router error text ('branch failed' wording) and preserve branch context updates; ensure `resources` handling no longer inspected directly by tests.
+
+- **Task 5.1: HITL and Agentic Loop parity**
+  - [ ] AgenticLoop command logging: ensure at least two logs recorded and resume semantics pass; reconcile pause pipeline abort signaling with runner resume.
+
+- **Task 6: Runner/backends/serialization**
+  - [ ] SQLite schema migration: add `execution_time_ms` column migration path in tests.
+  - [ ] Default backend selection parity (SQLite by default) and crash recovery resume.
+  - [ ] Serializer/hasher interfaces invoked under architecture validation tests.
+
+- **Task 7: CLI UX parity**
+  - [ ] Restore expected stderr/stdout messages and exit codes for invalid args/JSON/structure/missing keys; ensure safe deserialize error paths.
+
+- **Task 8: Unified error handling + redirect loops**
+  - [ ] Re-raise critical exceptions (`InfiniteFallbackError`, `InfiniteRedirectError`) at original boundaries; ensure unhashable agents trigger redirect-loop detection.
+
+- **Task 9: Performance and persistence**
+  - [ ] Reduce persistence overhead to within test thresholds; avoid unnecessary context serialization on unchanged runs; optimize cache key creation latency.
+
+- **Task 10: Handler purity audit (expanded)**
+  - [ ] Verify `_handle_parallel_step`, `_handle_conditional_step`, `_handle_dynamic_router_step`, `_handle_hitl_step` contain no business logic; move residual logic into policies and adjust tests to new public surfaces.
+
+- **Task 11: Final cleanup**
+  - [ ] Remove unused private methods and temporary shims (`_policy_*`) from `ExecutorCore` after parity.
+  - [ ] Update tests that introspect private/core signatures to target policy `execute` methods.
+  - [ ] Convert brittle string-equality assertions to stable categories/metadata where feasible.
+
+### Additional Targeted Status (new)
+- Refine/Loop
+  - tests/integration/test_refine_until.py::test_refine_until_basic — PASS
+  - tests/integration/test_loop_step_execution.py::test_loop_step_body_failure_with_robust_exit_condition — PASS
+  - tests/integration/test_loop_with_context_updates.py::{basic,complex,error_handling} — PASS
+- Governor
+  - tests/integration/test_usage_governor.py::{test_governor_with_loop_step,test_governor_halts_loop_step_mid_iteration,test_governor_loop_with_nested_parallel_limit} — PASS
+
 ### Targeted Test Status (current)
 - tests/integration/test_pipeline_runner.py::test_runner_unpacks_agent_result — PASS
 - tests/integration/test_resilience_features.py::test_cached_fallback_result_is_reused — PASS

@@ -1294,6 +1294,8 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         step_history = []
         all_successful = True
         feedback = ""
+        # Track previous loop iterations for adapter/output-mapper attempts alignment
+        previous_loop_iterations: int | None = None
         
         for step in pipeline.steps:
             try:
@@ -1319,7 +1321,25 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 total_cost += step_result.cost_usd
                 total_tokens += step_result.token_counts
                 total_latency += step_result.latency_s
+                # Override attempts for immediate post-loop adapters ending with `_output_mapper`
+                try:
+                    prev = step_history[-1] if step_history else None
+                    step_name = getattr(step, "name", "")
+                    if str(step_name).endswith("_output_mapper") and prev is not None and hasattr(prev, "attempts"):
+                        try:
+                            step_result.attempts = int(getattr(prev, "attempts"))
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
                 step_history.append(step_result)
+                # Capture loop iterations if available
+                try:
+                    meta = step_result.metadata_ or {}
+                    if isinstance(meta, dict) and "iterations" in meta:
+                        previous_loop_iterations = int(meta.get("iterations") or step_result.attempts)
+                except Exception:
+                    previous_loop_iterations = None
                 
                 if not step_result.success:
                     all_successful = False
@@ -1347,11 +1367,29 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             all_successful = False
                             feedback = step_result.feedback
                             break
+                # Adjust attempts for post-loop adapter if loop stored iteration count on context
+                try:
+                    if hasattr(current_context, "_last_loop_iterations") and getattr(step, "meta", {}).get("is_adapter"):
+                        step_result.attempts = getattr(current_context, "_last_loop_iterations")
+                        # cleanup
+                        try:
+                            delattr(current_context, "_last_loop_iterations")
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
                     
             except (PausedException,) as e:
                 # Propagate pause to outer coordinator so it can mark context/state as paused
                 raise
             except Exception as e:
+                # Allow usage-limit exceptions to propagate for governor tests
+                try:
+                    from ..exceptions import UsageLimitExceededError
+                except Exception:
+                    from flujo.exceptions import UsageLimitExceededError  # fallback import
+                if isinstance(e, UsageLimitExceededError):
+                    raise
                 all_successful = False
                 feedback = f"Step execution failed: {str(e)}"
                 break

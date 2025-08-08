@@ -606,7 +606,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             if isinstance(out, RefinementCheck) and out.is_complete:
                 return last_artifact_var.get()
             return out
-        mapper_step = cls.from_callable(_post_output_mapper, name=f"{name}_output_mapper")
+        mapper_step = cls.from_callable(_post_output_mapper, name=f"{name}_output_mapper", is_adapter=True)
         # Compose pipeline: loop then post mapping step
         return core_loop >> mapper_step
 
