@@ -611,6 +611,17 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             result = await self.simple_step_executor.execute(
                 self, step, data, context, resources, limits, stream, on_chunk, cache_key, None, _fallback_depth
             )
+        # Route steps with plugins/validators through SimpleStep policy to ensure redirect loop detection,
+        # validation semantics, retries, and fallback orchestration are consistently applied.
+        elif (hasattr(step, "plugins") and getattr(step, "plugins", None)) or (
+            hasattr(step, "validators") and getattr(step, "validators", None)
+        ):
+            telemetry.logfire.debug(
+                f"Routing step with plugins/validators to simple handler: {step.name}"
+            )
+            result = await self.simple_step_executor.execute(
+                self, step, data, context, resources, limits, stream, on_chunk, cache_key, None, _fallback_depth
+            )
         elif hasattr(step, 'fallback_step') and step.fallback_step is not None and not hasattr(step.fallback_step, '_mock_name'):
             telemetry.logfire.debug(f"Routing to simple step with fallback: {step.name}")
             result = await self.simple_step_executor.execute(
@@ -742,67 +753,20 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 _fallback_depth,
             )
 
-        telemetry.logfire.debug(f"_execute_simple_step called for step '{step.name}' with fallback_depth={_fallback_depth}")
-        
-        # --- 0. Fallback Loop Detection ---
-        if _fallback_depth > self._MAX_FALLBACK_CHAIN_LENGTH:
-            raise InfiniteFallbackError(f"Fallback chain length exceeded maximum of {self._MAX_FALLBACK_CHAIN_LENGTH}")
-        
-        # Get current fallback chain and check for loops
-        fallback_chain = self._fallback_chain.get([])
-        
-        # Only add to chain if this is a fallback execution (depth > 0)
+        # Legacy implementation retained during migration
+        # Initialize fallback tracking chain
+        fallback_chain: list[Any] = []
         if _fallback_depth > 0:
-            if step in fallback_chain:
-                raise InfiniteFallbackError(f"Fallback loop detected: step '{step.name}' already in fallback chain")
-            
-            # Add current step to fallback chain for loop detection
-            new_chain = fallback_chain + [step]
-            self._fallback_chain.set(new_chain)
-        
-        # --- 0. Pre-execution Validation for Agent Steps ---
-        if step.agent is None:
-            raise MissingAgentError(f"Step '{step.name}' has no agent configured")
-        
-        def _unpack_agent_result(output: Any) -> Any:
-            """Unpack agent result if it's wrapped in a response object."""
-            # Preserve Pydantic models directly
-            from pydantic import BaseModel
-            if isinstance(output, BaseModel):
-                return output
-            # Handle various wrapper types
-            if hasattr(output, "output"):
-                return output.output
-            elif hasattr(output, "content"):
-                return output.content
-            elif hasattr(output, "result"):
-                return output.result
-            elif hasattr(output, "data"):
-                return output.data
-            elif hasattr(output, "value"):
-                return output.value
-            elif isinstance(output, (tuple, list)) and len(output) > 0:
-                # Handle tuple/list results (common pattern)
-                return output[0]
-            elif hasattr(output, "__dict__"):
-                # Handle objects with attributes - try common patterns
-                for attr in ["output", "content", "result", "data", "value"]:
-                    if hasattr(output, attr):
-                        return getattr(output, attr)
-            # If no unpacking needed, return as-is
-            return output
-
-        def _detect_mock_objects(obj: Any) -> None:
-            """Detect Mock objects and raise MockDetectionError if found."""
-            # Use the globally imported Mock types
-            if isinstance(obj, (Mock, MagicMock, AsyncMock)):
-                raise MockDetectionError(f"Step '{step.name}' returned a Mock object. This is usually due to an unconfigured mock in a test.")
-            
-            # Only check direct Mock objects, not nested structures
-            # This matches the test expectation that nested mocks should not be detected
-
-        # Try to execute the primary step
-        primary_result = None
+            try:
+                current_chain = getattr(self, "_fallback_chain", None)
+                if current_chain is not None and isinstance(current_chain, list):
+                    fallback_chain = current_chain
+            except Exception:
+                fallback_chain = []
+        primary_cost_usd_total: float = 0.0
+        primary_tokens_total: int = 0
+        primary_latency_total: float = 0.0
+        primary_attempts_with_usage: int = 0
         try:
             # Initialize result
             result = StepResult(
@@ -900,6 +864,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     
                     # Track usage metrics
                     await self._usage_meter.add(cost_usd, prompt_tokens, completion_tokens)
+                    # Accumulate primary usage for potential fallback aggregation
+                    primary_cost_usd_total += cost_usd
+                    primary_tokens_total += prompt_tokens + completion_tokens
                     
                     # Usage governance check moved to after successful execution
                     
@@ -914,6 +881,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     # Only run hybrid check for DSL-defined validation steps
                     meta = getattr(step, "meta", None)
                     if isinstance(meta, dict) and meta.get("is_validation_step", False):
+                        strict_flag = bool(meta.get("strict_validation", True))
                         # Prefer precomputed hybrid results from the policy if present
                         hybrid_checked = getattr(step, "_policy_hybrid_checked_output", None)
                         hybrid_feedback = getattr(step, "_policy_hybrid_feedback", None)
@@ -928,111 +896,92 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         else:
                             processed_output = hybrid_checked
                         if hybrid_feedback:
-                            result.success = False
-                            result.feedback = hybrid_feedback
+                            if strict_flag:
+                                # Strict validation: fail and drop output
+                                result.success = False
+                                result.feedback = hybrid_feedback
+                                result.output = None
+                                result.latency_s = time.monotonic() - start_time
+                                if result.metadata_ is None:
+                                    result.metadata_ = {}
+                                result.metadata_["validation_passed"] = False
+                                return result
+                            # Non-strict: pass-through but record failure in metadata
+                            result.success = True
+                            result.feedback = None
                             result.output = processed_output
                             result.latency_s = time.monotonic() - start_time
+                            if result.metadata_ is None:
+                                result.metadata_ = {}
+                            result.metadata_["validation_passed"] = False
                             return result
+                        # No validation failures
                         result.success = True
                         result.output = processed_output
                         result.latency_s = time.monotonic() - start_time
+                        if result.metadata_ is None:
+                            result.metadata_ = {}
+                        result.metadata_["validation_passed"] = True
                         return result
-                    # --- 4. Plugin Runner (policy delegate) ---
+                    # --- 4. Plugin Runner (invoke current runner directly) ---
                     if hasattr(step, "plugins") and step.plugins:
                         try:
-                            processed_output = await self.plugin_redirector.run(
-                                initial=processed_output,
-                                step=step,
-                                data=data,
+                            plugin_result = await self._plugin_runner.run_plugins(
+                                step.plugins,
+                                processed_output,
                                 context=context,
                                 resources=resources,
-                                timeout_s=None,
                             )
+                            # Handle redirect_to if present
+                            if hasattr(plugin_result, "redirect_to") and plugin_result.redirect_to is not None:
+                                redirected_agent = plugin_result.redirect_to
+                                telemetry.logfire.info(
+                                    f"Step '{step.name}' redirecting to agent: {redirected_agent}"
+                                )
+                                redirected_output = await self._agent_runner.run(
+                                    agent=redirected_agent,
+                                    payload=data,
+                                    context=context,
+                                    resources=resources,
+                                    options={},
+                                    stream=stream,
+                                    on_chunk=on_chunk,
+                                    breach_event=breach_event,
+                                )
+                                pt, ct, c_usd = extract_usage_metrics(
+                                    raw_output=redirected_output, agent=redirected_agent, step_name=step.name
+                                )
+                                result.cost_usd += c_usd
+                                result.token_counts += pt + ct
+                                processed_output = self.unpacker.unpack(redirected_output)
+                            # Handle explicit failure outcome
+                            elif hasattr(plugin_result, "success") and not getattr(plugin_result, "success", True):
+                                fb = getattr(plugin_result, "feedback", "")
+                                raise PluginError(f"Plugin validation failed: {fb}")
+                            # Success outcome; apply new_solution if provided
+                            elif hasattr(plugin_result, "success") and getattr(plugin_result, "success", False):
+                                new_solution = getattr(plugin_result, "new_solution", None)
+                                if new_solution is not None:
+                                    processed_output = new_solution
+                            # Dict-based contract with 'output'
+                            elif isinstance(plugin_result, dict) and "output" in plugin_result:
+                                processed_output = plugin_result["output"]
+                            else:
+                                processed_output = plugin_result
                         except Exception as e:
+                            # Normalize to PluginError type for downstream handling
                             raise PluginError(str(e))
                     
                     # --- 5. Validator Runner (if validators exist) ---
                     if hasattr(step, "validators") and step.validators:
                         try:
-                            validation_results = await self._validator_runner.validate(
-                                step.validators, processed_output, context=context
+                            # Use policy-based validator invoker. It raises on first invalid.
+                            await self.validator_invoker.validate(
+                                processed_output,
+                                step,
+                                context=context,
+                                timeout_s=None,
                             )
-                            
-                            # Check if any validation failed
-                            failed_validations = [r for r in validation_results if not r.is_valid]
-                            if failed_validations:
-                                # Handle validation failures (RETRY)
-                                if attempt < max_retries + 1:
-                                    telemetry.logfire.warning(
-                                        f"Step '{step.name}' validation attempt {attempt} failed: {failed_validations[0].feedback}"
-                                    )
-                                    continue
-                                else:
-                                    result.success = False
-                                    result.feedback = (
-                                        f"Validation failed after max retries: "
-                                        f"{self._format_feedback(failed_validations[0].feedback, 'Agent execution failed')}"
-                                    )
-                                    result.output = processed_output
-                                    result.latency_s = time.monotonic() - start_time
-                                    telemetry.logfire.error(
-                                        f"Step '{step.name}' validation attempt {attempt} failed after max retries: {failed_validations[0].feedback}"
-                                    )
-                                
-                                # --- 7. Fallback Logic for Validation Failure ---
-                                if hasattr(step, 'fallback_step') and step.fallback_step is not None:
-                                    telemetry.logfire.info(f"Step '{step.name}' validation failed, attempting fallback")
-                                    
-                                    # Check for fallback loop before executing
-                                    if step.fallback_step in fallback_chain:
-                                        raise InfiniteFallbackError(f"Fallback loop detected: step '{step.fallback_step.name}' already in fallback chain")
-                                        
-                                        try:
-                                            # Execute fallback step using public execute API
-                                            fallback_result = await self.execute(
-                                                step=step.fallback_step,
-                                                data=data,
-                                                context=context,
-                                                resources=resources,
-                                                limits=limits,
-                                                stream=stream,
-                                                on_chunk=on_chunk,
-                                                breach_event=breach_event,
-                                                _fallback_depth=_fallback_depth + 1,
-                                            )
-                                            
-                                            # Mark as fallback triggered and preserve original error
-                                            if fallback_result.metadata_ is None:
-                                                fallback_result.metadata_ = {}
-                                            fallback_result.metadata_["fallback_triggered"] = True
-                                            fallback_result.metadata_["original_error"] = processed_output.feedback
-                                            
-                                            # Accumulate metrics from primary step
-                                            primary_attempts = max_retries + 1
-                                            fallback_result.cost_usd *= primary_attempts
-                                            fallback_result.token_counts *= primary_attempts
-                                            fallback_result.latency_s *= primary_attempts
-                                            fallback_result.attempts *= primary_attempts
-                                            
-                                            if fallback_result.success:
-                                                # For successful fallbacks, clear feedback to indicate success
-                                                fallback_result.feedback = None
-                                                return fallback_result
-                                            else:
-                                                # If fallback step failed, combine feedback with proper format
-                                                fallback_result.feedback = f"Original error: {self._format_feedback(result.feedback, 'Agent execution failed')}; Fallback error: {self._format_feedback(fallback_result.feedback, 'Agent execution failed')}"
-                                                return fallback_result
-                                        except InfiniteFallbackError:
-                                            # Re-raise InfiniteFallbackError to prevent infinite loops
-                                            raise
-                                        except Exception as fallback_error:
-                                            telemetry.logfire.error(f"Fallback for step '{step.name}' also failed: {fallback_error}")
-                                            # Return the original failure with fallback error info
-                                            result.feedback = f"Original error: {result.feedback}; Fallback error: {str(fallback_error)}"
-                                            return result
-                                    
-                                    return result
-                                    
                         except Exception as validation_error:
                             # Handle validation exceptions: fail fast if no fallback, otherwise retry then fallback
                             if not hasattr(step, 'fallback_step') or step.fallback_step is None:
@@ -1078,12 +1027,12 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                                         fallback_result.metadata_ = {}
                                     fallback_result.metadata_["fallback_triggered"] = True
                                     fallback_result.metadata_["original_error"] = result.feedback
-                                    # Scale fallback metrics by number of primary attempts
-                                    primary_attempts = max_retries + 1
-                                    fallback_result.cost_usd *= primary_attempts
-                                    fallback_result.token_counts *= primary_attempts
-                                    fallback_result.latency_s *= primary_attempts
-                                    fallback_result.attempts *= primary_attempts
+                                    # Aggregate primary usage into fallback metrics (no scaling)
+                                    fallback_result.cost_usd += primary_cost_usd_total
+                                    fallback_result.token_counts += primary_tokens_total
+                                    fallback_result.latency_s += primary_latency_total
+                                    # Attempts = primary attempts with usage + fallback attempts
+                                    fallback_result.attempts = result.attempts + fallback_result.attempts
                                     if fallback_result.success:
                                         fallback_result.feedback = None
                                         return fallback_result
@@ -1180,13 +1129,12 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                                 fallback_result.metadata_ = {}
                             fallback_result.metadata_["fallback_triggered"] = True
                             fallback_result.metadata_["original_error"] = result.feedback
-                            
-                            # Accumulate metrics from primary step
-                            primary_attempts = max_retries + 1
-                            fallback_result.cost_usd *= primary_attempts
-                            fallback_result.token_counts *= primary_attempts
-                            fallback_result.latency_s *= primary_attempts
-                            fallback_result.attempts *= primary_attempts
+                            # Aggregate primary usage into fallback metrics (no scaling)
+                            fallback_result.cost_usd += primary_cost_usd_total
+                            fallback_result.token_counts += primary_tokens_total
+                            fallback_result.latency_s += primary_latency_total
+                            # Attempts = primary attempts (attempts tried) + fallback attempts
+                            fallback_result.attempts = result.attempts + fallback_result.attempts
                             
                             if fallback_result.success:
                                 # For successful fallbacks, clear feedback to indicate success
@@ -1263,8 +1211,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         context_setter: Optional[Callable[[Any, Optional[Any]], None]],
         _fallback_depth: int = 0,
     ) -> StepResult:
-        # Use built-in loop implementation to ensure fallback behavior
-        return await self._execute_loop(
+        # Delegate to injected LoopStepExecutor policy
+        return await self.loop_step_executor.execute(
+            self,
             loop_step,
             data,
             context,
@@ -2869,7 +2818,7 @@ class OptimizedExecutorCore(ExecutorCore):
             step_history=iteration_results,
         )
 
-# Expose unified loop helper on base ExecutorCore
+# Restore OptimizedExecutorCore loop implementation to ExecutorCore for parity
 ExecutorCore._execute_loop = OptimizedExecutorCore._execute_loop
 
 # ----------------------------------------------------------------------
@@ -2961,10 +2910,8 @@ def _build_agent_options(self, cfg: Any) -> dict[str, Any]:
             opts[key] = val
     return opts
 
-# Legacy monkey-patching removed: policies now own execution logic
-
-# Add wrapper delegating to policy
-async def _execute_simple_step(self, step: Any, data: Any, context: Optional[TContext_w_Scratch], resources: Optional[Any], limits: Optional[UsageLimits], stream: bool = False, on_chunk: Optional[Callable[[Any], Awaitable[None]]] = None, cache_key: Optional[str] = None, breach_event: Optional[Any] = None, _fallback_depth: int = 0) -> StepResult:
-    return await self.simple_step_executor.execute(self, step, data, context, resources, limits, stream, on_chunk, cache_key, breach_event, _fallback_depth)
-
-# ExecutorCore._handle_parallel_step = _handle_parallel_step_fn  # noqa: F821
+"""
+Legacy monkey-patching removed: policies now own execution logic.
+Note: During migration, core still retains the full simple-step implementation
+behind the _from_policy guard so policies can parity-delegate safely.
+"""

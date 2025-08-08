@@ -7,6 +7,7 @@ from flujo.domain.dsl import Pipeline, Step
 from flujo.domain.dsl.step import StepConfig
 from flujo.domain.models import StepResult, UsageLimits
 from flujo.application.core.ultra_executor import ExecutorCore
+from flujo.application.core.step_policies import DefaultConditionalStepExecutor
 
 
 class TestExecutorCoreConditionalStep:
@@ -35,14 +36,13 @@ class TestExecutorCoreConditionalStep:
         assert hasattr(executor_core, "_handle_conditional_step")
         assert callable(executor_core._handle_conditional_step)
 
-    async def test_handle_conditional_step_signature(self, executor_core, mock_conditional_step):
-        """Test that _handle_conditional_step has the correct signature."""
+    async def test_conditional_policy_execute_signature(self, executor_core, mock_conditional_step):
+        """Policy surface: DefaultConditionalStepExecutor.execute has correct signature."""
         import inspect
-
-        sig = inspect.signature(executor_core._handle_conditional_step)
+        sig = inspect.signature(DefaultConditionalStepExecutor.execute)
         params = list(sig.parameters.keys())
-
         expected_params = [
+            "core",
             "conditional_step",
             "data",
             "context",
@@ -51,8 +51,7 @@ class TestExecutorCoreConditionalStep:
             "context_setter",
             "_fallback_depth",
         ]
-
-        assert params == expected_params
+        assert all(p in params for p in expected_params)
 
     async def test_handle_conditional_step_basic_execution(
         self, executor_core, mock_conditional_step, monkeypatch

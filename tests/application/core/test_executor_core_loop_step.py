@@ -6,6 +6,7 @@ from flujo.domain.dsl.loop import LoopStep
 from flujo.domain.dsl import Pipeline
 from flujo.domain.models import StepResult, UsageLimits
 from flujo.application.core.ultra_executor import ExecutorCore
+from flujo.application.core.step_policies import DefaultLoopStepExecutor
 
 
 class TestExecutorCoreLoopStep:
@@ -35,15 +36,11 @@ class TestExecutorCoreLoopStep:
         assert hasattr(executor_core, "_handle_loop_step")
         assert callable(executor_core._handle_loop_step)
 
-    async def test_handle_loop_step_signature(self, executor_core, mock_loop_step):
-        """Test that _handle_loop_step has correct signature."""
-        method = executor_core._handle_loop_step
+    async def test_loop_policy_execute_signature(self):
+        """Policy surface: DefaultLoopStepExecutor.execute has correct signature."""
         import inspect
-
-        sig = inspect.signature(method)
-
-        # Check required parameters
-        expected_params = {"loop_step", "data", "context", "resources", "limits", "context_setter"}
+        sig = inspect.signature(DefaultLoopStepExecutor.execute)
+        expected_params = {"core", "loop_step", "data", "context", "resources", "limits", "context_setter"}
         actual_params = set(sig.parameters.keys())
         assert expected_params.issubset(actual_params)
 

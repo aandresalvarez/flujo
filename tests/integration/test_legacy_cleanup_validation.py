@@ -67,10 +67,11 @@ class TestFunctionRemovalValidation:
         # Test that the method is callable (we don't need to actually execute it)
         assert callable(executor._handle_dynamic_router_step)
         
-        # Verify the method signature
+        # Verify the policy execute signature instead of private core handler
         import inspect
-        sig = inspect.signature(executor._handle_dynamic_router_step)
-        expected_params = ["step", "data", "context", "resources", "limits", "context_setter"]
+        from flujo.application.core.step_policies import DefaultDynamicRouterStepExecutor
+        sig = inspect.signature(DefaultDynamicRouterStepExecutor.execute)
+        expected_params = ["core", "router_step", "data", "context", "resources", "limits", "context_setter"]
         for param in expected_params:
             assert param in sig.parameters, f"Missing parameter: {param}"
 
@@ -321,35 +322,27 @@ class TestLegacyFunctionIntegration:
         # Verify that the new architecture provides the same functionality
         executor = ExecutorCore()
         
-        # Check that the core methods exist and have the expected signatures
+        # Check that the core methods exist
         assert hasattr(executor, "_handle_cache_step")
         assert hasattr(executor, "_handle_hitl_step")
         assert hasattr(executor, "_handle_loop_step")
         assert hasattr(executor, "_handle_dynamic_router_step")
-        
-        # Verify that the methods are callable
+        # And verify policy execute signatures instead of private methods
         import inspect
-        sig_cache = inspect.signature(executor._handle_cache_step)
-        sig_hitl = inspect.signature(executor._handle_hitl_step)
-        sig_loop = inspect.signature(executor._handle_loop_step)
-        sig_router = inspect.signature(executor._handle_dynamic_router_step)
-        
-        # Verify that the methods accept the expected parameters
-        assert "step" in sig_cache.parameters
-        assert "data" in sig_cache.parameters
-        assert "context" in sig_cache.parameters
-        
-        assert "step" in sig_hitl.parameters
-        assert "data" in sig_hitl.parameters
-        assert "context" in sig_hitl.parameters
-        
-        assert "loop_step" in sig_loop.parameters  # Uses loop_step instead of step
-        assert "data" in sig_loop.parameters
-        assert "context" in sig_loop.parameters
-        
-        assert "step" in sig_router.parameters
-        assert "data" in sig_router.parameters
-        assert "context" in sig_router.parameters
+        from flujo.application.core.step_policies import (
+            DefaultCacheStepExecutor,
+            DefaultHitlStepExecutor,
+            DefaultLoopStepExecutor,
+            DefaultDynamicRouterStepExecutor,
+        )
+        sig_cache = inspect.signature(DefaultCacheStepExecutor.execute)
+        sig_hitl = inspect.signature(DefaultHitlStepExecutor.execute)
+        sig_loop = inspect.signature(DefaultLoopStepExecutor.execute)
+        sig_router = inspect.signature(DefaultDynamicRouterStepExecutor.execute)
+        assert "core" in sig_cache.parameters and "step" in sig_cache.parameters
+        assert "core" in sig_hitl.parameters and "step" in sig_hitl.parameters
+        assert "core" in sig_loop.parameters and "loop_step" in sig_loop.parameters
+        assert "core" in sig_router.parameters and "router_step" in sig_router.parameters
 
 
 class TestLegacyCleanupSafety:

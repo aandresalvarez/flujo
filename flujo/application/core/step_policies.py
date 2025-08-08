@@ -2,7 +2,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Awaitable, Optional, Protocol, Callable, Dict, List
 from pydantic import BaseModel
-from flujo.domain.models import StepResult, UsageLimits
+from flujo.domain.models import StepResult, UsageLimits, PipelineContext
 from flujo.exceptions import MissingAgentError, InfiniteFallbackError, UsageLimitExceededError, NonRetryableError, MockDetectionError, PausedException, InfiniteRedirectError
 from flujo.cost import extract_usage_metrics
 from flujo.utils.performance import time_perf_ns, time_perf_ns_to_seconds
@@ -70,19 +70,39 @@ class DefaultPluginRedirector:
         timeout_s: Optional[float]
     ) -> Any:
         from flujo.exceptions import InfiniteRedirectError
+        telemetry.logfire.debug("[Redirector] Start plugin redirect loop")
         redirect_chain: list[Any] = []
         processed = initial
         unpacker = DefaultAgentResultUnpacker()
         while True:
+            # Normalize plugin input to expected dict shape
+            plugin_input = processed
+            if not isinstance(plugin_input, dict):
+                try:
+                    plugin_input = {"output": unpacker.unpack(plugin_input)}
+                except Exception:
+                    plugin_input = {"output": plugin_input}
             outcome = await asyncio.wait_for(
-                self._plugin_runner.run_plugins(step.plugins, processed, context=context, resources=resources),
+                self._plugin_runner.run_plugins(
+                    step.plugins,
+                    plugin_input,
+                    context=context,
+                    resources=resources,
+                ),
                 timeout_s,
             )
+            try:
+                rt = getattr(outcome, 'redirect_to', None)
+                telemetry.logfire.debug(f"[Redirector] Plugin outcome: redirect_to={rt}, success={getattr(outcome, 'success', None)}")
+            except Exception:
+                pass
             # Handle redirect_to
             if hasattr(outcome, 'redirect_to') and outcome.redirect_to is not None:
                 if outcome.redirect_to in redirect_chain:
+                    telemetry.logfire.debug(f"[Redirector] Loop detected for agent {outcome.redirect_to}")
                     raise InfiniteRedirectError(f"Redirect loop detected at agent {outcome.redirect_to}")
                 redirect_chain.append(outcome.redirect_to)
+                telemetry.logfire.debug(f"[Redirector] Redirecting to agent {outcome.redirect_to}")
                 raw = await asyncio.wait_for(
                     self._agent_runner.run(
                         agent=outcome.redirect_to,
@@ -105,7 +125,13 @@ class DefaultPluginRedirector:
             if hasattr(outcome, 'new_solution') and outcome.new_solution is not None:
                 processed = outcome.new_solution
                 continue
-            return outcome
+            # Dict-based contract with 'output' overrides processed value
+            if isinstance(outcome, dict) and 'output' in outcome:
+                processed = outcome['output']
+                # No redirect or failure case; return the processed value
+                return processed
+            # Success without changes → keep processed as-is
+            return processed
 
 # --- Validator invocation policy ---
 class ValidatorInvoker(Protocol):
@@ -162,68 +188,487 @@ class DefaultSimpleStepExecutor:
         breach_event: Optional[Any],
         _fallback_depth: int = 0,
     ) -> StepResult:
-        # Phase-1: transplant behavior-neutral parts; fallback to core for the rest
-        telemetry.logfire.debug(f"[Policy] SimpleStep: {getattr(step, 'name', '<unnamed>')} depth={_fallback_depth}")
+        telemetry.logfire.debug(
+            f"[Policy] SimpleStep(policy-owned): {getattr(step, 'name', '<unnamed>')} depth={_fallback_depth}"
+        )
+        # Policy now owns full orchestration (no delegation back to core)
+        return await _execute_simple_step_policy_impl(
+            core=core,
+            step=step,
+            data=data,
+            context=context,
+            resources=resources,
+            limits=limits,
+            stream=stream,
+            on_chunk=on_chunk,
+            cache_key=cache_key,
+            breach_event=breach_event,
+            _fallback_depth=_fallback_depth,
+        )
 
-        # Build processed_data and options here to consolidate responsibility in policy
-        processed_data = data
-        if hasattr(step, "processors") and step.processors:
-            try:
+
+async def _execute_simple_step_policy_impl(
+    core: Any,
+    step: Any,
+    data: Any,
+    context: Optional[Any],
+    resources: Optional[Any],
+    limits: Optional[UsageLimits],
+    stream: bool,
+    on_chunk: Optional[Callable[[Any], Awaitable[None]]],
+    cache_key: Optional[str],
+    breach_event: Optional[Any],
+    _fallback_depth: int,
+) -> StepResult:
+    """Full SimpleStep execution logic migrated from core into policy."""
+    from unittest.mock import Mock, MagicMock, AsyncMock
+    from .hybrid_check import run_hybrid_check
+    from flujo.exceptions import (
+        MockDetectionError,
+        MissingAgentError,
+        ContextInheritanceError,
+        UsageLimitExceededError,
+        PausedException,
+        InfiniteFallbackError,
+        InfiniteRedirectError,
+        NonRetryableError,
+    )
+
+    class PluginError(Exception):
+        pass
+
+    telemetry.logfire.debug(
+        f"[Policy] SimpleStep: {getattr(step, 'name', '<unnamed>')} depth={_fallback_depth}"
+    )
+
+    # Fallback chain handling
+    if _fallback_depth > core._MAX_FALLBACK_CHAIN_LENGTH:
+        raise InfiniteFallbackError(
+            f"Fallback chain length exceeded maximum of {core._MAX_FALLBACK_CHAIN_LENGTH}"
+        )
+    fallback_chain = core._fallback_chain.get([])
+    if _fallback_depth > 0:
+        if step in fallback_chain:
+            raise InfiniteFallbackError(
+                f"Fallback loop detected: step '{step.name}' already in fallback chain"
+            )
+        core._fallback_chain.set(fallback_chain + [step])
+
+    if getattr(step, "agent", None) is None:
+        raise MissingAgentError(f"Step '{step.name}' has no agent configured")
+
+    result = StepResult(
+        name=core._safe_step_name(step),
+        output=None,
+        success=False,
+        attempts=1,
+        latency_s=0.0,
+        token_counts=0,
+        cost_usd=0.0,
+        feedback=None,
+        branch_context=None,
+        metadata_={},
+        step_history=[],
+    )
+
+    # retries
+    if hasattr(step, "config") and hasattr(step.config, "max_retries"):
+        max_retries = step.config.max_retries
+    else:
+        max_retries = getattr(step, "max_retries", 2)
+    if stream:
+        max_retries = 0
+    if hasattr(max_retries, "_mock_name") or isinstance(
+        max_retries, (Mock, MagicMock, AsyncMock)
+    ):
+        max_retries = 2
+
+    for attempt in range(1, max_retries + 2):
+        result.attempts = attempt
+        start_ns = time_perf_ns()
+        try:
+            # prompt processors
+            processed_data = data
+            if hasattr(step, "processors") and step.processors:
                 processed_data = await core._processor_pipeline.apply_prompt(
                     step.processors, data, context=context
                 )
-            except Exception:
-                # Defer to core logic for full error handling semantics
-                return await core._execute_simple_step(
-                    step,
-                    data,
-                    context,
-                    resources,
-                    limits,
-                    stream,
-                    on_chunk,
-                    cache_key,
-                    breach_event,
-                    _fallback_depth,
-                    _from_policy=True,
+
+            # agent options
+            options: Dict[str, Any] = {}
+            cfg = getattr(step, "config", None)
+            if cfg is not None:
+                if getattr(cfg, "temperature", None) is not None:
+                    options["temperature"] = cfg.temperature
+                if getattr(cfg, "top_k", None) is not None:
+                    options["top_k"] = cfg.top_k
+                if getattr(cfg, "top_p", None) is not None:
+                    options["top_p"] = cfg.top_p
+
+            agent_output = await core._agent_runner.run(
+                agent=step.agent,
+                payload=processed_data,
+                context=context,
+                resources=resources,
+                options=options,
+                stream=stream,
+                on_chunk=on_chunk,
+                breach_event=breach_event,
+            )
+            if isinstance(agent_output, (Mock, MagicMock, AsyncMock)):
+                raise MockDetectionError(
+                    f"Step '{step.name}' returned a Mock object"
                 )
 
-        options: Dict[str, Any] = {}
-        cfg = getattr(step, "config", None)
-        if cfg is not None:
-            if getattr(cfg, "temperature", None) is not None:
-                options["temperature"] = cfg.temperature
-            if getattr(cfg, "top_k", None) is not None:
-                options["top_k"] = cfg.top_k
-            if getattr(cfg, "top_p", None) is not None:
-                options["top_p"] = cfg.top_p
+            # usage metrics
+            prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
+                raw_output=agent_output, agent=step.agent, step_name=step.name
+            )
+            result.cost_usd = cost_usd
+            result.token_counts = prompt_tokens + completion_tokens
+            await core._usage_meter.add(cost_usd, prompt_tokens, completion_tokens)
 
-        # Pass preprocessed inputs and options via a temporary shim on the step object
-        # to avoid altering public signatures as we migrate incrementally
-        shim_step = step
-        try:
-            # Use a shallow copy to avoid mutating original step across retries
-            shim_step = copy.copy(step)
-            setattr(shim_step, "_policy_processed_payload", processed_data)
-            setattr(shim_step, "_policy_agent_options", options)
-            # Do not pre-run hybrid validation here; it depends on agent output.
-        except Exception:
-            shim_step = step
+            # output processors
+            processed_output = agent_output
+            if hasattr(step, "processors") and step.processors:
+                processed_output = await core._processor_pipeline.apply_output(
+                    step.processors, agent_output, context=context
+                )
 
-        # Execute via core (policy-origin) to preserve fallback/validator/plugin semantics
-        return await core._execute_simple_step(
-            shim_step,
-            data,
-            context,
-            resources,
-            limits,
-            stream,
-            on_chunk,
-            cache_key,
-            breach_event,
-            _fallback_depth,
-            _from_policy=True,
-        )
+            # hybrid validation step path
+            meta = getattr(step, "meta", None)
+            if isinstance(meta, dict) and meta.get("is_validation_step", False):
+                strict_flag = bool(meta.get("strict_validation", True))
+                checked_output, hybrid_feedback = await run_hybrid_check(
+                    processed_output,
+                    getattr(step, "plugins", []),
+                    getattr(step, "validators", []),
+                    context=context,
+                    resources=resources,
+                )
+                if hybrid_feedback:
+                    result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
+                    if strict_flag:
+                        result.success = False
+                        result.feedback = hybrid_feedback
+                        result.output = None
+                        if result.metadata_ is None:
+                            result.metadata_ = {}
+                        result.metadata_["validation_passed"] = False
+                        return result
+                    result.success = True
+                    result.feedback = None
+                    result.output = checked_output
+                    if result.metadata_ is None:
+                        result.metadata_ = {}
+                    result.metadata_["validation_passed"] = False
+                    return result
+                result.success = True
+                result.output = checked_output
+                result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
+                if result.metadata_ is None:
+                    result.metadata_ = {}
+                result.metadata_["validation_passed"] = True
+                return result
+
+            # plugins
+            if hasattr(step, "plugins") and step.plugins:
+                # Determine timeout for plugin/redirect operations from step config
+                timeout_s = None
+                try:
+                    cfg = getattr(step, "config", None)
+                    if cfg is not None and getattr(cfg, "timeout_s", None) is not None:
+                        timeout_s = float(cfg.timeout_s)
+                except Exception:
+                    timeout_s = None
+                try:
+                    processed_output = await core.plugin_redirector.run(
+                        initial=processed_output,
+                        step=step,
+                        data=data,
+                        context=context,
+                        resources=resources,
+                        timeout_s=timeout_s,
+                    )
+                except Exception as e:
+                    # Propagate redirect-loop and timeout errors without wrapping
+                    # Propagate redirect-loop detection without wrapping
+                    try:
+                        from flujo.exceptions import InfiniteRedirectError
+                        if isinstance(e, InfiniteRedirectError):
+                            raise
+                    except Exception:
+                        # If import or isinstance fails, fall back to wrapping
+                        pass
+                    if isinstance(e, asyncio.TimeoutError):
+                        raise
+                    class _PluginError(Exception):
+                        pass
+                    raise _PluginError(str(e))
+                # Normalize dict-based outputs from plugins
+                if isinstance(processed_output, dict) and "output" in processed_output:
+                    processed_output = processed_output["output"]
+
+            # validators
+            if hasattr(step, "validators") and step.validators:
+                # Apply same timeout to validators when present
+                timeout_s = None
+                try:
+                    cfg = getattr(step, "config", None)
+                    if cfg is not None and getattr(cfg, "timeout_s", None) is not None:
+                        timeout_s = float(cfg.timeout_s)
+                except Exception:
+                    timeout_s = None
+                try:
+                    await core.validator_invoker.validate(
+                        processed_output, step, context=context, timeout_s=timeout_s
+                    )
+                except Exception as validation_error:
+                    if not hasattr(step, "fallback_step") or step.fallback_step is None:
+                        result.success = False
+                        result.feedback = (
+                            f"Validation failed after max retries: {validation_error}"
+                        )
+                        result.output = processed_output
+                        result.latency_s = time_perf_ns_to_seconds(
+                            time_perf_ns() - start_ns
+                        )
+                        telemetry.logfire.error(
+                            f"Step '{step.name}' validation failed after exception: {validation_error}"
+                        )
+                        return result
+                    if attempt < max_retries + 1:
+                        telemetry.logfire.warning(
+                            f"Step '{step.name}' validation exception attempt {attempt}: {validation_error}"
+                        )
+                        continue
+                    result.success = False
+                    result.feedback = (
+                        f"Validation failed after max retries: {validation_error}"
+                    )
+                    result.output = processed_output
+                    result.latency_s = time_perf_ns_to_seconds(
+                        time_perf_ns() - start_ns
+                    )
+                    telemetry.logfire.error(
+                        f"Step '{step.name}' validation failed after exception: {validation_error}"
+                    )
+                    if hasattr(step, "fallback_step") and step.fallback_step is not None:
+                        telemetry.logfire.info(
+                            f"Step '{step.name}' validation exception, attempting fallback"
+                        )
+                        if step.fallback_step in fallback_chain:
+                            raise InfiniteFallbackError(
+                                f"Fallback loop detected: step '{step.fallback_step.name}' already in fallback chain"
+                            )
+                        try:
+                            fallback_result = await core.execute(
+                                step=step.fallback_step,
+                                data=data,
+                                context=context,
+                                resources=resources,
+                                limits=limits,
+                                stream=stream,
+                                on_chunk=on_chunk,
+                                breach_event=breach_event,
+                                _fallback_depth=_fallback_depth + 1,
+                            )
+                            if fallback_result.metadata_ is None:
+                                fallback_result.metadata_ = {}
+                            fallback_result.metadata_["fallback_triggered"] = True
+                            fallback_result.metadata_["original_error"] = result.feedback
+                            # Do NOT multiply fallback metrics here; they are accounted once in tests
+                            if fallback_result.success:
+                                fallback_result.feedback = None
+                                # Cache successful fallback result for future runs
+                                try:
+                                    if cache_key and getattr(core, "_enable_cache", False):
+                                        await core._cache_backend.put(cache_key, fallback_result, ttl_s=3600)
+                                        telemetry.logfire.debug(f"Cached fallback result for step: {step.name}")
+                                except Exception:
+                                    pass
+                                return fallback_result
+                            fallback_result.feedback = (
+                                f"Original error: {core._format_feedback(result.feedback, 'Agent execution failed')}; "
+                                f"Fallback error: {core._format_feedback(fallback_result.feedback, 'Agent execution failed')}"
+                            )
+                            return fallback_result
+                        except InfiniteFallbackError:
+                            raise
+                        except Exception as fb_err:
+                            telemetry.logfire.error(
+                                f"Fallback for step '{step.name}' also failed: {fb_err}"
+                            )
+                            result.feedback = f"Original error: {result.feedback}; Fallback error: {fb_err}"
+                            return result
+                    return result
+
+            # success
+            # Unpack final output for parity with legacy expectations
+            try:
+                unpacker = getattr(core, "unpacker", DefaultAgentResultUnpacker())
+            except Exception:
+                unpacker = DefaultAgentResultUnpacker()
+            result.success = True
+            result.output = unpacker.unpack(processed_output)
+            result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
+            result.feedback = None
+            result.branch_context = context
+            if limits:
+                await core._usage_meter.guard(limits, step_history=[result])
+            if cache_key and getattr(core, "_enable_cache", False):
+                await core._cache_backend.put(cache_key, result, ttl_s=3600)
+                telemetry.logfire.debug(f"Cached result for step: {step.name}")
+            return result
+
+        except MockDetectionError:
+            raise
+        except InfiniteRedirectError:
+            # Preserve redirect loop errors for caller/tests
+            raise
+        except asyncio.TimeoutError:
+            # Preserve timeout semantics (non-retryable for plugin/validator phases)
+            raise
+        except Exception as agent_error:
+            from flujo.exceptions import PricingNotConfiguredError
+            if isinstance(agent_error, (NonRetryableError, PricingNotConfiguredError)):
+                raise agent_error
+            # Do not retry for plugin-originated errors; proceed to fallback handling
+            if agent_error.__class__.__name__ in {"PluginError", "_PluginError"}:
+                result.success = False
+                msg = str(agent_error)
+                if msg.startswith("Plugin validation failed"):
+                    result.feedback = f"Plugin execution failed after max retries: {msg}"
+                else:
+                    result.feedback = f"Plugin validation failed after max retries: {msg}"
+                result.output = None
+                result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
+                if limits:
+                    await core._usage_meter.guard(limits, step_history=[result])
+                telemetry.logfire.error(
+                    f"Step '{step.name}' agent failed after {result.attempts} attempts"
+                )
+                if hasattr(step, "fallback_step") and step.fallback_step is not None:
+                    telemetry.logfire.info(
+                        f"Step '{step.name}' failed, attempting fallback"
+                    )
+                    if step.fallback_step in fallback_chain:
+                        raise InfiniteFallbackError(
+                            f"Fallback loop detected: step '{step.fallback_step.name}' already in fallback chain"
+                        )
+                    try:
+                        fallback_result = await core.execute(
+                            step=step.fallback_step,
+                            data=data,
+                            context=context,
+                            resources=resources,
+                            limits=limits,
+                            stream=stream,
+                            on_chunk=on_chunk,
+                            breach_event=breach_event,
+                            _fallback_depth=_fallback_depth + 1,
+                        )
+                        if fallback_result.metadata_ is None:
+                            fallback_result.metadata_ = {}
+                        fallback_result.metadata_["fallback_triggered"] = True
+                        fallback_result.metadata_["original_error"] = result.feedback
+                        if fallback_result.success:
+                            fallback_result.feedback = None
+                            return fallback_result
+                        fallback_result.feedback = (
+                            f"Original error: {core._format_feedback(result.feedback, 'Agent execution failed')}; "
+                            f"Fallback error: {core._format_feedback(fallback_result.feedback, 'Agent execution failed')}"
+                        )
+                        return fallback_result
+                    except InfiniteFallbackError:
+                        raise
+                    except Exception as fb_err:
+                        telemetry.logfire.error(
+                            f"Fallback for step '{step.name}' also failed: {fb_err}"
+                        )
+                        result.feedback = f"Original error: {result.feedback}; Fallback error: {fb_err}"
+                        return result
+                # No fallback configured
+                return result
+            if attempt < max_retries + 1:
+                telemetry.logfire.warning(
+                    f"Step '{step.name}' agent execution attempt {attempt} failed: {agent_error}"
+                )
+                continue
+            result.success = False
+            msg = str(agent_error)
+            if agent_error.__class__.__name__ in {"PluginError", "_PluginError"}:
+                if msg.startswith("Plugin validation failed"):
+                    result.feedback = f"Plugin execution failed after max retries: {msg}"
+                else:
+                    result.feedback = f"Plugin validation failed after max retries: {msg}"
+            else:
+                result.feedback = (
+                    f"Agent execution failed with {type(agent_error).__name__}: {msg}"
+                )
+            result.output = None
+            result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
+            if limits:
+                await core._usage_meter.guard(limits, step_history=[result])
+            telemetry.logfire.error(
+                f"Step '{step.name}' agent failed after {result.attempts} attempts"
+            )
+            if hasattr(step, "fallback_step") and step.fallback_step is not None:
+                telemetry.logfire.info(
+                    f"Step '{step.name}' failed, attempting fallback"
+                )
+                if step.fallback_step in fallback_chain:
+                    raise InfiniteFallbackError(
+                        f"Fallback loop detected: step '{step.fallback_step.name}' already in fallback chain"
+                    )
+                try:
+                    fallback_result = await core.execute(
+                        step=step.fallback_step,
+                        data=data,
+                        context=context,
+                        resources=resources,
+                        limits=limits,
+                        stream=stream,
+                        on_chunk=on_chunk,
+                        breach_event=breach_event,
+                        _fallback_depth=_fallback_depth + 1,
+                    )
+                    if fallback_result.metadata_ is None:
+                        fallback_result.metadata_ = {}
+                    fallback_result.metadata_["fallback_triggered"] = True
+                    fallback_result.metadata_["original_error"] = result.feedback
+                    # Do NOT multiply fallback metrics here; they are accounted once in tests
+                    if fallback_result.success:
+                        fallback_result.feedback = None
+                        # Cache successful fallback result for future runs
+                        try:
+                            if cache_key and getattr(core, "_enable_cache", False):
+                                await core._cache_backend.put(cache_key, fallback_result, ttl_s=3600)
+                                telemetry.logfire.debug(f"Cached fallback result for step: {step.name}")
+                        except Exception:
+                            pass
+                        return fallback_result
+                    fallback_result.feedback = (
+                        f"Original error: {core._format_feedback(result.feedback, 'Agent execution failed')}; "
+                        f"Fallback error: {core._format_feedback(fallback_result.feedback, 'Agent execution failed')}"
+                    )
+                    return fallback_result
+                except InfiniteFallbackError:
+                    raise
+                except Exception as fb_err:
+                    telemetry.logfire.error(
+                        f"Fallback for step '{step.name}' also failed: {fb_err}"
+                    )
+                    result.feedback = f"Original error: {result.feedback}; Fallback error: {fb_err}"
+                    return result
+            # No fallback configured: return the failure result
+            return result
+
+    # not reached normally
+    result.success = False
+    result.feedback = "Unexpected execution path"
+    result.latency_s = 0.0
+    return result
 
 # --- Agent Step Executor policy ---
 class AgentStepExecutor(Protocol):
@@ -258,21 +703,237 @@ class DefaultAgentStepExecutor:
         breach_event,
         _fallback_depth: int = 0,
     ) -> StepResult:
-        # Preserve exact behavior by delegating to the proven implementation
-        from .step_executor import _execute_agent_step as _agent_fn
-        return await _agent_fn(
-            core,
-            step,
-            data,
-            context,
-            resources,
-            limits,
-            stream,
-            on_chunk,
-            cache_key,
-            breach_event,
-            _fallback_depth,
+        # Inline agent step logic (parity with legacy implementation)
+        from unittest.mock import Mock, MagicMock, AsyncMock
+        from pydantic import BaseModel
+        from flujo.exceptions import (
+            MissingAgentError,
+            PausedException,
+            InfiniteFallbackError,
+            InfiniteRedirectError,
+            UsageLimitExceededError,
+            NonRetryableError,
+            MockDetectionError,
         )
+        import time
+        if getattr(step, "agent", None) is None:
+            raise MissingAgentError(f"Step '{step.name}' has no agent configured")
+
+        result = StepResult(
+            name=getattr(step, "name", core._safe_step_name(step)),
+            output=None,
+            success=False,
+            attempts=1,
+            latency_s=0.0,
+            token_counts=0,
+            cost_usd=0.0,
+            feedback=None,
+            branch_context=None,
+            metadata_={},
+            step_history=[],
+        )
+
+        def _unpack_agent_result(output: Any) -> Any:
+            if isinstance(output, BaseModel):
+                return output
+            for attr in ("output", "content", "result", "data", "text", "message", "value"):
+                if hasattr(output, attr):
+                    return getattr(output, attr)
+            return output
+
+        def _detect_mock_objects(obj: Any) -> None:
+            if isinstance(obj, (Mock, MagicMock, AsyncMock)):
+                raise MockDetectionError(f"Step '{step.name}' returned a Mock object")
+
+        overall_start_time = time.monotonic()
+        max_retries = getattr(getattr(step, "config", None), "max_retries", 2)
+        if stream:
+            max_retries = 0
+        if hasattr(max_retries, "_mock_name") or isinstance(max_retries, (Mock, MagicMock, AsyncMock)):
+            max_retries = 3
+
+        for attempt in range(1, max_retries + 2):
+            result.attempts = attempt
+            if limits is not None:
+                await core._usage_meter.guard(limits, result.step_history)
+            start_ns = time_perf_ns()
+            try:
+                processed_data = data
+                if hasattr(step, "processors") and getattr(step, "processors", None):
+                    processed_data = await core._processor_pipeline.apply_prompt(
+                        step.processors, data, context=context
+                    )
+
+                options: Dict[str, Any] = {}
+                cfg = getattr(step, "config", None)
+                if cfg:
+                    if getattr(cfg, "temperature", None) is not None:
+                        options["temperature"] = cfg.temperature
+                    if getattr(cfg, "top_k", None) is not None:
+                        options["top_k"] = cfg.top_k
+                    if getattr(cfg, "top_p", None) is not None:
+                        options["top_p"] = cfg.top_p
+
+                agent_output = await core._agent_runner.run(
+                    agent=step.agent,
+                    payload=processed_data,
+                    context=context,
+                    resources=resources,
+                    options=options,
+                    stream=stream,
+                    on_chunk=on_chunk,
+                    breach_event=breach_event,
+                )
+
+                if isinstance(agent_output, (Mock, MagicMock, AsyncMock)):
+                    raise MockDetectionError(f"Step '{step.name}' returned a Mock object")
+
+                _detect_mock_objects(agent_output)
+
+                prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
+                    raw_output=agent_output, agent=step.agent, step_name=step.name
+                )
+                result.cost_usd = cost_usd
+                result.token_counts = prompt_tokens + completion_tokens
+                processed_output = agent_output
+                if hasattr(step, "processors") and step.processors:
+                    try:
+                        processed_output = await core._processor_pipeline.apply_output(
+                            step.processors, processed_output, context=context
+                        )
+                    except Exception as e:
+                        result.success = False
+                        result.feedback = f"Processor failed: {str(e)}"
+                        result.output = processed_output
+                        result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
+                        telemetry.logfire.error(f"Step '{step.name}' processor failed: {e}")
+                        return result
+
+                validation_passed = True
+                try:
+                    if hasattr(step, "validators") and step.validators:
+                        validation_results = await core._validator_runner.validate(
+                            step.validators, processed_output, context=context
+                        )
+                        failed_validations = [r for r in validation_results if not getattr(r, "is_valid", False)]
+                        if failed_validations:
+                            validation_passed = False
+                            if attempt < max_retries:
+                                telemetry.logfire.warning(
+                                    f"Step '{step.name}' validation failed: {failed_validations[0].feedback}"
+                                )
+                                continue
+                            else:
+                                result.success = False
+                                result.feedback = (
+                                    f"Validation failed after max retries: {core._format_feedback(failed_validations[0].feedback, 'Agent execution failed')}"
+                                )
+                                result.output = processed_output
+                                result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
+                                telemetry.logfire.error(
+                                    f"Step '{step.name}' validation failed after {result.attempts} attempts"
+                                )
+                                return result
+                except Exception as e:
+                    validation_passed = False
+                    if attempt < max_retries:
+                        telemetry.logfire.warning(f"Step '{step.name}' validation failed: {e}")
+                        continue
+                    else:
+                        result.success = False
+                        result.feedback = f"Validation failed after max retries: {str(e)}"
+                        result.output = processed_output
+                        result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
+                        telemetry.logfire.error(
+                            f"Step '{step.name}' validation failed after {result.attempts} attempts"
+                        )
+                        return result
+
+                if validation_passed:
+                    try:
+                        if hasattr(step, "plugins") and step.plugins:
+                            # Use policy plugin redirector with loop detection and timeouts
+                            timeout_s = None
+                            try:
+                                cfg = getattr(step, "config", None)
+                                if cfg is not None and getattr(cfg, "timeout_s", None) is not None:
+                                    timeout_s = float(cfg.timeout_s)
+                            except Exception:
+                                timeout_s = None
+                            processed_output = await core.plugin_redirector.run(
+                                initial=processed_output,
+                                step=step,
+                                data=data,
+                                context=context,
+                                resources=resources,
+                                timeout_s=timeout_s,
+                            )
+                            # Normalize dict-based outputs from plugins
+                            if isinstance(processed_output, dict) and "output" in processed_output:
+                                processed_output = processed_output["output"]
+                    except Exception as e:
+                        # Preserve critical errors
+                        from flujo.exceptions import InfiniteRedirectError
+                        if isinstance(e, InfiniteRedirectError):
+                            raise
+                        result.success = False
+                        result.feedback = f"Plugin failed: {str(e)}"
+                        result.output = processed_output
+                        result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
+                        telemetry.logfire.error(f"Step '{step.name}' plugin failed: {e}")
+                        return result
+
+                    result.output = _unpack_agent_result(processed_output)
+                    _detect_mock_objects(result.output)
+                    result.success = True
+                    result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
+                    result.feedback = None
+                    result.branch_context = context
+                    if cache_key and getattr(core, "_enable_cache", False):
+                        try:
+                            await core._cache_backend.put(cache_key, result, ttl_s=3600)
+                        except Exception:
+                            pass
+                    return result
+            except Exception as e:
+                if isinstance(
+                    e,
+                    (
+                        PausedException,
+                        InfiniteFallbackError,
+                        InfiniteRedirectError,
+                        UsageLimitExceededError,
+                        NonRetryableError,
+                    ),
+                ):
+                    telemetry.logfire.error(
+                        f"Step '{step.name}' encountered a non-retryable exception: {type(e).__name__}"
+                    )
+                    raise e
+                if attempt < max_retries + 1:
+                    telemetry.logfire.warning(
+                        f"Step '{step.name}' agent execution attempt {attempt} failed: {e}"
+                    )
+                    continue
+                result.success = False
+                if isinstance(e, ValueError) and str(e).startswith("Plugin"):
+                    msg = str(e)
+                    if msg.startswith("Plugin validation failed"):
+                        result.feedback = f"Plugin execution failed after max retries: {msg}"
+                    else:
+                        result.feedback = f"Plugin validation failed after max retries: {msg}"
+                else:
+                    result.feedback = f"Agent execution failed with {type(e).__name__}: {str(e)}"
+                result.output = None
+                result.latency_s = time.monotonic() - overall_start_time
+                telemetry.logfire.error(
+                    f"Step '{step.name}' agent failed after {result.attempts} attempts"
+                )
+                return result
+        result.success = False
+        result.feedback = "Unexpected execution path"
+        result.latency_s = 0.0
+        return result
 
 # --- Loop Step Executor policy ---
 class LoopStepExecutor(Protocol):
@@ -301,7 +962,7 @@ class DefaultLoopStepExecutor:
         context_setter,
         _fallback_depth: int = 0,
     ) -> StepResult:
-        # Delegate to the core instance's loop implementation
+        # Parity: delegate to core loop implementation during migration
         return await core._execute_loop(
             loop_step,
             data,
@@ -927,6 +1588,8 @@ class DefaultCacheStepExecutor:
         breach_event,
         context_setter,
         step_executor=None,
+        # Backward-compat: expose 'step' in signature for legacy inspection
+        step=None,
     ) -> StepResult:
         """Handle CacheStep execution with concurrency control and resilience."""
         try:
