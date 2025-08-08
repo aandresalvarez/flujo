@@ -1348,6 +1348,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             feedback = step_result.feedback
                             break
                     
+            except (PausedException,) as e:
+                # Propagate pause to outer coordinator so it can mark context/state as paused
+                raise
             except Exception as e:
                 all_successful = False
                 feedback = f"Step execution failed: {str(e)}"
@@ -2895,9 +2898,14 @@ class OptimizedExecutorCore(ExecutorCore):
 
             # Apply iteration input mapper
             iter_mapper = getattr(loop_step, 'iteration_input_mapper', None)
-            # Only apply iteration mapper if there will be a next iteration
+            # Only apply iteration mapper if there will be a next iteration and not paused
             if iter_mapper and iteration_count < max_loops:
                 try:
+                    # Guard: if HITL paused, abort loop by raising PausedException to let coordinator mark pause
+                    if current_context is not None and isinstance(getattr(current_context, 'scratchpad', None), dict):
+                        if current_context.scratchpad.get('status') == 'paused':
+                            from flujo.exceptions import PausedException
+                            raise PausedException(current_context.scratchpad.get('pause_message', 'Paused'))
                     current_data = iter_mapper(current_data, current_context, iteration_count)
                 except Exception as e:
                     telemetry.logfire.error(f"Error in iteration_input_mapper for LoopStep '{loop_step.name}' at iteration {iteration_count}: {e}")

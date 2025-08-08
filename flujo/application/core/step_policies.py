@@ -2184,6 +2184,12 @@ class DefaultHitlStepExecutor:
                     hitl_message = "Data conversion failed"
                 context.scratchpad['hitl_message'] = hitl_message
                 context.scratchpad['hitl_data'] = data
+                # Preserve pending AskHuman command for resumption logging
+                try:
+                    from flujo.domain.commands import AskHumanCommand as _AskHuman
+                    context.scratchpad.setdefault('paused_step_input', _AskHuman(question=hitl_message))
+                except Exception:
+                    pass
             except Exception as e:
                 telemetry.logfire.error(f"Failed to update context scratchpad: {e}")
 

@@ -335,6 +335,25 @@ def make_agentic_loop_pipeline(
             goal = ctx.initial_prompt if ctx is not None else ""
             return {"last_command_result": None, "goal": goal}
 
+        # If this is an AskHuman command, mark paused and store pending input so resume can log it
+        try:
+            from flujo.domain.commands import AskHumanCommand as _AskHuman
+            from flujo.exceptions import PausedException as _Paused
+            if isinstance(log, _AskHuman) and ctx is not None:
+                if hasattr(ctx, 'scratchpad') and isinstance(ctx.scratchpad, dict):
+                    ctx.scratchpad['status'] = 'paused'
+                    ctx.scratchpad['pause_message'] = getattr(log, 'question', 'Paused')
+                    # Save the pending command so resume can convert/log it
+                    ctx.scratchpad['paused_step_input'] = log
+                raise _Paused(getattr(log, 'question', 'Paused'))
+        except Exception:
+            pass
+
+        # If paused, do not log to preserve clean pause state
+        if ctx is not None and isinstance(getattr(ctx, 'scratchpad', None), dict):
+            if ctx.scratchpad.get('status') == 'paused':
+                goal = ctx.initial_prompt if ctx is not None else ""
+                return {"last_command_result": None, "goal": goal}
         _log_if_new(log, ctx)
         goal = ctx.initial_prompt if ctx is not None else ""
         return {"last_command_result": log.execution_result, "goal": goal}

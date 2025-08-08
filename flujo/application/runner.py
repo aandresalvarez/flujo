@@ -824,9 +824,16 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         if isinstance(ctx, PipelineContext):
             pending = ctx.scratchpad.pop("paused_step_input", None)
             if pending is not None:
+                # If we already have a concrete AgentCommand instance, use it directly
                 try:
-                    pending_cmd = _agent_command_adapter.validate_python(pending)
+                    from flujo.domain.commands import RunAgentCommand as _Run, AskHumanCommand as _Ask, FinishCommand as _Fin
+                    if isinstance(pending, (_Run, _Ask, _Fin)):
+                        pending_cmd = pending
+                    else:
+                        pending_cmd = _agent_command_adapter.validate_python(pending)
                 except ValidationError:
+                    pending_cmd = None
+                except Exception:
                     pending_cmd = None
                 if pending_cmd is not None:
                     log_entry = ExecutedCommandLog(
