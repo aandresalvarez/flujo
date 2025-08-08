@@ -254,7 +254,7 @@ def make_agentic_loop_pipeline(
     # Create the loop body pipeline
     planner_step_s: Step[Any, Any] = Step.from_callable(planner_step, max_retries=max_retries)
     executor_step_s: Step[Any, Any] = Step.from_callable(
-        command_executor_step, max_retries=max_retries
+        command_executor_step, max_retries=0  # No retries for command execution to allow HITL pausing
     )
     loop_body: Pipeline[Any, Any] = planner_step_s >> executor_step_s
 

@@ -1475,8 +1475,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 if step_result.branch_context is not None:
                     current_context = step_result.branch_context
                     
-            except _HITLPaused:
+            except _HITLPaused as e:
                 # Propagate HITL pause to caller so orchestrator can handle it
+                telemetry.logfire.info(f"_execute_pipeline caught PausedException: {str(e)}")
                 raise
             except Exception as e:
                 all_successful = False

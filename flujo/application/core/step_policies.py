@@ -1537,8 +1537,44 @@ class DefaultLoopStepExecutor:
                     # 3. Stop the loop immediately and re-raise the exception.
                     #    This is crucial to signal the top-level runner to halt.
                     raise e
+                except Exception as e:
+                    # Debug: Log what other exceptions we're catching
+                    telemetry.logfire.info(f"LoopStep '{loop_step.name}' caught non-PausedException: {type(e).__name__}: {str(e)}")
+                    # Re-raise to preserve original behavior
+                    raise
                 finally:
                     setattr(core, "_enable_cache", original_cache_enabled)
+                
+                # Check if any step was paused by looking at the context
+                if (current_context is not None and 
+                    hasattr(current_context, 'scratchpad') and 
+                    current_context.scratchpad.get('paused_step_input') is not None):
+                    # A step was paused, update status and raise PausedException
+                    telemetry.logfire.info(f"LoopStep '{loop_step.name}' detected pause via context at iteration {iteration_count}.")
+                    current_context.scratchpad['status'] = 'paused'
+                    current_context.scratchpad['pause_message'] = 'HITL step paused execution'
+                    from flujo.exceptions import PausedException as _Paused
+                    raise _Paused('HITL step paused execution')
+                
+                # Check if any step was paused by looking at both contexts
+                paused_in_current = (current_context is not None and 
+                                   hasattr(current_context, 'scratchpad') and 
+                                   current_context.scratchpad.get('paused_step_input') is not None)
+                paused_in_iteration = (iteration_context is not None and 
+                                     hasattr(iteration_context, 'scratchpad') and 
+                                     iteration_context.scratchpad.get('paused_step_input') is not None)
+                
+                telemetry.logfire.info(f"LoopStep '{loop_step.name}' pause check: current={paused_in_current}, iteration={paused_in_iteration}")
+                
+                if paused_in_current or paused_in_iteration:
+                    # A step was paused, update status and raise PausedException
+                    telemetry.logfire.info(f"LoopStep '{loop_step.name}' detected pause via context at iteration {iteration_count}.")
+                    if current_context is not None and hasattr(current_context, 'scratchpad'):
+                        current_context.scratchpad['status'] = 'paused'
+                        current_context.scratchpad['pause_message'] = 'HITL step paused execution'
+                    from flujo.exceptions import PausedException as _Paused
+                    raise _Paused('HITL step paused execution')
+                
                 config.max_retries = original_retries
             else:
                 original_cache_enabled = getattr(core, "_enable_cache", True)
@@ -1565,8 +1601,24 @@ class DefaultLoopStepExecutor:
                     # 3. Stop the loop immediately and re-raise the exception.
                     #    This is crucial to signal the top-level runner to halt.
                     raise e
+                except Exception as e:
+                    # Debug: Log what other exceptions we're catching
+                    telemetry.logfire.info(f"LoopStep '{loop_step.name}' caught non-PausedException: {type(e).__name__}: {str(e)}")
+                    # Re-raise to preserve original behavior
+                    raise
                 finally:
                     setattr(core, "_enable_cache", original_cache_enabled)
+                
+                # Check if any step was paused by looking at the context
+                if (current_context is not None and 
+                    hasattr(current_context, 'scratchpad') and 
+                    current_context.scratchpad.get('paused_step_input') is not None):
+                    # A step was paused, update status and raise PausedException
+                    telemetry.logfire.info(f"LoopStep '{loop_step.name}' detected pause via context at iteration {iteration_count}.")
+                    current_context.scratchpad['status'] = 'paused'
+                    current_context.scratchpad['pause_message'] = 'HITL step paused execution'
+                    from flujo.exceptions import PausedException as _Paused
+                    raise _Paused('HITL step paused execution')
             if any(not sr.success for sr in pipeline_result.step_history):
                 body_step = body_pipeline.steps[0]
                 if hasattr(body_step, 'fallback_step') and body_step.fallback_step is not None:
