@@ -632,11 +632,14 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 )
                 # Update the UsageLimitExceededError result with the current pipeline step_history
                 if isinstance(e, UsageLimitExceededError):
-                    # Preserve the exception's step_history if it's more complete
-                    if len(e.result.step_history) > len(pipeline_result_obj.step_history):
-                        pipeline_result_obj.step_history = e.result.step_history
+                    if e.result is None:
+                        e.result = pipeline_result_obj
                     else:
-                        e.result.step_history = pipeline_result_obj.step_history
+                        # Preserve the exception's step_history if it's more complete
+                        if len(e.result.step_history) > len(pipeline_result_obj.step_history):
+                            pipeline_result_obj.step_history = e.result.step_history
+                        else:
+                            e.result.step_history = pipeline_result_obj.step_history
             raise
         finally:
             if (
@@ -842,6 +845,18 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                         execution_result=human_input,
                     )
                     ctx.command_log.append(log_entry)
+                else:
+                    # If we cannot reconstruct the command, still record an AskHuman with the pause message
+                    try:
+                        from flujo.domain.commands import AskHumanCommand as _Ask
+                        log_entry = ExecutedCommandLog(
+                            turn=len(ctx.command_log) + 1,
+                            generated_command=_Ask(question=scratch.get("pause_message", "Paused")),
+                            execution_result=human_input,
+                        )
+                        ctx.command_log.append(log_entry)
+                    except Exception:
+                        pass
         paused_result.step_history.append(paused_step_result)
 
         data = human_input
