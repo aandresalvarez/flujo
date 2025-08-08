@@ -348,16 +348,20 @@ async def _execute_simple_step_policy_impl(
                 if getattr(cfg, "top_p", None) is not None:
                     options["top_p"] = cfg.top_p
 
-            agent_output = await core._agent_runner.run(
-                agent=step.agent,
-                payload=processed_data,
-                context=context,
-                resources=resources,
-                options=options,
-                stream=stream,
-                on_chunk=on_chunk,
-                breach_event=breach_event,
-            )
+            try:
+                agent_output = await core._agent_runner.run(
+                    agent=step.agent,
+                    payload=processed_data,
+                    context=context,
+                    resources=resources,
+                    options=options,
+                    stream=stream,
+                    on_chunk=on_chunk,
+                    breach_event=breach_event,
+                )
+            except PausedException:
+                # Re-raise PausedException immediately without retrying
+                raise
             if isinstance(agent_output, (Mock, MagicMock, AsyncMock)):
                 raise MockDetectionError(
                     f"Step '{step.name}' returned a Mock object"
@@ -754,6 +758,9 @@ async def _execute_simple_step_policy_impl(
 
         except MockDetectionError:
             raise
+        except PausedException:
+            # Preserve pause exceptions for HITL flow control
+            raise
         except InfiniteRedirectError:
             # Preserve redirect loop errors for caller/tests
             raise
@@ -1073,16 +1080,20 @@ class DefaultAgentStepExecutor:
                     if getattr(cfg, "top_p", None) is not None:
                         options["top_p"] = cfg.top_p
 
-                agent_output = await core._agent_runner.run(
-                    agent=step.agent,
-                    payload=processed_data,
-                    context=context,
-                    resources=resources,
-                    options=options,
-                    stream=stream,
-                    on_chunk=on_chunk,
-                    breach_event=breach_event,
-                )
+                try:
+                    agent_output = await core._agent_runner.run(
+                        agent=step.agent,
+                        payload=processed_data,
+                        context=context,
+                        resources=resources,
+                        options=options,
+                        stream=stream,
+                        on_chunk=on_chunk,
+                        breach_event=breach_event,
+                    )
+                except PausedException:
+                    # Re-raise PausedException immediately without retrying
+                    raise
 
                 if isinstance(agent_output, (Mock, MagicMock, AsyncMock)):
                     raise MockDetectionError(f"Step '{step.name}' returned a Mock object")
@@ -1514,6 +1525,18 @@ class DefaultLoopStepExecutor:
                         None,
                         context_setter,
                     )
+                except PausedException as e:
+                    # 1. A HITL step inside the loop body has paused execution.
+                    telemetry.logfire.info(f"LoopStep '{loop_step.name}' paused by HITL at iteration {iteration_count}.")
+
+                    # 2. Update the main loop's context to reflect the paused state.
+                    if current_context is not None and hasattr(current_context, 'scratchpad'):
+                        current_context.scratchpad['status'] = 'paused'
+                        current_context.scratchpad['pause_message'] = str(e)
+
+                    # 3. Stop the loop immediately and re-raise the exception.
+                    #    This is crucial to signal the top-level runner to halt.
+                    raise e
                 finally:
                     setattr(core, "_enable_cache", original_cache_enabled)
                 config.max_retries = original_retries
@@ -1530,6 +1553,18 @@ class DefaultLoopStepExecutor:
                         None,
                         context_setter,
                     )
+                except PausedException as e:
+                    # 1. A HITL step inside the loop body has paused execution.
+                    telemetry.logfire.info(f"LoopStep '{loop_step.name}' paused by HITL at iteration {iteration_count}.")
+
+                    # 2. Update the main loop's context to reflect the paused state.
+                    if current_context is not None and hasattr(current_context, 'scratchpad'):
+                        current_context.scratchpad['status'] = 'paused'
+                        current_context.scratchpad['pause_message'] = str(e)
+
+                    # 3. Stop the loop immediately and re-raise the exception.
+                    #    This is crucial to signal the top-level runner to halt.
+                    raise e
                 finally:
                     setattr(core, "_enable_cache", original_cache_enabled)
             if any(not sr.success for sr in pipeline_result.step_history):
