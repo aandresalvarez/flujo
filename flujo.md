@@ -45,10 +45,47 @@ While the DSL defines the *what*, the `flujo/application/core/` directory define
     *   **To understand how a `LoopStep` works:** Read the `DefaultLoopStepExecutor` in `step_policies.py`.
     *   **To modify retry behavior:** Change the logic inside `DefaultAgentStepExecutor`.
     *   **To add a new custom step type:** Create a new policy class for it and update the dispatcher in `ExecutorCore.execute`. You will not need to touch any of the other policies.
+    *   **To handle control flow exceptions properly:** Use the `ErrorClassifier` to categorize exceptions. Control flow exceptions (`PausedException`, workflow signals) should be classified as `ErrorCategory.CONTROL_FLOW` and always re-raised - never converted to failed results. Register a recovery strategy with `max_retries=0` and `primary_action=RecoveryAction.ESCALATE`.
+    *   **To implement pause/resume workflows:** Leverage the hook system (`OnPauseRequestedPayload`) and state backends for durable workflow persistence. Never implement ad-hoc exception catching - use the architectural systems.
 
 ---
 
-### **Section III: Architectural Pillars in Detail**
+### **Section III: Architectural Patterns for Common Problems**
+
+Before diving into the detailed pillars, here are key architectural patterns that developers should follow for common scenarios:
+
+#### **Pattern 1: Control Flow Exception Handling**
+**Problem**: Custom exceptions (like `PausedException`) need to control workflow execution without being treated as failures.
+
+**❌ Anti-Pattern**: Ad-hoc `try/except` blocks in step policies that convert exceptions to failed `StepResult`s.
+
+**✅ Architectural Solution**:
+1. **Classification**: Ensure your exception is registered in `ErrorClassifier` with `ErrorCategory.CONTROL_FLOW`
+2. **Recovery Strategy**: Register a strategy with `max_retries=0` and `primary_action=RecoveryAction.ESCALATE`
+3. **Policy Integration**: Use `ErrorClassifier.classify_error()` in step policies to detect control flow exceptions and re-raise them
+4. **Event System**: Fire `OnPauseRequestedPayload` events through the hook system for observability
+5. **State Persistence**: Use `StateManager` for durable pause/resume workflows
+
+#### **Pattern 2: Custom Step Types**
+**Problem**: Need to add new step types with specialized execution logic.
+
+**✅ Architectural Solution**:
+1. Create a new step class inheriting from `Step`
+2. Implement a dedicated policy class (e.g., `MyCustomStepExecutor`)
+3. Register the policy in `ExecutorCore.execute()` dispatcher
+4. Use existing context management, error handling, and telemetry systems
+
+#### **Pattern 3: Cross-Cutting Concerns** 
+**Problem**: Need to add logging, metrics, or custom behavior across all step types.
+
+**✅ Architectural Solution**:
+1. **Hooks**: Use the `HookDispatcher` and event system (`PreStepPayload`, `PostStepPayload`)
+2. **Plugins**: Implement `ValidationPlugin`s for step-level concerns
+3. **Telemetry**: Leverage existing OpenTelemetry and Prometheus integrations
+
+---
+
+### **Section IV: Architectural Pillars in Detail**
 
 #### **Pillar 1: Production Readiness (Resilience & Performance)**
 
@@ -57,7 +94,8 @@ Flujo is architected for production with a deep focus on reliability under load.
 *   **Proactive Resilience (`flujo/application/core/`)**:
     *   **Centralized Context Management:** The `ContextManager` (`.../context_manager.py`) provides the canonical implementation for context **isolation** (ensuring branches don't interfere) and **merging** (ensuring state is correctly propagated). All execution policies use this central utility.
     *   **Circuit Breaker:** Prevents cascading failures by temporarily halting calls to failing services (`.../circuit_breaker.py`).
-    *   **Error Recovery Strategies:** A system for classifying errors (`ErrorCategory`) and applying targeted recovery actions, like retries with exponential backoff (`RetryStrategy`) or providing a default value (`FallbackStrategy`).
+    *   **Sophisticated Error Classification System:** The `ErrorClassifier` (`.../optimized_error_handler.py`) automatically categorizes exceptions into `ErrorCategory` types (`NETWORK`, `VALIDATION`, `CONTROL_FLOW`, etc.) and applies appropriate recovery strategies. **Critical for developers**: Control flow exceptions like `PausedException` are classified as `CONTROL_FLOW` category and should **never be converted to failed `StepResult`** - they must be re-raised to preserve workflow control semantics.
+    *   **Recovery Strategy Registry:** A pluggable system for registering domain-specific error recovery patterns. Each strategy defines which exceptions to handle, retry policies, and recovery actions (`RETRY`, `FALLBACK`, `ESCALATE`, etc.).
 
 *   **Deep Performance Optimization (`flujo/application/core/optimization/`)**:
     *   **Optimized Memory Management:** An `OptimizedObjectPool` reuses common objects to reduce GC pressure, while the `OptimizedContextManager` uses copy-on-write techniques to avoid expensive deep copies of the pipeline context.
@@ -91,4 +129,8 @@ Flujo provides a suite of tools for monitoring, debugging, and managing pipeline
 
 ### **Conclusion**
 
-Flujo’s architecture presents a mature and robust solution for modern AI engineering. The clean separation between its intuitive **declarative shell** and its powerful, now **policy-driven execution core** delivers both an excellent developer experience and the resilience required for production systems. By integrating a compositional DSL, a decoupled and modular core, and built-in primitives for performance, resilience, and observability, Flujo provides a comprehensive and transparent framework for building, managing, and improving complex AI applications.
+Flujo's architecture presents a mature and robust solution for modern AI engineering. The clean separation between its intuitive **declarative shell** and its powerful, now **policy-driven execution core** delivers both an excellent developer experience and the resilience required for production systems. 
+
+**The documented architectural patterns** ensure developers can leverage Flujo's sophisticated systems (error classification, recovery strategies, hook system, state management) rather than implementing ad-hoc solutions. By following these patterns - particularly for control flow exception handling, custom step types, and cross-cutting concerns - developers build applications that are not only correct but also consistent with Flujo's architectural philosophy.
+
+By integrating a compositional DSL, a decoupled and modular core, built-in primitives for performance, resilience, and observability, and **clear guidance on architectural patterns**, Flujo provides a comprehensive and transparent framework for building, managing, and improving complex AI applications at scale.
