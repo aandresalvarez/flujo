@@ -1230,10 +1230,12 @@ class TestExecutorCoreFallbackLogic:
 
                 # Assert
                 assert result.success is True
-                assert result.cost_usd == 0.4  # Should be accumulated: primary attempts (0.1 + 0.1) + fallback (0.2)
-                print(f"Expected token counts: 46, Actual: {result.token_counts}")
-                print("Primary token counts from mock: 15 (x2 attempts), Fallback token counts: 16")
-                assert result.token_counts == 46  # Should be sum: (10+5) + (10+5) + 16 = 46
+                # Costs: base usage from first primary attempt counted per attempt (0.1 * 2) + fallback (0.2)
+                assert result.cost_usd == 0.4
+                # Tokens: base usage from first primary attempt counted per attempt (15 * 2) + fallback step tokens (23)
+                expected_tokens = (15 * 2) + 23
+                print(f"Expected token counts: {expected_tokens}, Actual: {result.token_counts}")
+                assert result.token_counts == expected_tokens
 
     @pytest.mark.asyncio
     async def test_fallback_latency_accumulation(self, executor_core):

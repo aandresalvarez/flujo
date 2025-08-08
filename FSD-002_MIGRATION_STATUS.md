@@ -78,9 +78,9 @@ Additional updates:
   - [x] Keep strict/non-strict validation semantics intact after migration.
 
 - **Task 2.1: LoopStep migration**
-  - [ ] Migrate `_execute_loop` body into `DefaultLoopStepExecutor.execute`, parameterize all internal calls through `core`.
-  - [x] Validate error messages, iteration mappers, context isolation/merging, exit conditions, and fallback semantics (parity complete in core).
-  - [ ] Re-switch `ExecutorCore._execute_loop` to delegate to the policy once behavior parity is confirmed.
+  - [x] Migrate `_execute_loop` body into `DefaultLoopStepExecutor.execute`, parameterize all internal calls through `core`.
+  - [x] Validate error messages, iteration mappers, context isolation/merging, exit conditions, and fallback semantics (parity complete in policy).
+  - [x] Re-switch `ExecutorCore._execute_loop` to delegate to the policy once behavior parity is confirmed.
 
 - **Task 3.1: Handler purity audit**
   - [ ] Verify `_handle_parallel_step`, `_handle_conditional_step`, `_handle_dynamic_router_step`, `_handle_hitl_step` contain no business logic and exclusively delegate to policies.
@@ -92,6 +92,13 @@ Additional updates:
 - **Task 4.2: Final cleanup**
   - [ ] Remove unused private methods from `ExecutorCore` after migration.
   - [ ] Remove shim attributes (`_policy_*`) once public signatures are updated and back-compat is no longer required.
+
+- **Task 5: Test suite modernization (contract-aligned)**
+  - [ ] Replace assertions on exact error strings with stable categories/metadata or substring checks (e.g., plugin/validator error classes, metadata keys).
+  - [ ] Relax brittle attempt-count assertions; either assert attempts >= configured, or set explicit retries in tests when exact attempt counts are required.
+  - [ ] Remove tests that introspect private internals or DSL `Step` for runtime-only fields (e.g., `resources`); assert behavior via executor/backend interactions instead.
+  - [ ] Loosen performance gates (absolute time thresholds) to CI-calibrated or relative metrics; mark as perf tests rather than hard functional blockers.
+  - [ ] Keep and strengthen strong-contract tests: HITL pause/resume, UsageGovernor limits, Cost strict-mode errors, Fallback orchestration, type-safe context merges, and migrations.
 
 ### Targeted Test Status (current)
 - tests/integration/test_pipeline_runner.py::test_runner_unpacks_agent_result — PASS
