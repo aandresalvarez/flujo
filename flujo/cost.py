@@ -347,8 +347,8 @@ class CostCalculator:
         )
 
         if pricing is None:
-            # If no pricing is configured, return 0.0 to avoid breaking pipelines
-            # This allows pipelines to run even without cost configuration
+            # Rely on get_provider_pricing to enforce strict mode. If it returned None,
+            # treat as non-strict and report 0.0 cost with a warning.
             telemetry.logfire.warning(
                 f"No pricing found for provider={provider}, model={model_name}. "
                 f"Cost will be reported as 0.0. "

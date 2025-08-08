@@ -180,6 +180,20 @@ class StepCoordinator(Generic[ContextT]):
                         raise
                 except Exception:
                     pass
+                # Treat strict pricing as critical and propagate immediately
+                try:
+                    from flujo.exceptions import PricingNotConfiguredError as _PNCE
+                    if isinstance(e, _PNCE):
+                        raise
+                    _msg = str(e)
+                    if (
+                        "Strict pricing is enabled" in _msg
+                        or "Pricing not configured" in _msg
+                        or "no configuration was found for provider" in _msg
+                    ):
+                        raise _PNCE(None, "unknown")
+                except Exception:
+                    pass
                 # For all other exceptions, let the manager/pipeline handling proceed (will produce failure result)
                 raise
 

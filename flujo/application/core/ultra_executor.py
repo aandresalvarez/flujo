@@ -834,6 +834,21 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                                 options["top_p"] = cfg.top_p
                     
                     # --- 3. Agent Execution (Inside Retry Loop) ---
+                    # Strict pricing preflight: if configured and missing, raise early for clear propagation
+                    try:
+                        model_id = getattr(step.agent, "model_id", None)
+                        if isinstance(model_id, str) and ":" in model_id:
+                            _prov, _model = model_id.split(":", 1)
+                            try:
+                                from ...infra.config import get_provider_pricing
+                                _ = get_provider_pricing(_prov, _model)
+                            except Exception as _pre_cost_exc:
+                                from ...exceptions import PricingNotConfiguredError as _PNCE
+                                if isinstance(_pre_cost_exc, _PNCE):
+                                    raise _pre_cost_exc
+                    except Exception:
+                        pass
+
                     agent_output = await self._agent_runner.run(
                         agent=step.agent,
                         payload=processed_data,  # Use processed_data from apply_prompt
@@ -867,9 +882,32 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         # For fallback executions returning plain strings, use default minimal tracking
                         prompt_tokens, completion_tokens, cost_usd = 0, 1, 0.0
                     else:
-                        prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
-                            raw_output=agent_output, agent=step.agent, step_name=step.name
-                        )
+                        try:
+                            prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
+                                raw_output=agent_output, agent=step.agent, step_name=step.name
+                            )
+                        except Exception as e_extract:
+                            # Strict pricing guard: re-raise as PricingNotConfiguredError immediately
+                            from ...exceptions import PricingNotConfiguredError
+                            msg = str(e_extract)
+                            if (
+                                isinstance(e_extract, PricingNotConfiguredError)
+                                or "Strict pricing is enabled" in msg
+                                or "Pricing not configured" in msg
+                                or "no configuration was found for provider" in msg
+                            ):
+                                # Try to parse provider/model from agent or message
+                                provider = "unknown"
+                                model = "unknown"
+                                try:
+                                    model_id = getattr(step.agent, "model_id", None)
+                                    if isinstance(model_id, str) and ":" in model_id:
+                                        provider, model = model_id.split(":", 1)
+                                except Exception:
+                                    pass
+                                raise PricingNotConfiguredError(provider, model)
+                            # Otherwise, propagate to outer handler
+                            raise
                     result.cost_usd = cost_usd
                     result.token_counts = prompt_tokens + completion_tokens
                     
@@ -1241,9 +1279,32 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     # MockDetectionError should be raised immediately - don't retry
                     raise
                 except Exception as agent_error:
+                    # Immediate strict-pricing surface: raise if message indicates strict pricing failure
+                    from ...exceptions import PricingNotConfiguredError
+                    # Absolute first: propagate concrete PricingNotConfiguredError without any wrapping
+                    if isinstance(agent_error, PricingNotConfiguredError):
+                        raise
+                    try:
+                        _msg_top = str(agent_error)
+                        if (
+                            "Strict pricing is enabled" in _msg_top
+                            or "Pricing not configured" in _msg_top
+                            or "no configuration was found for provider" in _msg_top
+                        ):
+                            prov, mdl = "unknown", "unknown"
+                            try:
+                                _mid = getattr(step.agent, "model_id", None)
+                                if isinstance(_mid, str) and ":" in _mid:
+                                    prov, mdl = _mid.split(":", 1)
+                            except Exception:
+                                pass
+                            raise PricingNotConfiguredError(prov, mdl)
+                    except PricingNotConfiguredError:
+                        raise
+                    except Exception:
+                        pass
                     # Check if this is a non-retryable error (like MockDetectionError)
                     # Also check for specific configuration errors that should not be retried
-                    from ...exceptions import PricingNotConfiguredError
                     # Non-retryable errors should be raised immediately
                     if isinstance(agent_error, (NonRetryableError, PricingNotConfiguredError)):
                         raise agent_error
@@ -1337,9 +1398,47 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             await self._usage_meter.guard(limits, step_history=[result])
                     # ONLY retry for actual agent failures when no fallback is configured
                     elif attempt < max_retries + 1:
+                        # STRICT PRICING: do not retry; propagate immediately so integration tests can assert the exception
+                        try:
+                            from ...exceptions import PricingNotConfiguredError as _PNC
+                            msg_a = str(agent_error)
+                            if (
+                                isinstance(agent_error, _PNC)
+                                or "Strict pricing is enabled" in msg_a
+                                or "Pricing not configured" in msg_a
+                                or "no configuration was found for provider" in msg_a
+                            ):
+                                prov, mdl = "unknown", "unknown"
+                                _mid = getattr(step.agent, "model_id", None)
+                                if isinstance(_mid, str) and ":" in _mid:
+                                    prov, mdl = _mid.split(":", 1)
+                                raise _PNC(prov, mdl)
+                        except _PNC:
+                            raise
+                        except Exception:
+                            pass
                         telemetry.logfire.warning(f"Step '{step.name}' agent execution attempt {attempt} failed: {agent_error}")
                         continue
                     else:
+                        # STRICT PRICING: after exhausting retries, propagate instead of returning failure result
+                        try:
+                            from ...exceptions import PricingNotConfiguredError as _PNC
+                            msg_a = str(agent_error)
+                            if (
+                                isinstance(agent_error, _PNC)
+                                or "Strict pricing is enabled" in msg_a
+                                or "Pricing not configured" in msg_a
+                                or "no configuration was found for provider" in msg_a
+                            ):
+                                prov, mdl = "unknown", "unknown"
+                                _mid = getattr(step.agent, "model_id", None)
+                                if isinstance(_mid, str) and ":" in _mid:
+                                    prov, mdl = _mid.split(":", 1)
+                                raise _PNC(prov, mdl)
+                        except _PNC:
+                            raise
+                        except Exception:
+                            pass
                         result.success = False
                         result.feedback = f"Agent execution failed with {type(agent_error).__name__}: {str(agent_error)}"
                         result.output = None

@@ -363,10 +363,17 @@ async def _execute_simple_step_policy_impl(
                     f"Step '{step.name}' returned a Mock object"
                 )
 
-            # usage metrics
-            prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
-                raw_output=agent_output, agent=step.agent, step_name=step.name
-            )
+            # usage metrics (allow strict pricing to bubble up)
+            try:
+                prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
+                    raw_output=agent_output, agent=step.agent, step_name=step.name
+                )
+            except Exception as e_usage:
+                from flujo.exceptions import PricingNotConfiguredError
+                if isinstance(e_usage, PricingNotConfiguredError):
+                    # Re-raise strict pricing errors immediately
+                    raise
+                raise
             result.cost_usd = cost_usd
             result.token_counts = prompt_tokens + completion_tokens
             await core._usage_meter.add(cost_usd, prompt_tokens, completion_tokens)
@@ -741,6 +748,25 @@ async def _execute_simple_step_policy_impl(
             raise
         except Exception as agent_error:
             from flujo.exceptions import PricingNotConfiguredError
+            # Strict pricing surfacing: treat pricing errors as non-retryable and re-raise immediately
+            try:
+                _msg_top = str(agent_error)
+                if (
+                    "Strict pricing is enabled" in _msg_top
+                    or "Pricing not configured" in _msg_top
+                    or "no configuration was found for provider" in _msg_top
+                ):
+                    prov, mdl = "unknown", "unknown"
+                    try:
+                        _mid = getattr(step.agent, "model_id", None)
+                        if isinstance(_mid, str) and ":" in _mid:
+                            prov, mdl = _mid.split(":", 1)
+                    except Exception:
+                        pass
+                    raise PricingNotConfiguredError(prov, mdl)
+            except PricingNotConfiguredError:
+                raise
+            # Also treat declared non-retryable errors as immediate
             if isinstance(agent_error, (NonRetryableError, PricingNotConfiguredError)):
                 raise agent_error
             # Do not retry for plugin-originated errors; proceed to fallback handling

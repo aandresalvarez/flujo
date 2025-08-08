@@ -217,6 +217,29 @@ class ExecutionManager(Generic[ContextT]):
 
                     # ✅ 4. Check if step failed and halt execution
                     if step_result and not step_result.success:
+                        # Raise PricingNotConfiguredError if strict pricing failure was encountered but swallowed upstream
+                        try:
+                            from flujo.exceptions import PricingNotConfiguredError as _PNC
+                            fb = step_result.feedback or ""
+                            if (
+                                "Strict pricing is enabled" in fb
+                                or "Pricing not configured" in fb
+                                or "no configuration was found for provider" in fb
+                            ):
+                                prov, mdl = None, "unknown"
+                                try:
+                                    model_id = getattr(step, "agent", None)
+                                    model_id = getattr(model_id, "model_id", None)
+                                    if isinstance(model_id, str) and ":" in model_id:
+                                        _prov, _mdl = model_id.split(":", 1)
+                                        prov, mdl = _prov, _mdl
+                                except Exception:
+                                    pass
+                                raise _PNC(prov, mdl)
+                        except _PNC:
+                            raise
+                        except Exception:
+                            pass
                         # Raise UsageLimitExceededError if the failure was due to usage limits
                         if step_result.feedback and "Usage limit exceeded" in step_result.feedback:
                             # Create appropriate error message based on the feedback
