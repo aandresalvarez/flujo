@@ -3318,7 +3318,24 @@ class OptimizedExecutorCore(ExecutorCore):
             cond = getattr(loop_step, 'exit_condition_callable', None)
             if cond:
                 try:
-                    if cond(current_data, current_context):
+                    # Extract the actual output value for condition checking
+                    output_for_condition = current_data
+                    if hasattr(current_data, 'output'):
+                        output_for_condition = current_data.output
+                    elif hasattr(current_data, 'content'):
+                        output_for_condition = current_data.content
+                    elif hasattr(current_data, 'result'):
+                        output_for_condition = current_data.result
+                    elif hasattr(current_data, 'data'):
+                        output_for_condition = current_data.data
+                    elif hasattr(current_data, 'text'):
+                        output_for_condition = current_data.text
+                    elif hasattr(current_data, 'message'):
+                        output_for_condition = current_data.message
+                    elif hasattr(current_data, 'value'):
+                        output_for_condition = current_data.value
+                    
+                    if cond(output_for_condition, current_context):
                         exit_reason = 'condition'
                         break
                 except Exception as e:
@@ -3360,6 +3377,22 @@ class OptimizedExecutorCore(ExecutorCore):
 
         # Determine final output and apply output mapper
         final_output = current_data
+        # Extract the actual output value from CostlyOutput objects
+        if hasattr(final_output, 'output'):
+            final_output = final_output.output
+        elif hasattr(final_output, 'content'):
+            final_output = final_output.content
+        elif hasattr(final_output, 'result'):
+            final_output = final_output.result
+        elif hasattr(final_output, 'data'):
+            final_output = final_output.data
+        elif hasattr(final_output, 'text'):
+            final_output = final_output.text
+        elif hasattr(final_output, 'message'):
+            final_output = final_output.message
+        elif hasattr(final_output, 'value'):
+            final_output = final_output.value
+        
         output_mapper = getattr(loop_step, 'loop_output_mapper', None)
         if output_mapper:
             try:
@@ -3393,7 +3426,16 @@ class OptimizedExecutorCore(ExecutorCore):
         else:
             if exit_reason == 'condition' and any_failure:
                 success_flag = False
-                feedback_msg = 'loop exited by condition, but last iteration body failed'
+                # Find the first failure in the step history
+                failure_feedback = None
+                for step_result in iteration_results:
+                    if not step_result.success and step_result.feedback:
+                        failure_feedback = step_result.feedback
+                        break
+                if failure_feedback:
+                    feedback_msg = f"Loop body failed: {failure_feedback}"
+                else:
+                    feedback_msg = 'loop exited by condition, but last iteration body failed'
             elif exit_reason == 'condition':
                 success_flag = True
                 feedback_msg = None
