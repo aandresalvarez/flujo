@@ -83,10 +83,29 @@ async def _execute_agent_step(
     if hasattr(max_retries, '_mock_name') or isinstance(max_retries, (Mock, MagicMock, AsyncMock)):
         max_retries = 3
 
+    # Capture initial context state to prevent accumulating context updates across retries
+    initial_context_state = None
+    total_attempts = max_retries + 1
+    if context is not None and total_attempts > 1:
+        import copy
+        initial_context_state = copy.deepcopy(context.model_dump())
+
     for attempt in range(1, max_retries + 2):
         result.attempts = attempt
         if limits is not None:
             await self._usage_meter.guard(limits, result.step_history)
+        
+        # Reset context to initial state for retry attempts (except first)
+        # This prevents context updates from accumulating across failed retries
+        if attempt > 1 and context is not None and initial_context_state is not None:
+            telemetry.logfire.debug(f"Resetting context for retry attempt {attempt}")
+            # Restore context to initial state before retry
+            for field, value in initial_context_state.items():
+                if hasattr(context, field):
+                    old_value = getattr(context, field)
+                    setattr(context, field, value)
+                    telemetry.logfire.debug(f"Reset context field {field}: {old_value} -> {value}")
+        
         start_time = time_perf_ns()
         try:
             processed_data = data

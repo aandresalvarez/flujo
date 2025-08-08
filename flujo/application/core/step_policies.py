@@ -326,8 +326,27 @@ async def _execute_simple_step_policy_impl(
     # Track last plugin failure feedback across attempts so final failure can
     # reflect plugin validation semantics even if a later agent call fails
     last_plugin_failure_feedback: Optional[str] = None
+    
+    # Capture initial context state to prevent accumulating context updates across retries
+    initial_context_state = None
+    if context is not None and total_attempts > 1:
+        import copy
+        initial_context_state = copy.deepcopy(context.model_dump())
+    
     for attempt in range(1, total_attempts + 1):
         result.attempts = attempt
+        
+        # Reset context to initial state for retry attempts (except first)
+        # This prevents context updates from accumulating across failed retries
+        if attempt > 1 and context is not None and initial_context_state is not None:
+            telemetry.logfire.debug(f"Resetting context for retry attempt {attempt}")
+            # Restore context to initial state before retry
+            for field, value in initial_context_state.items():
+                if hasattr(context, field):
+                    old_value = getattr(context, field)
+                    setattr(context, field, value)
+                    telemetry.logfire.debug(f"Reset context field {field}: {old_value} -> {value}")
+        
         start_ns = time_perf_ns()
         try:
             # prompt processors
@@ -1073,11 +1092,29 @@ class DefaultAgentStepExecutor:
         if stream:
             total_attempts = 1
 
+        # Capture initial context state to prevent accumulating context updates across retries
+        initial_context_state = None
+        if context is not None and total_attempts > 1:
+            import copy
+            initial_context_state = copy.deepcopy(context.model_dump())
+
         # Attempt loop
         for attempt in range(1, total_attempts + 1):
             result.attempts = attempt
             if limits is not None:
                 await core._usage_meter.guard(limits, result.step_history)
+            
+            # Reset context to initial state for retry attempts (except first)
+            # This prevents context updates from accumulating across failed retries
+            if attempt > 1 and context is not None and initial_context_state is not None:
+                telemetry.logfire.debug(f"Resetting context for retry attempt {attempt}")
+                # Restore context to initial state before retry
+                for field, value in initial_context_state.items():
+                    if hasattr(context, field):
+                        old_value = getattr(context, field)
+                        setattr(context, field, value)
+                        telemetry.logfire.debug(f"Reset context field {field}: {old_value} -> {value}")
+            
             start_ns = time_perf_ns()
             try:
                 processed_data = data
@@ -1847,7 +1884,14 @@ class DefaultLoopStepExecutor:
             try:
                 # Maintain attempts semantics for post-loop adapter: reflect the number
                 # of loop iterations as its attempts.
-                mapped = output_mapper(current_data, current_context)
+                # Unpack the final data from the loop before mapping (following policy pattern)
+                try:
+                    unpacker = getattr(core, "unpacker", DefaultAgentResultUnpacker())
+                except Exception:
+                    unpacker = DefaultAgentResultUnpacker()
+                unpacked_data = unpacker.unpack(current_data)
+                # Pass the UNPACKED data to the mapper
+                mapped = output_mapper(unpacked_data, current_context)
                 try:
                     from flujo.domain.dsl.step import Step
                     # Wrap mapped output into a StepResult-like structure only for attempts adjustment
@@ -2002,6 +2046,25 @@ class DefaultParallelStepExecutor:
                         branch_pipeline, data, branch_context, resources, limits, breach_event, context_setter
                     )
                     pipeline_success = all(s.success for s in pipeline_result.step_history) if pipeline_result.step_history else False
+                    
+                    # Enhanced feedback aggregation for branch failures
+                    branch_feedback = ""
+                    if pipeline_result.step_history:
+                        failed_steps = [s for s in pipeline_result.step_history if not s.success]
+                        if failed_steps:
+                            # Aggregate detailed failure information
+                            failure_details = []
+                            for failed_step in failed_steps:
+                                step_detail = f"step '{failed_step.name}'"
+                                if failed_step.attempts > 1:
+                                    step_detail += f" (after {failed_step.attempts} attempts)"
+                                if failed_step.feedback:
+                                    step_detail += f": {failed_step.feedback}"
+                                failure_details.append(step_detail)
+                            branch_feedback = f"Pipeline failed - {'; '.join(failure_details)}"
+                        else:
+                            branch_feedback = pipeline_result.step_history[-1].feedback if pipeline_result.step_history[-1].feedback else ""
+                    
                     branch_result = StepResult(
                         name=f"{parallel_step.name}_{branch_name}",
                         output=(pipeline_result.step_history[-1].output if pipeline_result.step_history else None),
@@ -2010,9 +2073,12 @@ class DefaultParallelStepExecutor:
                         latency_s=sum(s.latency_s for s in pipeline_result.step_history),
                         token_counts=pipeline_result.total_tokens,
                         cost_usd=pipeline_result.total_cost_usd,
-                        feedback=(pipeline_result.step_history[-1].feedback if pipeline_result.step_history else ""),
+                        feedback=branch_feedback,
                         branch_context=pipeline_result.final_pipeline_context,
-                        metadata_={},
+                        metadata_={
+                            "failed_steps_count": len([s for s in pipeline_result.step_history if not s.success]),
+                            "total_steps_count": len(pipeline_result.step_history),
+                        },
                     )
                 if usage_governor is not None:
                     breached = await usage_governor.add_usage(branch_result.cost_usd, branch_result.token_counts, branch_result)
@@ -2030,9 +2096,9 @@ class DefaultParallelStepExecutor:
                     latency_s=0.0,
                     token_counts=0,
                     cost_usd=0.0,
-                    feedback=f"Branch execution failed: {e}",
+                    feedback=f"Branch execution failed with {type(e).__name__}: {str(e)}",
                     branch_context=context,
-                    metadata_={},
+                    metadata_={"exception_type": type(e).__name__},
                 )
                 return branch_name, failure
         # Execute branches concurrently
@@ -2087,7 +2153,10 @@ class DefaultParallelStepExecutor:
         # Context merging using ContextManager
         if context is not None and parallel_step.merge_strategy != MergeStrategy.NO_MERGE:
             try:
+                # Merge context updates from all branches (successful and failed)
+                # This preserves context updates made before a step failed
                 branch_ctxs = {n: br.branch_context for n, br in branch_results.items() if br.branch_context is not None}
+                
                 if parallel_step.merge_strategy == MergeStrategy.CONTEXT_UPDATE:
                     for n, bc in branch_ctxs.items():
                         if parallel_step.field_mapping and n in parallel_step.field_mapping:
@@ -2195,14 +2264,21 @@ class DefaultParallelStepExecutor:
                 else f"Parallel step completed with {len(failure_messages)} branch failures (ignored)"
             )
         else:
-            # Join the detailed failure messages from the list.
-            detailed_feedback = "; ".join(failure_messages)
+            # Enhanced detailed failure feedback aggregation
+            total_branches = len(parallel_step.branches)
+            successful_branches = total_branches - len(failure_messages)
             
-            # Create a comprehensive final feedback string.
-            result.feedback = (
-                f"Parallel step failed with {len(failure_messages)} branch failures. "
-                f"Details: {detailed_feedback}"
-            )
+            # Format detailed failure information following Flujo best practices
+            if len(failure_messages) == 1:
+                # Single failure - use direct message format for compatibility
+                result.feedback = failure_messages[0]
+            else:
+                # Multiple failures - structured list with summary
+                summary = f"Parallel step failed: {len(failure_messages)} of {total_branches} branches failed"
+                if successful_branches > 0:
+                    summary += f" ({successful_branches} succeeded)"
+                detailed_feedback = "; ".join(failure_messages)
+                result.feedback = f"{summary}. Failures: {detailed_feedback}"
         return result
 
 class ConditionalStepExecutor(Protocol):

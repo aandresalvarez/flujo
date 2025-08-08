@@ -47,17 +47,16 @@ When implementing exceptions that control workflow execution (like `PausedExcept
 
 3. **Use in Step Policies**:
    ```python
-   # In step policies
-   try:
-       result = await core._agent_runner.run(...)
-   except Exception as e:
-       error_context = ErrorContext.from_exception(e, step_name=step.name)
-       classifier.classify_error(error_context)
-       
-       if error_context.category == ErrorCategory.CONTROL_FLOW:
-           # Re-raise immediately - never convert to StepResult
-           raise e
-   ```
+# In a step policy's main try/except block
+except Exception as e:
+    # 1. First, immediately check for and re-raise control flow exceptions.
+    if isinstance(e, (PausedException, PipelineAbortSignal)):
+        raise e  # Let the runner handle it.
+        
+    # 2. For all other exceptions, create a failure StepResult.
+    # The runner's retry/fallback logic will handle this result.
+    return StepResult(success=False, feedback=f"Step failed: {e}")
+```
 
 ### **❌ The Fatal Anti-Pattern**
 
@@ -102,9 +101,11 @@ class DefaultYourStepExecutor:
         # 5. Return results
 ```
 
+> **Note on `ExecutionFrame`**: The `core.execute` method and many policies now accept a single `ExecutionFrame` object instead of a long list of parameters. This is the preferred way to pass execution state. Your policy's `execute` method should be prepared to accept this frame and unpack its contents when calling `core.execute` recursively.
+
 ### **✅ Context Management in Policies**
 
-Always use the centralized `ContextManager`:
+Always use the centralized utilities:
 
 ```python
 # For isolation (parallel branches, loop iterations)
@@ -112,12 +113,16 @@ isolated_context = ContextManager.isolate(parent_context)
 
 # For merging (after parallel execution)
 merged_context = ContextManager.merge_contexts([ctx1, ctx2, ctx3])
+
+# For applying updates to existing context
+from flujo.utils.context import safe_merge_context_updates
+safe_merge_context_updates(target_context, source_context_with_updates)
 ```
 
 ### **❌ Anti-Pattern: Direct Context Manipulation**
 ```python
 # ❌ Don't do this
-context.some_field = new_value  # This won't persist correctly
+context.some_field = new_value  # This bypasses validation and won't persist correctly
 ```
 
 ---
@@ -146,10 +151,18 @@ class DefaultYourCustomStepExecutor:
 ### **Step 3: Register in ExecutorCore**
 ```python
 # In flujo/application/core/ultra_executor.py
-async def execute(self, step: Step, ...):
+
+# 1. Update the constructor to accept the new policy
+class ExecutorCore:
+    def __init__(self, ..., your_custom_step_executor=None):
+        # ...
+        self.your_custom_step_executor = your_custom_step_executor or DefaultYourCustomStepExecutor()
+
+# 2. Update the dispatcher to use the injected policy
+async def execute(self, frame: ExecutionFrame, ...):
+    step = frame.step
     if isinstance(step, YourCustomStep):
-        policy = DefaultYourCustomStepExecutor()
-        return await policy.execute(self, step, ...)
+        return await self.your_custom_step_executor.execute(self, frame)
 ```
 
 ### **Step 4: Add Tests**
@@ -319,11 +332,22 @@ except Exception as e:
 
 ### **❌ Pitfall: Context Mutation Instead of Updates**
 ```python
+# ❌ Pitfall: Direct Context Mutation in Policies
+# In a policy, you might be tempted to directly change the context.
+# This bypasses validation and can lead to inconsistent state.
 # ❌ Wrong
 context.some_field = new_value
 
-# ✅ Correct  
-updated_context = context.model_copy(update={"some_field": new_value})
+# ✅ Correct Architectural Pattern
+# Use `safe_merge_context_updates` from `flujo.utils.context` to apply changes.
+# This ensures validation is respected and is the canonical way to merge state.
+from flujo.utils.context import safe_merge_context_updates
+
+# Create a source context or dict with the updates
+updates_to_apply = YourContextModel(some_field=new_value)
+
+# Safely merge the changes into the main context
+safe_merge_context_updates(main_context, updates_to_apply)
 ```
 
 ### **❌ Pitfall: Exception Swallowing**
