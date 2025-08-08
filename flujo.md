@@ -1,5 +1,7 @@
  ### **The Flujo Architecture: A Deep Dive (Post-Refactor)**
 
+> **📖 For practical development guidance**, see [`DEVELOPER_GUIDE.md`](./DEVELOPER_GUIDE.md) which provides best practices, anti-patterns, and debugging strategies.
+
 #### **Core Philosophy: A Dual Architecture for Simplicity and Power**
 
 At its heart, Flujo is engineered with a powerful dual architecture to bring structure, reliability, and observability to AI-driven workflows:
@@ -132,5 +134,7 @@ Flujo provides a suite of tools for monitoring, debugging, and managing pipeline
 Flujo's architecture presents a mature and robust solution for modern AI engineering. The clean separation between its intuitive **declarative shell** and its powerful, now **policy-driven execution core** delivers both an excellent developer experience and the resilience required for production systems. 
 
 **The documented architectural patterns** ensure developers can leverage Flujo's sophisticated systems (error classification, recovery strategies, hook system, state management) rather than implementing ad-hoc solutions. By following these patterns - particularly for control flow exception handling, custom step types, and cross-cutting concerns - developers build applications that are not only correct but also consistent with Flujo's architectural philosophy.
+
+For day-to-day development, the companion [`DEVELOPER_GUIDE.md`](./DEVELOPER_GUIDE.md) provides practical best practices, common anti-patterns to avoid, and systematic debugging approaches that complement the architectural patterns documented here.
 
 By integrating a compositional DSL, a decoupled and modular core, built-in primitives for performance, resilience, and observability, and **clear guidance on architectural patterns**, Flujo provides a comprehensive and transparent framework for building, managing, and improving complex AI applications at scale.
