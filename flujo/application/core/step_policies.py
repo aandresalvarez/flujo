@@ -1955,7 +1955,7 @@ class DefaultParallelStepExecutor:
                 total_tokens += branch_result.token_counts
             else:
                 all_successful = False
-                failure_messages.append(f"Branch '{branch_name}': {branch_result.feedback}")
+                failure_messages.append(f"branch '{branch_name}' failed: {branch_result.feedback}")
         # Post-usage check
         if usage_governor is not None and usage_governor.breached():
             err = usage_governor.get_error()
@@ -2092,7 +2092,14 @@ class DefaultParallelStepExecutor:
                 else f"Parallel step completed with {len(failure_messages)} branch failures (ignored)"
             )
         else:
-            result.feedback = f"Parallel step failed with {len(failure_messages)} branch failures"
+            # Join the detailed failure messages from the list.
+            detailed_feedback = "; ".join(failure_messages)
+            
+            # Create a comprehensive final feedback string.
+            result.feedback = (
+                f"Parallel step failed with {len(failure_messages)} branch failures. "
+                f"Details: {detailed_feedback}"
+            )
         return result
 
 class ConditionalStepExecutor(Protocol):
