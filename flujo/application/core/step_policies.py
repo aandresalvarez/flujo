@@ -1516,102 +1516,114 @@ class DefaultConditionalStepExecutor:
             metadata_={},
         )
         start_time = time.monotonic()
-        try:
-            branch_key = conditional_step.condition_callable(data, context)
-            telemetry.logfire.info(f"Condition evaluated to branch key '{branch_key}'")
-            # Determine branch
-            branch_to_execute = None
-            if branch_key in conditional_step.branches:
-                branch_to_execute = conditional_step.branches[branch_key]
-                result.metadata_["executed_branch_key"] = branch_key
-            elif conditional_step.default_branch_pipeline is not None:
-                branch_to_execute = conditional_step.default_branch_pipeline
-                result.metadata_["executed_branch_key"] = "default"
-            else:
-                telemetry.logfire.warn(
-                    f"No branch found for key '{branch_key}' and no default branch provided"
-                )
-                result.success = False
-                result.feedback = f"No branch found for key '{branch_key}'"
-                result.latency_s = time.monotonic() - start_time
-                return result
-            # Execute selected branch
-            if branch_to_execute:
-                branch_data = data
-                if conditional_step.branch_input_mapper:
-                    branch_data = conditional_step.branch_input_mapper(data, context)
-                # Use ContextManager for proper deep isolation
-                branch_context = ContextManager.isolate(context) if context is not None else None
-                # Execute pipeline
-                total_cost = 0.0
-                total_tokens = 0
-                total_latency = 0.0
-                step_history = []
-                for pipeline_step in (branch_to_execute.steps if isinstance(branch_to_execute, Pipeline) else [branch_to_execute]):
-                    step_result = await core.execute(
-                        pipeline_step,
-                        branch_data,
-                        context=branch_context,
-                        resources=resources,
-                        limits=limits,
-                        context_setter=context_setter,
-                        _fallback_depth=_fallback_depth,
+        with telemetry.logfire.span(conditional_step.name) as span:
+            try:
+                branch_key = conditional_step.condition_callable(data, context)
+                telemetry.logfire.info(f"Condition evaluated to branch key '{branch_key}'")
+                try:
+                    span.set_attribute("executed_branch_key", branch_key)
+                except Exception:
+                    pass
+                # Determine branch
+                branch_to_execute = None
+                if branch_key in conditional_step.branches:
+                    branch_to_execute = conditional_step.branches[branch_key]
+                elif conditional_step.default_branch_pipeline is not None:
+                    branch_to_execute = conditional_step.default_branch_pipeline
+                else:
+                    telemetry.logfire.warn(
+                        f"No branch found for key '{branch_key}' and no default branch provided"
                     )
-                    total_cost += step_result.cost_usd
-                    total_tokens += step_result.token_counts
-                    total_latency += getattr(step_result, "latency_s", 0.0)
-                    branch_data = step_result.output
-                    if not step_result.success:
-                        result.feedback = (
-                            f"Failure in branch '{branch_key}'"
-                            if branch_key in conditional_step.branches
-                            else step_result.feedback or "Step execution failed"
-                        )
-                        result.success = False
-                        result.latency_s = total_latency
-                        result.token_counts = total_tokens
-                        result.cost_usd = total_cost
-                        return result
-                    step_history.append(step_result)
-                # Apply optional branch_output_mapper
-                final_output = branch_data
-                if getattr(conditional_step, "branch_output_mapper", None):
-                    try:
-                        final_output = conditional_step.branch_output_mapper(
-                            data, branch_key, branch_context
-                        )
-                    except Exception as e:
-                        result.success = False
-                        result.feedback = f"Branch output mapper raised an exception: {e}"
-                        result.latency_s = total_latency
-                        result.token_counts = total_tokens
-                        result.cost_usd = total_cost
-                        return result
-                result.success = True
-                result.output = final_output
-                result.latency_s = total_latency
-                result.token_counts = total_tokens
-                result.cost_usd = total_cost
-                # Update branch context using ContextManager
-                result.branch_context = ContextManager.merge(context, branch_context) if context is not None else branch_context
-                # Invoke context setter on success when provided
-                if context_setter is not None:
-                    try:
-                        from flujo.domain.models import PipelineResult
-                        pipeline_result = PipelineResult(
-                            step_history=step_history,
-                            total_cost_usd=total_cost,
-                            total_tokens=total_tokens,
-                            total_latency_s=total_latency,
-                            final_pipeline_context=result.branch_context,
-                        )
-                        context_setter(pipeline_result, context)
-                    except Exception:
-                        pass
-                return result
-        except Exception as e:
-            result.feedback = f"Error executing conditional logic or branch: {e}"
-            result.success = False
+                    result.success = False
+                    result.metadata_["executed_branch_key"] = branch_key
+                    result.feedback = f"No branch found for key '{branch_key}' and no default branch provided"
+                    result.latency_s = time.monotonic() - start_time
+                    return result
+                # Record executed branch key (always the evaluated key, even when default is used)
+                result.metadata_["executed_branch_key"] = branch_key
+                telemetry.logfire.info(f"Executing branch for key '{branch_key}'")
+                # Execute selected branch
+                if branch_to_execute:
+                    branch_data = data
+                    if conditional_step.branch_input_mapper:
+                        branch_data = conditional_step.branch_input_mapper(data, context)
+                    # Use ContextManager for proper deep isolation
+                    branch_context = ContextManager.isolate(context) if context is not None else None
+                    # Execute pipeline
+                    total_cost = 0.0
+                    total_tokens = 0
+                    total_latency = 0.0
+                    step_history = []
+                    for pipeline_step in (branch_to_execute.steps if isinstance(branch_to_execute, Pipeline) else [branch_to_execute]):
+                        # Span around the concrete branch step to expose its name for tests
+                        with telemetry.logfire.span(getattr(pipeline_step, "name", str(pipeline_step))):
+                            step_result = await core.execute(
+                            pipeline_step,
+                            branch_data,
+                            context=branch_context,
+                            resources=resources,
+                            limits=limits,
+                            context_setter=context_setter,
+                            _fallback_depth=_fallback_depth,
+                            )
+                        total_cost += step_result.cost_usd
+                        total_tokens += step_result.token_counts
+                        total_latency += getattr(step_result, "latency_s", 0.0)
+                        branch_data = step_result.output
+                        if not step_result.success:
+                            # Propagate branch failure details in feedback
+                            msg = step_result.feedback or "Step execution failed"
+                            result.feedback = f"Failure in branch '{branch_key}': {msg}"
+                            result.success = False
+                            result.latency_s = total_latency
+                            result.token_counts = total_tokens
+                            result.cost_usd = total_cost
+                            return result
+                        step_history.append(step_result)
+                    # Apply optional branch_output_mapper
+                    final_output = branch_data
+                    if getattr(conditional_step, "branch_output_mapper", None):
+                        try:
+                            final_output = conditional_step.branch_output_mapper(
+                                final_output, branch_key, branch_context
+                            )
+                        except Exception as e:
+                            result.success = False
+                            result.feedback = f"Branch output mapper raised an exception: {e}"
+                            result.latency_s = total_latency
+                            result.token_counts = total_tokens
+                            result.cost_usd = total_cost
+                            return result
+                    result.success = True
+                    result.output = final_output
+                    result.latency_s = total_latency
+                    result.token_counts = total_tokens
+                    result.cost_usd = total_cost
+                    # Update branch context using ContextManager
+                    result.branch_context = ContextManager.merge(context, branch_context) if context is not None else branch_context
+                    # Invoke context setter on success when provided
+                    if context_setter is not None:
+                        try:
+                            from flujo.domain.models import PipelineResult
+                            pipeline_result = PipelineResult(
+                                step_history=step_history,
+                                total_cost_usd=total_cost,
+                                total_tokens=total_tokens,
+                                total_latency_s=total_latency,
+                                final_pipeline_context=result.branch_context,
+                            )
+                            context_setter(pipeline_result, context)
+                        except Exception:
+                            pass
+                    return result
+            except Exception as e:
+                # Log error for visibility in tests
+                try:
+                    telemetry.logfire.error(str(e))
+                except Exception:
+                    pass
+                result.feedback = f"Error executing conditional logic or branch: {e}"
+                result.success = False
         result.latency_s = time.monotonic() - start_time
         return result
 

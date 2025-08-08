@@ -572,6 +572,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         else:
             self._ensure_pipeline()
         cancelled = False
+        paused = False
         try:
             await self._dispatch_hook(
                 "pre_run",
@@ -604,6 +605,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             return
         except PipelineAbortSignal as e:
             telemetry.logfire.info(str(e))
+            paused = True
         except (UsageLimitExceededError, PricingNotConfiguredError) as e:
             if current_context_instance is not None:
                 assert self.pipeline is not None
@@ -645,12 +647,15 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 ] = "failed"
                 if cancelled:
                     final_status = "failed"
+                elif paused or (
+                    isinstance(current_context_instance, PipelineContext)
+                    and current_context_instance.scratchpad.get("status") == "paused"
+                ):
+                    final_status = "paused"
                 elif pipeline_result_obj.step_history:
-                    final_status = (
-                        "completed"
-                        if all(s.success for s in pipeline_result_obj.step_history)
-                        else "failed"
-                    )
+                    final_status = "completed" if all(
+                        s.success for s in pipeline_result_obj.step_history
+                    ) else "failed"
                 await exec_manager.persist_final_state(
                     run_id=run_id_for_state,
                     context=current_context_instance,

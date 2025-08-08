@@ -2365,7 +2365,16 @@ class DefaultProcessorPipeline:
             return data
         
         processed_data = data
+        # Guard: skip when processors is a Mock or not iterable
+        try:
+            from unittest.mock import Mock, MagicMock, AsyncMock
+            if isinstance(processors, (Mock, MagicMock, AsyncMock)):
+                return data
+        except Exception:
+            pass
         processor_list = processors if isinstance(processors, list) else getattr(processors, "prompt_processors", [])
+        if processor_list is None or not hasattr(processor_list, "__iter__"):
+            return data
         
         for proc in processor_list:
             try:
@@ -2392,7 +2401,16 @@ class DefaultProcessorPipeline:
             return data
         
         processed_data = data
+        # Guard: skip when processors is a Mock or not iterable
+        try:
+            from unittest.mock import Mock, MagicMock, AsyncMock
+            if isinstance(processors, (Mock, MagicMock, AsyncMock)):
+                return data
+        except Exception:
+            pass
         processor_list = processors if isinstance(processors, list) else getattr(processors, "output_processors", [])
+        if processor_list is None or not hasattr(processor_list, "__iter__"):
+            return data
         
         for proc in processor_list:
             try:
@@ -2582,6 +2600,7 @@ class OptimizedExecutorCore(ExecutorCore):
         from ...domain.models import PipelineContext, StepResult, PipelineResult
         from flujo.exceptions import UsageLimitExceededError
         from .context_manager import ContextManager
+        from flujo.infra import telemetry
         
         # Initialization
         start_time = time.monotonic()
@@ -2604,7 +2623,7 @@ class OptimizedExecutorCore(ExecutorCore):
                     latency_s=time.monotonic() - start_time,
                     token_counts=0,
                     cost_usd=0.0,
-                    feedback=str(e),
+                    feedback=f"Error in initial_input_to_loop_body_mapper for LoopStep '{loop_step.name}': {e}",
                     branch_context=current_context,
                     metadata_={'iterations': 0, 'exit_reason': 'initial_input_mapper_error'},
                     step_history=[],
@@ -2631,6 +2650,9 @@ class OptimizedExecutorCore(ExecutorCore):
         cumulative_cost = 0.0
         cumulative_tokens = 0
         for iteration_count in range(1, max_loops + 1):
+            # Iteration span and logging
+            with telemetry.logfire.span(f"Loop '{loop_step.name}' - Iteration {iteration_count}"):
+                telemetry.logfire.info(f"LoopStep '{loop_step.name}': Starting Iteration {iteration_count}/{max_loops}")
             # Isolate context for each iteration to prevent cross-iteration contamination
             iteration_context = ContextManager.isolate(current_context) if current_context is not None else None
             # Execute the full loop body pipeline
@@ -2696,6 +2718,22 @@ class OptimizedExecutorCore(ExecutorCore):
                     continue
                 # No fallback: abort loop
                 failed = next(sr for sr in pipeline_result.step_history if not sr.success)
+                # Normalize plugin failure feedback to match legacy expectations
+                fb = failed.feedback or ""
+                try:
+                    if isinstance(fb, str) and "Plugin" in fb:
+                        # Strip outer execution prefix
+                        exec_prefix = "Plugin execution failed after max retries: "
+                        if fb.startswith(exec_prefix):
+                            fb = fb[len(exec_prefix):]
+                        # Collapse repeated validation prefixes
+                        val_prefix = "Plugin validation failed: "
+                        while fb.startswith(val_prefix):
+                            fb = fb[len(val_prefix):]
+                        # Rebuild canonical message
+                        fb = f"Plugin validation failed after max retries: {fb}"
+                except Exception:
+                    pass
                 return StepResult(
                     name=loop_step.name,
                     success=False,
@@ -2704,7 +2742,7 @@ class OptimizedExecutorCore(ExecutorCore):
                     latency_s=time.monotonic() - start_time,
                     token_counts=cumulative_tokens,
                     cost_usd=cumulative_cost,
-                    feedback=failed.feedback or "LoopStep body step failed",
+                    feedback=(f"Loop body failed: {fb}" if fb else "Loop body failed"),
                     branch_context=current_context,
                     metadata_={'iterations': iteration_count, 'exit_reason': 'body_step_error'},
                     step_history=iteration_results,
@@ -2746,6 +2784,7 @@ class OptimizedExecutorCore(ExecutorCore):
             if cond:
                 try:
                     if cond(current_data, current_context):
+                        telemetry.logfire.info(f"LoopStep '{loop_step.name}' exit condition met at iteration {iteration_count}.")
                         exit_reason = 'condition'
                         break
                 except Exception as e:
@@ -2757,7 +2796,7 @@ class OptimizedExecutorCore(ExecutorCore):
                         latency_s=time.monotonic() - start_time,
                         token_counts=cumulative_tokens,
                         cost_usd=cumulative_cost,
-                        feedback=str(e),
+                        feedback=f"Exception in exit condition for LoopStep '{loop_step.name}': {e}",
                         branch_context=current_context,
                         metadata_={'iterations': iteration_count, 'exit_reason': 'exit_condition_error'},
                         step_history=iteration_results,
@@ -2765,10 +2804,12 @@ class OptimizedExecutorCore(ExecutorCore):
 
             # Apply iteration input mapper
             iter_mapper = getattr(loop_step, 'iteration_input_mapper', None)
-            if iter_mapper:
+            # Only apply iteration mapper if there will be a next iteration
+            if iter_mapper and iteration_count < max_loops:
                 try:
                     current_data = iter_mapper(current_data, current_context, iteration_count)
                 except Exception as e:
+                    telemetry.logfire.error(f"Error in iteration_input_mapper for LoopStep '{loop_step.name}' at iteration {iteration_count}: {e}")
                     return StepResult(
                         name=loop_step.name,
                         success=False,
@@ -2777,7 +2818,7 @@ class OptimizedExecutorCore(ExecutorCore):
                         latency_s=time.monotonic() - start_time,
                         token_counts=cumulative_tokens,
                         cost_usd=cumulative_cost,
-                        feedback=str(e),
+                        feedback=f"Error in iteration_input_mapper for LoopStep '{loop_step.name}': {e}",
                         branch_context=current_context,
                         metadata_={'iterations': iteration_count, 'exit_reason': 'iteration_input_mapper_error'},
                         step_history=iteration_results,

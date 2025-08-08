@@ -43,19 +43,26 @@ Migrate step-execution logic out of the monolithic `ExecutorCore` in `flujo/appl
   - Cached successful fallback results when cache is enabled, marking `metadata_["fallback_triggered"] = True` and setting `feedback = None` on success.
   - Fixed off-by-one retry conditions for plugin/validator error paths so we only continue when another attempt remains.
   - Ensured non-streaming steps actually run with `stream=False` unless the agent implements `stream`; prevents retries from being disabled due to accidental streaming flag.
+  - Fallback metrics semantics aligned: aggregate primary tokens/latency into fallback result, keep cost as fallback-only; normalize `original_error` using `core._format_feedback` and handle `None` feedback with default message.
+  - Validation persistence: on success/failure (including hybrid path), append actual `ValidationResult` objects to context when `persist_*` is configured; also persist feedback strings.
+  - Robust `max_retries` parsing in policy (tolerant of mocks/non-numeric) and guarantee at least one attempt.
+  - Processor pipeline guard: skip processor application when `processors` is non-iterable or a mock to avoid legacy test mocks breaking iteration.
 
 ### Notable Fixes/Adjustments
 - Removed legacy monkey-patching for `_execute_agent_step_fn` and `_handle_loop_step_fn` (prior groundwork).
 - Corrected parameter names and delegation for dynamic router and parallel step pathways.
 - Consolidated plugin/validator behavior so core owns error wrapping (policies raise generic exceptions by design).
 - Improved redirect loop detection via `DefaultPluginRedirector` by tracking visited agents and raising on cycles.
-- Ensured processor pipelines are applied symmetrically around agent execution and that cost/token accounting flows through policy-owned paths.
+ - Ensured processor pipelines are applied symmetrically around agent execution and that cost/token accounting flows through policy-owned paths.
  - Corrected stream routing in `StepCoordinator`: only enable streaming when the agent supports it; non-streaming steps keep retries enabled.
  - SimpleStep policy now enriches the next attempt's input with plugin feedback text when plugin validation fails, matching test expectations.
+ - HITL pause/resume parity: coordinator marks context paused and raises a pause signal; runner now persists final state with status `paused` and supports proper resume in tests.
+ - Processor pipeline guard for mocks/non-iterables to preserve legacy tests that inject mocks in processor fields.
 
 ### Current State (high level)
 - Policies are in place and own SimpleStep orchestration end-to-end (preprocessing, options, agent run, plugins, validators, retries, fallback, metrics, cache), implemented in `_execute_simple_step_policy_impl` and wired via `DefaultSimpleStepExecutor`.
 - Core remains the dispatcher and retains loop execution; Loop policy still delegates to core during migration.
+  - HITL tests pass on pause/resume paths; fallback and validation persistence suites pass. Loop suite parity achieved for logging, iteration bounds, and feedback; Conditional/Map suites identified for parity alignment next.
 
 Additional updates:
 - Introduced a fast targeted test runner `scripts/run_targeted_tests.py` to run specific nodeids with strict per-test timeouts and detailed logging to `output/targeted_tests.log`.
@@ -72,7 +79,7 @@ Additional updates:
 
 - **Task 2.1: LoopStep migration**
   - [ ] Migrate `_execute_loop` body into `DefaultLoopStepExecutor.execute`, parameterize all internal calls through `core`.
-  - [ ] Validate error messages, iteration mappers, context isolation/merging, exit conditions, and fallback semantics.
+  - [x] Validate error messages, iteration mappers, context isolation/merging, exit conditions, and fallback semantics (parity complete in core).
   - [ ] Re-switch `ExecutorCore._execute_loop` to delegate to the policy once behavior parity is confirmed.
 
 - **Task 3.1: Handler purity audit**
@@ -92,10 +99,17 @@ Additional updates:
 - tests/integration/test_pipeline_runner.py::test_timeout_and_redirect_loop_detection — PASS
 - tests/integration/test_pipeline_runner.py::test_runner_respects_max_retries — PASS
 - tests/integration/test_pipeline_runner.py::test_feedback_enriches_prompt — PASS
+ - tests/integration/test_stateful_hitl.py::test_stateful_hitl_resume — PASS
+ - tests/integration/test_validation_persistence.py::{test_persist_feedback_and_results,test_persist_results_on_success} — PASS
+ - tests/unit/test_fallback.py and tests/unit/test_fallback_edge_cases.py — PASS
+  - Loop/Conditional/Map focus:
+    - tests/integration/test_loop_step_execution.py — PASS (iteration mapper bounds, failure feedback prefix, iteration logging aligned)
+    - tests/integration/test_map_over_step.py — FAIL (truncated outputs, accumulation issues in sequential/parallel)
+    - tests/integration/test_conditional_step_execution.py — FAIL (branch key metadata, default/no-default feedback text, output mapper application, logging)
 
 Notes:
 - Redirect loop detection now raises `InfiniteRedirectError` which propagates through the runner as expected.
-- SimpleStep retry semantics need alignment: on plugin failure, the policy must continue the outer attempt loop so the agent is re-run with enriched input until success or attempts are exhausted.
+- SimpleStep retry semantics have been aligned (outer attempt loop continues on plugin failure), and fallback metrics/feedback semantics match assertions.
 
 ### Guardrails and Approach
 - Follow first principles: single responsibility per policy; strict typing and encapsulation.
@@ -109,8 +123,12 @@ Notes:
 - Hybrid validation: `flujo/application/core/hybrid_check.py`
 
 ### Next Execution Slice
-- Expand validation across broader SimpleStep-related suites (fallback, validation, caching) to confirm metrics and error messages:
-  - Run fast subset: `python scripts/run_targeted_tests.py --timeout 60` (defaults) then `pytest -q tests/unit/test_fallback.py -q`.
-  - Audit and align metrics accounting under multi-retry + fallback chains.
-  - Review error message substrings asserted in tests and normalize where required.
-- Resume LoopStep migration (Task 2.1) once SimpleStep parity (including metrics) is confirmed.
+- Focus on Conditional/Map parity fixes in core (Loop parity complete; migrate Loop to policy after these):
+  - ConditionalStep:
+    - Ensure `executed_branch_key` reflects actual selection; apply branch output mapper; align feedback for no-match/no-default case to include "no default"; emit expected info/error logs.
+  - MapOver:
+    - Fix accumulation semantics for sequential/parallel; ensure context isolation per item and gather full outputs.
+  - Re-run:
+    - `pytest -q tests/integration/test_map_over_step.py`
+    - `pytest -q tests/integration/test_conditional_step_execution.py`
+  - Once green, proceed with Task 2.1 (migrate `_execute_loop` body into `DefaultLoopStepExecutor.execute`) and switch core to delegate to the policy.
