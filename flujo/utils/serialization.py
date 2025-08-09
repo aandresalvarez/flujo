@@ -958,28 +958,7 @@ def serialize_to_json_robust(obj: Any, **kwargs: Any) -> str:
     return json.dumps(robust_serialize(obj), **kwargs)
 
 
-def safe_serialize_basemodel(
-    obj: Any,
-    mode: str = "default",
-    _seen: Optional[Set[int]] = None,
-) -> Any:
-    """
-    Specialized serialization for BaseModel instances with mode-specific circular reference handling.
-    
-    DEPRECATED: This function now delegates to the enhanced safe_serialize function.
-    Use safe_serialize directly for new code.
-    
-    This function implements the specific circular reference behavior expected by Flujo BaseModel:
-    - "default" mode: Returns None for circular references (for BaseModel objects) or {} for dicts
-    - "cache" mode: Returns "<ClassName> circular>" placeholders
-    """
-    # Delegate to the enhanced safe_serialize function
-    return safe_serialize(
-        obj,
-        mode=mode,
-        _seen=_seen,
-        _recursion_depth=0,
-    )
+
 
 
 def reset_custom_serializer_registry() -> None:
