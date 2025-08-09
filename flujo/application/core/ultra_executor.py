@@ -1151,12 +1151,12 @@ class DefaultProcessorPipeline:
                     except TypeError:
                         processed_data = fn(processed_data)
             except Exception as e:
-                # Log error but continue with original data
+                # Prompt processor failures should fail the step
                 try:
                     telemetry.logfire.error(f"Prompt processor failed: {e}")
                 except Exception:
                     pass
-                processed_data = data
+                raise e  # Re-raise to fail the step
 
         return processed_data
 
@@ -1187,12 +1187,12 @@ class DefaultProcessorPipeline:
                     except TypeError:
                         processed_data = fn(processed_data)
             except Exception as e:
-                # Log error but continue with original output
+                # Output processor failures should be re-raised to trigger fallback
                 try:
                     telemetry.logfire.error(f"Output processor failed: {e}")
                 except Exception:
                     pass
-                processed_data = data
+                raise e  # Re-raise to trigger fallback logic
 
         return processed_data
 

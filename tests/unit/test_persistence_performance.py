@@ -39,10 +39,10 @@ class TestPersistencePerformanceOverhead:
             # Use higher threshold in CI environments for more reliable tests
             if os.getenv("CI") == "true":
                 default_limit = (
-                    2100.0  # Enhanced: Adjusted threshold for enhanced system after FSD-008 improvements
+                    1700.0  # Enhanced: Realistic threshold for production-grade enhanced system
                 )
             else:
-                default_limit = 2100.0  # Enhanced: Adjusted threshold to accommodate post-FSD-008 performance characteristics
+                default_limit = 1700.0  # Enhanced: Realistic limits for production-grade enhanced system with variability
 
             return float(os.getenv("FLUJO_OVERHEAD_LIMIT", str(default_limit)))
         except ValueError:
@@ -60,9 +60,11 @@ class TestPersistencePerformanceOverhead:
         agent = StubAgent(["output"] * 25)  # Extra outputs to handle retries and ensure robustness
         pipeline = Step.solution(agent)
 
-        # Create unique database files for isolation
+        # Create unique database files for isolation (enhanced for parallel test execution)
+        import os
+        worker_id = os.getenv("PYTEST_XDIST_WORKER", "master")
         test_id = uuid.uuid4().hex[:8]
-        with_backend_db_path = tmp_path / f"with_backend_{test_id}.db"
+        with_backend_db_path = tmp_path / f"with_backend_{worker_id}_{test_id}.db"
 
         # Test without backend (baseline)
         runner_no_backend = create_test_flujo(pipeline, state_backend=None)
@@ -114,6 +116,9 @@ class TestPersistencePerformanceOverhead:
         finally:
             # Clean up database files to prevent resource contention
             try:
+                # Ensure proper backend cleanup for resource management
+                if hasattr(isolated_backend, '_db_pool') and isolated_backend._db_pool:
+                    isolated_backend._db_pool.clear()
                 if with_backend_db_path.exists():
                     with_backend_db_path.unlink()
             except Exception as e:

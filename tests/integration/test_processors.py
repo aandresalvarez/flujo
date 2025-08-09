@@ -78,13 +78,9 @@ async def test_failing_processor_does_not_crash() -> None:
     step = Step.solution(agent, processors=procs)
     runner = create_test_flujo(step)
     result = await gather_result(runner, "in")
-    # ✅ ENHANCED ROBUSTNESS: System continues execution despite processor failure
-    # Previous behavior: Processor failures would cause step failure
-    # Enhanced behavior: Primary execution continues, processor errors are logged but don't cause failure
-    # This represents improved system resilience and robustness
     assert (
-        result.step_history[0].success is True
-    )  # Enhanced: Primary continues despite processor failure
+        result.step_history[0].success is False
+    )  # Processor failure should cause step failure
 
 
 class User(BaseModel):
