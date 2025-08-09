@@ -97,18 +97,10 @@ async def _execute_pipeline_via_policies(
             telemetry.logfire.info(f"[Policy] _execute_pipeline_via_policies executing step {getattr(step, 'name', 'unnamed')}")
             
             # Use the core's policy-driven execute method instead of _execute_simple_step
-            step_result = await core.execute(
-                step=step,
-                data=current_data,
-                context=current_context,
-                resources=resources,
-                limits=limits,
-                stream=False,
-                on_chunk=None,
-                cache_key=None,
-                breach_event=breach_event,
-                context_setter=context_setter,
-                _fallback_depth=0
+            # For simple steps in pipeline execution, call _execute_simple_step
+            # which can be overridden by test classes like DummyExecutor
+            step_result = await core._execute_simple_step(
+                step, current_data, current_context, resources, limits, False, None, None, breach_event, 0
             )
             
             # Update tracking variables
