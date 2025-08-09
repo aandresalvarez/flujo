@@ -605,17 +605,13 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             iteration_input_mapper=_iteration_mapper,
             **config_kwargs,
         )
-
         # Post-loop mapper that only maps on successful refinement (exit condition)
         async def _post_output_mapper(out: Any, *, context: BaseModel | None = None) -> Any:
             # If the critic indicates completion, return the last captured artifact; otherwise, return the check
             if isinstance(out, RefinementCheck) and out.is_complete:
                 return last_artifact_var.get()
             return out
-
-        mapper_step = cls.from_callable(
-            _post_output_mapper, name=f"{name}_output_mapper", is_adapter=True
-        )
+        mapper_step = cls.from_callable(_post_output_mapper, name=f"{name}_output_mapper", is_adapter=True)
         # Compose pipeline: loop then post mapping step
         return core_loop >> mapper_step
 

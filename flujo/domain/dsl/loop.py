@@ -41,9 +41,7 @@ class LoopStep(Step[Any, Any], Generic[TContext]):
             "Callable that takes (last_body_output, pipeline_context) and returns True to exit loop."
         )
     )
-    max_retries: int = Field(
-        default=5, ge=1, description="Number of retries after initial iteration.", alias="max_loops"
-    )
+    max_retries: int = Field(default=5, ge=1, description="Number of retries after initial iteration.", alias="max_loops")
 
     initial_input_to_loop_body_mapper: Optional[Callable[[Any, Optional[TContext]], Any]] = Field(
         default=None,

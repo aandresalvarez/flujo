@@ -11,9 +11,7 @@ class ContextManager:
     """Centralized context isolation and merging."""
 
     @staticmethod
-    def isolate(
-        context: Optional[BaseModel], include_keys: Optional[List[str]] = None
-    ) -> Optional[BaseModel]:
+    def isolate(context: Optional[BaseModel], include_keys: Optional[List[str]] = None) -> Optional[BaseModel]:
         """Return a deep copy of the context for isolation."""
         if context is None:
             return None
@@ -36,9 +34,7 @@ class ContextManager:
             return copy.deepcopy(context)
 
     @staticmethod
-    def merge(
-        main_context: Optional[BaseModel], branch_context: Optional[BaseModel]
-    ) -> Optional[BaseModel]:
+    def merge(main_context: Optional[BaseModel], branch_context: Optional[BaseModel]) -> Optional[BaseModel]:
         """Merge updates from branch_context into main_context and return the result."""
         if main_context is None:
             return branch_context

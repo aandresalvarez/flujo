@@ -302,13 +302,7 @@ class ErrorClassifier:
             ],
             ErrorCategory.EXTERNAL_SERVICE: ["service", "api", "endpoint", "server", "upstream"],
             ErrorCategory.CONFIGURATION: ["config", "setting", "parameter", "missing", "not found"],
-            ErrorCategory.CONTROL_FLOW: [
-                "pause",
-                "hitl",
-                "human input",
-                "workflow control",
-                "execution pause",
-            ],
+            ErrorCategory.CONTROL_FLOW: ["pause", "hitl", "human input", "workflow control", "execution pause"],
         }
 
     def classify_error(self, error_context: ErrorContext) -> None:
@@ -843,7 +837,6 @@ class OptimizedErrorHandler:
 
         # Control flow strategy - for PausedException and similar
         from flujo.exceptions import PausedException, InfiniteFallbackError, InfiniteRedirectError
-
         control_flow_strategy = RecoveryStrategy(
             name="control_flow",
             error_types={PausedException, InfiniteFallbackError, InfiniteRedirectError},

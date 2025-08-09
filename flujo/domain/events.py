@@ -89,10 +89,10 @@ class OnStepFailurePayload(BaseModel):
 
 class OnPauseRequestedPayload(BaseModel):
     """Payload for pause request hooks.
-
+    
     Contains information about a pause request from a HITL step.
     """
-
+    
     event_name: Literal["on_pause_requested"]
     step_name: str
     pause_message: str

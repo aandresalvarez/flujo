@@ -3,7 +3,6 @@ from typing import Any, Optional, Callable
 from flujo.domain.models import StepResult, UsageLimits
 # Removed ExecutorCore import to break circular dependency
 
-
 async def _handle_loop_step(
     self,
     step: Any,

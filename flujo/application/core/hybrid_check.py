@@ -38,8 +38,8 @@ async def run_hybrid_check(
             output = result
     # 2. Validators
     if validators:
+        from flujo.domain.validation import BaseValidator
         from flujo.domain.validation import ValidationResult
-
         failed_msgs: List[str] = []
         for validator in validators:
             try:

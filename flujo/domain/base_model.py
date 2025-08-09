@@ -74,19 +74,13 @@ class BaseModel(PydanticBaseModel):
                                     else:
                                         serialized_list.append(None)
                                 else:
-                                    if hasattr(item, "model_dump") and callable(
-                                        getattr(item, "model_dump")
-                                    ):
+                                    if hasattr(item, "model_dump") and callable(getattr(item, "model_dump")):
                                         if hasattr(item, "_safe_serialize_with_seen"):
-                                            serialized_list.append(
-                                                item.model_dump(mode=mode, _seen=_seen)
-                                            )
+                                            serialized_list.append(item.model_dump(mode=mode, _seen=_seen))
                                         else:
                                             serialized_list.append(item.model_dump(mode=mode))
                                     else:
-                                        serialized_list.append(
-                                            self._safe_serialize_with_seen(item, _seen, mode=mode)
-                                        )
+                                        serialized_list.append(self._safe_serialize_with_seen(item, _seen, mode=mode))
                         result[name] = serialized_list
                     else:  # tuple
                         serialized_tuple = []
@@ -108,19 +102,13 @@ class BaseModel(PydanticBaseModel):
                                     else:
                                         serialized_tuple.append(None)
                                 else:
-                                    if hasattr(item, "model_dump") and callable(
-                                        getattr(item, "model_dump")
-                                    ):
+                                    if hasattr(item, "model_dump") and callable(getattr(item, "model_dump")):
                                         if hasattr(item, "_safe_serialize_with_seen"):
-                                            serialized_tuple.append(
-                                                item.model_dump(mode=mode, _seen=_seen)
-                                            )
+                                            serialized_tuple.append(item.model_dump(mode=mode, _seen=_seen))
                                         else:
                                             serialized_tuple.append(item.model_dump(mode=mode))
                                     else:
-                                        serialized_tuple.append(
-                                            self._safe_serialize_with_seen(item, _seen, mode=mode)
-                                        )
+                                        serialized_tuple.append(self._safe_serialize_with_seen(item, _seen, mode=mode))
                         result[name] = tuple(serialized_tuple)
                 else:
                     # Handle other types with circular reference detection
@@ -132,16 +120,11 @@ class BaseModel(PydanticBaseModel):
                             result[name] = None
                     else:
                         from flujo.utils.serialization import lookup_custom_serializer
-
                         custom_serializer = lookup_custom_serializer(value)
                         if custom_serializer:
                             serialized = custom_serializer(value)
-                            result[name] = self._safe_serialize_with_seen(
-                                serialized, _seen, mode=mode
-                            )
-                        elif hasattr(value, "model_dump") and callable(
-                            getattr(value, "model_dump")
-                        ):
+                            result[name] = self._safe_serialize_with_seen(serialized, _seen, mode=mode)
+                        elif hasattr(value, "model_dump") and callable(getattr(value, "model_dump")):
                             if hasattr(value, "_safe_serialize_with_seen"):
                                 result[name] = value.model_dump(mode=mode, _seen=_seen)
                             else:
@@ -242,7 +225,6 @@ class BaseModel(PydanticBaseModel):
                     return obj.model_dump(mode=mode)
             # Check for custom serializers last, after handling known types
             from flujo.utils.serialization import lookup_custom_serializer
-
             custom_serializer = lookup_custom_serializer(obj)
             if custom_serializer:
                 serialized = custom_serializer(obj)

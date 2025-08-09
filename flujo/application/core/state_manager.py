@@ -63,13 +63,11 @@ class StateManager(Generic[ContextT]):
 
                 # Custom default function to handle mock objects during hashing
                 def default_serializer(o: Any) -> Any:
-                    if hasattr(o, "__class__") and "Mock" in o.__class__.__name__:
+                    if hasattr(o, '__class__') and 'Mock' in o.__class__.__name__:
                         return f"Mock({type(o).__name__})"
                     raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
 
-                context_str = json.dumps(
-                    filtered_data, sort_keys=True, separators=(",", ":"), default=default_serializer
-                )
+                context_str = json.dumps(filtered_data, sort_keys=True, separators=(",", ":"), default=default_serializer)
 
             return hashlib.md5(context_str.encode()).hexdigest()
         except Exception as e:
@@ -367,7 +365,7 @@ class StateManager(Generic[ContextT]):
                     "run_id": getattr(context, "run_id", ""),
                 }
                 # Only include essential fields to minimize serialization overhead
-
+                
                 # OPTIMIZATION: For large contexts, use even more minimal serialization
                 context_size = len(str(context))
                 if context_size > 10000:  # Large context threshold
@@ -379,7 +377,7 @@ class StateManager(Generic[ContextT]):
                         "run_id": getattr(context, "run_id", ""),
                         "context_size": context_size,  # Track size for debugging
                     }
-
+                    
             except Exception as e:
                 logger.warning(f"Failed to serialize context for run {run_id}: {e}")
                 pipeline_context = {
@@ -395,18 +393,16 @@ class StateManager(Generic[ContextT]):
             for step_result in step_history:
                 try:
                     # OPTIMIZATION: Only serialize essential fields including output for crash recovery
-                    serialized_step_history.append(
-                        {
-                            "name": step_result.name,
-                            "output": step_result.output,
-                            "success": step_result.success,
-                            "cost_usd": step_result.cost_usd,
-                            "token_counts": step_result.token_counts,
-                            "attempts": step_result.attempts,
-                            "latency_s": step_result.latency_s,
-                            "feedback": step_result.feedback,
-                        }
-                    )
+                    serialized_step_history.append({
+                        "name": step_result.name,
+                        "output": step_result.output,
+                        "success": step_result.success,
+                        "cost_usd": step_result.cost_usd,
+                        "token_counts": step_result.token_counts,
+                        "attempts": step_result.attempts,
+                        "latency_s": step_result.latency_s,
+                        "feedback": step_result.feedback,
+                    })
                 except Exception:
                     continue
 
@@ -415,9 +411,7 @@ class StateManager(Generic[ContextT]):
             "run_id": run_id,
             "pipeline_id": getattr(context, "pipeline_id", "unknown") if context else "unknown",
             "pipeline_name": getattr(context, "pipeline_name", "unknown") if context else "unknown",
-            "pipeline_version": getattr(context, "pipeline_version", "latest")
-            if context
-            else "latest",
+            "pipeline_version": getattr(context, "pipeline_version", "latest") if context else "latest",
             "current_step_index": current_step_index,
             "pipeline_context": pipeline_context,
             "last_step_output": last_step_output,

@@ -82,14 +82,12 @@ class Settings(BaseSettings):
 
     # --- Orchestrator Tuning ---
     max_iters: int = Field(5, validation_alias="MAX_ITERS")
-    k_variants: int = Field(3, validation_alias="K_VARIANTS")
+    k_variants: int = Field(3, validation_alias="K_VARIANTS") 
     reflection_limit: int = Field(3, validation_alias="REFLECTION_LIMIT")
     scorer: Literal["ratio", "weighted", "reward"] = Field("ratio", validation_alias="SCORER")
     t_schedule: list[float] = Field([1.0, 0.8, 0.5, 0.2], validation_alias="T_SCHEDULE")
     otlp_endpoint: Optional[str] = Field(None, validation_alias="OTLP_ENDPOINT")
-    agent_timeout: int = Field(
-        60, validation_alias="AGENT_TIMEOUT"
-    )  # Timeout in seconds for agent calls
+    agent_timeout: int = Field(60, validation_alias="AGENT_TIMEOUT")  # Timeout in seconds for agent calls
 
     model_config: ClassVar[SettingsConfigDict] = {
         "env_file": ".env",
@@ -185,5 +183,5 @@ def get_settings() -> Settings:
     the proper precedence: Defaults < TOML File < Environment Variables.
     """
     from .config_manager import get_config_manager
-
+    
     return get_config_manager().get_settings()

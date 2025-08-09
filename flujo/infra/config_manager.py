@@ -130,10 +130,10 @@ class ConfigManager:
 
     def load_config(self, force_reload: bool = False) -> FlujoConfig:
         """Load configuration from flujo.toml file.
-
+        
         Args:
             force_reload: If True, bypass the cache and reload from file
-
+            
         Returns:
             FlujoConfig: The loaded configuration
         """
@@ -180,14 +180,14 @@ class ConfigManager:
                 config_data["cost"] = data["cost"]
 
             config = FlujoConfig(**config_data)
-
+            
             # Cache the configuration and file modification time
             self._cached_config = config
             try:
                 self._config_file_mtime = self.config_path.stat().st_mtime
             except (OSError, AttributeError):
                 self._config_file_mtime = None
-
+                
             return config
 
         except FileNotFoundError as e:
@@ -216,26 +216,26 @@ class ConfigManager:
 
     def get_settings(self, force_reload: bool = False) -> Any:
         """Get settings with configuration file overrides applied.
-
+        
         Implements the precedence: Defaults < TOML File < Environment Variables
-
+        
         This method constructs the Settings object in the following strict order:
         1. Start with pydantic defaults from the Settings class
         2. Apply TOML file overrides (if [settings] section exists)
         3. Allow environment variables to override both defaults and TOML values
-
+        
         Args:
             force_reload: If True, bypass the cache and reload from file
         """
         from .settings import Settings
-
+        
         # Step 1: Load TOML configuration
         config = self.load_config(force_reload=force_reload)
-
+        
         # Step 2: Create Settings with defaults + environment variables
         # pydantic-settings automatically loads: defaults < environment variables
         settings = cast(Callable[[], Settings], Settings)()
-
+        
         # Step 3: Apply TOML overrides, but only if no environment variable is set
         # This ensures environment variables have the highest precedence
         if config.settings:
@@ -246,40 +246,38 @@ class ConfigManager:
                     if field_info and self._is_field_set_by_env(field_name, field_info):
                         # Environment variable takes precedence, skip TOML override
                         continue
-
+                    
                     # Apply TOML value since no environment variable was found
                     setattr(settings, field_name, toml_value)
-
+        
         return settings
-
+    
     def _is_field_set_by_env(self, field_name: str, field_info) -> bool:
         """Check if a field was set by an environment variable.
-
+        
         This method checks all possible environment variable names for a field,
         including validation_alias patterns.
         """
         import os
         from pydantic import AliasChoices
-
+        
         # Get all possible environment variable names for this field
         env_var_names = [field_name.upper()]
-
+        
         # Add validation_alias names if they exist
-        if hasattr(field_info, "validation_alias") and field_info.validation_alias:
+        if hasattr(field_info, 'validation_alias') and field_info.validation_alias:
             alias = field_info.validation_alias
             if isinstance(alias, AliasChoices):
-                env_var_names.extend(
-                    [str(choice).upper() for choice in alias.choices if isinstance(choice, str)]
-                )
+                env_var_names.extend([str(choice).upper() for choice in alias.choices if isinstance(choice, str)])
             elif isinstance(alias, str):
                 env_var_names.append(alias.upper())
-
+        
         # Check if any of these environment variables are set
         return any(env_var in os.environ for env_var in env_var_names)
 
     def get_cli_defaults(self, command: str, force_reload: bool = False) -> Dict[str, Any]:
         """Get CLI defaults for a specific command.
-
+        
         Args:
             command: The CLI command name
             force_reload: If True, bypass the cache and reload from file
@@ -297,9 +295,9 @@ class ConfigManager:
 
     def get_state_uri(self, force_reload: bool = False) -> Optional[str]:
         """Get the state URI from configuration.
-
+        
         Implements the precedence: Environment Variables > TOML File > None
-
+        
         Args:
             force_reload: If True, bypass the cache and reload from file
         """
@@ -307,7 +305,7 @@ class ConfigManager:
         env_uri = os.environ.get("FLUJO_STATE_URI")
         if env_uri:
             return env_uri
-
+        
         # 2. Check TOML file configuration
         config = self.load_config(force_reload=force_reload)
         return config.state_uri

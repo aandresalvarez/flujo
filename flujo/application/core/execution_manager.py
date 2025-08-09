@@ -2,6 +2,7 @@ from __future__ import annotations
 
 """Main execution manager that orchestrates pipeline execution components."""
 
+import asyncio
 from datetime import datetime
 from typing import Any, AsyncIterator, Generic, Optional, TypeVar
 import os # Added for os.getenv
@@ -11,8 +12,10 @@ from flujo.domain.models import (
     BaseModel,
     PipelineResult,
     StepResult,
+    UsageLimits,
 )
-from flujo.domain.dsl import LoopStep
+from flujo.domain.dsl import Pipeline, Step, LoopStep
+from flujo.domain.resources import AppResources
 from flujo.exceptions import (
     ContextInheritanceError,
     PipelineAbortSignal,
@@ -20,10 +23,13 @@ from flujo.exceptions import (
     PausedException,
     UsageLimitExceededError,
     NonRetryableError,
+    MockDetectionError,
 )
+from flujo.state import StateBackend
 from flujo.infra import telemetry
 from flujo.application.core.context_adapter import _inject_context, _build_context_update
 from .context_manager import ContextManager
+from flujo.utils.formatting import format_cost
 
 from .step_coordinator import StepCoordinator
 from .state_manager import StateManager
@@ -267,7 +273,7 @@ class ExecutionManager(Generic[ContextT]):
                         yield result
                         return
 
-                except NonRetryableError:
+                except NonRetryableError as e:
                     raise
                 except Exception as e:
                     # Ensure redirect-loop propagates as an exception to satisfy tests
@@ -308,7 +314,7 @@ class ExecutionManager(Generic[ContextT]):
                                 scratch["status"] = "paused"
                     except Exception:
                         pass
-                    # Prevent duplicate addition in finally block (handled by explicit yield)
+                    should_add_step_result = False  # Prevent duplicate addition in finally block
                     self.set_final_context(result, context)
                     yield result
                     return
@@ -332,7 +338,7 @@ class ExecutionManager(Generic[ContextT]):
                             state_created_at=state_created_at,
                             step_history=result.step_history,
                         )
-                    # Prevent duplicate addition in finally block (handled by explicit yield)
+                    should_add_step_result = False  # Prevent duplicate addition in finally block
                     self.set_final_context(result, context)
                     yield result
                     return
