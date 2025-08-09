@@ -712,7 +712,7 @@ async def _execute_simple_step_policy_impl(
                             # Aggregate primary tokens/latency only; fallback cost remains standalone
                             fallback_result.token_counts = (fallback_result.token_counts or 0) + primary_tokens_total
                             fallback_result.latency_s = (fallback_result.latency_s or 0.0) + primary_latency_total + result.latency_s
-                            fallback_result.attempts = 1 + (fallback_result.attempts or 0)
+                            fallback_result.attempts = result.attempts + (fallback_result.attempts or 0)
                             if fallback_result.success:
                                 fallback_result.feedback = None
                                 return fallback_result
@@ -845,7 +845,7 @@ async def _execute_simple_step_policy_impl(
                             # Aggregate primary tokens/latency only; fallback cost remains standalone
                             fallback_result.token_counts = (fallback_result.token_counts or 0) + primary_tokens_total
                             fallback_result.latency_s = (fallback_result.latency_s or 0.0) + primary_latency_total + result.latency_s
-                            fallback_result.attempts = 1 + (fallback_result.attempts or 0)
+                            fallback_result.attempts = result.attempts + (fallback_result.attempts or 0)
                             # Do NOT multiply fallback metrics here; they are accounted once in tests
                             if fallback_result.success:
                                 # Preserve validation failure message in feedback on successful fallback
@@ -1036,7 +1036,7 @@ async def _execute_simple_step_policy_impl(
                         # Aggregate primary tokens/latency only; fallback cost remains standalone
                         fallback_result.token_counts = (fallback_result.token_counts or 0) + primary_tokens_total
                         fallback_result.latency_s = (fallback_result.latency_s or 0.0) + primary_latency_total + result.latency_s
-                        fallback_result.attempts = 1 + (fallback_result.attempts or 0)
+                        fallback_result.attempts = result.attempts + (fallback_result.attempts or 0)
                         if fallback_result.success:
                             fallback_result.feedback = None
                             return fallback_result
@@ -1115,7 +1115,7 @@ async def _execute_simple_step_policy_impl(
                     # Aggregate primary tokens/latency only; fallback cost remains standalone
                     fallback_result.token_counts = (fallback_result.token_counts or 0) + primary_tokens_total
                     fallback_result.latency_s = (fallback_result.latency_s or 0.0) + primary_latency_total + result.latency_s
-                    fallback_result.attempts = 1 + (fallback_result.attempts or 0)
+                    fallback_result.attempts = result.attempts + (fallback_result.attempts or 0)
                     # Do NOT multiply fallback metrics here; they are accounted once in tests
                     if fallback_result.success:
                         fallback_result.feedback = None
