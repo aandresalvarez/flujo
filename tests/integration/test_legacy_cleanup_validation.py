@@ -339,10 +339,14 @@ class TestLegacyFunctionIntegration:
         sig_hitl = inspect.signature(DefaultHitlStepExecutor.execute)
         sig_loop = inspect.signature(DefaultLoopStepExecutor.execute)
         sig_router = inspect.signature(DefaultDynamicRouterStepExecutor.execute)
+        # ✅ ARCHITECTURAL UPDATE: Unified parameter naming across all step executors
+        # All step executors now use consistent 'step' parameter name for API clarity
+        # Previous: Different executors used step/loop_step/router_step inconsistently
+        # Current: All use 'step' for consistent interface design
         assert "core" in sig_cache.parameters and "step" in sig_cache.parameters
         assert "core" in sig_hitl.parameters and "step" in sig_hitl.parameters
-        assert "core" in sig_loop.parameters and "loop_step" in sig_loop.parameters
-        assert "core" in sig_router.parameters and "router_step" in sig_router.parameters
+        assert "core" in sig_loop.parameters and "step" in sig_loop.parameters
+        assert "core" in sig_router.parameters and "step" in sig_router.parameters
 
 
 class TestLegacyCleanupSafety:

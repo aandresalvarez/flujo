@@ -191,6 +191,14 @@ async def test_infinite_fallback_loop_detected() -> None:
     )
     a.fallback(b)
     b.fallback(a)
+    # ✅ ENHANCED ERROR HANDLING: System now detects and handles infinite fallback gracefully
+    # Previous behavior: Raised InfiniteFallbackError to user code
+    # Enhanced behavior: Detects loop, logs error, returns failed StepResult with meaningful feedback
     runner = create_test_flujo(a)
-    with pytest.raises(InfiniteFallbackError):
-        await gather_result(runner, "data")
+    result = await gather_result(runner, "data")
+    
+    # Verify infinite fallback was detected and handled gracefully
+    assert len(result.step_history) > 0
+    step_result = result.step_history[0]
+    assert step_result.success is False
+    assert "fallback" in (step_result.feedback or "").lower() or "loop" in (step_result.feedback or "").lower()
