@@ -1430,6 +1430,13 @@ class DefaultAgentStepExecutor:
         # Inline agent step logic (parity with legacy implementation)
         from unittest.mock import Mock, MagicMock, AsyncMock
         from pydantic import BaseModel
+        from flujo.exceptions import (
+            PausedException,
+            InfiniteFallbackError,
+            InfiniteRedirectError,
+            UsageLimitExceededError,
+            NonRetryableError,
+        )
         import time
 
         if getattr(step, "agent", None) is None:

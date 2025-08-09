@@ -1,6 +1,6 @@
 from typing import Protocol, TypeVar, Dict, Any, List, Generic, Optional, Callable, Awaitable
 from dataclasses import dataclass
-from ...domain.dsl.step import Step
+# from ...domain.dsl.step import Step  # Avoiding circular import
 from ...domain.resources import AppResources
 from ...domain.models import UsageLimits, PipelineResult
 import asyncio
@@ -28,7 +28,7 @@ class ExecutionFrame(Generic[TContext_w_Scratch]):
     """
 
     # Core execution parameters
-    step: Step[Any, Any]
+    step: "Step[Any, Any]"
     data: Any
     context: Optional[TContext_w_Scratch]
     resources: Optional[AppResources]

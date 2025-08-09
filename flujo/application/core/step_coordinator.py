@@ -6,7 +6,6 @@ from typing import Any, AsyncIterator, Generic, Optional, TypeVar, Literal
 
 from flujo.domain.backends import ExecutionBackend, StepExecutionRequest
 from flujo.domain.models import BaseModel, StepResult, PipelineContext, PipelineResult, UsageLimits
-from flujo.domain.dsl import Step
 from flujo.domain.resources import AppResources
 from flujo.exceptions import (
     ContextInheritanceError,
@@ -38,7 +37,7 @@ class StepCoordinator(Generic[ContextT]):
 
     async def execute_step(
         self,
-        step: Step[Any, Any],
+        step: "Step[Any, Any]",
         data: Any,
         context: Optional[ContextT],
         backend: Optional[ExecutionBackend] = None,  # ✅ NEW: Receive the backend to call.
