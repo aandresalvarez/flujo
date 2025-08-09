@@ -52,14 +52,15 @@ class MyMonitoredAgent(AsyncAgentProtocol[str, str]):
 # global_monitor.calls contains details of each invocation
 ```
 
-## Combining Decorators
+## Agent Monitoring
 
-Decorators are composable. Apply `@monitored_agent` on top so monitoring captures validation failures.
+Use `@monitored_agent` to capture execution metrics and performance data for your agents:
 
 ```python
-@monitored_agent("combo")
-@validated_agent(InputModel, OutputModel)
-class CombinedAgent(AsyncAgentProtocol[InputModel, OutputModel]):
+@monitored_agent("my_agent")
+class OptimizedAgent(AsyncAgentProtocol[InputModel, OutputModel]):
     async def run(self, data: InputModel, **kwargs) -> OutputModel:
         return OutputModel(doubled=data.value * 2)
 ```
+
+For input/output validation, use the Step-level validation system which provides better architectural separation and follows Flujo's policy-driven design.
