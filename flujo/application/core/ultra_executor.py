@@ -692,6 +692,97 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             _fallback_depth=_fallback_depth,
         )
 
+    # Backward compatibility methods - delegate to policy system
+    async def _execute_simple_step(self, step, data, context, resources, limits, stream, on_chunk, cache_key, breach_event, _fallback_depth=0, _from_policy=False):
+        """Backward compatibility method - delegates to SimpleStepExecutor policy."""
+        return await self.simple_step_executor.execute(
+            self, step, data, context, resources, limits, stream, on_chunk, cache_key, breach_event, _fallback_depth
+        )
+
+    async def _handle_parallel_step(self, step=None, data=None, context=None, resources=None, limits=None, breach_event=None, context_setter=None, *, parallel_step=None, step_executor=None):
+        """Backward compatibility method - delegates to ParallelStepExecutor policy."""
+        ps = parallel_step if parallel_step is not None else step
+        return await self.parallel_step_executor.execute(
+            self, ps, data, context, resources, limits, breach_event, context_setter, ps, step_executor
+        )
+
+    async def _execute_pipeline(self, pipeline, data, context, resources, limits, breach_event, context_setter):
+        """Backward compatibility method - delegates to policy-based pipeline execution."""
+        from flujo.application.core.step_policies import _execute_pipeline_via_policies
+        return await _execute_pipeline_via_policies(
+            self, pipeline, data, context, resources, limits, breach_event, context_setter
+        )
+
+    async def _handle_loop_step(self, loop_step, data, context, resources, limits, context_setter, _fallback_depth=0):
+        """Backward compatibility method - delegates to LoopStepExecutor policy."""
+        return await self.loop_step_executor.execute(
+            self, loop_step, data, context, resources, limits, False, None, None, None, _fallback_depth
+        )
+
+    async def _handle_conditional_step(self, conditional_step, data, context, resources, limits, context_setter, _fallback_depth=0):
+        """Backward compatibility method - delegates to ConditionalStepExecutor policy."""
+        return await self.conditional_step_executor.execute(
+            self, conditional_step, data, context, resources, limits, context_setter, _fallback_depth
+        )
+
+    async def _handle_hitl_step(self, hitl_step, data, context, resources, limits, context_setter):
+        """Backward compatibility method - delegates to HitlStepExecutor policy."""
+        return await self.hitl_step_executor.execute(
+            self, hitl_step, data, context, resources, limits, context_setter
+        )
+
+    async def _handle_cache_step(self, cache_step, data, context, resources, limits, breach_event, context_setter, cache_key):
+        """Backward compatibility method - delegates to CacheStepExecutor policy."""
+        return await self.cache_step_executor.execute(
+            self, cache_step, data, context, resources, limits, breach_event, context_setter, cache_key
+        )
+
+    async def _handle_dynamic_router_step(self, router_step, data, context, resources, limits, context_setter):
+        """Backward compatibility method - delegates to DynamicRouterStepExecutor policy."""
+        return await self.dynamic_router_step_executor.execute(
+            self, router_step, data, context, resources, limits, context_setter
+        )
+
+    async def _execute_complex_step(self, step, data, context, resources, limits, stream=False, on_chunk=None, cache_key=None, breach_event=None, context_setter=None, _fallback_depth=0):
+        """Backward compatibility method - delegates to main execute method for complex step routing."""
+        return await self.execute(
+            step=step,
+            data=data,
+            context=context,
+            resources=resources,
+            limits=limits,
+            stream=stream,
+            on_chunk=on_chunk,
+            cache_key=cache_key,
+            breach_event=breach_event,
+            context_setter=context_setter,
+            _fallback_depth=_fallback_depth
+        )
+
+    # Add the _ParallelUsageGovernor class for backward compatibility
+    class _ParallelUsageGovernor:
+        """Backward compatibility class - delegates to policy implementation."""
+        def __init__(self, limits):
+            from flujo.application.core.step_policies import _ParallelUsageGovernor as PolicyGovernor
+            self._policy_governor = PolicyGovernor(limits)
+        
+        async def add_usage(self, cost_delta, token_delta, result):
+            return await self._policy_governor.add_usage(cost_delta, token_delta, result)
+        
+        def breached(self):
+            return self._policy_governor.breached()
+        
+        def get_error(self):
+            return self._policy_governor.get_error()
+        
+        @property
+        def total_cost(self):
+            return self._policy_governor.total_cost
+        
+        @property
+        def total_tokens(self):
+            return self._policy_governor.total_tokens
+
     def _is_complex_step(self, step: Any) -> bool:
         """Check if step needs complex handling using an object-oriented approach.
 
