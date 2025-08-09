@@ -27,7 +27,7 @@ class TestLegacyFunctionUsageAnalysis:
         # step_logic module was intentionally removed during refactoring
         # This test verifies that the module no longer exists
         with pytest.raises(ModuleNotFoundError):
-            pass
+            import flujo.application.core.step_logic  # This module should be removed
 
         print("step_logic module successfully removed")
 
@@ -36,9 +36,7 @@ class TestLegacyFunctionUsageAnalysis:
         # step_logic module was intentionally removed during refactoring
         # This test verifies that the module no longer exists
         with pytest.raises(ModuleNotFoundError):
-
-            # The functionality has been migrated to ultra_executor
-            pass  # This should raise ModuleNotFoundError
+            import flujo.application.core.step_logic  # This module should be removed
 
         print("step_logic module successfully removed")
 
@@ -99,7 +97,7 @@ class TestMigrationCompleteness:
         # step_logic module was intentionally removed during refactoring
         # This test verifies that the module no longer exists
         with pytest.raises(ModuleNotFoundError):
-            pass
+            import flujo.application.core.step_logic  # This module should be removed
 
         print("step_logic module successfully removed")
 
@@ -328,7 +326,7 @@ class TestLegacyCleanupCompleteness:
         # step_logic module was removed, functionality migrated to ultra_executor
         # Test that the module no longer exists
         with pytest.raises(ModuleNotFoundError):
-            pass
+            import flujo.application.core.step_logic  # This module should be removed
 
         # Test that ExecutorCore has all the migrated functionality
         executor = ExecutorCore()

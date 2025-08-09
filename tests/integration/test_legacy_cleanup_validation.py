@@ -26,7 +26,7 @@ class TestFunctionRemovalValidation:
         # step_logic module was intentionally removed during refactoring
         # This test verifies that the module no longer exists
         with pytest.raises(ModuleNotFoundError):
-            pass
+            import flujo.application.core.step_logic  # This module should be removed
 
         print("step_logic module successfully removed")
 
@@ -35,7 +35,7 @@ class TestFunctionRemovalValidation:
         # step_logic module was intentionally removed during refactoring
         # This test verifies that the module no longer exists
         with pytest.raises(ModuleNotFoundError):
-            pass
+            import flujo.application.core.step_logic  # This module should be removed
 
         print("step_logic module successfully removed")
 
@@ -44,7 +44,7 @@ class TestFunctionRemovalValidation:
         # step_logic module was intentionally removed during refactoring
         # This test verifies that the module no longer exists
         with pytest.raises(ModuleNotFoundError):
-            pass
+            import flujo.application.core.step_logic  # This module should be removed
 
         print("step_logic module successfully removed")
 
@@ -53,7 +53,7 @@ class TestFunctionRemovalValidation:
         # step_logic module was intentionally removed during refactoring
         # This test verifies that the module no longer exists
         with pytest.raises(ModuleNotFoundError):
-            pass
+            import flujo.application.core.step_logic  # This module should be removed
 
         print("step_logic module successfully removed")
 
@@ -319,8 +319,7 @@ class TestLegacyFunctionIntegration:
         # The legacy functions were removed during refactoring
         # This test now verifies that the new architecture is used instead
         with pytest.raises(ModuleNotFoundError):
-            # Try to import the removed function
-            pass
+            import flujo.application.core.step_logic  # This module should be removed
 
         # Verify that the new architecture is available
         from flujo.application.core.ultra_executor import ExecutorCore
