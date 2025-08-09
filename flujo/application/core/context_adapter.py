@@ -181,11 +181,31 @@ def register_custom_type(type_class: Type[T]) -> None:
         ValueError: If the type class doesn't have required methods for serialization.
     """
     if hasattr(type_class, "__name__"):
-        # Register for serialization - register the class itself
-        register_custom_serializer(
-            type_class,
-            lambda obj: obj.model_dump() if hasattr(obj, "model_dump") else obj.__dict__,
-        )
+        # Check if this is a Flujo BaseModel to avoid circular dependency
+        from flujo.domain.base_model import BaseModel as FlujoBaseModel
+        
+        def safe_serialize_custom_type(obj: Any) -> Any:
+            """Safe serializer that avoids circular dependency with Flujo BaseModel."""
+            if isinstance(obj, FlujoBaseModel):
+                # For Flujo BaseModel, manually serialize fields to avoid circular dependency
+                # since FlujoBaseModel.model_dump() delegates to safe_serialize
+                try:
+                    result = {}
+                    for field_name in getattr(obj.__class__, "model_fields", {}):
+                        result[field_name] = getattr(obj, field_name, None)
+                    return result
+                except Exception:
+                    # Fallback to __dict__ if field access fails
+                    return obj.__dict__
+            elif hasattr(obj, "model_dump"):
+                # For regular Pydantic models, use model_dump
+                return obj.model_dump()
+            else:
+                # For other objects, use __dict__
+                return obj.__dict__
+        
+        # Register for serialization
+        register_custom_serializer(type_class, safe_serialize_custom_type)
 
         # Register deserializer if it's a Pydantic model
         if hasattr(type_class, "model_validate") and callable(
