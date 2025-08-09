@@ -198,13 +198,17 @@ class DummyRemoteBackend(ExecutionBackend):
 
         def reconstruct(original: Any, value: Any) -> Any:
             """Rebuild a value using the type of ``original``."""
-            if original is None:
+            if original is None or value is None:
                 return None
             if isinstance(original, FlujoBaseModel):
                 if isinstance(value, dict):
                     fixed_value = {}
                     for k, v in value.items():
-                        fixed_value[k] = reconstruct(getattr(original, k, None), v)
+                        original_field_value = getattr(original, k, None)
+                        reconstructed_value = reconstruct(original_field_value, v)
+                        # Skip None values to avoid Pydantic validation errors for non-optional fields
+                        if reconstructed_value is not None:
+                            fixed_value[k] = reconstructed_value
                     # Apply enhanced cleaning to ensure all string fields are strings
                     fixed_value = _ensure_string_fields_are_strings(fixed_value, original)
                     return type(original).model_validate(fixed_value)

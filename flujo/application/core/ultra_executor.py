@@ -623,18 +623,11 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     self, step, data, context, resources, limits, stream, on_chunk, cache_key, None, _fallback_depth
                 )
         except InfiniteFallbackError as e:
-            # Handle infinite fallback errors gracefully for backward compatibility
-            # Convert to failed result with meaningful feedback
-            telemetry.logfire.error(f"Infinite fallback error for step '{step.name}': {str(e)}")
-            result = StepResult(
-                name=step.name,  # First Principles: Every StepResult MUST have a name field
-                output=None,
-                success=False,
-                feedback=f"Infinite fallback chain detected for step '{step.name}'. This usually indicates a configuration issue with Mock objects or recursive fallback steps.",
-                step_history=[],
-                cost_usd=0.0,  # Architectural: Use correct field name
-                metadata_={"error_type": "InfiniteFallbackError", "original_error": str(e)}
-            )
+            # CRITICAL: InfiniteFallbackError is a control flow exception that MUST be re-raised
+            # Converting it to StepResult violates the Policy-Driven Architecture
+            step_name = str(step.name) if hasattr(step, 'name') else f"<{type(step).__name__}>"
+            telemetry.logfire.error(f"Infinite fallback error for step '{step_name}': {str(e)}")
+            raise e  # Re-raise to maintain control flow semantics
         
         # Finalization: do not re-apply processors for fallback results; fallback step execution owns all processing
 

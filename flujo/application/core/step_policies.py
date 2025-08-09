@@ -1087,7 +1087,9 @@ async def _execute_simple_step_policy_impl(
                         fallback_result.latency_s = (fallback_result.latency_s or 0.0) + primary_latency_total + result.latency_s
                         fallback_result.attempts = result.attempts + (fallback_result.attempts or 0)
                         if fallback_result.success:
-                            fallback_result.feedback = None
+                            # Preserve fallback trigger information for diagnostics
+                            original_error = core._format_feedback(_normalize_plugin_feedback(str(agent_error)), "Agent execution failed")
+                            fallback_result.feedback = f"Primary agent failed: {original_error}"
                             return fallback_result
                         _orig = _normalize_plugin_feedback(str(agent_error))
                         _orig_for_format = None if _orig in ("", "Plugin failed without feedback") else _orig
@@ -1167,7 +1169,8 @@ async def _execute_simple_step_policy_impl(
                     fallback_result.attempts = result.attempts + (fallback_result.attempts or 0)
                     # Do NOT multiply fallback metrics here; they are accounted once in tests
                     if fallback_result.success:
-                        fallback_result.feedback = None
+                        # Preserve fallback trigger information for diagnostics  
+                        fallback_result.feedback = f"Primary agent failed: {core._format_feedback(msg, 'Agent execution failed')}"
                         # Cache successful fallback result for future runs
                         try:
                             if cache_key and getattr(core, "_enable_cache", False):
@@ -1655,6 +1658,8 @@ class DefaultAgentStepExecutor:
                         )
                         if fb_res.success:
                             fb_res.metadata_ = {**(fb_res.metadata_ or {}), **result.metadata_}
+                            # Preserve fallback trigger information for diagnostics
+                            fb_res.feedback = f"Primary agent failed: {primary_fb}"
                             return fb_res
                         else:
                             result.success = False
