@@ -8,7 +8,6 @@ from flujo.domain.models import PipelineResult
 from flujo.testing.utils import StubAgent, DummyPlugin, gather_result
 from flujo.domain.plugins import PluginOutcome
 from typing import Any
-from flujo.domain.plugins import PluginOutcome
 from tests.conftest import create_test_flujo
 
 
@@ -248,6 +247,7 @@ async def test_step_config_top_k_passed() -> None:
     class CaptureAgent:
         def __init__(self):
             self.kwargs: dict[str, Any] | None = None
+
         async def run(self, data: Any, **kwargs: Any) -> str:
             self.kwargs = kwargs
             return "ok"
@@ -260,10 +260,12 @@ async def test_step_config_top_k_passed() -> None:
     assert agent.kwargs.get("top_k") == 5
     assert "top_p" not in agent.kwargs
 
+
 async def test_step_config_top_p_passed() -> None:
     class CaptureAgent:
         def __init__(self):
             self.kwargs: dict[str, Any] | None = None
+
         async def run(self, data: Any, **kwargs: Any) -> str:
             self.kwargs = kwargs
             return "ok"
@@ -276,16 +278,20 @@ async def test_step_config_top_p_passed() -> None:
     assert agent.kwargs.get("top_p") == 0.9
     assert "top_k" not in agent.kwargs
 
+
 async def test_step_config_sampling_parameters_passed() -> None:
     class CaptureAgent:
         def __init__(self):
             self.kwargs: dict[str, Any] | None = None
+
         async def run(self, data: Any, **kwargs: Any) -> str:
             self.kwargs = kwargs
             return "ok"
 
     agent = CaptureAgent()
-    step = Step.model_validate({"name": "s_sampling", "agent": agent, "config": StepConfig(top_k=4, top_p=0.8)})
+    step = Step.model_validate(
+        {"name": "s_sampling", "agent": agent, "config": StepConfig(top_k=4, top_p=0.8)}
+    )
     runner = create_test_flujo(step)
     await gather_result(runner, "in")
     assert agent.kwargs is not None

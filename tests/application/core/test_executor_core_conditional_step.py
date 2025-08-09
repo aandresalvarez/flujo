@@ -39,6 +39,7 @@ class TestExecutorCoreConditionalStep:
     async def test_conditional_policy_execute_signature(self, executor_core, mock_conditional_step):
         """Policy surface: DefaultConditionalStepExecutor.execute has correct signature."""
         import inspect
+
         sig = inspect.signature(DefaultConditionalStepExecutor.execute)
         params = list(sig.parameters.keys())
         expected_params = [
@@ -254,7 +255,9 @@ class TestExecutorCoreConditionalStep:
         mock_conditional_step.branches["branch_a"].steps = [mock_step]
 
         # Mock the _handle_conditional_step method to return a result with correct name
-        with patch.object(executor_core, "_handle_conditional_step", new_callable=AsyncMock) as mock_handler:
+        with patch.object(
+            executor_core, "_handle_conditional_step", new_callable=AsyncMock
+        ) as mock_handler:
             mock_handler.return_value = StepResult(
                 name="test_conditional", success=True, output="test_output"
             )

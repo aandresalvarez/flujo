@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any, Optional, Type, Generic, Callable
+from typing import Any, Optional, Type, Generic
 
 from pydantic import ValidationError, BaseModel as PydanticBaseModel, TypeAdapter
 from pydantic_ai import Agent, ModelRetry
@@ -34,7 +34,7 @@ from ..infra.telemetry import logfire
 from .factory import make_agent, _unwrap_type_adapter
 
 # Import prompts from the prompts module
-from ..prompts import REPAIR_SYS, _format_repair_prompt
+from ..prompts import _format_repair_prompt
 
 
 # Import from utils to avoid circular imports
@@ -236,11 +236,12 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                     prompt = _format_repair_prompt(prompt_data)
                     # Import here to avoid circular imports and allow monkeypatching
                     from .repair import get_repair_agent as repair_get_repair_agent
+
                     repair_agent = repair_get_repair_agent()
                     # Extract the actual string output from the repair agent response
                     repair_response = await repair_agent.run(prompt)
                     # Handle case where repair agent returns ProcessedOutputWithUsage
-                    if hasattr(repair_response, 'output'):
+                    if hasattr(repair_response, "output"):
                         repaired_str = repair_response.output
                     else:
                         repaired_str = repair_response
@@ -248,11 +249,11 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                         # First, try to parse the repair agent's response as JSON
                         # Handle case where output is wrapped in markdown code blocks
                         json_str = repaired_str
-                        if json_str.startswith('```json\n') and json_str.endswith('\n```'):
+                        if json_str.startswith("```json\n") and json_str.endswith("\n```"):
                             json_str = json_str[8:-4].strip()
-                        elif json_str.startswith('```\n') and json_str.endswith('\n```'):
+                        elif json_str.startswith("```\n") and json_str.endswith("\n```"):
                             json_str = json_str[4:-4].strip()
-                        
+
                         repair_response = json.loads(json_str)
 
                         # Check if the repair agent explicitly signaled it cannot fix the output
@@ -365,6 +366,7 @@ def make_agent_async(
     # Import make_agent via infra path to allow test monkeypatching
     try:
         from flujo.agents import make_agent as infra_make_agent
+
         agent, final_processors = infra_make_agent(
             model,
             system_prompt,
@@ -394,6 +396,3 @@ def make_agent_async(
         processors=final_processors,
         auto_repair=auto_repair,
     )
-
-
-

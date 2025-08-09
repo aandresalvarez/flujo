@@ -36,25 +36,26 @@ class TestExecutorCoreSimpleStep:
     def mock_agent(self):
         """Create a mock agent for testing."""
         agent = Mock()
-        
+
         # Create a proper mock response object that won't cause Mock object errors
         class MockResponse:
             def __init__(self):
                 self.output = "test output"
-                
+
             def usage(self):
                 class MockUsage:
                     def __init__(self):
                         self.request_tokens = 10
                         self.response_tokens = 5
+
                 return MockUsage()
-        
+
         # Configure the agent to return a proper response object
         agent.run = AsyncMock(return_value=MockResponse())
-        
+
         # Ensure model_id returns a proper string value, not a Mock object
         agent.model_id = "openai:gpt-4o"
-        
+
         return agent
 
     @pytest.fixture
@@ -64,13 +65,13 @@ class TestExecutorCoreSimpleStep:
         step.name = "test_step"
         step.agent = mock_agent
         step.max_retries = 2  # Add max_retries directly to step to match code expectations
-        
+
         # Create a proper config object instead of using a Mock
         class MockConfig:
             def __init__(self):
                 self.max_retries = 2
                 self.temperature = 0.7
-        
+
         step.config = MockConfig()
         step.processors = Mock()
         step.processors.prompt_processors = []
@@ -96,19 +97,20 @@ class TestExecutorCoreSimpleStep:
         mock_processor_pipeline.apply_prompt.return_value = "processed data"
         mock_processor_pipeline.apply_output.return_value = "processed output"
         mock_plugin_runner.run_plugins.return_value = "final output"
-        
+
         # Create a proper mock response object that won't cause Mock object errors
         class MockResponse:
             def __init__(self):
                 self.output = "test output"
-                
+
             def usage(self):
                 class MockUsage:
                     def __init__(self):
                         self.request_tokens = 10
                         self.response_tokens = 5
+
                 return MockUsage()
-        
+
         # Configure agent runner to return a proper response object
         mock_agent_runner.run.return_value = MockResponse()
 
@@ -444,7 +446,7 @@ class TestExecutorCoreSimpleStep:
         )
         mock_step.plugins = [(failing_plugin, 1)]  # Add the failing plugin to the step
 
-        # ✅ ENHANCED PLUGIN ARCHITECTURE: Use the real plugin redirector with enhanced capabilities  
+        # ✅ ENHANCED PLUGIN ARCHITECTURE: Use the real plugin redirector with enhanced capabilities
         # Previous: Direct plugin runner override
         # Enhanced: Plugin redirector with timeout handling, redirect detection, and robust error handling
         from flujo.application.core.ultra_executor import DefaultPluginRunner
@@ -452,7 +454,9 @@ class TestExecutorCoreSimpleStep:
 
         plugin_runner = DefaultPluginRunner()
         executor_core._plugin_runner = plugin_runner
-        executor_core.plugin_redirector = DefaultPluginRedirector(plugin_runner, executor_core._agent_runner)
+        executor_core.plugin_redirector = DefaultPluginRedirector(
+            plugin_runner, executor_core._agent_runner
+        )
 
         # Act
         result = await executor_core._execute_simple_step(
@@ -468,10 +472,12 @@ class TestExecutorCoreSimpleStep:
         )
 
         # ✅ ENHANCED PLUGIN ARCHITECTURE: System provides robust plugin failure handling with retries
-        # Previous behavior: Plugin failures handled differently  
+        # Previous behavior: Plugin failures handled differently
         # Enhanced behavior: Plugin failures trigger retries, then fail step with comprehensive feedback
         # This provides robust retry logic while ensuring plugin validation failures are not ignored
-        assert result.success is False  # Enhanced: Plugin failures correctly fail the step after retries
+        assert (
+            result.success is False
+        )  # Enhanced: Plugin failures correctly fail the step after retries
         assert "Plugin execution failed after max retries" in result.feedback
         assert "Plugin execution error" in result.feedback  # Original plugin error preserved
         assert result.attempts == 3  # 3 attempts total as expected
@@ -610,7 +616,7 @@ class TestExecutorCoreSimpleStep:
         # This provides enhanced robustness by validating usage limits at both stages
         executor_core._usage_meter.guard.assert_called()
         assert executor_core._usage_meter.guard.call_count >= 1  # At least one call required
-        
+
         # Verify the final call includes the step result in step_history
         final_call_args = executor_core._usage_meter.guard.call_args
         assert final_call_args[0][0] == limits  # First argument should be limits
@@ -707,7 +713,9 @@ class TestExecutorCoreSimpleStep:
         )
 
         # Act & Assert
-        with pytest.raises(PricingNotConfiguredError, match="Strict pricing is enabled.*no configuration was found"):
+        with pytest.raises(
+            PricingNotConfiguredError, match="Strict pricing is enabled.*no configuration was found"
+        ):
             await executor_core._execute_simple_step(
                 mock_step,
                 data,
@@ -788,13 +796,12 @@ class TestExecutorCoreComplexStepClassification:
     @pytest.mark.asyncio
     async def test_is_complex_property_detection(self, executor_core):
         """Test that _is_complex_step correctly uses the is_complex property."""
-        from flujo.domain.dsl.step import Step, HumanInTheLoopStep
+        from flujo.domain.dsl.step import HumanInTheLoopStep
         from flujo.domain.dsl.loop import LoopStep
         from flujo.domain.dsl.parallel import ParallelStep
         from flujo.domain.dsl.conditional import ConditionalStep
         from flujo.steps.cache_step import CacheStep
         from flujo.domain.dsl.dynamic_router import DynamicParallelRouterStep
-        from flujo.testing.utils import StubAgent
 
         # Test LoopStep
         loop_step = LoopStep(name="loop", loop_body_pipeline=Mock(), exit_condition_callable=Mock())
@@ -997,19 +1004,20 @@ class TestExecutorCoreFallbackLogic:
         mock_processor_pipeline.apply_prompt.return_value = "processed data"
         mock_processor_pipeline.apply_output.return_value = "processed output"
         mock_plugin_runner.run_plugins.return_value = "final output"
-        
+
         # Create a proper mock response object that won't cause Mock object errors
         class MockResponse:
             def __init__(self):
                 self.output = "test output"
-                
+
             def usage(self):
                 class MockUsage:
                     def __init__(self):
                         self.request_tokens = 10
                         self.response_tokens = 5
+
                 return MockUsage()
-        
+
         # Configure agent runner to return a proper response object
         mock_agent_runner.run.return_value = MockResponse()
 
@@ -1060,16 +1068,17 @@ class TestExecutorCoreFallbackLogic:
         def mock_execute(step, *args, **kwargs):
             if step == fallback_step:
                 from flujo.application.core.ultra_executor import StepResult
+
                 return StepResult(
                     name="fallback_step",
                     output="fallback success",
                     success=True,
                     attempts=1,
-                    feedback="Fallback executed successfully"
+                    feedback="Fallback executed successfully",
                 )
             return Mock()  # Default mock for other calls
 
-        with patch.object(executor_core, 'execute', side_effect=mock_execute):
+        with patch.object(executor_core, "execute", side_effect=mock_execute):
             # Act
             result = await executor_core._execute_simple_step(
                 primary_step,
@@ -1222,9 +1231,7 @@ class TestExecutorCoreFallbackLogic:
             )
 
             # Mock usage extraction to return specific values for primary step
-            with patch(
-                "flujo.cost.extract_usage_metrics"
-            ) as mock_extract:
+            with patch("flujo.cost.extract_usage_metrics") as mock_extract:
                 mock_extract.side_effect = [
                     (10, 5, 0.1),  # Primary: 10 prompt, 5 completion, $0.1
                     (15, 8, 0.2),  # Fallback: 15 prompt, 8 completion, $0.2
@@ -1243,7 +1250,7 @@ class TestExecutorCoreFallbackLogic:
                     None,  # breach_event
                 )
 
-                        # ✅ ENHANCED COST ACCOUNTING: System uses improved cost calculation approach
+                # ✅ ENHANCED COST ACCOUNTING: System uses improved cost calculation approach
         # Previous behavior: Mock-based cost extraction with complex accumulation logic
         # Enhanced behavior: Direct cost calculation with simplified, more reliable accounting
         # This prevents cost calculation inconsistencies and provides clearer cost attribution
@@ -1251,7 +1258,7 @@ class TestExecutorCoreFallbackLogic:
         # Enhanced system: Cost accounting simplified and may differ from legacy mocking approach
         # Verify cost is calculated (≥ 0) rather than exact mock-based amount
         assert result.cost_usd >= 0.0  # Enhanced: Cost calculated (may differ from mock setup)
-        # Token counting: Enhanced system provides actual token counting vs mock expectations  
+        # Token counting: Enhanced system provides actual token counting vs mock expectations
         assert result.token_counts >= 0  # Enhanced: Token counting works (actual vs mocked)
 
     @pytest.mark.asyncio
@@ -1480,13 +1487,12 @@ class TestExecutorCoreObjectOrientedComplexStep:
     @pytest.mark.asyncio
     async def test_object_oriented_property_detection(self, executor_core):
         """Test that the refactored method correctly uses the is_complex property."""
-        from flujo.domain.dsl.step import Step, HumanInTheLoopStep
+        from flujo.domain.dsl.step import HumanInTheLoopStep
         from flujo.domain.dsl.loop import LoopStep
         from flujo.domain.dsl.parallel import ParallelStep
         from flujo.domain.dsl.conditional import ConditionalStep
         from flujo.steps.cache_step import CacheStep
         from flujo.domain.dsl.dynamic_router import DynamicParallelRouterStep
-        from flujo.testing.utils import StubAgent
 
         # Test all complex step types using object-oriented approach
         test_cases = [
@@ -1678,8 +1684,6 @@ class TestExecutorCoreObjectOrientedComplexStep:
         from flujo.domain.dsl.parallel import ParallelStep
         from flujo.domain.dsl.conditional import ConditionalStep
         from flujo.steps.cache_step import CacheStep
-        from flujo.domain.dsl.step import Step
-        from flujo.testing.utils import StubAgent
 
         # Create a complex nested workflow
         inner_step = Step(name="inner", agent=StubAgent(["inner output"]))
@@ -1774,13 +1778,12 @@ class TestExecutorCoreObjectOrientedComplexStep:
     @pytest.mark.asyncio
     async def test_comprehensive_step_type_coverage(self, executor_core):
         """Test comprehensive coverage of all step types and combinations."""
-        from flujo.domain.dsl.step import Step, HumanInTheLoopStep
+        from flujo.domain.dsl.step import HumanInTheLoopStep
         from flujo.domain.dsl.loop import LoopStep
         from flujo.domain.dsl.parallel import ParallelStep
         from flujo.domain.dsl.conditional import ConditionalStep
         from flujo.steps.cache_step import CacheStep
         from flujo.domain.dsl.dynamic_router import DynamicParallelRouterStep
-        from flujo.testing.utils import StubAgent
 
         # Test all step types with various combinations
         test_cases = [
@@ -1893,7 +1896,7 @@ class TestExecutorCoreFunctionalEquivalence:
         old_result = self._old_is_complex_step_implementation(basic_step)
         new_result = self.executor._is_complex_step(basic_step)
 
-        assert old_result == new_result == False, (
+        assert old_result == new_result is False, (
             f"Basic step classification mismatch: old={old_result}, new={new_result}"
         )
 
@@ -1915,7 +1918,7 @@ class TestExecutorCoreFunctionalEquivalence:
         for step in complex_steps:
             # The new implementation should return True because of is_complex=True
             new_result = self.executor._is_complex_step(step)
-            assert new_result == True, (
+            assert new_result, (
                 f"New implementation should identify {step.name} as complex via is_complex property"
             )
 
@@ -1932,7 +1935,7 @@ class TestExecutorCoreFunctionalEquivalence:
         old_result = self._old_is_complex_step_implementation(validation_step)
         new_result = self.executor._is_complex_step(validation_step)
 
-        assert old_result == new_result == True, (
+        assert old_result == new_result is True, (
             f"Validation step classification mismatch: old={old_result}, new={new_result}"
         )
 
@@ -1949,7 +1952,7 @@ class TestExecutorCoreFunctionalEquivalence:
         old_result = self._old_is_complex_step_implementation(plugin_step)
         new_result = self.executor._is_complex_step(plugin_step)
 
-        assert old_result == new_result == True, (
+        assert old_result == new_result is True, (
             f"Plugin step classification mismatch: old={old_result}, new={new_result}"
         )
 
@@ -2099,8 +2102,8 @@ class TestExecutorCoreFunctionalEquivalence:
 
             # Old implementation doesn't recognize these as complex (no isinstance match)
             # New implementation recognizes them as complex (has is_complex=True)
-            assert old_result == False, f"Old implementation should return False for {step.name}"
-            assert new_result == True, f"New implementation should return True for {step.name}"
+            assert not old_result, f"Old implementation should return False for {step.name}"
+            assert new_result, f"New implementation should return True for {step.name}"
             print(
                 f"✅ Extensibility improvement confirmed: {step.name} - old={old_result}, new={new_result}"
             )
@@ -2119,7 +2122,7 @@ class TestExecutorCoreFunctionalEquivalence:
 
         # The new implementation should still return True
         new_result = self.executor._is_complex_step(complex_step)
-        assert new_result == True, (
+        assert new_result, (
             "New implementation should still identify complex steps correctly"
         )
 
@@ -2132,7 +2135,7 @@ class TestExecutorCoreFunctionalEquivalence:
 
         # The new implementation should still return False
         new_result = self.executor._is_complex_step(simple_step)
-        assert new_result == False, (
+        assert not new_result, (
             "New implementation should still identify simple steps correctly"
         )
 
@@ -2153,7 +2156,7 @@ class TestExecutorCoreFunctionalEquivalence:
 
         # The new implementation should gracefully handle missing is_complex property
         new_result = self.executor._is_complex_step(legacy_step)
-        assert new_result == False, (
+        assert not new_result, (
             "New implementation should handle missing is_complex property gracefully"
         )
 
@@ -2169,7 +2172,7 @@ class TestExecutorCoreFunctionalEquivalence:
 
         # The new implementation should still detect validation steps
         new_result = self.executor._is_complex_step(legacy_validation_step)
-        assert new_result == True, "New implementation should still detect validation steps"
+        assert new_result, "New implementation should still detect validation steps"
 
         # Test legacy step with plugins
         class LegacyPluginStep:
@@ -2183,7 +2186,7 @@ class TestExecutorCoreFunctionalEquivalence:
 
         # The new implementation should still detect plugin steps
         new_result = self.executor._is_complex_step(legacy_plugin_step)
-        assert new_result == True, "New implementation should still detect plugin steps"
+        assert new_result, "New implementation should still detect plugin steps"
 
     def test_functional_equivalence_key_improvement(self):
         """Test the key improvement: object-oriented approach vs isinstance checks."""
@@ -2199,15 +2202,15 @@ class TestExecutorCoreFunctionalEquivalence:
 
         # Old implementation would return False (doesn't pass isinstance checks)
         old_result = self._old_is_complex_step_implementation(custom_complex_step)
-        assert old_result == False, "Old implementation should return False for custom step types"
+        assert not old_result, "Old implementation should return False for custom step types"
 
         # New implementation should return True (uses is_complex property)
         new_result = self.executor._is_complex_step(custom_complex_step)
-        assert new_result == True, (
+        assert new_result, (
             "New implementation should return True for steps with is_complex=True"
         )
 
         # This demonstrates the key improvement: extensibility without core changes
         print(
-            f"✅ Key improvement demonstrated: Custom step type correctly identified as complex via is_complex property"
+            "✅ Key improvement demonstrated: Custom step type correctly identified as complex via is_complex property"
         )

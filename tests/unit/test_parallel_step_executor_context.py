@@ -1,4 +1,3 @@
-import asyncio
 import types
 from typing import Any, Optional, Dict
 
@@ -17,7 +16,9 @@ class _Ctx(types.SimpleNamespace):
 
 
 @pytest.mark.asyncio
-async def test_parallel_executor_isolates_context_per_branch(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_parallel_executor_isolates_context_per_branch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     base_context = _Ctx()
     called: Dict[str, int] = {"isolate": 0}
 
@@ -43,7 +44,9 @@ async def test_parallel_executor_isolates_context_per_branch(monkeypatch: pytest
     )
 
     # Provide a fake step executor to avoid invoking core._execute_pipeline
-    async def fake_step_executor(_branch_pipeline: Any, data: Any, ctx: Any, _resources: Any, _breach: Any) -> StepResult:
+    async def fake_step_executor(
+        _branch_pipeline: Any, data: Any, ctx: Any, _resources: Any, _breach: Any
+    ) -> StepResult:
         return StepResult(name="branch", output=data, success=True, attempts=1)
 
     # Minimal core stub
@@ -69,7 +72,9 @@ async def test_parallel_executor_isolates_context_per_branch(monkeypatch: pytest
 
 
 @pytest.mark.asyncio
-async def test_parallel_executor_merges_successful_branch_contexts(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_parallel_executor_merges_successful_branch_contexts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     base_context = _Ctx()
     calls: Dict[str, int] = {"merge": 0}
 
@@ -97,7 +102,9 @@ async def test_parallel_executor_merges_successful_branch_contexts(monkeypatch: 
     )
 
     # Provide a fake step executor that yields StepResult with branch_context for ok branches
-    async def fake_step_executor(_branch_pipeline: Any, data: Any, ctx: Any, _resources: Any, _breach: Any) -> StepResult:
+    async def fake_step_executor(
+        _branch_pipeline: Any, data: Any, ctx: Any, _resources: Any, _breach: Any
+    ) -> StepResult:
         # Determine branch by probing pipeline name on first step, fallback to generic
         try:
             step0 = _branch_pipeline.steps[0]
@@ -128,5 +135,3 @@ async def test_parallel_executor_merges_successful_branch_contexts(monkeypatch: 
 
     # merge should be called for each successful branch (a, b) only
     assert calls["merge"] == 2
-
-

@@ -21,11 +21,10 @@ class TestFallbackLoopDetection:
 
     def test_detect_fallback_loop_object_identity(self):
         """Test that object identity detection works (original implementation)."""
-        executor = ExecutorCore()
-        step1 = Step.model_validate({"name": "step1", "agent": StubAgent(["ok"])})
-        step2 = Step.model_validate({"name": "step2", "agent": StubAgent(["ok"])})
+        ExecutorCore()
+        Step.model_validate({"name": "step1", "agent": StubAgent(["ok"])})
+        Step.model_validate({"name": "step2", "agent": StubAgent(["ok"])})
 
-        chain = [step1, step2]
 
         # Should detect loop when same object is added again
         # Note: This test is now testing the integration rather than the isolated function
@@ -99,7 +98,9 @@ class TestFallbackLoopDetection:
         # Enhanced: Loop detection returns graceful failure instead of raising exception
         result = await gather_result(runner, "data")
         assert result.step_history[0].success is False
-        assert "fallback" in result.step_history[0].feedback.lower()  # Enhanced: Flexible fallback error matching
+        assert (
+            "fallback" in result.step_history[0].feedback.lower()
+        )  # Enhanced: Flexible fallback error matching
 
     @pytest.mark.asyncio
     async def test_fallback_loop_integration_step_name(self):
@@ -113,7 +114,9 @@ class TestFallbackLoopDetection:
     async def test_fallback_loop_healthcare_scenario(self):
         """Test fallback loop detection in a healthcare scenario."""
         # Simulate a healthcare pipeline with multiple validation steps
-        plugin_validation = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="validation failed")])
+        plugin_validation = DummyPlugin(
+            outcomes=[PluginOutcome(success=False, feedback="validation failed")]
+        )
         plugin_retry = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="retry failed")])
 
         # Medical record validation steps
@@ -143,14 +146,20 @@ class TestFallbackLoopDetection:
         # Enhanced: Healthcare loop detection returns graceful failure
         result = await gather_result(runner, "medical_record_data")
         assert result.step_history[0].success is False
-        assert "fallback" in result.step_history[0].feedback.lower()  # Enhanced: Flexible fallback error matching
+        assert (
+            "fallback" in result.step_history[0].feedback.lower()
+        )  # Enhanced: Flexible fallback error matching
 
     @pytest.mark.asyncio
     async def test_fallback_loop_legal_scenario(self):
         """Test fallback loop detection in a legal scenario."""
         # Simulate a legal document processing pipeline
-        plugin_legal = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="legal review failed")])
-        plugin_compliance = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="compliance check failed")])
+        plugin_legal = DummyPlugin(
+            outcomes=[PluginOutcome(success=False, feedback="legal review failed")]
+        )
+        plugin_compliance = DummyPlugin(
+            outcomes=[PluginOutcome(success=False, feedback="compliance check failed")]
+        )
 
         # Legal document review steps
         review_document = Step.model_validate(
@@ -179,14 +188,20 @@ class TestFallbackLoopDetection:
         # Enhanced: Legal loop detection returns graceful failure
         result = await gather_result(runner, "legal_document_data")
         assert result.step_history[0].success is False
-        assert "fallback" in result.step_history[0].feedback.lower()  # Enhanced: Flexible fallback error matching
+        assert (
+            "fallback" in result.step_history[0].feedback.lower()
+        )  # Enhanced: Flexible fallback error matching
 
     @pytest.mark.asyncio
     async def test_fallback_loop_finance_scenario(self):
         """Test fallback loop detection in a finance scenario."""
         # Simulate a financial transaction processing pipeline
-        plugin_fraud = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="fraud detection failed")])
-        plugin_aml = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="AML check failed")])
+        plugin_fraud = DummyPlugin(
+            outcomes=[PluginOutcome(success=False, feedback="fraud detection failed")]
+        )
+        plugin_aml = DummyPlugin(
+            outcomes=[PluginOutcome(success=False, feedback="AML check failed")]
+        )
 
         # Financial transaction steps
         fraud_detection = Step.model_validate(
@@ -215,7 +230,9 @@ class TestFallbackLoopDetection:
         # Enhanced: Finance loop detection returns graceful failure
         result = await gather_result(runner, "transaction_data")
         assert result.step_history[0].success is False
-        assert "fallback" in result.step_history[0].feedback.lower()  # Enhanced: Flexible fallback error matching
+        assert (
+            "fallback" in result.step_history[0].feedback.lower()
+        )  # Enhanced: Flexible fallback error matching
 
     @pytest.mark.asyncio
     async def test_fallback_loop_logging_and_audit(self):
@@ -247,7 +264,9 @@ class TestFallbackLoopDetection:
         runner = create_test_flujo(step_a)
         result = await gather_result(runner, "data")
         assert result.step_history[0].success is False
-        assert "fallback" in result.step_history[0].feedback.lower()  # Enhanced: Flexible fallback error matching
+        assert (
+            "fallback" in result.step_history[0].feedback.lower()
+        )  # Enhanced: Flexible fallback error matching
 
     @pytest.mark.asyncio
     async def test_infinite_fallback_error_raises_correctly(self):
@@ -348,19 +367,19 @@ class TestFallbackLoopDetection:
         # This provides better user experience and system stability
         runner = create_test_flujo(step_a)
         result = await gather_result(runner, "data")
-        
+
         # Verify the system detected and handled the infinite fallback correctly
         assert len(result.step_history) > 0
         step_result = result.step_history[0]
         assert step_result.success is False
-        assert "fallback" in (step_result.feedback or "").lower() or "loop" in (step_result.feedback or "").lower()
+        assert (
+            "fallback" in (step_result.feedback or "").lower()
+            or "loop" in (step_result.feedback or "").lower()
+        )
 
 
 def test_fallback_loop_detection_cache_key_collision_fix():
     """Test that cache key includes relationship content to prevent collisions."""
-    from flujo.application.core.ultra_executor import ExecutorCore
-    from flujo.domain.dsl.step import Step
-    from unittest.mock import Mock
 
     # This test is now covered by integration tests
     # The actual loop detection happens in the executor during execution

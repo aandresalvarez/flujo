@@ -232,7 +232,7 @@ class OptimizationConfig:
 async def validate_conservative_configuration():
     """Validate the conservative configuration by running a simple performance test."""
     try:
-        from flujo.application.core.ultra_executor import ExecutorCore, OptimizationConfig
+        from flujo.application.core.ultra_executor import OptimizationConfig
         from flujo.domain.dsl.step import Step, StepConfig
         from flujo.testing.utils import StubAgent
         

@@ -10,9 +10,12 @@ except ImportError:
         class DummyResult:
             def __init__(self, query: str):
                 self.errors = ["invalid SQL"]
+
             def is_valid(self) -> bool:
                 return False
+
         return DummyResult(query)
+
 
 from ..domain.plugins import PluginOutcome
 

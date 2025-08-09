@@ -147,7 +147,9 @@ class TestComponentIntegration:
         # First Principles: Verify successful execution and optimized component usage
         assert result.success
         # Enhanced: Optimized system may use efficient paths that bypass serializer when not needed
-        assert serializer.serialize_calls >= 0, "Serializer may be optimized away in enhanced system"
+        assert serializer.serialize_calls >= 0, (
+            "Serializer may be optimized away in enhanced system"
+        )
         assert hasher.digest_calls >= 0, "Hasher may be optimized in enhanced system"
         assert cache_backend.get_calls >= 0, "Cache backend usage optimized for performance"
         assert cache_backend.put_calls >= 0, "Cache backend usage optimized for performance"

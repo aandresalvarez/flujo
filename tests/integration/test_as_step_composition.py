@@ -6,7 +6,6 @@ from flujo.testing.utils import StubAgent, gather_result
 from flujo.domain.commands import FinishCommand, RunAgentCommand
 from flujo.domain.models import PipelineContext, PipelineResult
 from flujo.domain.resources import AppResources
-from flujo.exceptions import ContextInheritanceError
 from tests.conftest import create_test_flujo
 
 
@@ -191,7 +190,7 @@ async def test_as_step_context_inheritance_error() -> None:
         "goal",
         initial_context_data={"initial_prompt": "goal"},
     )
-    
+
     # Enhanced: Context inheritance failure handled gracefully as step failure
     assert len(result.step_history) > 0
     step_result = result.step_history[-1]
@@ -202,7 +201,6 @@ async def test_as_step_context_inheritance_error() -> None:
 
 @pytest.mark.asyncio
 async def test_direct_context_inheritance_error():
-    from flujo.exceptions import ContextInheritanceError
     from flujo.domain.models import PipelineContext
     from flujo.domain.dsl.step import Step
     from flujo.application.runner import Flujo
@@ -219,13 +217,14 @@ async def test_direct_context_inheritance_error():
 
     # Enhanced: Context inheritance error returns graceful failure
     results = []
-    async for result in runner.run_async(
-        "goal", initial_context_data={"initial_prompt": "goal"}
-    ):
+    async for result in runner.run_async("goal", initial_context_data={"initial_prompt": "goal"}):
         results.append(result)
-    
+
     # Enhanced: Verify graceful failure instead of exception
     assert len(results) > 0
     pipeline_result = results[-1]
     assert pipeline_result.step_history[0].success is False
-    assert "contextinheritanceerror" in pipeline_result.step_history[0].feedback.lower() or "context inheritance" in pipeline_result.step_history[0].feedback.lower()
+    assert (
+        "contextinheritanceerror" in pipeline_result.step_history[0].feedback.lower()
+        or "context inheritance" in pipeline_result.step_history[0].feedback.lower()
+    )

@@ -1,4 +1,5 @@
 import pytest
+
 pytest.skip("Skipping core fallback core tests; will address next", allow_module_level=True)
 """
 Comprehensive tests for fallback functionality in ExecutorCore.
@@ -20,7 +21,6 @@ from flujo.exceptions import (
     MissingAgentError,
     PricingNotConfiguredError,
 )
-from flujo.application.core.ultra_executor import DefaultProcessorPipeline
 
 
 class TestExecutorCoreFallback:
@@ -141,7 +141,7 @@ class TestExecutorCoreFallback:
         # Configure executor - provide enough side effects for all retry attempts
         executor_core._agent_runner.run.side_effect = [
             Exception("Primary failed"),  # First attempt fails
-            Exception("Primary failed"),  # Second attempt fails  
+            Exception("Primary failed"),  # Second attempt fails
             Exception("Primary failed"),  # Third attempt fails
             Exception("Primary failed"),  # Fourth attempt fails (all retries exhausted)
         ]
@@ -191,7 +191,7 @@ class TestExecutorCoreFallback:
         # Configure executor - provide enough side effects for all retry attempts
         executor_core._agent_runner.run.side_effect = [
             Exception("Primary failed"),  # First attempt fails
-            Exception("Primary failed"),  # Second attempt fails  
+            Exception("Primary failed"),  # Second attempt fails
             Exception("Primary failed"),  # Third attempt fails
             Exception("Primary failed"),  # Fourth attempt fails (all retries exhausted)
         ]
@@ -242,7 +242,7 @@ class TestExecutorCoreFallback:
         # Configure executor - provide enough side effects for all retry attempts
         executor_core._agent_runner.run.side_effect = [
             Exception("Primary failed"),  # First attempt fails
-            Exception("Primary failed"),  # Second attempt fails  
+            Exception("Primary failed"),  # Second attempt fails
             Exception("Primary failed"),  # Third attempt fails
             Exception("Primary failed"),  # Fourth attempt fails (all retries exhausted)
         ]
@@ -293,7 +293,7 @@ class TestExecutorCoreFallback:
         # Configure executor - provide enough side effects for all retry attempts
         executor_core._agent_runner.run.side_effect = [
             Exception("Primary failed"),  # First attempt fails
-            Exception("Primary failed"),  # Second attempt fails  
+            Exception("Primary failed"),  # Second attempt fails
             Exception("Primary failed"),  # Third attempt fails
             Exception("Primary failed"),  # Fourth attempt fails (all retries exhausted)
         ]
@@ -342,7 +342,7 @@ class TestExecutorCoreFallback:
         # Configure executor - provide enough side effects for all retry attempts
         executor_core._agent_runner.run.side_effect = [
             Exception("Primary failed"),  # First attempt fails
-            Exception("Primary failed"),  # Second attempt fails  
+            Exception("Primary failed"),  # Second attempt fails
             Exception("Primary failed"),  # Third attempt fails
             Exception("Primary failed"),  # Fourth attempt fails (all retries exhausted)
         ]
@@ -390,7 +390,7 @@ class TestExecutorCoreFallback:
         # Configure executor - provide enough side effects for all retry attempts
         executor_core._agent_runner.run.side_effect = [
             Exception("Primary failed"),  # First attempt fails
-            Exception("Primary failed"),  # Second attempt fails  
+            Exception("Primary failed"),  # Second attempt fails
             Exception("Primary failed"),  # Third attempt fails
             Exception("Primary failed"),  # Fourth attempt fails (all retries exhausted)
         ]
@@ -425,7 +425,7 @@ class TestExecutorCoreFallback:
         # Configure executor - provide enough side effects for all retry attempts
         executor_core._agent_runner.run.side_effect = [
             Exception("Primary failed"),  # First attempt fails
-            Exception("Primary failed"),  # Second attempt fails  
+            Exception("Primary failed"),  # Second attempt fails
             Exception("Primary failed"),  # Third attempt fails
             Exception("Primary failed"),  # Fourth attempt fails (all retries exhausted)
         ]
@@ -464,7 +464,7 @@ class TestExecutorCoreFallback:
         # Configure executor - provide enough side effects for all retry attempts
         executor_core._agent_runner.run.side_effect = [
             Exception("Primary failed"),  # First attempt fails
-            Exception("Primary failed"),  # Second attempt fails  
+            Exception("Primary failed"),  # Second attempt fails
             Exception("Primary failed"),  # Third attempt fails
             Exception("Primary failed"),  # Fourth attempt fails (all retries exhausted)
         ]
@@ -504,7 +504,7 @@ class TestExecutorCoreFallback:
         # Configure executor - provide enough side effects for all retry attempts
         executor_core._agent_runner.run.side_effect = [
             Exception("Primary failed"),  # First attempt fails
-            Exception("Primary failed"),  # Second attempt fails  
+            Exception("Primary failed"),  # Second attempt fails
             Exception("Primary failed"),  # Third attempt fails
             Exception("Primary failed"),  # Fourth attempt fails (all retries exhausted)
         ]
@@ -560,7 +560,7 @@ class TestExecutorCoreFallback:
         # Configure executor - provide enough side effects for all retry attempts
         executor_core._agent_runner.run.side_effect = [
             Exception("Primary failed"),  # First attempt fails
-            Exception("Primary failed"),  # Second attempt fails  
+            Exception("Primary failed"),  # Second attempt fails
             Exception("Primary failed"),  # Third attempt fails
             Exception("Primary failed"),  # Fourth attempt fails (all retries exhausted)
         ]
@@ -608,7 +608,7 @@ class TestExecutorCoreFallback:
         # Configure executor - provide enough side effects for all retry attempts
         executor_core._agent_runner.run.side_effect = [
             Exception("Primary failed"),  # First attempt fails
-            Exception("Primary failed"),  # Second attempt fails  
+            Exception("Primary failed"),  # Second attempt fails
             Exception("Primary failed"),  # Third attempt fails
             Exception("Primary failed"),  # Fourth attempt fails (all retries exhausted)
         ]
@@ -754,7 +754,7 @@ class TestExecutorCoreFallback:
         # Configure executor - provide enough side effects for all retry attempts
         executor_core._agent_runner.run.side_effect = [
             Exception("Primary failed"),  # First attempt fails
-            Exception("Primary failed"),  # Second attempt fails  
+            Exception("Primary failed"),  # Second attempt fails
             Exception("Primary failed"),  # Third attempt fails
             Exception("Primary failed"),  # Fourth attempt fails (all retries exhausted)
         ]
@@ -808,7 +808,7 @@ class TestExecutorCoreFallback:
         # Configure executor - provide enough side effects for all retry attempts
         executor_core._agent_runner.run.side_effect = [
             Exception("Primary failed"),  # First attempt fails
-            Exception("Primary failed"),  # Second attempt fails  
+            Exception("Primary failed"),  # Second attempt fails
             Exception("Primary failed"),  # Third attempt fails
             Exception("Primary failed"),  # Fourth attempt fails (all retries exhausted)
         ]
@@ -904,6 +904,7 @@ class TestExecutorCoreFallback:
 
         # Mock the execute method for fallback
         from flujo.domain.models import StepResult
+
         with patch.object(executor_core, "execute", new_callable=AsyncMock) as mock_execute:
             mock_execute.return_value = StepResult(
                 name="fallback_step",
@@ -945,7 +946,7 @@ class TestExecutorCoreFallback:
         # Configure executor - provide enough side effects for all retry attempts
         executor_core._agent_runner.run.side_effect = [
             Exception("Primary failed"),  # First attempt fails
-            Exception("Primary failed"),  # Second attempt fails  
+            Exception("Primary failed"),  # Second attempt fails
             Exception("Primary failed"),  # Third attempt fails
             Exception("Primary failed"),  # Fourth attempt fails (all retries exhausted)
         ]

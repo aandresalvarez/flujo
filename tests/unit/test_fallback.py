@@ -5,7 +5,6 @@ import asyncio
 from flujo.domain.dsl import Step, StepConfig
 from flujo.testing.utils import StubAgent, DummyPlugin, gather_result
 from flujo.domain.plugins import PluginOutcome
-from flujo.application.runner import InfiniteFallbackError
 from tests.conftest import create_test_flujo
 
 
@@ -196,9 +195,12 @@ async def test_infinite_fallback_loop_detected() -> None:
     # Enhanced behavior: Detects loop, logs error, returns failed StepResult with meaningful feedback
     runner = create_test_flujo(a)
     result = await gather_result(runner, "data")
-    
+
     # Verify infinite fallback was detected and handled gracefully
     assert len(result.step_history) > 0
     step_result = result.step_history[0]
     assert step_result.success is False
-    assert "fallback" in (step_result.feedback or "").lower() or "loop" in (step_result.feedback or "").lower()
+    assert (
+        "fallback" in (step_result.feedback or "").lower()
+        or "loop" in (step_result.feedback or "").lower()
+    )

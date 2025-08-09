@@ -175,7 +175,7 @@ def safe_merge_context_updates(
                 model_class = type(source_context)
                 if hasattr(model_class, "model_fields"):
                     for field_name, field_info in model_class.model_fields.items():
-                        if field_info.annotation == bool and field_name not in source_fields:
+                        if field_info.annotation is bool and field_name not in source_fields:
                             source_fields[field_name] = getattr(source_context, field_name)
             except TypeError:
                 source_fields = source_context.model_dump()
@@ -187,7 +187,7 @@ def safe_merge_context_updates(
                 model_class = type(source_context)
                 if hasattr(model_class, "__fields__"):
                     for field_name, field_info in model_class.__fields__.items():
-                        if field_info.type_ == bool and field_name not in source_fields:
+                        if field_info.type_ is bool and field_name not in source_fields:
                             source_fields[field_name] = getattr(source_context, field_name)
             except TypeError:
                 source_fields = source_context.dict()

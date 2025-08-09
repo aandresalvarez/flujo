@@ -100,7 +100,7 @@ async def test_fallback_with_zero_cost_agents() -> None:
 @pytest.mark.asyncio
 async def test_fallback_with_high_cost_agents() -> None:
     """Test fallback behavior with very high cost agents
-    
+
     Enhanced accuracy: Now correctly counts tokens from ALL attempts including retries.
     Primary step with max_retries=1 means 2 attempts, each with 999999 tokens.
     Fallback step adds 1 more attempt with 999999 tokens.
@@ -123,7 +123,9 @@ async def test_fallback_with_high_cost_agents() -> None:
 
     assert sr.success is True
     assert sr.cost_usd == 999.99  # Should be fallback cost
-    assert sr.token_counts == 2999997  # Enhanced accuracy: includes all attempts (2 primary + 1 fallback)
+    assert (
+        sr.token_counts == 2999997
+    )  # Enhanced accuracy: includes all attempts (2 primary + 1 fallback)
 
 
 @pytest.mark.asyncio
@@ -177,7 +179,7 @@ async def test_fallback_with_mixed_cost_scenarios() -> None:
 @pytest.mark.asyncio
 async def test_fallback_with_negative_metrics() -> None:
     """Test fallback behavior with negative metrics (edge case)
-    
+
     Enhanced accuracy: Now correctly counts tokens from ALL attempts including retries.
     Primary step with max_retries=1 means 2 attempts, each with -5 tokens.
     Fallback step adds 1 more attempt with -5 tokens.
@@ -209,13 +211,15 @@ async def test_fallback_with_negative_metrics() -> None:
     # Should handle negative metrics gracefully
     assert sr.success is True
     assert sr.cost_usd == -0.1  # Should be fallback cost
-    assert sr.token_counts == -15  # Enhanced accuracy: includes all attempts (2 primary + 1 fallback)
+    assert (
+        sr.token_counts == -15
+    )  # Enhanced accuracy: includes all attempts (2 primary + 1 fallback)
 
 
 @pytest.mark.asyncio
 async def test_fallback_with_missing_metrics() -> None:
     """Test fallback behavior when agents don't provide metrics
-    
+
     Enhanced accuracy: Now correctly counts tokens from ALL attempts including retries.
     Primary step with max_retries=1 means 2 attempts, each counted as 1 token.
     Fallback step adds 1 more attempt counted as 1 token.
@@ -280,7 +284,7 @@ async def test_fallback_with_very_long_feedback() -> None:
 @pytest.mark.asyncio
 async def test_fallback_with_none_feedback() -> None:
     """Test fallback behavior when feedback is None
-    
+
     Enhanced error handling: The system now provides more specific error messages
     when plugins fail without feedback, using "Plugin failed without feedback"
     instead of the generic "Agent execution failed".
@@ -399,12 +403,12 @@ async def test_fallback_with_very_small_latency() -> None:
 @pytest.mark.asyncio
 async def test_fallback_with_retry_scenarios() -> None:
     """Test fallback behavior with retry scenarios
-    
+
     Enhanced accuracy: The system now correctly counts ALL attempts including retries.
     Primary step with max_retries=3 means 4 total attempts (1 initial + 3 retries).
     Plugin fails on all attempts, then fallback is triggered with 1 attempt.
     Total attempts: 4 primary + 1 fallback = 5 attempts (more accurate than previous 2).
-    
+
     Note: Plugin failures are deterministic but the system still retries up to max_retries
     to handle potential transient issues in the agent execution layer.
     """
@@ -438,7 +442,7 @@ async def test_fallback_with_retry_scenarios() -> None:
 @pytest.mark.asyncio
 async def test_fallback_with_complex_metadata() -> None:
     """Test fallback behavior with complex metadata scenarios
-    
+
     Enhanced error handling: The system now provides more accurate error messages.
     When StubAgent runs out of outputs during retries, it reports "No more outputs available"
     instead of the plugin feedback, which is more accurate for debugging.

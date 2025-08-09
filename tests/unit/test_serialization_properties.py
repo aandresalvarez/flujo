@@ -1,7 +1,6 @@
 """Property-based tests for serialization and reconstruction using Hypothesis."""
 
 import json
-import pytest
 from hypothesis import given, strategies as st, settings, Verbosity
 from hypothesis.strategies import composite
 from pydantic import BaseModel, Field
@@ -207,6 +206,7 @@ class TestSerializationProperties:
         serialized = safe_serialize(request_data)
         # Use the robust serialization system instead of json.dumps
         from flujo.utils.serialization import serialize_to_json_robust
+
         data = serialize_to_json_robust(serialized)
         data = json.loads(data)
 
@@ -234,6 +234,7 @@ class TestSerializationProperties:
         serialized = safe_serialize(request_data)
         # Use the robust serialization system instead of json.dumps
         from flujo.utils.serialization import serialize_to_json_robust
+
         data = serialize_to_json_robust(serialized)
         data = json.loads(data)
 
@@ -260,6 +261,7 @@ class TestSerializationProperties:
         serialized = safe_serialize(request_data)
         # Use the robust serialization system instead of json.dumps
         from flujo.utils.serialization import serialize_to_json_robust
+
         data = serialize_to_json_robust(serialized)
         data = json.loads(data)
 
@@ -276,11 +278,11 @@ class TestSerializationProperties:
         # UUID should be serialized as a string
         result = safe_serialize({"uuid": uuid.uuid4()})
         assert isinstance(result["uuid"], str)
-        
+
         # Decimal should be serialized as a string
         result = safe_serialize({"dec": Decimal("1.23")})
         assert isinstance(result["dec"], str)
-        
+
         # datetime is supported, so it should not raise
         result = safe_serialize({"dt": datetime.now()})
         assert isinstance(result["dt"], str)
@@ -299,6 +301,7 @@ class TestSerializationProperties:
         serialized = safe_serialize(request_data)
         # Use the robust serialization system instead of json.dumps
         from flujo.utils.serialization import serialize_to_json_robust
+
         data = serialize_to_json_robust(serialized)
         data = json.loads(data)
         try:
@@ -329,6 +332,7 @@ class TestSerializationProperties:
         serialized = safe_serialize(request_data)
         # Use the robust serialization system instead of json.dumps
         from flujo.utils.serialization import serialize_to_json_robust
+
         data_json = serialize_to_json_robust(serialized)
         data_json = json.loads(data_json)
         try:
@@ -419,6 +423,7 @@ class TestSerializationProperties:
         serialized = safe_serialize(request_data)
         # Use the robust serialization system instead of json.dumps
         from flujo.utils.serialization import serialize_to_json_robust
+
         data = serialize_to_json_robust(serialized)
         data = json.loads(data)
 
@@ -471,6 +476,7 @@ class TestSerializationProperties:
         serialized = safe_serialize(request_data)
         # Use the robust serialization system instead of json.dumps
         from flujo.utils.serialization import serialize_to_json_robust
+
         data = serialize_to_json_robust(serialized)
         data = json.loads(data)
 
@@ -525,6 +531,7 @@ class TestSerializationProperties:
         serialized = safe_serialize(request_data)
         # Use the robust serialization system instead of json.dumps
         from flujo.utils.serialization import serialize_to_json_robust
+
         data = serialize_to_json_robust(serialized)
         data = json.loads(data)
 
@@ -571,6 +578,7 @@ class TestSerializationProperties:
         serialized = safe_serialize(request_data)
         # Use the robust serialization system instead of json.dumps
         from flujo.utils.serialization import serialize_to_json_robust
+
         data = serialize_to_json_robust(serialized)
         data = json.loads(data)
 

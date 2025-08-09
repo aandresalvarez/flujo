@@ -53,8 +53,8 @@ def test_parallel_step_context_contract_static_analysis():
     # If mypy reports an error on the line below, the contract is enforced.
 
     # Case 1: Context without scratchpad (should cause mypy error)
-    context_without_scratchpad = ContextWithoutScratchpad(value="test")
-    parallel_step_no_scratch = ParallelStep(
+    ContextWithoutScratchpad(value="test")
+    ParallelStep(
         name="test_parallel_no_scratch",
         merge_strategy=lambda ctx, res: ctx.scratchpad.update(
             res
@@ -64,8 +64,8 @@ def test_parallel_step_context_contract_static_analysis():
     # await _mock_handle_parallel_step(parallel_step_no_scratch, "data", context_without_scratchpad)
 
     # Case 2: Context with scratchpad (should pass mypy)
-    context_with_scratchpad = ContextWithActualScratchpad(value="test", scratchpad={})
-    parallel_step_with_scratch = ParallelStep(
+    ContextWithActualScratchpad(value="test", scratchpad={})
+    ParallelStep(
         name="test_parallel_with_scratch",
         merge_strategy=lambda ctx, res: ctx.scratchpad.update(res),
     )

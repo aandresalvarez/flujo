@@ -324,7 +324,9 @@ class SQLiteBackend(StateBackend):
                 # Use os.path.exists to avoid Path.stat side effects
                 exists = os.path.exists(self.db_path)
             except OSError as e:
-                telemetry.logfire.warning(f"File existence check failed, skipping backup and proceeding: {e}")
+                telemetry.logfire.warning(
+                    f"File existence check failed, skipping backup and proceeding: {e}"
+                )
             else:
                 if exists:
                     try:
@@ -339,18 +341,22 @@ class SQLiteBackend(StateBackend):
                             telemetry.logfire.warning(f"File stat failed, assuming corrupted: {e}")
                             await self._backup_corrupted_database()
                     except (sqlite3.DatabaseError, sqlite3.OperationalError) as e:
-                        telemetry.logfire.warning(f"Database appears to be corrupted, creating backup: {e}")
+                        telemetry.logfire.warning(
+                            f"Database appears to be corrupted, creating backup: {e}"
+                        )
                         await self._backup_corrupted_database()
-            
+
             async with aiosqlite.connect(self.db_path) as db:
                 # OPTIMIZATION: Use more efficient SQLite settings for performance
-                await db.execute("PRAGMA journal_mode = WAL")  # Write-Ahead Logging for better concurrency
+                await db.execute(
+                    "PRAGMA journal_mode = WAL"
+                )  # Write-Ahead Logging for better concurrency
                 await db.execute("PRAGMA synchronous = NORMAL")  # Faster than FULL, still safe
                 await db.execute("PRAGMA cache_size = 10000")  # Increase cache size
                 await db.execute("PRAGMA temp_store = MEMORY")  # Use memory for temp tables
                 await db.execute("PRAGMA mmap_size = 268435456")  # 256MB memory mapping
                 await db.execute("PRAGMA page_size = 4096")  # Standard page size
-                
+
                 # Create the main workflow_state table with optimized schema
                 await db.execute(
                     """
@@ -373,10 +379,10 @@ class SQLiteBackend(StateBackend):
                     )
                     """
                 )
-                
+
                 # Create indexes for better query performance (after migration)
                 # Note: Index creation is moved after migration to ensure columns exist
-                
+
                 # Create the runs table for run tracking (for backward compatibility)
                 await db.execute(
                     """
@@ -395,12 +401,16 @@ class SQLiteBackend(StateBackend):
                     )
                     """
                 )
-                
+
                 # Create indexes for runs table
                 await db.execute("CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status)")
-                await db.execute("CREATE INDEX IF NOT EXISTS idx_runs_pipeline_id ON runs(pipeline_id)")
-                await db.execute("CREATE INDEX IF NOT EXISTS idx_runs_created_at ON runs(created_at)")
-                
+                await db.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_runs_pipeline_id ON runs(pipeline_id)"
+                )
+                await db.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_runs_created_at ON runs(created_at)"
+                )
+
                 # Create the steps table for step tracking
                 await db.execute(
                     """
@@ -419,11 +429,13 @@ class SQLiteBackend(StateBackend):
                     )
                     """
                 )
-                
+
                 # Create indexes for steps table
                 await db.execute("CREATE INDEX IF NOT EXISTS idx_steps_run_id ON steps(run_id)")
-                await db.execute("CREATE INDEX IF NOT EXISTS idx_steps_step_index ON steps(step_index)")
-                
+                await db.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_steps_step_index ON steps(step_index)"
+                )
+
                 # Create the traces table for trace tracking
                 await db.execute(
                     """
@@ -435,7 +447,7 @@ class SQLiteBackend(StateBackend):
                     )
                     """
                 )
-                
+
                 # Create the spans table for span tracking
                 await db.execute(
                     """
@@ -454,21 +466,23 @@ class SQLiteBackend(StateBackend):
                     )
                     """
                 )
-                
+
                 # Create indexes for spans table
                 await db.execute("CREATE INDEX IF NOT EXISTS idx_spans_run_id ON spans(run_id)")
                 await db.execute("CREATE INDEX IF NOT EXISTS idx_spans_span_id ON spans(span_id)")
-                await db.execute("CREATE INDEX IF NOT EXISTS idx_spans_parent_span_id ON spans(parent_span_id)")
-                
+                await db.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_spans_parent_span_id ON spans(parent_span_id)"
+                )
+
                 # Run migration to ensure schema is up to date
                 await self._migrate_existing_schema(db)
-                
+
                 # Create indexes after migration to ensure columns exist
                 await self._create_indexes(db)
-                
+
                 await db.commit()
                 telemetry.logfire.info(f"Initialized SQLite database at {self.db_path}")
-                
+
         except (sqlite3.DatabaseError, sqlite3.OperationalError) as e:
             # If we get a database error during initialization, try to backup and retry
             corruption_indicators = [
@@ -477,8 +491,13 @@ class SQLiteBackend(StateBackend):
                 "database disk image is malformed",
                 "database is locked",
             ]
-            if any(indicator in str(e).lower() for indicator in corruption_indicators) and retry_count == 0:
-                telemetry.logfire.warning(f"Database corruption detected during initialization, creating backup: {e}")
+            if (
+                any(indicator in str(e).lower() for indicator in corruption_indicators)
+                and retry_count == 0
+            ):
+                telemetry.logfire.warning(
+                    f"Database corruption detected during initialization, creating backup: {e}"
+                )
                 await self._backup_corrupted_database()
                 # Retry once after backup
                 await self._init_db(retry_count + 1, max_retries)
@@ -486,41 +505,45 @@ class SQLiteBackend(StateBackend):
                 telemetry.logfire.warning(
                     f"Database initialization failed, retrying ({retry_count + 1}/{max_retries}): {e}"
                 )
-                await asyncio.sleep(0.1 * (2 ** retry_count))  # Exponential backoff
+                await asyncio.sleep(0.1 * (2**retry_count))  # Exponential backoff
                 await self._init_db(retry_count + 1, max_retries)
             else:
-                telemetry.logfire.error(f"Failed to initialize database after {max_retries} retries: {e}")
+                telemetry.logfire.error(
+                    f"Failed to initialize database after {max_retries} retries: {e}"
+                )
                 raise
         except Exception as e:
             if retry_count < max_retries:
                 telemetry.logfire.warning(
                     f"Database initialization failed, retrying ({retry_count + 1}/{max_retries}): {e}"
                 )
-                await asyncio.sleep(0.1 * (2 ** retry_count))  # Exponential backoff
+                await asyncio.sleep(0.1 * (2**retry_count))  # Exponential backoff
                 await self._init_db(retry_count + 1, max_retries)
             else:
-                telemetry.logfire.error(f"Failed to initialize database after {max_retries} retries: {e}")
+                telemetry.logfire.error(
+                    f"Failed to initialize database after {max_retries} retries: {e}"
+                )
                 raise
 
     async def _backup_corrupted_database(self) -> None:
         """Backup a corrupted database file with a unique timestamp."""
-        import time
-        
+
         # Determine if corrupted DB file exists using os.path.exists to avoid Path.stat side effects
         import os
+
         try:
             exists = os.path.exists(self.db_path)
         except OSError:
             exists = False
         if not exists:
             return
-            
+
         # Generate unique backup filename
         timestamp = int(time.time())
         # Start counter for duplicate backup filenames
         counter = 1
         backup_path = self.db_path.parent / f"{self.db_path.name}.corrupt.{timestamp}"
-        
+
         # Resolve unique backup filename, skipping paths that raise stat errors
         while True:
             try:
@@ -534,15 +557,16 @@ class SQLiteBackend(StateBackend):
             counter += 1
             if counter > 1000:
                 break
-        
+
         try:
             # Try to move the corrupted file to backup location using Path.rename
             self.db_path.rename(backup_path)
             telemetry.logfire.warning(f"Corrupted database backed up to {backup_path}")
-        except (OSError, IOError) as e:
+        except (OSError, IOError):
             # If move fails, try to copy and then remove
             try:
                 import shutil
+
                 shutil.copy2(str(self.db_path), str(backup_path))
                 self.db_path.unlink()
                 telemetry.logfire.warning(f"Corrupted database copied to {backup_path} and removed")
@@ -554,7 +578,9 @@ class SQLiteBackend(StateBackend):
                 except (OSError, IOError) as remove_error:
                     telemetry.logfire.error(f"Failed to remove corrupted database: {remove_error}")
                     # If all backup attempts fail, raise a DatabaseError
-                    raise sqlite3.DatabaseError("Database corruption recovery failed") from remove_error
+                    raise sqlite3.DatabaseError(
+                        "Database corruption recovery failed"
+                    ) from remove_error
 
     async def _migrate_existing_schema(self, db: aiosqlite.Connection) -> None:
         """Migrate existing database schema to the new optimized structure."""
@@ -642,7 +668,7 @@ class SQLiteBackend(StateBackend):
             cursor = await db.execute("PRAGMA table_info(workflow_state)")
             existing_columns = {row[1] for row in await cursor.fetchall()}
             await cursor.close()
-            
+
             # Create indexes only for columns that exist
             if "status" in existing_columns:
                 await db.execute(
@@ -810,10 +836,8 @@ class SQLiteBackend(StateBackend):
                         pipeline_context_json = _fast_json_dumps(pipeline_context)
                     else:
                         # For complex objects, use robust serialization
-                        pipeline_context_json = _fast_json_dumps(
-                            robust_serialize(pipeline_context)
-                        )
-                    
+                        pipeline_context_json = _fast_json_dumps(robust_serialize(pipeline_context))
+
                     last_step_output = state.get("last_step_output")
                     if last_step_output is not None:
                         if isinstance(last_step_output, (str, int, float, bool, type(None))):
@@ -821,13 +845,17 @@ class SQLiteBackend(StateBackend):
                             last_step_output_json = _fast_json_dumps(last_step_output)
                         else:
                             # For complex objects, use robust serialization
-                            last_step_output_json = _fast_json_dumps(robust_serialize(last_step_output))
+                            last_step_output_json = _fast_json_dumps(
+                                robust_serialize(last_step_output)
+                            )
                     else:
                         last_step_output_json = None
-                    
+
                     step_history = state.get("step_history")
                     if step_history is not None:
-                        if isinstance(step_history, list) and all(isinstance(item, dict) for item in step_history):
+                        if isinstance(step_history, list) and all(
+                            isinstance(item, dict) for item in step_history
+                        ):
                             # For simple list of dicts, use direct JSON serialization
                             step_history_json = _fast_json_dumps(step_history)
                         else:
@@ -835,10 +863,10 @@ class SQLiteBackend(StateBackend):
                             step_history_json = _fast_json_dumps(robust_serialize(step_history))
                     else:
                         step_history_json = None
-                    
+
                     # Get execution_time_ms directly from state
                     execution_time_ms = state.get("execution_time_ms")
-                    
+
                     await db.execute(
                         """
                         INSERT OR REPLACE INTO workflow_state (
@@ -1084,9 +1112,15 @@ class SQLiteBackend(StateBackend):
                             "pipeline_name": row[1],
                             "pipeline_version": row[2],
                             "status": row[3],
-                            "start_time": row[4],  # Map created_at to start_time for backward compatibility
-                            "end_time": row[5],    # Map updated_at to end_time for backward compatibility
-                            "total_cost": row[6] if row[6] is not None else 0.0,  # Map execution_time_ms to total_cost for backward compatibility
+                            "start_time": row[
+                                4
+                            ],  # Map created_at to start_time for backward compatibility
+                            "end_time": row[
+                                5
+                            ],  # Map updated_at to end_time for backward compatibility
+                            "total_cost": row[6]
+                            if row[6] is not None
+                            else 0.0,  # Map execution_time_ms to total_cost for backward compatibility
                         }
                     )
                 return result
@@ -1239,7 +1273,7 @@ class SQLiteBackend(StateBackend):
                     # OPTIMIZATION: Use simplified schema for better performance
                     created_at = run_data.get("created_at") or datetime.utcnow().isoformat()
                     updated_at = run_data.get("updated_at") or created_at
-                    
+
                     await db.execute(
                         """
                         INSERT OR REPLACE INTO runs (

@@ -7,7 +7,6 @@ from flujo import Step, Pipeline, Flujo
 from flujo.domain.models import UsageLimits
 from flujo.exceptions import UsageLimitExceededError
 from flujo.testing import StubAgent
-from flujo.utils.serialization import register_custom_serializer
 
 
 class CostTrackingStubAgent(StubAgent):
@@ -44,7 +43,7 @@ class CostTrackingStubAgent(StubAgent):
                     "total_tokens": self.token_counts,
                     "cost_usd": self.cost_usd,
                 }
-            
+
             def __repr__(self) -> str:
                 return f"UsageResponse(output={self.output}, cost_usd={self.cost_usd}, token_counts={self.token_counts})"
 
@@ -59,6 +58,7 @@ def serialize_usage_response(obj):
         "cost_usd": obj.cost_usd,
         "token_counts": obj.token_counts,
     }
+
 
 # We'll register the serializer when we need it in the tests
 
@@ -225,7 +225,9 @@ def test_usage_limits_enforcement_loop_steps():
     assert result is not None
     # Should have 1 step (the loop step itself)
     assert len(result.step_history) == 1
-    assert result.total_cost_usd == pytest.approx(0.9)  # 3 iterations * $0.30 = $0.90 (stopped before breaching)
+    assert result.total_cost_usd == pytest.approx(
+        0.9
+    )  # 3 iterations * $0.30 = $0.90 (stopped before breaching)
 
 
 def test_usage_limits_enforcement_complex_steps():

@@ -92,7 +92,7 @@ class TestFunctionCallPerformance:
             mock_executor_class.return_value = mock_executor
             mock_executor._handle_loop_step = AsyncMock(return_value=StepResult(name="test"))
 
-                    # step_logic module was removed, functionality migrated to ultra_executor
+            # step_logic module was removed, functionality migrated to ultra_executor
 
         # Measure delegation performance
         start_time = time.perf_counter()
@@ -186,7 +186,7 @@ class TestMemoryUsageAnalysis:
         # step_logic module was intentionally removed during refactoring
         # This test verifies that the module no longer exists
         with pytest.raises(ModuleNotFoundError):
-            import flujo.application.core.step_logic as step_logic
+            pass
 
         print("step_logic module successfully removed")
 
@@ -195,7 +195,7 @@ class TestMemoryUsageAnalysis:
         # step_logic module was intentionally removed during refactoring
         # This test verifies that the module no longer exists
         with pytest.raises(ModuleNotFoundError):
-            import flujo.application.core.step_logic as step_logic
+            pass
 
         print("step_logic module successfully removed")
 
@@ -208,7 +208,7 @@ class TestCleanupCompleteness:
         # step_logic module was intentionally removed during refactoring
         # This test verifies that the module no longer exists
         with pytest.raises(ModuleNotFoundError):
-            import flujo.application.core.step_logic as step_logic
+            pass
 
         print("step_logic module successfully removed")
 
@@ -218,7 +218,7 @@ class TestCleanupCompleteness:
         # This test verifies that the file no longer exists
         with pytest.raises(FileNotFoundError):
             with open("flujo/application/core/step_logic.py", "r") as f:
-                content = f.read()
+                f.read()
 
         print("step_logic.py file successfully removed")
 

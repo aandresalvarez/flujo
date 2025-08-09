@@ -243,16 +243,14 @@ async def test_loop_step_body_failure_with_robust_exit_condition() -> None:
     # This provides better debugging information for complex loop failures
     feedback = step_result.feedback or ""
     assert "Loop body failed" in feedback
-    assert "Plugin validation failed" in feedback  
+    assert "Plugin validation failed" in feedback
     assert "bad" in feedback  # Original error preserved
 
 
 @pytest.mark.asyncio
 async def test_loop_step_body_failure_causing_exit_condition_error() -> None:
     # No plugins for exit condition error test; ensure agent returns dict for condition
-    bad_step = Step.model_validate(
-        {"name": "bad", "agent": StubAgent([{}])}
-    )
+    bad_step = Step.model_validate({"name": "bad", "agent": StubAgent([{}])})
     body = Pipeline.from_step(bad_step)
 
     def exit_condition(out: dict, _: Ctx | None) -> bool:

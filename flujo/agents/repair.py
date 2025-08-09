@@ -11,37 +11,28 @@ repair logic from general agent functionality.
 
 from __future__ import annotations
 
-import asyncio
 import ast
 import json
 import re
-from typing import Any, Optional, Final
-from functools import partial
+from typing import Any, Final
 
-from pydantic import ValidationError, TypeAdapter
-from pydantic_ai import ModelRetry
 
-from ..domain.agent_protocol import AsyncAgentProtocol, AgentInT, AgentOutT
-from ..exceptions import OrchestratorError, OrchestratorRetryError
 from ..utils.serialization import safe_serialize, safe_deserialize
-from ..infra.telemetry import logfire
 
 # Import needed modules (avoiding circular imports)
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .wrapper import AsyncAgentWrapper
-    
-from .factory import _unwrap_type_adapter
+
 
 # Import prompts from the prompts module
-from ..prompts import REPAIR_SYS, _format_repair_prompt
+from ..prompts import REPAIR_SYS
 
 MAX_LITERAL_EVAL_SIZE = 1_000_000
 
 
 # Import from utils to avoid circular imports
-from .utils import get_raw_output_from_exception
 
 
 class DeterministicRepairProcessor:
@@ -191,8 +182,10 @@ class DeterministicRepairProcessor:
 def make_repair_agent(model: str | None = None) -> "AsyncAgentWrapper[Any, str]":
     """Create the internal JSON repair agent."""
     from ..infra.settings import settings
+
     # Import make_agent_async via delegation to avoid circular imports
     from .wrapper import make_agent_async
+
     model_name = model or settings.default_repair_model
     return make_agent_async(model_name, REPAIR_SYS, str, auto_repair=False)
 

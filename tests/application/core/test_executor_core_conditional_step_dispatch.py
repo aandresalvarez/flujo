@@ -156,7 +156,7 @@ class TestExecutorCoreConditionalStepDispatch:
             # Previous behavior: Expected debug-level telemetry logging
             # Enhanced behavior: More efficient telemetry with optimized logging levels
             # This reduces logging overhead while maintaining observability
-            
+
             # Test execution completes successfully with enhanced telemetry
             await executor_core._execute_complex_step(
                 step=mock_conditional_step,
@@ -169,6 +169,6 @@ class TestExecutorCoreConditionalStepDispatch:
                 breach_event=None,
                 context_setter=None,
             )
-            
+
             # Enhanced: Telemetry optimization may use different logging strategies
             # Core functionality verified through successful execution

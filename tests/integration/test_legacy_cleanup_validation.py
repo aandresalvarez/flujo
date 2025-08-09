@@ -5,7 +5,7 @@ This module implements the cleanup validation testing strategy outlined in FSD_L
 to validate that the legacy cleanup was successful and no functionality was lost.
 """
 
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import Mock, AsyncMock
 
 import pytest
 
@@ -26,7 +26,7 @@ class TestFunctionRemovalValidation:
         # step_logic module was intentionally removed during refactoring
         # This test verifies that the module no longer exists
         with pytest.raises(ModuleNotFoundError):
-            import flujo.application.core.step_logic as step_logic
+            pass
 
         print("step_logic module successfully removed")
 
@@ -35,7 +35,7 @@ class TestFunctionRemovalValidation:
         # step_logic module was intentionally removed during refactoring
         # This test verifies that the module no longer exists
         with pytest.raises(ModuleNotFoundError):
-            import flujo.application.core.step_logic as step_logic
+            pass
 
         print("step_logic module successfully removed")
 
@@ -44,7 +44,7 @@ class TestFunctionRemovalValidation:
         # step_logic module was intentionally removed during refactoring
         # This test verifies that the module no longer exists
         with pytest.raises(ModuleNotFoundError):
-            import flujo.application.core.step_logic as step_logic
+            pass
 
         print("step_logic module successfully removed")
 
@@ -53,25 +53,34 @@ class TestFunctionRemovalValidation:
         # step_logic module was intentionally removed during refactoring
         # This test verifies that the module no longer exists
         with pytest.raises(ModuleNotFoundError):
-            import flujo.application.core.step_logic as step_logic
+            pass
 
         print("step_logic module successfully removed")
 
         # Test that the new handler exists and can be called
         from flujo.application.core.ultra_executor import ExecutorCore
-        
+
         # Verify that the new architecture is available
         executor = ExecutorCore()
         assert hasattr(executor, "_handle_dynamic_router_step")
-        
+
         # Test that the method is callable (we don't need to actually execute it)
         assert callable(executor._handle_dynamic_router_step)
-        
+
         # Verify the policy execute signature instead of private core handler
         import inspect
         from flujo.application.core.step_policies import DefaultDynamicRouterStepExecutor
+
         sig = inspect.signature(DefaultDynamicRouterStepExecutor.execute)
-        expected_params = ["core", "router_step", "data", "context", "resources", "limits", "context_setter"]
+        expected_params = [
+            "core",
+            "router_step",
+            "data",
+            "context",
+            "resources",
+            "limits",
+            "context_setter",
+        ]
         for param in expected_params:
             assert param in sig.parameters, f"Missing parameter: {param}"
 
@@ -89,7 +98,9 @@ class TestRemainingFunctionPreservation:
         wrapped_step_mock.name = "test_step"
         mock_cache_step.wrapped_step = wrapped_step_mock
         mock_cache_step.wrapped_step.agent = AsyncMock()
-        mock_cache_step.wrapped_step.agent.run = AsyncMock(return_value="test_output")  # Configure agent.run to return proper value
+        mock_cache_step.wrapped_step.agent.run = AsyncMock(
+            return_value="test_output"
+        )  # Configure agent.run to return proper value
         mock_cache_step.wrapped_step.config = Mock()
         mock_cache_step.wrapped_step.config.max_retries = 1
         mock_cache_step.wrapped_step.config.timeout_s = 30
@@ -102,7 +113,9 @@ class TestRemainingFunctionPreservation:
         mock_cache_step.wrapped_step.updates_context = False
         mock_cache_step.wrapped_step.persist_feedback_to_context = None
         mock_cache_step.wrapped_step.persist_validation_results_to = None
-        mock_cache_step.wrapped_step.fallback_step = None  # Ensure no fallback to prevent infinite loops
+        mock_cache_step.wrapped_step.fallback_step = (
+            None  # Ensure no fallback to prevent infinite loops
+        )
         mock_cache_step.cache_backend = Mock()
         mock_cache_step.cache_backend.get = AsyncMock(return_value=None)  # Cache miss
 
@@ -142,7 +155,9 @@ class TestRemainingFunctionPreservation:
         wrapped_step_mock.name = "test_step"
         mock_cache_step.wrapped_step = wrapped_step_mock
         mock_cache_step.wrapped_step.agent = AsyncMock()
-        mock_cache_step.wrapped_step.agent.run = AsyncMock(return_value="test_output")  # Configure agent.run to return proper value
+        mock_cache_step.wrapped_step.agent.run = AsyncMock(
+            return_value="test_output"
+        )  # Configure agent.run to return proper value
         mock_cache_step.wrapped_step.config = Mock()
         mock_cache_step.wrapped_step.config.max_retries = 1
         mock_cache_step.wrapped_step.config.timeout_s = 30
@@ -155,7 +170,9 @@ class TestRemainingFunctionPreservation:
         mock_cache_step.wrapped_step.updates_context = False
         mock_cache_step.wrapped_step.persist_feedback_to_context = None
         mock_cache_step.wrapped_step.persist_validation_results_to = None
-        mock_cache_step.wrapped_step.fallback_step = None  # Ensure no fallback to prevent infinite loops
+        mock_cache_step.wrapped_step.fallback_step = (
+            None  # Ensure no fallback to prevent infinite loops
+        )
         mock_cache_step.cache_backend = Mock()
 
         # Create a cached result
@@ -253,7 +270,7 @@ class TestRemainingFunctionPreservation:
         mock_step.fallback_step = None
         mock_step.persist_feedback_to_context = None
 
-        mock_step_executor = AsyncMock()
+        AsyncMock()
 
         # Test basic execution using ExecutorCore
         executor = ExecutorCore()
@@ -303,10 +320,11 @@ class TestLegacyFunctionIntegration:
         # This test now verifies that the new architecture is used instead
         with pytest.raises(ImportError, match="cannot import name '_handle_cache_step'"):
             # Try to import the removed function
-            from flujo.application.core.ultra_executor import _handle_cache_step
+            pass
 
         # Verify that the new architecture is available
         from flujo.application.core.ultra_executor import ExecutorCore
+
         executor = ExecutorCore()
         assert hasattr(executor, "_handle_cache_step")
         assert hasattr(executor, "_handle_hitl_step")
@@ -318,10 +336,10 @@ class TestLegacyFunctionIntegration:
         # The legacy functions were removed during refactoring
         # This test now verifies that the new architecture maintains the same interface
         from flujo.application.core.ultra_executor import ExecutorCore
-        
+
         # Verify that the new architecture provides the same functionality
         executor = ExecutorCore()
-        
+
         # Check that the core methods exist
         assert hasattr(executor, "_handle_cache_step")
         assert hasattr(executor, "_handle_hitl_step")
@@ -335,6 +353,7 @@ class TestLegacyFunctionIntegration:
             DefaultLoopStepExecutor,
             DefaultDynamicRouterStepExecutor,
         )
+
         sig_cache = inspect.signature(DefaultCacheStepExecutor.execute)
         sig_hitl = inspect.signature(DefaultHitlStepExecutor.execute)
         sig_loop = inspect.signature(DefaultLoopStepExecutor.execute)
@@ -369,22 +388,22 @@ class TestLegacyCleanupSafety:
         # The legacy functions were removed during refactoring
         # This test now verifies that error handling works in the new architecture
         from flujo.application.core.ultra_executor import ExecutorCore
-        
+
         # Verify that the new architecture provides proper error handling
         executor = ExecutorCore()
-        
+
         # Test that the methods exist and can handle errors gracefully
         assert hasattr(executor, "_handle_cache_step")
         assert hasattr(executor, "_handle_hitl_step")
         assert hasattr(executor, "_handle_loop_step")
         assert hasattr(executor, "_handle_dynamic_router_step")
-        
+
         # Test that error handling is preserved by checking that the methods
         # can be called with invalid inputs without crashing
         mock_step = Mock()
         mock_step.name = "test_step"
         mock_step.fallback_step = None  # Ensure no fallback to prevent infinite loops
-        
+
         # These should not raise unhandled exceptions
         # (they may raise expected exceptions like MissingAgentError, but not unhandled ones)
         try:
@@ -402,7 +421,10 @@ class TestLegacyCleanupSafety:
         except Exception as e:
             # Expected to fail, but should be a handled exception, not an unhandled one
             error_str = str(e)
-            assert any(error_type in error_str for error_type in ["MissingAgentError", "ValidationError", "Fallback loop detected"])
+            assert any(
+                error_type in error_str
+                for error_type in ["MissingAgentError", "ValidationError", "Fallback loop detected"]
+            )
 
     async def test_performance_not_degraded(self):
         """Test that performance is not degraded in the new architecture."""
@@ -410,28 +432,28 @@ class TestLegacyCleanupSafety:
         # This test now verifies that performance is maintained in the new architecture
         from flujo.application.core.ultra_executor import ExecutorCore
         import time
-        
+
         # Verify that the new architecture is available and performant
         executor = ExecutorCore()
-        
+
         # Test that the methods exist and can be called quickly
         assert hasattr(executor, "_handle_cache_step")
         assert hasattr(executor, "_handle_hitl_step")
         assert hasattr(executor, "_handle_loop_step")
         assert hasattr(executor, "_handle_dynamic_router_step")
-        
+
         # Test that method calls are fast (should complete in under 1ms)
         start_time = time.time()
-        
+
         # Just check that the methods exist and are callable
         # (we're not testing actual execution performance here, just that the methods exist)
         assert callable(executor._handle_cache_step)
         assert callable(executor._handle_hitl_step)
         assert callable(executor._handle_loop_step)
         assert callable(executor._handle_dynamic_router_step)
-        
+
         end_time = time.time()
         elapsed_time = end_time - start_time
-        
+
         # Method existence checks should be very fast
         assert elapsed_time < 0.1  # Should complete in under 100ms

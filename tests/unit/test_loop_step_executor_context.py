@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any
 
 import pytest
 
@@ -39,7 +39,9 @@ class _Core(ExecutorCore):
     ) -> PipelineResult[Any]:
         # Produce a successful single-step result with a final context to merge
         sr = StepResult(name="body", success=True, output=_data)
-        pr = PipelineResult(step_history=[sr], total_cost_usd=0.0, total_tokens=0, final_pipeline_context=_context)
+        pr = PipelineResult(
+            step_history=[sr], total_cost_usd=0.0, total_tokens=0, final_pipeline_context=_context
+        )
         return pr
 
 
@@ -55,7 +57,15 @@ async def test_loop_executor_calls_isolate_each_iteration(monkeypatch: pytest.Mo
 
     core = _Core()
     loop = _SimpleLoop("L", iterations=3)
-    res = await core._execute_loop(loop, data=1, context=None, resources=None, limits=None, context_setter=None, _fallback_depth=0)
+    res = await core._execute_loop(
+        loop,
+        data=1,
+        context=None,
+        resources=None,
+        limits=None,
+        context_setter=None,
+        _fallback_depth=0,
+    )
 
     assert isinstance(res, StepResult)
     # ✅ ARCHITECTURAL UPDATE: Enhanced context management now optimizes isolation
@@ -77,7 +87,15 @@ async def test_loop_executor_merges_iteration_context(monkeypatch: pytest.Monkey
 
     core = _Core()
     loop = _SimpleLoop("L", iterations=2)
-    res = await core._execute_loop(loop, data=1, context=PipelineContext(initial_prompt="x"), resources=None, limits=None, context_setter=None, _fallback_depth=0)
+    res = await core._execute_loop(
+        loop,
+        data=1,
+        context=PipelineContext(initial_prompt="x"),
+        resources=None,
+        limits=None,
+        context_setter=None,
+        _fallback_depth=0,
+    )
 
     assert isinstance(res, StepResult)
     # ✅ ARCHITECTURAL UPDATE: Enhanced context management optimizes merging
@@ -85,5 +103,3 @@ async def test_loop_executor_merges_iteration_context(monkeypatch: pytest.Monkey
     # Current behavior: 1 optimized merge with proper context accumulation
     # This improvement reduces overhead while maintaining context consistency
     assert calls["merge"] >= 1  # At least one merge occurred
-
-

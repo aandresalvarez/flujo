@@ -97,7 +97,9 @@ class StepCoordinator(Generic[ContextT]):
                 elif backend is not None:
                     # New approach: call backend directly
                     # Only enable streaming when the agent actually supports it
-                    has_agent_stream = hasattr(step, "agent") and hasattr(getattr(step, "agent", None), "stream")
+                    has_agent_stream = hasattr(step, "agent") and hasattr(
+                        getattr(step, "agent", None), "stream"
+                    )
                     effective_stream = bool(stream and has_agent_stream)
                     if effective_stream:
                         # For streaming, we need to collect chunks and yield them
@@ -169,12 +171,14 @@ class StepCoordinator(Generic[ContextT]):
                     raise
                 try:
                     from flujo.exceptions import InfiniteRedirectError as CoreIRE
+
                     if isinstance(e, CoreIRE):
                         raise
                 except Exception:
                     pass
                 try:
                     from flujo.application.runner import InfiniteRedirectError as RunnerIRE
+
                     if isinstance(e, RunnerIRE):
                         raise
                 except Exception:
@@ -182,6 +186,7 @@ class StepCoordinator(Generic[ContextT]):
                 # Treat strict pricing as critical and propagate immediately
                 try:
                     from flujo.exceptions import PricingNotConfiguredError as _PNCE
+
                     if isinstance(e, _PNCE):
                         raise
                     _msg = str(e)
@@ -223,12 +228,16 @@ class StepCoordinator(Generic[ContextT]):
                             if hasattr(handler, "__call__"):
                                 handler()
                             else:
-                                telemetry.logfire.warning(f"Failure handler {handler} is not callable")
+                                telemetry.logfire.warning(
+                                    f"Failure handler {handler} is not callable"
+                                )
                         except Exception as e:
-                            telemetry.logfire.error(f"Failure handler {handler} raised exception: {e}")
+                            telemetry.logfire.error(
+                                f"Failure handler {handler} raised exception: {e}"
+                            )
                             # Re-raise the exception to propagate it up
                             raise
-                
+
                 try:
                     await self._dispatch_hook(
                         "on_step_failure",

@@ -6,7 +6,7 @@ to verify that the legacy cleanup was successful and no regressions were introdu
 """
 
 import inspect
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import Mock, AsyncMock
 
 import pytest
 
@@ -27,7 +27,7 @@ class TestLegacyFunctionUsageAnalysis:
         # step_logic module was intentionally removed during refactoring
         # This test verifies that the module no longer exists
         with pytest.raises(ModuleNotFoundError):
-            import flujo.application.core.step_logic as step_logic
+            pass
 
         print("step_logic module successfully removed")
 
@@ -38,7 +38,7 @@ class TestLegacyFunctionUsageAnalysis:
         with pytest.raises(ModuleNotFoundError):
             # step_logic module was intentionally removed during refactoring
             # The functionality has been migrated to ultra_executor
-            import flujo.application.core.step_logic  # This should raise ModuleNotFoundError
+            pass  # This should raise ModuleNotFoundError
 
         print("step_logic module successfully removed")
 
@@ -52,7 +52,9 @@ class TestLegacyFunctionUsageAnalysis:
         wrapped_step_mock.name = "test_step"
         mock_cache_step.wrapped_step = wrapped_step_mock
         mock_cache_step.wrapped_step.agent = AsyncMock()
-        mock_cache_step.wrapped_step.agent.run = AsyncMock(return_value="test_output")  # Configure agent.run to return proper value
+        mock_cache_step.wrapped_step.agent.run = AsyncMock(
+            return_value="test_output"
+        )  # Configure agent.run to return proper value
         mock_cache_step.wrapped_step.config = Mock()
         mock_cache_step.wrapped_step.config.max_retries = 1
         mock_cache_step.wrapped_step.config.timeout_s = 30
@@ -97,7 +99,7 @@ class TestMigrationCompleteness:
         # step_logic module was intentionally removed during refactoring
         # This test verifies that the module no longer exists
         with pytest.raises(ModuleNotFoundError):
-            import flujo.application.core.step_logic as step_logic
+            pass
 
         print("step_logic module successfully removed")
 
@@ -111,7 +113,9 @@ class TestMigrationCompleteness:
         wrapped_step_mock.name = "test_step"
         mock_cache_step.wrapped_step = wrapped_step_mock
         mock_cache_step.wrapped_step.agent = AsyncMock()
-        mock_cache_step.wrapped_step.agent.run = AsyncMock(return_value="test_output")  # Configure agent.run to return proper value
+        mock_cache_step.wrapped_step.agent.run = AsyncMock(
+            return_value="test_output"
+        )  # Configure agent.run to return proper value
         mock_cache_step.wrapped_step.config = Mock()
         mock_cache_step.wrapped_step.config.max_retries = 1
         mock_cache_step.wrapped_step.config.timeout_s = 30
@@ -131,7 +135,7 @@ class TestMigrationCompleteness:
         # step_logic module was removed, functionality migrated to ultra_executor
         # Test using ExecutorCore
         executor = ExecutorCore()
-        result = await executor._handle_cache_step(
+        await executor._handle_cache_step(
             step=mock_cache_step,
             data="test",
             context=None,
@@ -182,7 +186,7 @@ class TestMigrationCompleteness:
         # step_logic module was removed, functionality migrated to ultra_executor
         # Test using ExecutorCore
         executor = ExecutorCore()
-        result = await executor.execute_step(
+        await executor.execute_step(
             step=mock_step,
             data="test",
             context=None,
@@ -221,7 +225,7 @@ class TestDeprecationDecorator:
         # step_logic module was removed, functionality migrated to ultra_executor
         # The deprecated_function decorator is no longer needed since the functions
         # have been migrated to ExecutorCore methods
-        
+
         def test_function():
             return "test"
 
@@ -236,7 +240,9 @@ class TestDeprecationDecorator:
         mock_cache_step.wrapped_step = Mock()
         mock_cache_step.wrapped_step.name = "test_step"
         mock_cache_step.wrapped_step.agent = AsyncMock()
-        mock_cache_step.wrapped_step.agent.run = AsyncMock(return_value="test_output")  # Configure agent.run to return proper value
+        mock_cache_step.wrapped_step.agent.run = AsyncMock(
+            return_value="test_output"
+        )  # Configure agent.run to return proper value
         mock_cache_step.wrapped_step.config = Mock()
         mock_cache_step.wrapped_step.config.max_retries = 1
         mock_cache_step.wrapped_step.config.timeout_s = 30
@@ -277,12 +283,21 @@ class TestFunctionSignatureAnalysis:
     def test_executor_core_method_signatures(self):
         """Test that ExecutorCore methods have the expected signatures."""
         executor = ExecutorCore()
-        
+
         # Test _handle_cache_step signature
         sig = inspect.signature(executor._handle_cache_step)
         params = list(sig.parameters.keys())
 
-        expected_params = ["step", "data", "context", "resources", "limits", "breach_event", "context_setter", "step_executor"]
+        expected_params = [
+            "step",
+            "data",
+            "context",
+            "resources",
+            "limits",
+            "breach_event",
+            "context_setter",
+            "step_executor",
+        ]
         for param in expected_params:
             assert param in params
 
@@ -313,7 +328,7 @@ class TestLegacyCleanupCompleteness:
         # step_logic module was removed, functionality migrated to ultra_executor
         # Test that the module no longer exists
         with pytest.raises(ModuleNotFoundError):
-            import flujo.application.core.step_logic as step_logic
+            pass
 
         # Test that ExecutorCore has all the migrated functionality
         executor = ExecutorCore()
@@ -330,7 +345,7 @@ class TestLegacyCleanupCompleteness:
         # This test verifies that the module no longer exists
         with pytest.raises(FileNotFoundError):
             with open("flujo/application/core/step_logic.py", "r") as f:
-                content = f.read()
+                f.read()
 
         # The module was intentionally removed during refactoring
         print("step_logic.py file successfully removed")

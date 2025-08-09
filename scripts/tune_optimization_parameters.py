@@ -22,7 +22,7 @@ from flujo.application.core.optimization_parameter_tuner import (  # noqa: E402
     OptimizationParameterTuner,
     TuningStrategy
 )
-from flujo.application.core.ultra_executor import ExecutorCore, OptimizationConfig  # noqa: E402
+from flujo.application.core.ultra_executor import OptimizationConfig  # noqa: E402
 from flujo.domain.dsl.step import Step, StepConfig  # noqa: E402
 from flujo.testing.utils import StubAgent  # noqa: E402
 

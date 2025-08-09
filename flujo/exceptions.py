@@ -144,10 +144,13 @@ class AgentIOValidationError(OrchestratorError):
 
 class NonRetryableError(Exception):
     """Base class for errors that should not be retried in the pipeline."""
+
     pass
+
 
 class MockDetectionError(NonRetryableError):
     """Error raised when Mock objects are detected in output."""
+
     pass
 
 

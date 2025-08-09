@@ -162,8 +162,12 @@ async def test_hitl_with_context_updates_error_handling():
     # Previous behavior: Partial context updates preserved even on step failure
     # Enhanced behavior: Transaction-like semantics - failed steps don't commit changes
     # This prevents inconsistent state and ensures data integrity
-    assert result.final_pipeline_context.total_interactions == 0  # No changes committed from failed step
-    assert len(result.final_pipeline_context.interaction_history) == 0  # No partial updates preserved
+    assert (
+        result.final_pipeline_context.total_interactions == 0
+    )  # No changes committed from failed step
+    assert (
+        len(result.final_pipeline_context.interaction_history) == 0
+    )  # No partial updates preserved
     # The failure is properly captured in the step result feedback
     assert "intentional failure" in result.step_history[-1].feedback.lower()
 

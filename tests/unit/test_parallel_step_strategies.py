@@ -26,31 +26,28 @@ class MockContext(BaseModel):
     # Required PipelineContext attributes
     initial_prompt: str = "test_prompt"
     scratchpad: Dict[str, Any] = {}
-    
+
     # Additional data storage for tests that expect it
     data: Dict[str, Any] = {}
-    
+
     model_config = {"extra": "allow", "arbitrary_types_allowed": True}
 
     def __init__(self, data: Dict[str, Any] = None, **kwargs):
         # Merge data and kwargs
         merged_data = dict(data) if data is not None else {}
         merged_data.update(kwargs)
-        
+
         # Extract known fields
         initial_prompt = merged_data.pop("initial_prompt", "test_prompt")
         scratchpad = merged_data.pop("scratchpad", {})
-        
+
         # Store original data for tests that expect it
         data_field = dict(data) if data is not None else {}
         data_field.update(kwargs)
-        
+
         # Initialize BaseModel with all fields
         super().__init__(
-            initial_prompt=initial_prompt,
-            scratchpad=scratchpad,
-            data=data_field,
-            **merged_data
+            initial_prompt=initial_prompt, scratchpad=scratchpad, data=data_field, **merged_data
         )
 
     @classmethod
@@ -68,12 +65,12 @@ class TestParallelStepExecution:
         async def executor(step, input_data, context, resources, breach_event=None):
             # Simulate successful step execution
             # Handle both Step and Pipeline objects
-            if hasattr(step, 'name'):
+            if hasattr(step, "name"):
                 step_name = step.name
             else:
                 # For Pipeline objects, use a default name
                 step_name = "pipeline_step"
-                
+
             return StepResult(
                 name=step_name,
                 output=input_data,  # Return input_data as expected by tests
@@ -450,20 +447,16 @@ class TestParallelStepExecution:
         class NoScratchpadContext(BaseModel):
             initial_prompt: str = "test_prompt"
             data: Dict[str, Any] = {}
-            
+
             model_config = {"extra": "allow", "arbitrary_types_allowed": True}
 
             def __init__(self, data: Dict[str, Any] = None, **kwargs):
                 merged_data = dict(data) if data is not None else {}
                 merged_data.update(kwargs)
-                
+
                 initial_prompt = merged_data.pop("initial_prompt", "test_prompt")
-                
-                super().__init__(
-                    initial_prompt=initial_prompt,
-                    data=merged_data,
-                    **merged_data
-                )
+
+                super().__init__(initial_prompt=initial_prompt, data=merged_data, **merged_data)
                 # Note: deliberately not setting scratchpad - the framework should create it
 
             @classmethod
@@ -612,16 +605,11 @@ class TestParallelStepExecution:
             initial_prompt: str = "test_prompt"
             value: str = "initial"
             scratchpad: Dict[str, Any] = {}
-            
+
             model_config = {"extra": "allow", "arbitrary_types_allowed": True}
 
             def __init__(self, value: str = "initial", **kwargs):
-                super().__init__(
-                    initial_prompt="test_prompt",
-                    value=value,
-                    scratchpad={},
-                    **kwargs
-                )
+                super().__init__(initial_prompt="test_prompt", value=value, scratchpad={}, **kwargs)
 
             @classmethod
             def model_validate(cls, data):

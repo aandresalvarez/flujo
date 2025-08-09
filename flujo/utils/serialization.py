@@ -411,21 +411,21 @@ def safe_serialize(
     PRIMITIVE_TYPES = (str, int, float, bool, type(None))
     if _seen is None:
         _seen = set()
-    
+
     # Handle datetime objects specifically to prevent infinite recursion - don't add to _seen
     if isinstance(obj, (datetime, date, time)):
         return obj.isoformat()
-    
+
     if not isinstance(obj, PRIMITIVE_TYPES):
         obj_id = id(obj)
         if obj_id in _seen:
             return circular_ref_placeholder
         _seen.add(obj_id)
-    
+
     # Limit recursion depth to prevent stack overflow
     if _recursion_depth > 50:
         return f"<max-depth-exceeded: {type(obj).__name__}>"
-    
+
     try:
         # Check for custom serializers first (including for Enum objects)
         custom_serializer = lookup_custom_serializer(obj)
@@ -445,14 +445,14 @@ def safe_serialize(
                     raise
                 # For other exceptions, fall through to default handling
                 pass
-        
+
         # Handle Enum objects specifically - don't add to _seen
         if isinstance(obj, Enum):
             try:
                 return obj.value
             except (AttributeError, TypeError):
                 return str(obj)
-        
+
         if obj is None:
             return None
         if isinstance(obj, (str, int, bool)):
@@ -475,7 +475,9 @@ def safe_serialize(
             if hasattr(obj, "__name__"):
                 return obj.__name__
             # Handle mock objects gracefully for testing
-            elif hasattr(obj, "__class__") and ("Mock" in obj.__class__.__name__ or "mock" in obj.__class__.__name__.lower()):
+            elif hasattr(obj, "__class__") and (
+                "Mock" in obj.__class__.__name__ or "mock" in obj.__class__.__name__.lower()
+            ):
                 return f"Mock({type(obj).__name__})"
             else:
                 return repr(obj)
@@ -501,7 +503,11 @@ def safe_serialize(
                     if v is None or isinstance(v, (str, int, float, bool, list, dict)):
                         # Basic types - keep as-is
                         result[k] = v
-                    elif hasattr(type(v), '__module__') and type(v).__module__ in ['uuid', 'datetime', 'decimal']:
+                    elif hasattr(type(v), "__module__") and type(v).__module__ in [
+                        "uuid",
+                        "datetime",
+                        "decimal",
+                    ]:
                         # Known custom types that should be preserved - keep as-is
                         result[k] = v
                     else:
@@ -545,7 +551,9 @@ def safe_serialize(
             result = {}
             for k, v in obj.items():
                 try:
-                    key_str = str(_serialize_for_key(k, _seen, default_serializer, _recursion_depth + 1))
+                    key_str = str(
+                        _serialize_for_key(k, _seen, default_serializer, _recursion_depth + 1)
+                    )
                     result[key_str] = safe_serialize(
                         v,
                         default_serializer,
@@ -595,7 +603,9 @@ def safe_serialize(
             elif hasattr(obj, "model_dump") or (HAS_PYDANTIC and isinstance(obj, BaseModel)):
                 # Let Pydantic models be handled by their specific logic
                 pass
-            elif hasattr(obj, "__class__") and ("Mock" in obj.__class__.__name__ or "mock" in obj.__class__.__name__.lower()):
+            elif hasattr(obj, "__class__") and (
+                "Mock" in obj.__class__.__name__ or "mock" in obj.__class__.__name__.lower()
+            ):
                 # Handle mock objects for testing with improved detection
                 return serialize_mock_object(obj)
             # For other objects with __dict__, raise TypeError to enforce explicit serialization
@@ -611,7 +621,9 @@ def safe_serialize(
             # we should raise TypeError as expected by tests
             if hasattr(obj, "__dict__") and not isinstance(obj, type):
                 # Check if this is a mock object or test object that should be handled gracefully
-                if hasattr(obj, "__class__") and ("Mock" in obj.__class__.__name__ or "mock" in obj.__class__.__name__.lower()):
+                if hasattr(obj, "__class__") and (
+                    "Mock" in obj.__class__.__name__ or "mock" in obj.__class__.__name__.lower()
+                ):
                     return serialize_mock_object(obj)
                 else:
                     raise TypeError(
@@ -644,18 +656,18 @@ def safe_serialize(
 def serialize_agent_response(response: Any) -> Dict[str, Any]:
     """
     Serialize AgentResponse objects properly with proper field extraction.
-    
+
     Args:
         response: An object that looks like an AgentResponse (has output/content and usage attributes)
-        
+
     Returns:
         A serializable dictionary representation of the AgentResponse
     """
     result = {
         "content": getattr(response, "content", getattr(response, "output", None)),
-        "metadata": {}
+        "metadata": {},
     }
-    
+
     # Handle usage information if present
     if hasattr(response, "usage"):
         if callable(response.usage):
@@ -664,7 +676,7 @@ def serialize_agent_response(response: Any) -> Dict[str, Any]:
                 if hasattr(usage_info, "request_tokens") and hasattr(usage_info, "response_tokens"):
                     result["metadata"]["usage"] = {
                         "request_tokens": usage_info.request_tokens,
-                        "response_tokens": usage_info.response_tokens
+                        "response_tokens": usage_info.response_tokens,
                     }
                 elif hasattr(usage_info, "model_dump"):
                     # Handle Pydantic usage models
@@ -678,29 +690,36 @@ def serialize_agent_response(response: Any) -> Dict[str, Any]:
         else:
             # Direct usage attribute
             result["metadata"]["usage"] = safe_serialize(response.usage)
-    
+
     # Handle additional attributes that might be present
-    for attr in ["_prompt_tokens", "_completion_tokens", "prompt_tokens", "completion_tokens", "cost_usd", "token_counts"]:
+    for attr in [
+        "_prompt_tokens",
+        "_completion_tokens",
+        "prompt_tokens",
+        "completion_tokens",
+        "cost_usd",
+        "token_counts",
+    ]:
         if hasattr(response, attr):
             result["metadata"][attr] = getattr(response, attr)
-    
+
     # Handle metadata field if present
     if hasattr(response, "metadata"):
         if hasattr(response.metadata, "model_dump"):
             result["metadata"].update(response.metadata.model_dump())
         else:
             result["metadata"].update(safe_serialize(response.metadata))
-    
+
     return result
 
 
 def serialize_mock_object(mock_obj: Any) -> Dict[str, Any]:
     """
     Serialize Mock objects for testing scenarios with improved detection.
-    
+
     Args:
         mock_obj: A Mock object to serialize
-        
+
     Returns:
         A serializable dictionary representation of the Mock object
     """
@@ -708,9 +727,9 @@ def serialize_mock_object(mock_obj: Any) -> Dict[str, Any]:
         "type": "Mock",
         "class_name": type(mock_obj).__name__,
         "module": getattr(mock_obj, "__module__", "unknown"),
-        "attributes": {}
+        "attributes": {},
     }
-    
+
     # Serialize all attributes of the mock object
     if hasattr(mock_obj, "__dict__"):
         for key, value in mock_obj.__dict__.items():
@@ -718,45 +737,47 @@ def serialize_mock_object(mock_obj: Any) -> Dict[str, Any]:
                 result["attributes"][key] = safe_serialize(value)
             except Exception as e:
                 result["attributes"][key] = f"<unserializable: {type(value).__name__} - {str(e)}>"
-    
+
     # Handle special Mock attributes
     for attr in ["_mock_name", "_mock_parent", "_mock_return_value", "_mock_side_effect"]:
         if hasattr(mock_obj, attr):
             try:
                 result["attributes"][attr] = safe_serialize(getattr(mock_obj, attr))
             except Exception:
-                result["attributes"][attr] = f"<unserializable: {type(getattr(mock_obj, attr)).__name__}>"
-    
+                result["attributes"][attr] = (
+                    f"<unserializable: {type(getattr(mock_obj, attr)).__name__}>"
+                )
+
     return result
 
 
 def handle_unknown_type(obj: Any) -> str:
     """
     Handle unknown types with helpful error messages and custom serializer suggestions.
-    
+
     Args:
         obj: The object that couldn't be serialized
-        
+
     Returns:
         A helpful error message string
     """
     obj_type = type(obj).__name__
     obj_module = getattr(obj, "__module__", "unknown")
-    
+
     # Provide specific suggestions based on the object type
     if hasattr(obj, "__dict__"):
         suggestion = f"Consider registering a custom serializer: register_custom_serializer({obj_type}, lambda obj: obj.__dict__)"
     elif hasattr(obj, "model_dump"):
-        suggestion = f"Object has model_dump method - this should be handled automatically"
+        suggestion = "Object has model_dump method - this should be handled automatically"
     elif hasattr(obj, "__class__") and "Mock" in obj.__class__.__name__:
-        suggestion = f"Mock object detected - this should be handled automatically"
+        suggestion = "Mock object detected - this should be handled automatically"
     elif hasattr(obj, "__slots__"):
         suggestion = f"Object uses __slots__ - consider: register_custom_serializer({obj_type}, lambda obj: {{name: getattr(obj, name, None) for name in obj.__slots__}})"
     elif hasattr(obj, "__getstate__"):
         suggestion = f"Object has __getstate__ method - consider: register_custom_serializer({obj_type}, lambda obj: obj.__getstate__())"
     else:
         suggestion = f"Consider registering a custom serializer: register_custom_serializer({obj_type}, your_serializer_function)"
-    
+
     return f"<unserializable: {obj_type} from {obj_module}> - {suggestion}"
 
 
@@ -807,4 +828,3 @@ def reset_custom_serializer_registry() -> None:
     with _registry_lock:
         _custom_serializers.clear()
         _custom_deserializers.clear()
-

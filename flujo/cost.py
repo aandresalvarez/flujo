@@ -93,11 +93,11 @@ def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[
         # For explicit costs, we don't try to split tokens.
         # We take the total token count if provided, otherwise it's 0.
         total_tokens = getattr(raw_output, "token_counts", 0) or 0
-        
+
         # Handle Mock objects in cost extraction
-        if hasattr(cost_usd, '_mock_name'):
+        if hasattr(cost_usd, "_mock_name"):
             cost_usd = 0.0
-        if hasattr(total_tokens, '_mock_name'):
+        if hasattr(total_tokens, "_mock_name"):
             total_tokens = 0
 
         telemetry.logfire.info(

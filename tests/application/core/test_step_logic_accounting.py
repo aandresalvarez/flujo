@@ -1,7 +1,6 @@
 """Tests for exhaustive accounting in step logic."""
 
-from typing import Any, Optional, List
-from unittest.mock import Mock
+from typing import Any, List
 
 import pytest
 
@@ -36,7 +35,7 @@ class CostlyOutput:
 
 from flujo.domain.plugins import ValidationPlugin
 
-from flujo.domain.plugins import ValidationPlugin
+
 
 class DummyPlugin(ValidationPlugin):
     """A dummy plugin for testing."""
@@ -124,7 +123,7 @@ async def test_successful_fallback_preserves_metrics() -> None:
     fallback_result.token_counts = 5
 
     # Mock step executor that returns the fallback result
-    mock_executor = MockStepExecutor(fallback_result)
+    MockStepExecutor(fallback_result)
 
     # Set up fallback
     fallback_step = Step.model_validate({"name": "fallback", "agent": StubAgent([])})
@@ -174,7 +173,7 @@ async def test_failed_fallback_accumulates_metrics() -> None:
     fallback_result.token_counts = 5
 
     # Mock step executor that returns the failed fallback result
-    mock_executor = MockStepExecutor(fallback_result)
+    MockStepExecutor(fallback_result)
 
     # Set up fallback
     fallback_step = Step.model_validate({"name": "fallback", "agent": StubAgent([])})
@@ -204,10 +203,12 @@ async def test_failed_fallback_accumulates_metrics() -> None:
 async def test_multiple_retries_preserve_last_attempt_metrics() -> None:
     """Test that multiple retries preserve metrics from the last failed attempt."""
     # Create a step that fails twice with different costs and feedback
-    plugin = DummyPlugin(outcomes=[
-        PluginOutcome(success=False, feedback="First attempt failed"),
-        PluginOutcome(success=False, feedback="Second attempt failed")
-    ])
+    plugin = DummyPlugin(
+        outcomes=[
+            PluginOutcome(success=False, feedback="First attempt failed"),
+            PluginOutcome(success=False, feedback="Second attempt failed"),
+        ]
+    )
 
     # Agent returns different costly outputs for each attempt
     agent = StubAgent(

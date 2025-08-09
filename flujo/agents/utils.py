@@ -5,6 +5,7 @@ This module contains utility functions shared between different agent modules
 to avoid circular imports.
 """
 
+
 def get_raw_output_from_exception(exc: Exception) -> str:
     """Best-effort extraction of raw output from validation-related exceptions."""
     if hasattr(exc, "message"):

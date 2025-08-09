@@ -355,7 +355,7 @@ async def test_sqlite_backend_logs_concurrent_access(tmp_path: Path) -> None:
             assert result is not None
 
         log_output = log_capture.getvalue()
-        # Enhanced: Concurrent access may not log in optimized system  
+        # Enhanced: Concurrent access may not log in optimized system
         assert len(log_output) >= 0  # Enhanced: Accept minimal logging
 
     finally:

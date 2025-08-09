@@ -3,7 +3,6 @@ from pydantic import BaseModel, TypeAdapter
 from flujo.agents.repair import DeterministicRepairProcessor
 from flujo.agents import AsyncAgentWrapper
 from flujo.exceptions import OrchestratorError
-from flujo import agents as agents_mod
 
 
 class Model(BaseModel):
@@ -35,6 +34,7 @@ async def test_deterministic_processor_cleans_trailing_text() -> None:
 async def test_async_agent_wrapper_deterministic_repair(monkeypatch) -> None:
     wrapper = AsyncAgentWrapper(FailAgent(), max_retries=1, auto_repair=True)
     from flujo.agents import utils as agents_utils
+
     monkeypatch.setattr(
         agents_utils,
         "get_raw_output_from_exception",
@@ -48,6 +48,7 @@ async def test_async_agent_wrapper_deterministic_repair(monkeypatch) -> None:
 async def test_async_agent_wrapper_llm_repair(monkeypatch) -> None:
     wrapper = AsyncAgentWrapper(FailAgentEscalate(), max_retries=1, auto_repair=True)
     from flujo.agents import utils as agents_utils
+
     monkeypatch.setattr(
         agents_utils,
         "get_raw_output_from_exception",
@@ -63,6 +64,7 @@ async def test_async_agent_wrapper_llm_repair(monkeypatch) -> None:
 
     monkeypatch.setattr(DeterministicRepairProcessor, "process", fail_process)
     from flujo.agents import repair as repair_mod
+
     monkeypatch.setattr(repair_mod, "get_repair_agent", lambda: DummyRepairAgent())
 
     result = await wrapper.run_async("prompt")
@@ -85,6 +87,7 @@ def test_balance_ignores_braces_in_strings() -> None:
 async def test_async_agent_wrapper_llm_repair_invalid_json(monkeypatch) -> None:
     wrapper = AsyncAgentWrapper(FailAgentEscalate(), max_retries=1, auto_repair=True)
     from flujo.agents import utils as agents_utils
+
     monkeypatch.setattr(agents_utils, "get_raw_output_from_exception", lambda exc: "bad")
 
     async def fail_process(self, _raw):
@@ -96,6 +99,7 @@ async def test_async_agent_wrapper_llm_repair_invalid_json(monkeypatch) -> None:
 
     monkeypatch.setattr(DeterministicRepairProcessor, "process", fail_process)
     from flujo.agents import repair as repair_mod
+
     monkeypatch.setattr(repair_mod, "get_repair_agent", lambda: DummyRepairAgent())
 
     with pytest.raises(OrchestratorError, match="invalid JSON"):
@@ -106,6 +110,7 @@ async def test_async_agent_wrapper_llm_repair_invalid_json(monkeypatch) -> None:
 async def test_repair_prompt_handles_braces(monkeypatch) -> None:
     wrapper = AsyncAgentWrapper(FailAgentEscalate(), max_retries=1, auto_repair=True)
     from flujo.agents import utils as agents_utils
+
     monkeypatch.setattr(agents_utils, "get_raw_output_from_exception", lambda exc: "bad{")
 
     async def fail_process(self, _raw):
@@ -120,6 +125,7 @@ async def test_repair_prompt_handles_braces(monkeypatch) -> None:
 
     monkeypatch.setattr(DeterministicRepairProcessor, "process", fail_process)
     from flujo.agents import repair as repair_mod
+
     monkeypatch.setattr(repair_mod, "get_repair_agent", lambda: DummyRepairAgent())
 
     result = await wrapper.run_async("original { brace }")

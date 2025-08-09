@@ -6,14 +6,9 @@ and maintains accurate cost tracking across multiple concurrent branches.
 
 import asyncio
 import pytest
-from typing import Dict, Any
 
 from flujo.application.core.ultra_executor import ExecutorCore
-from flujo.domain.models import StepResult, UsageLimits, PipelineResult
-from flujo.exceptions import UsageLimitExceededError
-from flujo.domain.dsl.step import Step
-from flujo.domain.dsl.pipeline import Pipeline
-from flujo.testing.utils import StubAgent
+from flujo.domain.models import StepResult, UsageLimits
 
 
 class TestParallelUsageGovernorStress:
@@ -22,7 +17,6 @@ class TestParallelUsageGovernorStress:
     @pytest.mark.asyncio
     async def test_stress_parallel_usage_governor_high_concurrency(self):
         """Test that _ParallelUsageGovernor handles high concurrency correctly."""
-        from flujo.application.core.ultra_executor import ExecutorCore
 
         # Create a usage governor with a high limit to test accuracy
         limits = UsageLimits(total_cost_usd_limit=10.0, total_tokens_limit=10000)
@@ -76,7 +70,6 @@ class TestParallelUsageGovernorStress:
     @pytest.mark.asyncio
     async def test_stress_parallel_usage_governor_breach_detection(self):
         """Test that _ParallelUsageGovernor correctly detects breaches under high concurrency."""
-        from flujo.application.core.ultra_executor import ExecutorCore
 
         # Create a usage governor with a low limit to trigger breach
         limits = UsageLimits(total_cost_usd_limit=0.15, total_tokens_limit=500)
@@ -88,7 +81,7 @@ class TestParallelUsageGovernorStress:
         # Define costs that will exceed the limit when combined
         # Each operation adds $0.03, total will be $0.30 which exceeds $0.15
         operation_costs = [0.03] * 10  # 10 operations of $0.03 each
-        operation_tokens = [50] * 10   # 10 operations of 50 tokens each
+        operation_tokens = [50] * 10  # 10 operations of 50 tokens each
 
         # Simulate concurrent usage updates
         async def add_usage_concurrently():
@@ -123,7 +116,6 @@ class TestParallelUsageGovernorStress:
     @pytest.mark.asyncio
     async def test_stress_parallel_usage_governor_mixed_operations(self):
         """Test _ParallelUsageGovernor with mixed operations of different sizes."""
-        from flujo.application.core.ultra_executor import ExecutorCore
 
         # Create a usage governor with a moderate limit
         limits = UsageLimits(total_cost_usd_limit=1.0, total_tokens_limit=2000)
@@ -174,7 +166,6 @@ class TestParallelUsageGovernorStress:
     @pytest.mark.asyncio
     async def test_stress_parallel_usage_governor_rapid_succession(self):
         """Test _ParallelUsageGovernor with rapid succession of operations."""
-        from flujo.application.core.ultra_executor import ExecutorCore
 
         # Create a usage governor
         limits = UsageLimits(total_cost_usd_limit=5.0, total_tokens_limit=5000)
@@ -221,7 +212,6 @@ class TestParallelUsageGovernorStress:
     @pytest.mark.asyncio
     async def test_stress_parallel_usage_governor_token_limits(self):
         """Test _ParallelUsageGovernor with token limit breaches."""
-        from flujo.application.core.ultra_executor import ExecutorCore
 
         # Create a usage governor with token limits
         limits = UsageLimits(total_cost_usd_limit=10.0, total_tokens_limit=150)
@@ -232,7 +222,7 @@ class TestParallelUsageGovernorStress:
 
         # Define token-heavy operations that will exceed the token limit
         operation_costs = [0.01] * 10  # Small costs
-        operation_tokens = [20] * 10   # 20 tokens each, total 200 exceeds 150
+        operation_tokens = [20] * 10  # 20 tokens each, total 200 exceeds 150
 
         # Simulate concurrent usage updates
         async def add_usage_concurrently():
@@ -267,7 +257,6 @@ class TestParallelUsageGovernorStress:
     @pytest.mark.asyncio
     async def test_stress_parallel_usage_governor_no_limits(self):
         """Test _ParallelUsageGovernor with no limits (edge case)."""
-        from flujo.application.core.ultra_executor import ExecutorCore
 
         # Create a usage governor with no limits
         governor = ExecutorCore._ParallelUsageGovernor(None)
@@ -312,4 +301,4 @@ class TestParallelUsageGovernorStress:
         )
         assert governor.total_tokens == expected_total_tokens, (
             f"Expected total tokens {expected_total_tokens}, got {governor.total_tokens}"
-        ) 
+        )

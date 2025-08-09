@@ -39,9 +39,23 @@ class TestExecutorCoreLoopStep:
     async def test_loop_policy_execute_signature(self):
         """Policy surface: DefaultLoopStepExecutor.execute has correct standardized signature."""
         import inspect
+
         sig = inspect.signature(DefaultLoopStepExecutor.execute)
         # Updated to match Flujo team guide standardized policy signature
-        expected_params = {"self", "core", "step", "data", "context", "resources", "limits", "stream", "on_chunk", "cache_key", "breach_event", "_fallback_depth"}
+        expected_params = {
+            "self",
+            "core",
+            "step",
+            "data",
+            "context",
+            "resources",
+            "limits",
+            "stream",
+            "on_chunk",
+            "cache_key",
+            "breach_event",
+            "_fallback_depth",
+        }
         actual_params = set(sig.parameters.keys())
         assert expected_params.issubset(actual_params)
 

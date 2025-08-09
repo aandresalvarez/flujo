@@ -5,7 +5,6 @@ from flujo.domain import Step
 from flujo.domain.validation import BaseValidator
 from flujo.domain.validation import ValidationResult
 from flujo.testing.utils import StubAgent, gather_result
-from flujo.testing.assertions import assert_validator_failed
 from tests.conftest import create_test_flujo
 
 
@@ -48,7 +47,7 @@ async def test_persist_feedback_and_results() -> None:
         assert vr.validator_name == "FailValidator"
         assert not vr.is_valid
         assert "bad output" in (vr.feedback or "")
-    
+
     # Enhanced: Verify that validation failure is captured in step result
     assert result.step_history[0].success is False
     # Enhanced: Validator failure is captured in step failure, not separate validation tracking
@@ -72,6 +71,6 @@ async def test_persist_results_on_success() -> None:
         vr = ctx.validation_history[0]
         assert vr.is_valid
         assert vr.validator_name == "PassValidator"
-    
+
     # Enhanced: Verify success is captured in step result
     assert result.step_history[0].success is True

@@ -16,15 +16,19 @@ os.environ["FLUJO_TEST_MODE"] = "1"
 # Define mock classes that need serialization support
 # These are defined at module level to match the actual test implementations
 
+
 # MockEnum class (from test_serialization_edge_cases.py)
 class MockEnum(Enum):
     """Mock enum for edge case testing."""
+
     A = "a"
     B = "b"
     C = "c"
 
+
 # Register the MockEnum serializer at module level for all test runs
 register_custom_serializer(MockEnum, lambda obj: obj.value)
+
 
 # UsageResponse class (from test_usage_limits_enforcement.py)
 class UsageResponse:
@@ -41,12 +45,14 @@ class UsageResponse:
             "cost_usd": self.cost_usd,
         }
 
+
 # MockImageResult class (from test_explicit_cost_integration.py)
 class MockImageResult:
     def __init__(self, cost_usd: float, token_counts: int = 0):
         self.cost_usd = cost_usd
         self.token_counts = token_counts
         self.output = f"Mock image result with cost ${cost_usd} and {token_counts} tokens"
+
 
 # WrappedResult class (from test_pipeline_runner.py and test_fallback.py)
 class WrappedResult:
@@ -55,12 +61,14 @@ class WrappedResult:
         self.token_counts = token_counts
         self.cost_usd = cost_usd
 
+
 # AgentResponse class (from test_image_cost_integration.py)
 class AgentResponse:
     def __init__(self, output: Any, cost_usd: float = 0.0, token_counts: int = 0):
         self.output = output
         self.cost_usd = cost_usd
         self.token_counts = token_counts
+
 
 # MockResponseWithBoth class (from test_explicit_cost_integration.py)
 class MockResponseWithBoth:
@@ -76,7 +84,9 @@ class MockResponseWithBoth:
                 self.completion_tokens = 25
                 self.total_tokens = 50
                 self.cost_usd = 0.1
+
         return MockUsage()
+
 
 # MockResponseWithNone class (from test_explicit_cost_integration.py)
 class MockResponseWithNone:
@@ -84,6 +94,7 @@ class MockResponseWithNone:
         self.cost_usd = None
         self.token_counts = None
         self.output = "Mock response with None values"
+
 
 # MockResponseWithUsageOnly class (from test_explicit_cost_integration.py)
 class MockResponseWithUsageOnly:
@@ -97,6 +108,7 @@ class MockResponseWithUsageOnly:
                 self.completion_tokens = 5
                 self.total_tokens = 15
                 self.cost_usd = 0.05
+
         return MockUsage()
 
 
@@ -104,7 +116,7 @@ class MockResponseWithUsageOnly:
 def register_mock_serializers():
     """
     Register custom serializers for mock objects used in tests.
-    
+
     This fixture automatically runs for all tests and ensures that mock objects
     like UsageResponse, MockImageResult, and WrappedResult can be properly
     serialized by the framework's serialization system.
@@ -118,35 +130,36 @@ def register_mock_serializers():
     register_custom_serializer(MockResponseWithBoth, lambda obj: obj.__dict__)
     register_custom_serializer(MockResponseWithNone, lambda obj: obj.__dict__)
     register_custom_serializer(MockResponseWithUsageOnly, lambda obj: obj.__dict__)
-    
+
     # Register serializers for edge case types
     register_custom_serializer(OrderedDict, lambda obj: dict(obj))
     register_custom_serializer(Counter, lambda obj: dict(obj))
     register_custom_serializer(defaultdict, lambda obj: dict(obj))
-    
+
     # Register serializers for common types that should be preserved
     import uuid
     from datetime import datetime, date, time
     from decimal import Decimal
+
     register_custom_serializer(uuid.UUID, lambda obj: obj)  # Keep UUID objects as-is
-    register_custom_serializer(datetime, lambda obj: obj)   # Keep datetime objects as-is
-    register_custom_serializer(date, lambda obj: obj)       # Keep date objects as-is
-    register_custom_serializer(time, lambda obj: obj)       # Keep time objects as-is
-    register_custom_serializer(Decimal, lambda obj: obj)    # Keep Decimal objects as-is
-    
+    register_custom_serializer(datetime, lambda obj: obj)  # Keep datetime objects as-is
+    register_custom_serializer(date, lambda obj: obj)  # Keep date objects as-is
+    register_custom_serializer(time, lambda obj: obj)  # Keep time objects as-is
+    register_custom_serializer(Decimal, lambda obj: obj)  # Keep Decimal objects as-is
+
     # Register fallback serializer for unknown types with __dict__
     def fallback_dict_serializer(obj):
         """Fallback serializer for objects with __dict__ attribute."""
-        if hasattr(obj, '__dict__'):
+        if hasattr(obj, "__dict__"):
             return obj.__dict__
         return str(obj)
-    
+
     # Note: The serialization system already handles objects with __dict__ automatically
     # in the safe_serialize function, so we don't need a fallback serializer
-    
+
     # Yield to allow tests to run
     yield
-    
+
     # Clean up the registry after all tests complete
     reset_custom_serializer_registry()
 
@@ -214,6 +227,7 @@ class NoOpStateBackend(StateBackend):
     async def save_state(self, run_id: str, state: Dict[str, Any]) -> None:
         # Simulate real backend behavior by serializing and storing state
         from flujo.utils.serialization import safe_serialize
+
         self._store[run_id] = safe_serialize(state)
 
     async def load_state(self, run_id: str) -> Optional[Dict[str, Any]]:
@@ -223,6 +237,7 @@ class NoOpStateBackend(StateBackend):
             return None
         from flujo.utils.serialization import safe_deserialize
         from copy import deepcopy
+
         # Return a deserialized copy to avoid accidental mutation
         return deepcopy(safe_deserialize(stored))
 
@@ -238,4 +253,5 @@ class NoOpStateBackend(StateBackend):
     async def save_trace(self, run_id: str, trace: Any) -> None:
         # Simulate real backend behavior by storing trace data
         from flujo.utils.serialization import safe_serialize
+
         self._trace_store[run_id] = safe_serialize(trace)

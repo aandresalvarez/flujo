@@ -36,6 +36,7 @@ CircularReferenceModel.model_rebuild()
 # Note: CircularReferenceModel should use BaseModel's built-in circular reference handling
 # Do not register a custom serializer that bypasses this logic
 
+
 # Register serializers for classes defined within test methods
 def register_test_serializers():
     """Register serializers for classes defined within test methods."""

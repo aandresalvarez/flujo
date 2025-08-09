@@ -29,13 +29,12 @@ Notes
 from __future__ import annotations
 
 import argparse
-import os
 import subprocess as sp
 import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Tuple
+from typing import List
 
 
 DEFAULT_NODEIDS: List[str] = [

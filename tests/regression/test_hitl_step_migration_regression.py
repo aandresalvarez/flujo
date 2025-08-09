@@ -13,6 +13,7 @@ import pytest
 from unittest.mock import Mock
 
 from flujo.application.core.ultra_executor import ExecutorCore
+
 # Legacy implementation is not available in the current codebase
 # The regression tests will focus on ensuring the new implementation
 # maintains the expected behavior without comparing to legacy

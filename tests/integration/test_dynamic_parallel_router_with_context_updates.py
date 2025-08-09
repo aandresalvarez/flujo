@@ -194,7 +194,7 @@ async def test_dynamic_router_multiple_branches_context_updates():
 @pytest.mark.asyncio
 async def test_dynamic_router_router_failure_context_preservation():
     """Test context preservation when router agent fails.
-    
+
     Note: With enhanced context isolation, context updates made by a failing router agent
     are not preserved in the final context. This is the correct architectural behavior
     as it prevents partial/corrupted state from being propagated when operations fail.
@@ -230,7 +230,7 @@ async def test_dynamic_router_router_failure_context_preservation():
 @pytest.mark.asyncio
 async def test_dynamic_router_branch_failure_context_preservation():
     """Test context preservation when a branch fails.
-    
+
     Note: With enhanced context isolation, context updates from successful branches
     are preserved, but context updates from failed branches are not merged back
     to prevent partial/corrupted state propagation.
@@ -276,7 +276,7 @@ async def test_dynamic_router_branch_failure_context_preservation():
 
     # Verify successful billing branch context updates were preserved
     assert "billing_processed" in result.final_pipeline_context.context_updates
-    
+
     # Enhanced context isolation: context updates from failed support branch are not preserved
     # This prevents partial/corrupted state from being propagated
     assert "support_failed" not in result.final_pipeline_context.context_updates

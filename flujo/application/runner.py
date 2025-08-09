@@ -22,7 +22,6 @@ from typing import (
 
 from pydantic import ValidationError
 
-from ..infra import telemetry
 from ..exceptions import (
     OrchestratorError,
     PipelineContextInitializationError,
@@ -31,9 +30,6 @@ from ..exceptions import (
     ContextInheritanceError,
     InfiniteFallbackError,
     InfiniteRedirectError as _InfiniteRedirectError,
-    PausedException,
-    MissingAgentError,
-    TypeMismatchError,
     PricingNotConfiguredError,
 )
 from ..domain.dsl.step import Step
@@ -283,11 +279,12 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             # This significantly reduces overhead in test scenarios
             if os.getenv("FLUJO_TEST_MODE") or os.getenv("CI") == "true":
                 from ..state.backends.memory import InMemoryBackend
+
                 self.state_backend = InMemoryBackend()
             else:
                 from pathlib import Path
                 from ..state.backends.sqlite import SQLiteBackend
-                
+
                 # OPTIMIZATION: Use a more efficient database path and configuration
                 db_path = Path.cwd() / "flujo_ops.db"
                 self.state_backend = SQLiteBackend(db_path)
@@ -446,7 +443,10 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         # Debug: log provided initial_context_data for visibility in map-over tests
         try:
             from flujo.infra import telemetry
-            telemetry.logfire.info(f"Runner.run_async received initial_context_data keys={list(initial_context_data.keys()) if isinstance(initial_context_data, dict) else None}")
+
+            telemetry.logfire.info(
+                f"Runner.run_async received initial_context_data keys={list(initial_context_data.keys()) if isinstance(initial_context_data, dict) else None}"
+            )
         except Exception:
             pass
         current_context_instance: Optional[ContextT] = None
@@ -487,12 +487,16 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                         processed_context_data[key] = value
 
                 try:
-                    telemetry.logfire.info(f"Runner.run_async building context with data: {processed_context_data}")
+                    telemetry.logfire.info(
+                        f"Runner.run_async building context with data: {processed_context_data}"
+                    )
                 except Exception:
                     pass
                 current_context_instance = self.context_model(**processed_context_data)
                 try:
-                    telemetry.logfire.info(f"Runner.run_async created context: {self.context_model.__name__}.nums={getattr(current_context_instance, 'nums', None)!r}")
+                    telemetry.logfire.info(
+                        f"Runner.run_async created context: {self.context_model.__name__}.nums={getattr(current_context_instance, 'nums', None)!r}"
+                    )
                 except Exception:
                     pass
             except ValidationError as e:
@@ -659,9 +663,9 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     cast(Optional[ContextT], current_context_instance),
                 )
                 # Initialize final_status default for cases with no step history
-                final_status: Literal[
-                    "running", "paused", "completed", "failed", "cancelled"
-                ] = "failed"
+                final_status: Literal["running", "paused", "completed", "failed", "cancelled"] = (
+                    "failed"
+                )
                 if cancelled:
                     final_status = "failed"
                 elif paused or (
@@ -670,9 +674,11 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 ):
                     final_status = "paused"
                 elif pipeline_result_obj.step_history:
-                    final_status = "completed" if all(
-                        s.success for s in pipeline_result_obj.step_history
-                    ) else "failed"
+                    final_status = (
+                        "completed"
+                        if all(s.success for s in pipeline_result_obj.step_history)
+                        else "failed"
+                    )
                 await exec_manager.persist_final_state(
                     run_id=run_id_for_state,
                     context=current_context_instance,
@@ -682,7 +688,11 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     final_status=final_status,
                 )
                 # Async cleanup: delete persisted workflow state if requested
-                if self.delete_on_completion and final_status == "completed" and run_id_for_state is not None:
+                if (
+                    self.delete_on_completion
+                    and final_status == "completed"
+                    and run_id_for_state is not None
+                ):
                     # Remove via StateManager
                     await state_manager.delete_workflow_state(run_id_for_state)
                     # Remove via backend
@@ -692,7 +702,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                         pass
                     # Fallback: clear backend store attribute
                     try:
-                        store = getattr(self.state_backend, '_store', None)
+                        store = getattr(self.state_backend, "_store", None)
                         if isinstance(store, dict):
                             store.clear()
                     except Exception:
@@ -727,8 +737,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             # Non-streaming pipeline: yield only the final PipelineResult
             final_result: PipelineResult[ContextT] | None = None
             async for item in self.run_async(
-                initial_input,
-                initial_context_data=initial_context_data
+                initial_input, initial_context_data=initial_context_data
             ):
                 final_result = item
             if final_result is not None:
@@ -736,8 +745,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         else:
             # Streaming pipeline: yield all items (chunks and final result)
             async for item in self.run_async(
-                initial_input,
-                initial_context_data=initial_context_data
+                initial_input, initial_context_data=initial_context_data
             ):
                 yield item
 
@@ -829,7 +837,12 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             if pending is not None:
                 # If we already have a concrete AgentCommand instance, use it directly
                 try:
-                    from flujo.domain.commands import RunAgentCommand as _Run, AskHumanCommand as _Ask, FinishCommand as _Fin
+                    from flujo.domain.commands import (
+                        RunAgentCommand as _Run,
+                        AskHumanCommand as _Ask,
+                        FinishCommand as _Fin,
+                    )
+
                     if isinstance(pending, (_Run, _Ask, _Fin)):
                         pending_cmd = pending
                     else:
@@ -849,6 +862,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     # If we cannot reconstruct the command, still record an AskHuman with the pause message
                     try:
                         from flujo.domain.commands import AskHumanCommand as _Ask
+
                         log_entry = ExecutedCommandLog(
                             turn=len(ctx.command_log) + 1,
                             generated_command=_Ask(question=scratch.get("pause_message", "Paused")),
@@ -860,6 +874,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         # Only append a synthetic success for HumanInTheLoopStep; for other steps we
         # should re-run the paused step with the provided human_input as its data.
         from ..domain.dsl.step import HumanInTheLoopStep as _HITL
+
         if isinstance(paused_step, _HITL):
             paused_result.step_history.append(paused_step_result)
             data = human_input
@@ -877,6 +892,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 wf_state_loaded = WorkflowState.model_validate(loaded)
                 state_created_at = wf_state_loaded.created_at
         from ..exceptions import PipelineAbortSignal as _Abort
+
         try:
             async for _ in self._execute_steps(
                 resume_start_idx,
@@ -929,7 +945,11 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         )
 
         # Delete state if delete_on_completion is True and pipeline completed successfully
-        if self.delete_on_completion and final_status == "completed" and run_id_for_state is not None:
+        if (
+            self.delete_on_completion
+            and final_status == "completed"
+            and run_id_for_state is not None
+        ):
             # Remove persisted workflow state via StateManager
             await state_manager.delete_workflow_state(run_id_for_state)
             # Explicitly delete raw state entry from backend to ensure cleanup
@@ -940,7 +960,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 pass
             # Final fallback: completely clear backend store to remove any residual state
             try:
-                store = getattr(self.state_backend, '_store', None)
+                store = getattr(self.state_backend, "_store", None)
                 if isinstance(store, dict):
                     store.clear()
             except Exception:

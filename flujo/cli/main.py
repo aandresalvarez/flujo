@@ -34,7 +34,6 @@ from rich.table import Table
 from rich.console import Console
 from flujo.domain.dsl import Pipeline, Step
 import runpy
-from typer.testing import CliRunner as TyperCliRunner
 from flujo.domain.agent_protocol import AsyncAgentProtocol
 from ..utils.serialization import safe_serialize, safe_deserialize
 from .lens import lens_app
@@ -44,7 +43,9 @@ import click.testing
 # Type definitions for CLI
 WeightsType = List[Dict[str, Union[str, float]]]
 MetadataType = Dict[str, Any]
-ScorerType = str  # Changed from Literal["ratio", "weighted", "reward"] to str for typer compatibility
+ScorerType = (
+    str  # Changed from Literal["ratio", "weighted", "reward"] to str for typer compatibility
+)
 
 
 app: typer.Typer = typer.Typer(rich_markup_mode="markdown")
@@ -96,7 +97,9 @@ def apply_cli_defaults(
 @app.command()
 def solve(
     prompt: str,
-    max_iters: Annotated[Union[int, None], typer.Option(help="Maximum number of iterations.")] = None,
+    max_iters: Annotated[
+        Union[int, None], typer.Option(help="Maximum number of iterations.")
+    ] = None,
     k: Annotated[
         Union[int, None],
         typer.Option(help="Number of solution variants to generate per iteration."),
@@ -118,7 +121,9 @@ def solve(
     solution_model: Annotated[
         Union[str, None], typer.Option(help="Model for the Solution agent.")
     ] = None,
-    review_model: Annotated[Union[str, None], typer.Option(help="Model for the Review agent.")] = None,
+    review_model: Annotated[
+        Union[str, None], typer.Option(help="Model for the Review agent.")
+    ] = None,
     validator_model: Annotated[
         Union[str, None], typer.Option(help="Model for the Validator agent.")
     ] = None,
@@ -587,7 +592,9 @@ def validate(
 
 @app.command()
 def run(
-    pipeline_file: str = typer.Argument(..., help="Path to the Python file containing the pipeline to run"),
+    pipeline_file: str = typer.Argument(
+        ..., help="Path to the Python file containing the pipeline to run"
+    ),
     input_data: Optional[str] = typer.Option(
         None, "--input", "--input-data", "-i", help="Initial input data for the pipeline"
     ),
@@ -601,9 +608,14 @@ def run(
         None, "--context-file", "-f", help="Path to JSON/YAML file with context data"
     ),
     pipeline_name: str = typer.Option(
-        "pipeline", "--pipeline-name", "-p", help="Name of the pipeline variable (default: pipeline)"
+        "pipeline",
+        "--pipeline-name",
+        "-p",
+        help="Name of the pipeline variable (default: pipeline)",
     ),
-    run_id: Optional[str] = typer.Option(None, "--run-id", help="Unique run ID for state persistence"),
+    run_id: Optional[str] = typer.Option(
+        None, "--run-id", help="Unique run ID for state persistence"
+    ),
     json_output: bool = typer.Option(
         False, "--json", "--json-output", help="Output raw JSON instead of formatted result"
     ),
@@ -631,6 +643,7 @@ def run(
         json_output = cast(bool, cli_args["json_output"])
         # Detect raw flags to support JSON mode when alias parsing fails
         import click
+
         ctx = click.get_current_context()
         # ctx.args contains unparsed arguments; check for JSON flags
         if not json_output and any(flag in ctx.args for flag in ("--json", "--json-output")):
@@ -638,6 +651,7 @@ def run(
         # If JSON mode, silence all logging to ensure valid JSON output
         if json_output:
             import logging
+
             logging.disable(logging.CRITICAL)
         # Load the pipeline file
         ns: Dict[str, Any] = runpy.run_path(pipeline_file)
@@ -647,12 +661,14 @@ def run(
         # If default name missing, locate any Pipeline instance (prefer multi-step pipelines)
         if pipeline_obj is None:
             # Collect all Pipeline instances
-            pipeline_candidates = [(name, val) for name, val in ns.items() if isinstance(val, Pipeline)]
+            pipeline_candidates = [
+                (name, val) for name, val in ns.items() if isinstance(val, Pipeline)
+            ]
             if pipeline_candidates:
                 # Prefer the first pipeline with more than one step
                 selected = None
                 for name, val in pipeline_candidates:
-                    if hasattr(val, 'steps') and len(val.steps) > 1:
+                    if hasattr(val, "steps") and len(val.steps) > 1:
                         selected = (name, val)
                         break
                 if selected:
@@ -760,10 +776,14 @@ def run(
 
         # Run and display JSON if requested (suppress prints and warnings)
         if json_output:
-            import warnings, logging
+            import warnings
+            import logging
+
             warnings.filterwarnings("ignore")
             logging.disable(logging.CRITICAL)
-            import sys, io
+            import sys
+            import io
+
             buf = io.StringIO()
             old_stdout = sys.stdout
             sys.stdout = buf
@@ -776,6 +796,7 @@ def run(
             finally:
                 sys.stdout = old_stdout
             from flujo.utils.serialization import serialize_to_json_robust
+
             typer.echo(serialize_to_json_robust(result, indent=2))
             return
         # Normal run and console output
@@ -813,6 +834,7 @@ def run(
                 )
                 for idx, inner in enumerate(step_res.step_history, start=1):
                     add_rows(inner, prefix=f"  [{idx}] ")
+
             for top_res in result.step_history:
                 add_rows(top_res)
             console.print(table)

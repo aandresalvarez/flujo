@@ -341,7 +341,9 @@ class TestOptimizationErrorHandling:
         invalid_step = Mock()
         invalid_step.name = "invalid_step"
         invalid_step.agent = None
-        invalid_step.fallback_step = None  # Explicitly set to None to prevent infinite fallback chain
+        invalid_step.fallback_step = (
+            None  # Explicitly set to None to prevent infinite fallback chain
+        )
         # Add proper config even for invalid step
         from flujo.domain.dsl.step import StepConfig
 

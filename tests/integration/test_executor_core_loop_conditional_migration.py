@@ -414,9 +414,9 @@ class TestExecutorCoreLoopConditionalMigration:
         assert result.success is False
         # Enhanced: Check for loop failure indicators in feedback
         assert result.feedback and (
-            "max_loops" in result.feedback or
-            "loop body failed" in result.feedback.lower() or
-            "no more outputs" in result.feedback.lower()
+            "max_loops" in result.feedback
+            or "loop body failed" in result.feedback.lower()
+            or "no more outputs" in result.feedback.lower()
         )
 
     async def test_conditionalstep_edge_cases(self, executor_core):

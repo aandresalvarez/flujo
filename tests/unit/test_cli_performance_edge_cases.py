@@ -410,7 +410,7 @@ class TestCLIErrorHandling:
         """Fails gracefully when database path is unwritable (not root, Unix)."""
         if hasattr(os, "geteuid") and os.geteuid() == 0:
             pytest.skip("Test not valid when running as root")
-        
+
         original_uri = os.environ.get("FLUJO_STATE_URI")
         try:
             os.environ["FLUJO_STATE_URI"] = f"sqlite://{unwritable_db_path}"

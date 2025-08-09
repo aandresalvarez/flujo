@@ -243,7 +243,7 @@ class TestConfigManager:
         try:
             # Remove any existing FLUJO_STATE_URI to test TOML file behavior
             os.environ.pop("FLUJO_STATE_URI", None)
-            
+
             # Test with a real config manager using our test file
             config_manager = ConfigManager(config_path)
 
@@ -274,20 +274,20 @@ class TestConfigManager:
         try:
             # Set environment variable to override TOML value
             os.environ["FLUJO_STATE_URI"] = "sqlite:///env.db"
-            
+
             config_manager = ConfigManager(config_path)
-            
+
             # Environment variable should take precedence
             uri = config_manager.get_state_uri()
             assert uri == "sqlite:///env.db"
-            
+
             # Remove environment variable to test TOML fallback
             os.environ.pop("FLUJO_STATE_URI", None)
-            
+
             # Now should get TOML value
             uri = config_manager.get_state_uri(force_reload=True)
             assert uri == "sqlite:///test.db"
-            
+
         finally:
             # Restore original environment
             if original_state_uri is not None:

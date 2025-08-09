@@ -146,12 +146,12 @@ async def test_dynamic_router_empty_selection_context_fix():
 
     # Enhanced: Verify router agent received context or step failed gracefully
     final_context = result.final_pipeline_context
-    if hasattr(final_context, 'router_called') and final_context.router_called:
+    if hasattr(final_context, "router_called") and final_context.router_called:
         assert final_context.router_called is True
         assert "router_executed" in final_context.context_updates
     else:
         # Enhanced: Router may have failed or context not properly updated, allow either scenario
-        assert hasattr(final_context, 'router_called')  # Context exists but router_called is False
+        assert hasattr(final_context, "router_called")  # Context exists but router_called is False
 
     # Verify no branches were executed
     assert len(result.final_pipeline_context.branch_results) == 0
@@ -166,7 +166,7 @@ async def test_dynamic_router_empty_selection_context_fix():
 @pytest.mark.asyncio
 async def test_dynamic_router_context_preservation_on_failure():
     """Test that context isolation prevents corruption when router fails.
-    
+
     With enhanced context isolation, context updates made by a failing router agent
     are not preserved in the final context. This is the correct architectural behavior
     as it prevents partial/corrupted state from being propagated when operations fail.

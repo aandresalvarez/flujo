@@ -41,16 +41,32 @@ async def test_conditional_executor_isolates_and_merges(monkeypatch: pytest.Monk
     )
 
     class _Core:
-        async def execute(self, step, data, context=None, resources=None, limits=None, context_setter=None, _fallback_depth=0):  # type: ignore[no-redef]
+        async def execute(
+            self,
+            step,
+            data,
+            context=None,
+            resources=None,
+            limits=None,
+            context_setter=None,
+            _fallback_depth=0,
+        ):  # type: ignore[no-redef]
             # Return a StepResult-like object for the selected branch
             from flujo.domain.models import StepResult
+
             return StepResult(name="A", output=data, success=True, branch_context=context)
 
     execu = DefaultConditionalStepExecutor()
-    res = await execu.execute(_Core(), cond, data=1, context=type("C", (), {})(), resources=None, limits=None, context_setter=None)
+    res = await execu.execute(
+        _Core(),
+        cond,
+        data=1,
+        context=type("C", (), {})(),
+        resources=None,
+        limits=None,
+        context_setter=None,
+    )
 
     assert res.success is True
     assert calls["isolate"] == 1
     assert calls["merge"] == 1
-
-

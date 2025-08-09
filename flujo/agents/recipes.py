@@ -12,11 +12,10 @@ application-specific agent implementations from general framework machinery.
 from __future__ import annotations
 
 import warnings
-from typing import Any, Optional, Type
+from typing import Any
 
-from ..domain.agent_protocol import AsyncAgentProtocol, AgentInT, AgentOutT
+from ..domain.agent_protocol import AsyncAgentProtocol
 from ..domain.models import Checklist, ImprovementReport
-from ..exceptions import OrchestratorError
 from ..infra.telemetry import logfire
 
 # Import the wrapper and factory functionality (avoiding circular imports)
@@ -25,7 +24,6 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .wrapper import AsyncAgentWrapper
 
-from .factory import make_agent
 
 # Import prompts from the prompts module
 from ..prompts import (
@@ -193,11 +191,13 @@ def get_reflection_agent(
 ) -> AsyncAgentProtocol[Any, Any] | NoOpReflectionAgent:
     """Returns a new instance of the reflection agent, or a no-op if disabled."""
     from ..infra.settings import settings
+
     if not settings.reflection_enabled:
         return NoOpReflectionAgent()
     try:
         # Import here to avoid circular import issues
         from .wrapper import make_agent_async
+
         model_name = model or settings.default_reflection_model
         agent = make_agent_async(model_name, REFLECT_SYS, str)
         logfire.info("Reflection agent created successfully.")
@@ -212,8 +212,10 @@ def make_self_improvement_agent(
 ) -> "AsyncAgentWrapper[Any, ImprovementReport]":
     """Create the SelfImprovementAgent."""
     from ..infra.settings import settings
+
     # Import here to avoid circular import issues
     from .wrapper import make_agent_async
+
     model_name = model or settings.default_self_improvement_model
     return make_agent_async(model_name, SELF_IMPROVE_SYS, ImprovementReport)
 
@@ -222,8 +224,10 @@ def make_self_improvement_agent(
 def make_review_agent(model: str | None = None) -> "AsyncAgentWrapper[Any, Checklist]":
     """Create a review agent with default settings."""
     from ..infra.settings import settings
+
     # Import here to avoid circular import issues
     from .wrapper import make_agent_async
+
     model_name = model or settings.default_review_model
     return make_agent_async(model_name, REVIEW_SYS, Checklist)
 
@@ -231,8 +235,10 @@ def make_review_agent(model: str | None = None) -> "AsyncAgentWrapper[Any, Check
 def make_solution_agent(model: str | None = None) -> "AsyncAgentWrapper[Any, str]":
     """Create a solution agent with default settings."""
     from ..infra.settings import settings
+
     # Import here to avoid circular import issues
     from .wrapper import make_agent_async
+
     model_name = model or settings.default_solution_model
     return make_agent_async(model_name, SOLUTION_SYS, str)
 
@@ -240,8 +246,10 @@ def make_solution_agent(model: str | None = None) -> "AsyncAgentWrapper[Any, str
 def make_validator_agent(model: str | None = None) -> "AsyncAgentWrapper[Any, Checklist]":
     """Create a validator agent with default settings."""
     from ..infra.settings import settings
+
     # Import here to avoid circular import issues
     from .wrapper import make_agent_async
+
     model_name = model or settings.default_validator_model
     return make_agent_async(model_name, VALIDATE_SYS, Checklist)
 

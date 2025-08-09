@@ -1,4 +1,5 @@
 import pytest
+
 pytest.skip("Skipping edge case suite; will address later", allow_module_level=True)
 """
 Comprehensive tests for fallback functionality in ExecutorCore.
@@ -20,7 +21,6 @@ from flujo.exceptions import (
     MissingAgentError,
     PricingNotConfiguredError,
 )
-from flujo.application.core.ultra_executor import DefaultProcessorPipeline
 
 
 class TestExecutorCoreFallback:
@@ -141,7 +141,7 @@ class TestExecutorCoreFallback:
         # Configure executor - provide enough side effects for all retry attempts
         executor_core._agent_runner.run.side_effect = [
             Exception("Primary failed"),  # First attempt fails
-            Exception("Primary failed"),  # Second attempt fails  
+            Exception("Primary failed"),  # Second attempt fails
             Exception("Primary failed"),  # Third attempt fails
             Exception("Primary failed"),  # Fourth attempt fails (all retries exhausted)
         ]
@@ -191,7 +191,7 @@ class TestExecutorCoreFallback:
         # Configure executor - provide enough side effects for all retry attempts
         executor_core._agent_runner.run.side_effect = [
             Exception("Primary failed"),  # First attempt fails
-            Exception("Primary failed"),  # Second attempt fails  
+            Exception("Primary failed"),  # Second attempt fails
             Exception("Primary failed"),  # Third attempt fails
             Exception("Primary failed"),  # Fourth attempt fails (all retries exhausted)
         ]
@@ -242,7 +242,7 @@ class TestExecutorCoreFallback:
         # Configure executor - provide enough side effects for all retry attempts
         executor_core._agent_runner.run.side_effect = [
             Exception("Primary failed"),  # First attempt fails
-            Exception("Primary failed"),  # Second attempt fails  
+            Exception("Primary failed"),  # Second attempt fails
             Exception("Primary failed"),  # Third attempt fails
             Exception("Primary failed"),  # Fourth attempt fails (all retries exhausted)
         ]
@@ -293,7 +293,7 @@ class TestExecutorCoreFallback:
         # Configure executor - provide enough side effects for all retry attempts
         executor_core._agent_runner.run.side_effect = [
             Exception("Primary failed"),  # First attempt fails
-            Exception("Primary failed"),  # Second attempt fails  
+            Exception("Primary failed"),  # Second attempt fails
             Exception("Primary failed"),  # Third attempt fails
             Exception("Primary failed"),  # Fourth attempt fails (all retries exhausted)
         ]
@@ -342,7 +342,7 @@ class TestExecutorCoreFallback:
         # Configure executor - provide enough side effects for all retry attempts
         executor_core._agent_runner.run.side_effect = [
             Exception("Primary failed"),  # First attempt fails
-            Exception("Primary failed"),  # Second attempt fails  
+            Exception("Primary failed"),  # Second attempt fails
             Exception("Primary failed"),  # Third attempt fails
             Exception("Primary failed"),  # Fourth attempt fails (all retries exhausted)
         ]
@@ -390,7 +390,7 @@ class TestExecutorCoreFallback:
         # Configure executor - provide enough side effects for all retry attempts
         executor_core._agent_runner.run.side_effect = [
             Exception("Primary failed"),  # First attempt fails
-            Exception("Primary failed"),  # Second attempt fails  
+            Exception("Primary failed"),  # Second attempt fails
             Exception("Primary failed"),  # Third attempt fails
             Exception("Primary failed"),  # Fourth attempt fails (all retries exhausted)
         ]
@@ -425,7 +425,7 @@ class TestExecutorCoreFallback:
         # Configure executor - provide enough side effects for all retry attempts
         executor_core._agent_runner.run.side_effect = [
             Exception("Primary failed"),  # First attempt fails
-            Exception("Primary failed"),  # Second attempt fails  
+            Exception("Primary failed"),  # Second attempt fails
             Exception("Primary failed"),  # Third attempt fails
             Exception("Primary failed"),  # Fourth attempt fails (all retries exhausted)
         ]
@@ -464,7 +464,7 @@ class TestExecutorCoreFallback:
         # Configure executor - provide enough side effects for all retry attempts
         executor_core._agent_runner.run.side_effect = [
             Exception("Primary failed"),  # First attempt fails
-            Exception("Primary failed"),  # Second attempt fails  
+            Exception("Primary failed"),  # Second attempt fails
             Exception("Primary failed"),  # Third attempt fails
             Exception("Primary failed"),  # Fourth attempt fails (all retries exhausted)
         ]
@@ -504,7 +504,7 @@ class TestExecutorCoreFallback:
         # Configure executor - provide enough side effects for all retry attempts
         executor_core._agent_runner.run.side_effect = [
             Exception("Primary failed"),  # First attempt fails
-            Exception("Primary failed"),  # Second attempt fails  
+            Exception("Primary failed"),  # Second attempt fails
             Exception("Primary failed"),  # Third attempt fails
             Exception("Primary failed"),  # Fourth attempt fails (all retries exhausted)
         ]
@@ -560,7 +560,7 @@ class TestExecutorCoreFallback:
         # Configure executor - provide enough side effects for all retry attempts
         executor_core._agent_runner.run.side_effect = [
             Exception("Primary failed"),  # First attempt fails
-            Exception("Primary failed"),  # Second attempt fails  
+            Exception("Primary failed"),  # Second attempt fails
             Exception("Primary failed"),  # Third attempt fails
             Exception("Primary failed"),  # Fourth attempt fails (all retries exhausted)
         ]
@@ -608,7 +608,7 @@ class TestExecutorCoreFallback:
         # Configure executor - provide enough side effects for all retry attempts
         executor_core._agent_runner.run.side_effect = [
             Exception("Primary failed"),  # First attempt fails
-            Exception("Primary failed"),  # Second attempt fails  
+            Exception("Primary failed"),  # Second attempt fails
             Exception("Primary failed"),  # Third attempt fails
             Exception("Primary failed"),  # Fourth attempt fails (all retries exhausted)
         ]
@@ -754,7 +754,7 @@ class TestExecutorCoreFallback:
         # Configure executor - provide enough side effects for all retry attempts
         executor_core._agent_runner.run.side_effect = [
             Exception("Primary failed"),  # First attempt fails
-            Exception("Primary failed"),  # Second attempt fails  
+            Exception("Primary failed"),  # Second attempt fails
             Exception("Primary failed"),  # Third attempt fails
             Exception("Primary failed"),  # Fourth attempt fails (all retries exhausted)
         ]
@@ -808,7 +808,7 @@ class TestExecutorCoreFallback:
         # Configure executor - provide enough side effects for all retry attempts
         executor_core._agent_runner.run.side_effect = [
             Exception("Primary failed"),  # First attempt fails
-            Exception("Primary failed"),  # Second attempt fails  
+            Exception("Primary failed"),  # Second attempt fails
             Exception("Primary failed"),  # Third attempt fails
             Exception("Primary failed"),  # Fourth attempt fails (all retries exhausted)
         ]
@@ -904,6 +904,7 @@ class TestExecutorCoreFallback:
 
         # Mock the execute method for fallback
         from flujo.domain.models import StepResult
+
         with patch.object(executor_core, "execute", new_callable=AsyncMock) as mock_execute:
             mock_execute.return_value = StepResult(
                 name="fallback_step",
@@ -945,7 +946,7 @@ class TestExecutorCoreFallback:
         # Configure executor - provide enough side effects for all retry attempts
         executor_core._agent_runner.run.side_effect = [
             Exception("Primary failed"),  # First attempt fails
-            Exception("Primary failed"),  # Second attempt fails  
+            Exception("Primary failed"),  # Second attempt fails
             Exception("Primary failed"),  # Third attempt fails
             Exception("Primary failed"),  # Fourth attempt fails (all retries exhausted)
         ]
@@ -1030,7 +1031,9 @@ class TestExecutorCoreFallback:
             # Assert
             assert result.success is True
             assert result.output == "fallback success"
-            assert result.attempts == 5  # Should show all attempts were made (1 initial + 3 retries + 1 fallback)
+            assert (
+                result.attempts == 5
+            )  # Should show all attempts were made (1 initial + 3 retries + 1 fallback)
 
     @pytest.mark.asyncio
     async def test_fallback_with_telemetry_logging(self, executor_core, create_step_with_fallback):
@@ -1043,14 +1046,15 @@ class TestExecutorCoreFallback:
         # Configure executor - provide enough side effects for all retry attempts
         executor_core._agent_runner.run.side_effect = [
             Exception("Primary failed"),  # First attempt fails
-            Exception("Primary failed"),  # Second attempt fails  
+            Exception("Primary failed"),  # Second attempt fails
             Exception("Primary failed"),  # Third attempt fails
             Exception("Primary failed"),  # Fourth attempt fails (all retries exhausted)
         ]
 
         # Mock telemetry logging and fallback execution
         from flujo.domain.models import StepResult
-        with patch("flujo.infra.telemetry.logfire.info") as mock_log:
+
+        with patch("flujo.infra.telemetry.logfire.info"):
             with patch.object(executor_core, "execute", new_callable=AsyncMock) as mock_execute:
                 mock_execute.return_value = StepResult(
                     name="fallback_step",
@@ -1062,7 +1066,7 @@ class TestExecutorCoreFallback:
                     token_counts=23,
                     feedback=None,
                 )
-                
+
                 # Act
                 result = await executor_core._execute_simple_step(
                     primary_step,
@@ -1198,7 +1202,7 @@ class TestExecutorCoreFallback:
         # Configure executor - provide enough side effects for all retry attempts
         executor_core._agent_runner.run.side_effect = [
             Exception("Primary failed"),  # First attempt fails
-            Exception("Primary failed"),  # Second attempt fails  
+            Exception("Primary failed"),  # Second attempt fails
             Exception("Primary failed"),  # Third attempt fails
             Exception("Primary failed"),  # Fourth attempt fails (all retries exhausted)
         ]
@@ -1266,7 +1270,7 @@ class TestExecutorCoreFallback:
         # Configure executor - provide enough side effects for all retry attempts
         executor_core._agent_runner.run.side_effect = [
             Exception("Primary failed"),  # First attempt fails
-            Exception("Primary failed"),  # Second attempt fails  
+            Exception("Primary failed"),  # Second attempt fails
             Exception("Primary failed"),  # Third attempt fails
             Exception("Primary failed"),  # Fourth attempt fails (all retries exhausted)
         ]
@@ -1310,7 +1314,7 @@ class TestExecutorCoreFallback:
         # Configure executor - provide enough side effects for all retry attempts
         executor_core._agent_runner.run.side_effect = [
             Exception("Primary failed"),  # First attempt fails
-            Exception("Primary failed"),  # Second attempt fails  
+            Exception("Primary failed"),  # Second attempt fails
             Exception("Primary failed"),  # Third attempt fails
             Exception("Primary failed"),  # Fourth attempt fails (all retries exhausted)
         ]
@@ -1371,7 +1375,7 @@ class TestExecutorCoreFallback:
         # Configure executor - provide enough side effects for all retry attempts
         executor_core._agent_runner.run.side_effect = [
             Exception("Primary failed"),  # First attempt fails
-            Exception("Primary failed"),  # Second attempt fails  
+            Exception("Primary failed"),  # Second attempt fails
             Exception("Primary failed"),  # Third attempt fails
             Exception("Primary failed"),  # Fourth attempt fails (all retries exhausted)
         ]
@@ -1417,6 +1421,7 @@ class TestExecutorCoreFallback:
         from flujo.domain.dsl.step import Step, StepConfig
         from flujo.domain.processors import AgentProcessors
         from flujo.application.core.ultra_executor import ExecutorCore
+
         # Define real async agents
         class PrimaryAgent:
             async def run(self, data, **kwargs):
@@ -1424,13 +1429,14 @@ class TestExecutorCoreFallback:
                 result = "primary success"
                 print(f"🔍 PrimaryAgent.run returning: {result}")
                 return result
-        
+
         class FallbackAgent:
             async def run(self, data, **kwargs):
                 print(f"🔍 FallbackAgent.run called with data: {data}")
                 result = "fallback success"
                 print(f"🔍 FallbackAgent.run returning: {result}")
                 return result
+
         # Create fallback step
         fallback_step = Step(
             name="fallback_step",
@@ -1451,10 +1457,12 @@ class TestExecutorCoreFallback:
         assert result.success is True
         assert result.output == "fallback success"
         assert result.metadata_ and result.metadata_.get("fallback_triggered") is True
+
         # Add a processor to fallback and check processed output
         class SuffixProcessor:
             async def process(self, data, context=None):
                 return f"{data} [processed]"
+
         fallback_step.processors.output_processors = [SuffixProcessor()]
         result2 = await executor_core.execute(primary_step, "test data")
         assert result2.success is True
@@ -1467,55 +1475,53 @@ class TestExecutorCoreFallback:
         from flujo.domain.dsl.step import Step, StepConfig
         from flujo.domain.processors import AgentProcessors
         from flujo.application.core.ultra_executor import ExecutorCore
-        
+
         # Define agents
         class PrimaryAgent:
             async def run(self, data, **kwargs):
                 return "primary success"
-        
+
         class FallbackAgent:
             async def run(self, data, **kwargs):
                 return "fallback success"
-        
+
         # Define failing plugin
         class FailingPlugin:
             async def process(self, data, **kwargs):
                 raise Exception("Plugin processing failed")
-        
+
         # Create steps with NO retries to trigger immediate fallback
         fallback_step = Step(
             name="fallback_step",
             agent=FallbackAgent(),
             config=StepConfig(max_retries=0),  # No retries
-            processors=AgentProcessors(output_processors=[])
+            processors=AgentProcessors(output_processors=[]),
         )
-        
+
         primary_step = Step(
-            name="primary_step", 
+            name="primary_step",
             agent=PrimaryAgent(),
             config=StepConfig(max_retries=0),  # No retries - immediate fallback
             processors=AgentProcessors(output_processors=[FailingPlugin()]),
-            fallback_step=fallback_step
+            fallback_step=fallback_step,
         )
-        
+
         print(f"🔍 primary_step.agent: {primary_step.agent}")
         print(f"🔍 primary_step.agent type: {type(primary_step.agent)}")
         print(f"🔍 hasattr(primary_step.agent, 'run'): {hasattr(primary_step.agent, 'run')}")
-        if hasattr(primary_step.agent, 'run'):
+        if hasattr(primary_step.agent, "run"):
             print(f"🔍 primary_step.agent.run: {primary_step.agent.run}")
-        
+
         print(f"🔍 fallback_step.agent: {fallback_step.agent}")
         print(f"🔍 fallback_step.agent type: {type(fallback_step.agent)}")
         print(f"🔍 hasattr(fallback_step.agent, 'run'): {hasattr(fallback_step.agent, 'run')}")
-        if hasattr(fallback_step.agent, 'run'):
+        if hasattr(fallback_step.agent, "run"):
             print(f"🔍 fallback_step.agent.run: {fallback_step.agent.run}")
-        
+
         # Execute
         executor = ExecutorCore()
-        result = await executor.execute(
-            primary_step, "test data"
-        )
-        
+        result = await executor.execute(primary_step, "test data")
+
         # Verify fallback was triggered due to plugin failure
         print(f"🔍 Result: {result}")
         print(f"🔍 Result.success: {result.success}")
@@ -1532,51 +1538,48 @@ class TestExecutorCoreFallback:
         from flujo.domain.dsl.step import Step, StepConfig
         from flujo.domain.processors import AgentProcessors
         from flujo.application.core.ultra_executor import ExecutorCore
-        
+
         # Define agents
         class PrimaryAgent:
             async def run(self, data, **kwargs):
                 return "primary success"
-        
+
         class FallbackAgent:
             async def run(self, data, **kwargs):
                 return "fallback success"
-        
+
         # Define working plugin
         class WorkingPlugin:
             async def process(self, data, **kwargs):
                 return f"processed: {data}"
-        
+
         # Define failing validator
         class FailingValidator:
             async def validate(self, data, **kwargs):
                 raise Exception("Validation failed")
-        
+
         # Create steps with NO retries to trigger immediate fallback
         fallback_step = Step(
             name="fallback_step",
             agent=FallbackAgent(),
             config=StepConfig(max_retries=0),  # No retries
-            processors=AgentProcessors(output_processors=[])
+            processors=AgentProcessors(output_processors=[]),
         )
-        
+
         primary_step = Step(
             name="primary_step",
             agent=PrimaryAgent(),
             config=StepConfig(max_retries=0),  # No retries - immediate fallback
             processors=AgentProcessors(
-                output_processors=[WorkingPlugin()],
-                validators=[FailingValidator()]
+                output_processors=[WorkingPlugin()], validators=[FailingValidator()]
             ),
-            fallback_step=fallback_step
+            fallback_step=fallback_step,
         )
-        
+
         # Execute
         executor = ExecutorCore()
-        result = await executor.execute(
-            primary_step, "test data"
-        )
-        
+        result = await executor.execute(primary_step, "test data")
+
         # Verify fallback was triggered due to validator failure
         assert result.success is True
         assert result.output == "fallback success"
@@ -1588,51 +1591,48 @@ class TestExecutorCoreFallback:
         from flujo.domain.dsl.step import Step, StepConfig
         from flujo.domain.processors import AgentProcessors
         from flujo.application.core.ultra_executor import ExecutorCore
-        
+
         # Define agents
         class PrimaryAgent:
             async def run(self, data, **kwargs):
                 raise Exception("Primary agent failed")
-        
+
         class FallbackAgent:
             async def run(self, data, **kwargs):
                 return "fallback success"
-        
+
         # Define failing plugin (should not be called since primary fails)
         class FailingPlugin:
             async def process(self, data, **kwargs):
                 raise Exception("Plugin processing failed")
-        
+
         # Define failing validator (should not be called since primary fails)
         class FailingValidator:
             async def validate(self, data, **kwargs):
                 raise Exception("Validation failed")
-        
+
         # Create steps with NO retries to trigger immediate fallback
         fallback_step = Step(
             name="fallback_step",
             agent=FallbackAgent(),
             config=StepConfig(max_retries=0),  # No retries
-            processors=AgentProcessors(output_processors=[])
+            processors=AgentProcessors(output_processors=[]),
         )
-        
+
         primary_step = Step(
             name="primary_step",
             agent=PrimaryAgent(),
             config=StepConfig(max_retries=0),  # No retries - immediate fallback
             processors=AgentProcessors(
-                output_processors=[FailingPlugin()],
-                validators=[FailingValidator()]
+                output_processors=[FailingPlugin()], validators=[FailingValidator()]
             ),
-            fallback_step=fallback_step
+            fallback_step=fallback_step,
         )
-        
+
         # Execute
         executor = ExecutorCore()
-        result = await executor.execute(
-            primary_step, "test data"
-        )
-        
+        result = await executor.execute(primary_step, "test data")
+
         # Verify fallback was triggered due to primary failure
         assert result.success is True
         assert result.output == "fallback success"
@@ -1644,10 +1644,10 @@ class TestExecutorCoreFallback:
         from flujo.domain.dsl.step import Step, StepConfig
         from flujo.domain.processors import AgentProcessors
         from flujo.application.core.ultra_executor import ExecutorCore
-        
+
         # Track retry attempts
         retry_count = 0
-        
+
         class RetryFailingAgent:
             async def run(self, data, **kwargs):
                 nonlocal retry_count
@@ -1655,33 +1655,31 @@ class TestExecutorCoreFallback:
                 if retry_count < 3:  # Fail first 2 attempts
                     raise Exception(f"Attempt {retry_count} failed")
                 return "primary success after retries"
-        
+
         class FallbackAgent:
             async def run(self, data, **kwargs):
                 return "fallback success"
-        
+
         # Create steps with retry config
         fallback_step = Step(
             name="fallback_step",
             agent=FallbackAgent(),
             config=StepConfig(max_retries=0),  # No retries for fallback
-            processors=AgentProcessors(output_processors=[])
+            processors=AgentProcessors(output_processors=[]),
         )
-        
+
         primary_step = Step(
             name="primary_step",
             agent=RetryFailingAgent(),
             config=StepConfig(max_retries=2),  # Allow 2 retries
             processors=AgentProcessors(output_processors=[]),
-            fallback_step=fallback_step
+            fallback_step=fallback_step,
         )
-        
+
         # Execute
         executor = ExecutorCore()
-        result = await executor.execute(
-            primary_step, "test data"
-        )
-        
+        result = await executor.execute(primary_step, "test data")
+
         # Verify primary succeeded after retries (not fallback)
         assert result.success is True
         assert result.output == "primary success after retries"
@@ -1693,43 +1691,43 @@ class TestExecutorCoreFallback:
         from flujo.domain.dsl.step import Step, StepConfig
         from flujo.domain.processors import AgentProcessors
         from flujo.application.core.ultra_executor import ExecutorCore
-        
+
         # Define agents
         class PrimaryAgent:
             async def run(self, data, **kwargs):
                 raise Exception("Primary failed")
-        
+
         class StreamingFallbackAgent:
             async def run(self, data, **kwargs):
                 return "streaming fallback success"
-        
+
         # Define streaming processor
         class StreamingProcessor:
             async def process(self, data, **kwargs):
                 return f"streamed: {data}"
-        
+
         # Create steps
         fallback_step = Step(
             name="fallback_step",
             agent=StreamingFallbackAgent(),
             config=StepConfig(max_retries=1),
-            processors=AgentProcessors(output_processors=[StreamingProcessor()])
+            processors=AgentProcessors(output_processors=[StreamingProcessor()]),
         )
-        
+
         primary_step = Step(
             name="primary_step",
             agent=PrimaryAgent(),
             config=StepConfig(max_retries=1),
             processors=AgentProcessors(output_processors=[]),
-            fallback_step=fallback_step
+            fallback_step=fallback_step,
         )
-        
+
         # Execute with streaming
         executor = ExecutorCore()
         result = await executor._execute_simple_step(
             primary_step, "test data", None, None, None, True, None, "cache_key", None
         )
-        
+
         # Verify fallback succeeded with streaming processing
         assert result.success is True
         assert result.output == "streamed: streaming fallback success"
@@ -1740,42 +1738,42 @@ class TestExecutorCoreFallback:
         from flujo.domain.dsl.step import Step, StepConfig
         from flujo.domain.processors import AgentProcessors
         from flujo.application.core.ultra_executor import ExecutorCore
-        
+
         # Define agents that use context
         class PrimaryAgent:
             async def run(self, data, context=None, **kwargs):
                 if context and context.get("user_id"):
                     raise Exception(f"Primary failed for user {context['user_id']}")
                 raise Exception("Primary failed")
-        
+
         class ContextAwareFallbackAgent:
             async def run(self, data, context=None, **kwargs):
                 user_id = context.get("user_id", "unknown") if context else "unknown"
                 return f"fallback success for user {user_id}"
-        
+
         # Create steps
         fallback_step = Step(
             name="fallback_step",
             agent=ContextAwareFallbackAgent(),
             config=StepConfig(max_retries=1),
-            processors=AgentProcessors(output_processors=[])
+            processors=AgentProcessors(output_processors=[]),
         )
-        
+
         primary_step = Step(
             name="primary_step",
             agent=PrimaryAgent(),
             config=StepConfig(max_retries=1),
             processors=AgentProcessors(output_processors=[]),
-            fallback_step=fallback_step
+            fallback_step=fallback_step,
         )
-        
+
         # Execute with context
         executor = ExecutorCore()
         context = {"user_id": "test_user_123"}
         result = await executor._execute_simple_step(
             primary_step, "test data", context, None, None, False, None, "cache_key", None
         )
-        
+
         # Verify fallback succeeded with context preserved
         assert result.success is True
         assert result.output == "fallback success for user test_user_123"

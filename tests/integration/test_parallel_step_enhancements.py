@@ -37,7 +37,7 @@ class CostlyAgent:
 
         # Check for breach event to support proactive cancellation
         if breach_event is not None and breach_event.is_set():
-            print(f"[DEBUG] CostlyAgent early exit due to breach_event")
+            print("[DEBUG] CostlyAgent early exit due to breach_event")
 
             # Early exit if breach detected
             class Output(BaseModel):
@@ -55,7 +55,7 @@ class CostlyAgent:
 
         while remaining_time > 0:
             if breach_event is not None and breach_event.is_set():
-                print(f"[DEBUG] CostlyAgent cancelled during sleep")
+                print("[DEBUG] CostlyAgent cancelled during sleep")
 
                 # Early exit if breach detected during sleep
                 class Output(BaseModel):
@@ -69,7 +69,7 @@ class CostlyAgent:
             await asyncio.sleep(sleep_time)
             remaining_time -= sleep_time
 
-        print(f"[DEBUG] CostlyAgent completed sleep, returning result")
+        print("[DEBUG] CostlyAgent completed sleep, returning result")
 
         class Output(BaseModel):
             value: Any

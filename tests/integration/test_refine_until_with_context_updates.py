@@ -144,7 +144,8 @@ async def test_refine_until_with_context_updates_error_handling():
     # Verify error handling with context updates
     assert result.step_history[-1].success is False
     assert (
-        "loop body failed" in result.step_history[-1].feedback.lower()  # Enhanced: Simplified error message
+        "loop body failed"
+        in result.step_history[-1].feedback.lower()  # Enhanced: Simplified error message
     )
 
     # Verify context updates from successful iterations
