@@ -749,7 +749,14 @@ async def _execute_simple_step_policy_impl(
                             fallback_result.latency_s = (fallback_result.latency_s or 0.0) + primary_latency_total + result.latency_s
                             fallback_result.attempts = result.attempts + (fallback_result.attempts or 0)
                             if fallback_result.success:
-                                fallback_result.feedback = None
+                                # Context-aware feedback preservation: preserve diagnostics if configured
+                                preserve_diagnostics = (
+                                    hasattr(step, "config") 
+                                    and step.config is not None
+                                    and hasattr(step.config, "preserve_fallback_diagnostics")
+                                    and step.config.preserve_fallback_diagnostics is True
+                                )
+                                fallback_result.feedback = None if not preserve_diagnostics else fallback_result.feedback
                                 return fallback_result
                             _orig = _normalize_plugin_feedback(str(e))
                             _orig_for_format = None if _orig in ("", "Plugin failed without feedback") else _orig
@@ -883,11 +890,17 @@ async def _execute_simple_step_policy_impl(
                             fallback_result.attempts = result.attempts + (fallback_result.attempts or 0)
                             # Do NOT multiply fallback metrics here; they are accounted once in tests
                             if fallback_result.success:
-                                # Preserve validation failure message in feedback on successful fallback
+                                # Context-aware feedback preservation: preserve diagnostics if configured
+                                preserve_diagnostics = (
+                                    hasattr(step, "config") 
+                                    and step.config is not None
+                                    and hasattr(step.config, "preserve_fallback_diagnostics")
+                                    and step.config.preserve_fallback_diagnostics is True
+                                )
                                 try:
                                     fallback_result.feedback = (
                                         f"Validation failed after max retries: {validation_error}"
-                                    )
+                                    ) if preserve_diagnostics else None
                                 except Exception:
                                     fallback_result.feedback = None
                                 # Cache successful fallback result for future runs
@@ -1087,9 +1100,18 @@ async def _execute_simple_step_policy_impl(
                         fallback_result.latency_s = (fallback_result.latency_s or 0.0) + primary_latency_total + result.latency_s
                         fallback_result.attempts = result.attempts + (fallback_result.attempts or 0)
                         if fallback_result.success:
-                            # Preserve fallback trigger information for diagnostics
-                            original_error = core._format_feedback(_normalize_plugin_feedback(str(agent_error)), "Agent execution failed")
-                            fallback_result.feedback = f"Primary agent failed: {original_error}"
+                            # Context-aware feedback preservation: preserve diagnostics if configured
+                            preserve_diagnostics = (
+                                hasattr(step, "config") 
+                                and step.config is not None
+                                and hasattr(step.config, "preserve_fallback_diagnostics")
+                                and step.config.preserve_fallback_diagnostics is True
+                            )
+                            if preserve_diagnostics:
+                                original_error = core._format_feedback(_normalize_plugin_feedback(str(agent_error)), "Agent execution failed")
+                                fallback_result.feedback = f"Primary agent failed: {original_error}"
+                            else:
+                                fallback_result.feedback = None
                             return fallback_result
                         _orig = _normalize_plugin_feedback(str(agent_error))
                         _orig_for_format = None if _orig in ("", "Plugin failed without feedback") else _orig
@@ -1169,8 +1191,17 @@ async def _execute_simple_step_policy_impl(
                     fallback_result.attempts = result.attempts + (fallback_result.attempts or 0)
                     # Do NOT multiply fallback metrics here; they are accounted once in tests
                     if fallback_result.success:
-                        # Preserve fallback trigger information for diagnostics  
-                        fallback_result.feedback = f"Primary agent failed: {core._format_feedback(msg, 'Agent execution failed')}"
+                        # Context-aware feedback preservation: preserve diagnostics if configured
+                        preserve_diagnostics = (
+                            hasattr(step, "config") 
+                            and step.config is not None
+                            and hasattr(step.config, "preserve_fallback_diagnostics")
+                            and step.config.preserve_fallback_diagnostics is True
+                        )
+                        if preserve_diagnostics:
+                            fallback_result.feedback = f"Primary agent failed: {core._format_feedback(msg, 'Agent execution failed')}"
+                        else:
+                            fallback_result.feedback = None
                         # Cache successful fallback result for future runs
                         try:
                             if cache_key and getattr(core, "_enable_cache", False):
@@ -1436,7 +1467,14 @@ class DefaultAgentStepExecutor:
                                     if fb_res.success:
                                         # Adopt fallback success output but preserve original validation failure in feedback
                                         fb_res.metadata_ = {**(fb_res.metadata_ or {}), **result.metadata_}
-                                        fb_res.feedback = fb_msg
+                                        # Context-aware feedback preservation: preserve diagnostics if configured
+                                        preserve_diagnostics = (
+                                            hasattr(step, "config") 
+                                            and step.config is not None
+                                            and hasattr(step.config, "preserve_fallback_diagnostics")
+                                            and step.config.preserve_fallback_diagnostics is True
+                                        )
+                                        fb_res.feedback = fb_msg if preserve_diagnostics else None
                                         return fb_res
                                     else:
                                         # Compose failure feedback
@@ -1492,7 +1530,14 @@ class DefaultAgentStepExecutor:
                             result.metadata_["original_error"] = fb_msg
                             if fb_res.success:
                                 fb_res.metadata_ = {**(fb_res.metadata_ or {}), **result.metadata_}
-                                fb_res.feedback = fb_msg
+                                # Context-aware feedback preservation: preserve diagnostics if configured
+                                preserve_diagnostics = (
+                                    hasattr(step, "config") 
+                                    and step.config is not None
+                                    and hasattr(step.config, "preserve_fallback_diagnostics")
+                                    and step.config.preserve_fallback_diagnostics is True
+                                )
+                                fb_res.feedback = fb_msg if preserve_diagnostics else None
                                 return fb_res
                             else:
                                 result.success = False
@@ -1658,8 +1703,14 @@ class DefaultAgentStepExecutor:
                         )
                         if fb_res.success:
                             fb_res.metadata_ = {**(fb_res.metadata_ or {}), **result.metadata_}
-                            # Preserve fallback trigger information for diagnostics
-                            fb_res.feedback = f"Primary agent failed: {primary_fb}"
+                            # Context-aware feedback preservation: preserve diagnostics if configured
+                            preserve_diagnostics = (
+                                hasattr(step, "config") 
+                                and step.config is not None
+                                and hasattr(step.config, "preserve_fallback_diagnostics")
+                                and step.config.preserve_fallback_diagnostics is True
+                            )
+                            fb_res.feedback = f"Primary agent failed: {primary_fb}" if preserve_diagnostics else None
                             return fb_res
                         else:
                             result.success = False

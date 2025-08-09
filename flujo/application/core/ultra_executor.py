@@ -623,11 +623,36 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     self, step, data, context, resources, limits, stream, on_chunk, cache_key, None, _fallback_depth
                 )
         except InfiniteFallbackError as e:
-            # CRITICAL: InfiniteFallbackError is a control flow exception that MUST be re-raised
-            # Converting it to StepResult violates the Policy-Driven Architecture
+            # ENHANCED BEHAVIOR: Distinguish between framework loop detection vs direct agent exceptions
+            error_msg = str(e)
             step_name = str(step.name) if hasattr(step, 'name') else f"<{type(step).__name__}>"
-            telemetry.logfire.error(f"Infinite fallback error for step '{step_name}': {str(e)}")
-            raise e  # Re-raise to maintain control flow semantics
+            telemetry.logfire.error(f"Infinite fallback error for step '{step_name}': {error_msg}")
+            
+            # Check if this is a framework-detected loop (handle gracefully) vs direct agent exception (re-raise)
+            is_framework_loop_detection = (
+                "Fallback loop detected:" in error_msg or
+                "Fallback chain length exceeded maximum" in error_msg or
+                "Infinite Mock fallback chain detected" in error_msg
+            )
+            
+            if is_framework_loop_detection:
+                # Framework-detected infinite loops: Handle gracefully with failed StepResult
+                return StepResult(
+                    name=step_name,
+                    output=None,
+                    success=False,
+                    attempts=1,
+                    latency_s=0.0,
+                    token_counts=0,
+                    cost_usd=0.0,
+                    feedback=f"Infinite fallback loop detected: {error_msg}",
+                    branch_context=None,
+                    metadata_={"infinite_fallback_detected": True, "error_type": "InfiniteFallbackError"},
+                    step_history=[],
+                )
+            else:
+                # Direct agent exceptions: Re-raise for proper control flow
+                raise e
         
         # Finalization: do not re-apply processors for fallback results; fallback step execution owns all processing
 

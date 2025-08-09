@@ -1674,7 +1674,7 @@ class TestExecutorCoreFallback:
         primary_step = Step(
             name="primary_step",
             agent=PrimaryAgent(),
-            config=StepConfig(max_retries=0),  # No retries - immediate fallback
+            config=StepConfig(max_retries=0, preserve_fallback_diagnostics=True),  # No retries - immediate fallback, preserve diagnostics
             processors=AgentProcessors(
                 output_processors=[FailingPlugin()],
                 validators=[FailingValidator()]

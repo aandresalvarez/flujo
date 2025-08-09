@@ -95,6 +95,10 @@ class StepConfig(BaseModel):
         Optional top-k sampling parameter for LLM based agents.
     top_p:
         Optional nucleus sampling parameter for LLM based agents.
+    preserve_fallback_diagnostics:
+        Whether to preserve diagnostic feedback from fallback executions.
+        When True, successful fallbacks retain feedback for monitoring/debugging.
+        When False, successful fallbacks clear feedback for backward compatibility.
     """
 
     max_retries: int = 1
@@ -102,6 +106,7 @@ class StepConfig(BaseModel):
     temperature: float | None = None
     top_k: int | None = None
     top_p: float | None = None
+    preserve_fallback_diagnostics: bool = False
 
 
 class Step(BaseModel, Generic[StepInT, StepOutT]):
