@@ -627,11 +627,12 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             # Convert to failed result with meaningful feedback
             telemetry.logfire.error(f"Infinite fallback error for step '{step.name}': {str(e)}")
             result = StepResult(
+                name=step.name,  # First Principles: Every StepResult MUST have a name field
                 output=None,
                 success=False,
                 feedback=f"Infinite fallback chain detected for step '{step.name}'. This usually indicates a configuration issue with Mock objects or recursive fallback steps.",
                 step_history=[],
-                total_cost_usd=0.0,
+                cost_usd=0.0,  # Architectural: Use correct field name
                 metadata_={"error_type": "InfiniteFallbackError", "original_error": str(e)}
             )
         
