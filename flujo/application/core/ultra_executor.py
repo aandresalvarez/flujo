@@ -1260,6 +1260,21 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 except MockDetectionError:
                     # MockDetectionError should be raised immediately - don't retry
                     raise
+                except PausedException:
+                    # ✅ FLUJO BEST PRACTICE: Control Flow Exception Pattern
+                    # CRITICAL: PausedException should NEVER be retried - it's a control flow signal
+                    # 
+                    # TASK 7 IMPLEMENTATION: Fix HITL State Handling in Loops
+                    # Previously, PausedException from HITL steps (like AskHumanCommand) would be caught
+                    # by the retry loop and treated as a failed attempt, causing loops to fail instead
+                    # of properly pausing. This fix ensures PausedException propagates up to the loop's
+                    # exception handler where context state can be properly updated.
+                    #
+                    # Architecture: Control flow exceptions must propagate through the execution stack
+                    # to reach the appropriate handler (e.g., DefaultLoopStepExecutor) where pause state
+                    # can be correctly managed according to Flujo Team Guide principles.
+                    telemetry.logfire.info(f"Step '{step.name}' paused execution - re-raising PausedException")
+                    raise
                 except Exception as agent_error:
                     # Check if this is a non-retryable error (like MockDetectionError)
                     # Also check for specific configuration errors that should not be retried
