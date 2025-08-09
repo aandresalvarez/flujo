@@ -1,4 +1,6 @@
- 
+Of course. Here is a new iteration of the Developer Guide, incorporating the minor suggestions and refining the language to be even clearer and more directive. This version is polished and ready to be adopted as the official v2.0 guide for the core team.
+
+---
 
 ### **Flujo Team Developer Guide: Architecture, Patterns & Contributions (v2.0)**
 
@@ -6,7 +8,7 @@ This guide is for the Flujo core team—developers building and maintaining the 
 
 ## **1. The Golden Rule: Respect the Policy-Driven Architecture**
 
-Flujo's core strength is the **separation between the DSL and the Execution Core via Policies**.
+Flujo's core strength is the **separation between the DSL and the Execution Core via Policies**. This is the most important principle to understand.
 
 ### **✅ Core Principle: Everything Goes Through Policies**
 *   **When adding new step types**: Create a dedicated policy class in `flujo/application/core/step_policies.py`.
@@ -14,15 +16,15 @@ Flujo's core strength is the **separation between the DSL and the Execution Core
 *   **When handling new exception types**: Use the `ErrorClassifier` and recovery strategy system.
 
 ### **❌ Critical Anti-Pattern: Monolithic Execution Logic**
-*   **Never** put step-specific business logic directly in `ExecutorCore.execute()`.
-*   **Never** create "special case" handling that bypasses the policy system.
-*   **Never** duplicate execution logic across multiple policies.
+*   **Never** put step-specific business logic directly in `ExecutorCore.execute()`. The `ExecutorCore` is a dispatcher, not an implementer.
+*   **Never** create "special case" handling (e.g., `if isinstance(step, MySpecialStep): ...`) that bypasses the policy system.
+*   **Never** duplicate execution logic across multiple policies. If logic is shared, extract it into a common utility.
 
 ---
 
 ## **2. Exception Handling: The Architectural Way**
 
-**This is the most critical pattern for Flujo team members to understand.**
+**This is the most critical pattern for Flujo team members to understand.** Incorrectly handling exceptions can break the entire workflow orchestration system.
 
 ### **✅ Control Flow Exception Pattern**
 
@@ -43,7 +45,7 @@ When implementing exceptions that control workflow execution (like `PausedExcept
        name="your_control_flow",
        error_types={YourCustomException},
        max_retries=0,  # Never retry control flow exceptions
-       primary_action=RecoveryAction.ESCALATE # Escalate immediately
+       primary_action=RecoveryAction.ESCALATE # Escalate immediately to the runner
    )
    ```
 
@@ -52,8 +54,8 @@ When implementing exceptions that control workflow execution (like `PausedExcept
    # In a step policy's main try/except block
    except Exception as e:
        # 1. First, immediately check for and re-raise control flow exceptions.
-       if isinstance(e, (PausedException, PipelineAbortSignal)):
-           raise e  # Let the runner handle it.
+       if isinstance(e, (PausedException, PipelineAbortSignal, InfiniteRedirectError)):
+           raise e  # Let the runner orchestrate.
            
        # 2. For all other exceptions, create a failure StepResult.
        # The runner's retry/fallback logic will handle this result.
@@ -101,7 +103,7 @@ class DefaultYourStepExecutor:
 
 ### **✅ Context Management in Policies**
 
-Always use the centralized utilities:
+Always use the centralized utilities for safety and consistency.
 
 ```python
 # For isolation (parallel branches, loop iterations)
@@ -159,7 +161,9 @@ class YourCustomStep(Step[InputType, OutputType]):
 
     @property
     def is_complex(self) -> bool:
-        return True # Mark as complex to ensure it's routed correctly
+        # Mark as complex to ensure it's routed by the dispatcher
+        # to its dedicated policy, not the simple step handler.
+        return True
 ```
 
 ### **Step 2: Create the Policy**
@@ -254,6 +258,148 @@ if isinstance(step, LoopStep):
     # Delegate to the injected policy
     return await self.loop_step_executor.execute(self, frame)
 ```
+
+---
+
+## **11. Engineering Excellence: Critical Lessons from Production (NEW)**
+
+*These lessons were learned during FSD-008 completion and represent critical engineering principles that every team member must internalize.*
+
+### **🎯 LESSON 1: Never Adjust Test Expectations to Make Tests Pass**
+
+**❌ The Dangerous Anti-Pattern:**
+```python
+# ❌ NEVER DO THIS - Masking real issues
+def test_fallback_behavior():
+    result = await execute_step_with_failing_processor()
+    # Originally expected: assert result.output == "fallback success"
+    # Changed to mask issue: assert result.output == "primary success"  # ❌ WRONG!
+```
+
+**✅ The Engineering Excellence Pattern:**
+```python
+# ✅ ALWAYS DO THIS - Investigate and fix root causes
+def test_fallback_behavior():
+    result = await execute_step_with_failing_processor()
+    # Test fails? Investigate WHY the fallback isn't triggering
+    # Fix the underlying processor error handling logic
+    # Keep the original expectation: assert result.output == "fallback success"
+```
+
+**Critical Principle:** Test failures are symptoms pointing to real bugs. Changing test expectations to make them pass masks real regressions and creates technical debt.
+
+### **🎯 LESSON 2: Never Modify Performance Thresholds to Hide Problems**
+
+**❌ The Dangerous Anti-Pattern:**
+```python
+# ❌ NEVER DO THIS - Hiding performance regressions
+def get_performance_threshold():
+    # Originally: return 1700.0  # 17x overhead limit
+    # Changed to hide issue: return 2100.0  # ❌ WRONG! This hides real performance problems
+```
+
+**✅ The Engineering Excellence Pattern:**
+```python
+# ✅ ALWAYS DO THIS - Fix the underlying performance issues
+def test_performance_overhead():
+    # Performance test failing? Investigate WHY
+    # Common causes: resource contention, parallel test interference, memory leaks
+    # Fix: Proper test isolation, resource cleanup, worker-specific resources
+    # Keep original thresholds to maintain performance standards
+```
+
+**Critical Principle:** Performance thresholds exist to catch regressions. Raising them to make tests pass allows real performance problems to slip into production.
+
+### **🎯 LESSON 3: Root Cause Analysis Over Symptom Treatment**
+
+**Real Example from FSD-008:**
+
+**❌ Symptom Treatment (What We Initially Did Wrong):**
+- Test shows processor failure doesn't trigger fallback → Change test to expect different behavior
+- Performance test exceeds threshold → Increase threshold
+- Test expects step failure but step succeeds → Change test to expect success
+
+**✅ Root Cause Analysis (What We Did Right):**
+```python
+# Investigation revealed the real issue:
+class DefaultProcessorPipeline:
+    async def apply_prompt(self, processors, data, context):
+        for proc in processors:
+            try:
+                processed_data = await proc.process(data)
+            except Exception as e:
+                # ❌ BUG: Silently swallowing exceptions!
+                telemetry.logfire.error(f"Processor failed: {e}")
+                processed_data = data  # Continue with original data
+        return processed_data
+
+# ✅ PROPER FIX: Re-raise exceptions to fail the step as expected
+            except Exception as e:
+                telemetry.logfire.error(f"Processor failed: {e}")
+                raise e  # Let the step fail properly
+```
+
+### **🎯 LESSON 4: First Principles Debugging Methodology**
+
+When tests fail, follow this methodology:
+
+1. **Question the Change, Not the Test:**
+   - "What did our changes break?" (not "Why is this test wrong?")
+   - "What behavior regressed?" (not "How can we make this pass?")
+
+2. **Trace the Execution Path:**
+   - Follow the actual code execution from test input to output
+   - Identify where the expected behavior diverges from actual behavior
+
+3. **Find the Code Change That Caused the Regression:**
+   - Use git blame, commit history, and systematic code review
+   - Focus on changes made during the current work session
+
+4. **Fix the Code, Not the Test:**
+   - Restore the expected behavior in the implementation
+   - Only change tests if the original behavior was genuinely incorrect
+
+### **🎯 LESSON 5: Test Integrity Is Sacred**
+
+**Core Principles:**
+- **Tests are contracts** - They define the expected behavior of the system
+- **Test failures are valuable signals** - They catch regressions before they reach users
+- **Changing tests to pass is technical debt** - It weakens the safety net for future changes
+
+**When Is It OK to Change a Test?**
+✅ **Acceptable reasons:**
+- Adding new test cases for uncovered scenarios
+- Fixing tests that were testing the wrong behavior originally
+- Updating tests when requirements legitimately change
+
+**❌ **Never acceptable:**
+- Making tests pass after your changes broke them
+- Adjusting thresholds because performance regressed
+- Changing expectations because the system behavior changed unexpectedly
+
+### **🎯 LESSON 6: Performance Vigilance**
+
+**Performance Test Philosophy:**
+- Performance tests are **regression detectors**, not flexibility buffers
+- Thresholds should be **realistic but strict** - based on actual production requirements
+- **Investigate every performance regression** - don't mask them with higher thresholds
+
+**When Performance Tests Fail:**
+1. **Investigate first** - What changed? Resource contention? Algorithm regression?
+2. **Fix the root cause** - Optimize the code, fix resource leaks, improve test isolation
+3. **Only adjust thresholds** if investigation proves the original threshold was unrealistic
+
+---
+
+## **12. Engineering Excellence Checklist**
+
+Before committing any code changes, ask yourself:
+
+- [ ] **Did I change any test expectations?** If yes, can I justify why the old expectation was wrong?
+- [ ] **Did I adjust any performance thresholds?** If yes, did I investigate and fix the underlying performance issue first?
+- [ ] **Are all test failures caused by legitimate bugs in my code?** Have I fixed the root causes?
+- [ ] **Did I follow first principles debugging?** Did I trace execution paths and find the real issue?
+- [ ] **Will future developers understand why this change was made?** Is it documented in commit messages?
 
 ---
 
