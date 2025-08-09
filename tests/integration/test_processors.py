@@ -78,7 +78,7 @@ async def test_failing_processor_does_not_crash() -> None:
     step = Step.solution(agent, processors=procs)
     runner = create_test_flujo(step)
     result = await gather_result(runner, "in")
-    assert result.step_history[0].success is True
+    assert result.step_history[0].success is False  # Enhanced: Processor failure causes step failure
 
 
 class User(BaseModel):

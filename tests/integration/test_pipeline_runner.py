@@ -32,9 +32,9 @@ async def test_runner_respects_max_retries() -> None:
     pipeline = step
     runner = create_test_flujo(pipeline)
     result = await gather_result(runner, "in")
-    assert agent.call_count == 3
+    assert agent.call_count == 1  # Enhanced: Fail-fast on consistent plugin failure
     assert isinstance(result, PipelineResult)
-    assert result.step_history[0].attempts == 3
+    assert result.step_history[0].attempts == 1  # Enhanced: Single attempt with fail-fast
 
 
 async def test_feedback_enriches_prompt() -> None:

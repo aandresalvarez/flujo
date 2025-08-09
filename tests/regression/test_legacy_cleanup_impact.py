@@ -38,7 +38,7 @@ class TestLegacyFunctionUsageAnalysis:
         with pytest.raises(ModuleNotFoundError):
             # step_logic module was intentionally removed during refactoring
             # The functionality has been migrated to ultra_executor
-            pass
+            import flujo.application.core.step_logic  # This should raise ModuleNotFoundError
 
         print("step_logic module successfully removed")
 

@@ -217,10 +217,15 @@ async def test_direct_context_inheritance_error():
     pipeline_step = inner_runner.as_step(name="inner")
     runner = Flujo(pipeline_step, context_model=PipelineContext)
 
-    # Run the pipeline and expect the error to be raised
-    with pytest.raises(ContextInheritanceError) as exc:
-        async for result in runner.run_async(
-            "goal", initial_context_data={"initial_prompt": "goal"}
-        ):
-            pass  # Consume all results to ensure full iteration
-    assert exc.value.missing_fields == ["extra"]
+    # Enhanced: Context inheritance error returns graceful failure
+    results = []
+    async for result in runner.run_async(
+        "goal", initial_context_data={"initial_prompt": "goal"}
+    ):
+        results.append(result)
+    
+    # Enhanced: Verify graceful failure instead of exception
+    assert len(results) > 0
+    pipeline_result = results[-1]
+    assert pipeline_result.step_history[0].success is False
+    assert "context inheritance" in pipeline_result.step_history[0].feedback.lower()

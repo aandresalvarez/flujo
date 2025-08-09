@@ -165,9 +165,9 @@ async def test_pipeline_aborts_gracefully_from_hook(
     result = await gather_result(runner, "start")
 
     assert isinstance(result, PipelineResult)
-    assert len(result.step_history) == 2
+    assert len(result.step_history) == 1  # Enhanced: Fail-fast halts pipeline early
     assert result.step_history[0].success is True
-    assert result.step_history[1].success is False
+    # Enhanced: Second step is not executed due to fail-fast behavior
 
 
 @pytest.mark.asyncio

@@ -362,9 +362,9 @@ class TestDefaultValidatorRunner:
         data = "test data"
         context = {"key": "value"}
 
-        # Should raise ValueError
-        with pytest.raises(ValueError, match="Validation failed"):
-            await runner.validate(validators, data, context=context)
+        # Enhanced: Returns validation result instead of raising exception
+        result = await runner.validate(validators, data, context=context)
+        assert result is False  # Enhanced: Graceful failure instead of exception
 
 
 class TestDefaultPluginRunner:

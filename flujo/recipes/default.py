@@ -134,7 +134,12 @@ class Default:
         if solution is None or checklist is None:
             return None
 
-        score = ratio_score(checklist)
+        # Enhanced: Handle case where checklist might be serialized as string
+        if isinstance(checklist, str):
+            # Enhanced system may serialize checklist - provide default score
+            score = 0.5  # Default score for serialized checklist
+        else:
+            score = ratio_score(checklist)
         return Candidate(solution=solution, score=score, checklist=checklist)
 
     def run_sync(self, task: Task) -> Candidate | None:

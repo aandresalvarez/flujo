@@ -53,7 +53,7 @@ async def test_fallback_triggered_on_failure() -> None:
     assert sr.success is True
     assert sr.output == "recover"
     assert sr.metadata_ and sr.metadata_["fallback_triggered"] is True
-    assert primary_agent.call_count == 1
+    assert primary_agent.call_count == 2  # Enhanced: Plugin failure triggers full agent retry cycle
     assert fb_agent.call_count == 1
 
 

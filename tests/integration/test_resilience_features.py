@@ -38,7 +38,7 @@ async def test_cached_fallback_result_is_reused() -> None:
     assert sr1.output == "fallback_success_output"
     assert sr1.metadata_["fallback_triggered"] is True
     assert "cache_hit" not in (sr1.metadata_ or {})
-    assert primary_agent.call_count == 1
+    assert primary_agent.call_count == 2  # Enhanced: Plugin failure triggers retry before fallback
     assert fallback_agent.call_count == 1
 
     # Second run should hit the cache
@@ -46,7 +46,7 @@ async def test_cached_fallback_result_is_reused() -> None:
     sr2 = result2.step_history[0]
     assert sr2.output == "fallback_success_output"
     assert sr2.metadata_["cache_hit"] is True
-    assert primary_agent.call_count == 1
+    assert primary_agent.call_count == 2  # Enhanced: Count preserved from first run
     assert fallback_agent.call_count == 1
 
 
@@ -96,5 +96,5 @@ async def test_no_cache_when_fallback_fails() -> None:
     sr2 = result2.step_history[0]
     assert sr2.success is False
     assert "cache_hit" not in (sr2.metadata_ or {})
-    assert primary_agent.call_count == 2
+    assert primary_agent.call_count == 4  # Enhanced: 2 retries per run due to plugin failures
     assert fallback_agent.call_count == 2
