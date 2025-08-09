@@ -715,9 +715,15 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
 
     async def _handle_loop_step(self, loop_step, data, context, resources, limits, context_setter, _fallback_depth=0):
         """Backward compatibility method - delegates to LoopStepExecutor policy."""
-        return await self.loop_step_executor.execute(
-            self, loop_step, data, context, resources, limits, False, None, None, None, _fallback_depth
-        )
+        # Store context_setter for policy access
+        original_context_setter = getattr(self, '_context_setter', None)
+        try:
+            self._context_setter = context_setter
+            return await self.loop_step_executor.execute(
+                self, loop_step, data, context, resources, limits, False, None, None, None, _fallback_depth
+            )
+        finally:
+            self._context_setter = original_context_setter
 
     async def _handle_conditional_step(self, conditional_step, data, context, resources, limits, context_setter, _fallback_depth=0):
         """Backward compatibility method - delegates to ConditionalStepExecutor policy."""

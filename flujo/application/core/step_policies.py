@@ -1709,6 +1709,7 @@ class DefaultLoopStepExecutor:
         from .context_manager import ContextManager
         from flujo.infra import telemetry
         telemetry.logfire.info(f"[POLICY] DefaultLoopStepExecutor executing '{getattr(loop_step,'name','<unnamed>')}'")
+        telemetry.logfire.debug(f"Handling LoopStep '{getattr(loop_step,'name','<unnamed>')}'")
         telemetry.logfire.info(f"[POLICY] Loop body pipeline: {getattr(loop_step, 'loop_body_pipeline', 'NONE')}")
         telemetry.logfire.info(f"[POLICY] Core has _execute_pipeline: {hasattr(core, '_execute_pipeline')}")
         from flujo.domain.dsl.pipeline import Pipeline
