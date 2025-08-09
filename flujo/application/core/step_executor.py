@@ -83,35 +83,37 @@ async def _execute_agent_step(
     if hasattr(max_retries, '_mock_name') or isinstance(max_retries, (Mock, MagicMock, AsyncMock)):
         max_retries = 3
 
-    # Capture initial context state to prevent accumulating context updates across retries
-    initial_context_state = None
+    # FSD-003: Implement idempotent context updates for step retries
+    # Capture pristine context snapshot before any retry attempts
     total_attempts = max_retries + 1
+    pre_attempt_context = None
     if context is not None and total_attempts > 1:
-        import copy
-        initial_context_state = copy.deepcopy(context.model_dump())
+        from flujo.application.core.context_manager import ContextManager
+        pre_attempt_context = ContextManager.isolate(context)
 
     for attempt in range(1, max_retries + 2):
         result.attempts = attempt
         if limits is not None:
             await self._usage_meter.guard(limits, result.step_history)
         
-        # Reset context to initial state for retry attempts (except first)
-        # This prevents context updates from accumulating across failed retries
-        if attempt > 1 and context is not None and initial_context_state is not None:
-            telemetry.logfire.debug(f"Resetting context for retry attempt {attempt}")
-            # Restore context to initial state before retry
-            for field, value in initial_context_state.items():
-                if hasattr(context, field):
-                    old_value = getattr(context, field)
-                    setattr(context, field, value)
-                    telemetry.logfire.debug(f"Reset context field {field}: {old_value} -> {value}")
+        # FSD-003: Per-attempt context isolation  
+        # Each attempt (including the first) operates on a pristine copy when retries are possible
+        if total_attempts > 1 and pre_attempt_context is not None:
+            telemetry.logfire.info(f"[StepExecutor] Creating isolated context for attempt {attempt} (total_attempts={total_attempts})")
+            attempt_context = ContextManager.isolate(pre_attempt_context)
+            telemetry.logfire.info(f"[StepExecutor] Isolated context for attempt {attempt}, original context preserved")
+            # Debug: Check if isolation worked
+            if hasattr(attempt_context, 'branch_count') and hasattr(pre_attempt_context, 'branch_count'):
+                telemetry.logfire.info(f"[StepExecutor] Attempt {attempt}: attempt_context.branch_count={attempt_context.branch_count}, pre_attempt_context.branch_count={pre_attempt_context.branch_count}")
+        else:
+            attempt_context = context
         
         start_time = time_perf_ns()
         try:
             processed_data = data
             if hasattr(step, 'processors') and getattr(step, 'processors', None):
                 processed_data = await self._processor_pipeline.apply_prompt(
-                    step.processors, data, context=context
+                    step.processors, data, context=attempt_context
                 )
 
             options = {}
@@ -126,13 +128,16 @@ async def _execute_agent_step(
             agent_output = await self._agent_runner.run(
                 agent=step.agent,
                 payload=processed_data,
-                context=context,
+                context=attempt_context,
                 resources=resources,
                 options=options,
                 stream=stream,
                 on_chunk=on_chunk,
                 breach_event=breach_event,
             )
+            
+            # FSD-003 Debug: Check if agent execution actually succeeded
+            telemetry.logfire.info(f"[StepExecutor] Agent output type: {type(agent_output)}, contains exception: {isinstance(agent_output, Exception)}")
 
             if isinstance(agent_output, (Mock, MagicMock, AsyncMock)):
                 raise MockDetectionError(f"Step '{step.name}' returned a Mock object")
@@ -152,7 +157,7 @@ async def _execute_agent_step(
             if hasattr(step, "processors") and step.processors:
                 try:
                     processed_output = await self._processor_pipeline.apply_output(
-                        step.processors, processed_output, context=context
+                        step.processors, processed_output, context=attempt_context
                     )
                 except Exception as e:
                     result.success = False
@@ -166,7 +171,7 @@ async def _execute_agent_step(
             try:
                 if hasattr(step, "validators") and step.validators:
                     validation_results = await self._validator_runner.validate(
-                        step.validators, processed_output, context=context
+                        step.validators, processed_output, context=attempt_context
                     )
                     failed_validations = [r for r in validation_results if not r.is_valid]
                     if failed_validations:
@@ -200,7 +205,7 @@ async def _execute_agent_step(
                         unpacked_output = _unpack_agent_result(processed_output)
                         plugin_data = {"output": unpacked_output} if not isinstance(unpacked_output, dict) else unpacked_output
                         plugin_result = await self._plugin_runner.run_plugins(
-                            step.plugins, plugin_data, context=context, resources=resources
+                            step.plugins, plugin_data, context=attempt_context, resources=resources
                         )
                         if hasattr(plugin_result, "redirect_to") and plugin_result.redirect_to is not None:
                             redirected_agent = plugin_result.redirect_to
@@ -208,7 +213,7 @@ async def _execute_agent_step(
                             redirected_output = await self._agent_runner.run(
                                 agent=redirected_agent,
                                 payload=data,
-                                context=context,
+                                context=attempt_context,
                                 resources=resources,
                                 options={},
                                 stream=stream,
@@ -243,6 +248,16 @@ async def _execute_agent_step(
                 result.success = True
                 result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_time)
                 result.feedback = None
+                
+                # FSD-003: Post-success context merge for step executor
+                # Only commit context changes if the step succeeds
+                if total_attempts > 1 and context is not None and attempt_context is not None and attempt_context is not context:
+                    # Merge successful attempt context back into original context
+                    from flujo.application.core.context_manager import ContextManager
+                    ContextManager.merge(context, attempt_context)
+                    telemetry.logfire.info(f"[StepExecutor] Merged successful attempt {attempt} context back to main context")
+                    telemetry.logfire.info(f"[StepExecutor] Context after merge: branch_count={getattr(context, 'branch_count', 'N/A')}")
+                
                 result.branch_context = context
                 if cache_key and self._enable_cache:
                     self.cache.set(cache_key, result)
@@ -270,6 +285,21 @@ async def _execute_agent_step(
                 result.feedback = f"Agent execution failed with {type(e).__name__}: {str(e)}"
             result.output = None
             result.latency_s = time.monotonic() - overall_start_time
+            
+            # FSD-003: For failed steps, return the attempt context from the last attempt
+            # This prevents context accumulation across retry attempts while preserving
+            # the effect of a single execution attempt
+            if total_attempts > 1 and attempt_context is not None:
+                result.branch_context = attempt_context
+                telemetry.logfire.info(f"[StepExecutor] FAILED: Setting branch_context to attempt_context (prevents retry accumulation)")
+                if hasattr(attempt_context, 'branch_count'):
+                    telemetry.logfire.info(f"[StepExecutor] FAILED: Final attempt_context.branch_count = {attempt_context.branch_count}")
+                    telemetry.logfire.info(f"[StepExecutor] FAILED: Original context.branch_count = {getattr(context, 'branch_count', 'N/A')}")
+            else:
+                result.branch_context = context
+                if hasattr(context, 'branch_count') if context else False:
+                    telemetry.logfire.info(f"[StepExecutor] FAILED: Using original context.branch_count = {context.branch_count}")
+                
             telemetry.logfire.error(f"Step '{step.name}' agent failed after {result.attempts} attempts")
             return result
     result.success = False

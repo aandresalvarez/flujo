@@ -327,25 +327,27 @@ async def _execute_simple_step_policy_impl(
     # reflect plugin validation semantics even if a later agent call fails
     last_plugin_failure_feedback: Optional[str] = None
     
-    # Capture initial context state to prevent accumulating context updates across retries
-    initial_context_state = None
+    # FSD-003: Implement idempotent context updates for step retries  
+    # Capture pristine context snapshot before any retry attempts
+    pre_attempt_context = None
     if context is not None and total_attempts > 1:
-        import copy
-        initial_context_state = copy.deepcopy(context.model_dump())
+        from flujo.application.core.context_manager import ContextManager
+        pre_attempt_context = ContextManager.isolate(context)
     
     for attempt in range(1, total_attempts + 1):
         result.attempts = attempt
         
-        # Reset context to initial state for retry attempts (except first)
-        # This prevents context updates from accumulating across failed retries
-        if attempt > 1 and context is not None and initial_context_state is not None:
-            telemetry.logfire.debug(f"Resetting context for retry attempt {attempt}")
-            # Restore context to initial state before retry
-            for field, value in initial_context_state.items():
-                if hasattr(context, field):
-                    old_value = getattr(context, field)
-                    setattr(context, field, value)
-                    telemetry.logfire.debug(f"Reset context field {field}: {old_value} -> {value}")
+        # FSD-003: Per-attempt context isolation
+        # Each attempt (including the first) operates on a pristine copy when retries are possible
+        if total_attempts > 1 and pre_attempt_context is not None:
+            telemetry.logfire.info(f"[SimpleStep] Creating isolated context for simple step attempt {attempt} (total_attempts={total_attempts})")
+            attempt_context = ContextManager.isolate(pre_attempt_context)
+            telemetry.logfire.info(f"[SimpleStep] Isolated context for simple step attempt {attempt}, original context preserved")
+            # Debug: Check if isolation worked
+            if hasattr(attempt_context, 'branch_count') and hasattr(pre_attempt_context, 'branch_count'):
+                telemetry.logfire.info(f"[SimpleStep] Attempt {attempt}: attempt_context.branch_count={attempt_context.branch_count}, pre_attempt_context.branch_count={pre_attempt_context.branch_count}")
+        else:
+            attempt_context = context
         
         start_ns = time_perf_ns()
         try:
@@ -353,7 +355,7 @@ async def _execute_simple_step_policy_impl(
             processed_data = data
             if hasattr(step, "processors") and step.processors:
                 processed_data = await core._processor_pipeline.apply_prompt(
-                    step.processors, data, context=context
+                    step.processors, data, context=attempt_context
                 )
 
             # agent options
@@ -371,7 +373,7 @@ async def _execute_simple_step_policy_impl(
                 agent_output = await core._agent_runner.run(
                     agent=step.agent,
                     payload=processed_data,
-                    context=context,
+                    context=attempt_context,
                     resources=resources,
                     options=options,
                     stream=stream,
@@ -418,7 +420,7 @@ async def _execute_simple_step_policy_impl(
                 except Exception:
                     pass
                 processed_output = await core._processor_pipeline.apply_output(
-                    step.processors, agent_output, context=context
+                    step.processors, agent_output, context=attempt_context
                 )
 
             # hybrid validation step path
@@ -436,17 +438,17 @@ async def _execute_simple_step_policy_impl(
                     result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
                     # Persist hybrid feedback/results to context when configured (use actual validator outputs)
                     try:
-                        if context is not None:
+                        if attempt_context is not None:
                             if getattr(step, "persist_feedback_to_context", None):
                                 fname = step.persist_feedback_to_context
-                                if hasattr(context, fname):
-                                    getattr(context, fname).append(hybrid_feedback)
+                                if hasattr(attempt_context, fname):
+                                    getattr(attempt_context, fname).append(hybrid_feedback)
                             if getattr(step, "persist_validation_results_to", None):
                                 # Re-run validators on the checked output to get named results
-                                results = await core._validator_runner.validate(step.validators, checked_output, context=context)
+                                results = await core._validator_runner.validate(step.validators, checked_output, context=attempt_context)
                                 hname = step.persist_validation_results_to
-                                if hasattr(context, hname):
-                                    getattr(context, hname).extend(results)
+                                if hasattr(attempt_context, hname):
+                                    getattr(attempt_context, hname).extend(results)
                     except Exception:
                         pass
                     if strict_flag:
@@ -472,11 +474,11 @@ async def _execute_simple_step_policy_impl(
                 result.metadata_["validation_passed"] = True
                 # On success, optionally persist positive validation results (actual validator outputs)
                 try:
-                    if context is not None and getattr(step, "persist_validation_results_to", None):
-                        results = await core._validator_runner.validate(step.validators, checked_output, context=context)
+                    if attempt_context is not None and getattr(step, "persist_validation_results_to", None):
+                        results = await core._validator_runner.validate(step.validators, checked_output, context=attempt_context)
                         hname = step.persist_validation_results_to
-                        if hasattr(context, hname):
-                            getattr(context, hname).extend(results)
+                        if hasattr(attempt_context, hname):
+                            getattr(attempt_context, hname).extend(results)
                 except Exception:
                     pass
                 return result
@@ -615,11 +617,11 @@ async def _execute_simple_step_policy_impl(
                     )
                     # Persist successful validation results when requested
                     try:
-                        if context is not None and getattr(step, "persist_validation_results_to", None):
-                            results = await core._validator_runner.validate(step.validators, processed_output, context=context)
+                        if attempt_context is not None and getattr(step, "persist_validation_results_to", None):
+                            results = await core._validator_runner.validate(step.validators, processed_output, context=attempt_context)
                             hist_name = step.persist_validation_results_to
-                            if hasattr(context, hist_name):
-                                getattr(context, hist_name).extend(results)
+                            if hasattr(attempt_context, hist_name):
+                                getattr(attempt_context, hist_name).extend(results)
                     except Exception:
                         pass
                 except Exception as validation_error:
@@ -634,16 +636,16 @@ async def _execute_simple_step_policy_impl(
                         )
                         # Persist failure feedback/results to context if configured
                         try:
-                            if context is not None:
+                            if attempt_context is not None:
                                 if getattr(step, "persist_feedback_to_context", None):
                                     fname = step.persist_feedback_to_context
-                                    if hasattr(context, fname):
-                                        getattr(context, fname).append(str(validation_error))
+                                    if hasattr(attempt_context, fname):
+                                        getattr(attempt_context, fname).append(str(validation_error))
                                 if getattr(step, "persist_validation_results_to", None):
-                                    results = await core._validator_runner.validate(step.validators, processed_output, context=context)
+                                    results = await core._validator_runner.validate(step.validators, processed_output, context=attempt_context)
                                     hname = step.persist_validation_results_to
-                                    if hasattr(context, hname):
-                                        getattr(context, hname).extend(results)
+                                    if hasattr(attempt_context, hname):
+                                        getattr(attempt_context, hname).extend(results)
                         except Exception:
                             pass
                         telemetry.logfire.error(
@@ -666,16 +668,16 @@ async def _execute_simple_step_policy_impl(
                         time_perf_ns() - start_ns
                     )
                     try:
-                        if context is not None:
+                        if attempt_context is not None:
                             if getattr(step, "persist_feedback_to_context", None):
                                 fname = step.persist_feedback_to_context
-                                if hasattr(context, fname):
-                                    getattr(context, fname).append(str(validation_error))
+                                if hasattr(attempt_context, fname):
+                                    getattr(attempt_context, fname).append(str(validation_error))
                             if getattr(step, "persist_validation_results_to", None):
-                                results = await core._validator_runner.validate(step.validators, processed_output, context=context)
+                                results = await core._validator_runner.validate(step.validators, processed_output, context=attempt_context)
                                 hname = step.persist_validation_results_to
-                                if hasattr(context, hname):
-                                    getattr(context, hname).extend(results)
+                                if hasattr(attempt_context, hname):
+                                    getattr(attempt_context, hname).extend(results)
                     except Exception:
                         pass
                     telemetry.logfire.error(
@@ -751,6 +753,15 @@ async def _execute_simple_step_policy_impl(
             result.output = unpacker.unpack(processed_output)
             result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
             result.feedback = None
+            
+            # FSD-003: Post-success context merge for simple steps
+            # Only commit context changes if the step succeeds
+            if total_attempts > 1 and context is not None and attempt_context is not None and attempt_context is not context:
+                # Merge successful attempt context back into original context
+                from flujo.application.core.context_manager import ContextManager
+                ContextManager.merge(context, attempt_context)
+                telemetry.logfire.debug(f"Merged successful simple step attempt {attempt} context back to main context")
+            
             result.branch_context = context
             # Adapter attempts alignment: if this is an adapter step following a loop,
             # reflect the loop iteration count as the adapter's attempts for parity with tests.
@@ -995,6 +1006,19 @@ async def _execute_simple_step_policy_impl(
                     result.feedback = f"Original error: {result.feedback}; Fallback error: {fb_err}"
                     return result
             # No fallback configured: return the failure result
+            # FSD-003: For failed steps, return the attempt context from the last attempt
+            # This prevents context accumulation across retry attempts while preserving
+            # the effect of a single execution attempt
+            if total_attempts > 1 and 'attempt_context' in locals() and attempt_context is not None:
+                result.branch_context = attempt_context
+                telemetry.logfire.info(f"[SimpleStep] FAILED: Setting branch_context to attempt_context (prevents retry accumulation)")
+                if hasattr(attempt_context, 'branch_count'):
+                    telemetry.logfire.info(f"[SimpleStep] FAILED: Final attempt_context.branch_count = {attempt_context.branch_count}")
+                    telemetry.logfire.info(f"[SimpleStep] FAILED: Original context.branch_count = {getattr(context, 'branch_count', 'N/A')}")
+            else:
+                result.branch_context = context
+                if hasattr(context, 'branch_count') if context else False:
+                    telemetry.logfire.info(f"[SimpleStep] FAILED: Using original context.branch_count = {context.branch_count}")
             return result
 
     # not reached normally
@@ -1092,11 +1116,12 @@ class DefaultAgentStepExecutor:
         if stream:
             total_attempts = 1
 
-        # Capture initial context state to prevent accumulating context updates across retries
-        initial_context_state = None
+        # FSD-003: Implement idempotent context updates for step retries
+        # Capture pristine context snapshot before any retry attempts
+        pre_attempt_context = None
         if context is not None and total_attempts > 1:
-            import copy
-            initial_context_state = copy.deepcopy(context.model_dump())
+            from flujo.application.core.context_manager import ContextManager
+            pre_attempt_context = ContextManager.isolate(context)
 
         # Attempt loop
         for attempt in range(1, total_attempts + 1):
@@ -1104,23 +1129,24 @@ class DefaultAgentStepExecutor:
             if limits is not None:
                 await core._usage_meter.guard(limits, result.step_history)
             
-            # Reset context to initial state for retry attempts (except first)
-            # This prevents context updates from accumulating across failed retries
-            if attempt > 1 and context is not None and initial_context_state is not None:
-                telemetry.logfire.debug(f"Resetting context for retry attempt {attempt}")
-                # Restore context to initial state before retry
-                for field, value in initial_context_state.items():
-                    if hasattr(context, field):
-                        old_value = getattr(context, field)
-                        setattr(context, field, value)
-                        telemetry.logfire.debug(f"Reset context field {field}: {old_value} -> {value}")
+            # FSD-003: Per-attempt context isolation
+            # Each attempt (including the first) operates on a pristine copy when retries are possible
+            if total_attempts > 1 and pre_attempt_context is not None:
+                telemetry.logfire.info(f"[AgentStep] Creating isolated context for attempt {attempt} (total_attempts={total_attempts})")
+                attempt_context = ContextManager.isolate(pre_attempt_context)
+                telemetry.logfire.info(f"[AgentStep] Isolated context for attempt {attempt}, original context preserved")
+                # Debug: Check if isolation worked
+                if hasattr(attempt_context, 'branch_count') and hasattr(pre_attempt_context, 'branch_count'):
+                    telemetry.logfire.info(f"[AgentStep] Attempt {attempt}: attempt_context.branch_count={attempt_context.branch_count}, pre_attempt_context.branch_count={pre_attempt_context.branch_count}")
+            else:
+                attempt_context = context
             
             start_ns = time_perf_ns()
             try:
                 processed_data = data
                 if hasattr(step, "processors") and getattr(step, "processors", None):
                     processed_data = await core._processor_pipeline.apply_prompt(
-                        step.processors, data, context=context
+                        step.processors, data, context=attempt_context
                     )
 
                 options: Dict[str, Any] = {}
@@ -1137,7 +1163,7 @@ class DefaultAgentStepExecutor:
                     agent_output = await core._agent_runner.run(
                         agent=step.agent,
                         payload=processed_data,
-                        context=context,
+                        context=attempt_context,
                         resources=resources,
                         options=options,
                         stream=stream,
@@ -1162,7 +1188,7 @@ class DefaultAgentStepExecutor:
                 if hasattr(step, "processors") and step.processors:
                     try:
                         processed_output = await core._processor_pipeline.apply_output(
-                            step.processors, processed_output, context=context
+                            step.processors, processed_output, context=attempt_context
                         )
                     except Exception as e:
                         result.success = False
@@ -1176,7 +1202,7 @@ class DefaultAgentStepExecutor:
                 try:
                     if hasattr(step, "validators") and step.validators:
                         validation_results = await core._validator_runner.validate(
-                            step.validators, processed_output, context=context
+                            step.validators, processed_output, context=attempt_context
                         )
                         failed_validations = [r for r in validation_results if not getattr(r, "is_valid", False)]
                         if failed_validations:
@@ -1199,7 +1225,7 @@ class DefaultAgentStepExecutor:
                                         fb_res = await core.execute(
                                             step=step.fallback_step,
                                             data=data,
-                                            context=context,
+                                            context=attempt_context,
                                             resources=resources,
                                             limits=limits,
                                             stream=stream,
@@ -1258,7 +1284,7 @@ class DefaultAgentStepExecutor:
                                 fb_res = await core.execute(
                                     step=step.fallback_step,
                                     data=data,
-                                    context=context,
+                                    context=attempt_context,
                                     resources=resources,
                                     limits=limits,
                                     stream=stream,
@@ -1341,6 +1367,15 @@ class DefaultAgentStepExecutor:
                     result.success = True
                     result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
                     result.feedback = None
+                    
+                    # FSD-003: Post-success context merge
+                    # Only commit context changes if the step succeeds
+                    if total_attempts > 1 and context is not None and attempt_context is not None and attempt_context is not context:
+                        # Merge successful attempt context back into original context
+                        from flujo.application.core.context_manager import ContextManager
+                        ContextManager.merge(context, attempt_context)
+                        telemetry.logfire.debug(f"Merged successful agent step attempt {attempt} context back to main context")
+                    
                     result.branch_context = context
                     # Adapter attempts alignment for post-loop mappers (e.g., refine_output_mapper)
                     try:
@@ -1398,7 +1433,7 @@ class DefaultAgentStepExecutor:
                         fb_res = await core.execute(
                             step=step.fallback_step,
                             data=data,
-                            context=context,
+                            context=attempt_context,
                             resources=resources,
                             limits=limits,
                             stream=stream,

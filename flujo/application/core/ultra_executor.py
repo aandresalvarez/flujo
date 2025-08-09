@@ -810,17 +810,37 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             if hasattr(max_retries, '_mock_name') or isinstance(max_retries, (Mock, MagicMock, AsyncMock)):
                 max_retries = 2  # Default value for Mock objects
             
+            # FSD-003: Implement idempotent context updates for step retries
+            # Capture pristine context snapshot before any retry attempts
+            total_attempts = max_retries + 1
+            pre_attempt_context = None
+            if context is not None and total_attempts > 1:
+                from flujo.application.core.context_manager import ContextManager
+                pre_attempt_context = ContextManager.isolate(context)
+                telemetry.logfire.info(f"[UltraExecutor] Creating pre-attempt context snapshot for step '{step.name}' (total_attempts={total_attempts})")
+            
             # FIXED: Use loop-based retry mechanism to avoid infinite recursion
             # max_retries = 2 means 1 initial + 2 retries = 3 total attempts
             for attempt in range(1, max_retries + 2):  # +2 because we want max_retries + 1 total attempts
                 result.attempts = attempt
+                telemetry.logfire.info(f"[UltraExecutor] _execute_simple_step attempt {attempt} for step '{step.name}'")
+                
+                # FSD-003: Per-attempt context isolation
+                # Each attempt (including the first) operates on a pristine copy when retries are possible
+                if total_attempts > 1 and pre_attempt_context is not None:
+                    attempt_context = ContextManager.isolate(pre_attempt_context)
+                    telemetry.logfire.info(f"[UltraExecutor] Creating isolated context for attempt {attempt} (total_attempts={total_attempts})")
+                    if hasattr(attempt_context, 'branch_count') and hasattr(pre_attempt_context, 'branch_count'):
+                        telemetry.logfire.info(f"[UltraExecutor] Attempt {attempt}: attempt_context.branch_count={attempt_context.branch_count}, pre_attempt_context.branch_count={pre_attempt_context.branch_count}")
+                else:
+                    attempt_context = context
                 
                 try:
                     # --- 1. Processor Pipeline (apply_prompt) ---
                     processed_data = data
                     if hasattr(step, "processors") and step.processors:
                         processed_data = await self._processor_pipeline.apply_prompt(
-                            step.processors, data, context=context
+                            step.processors, data, context=attempt_context
                         )
                     
                     # --- 2. Build sampling options from StepConfig ---
@@ -838,7 +858,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     agent_output = await self._agent_runner.run(
                         agent=step.agent,
                         payload=processed_data,  # Use processed_data from apply_prompt
-                        context=context,
+                        context=attempt_context,
                         resources=resources,
                         options=options,
                         stream=stream,
@@ -889,7 +909,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         telemetry.logfire.info(f"Applying output processors for step '{step.name}'")
                         try:
                             processed_output = await self._processor_pipeline.apply_output(
-                                step.processors, agent_output, context=context
+                                step.processors, agent_output, context=attempt_context
                             )
                         except Exception as e:
                             # Treat processor failure as plugin failure and attempt fallback immediately when available
@@ -899,7 +919,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                                     fallback_result = await self.execute(
                                         step=step.fallback_step,
                                         data=data,
-                                        context=context,
+                                        context=attempt_context,
                                         resources=resources,
                                         limits=limits,
                                         stream=stream,
@@ -1166,6 +1186,17 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     result.output = processed_output
                     result.latency_s = time.monotonic() - start_time
                     result.feedback = None  # None for successful runs
+                    
+                    # FSD-003: Post-success context merge for ultra executor
+                    # Only commit context changes if the step succeeds
+                    if total_attempts > 1 and context is not None and attempt_context is not None and attempt_context is not context:
+                        # Merge successful attempt context back into original context
+                        from flujo.application.core.context_manager import ContextManager
+                        ContextManager.merge(context, attempt_context)
+                        telemetry.logfire.info(f"[UltraExecutor] Merged successful attempt {attempt} context back to main context")
+                        if hasattr(context, 'branch_count'):
+                            telemetry.logfire.info(f"[UltraExecutor] Context after merge: branch_count={context.branch_count}")
+                    
                     result.branch_context = context
 
                     # Optional fallback-on-success orchestration (disabled by default)
@@ -1265,6 +1296,20 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             await self._usage_meter.guard(limits, step_history=[result])
                     
                     telemetry.logfire.error(f"Step '{step.name}' agent failed after {result.attempts} attempts")
+                    
+                    # FSD-003: For failed steps, return the attempt context from the last attempt
+                    # This prevents context accumulation across retry attempts while preserving
+                    # the effect of a single execution attempt
+                    if total_attempts > 1 and 'attempt_context' in locals() and attempt_context is not None:
+                        result.branch_context = attempt_context
+                        telemetry.logfire.info(f"[UltraExecutor] FAILED: Setting branch_context to attempt_context (prevents retry accumulation)")
+                        if hasattr(attempt_context, 'branch_count'):
+                            telemetry.logfire.info(f"[UltraExecutor] FAILED: Final attempt_context.branch_count = {attempt_context.branch_count}")
+                            telemetry.logfire.info(f"[UltraExecutor] FAILED: Original context.branch_count = {getattr(context, 'branch_count', 'N/A')}")
+                    else:
+                        result.branch_context = context
+                        if hasattr(context, 'branch_count') if context else False:
+                            telemetry.logfire.info(f"[UltraExecutor] FAILED: Using original context.branch_count = {context.branch_count}")
                     
                     # --- 7. Fallback Logic ---
                     if hasattr(step, 'fallback_step') and step.fallback_step is not None:
