@@ -40,6 +40,8 @@ class TestExecutorCoreFallback:
         mock_processor_pipeline.apply_output.return_value = "processed output"
         mock_plugin_runner.run_plugins.return_value = "final output"
         mock_agent_runner.run.return_value = "raw output"
+        # Configure cache backend to return None by default (no cached result)
+        mock_cache_backend.get.return_value = None
 
         return ExecutorCore(
             agent_runner=mock_agent_runner,

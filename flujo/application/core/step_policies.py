@@ -676,7 +676,7 @@ async def _execute_simple_step_policy_impl(
                         continue
                     # Exhausted retries: finalize as plugin error and allow fallback
                     result.success = False
-                    msg = f"Plugin validation failed: {str(e)}"
+                    msg = str(e)
                     result.feedback = f"Plugin execution failed after max retries: {msg}"
                     result.output = None
                     result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
@@ -2567,6 +2567,7 @@ class DefaultConditionalStepExecutor:
         from ...utils.context import safe_merge_context_updates
 
         telemetry.logfire.debug("=== HANDLE CONDITIONAL STEP ===")
+        telemetry.logfire.debug(f"Handling ConditionalStep '{getattr(conditional_step,'name','<unnamed>')}'")
         telemetry.logfire.debug(f"Conditional step name: {conditional_step.name}")
 
         # Initialize result
