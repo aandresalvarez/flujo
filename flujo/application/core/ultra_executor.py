@@ -1415,53 +1415,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             telemetry.logfire.info(f"_execute_simple_step caught critical exception {type(e).__name__} for step '{step.name}' - re-raising")
             raise
 
-    async def _execute_agent_step(
-        self,
-        step: Any,
-        data: Any,
-        context: Optional[TContext_w_Scratch],
-        resources: Optional[Any],
-        limits: Optional[UsageLimits],
-        stream: bool,
-        on_chunk: Optional[Callable[[Any], Awaitable[None]]],
-        cache_key: Optional[str],
-        breach_event: Optional[Any],
-        _fallback_depth: int = 0,
-    ) -> StepResult:
-        return await self.agent_step_executor.execute(
-            self,
-            step,
-            data,
-            context,
-            resources,
-            limits,
-            stream,
-            on_chunk,
-            cache_key,
-            breach_event,
-            _fallback_depth,
-        )
 
-    async def _handle_loop_step(
-        self,
-        step: Any,
-        data: Any,
-        context: Optional[TContext_w_Scratch],
-        resources: Optional[Any],
-        limits: Optional[UsageLimits],
-        context_setter: Optional[Callable[[Any, Optional[Any]], None]],
-        _fallback_depth: int = 0,
-    ) -> StepResult:
-        # Delegate to the unified loop helper to ensure consistent semantics for MapStep and LoopStep
-        return await self._execute_loop(
-            step,
-            data,
-            context,
-            resources,
-            limits,
-            context_setter,
-            _fallback_depth,
-        )
+
+
     
     # --- Policy-driven ParallelStep handler ---
     async def _handle_parallel_step(

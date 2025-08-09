@@ -212,7 +212,6 @@ class DefaultSimpleStepExecutor:
             cache_key,
             breach_event,
             _fallback_depth,
-            _from_policy=True,
         )
 
 
@@ -1541,14 +1540,24 @@ class DefaultLoopStepExecutor:
     async def execute(
         self,
         core,
-        loop_step,
+        step,
         data,
         context,
         resources,
         limits,
-        context_setter,
+        stream: bool,
+        on_chunk: Optional[Callable[[Any], Awaitable[None]]],
+        cache_key: Optional[str],
+        breach_event: Optional[Any],
         _fallback_depth: int = 0,
     ) -> StepResult:
+        # Use proper variable name to match parameter
+        loop_step = step
+        
+        # Standard policy context_setter extraction - this is how we get the context_setter
+        # that the legacy _handle_loop_step method expected
+        context_setter = getattr(core, '_context_setter', None)
+        
         # Migrated loop execution logic from core with parameterized calls via `core`
         import time
         from flujo.domain.models import PipelineContext, StepResult
