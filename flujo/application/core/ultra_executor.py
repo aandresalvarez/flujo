@@ -137,8 +137,6 @@ from flujo.application.core.context_manager import ContextManager
 from flujo.application.core.hybrid_check import run_hybrid_check
 
 # ... existing imports ...
-from .step_executor import _execute_agent_step as _execute_agent_step_fn
-from .loop_executor import _handle_loop_step as _handle_loop_step_fn
 from .step_policies import (
     TimeoutRunner, DefaultTimeoutRunner,
     AgentResultUnpacker, DefaultAgentResultUnpacker,
@@ -148,6 +146,10 @@ from .step_policies import (
     AgentStepExecutor, DefaultAgentStepExecutor,
     LoopStepExecutor, DefaultLoopStepExecutor,
     ParallelStepExecutor, DefaultParallelStepExecutor,
+    ConditionalStepExecutor, DefaultConditionalStepExecutor,
+    DynamicRouterStepExecutor, DefaultDynamicRouterStepExecutor,
+    HitlStepExecutor, DefaultHitlStepExecutor,
+    CacheStepExecutor, DefaultCacheStepExecutor,
 )
 
 
@@ -213,6 +215,10 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         agent_step_executor: Optional[AgentStepExecutor] = None,
         loop_step_executor: Optional[LoopStepExecutor] = None,
         parallel_step_executor: Optional[ParallelStepExecutor] = None,
+        conditional_step_executor: Optional[ConditionalStepExecutor] = None,
+        dynamic_router_step_executor: Optional[DynamicRouterStepExecutor] = None,
+        hitl_step_executor: Optional[HitlStepExecutor] = None,
+        cache_step_executor: Optional[CacheStepExecutor] = None,
     ):
         """Initialize ExecutorCore with dependency injection."""
         # Validate parameters for compatibility
@@ -251,6 +257,10 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         self.agent_step_executor = agent_step_executor or DefaultAgentStepExecutor()
         self.loop_step_executor = loop_step_executor or DefaultLoopStepExecutor()
         self.parallel_step_executor = parallel_step_executor or DefaultParallelStepExecutor()
+        self.conditional_step_executor = conditional_step_executor or DefaultConditionalStepExecutor()
+        self.dynamic_router_step_executor = dynamic_router_step_executor or DefaultDynamicRouterStepExecutor()
+        self.hitl_step_executor = hitl_step_executor or DefaultHitlStepExecutor()
+        self.cache_step_executor = cache_step_executor or DefaultCacheStepExecutor()
         
     @property
     def cache(self) -> _LRUCache:
@@ -558,58 +568,58 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         else:
             telemetry.logfire.debug(f"Caching disabled for step: {step.name}")
 
-        # Consistent step routing following the recursive execution model
-        # Route to appropriate handler based on step type
+        # Policy-driven step routing following the Flujo architecture
+        # Each step type is handled by its dedicated policy executor
         if isinstance(step, LoopStep):
-            telemetry.logfire.debug(f"Handling LoopStep: {step.name}")
-            result = await self._handle_loop_step(
-                step, data, context, resources, limits, context_setter, _fallback_depth
+            telemetry.logfire.debug(f"Routing to LoopStep policy: {step.name}")
+            result = await self.loop_step_executor.execute(
+                self, step, data, context, resources, limits, stream, on_chunk, cache_key, breach_event, _fallback_depth
             )
         elif isinstance(step, ParallelStep):
-            telemetry.logfire.debug(f"Handling ParallelStep: {step.name}")
-            result = await self._handle_parallel_step(
-                step, data, context, resources, limits, breach_event, context_setter
+            telemetry.logfire.debug(f"Routing to ParallelStep policy: {step.name}")
+            result = await self.parallel_step_executor.execute(
+                self, step, data, context, resources, limits, breach_event, context_setter
             )
         elif isinstance(step, ConditionalStep):
-            telemetry.logfire.debug(f"Handling ConditionalStep: {step.name}")
-            result = await self._handle_conditional_step(
-                step, data, context, resources, limits, context_setter, _fallback_depth
+            telemetry.logfire.debug(f"Routing to ConditionalStep policy: {step.name}")
+            result = await self.conditional_step_executor.execute(
+                self, step, data, context, resources, limits, context_setter, _fallback_depth
             )
         elif isinstance(step, DynamicParallelRouterStep):
-            telemetry.logfire.debug(f"Routing to dynamic router step handler: {step.name}")
-            result = await self._handle_dynamic_router_step(
-                step, data, context, resources, limits, context_setter
+            telemetry.logfire.debug(f"Routing to DynamicRouterStep policy: {step.name}")
+            result = await self.dynamic_router_step_executor.execute(
+                self, step, data, context, resources, limits, context_setter
             )
         elif isinstance(step, HumanInTheLoopStep):
-            telemetry.logfire.debug(f"Routing to HITL step handler: {step.name}")
-            result = await self._handle_hitl_step(
-                step, data, context, resources, limits, context_setter
+            telemetry.logfire.debug(f"Routing to HitlStep policy: {step.name}")
+            result = await self.hitl_step_executor.execute(
+                self, step, data, context, resources, limits, context_setter
             )
         elif isinstance(step, CacheStep):
-            telemetry.logfire.debug(f"Routing to cache step handler: {step.name}")
-            result = await self._handle_cache_step(
-                step, data, context, resources, limits, breach_event, context_setter, None
+            telemetry.logfire.debug(f"Routing to CacheStep policy: {step.name}")
+            result = await self.cache_step_executor.execute(
+                self, step, data, context, resources, limits, breach_event, context_setter, None
             )
         # For streaming agents, use simple step handler to process streaming without retries
         elif hasattr(step, "meta") and step.meta.get("is_validation_step", False):
-            telemetry.logfire.debug(f"Routing validation step to simple handler: {step.name}")
-            result = await self._execute_simple_step(
-                step, data, context, resources, limits, stream, on_chunk, cache_key, None, _fallback_depth
+            telemetry.logfire.debug(f"Routing validation step to SimpleStep policy: {step.name}")
+            result = await self.simple_step_executor.execute(
+                self, step, data, context, resources, limits, stream, on_chunk, cache_key, None, _fallback_depth
             )
         elif stream:
-            telemetry.logfire.debug(f"Routing streaming step to simple handler: {step.name}")
-            result = await self._execute_simple_step(
-                step, data, context, resources, limits, stream, on_chunk, cache_key, None, _fallback_depth
+            telemetry.logfire.debug(f"Routing streaming step to SimpleStep policy: {step.name}")
+            result = await self.simple_step_executor.execute(
+                self, step, data, context, resources, limits, stream, on_chunk, cache_key, None, _fallback_depth
             )
         elif hasattr(step, 'fallback_step') and step.fallback_step is not None and not hasattr(step.fallback_step, '_mock_name'):
-            telemetry.logfire.debug(f"Routing to simple step with fallback: {step.name}")
-            result = await self._execute_simple_step(
-                step, data, context, resources, limits, stream, on_chunk, cache_key, None, _fallback_depth
+            telemetry.logfire.debug(f"Routing to SimpleStep policy with fallback: {step.name}")
+            result = await self.simple_step_executor.execute(
+                self, step, data, context, resources, limits, stream, on_chunk, cache_key, None, _fallback_depth
             )
         else:
-            telemetry.logfire.debug(f"Routing to agent step handler: {step.name}")
-            result = await self._execute_agent_step(
-                step, data, context, resources, limits, stream, on_chunk, cache_key, None, _fallback_depth
+            telemetry.logfire.debug(f"Routing to AgentStep policy: {step.name}")
+            result = await self.agent_step_executor.execute(
+                self, step, data, context, resources, limits, stream, on_chunk, cache_key, None, _fallback_depth
             )
         
         # Finalization: do not re-apply processors for fallback results; fallback step execution owns all processing
@@ -2057,10 +2067,10 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         _fallback_depth: int = 0,
     ) -> StepResult:
         """Execute a complex step with plugins, validators, etc."""
-        # This is a compatibility method for tests
-        return await self.execute_step(
+        # This is a compatibility method for tests - delegate to main execute method
+        return await self.execute(
             step, data, context, resources, limits, stream, on_chunk, 
-            breach_event, context_setter, _fallback_depth=_fallback_depth
+            cache_key, breach_event, context_setter, _fallback_depth=_fallback_depth
         )
 
     async def _handle_cache_step(
@@ -3636,10 +3646,5 @@ def _build_agent_options(self, cfg: Any) -> dict[str, Any]:
             opts[key] = val
     return opts
 
-# ... inside ExecutorCore class or after all definitions ...
-ExecutorCore._execute_agent_step = _execute_agent_step_fn
-ExecutorCore._handle_loop_step = _handle_loop_step_fn
 
-# Add wrapper delegating to policy
-async def _execute_simple_step(self, step: Any, data: Any, context: Optional[TContext_w_Scratch], resources: Optional[Any], limits: Optional[UsageLimits], stream: bool = False, on_chunk: Optional[Callable[[Any], Awaitable[None]]] = None, cache_key: Optional[str] = None, breach_event: Optional[Any] = None, _fallback_depth: int = 0) -> StepResult:
-    return await self.simple_step_executor.execute(step, data, context, resources, limits, stream, on_chunk, cache_key, breach_event, _fallback_depth)
+
