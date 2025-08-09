@@ -98,6 +98,8 @@ class ConfigManager:
             config_path: Path to the configuration file. If None, will search for flujo.toml
         """
         self.config_path = self._find_config_file(config_path)
+        self._cached_config: Optional[FlujoConfig] = None
+        self._config_file_mtime: Optional[float] = None
 
     def _find_config_file(self, config_path: Optional[Union[str, Path]]) -> Optional[Path]:
         """Find the configuration file to use."""
@@ -126,11 +128,30 @@ class ConfigManager:
 
         return None
 
-    def load_config(self) -> FlujoConfig:
-        """Load configuration from flujo.toml file."""
+    def load_config(self, force_reload: bool = False) -> FlujoConfig:
+        """Load configuration from flujo.toml file.
+        
+        Args:
+            force_reload: If True, bypass the cache and reload from file
+            
+        Returns:
+            FlujoConfig: The loaded configuration
+        """
         if self.config_path is None:
             return FlujoConfig()
 
+        # Check if we can use cached config
+        if not force_reload and self._cached_config is not None:
+            try:
+                # Check if file has been modified since last load
+                current_mtime = self.config_path.stat().st_mtime
+                if self._config_file_mtime is not None and current_mtime == self._config_file_mtime:
+                    return self._cached_config
+            except (OSError, AttributeError):
+                # If we can't check modification time, proceed with reload
+                pass
+
+        # Load configuration from file
         try:
             with open(self.config_path, "rb") as f:
                 data = tomllib.load(f)
@@ -158,7 +179,16 @@ class ConfigManager:
             if "cost" in data:
                 config_data["cost"] = data["cost"]
 
-            return FlujoConfig(**config_data)
+            config = FlujoConfig(**config_data)
+            
+            # Cache the configuration and file modification time
+            self._cached_config = config
+            try:
+                self._config_file_mtime = self.config_path.stat().st_mtime
+            except (OSError, AttributeError):
+                self._config_file_mtime = None
+                
+            return config
 
         except FileNotFoundError as e:
             raise ConfigurationError(f"Configuration file not found at {self.config_path}: {e}")
@@ -184,15 +214,19 @@ class ConfigManager:
                 f"An unexpected error occurred during configuration loading: {e}"
             )
 
-    def get_settings(self) -> Any:
-        """Get settings with configuration file overrides applied."""
+    def get_settings(self, force_reload: bool = False) -> Any:
+        """Get settings with configuration file overrides applied.
+        
+        Args:
+            force_reload: If True, bypass the cache and reload from file
+        """
         # Start with the default settings using the proper constructor
         # BaseSettings handles the initialization automatically
         from .settings import Settings
 
         # Use the same pattern as in settings.py to avoid type checker issues
         settings = cast(Callable[[], Settings], Settings)()
-        config = self.load_config()
+        config = self.load_config(force_reload=force_reload)
 
         # Apply settings overrides from configuration file
         if config.settings:
@@ -202,9 +236,14 @@ class ConfigManager:
 
         return settings
 
-    def get_cli_defaults(self, command: str) -> Dict[str, Any]:
-        """Get CLI defaults for a specific command."""
-        config = self.load_config()
+    def get_cli_defaults(self, command: str, force_reload: bool = False) -> Dict[str, Any]:
+        """Get CLI defaults for a specific command.
+        
+        Args:
+            command: The CLI command name
+            force_reload: If True, bypass the cache and reload from file
+        """
+        config = self.load_config(force_reload=force_reload)
 
         if command == "solve" and config.solve:
             return config.solve.model_dump(exclude_none=True)
@@ -215,9 +254,13 @@ class ConfigManager:
 
         return {}
 
-    def get_state_uri(self) -> Optional[str]:
-        """Get the state URI from configuration."""
-        config = self.load_config()
+    def get_state_uri(self, force_reload: bool = False) -> Optional[str]:
+        """Get the state URI from configuration.
+        
+        Args:
+            force_reload: If True, bypass the cache and reload from file
+        """
+        config = self.load_config(force_reload=force_reload)
         return config.state_uri
 
 
