@@ -54,6 +54,8 @@ __all__ = [
     "NoOpChecklistAgent",
     "_is_image_generation_model",
     "_attach_image_cost_post_processor",
+    "_deprecated_agent",
+    "__getattr__",
     # Type exports
     "Agent",
     "AsyncAgentProtocol",
