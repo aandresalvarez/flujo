@@ -4,7 +4,7 @@ import pytest
 from typing import Any, Optional, Tuple
 from pydantic import BaseModel
 
-from flujo.validation import BaseValidator, validator
+from flujo.domain.validation import BaseValidator, validator
 from flujo.domain.validation import ValidationResult
 
 

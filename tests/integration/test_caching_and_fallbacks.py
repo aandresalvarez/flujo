@@ -2,7 +2,7 @@ import time
 import pytest
 
 from flujo import Step, Flujo
-from flujo.caching import InMemoryCache
+from flujo.infra.caching import InMemoryCache
 from flujo.testing.utils import StubAgent, gather_result, DummyPlugin
 from flujo.domain import Pipeline
 from flujo.domain.dsl import StepConfig

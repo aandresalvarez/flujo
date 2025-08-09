@@ -320,7 +320,7 @@ class TestAssertValidatorFailed:
     @pytest.mark.asyncio
     async def test_test_validator_failed_sync_with_complex_data(self, caplog):
         """Test _test_validator_failed_sync with complex data structures using proper logging."""
-        from flujo.monitor import global_monitor
+        from flujo.infra.monitor import global_monitor
 
         def complex_validator(data):
             if isinstance(data, dict) and "invalid" in data:

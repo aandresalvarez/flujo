@@ -262,7 +262,7 @@ validate_step = Step.validate_step(
 )
 
 # With programmatic validators
-from flujo.validation import BaseValidator, ValidationResult
+from flujo.domain.validation import BaseValidator, ValidationResult
 
 class WordCountValidator(BaseValidator):
     async def validate(self, output_to_check: str, *, context=None) -> ValidationResult:
@@ -816,7 +816,7 @@ Use `Step.cached()` to store the result of an expensive step in a cache backend.
 
 ```python
 from flujo import Step
-from flujo.caching import InMemoryCache
+from flujo.infra.caching import InMemoryCache
 
 expensive = Step("slow", agent)
 cached = Step.cached(expensive, cache_backend=InMemoryCache())

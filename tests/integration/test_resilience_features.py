@@ -1,7 +1,7 @@
 import pytest
 
 from flujo import Step, Flujo
-from flujo.caching import InMemoryCache
+from flujo.infra.caching import InMemoryCache
 from flujo.testing.utils import StubAgent, DummyPlugin, gather_result
 from flujo.domain.plugins import PluginOutcome
 from flujo.domain.dsl import StepConfig

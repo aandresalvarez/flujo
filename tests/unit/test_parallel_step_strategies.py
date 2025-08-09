@@ -16,7 +16,7 @@ from flujo.domain.models import (
     UsageLimits,
 )
 from flujo.exceptions import UsageLimitExceededError
-from flujo.monitor import global_monitor
+from flujo.infra.monitor import global_monitor
 from flujo.testing.utils import StubAgent
 
 

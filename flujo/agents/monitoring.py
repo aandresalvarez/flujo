@@ -5,7 +5,7 @@ from functools import wraps
 from typing import Any, Callable, Type, Any as _Any
 
 from ..exceptions import AgentIOValidationError
-from ..monitor import FailureType, global_monitor
+from ..infra.monitor import FailureType, global_monitor
 
 
 def monitored_agent(agent_name: str) -> Callable[[Type[_Any]], Type[_Any]]:

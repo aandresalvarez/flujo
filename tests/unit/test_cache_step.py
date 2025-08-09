@@ -10,7 +10,7 @@ from flujo.steps.cache_step import (
     _generate_cache_key,
 )
 from flujo.domain.dsl import Step
-from flujo.caching import InMemoryCache
+from flujo.infra.caching import InMemoryCache
 from flujo.domain.models import BaseModel
 
 

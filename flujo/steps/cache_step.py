@@ -8,7 +8,7 @@ from pydantic import Field
 from flujo.utils.hash import stable_digest
 
 from flujo.domain.dsl import Step
-from flujo.caching import CacheBackend, InMemoryCache
+from flujo.infra.caching import CacheBackend, InMemoryCache
 
 StepInT = TypeVar("StepInT")
 StepOutT = TypeVar("StepOutT")

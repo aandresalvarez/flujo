@@ -236,7 +236,7 @@ def test_usage_limits_enforcement_complex_steps():
 
     # Create a step with a validator (complex step)
     from flujo import Step
-    from flujo.validation import validator
+    from flujo.domain.validation import validator
 
     @validator
     def always_pass(output: Any, context: Any) -> bool:

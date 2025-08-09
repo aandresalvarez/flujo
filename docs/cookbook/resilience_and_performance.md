@@ -10,7 +10,7 @@ cache backend and reuses them on subsequent runs.
 
 ```python
 from flujo import Step
-from flujo.caching import InMemoryCache
+from flujo.infra.caching import InMemoryCache
 from flujo.testing.utils import StubAgent
 
 # Expensive step that performs complex analysis

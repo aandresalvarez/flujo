@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, Literal, cast
 
-from .domain.events import (
+from ..domain.events import (
     HookPayload,
     PreRunPayload,
     PostRunPayload,

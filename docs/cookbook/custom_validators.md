@@ -7,7 +7,7 @@
 You can create a custom validator by subclassing the `BaseValidator` class and implementing the `validate` method.
 
 ```python
-from flujo.validation import BaseValidator
+from flujo.domain.validation import BaseValidator
 from flujo.domain.validation import ValidationResult
 
 class MyValidator(BaseValidator):
@@ -23,7 +23,7 @@ class MyValidator(BaseValidator):
 You can also create a custom validator by decorating a function with the `validator` decorator. The function should take the output to check as an argument and return a tuple containing a boolean indicating whether the output is valid and an optional feedback string.
 
 ```python
-from flujo.validation import validator
+from flujo.domain.validation import validator
 
 @validator
 def contains_world(output_to_check: any) -> tuple[bool, str | None]:

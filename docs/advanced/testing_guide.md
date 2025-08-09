@@ -226,7 +226,7 @@ Asserts that a specific validator failed during a pipeline run. This is useful f
 ```python
 from flujo import Flujo, Step
 from flujo.testing.utils import StubAgent
-from flujo.validation import validator
+from flujo.domain.validation import validator
 
 @validator
 def always_fail_validator(output: str) -> tuple[bool, str | None]:

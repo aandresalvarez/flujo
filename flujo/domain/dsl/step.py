@@ -34,7 +34,7 @@ from ..plugins import ValidationPlugin
 from ..validation import Validator
 
 from ..processors import AgentProcessors
-from flujo.caching import CacheBackend
+from flujo.infra.caching import CacheBackend
 from ...exceptions import StepInvocationError
 from typing import TYPE_CHECKING
 

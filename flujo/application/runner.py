@@ -53,9 +53,9 @@ from pydantic import TypeAdapter
 from ..domain.resources import AppResources
 from ..domain.types import HookCallable
 from ..domain.backends import ExecutionBackend
-from ..console_tracer import ConsoleTracer
+from ..infra.console_tracer import ConsoleTracer
 from ..state import StateBackend, WorkflowState
-from ..registry import PipelineRegistry
+from ..infra.registry import PipelineRegistry
 
 from .core.context_manager import (
     _accepts_param,

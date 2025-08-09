@@ -3,7 +3,7 @@ from datetime import datetime
 
 from flujo.domain import Step
 from flujo.domain.models import PipelineContext
-from flujo.registry import PipelineRegistry
+from flujo.infra.registry import PipelineRegistry
 from flujo.state import WorkflowState
 from flujo.state.backends.memory import InMemoryBackend
 from flujo.testing.utils import gather_result

@@ -2,7 +2,7 @@ import pytest
 from flujo.domain.models import BaseModel, Field
 
 from flujo.domain import Step
-from flujo.validation import BaseValidator
+from flujo.domain.validation import BaseValidator
 from flujo.domain.validation import ValidationResult
 from flujo.testing.utils import StubAgent, gather_result
 from flujo.testing.assertions import assert_validator_failed

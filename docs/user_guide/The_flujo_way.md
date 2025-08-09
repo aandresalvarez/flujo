@@ -189,7 +189,7 @@ runner = Flujo(pipeline, context_model=ModerationContext)
 ## ✅ 4. Validations & Quality Gates
 
 ```python
-from flujo.validation import BaseValidator, ValidationResult
+from flujo.domain.validation import BaseValidator, ValidationResult
 
 class NoPII(BaseValidator):
     name = "NoPII"
@@ -235,7 +235,7 @@ runner = Flujo(pipeline, usage_limits=UsageLimits(total_cost_usd_limit=0.50))
 ### 🪄 Real-time Logs
 
 ```python
-from flujo.console_tracer import ConsoleTracer
+from flujo.infra.console_tracer import ConsoleTracer
 
 # Quick enablement with defaults
 runner = Flujo(pipeline, local_tracer="default")
@@ -401,10 +401,10 @@ from flujo.models import BaseModel, UsageLimits, PipelineResult
 from flujo.domain.resources import AppResources
 
 # Validation
-from flujo.validation import BaseValidator, ValidationResult
+from flujo.domain.validation import BaseValidator, ValidationResult
 
 # Tracing
-from flujo.console_tracer import ConsoleTracer
+from flujo.infra.console_tracer import ConsoleTracer
 
 # Testing utilities
 from flujo.testing import StubAgent, gather_result

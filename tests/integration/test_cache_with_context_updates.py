@@ -12,7 +12,7 @@ from typing import Any, Dict, List
 from flujo import step, Step
 from flujo.domain.models import PipelineContext
 from flujo.testing.utils import gather_result
-from flujo.caching import InMemoryCache
+from flujo.infra.caching import InMemoryCache
 from tests.conftest import create_test_flujo
 
 

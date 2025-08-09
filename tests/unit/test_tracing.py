@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import MagicMock
-from flujo.console_tracer import ConsoleTracer
+from flujo.infra.console_tracer import ConsoleTracer
 from flujo.domain.models import StepResult
 from flujo.domain.events import PostStepPayload
 

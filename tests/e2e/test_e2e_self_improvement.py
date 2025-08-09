@@ -8,7 +8,7 @@ from flujo.application.self_improvement import (
 )
 from flujo.domain.models import ImprovementReport, SuggestionType
 from flujo.domain import Step
-from flujo.validation import BaseValidator, ValidationResult
+from flujo.domain.validation import BaseValidator, ValidationResult
 from flujo.testing.utils import StubAgent
 from tests.conftest import create_test_flujo
 from pydantic_evals import Dataset, Case

@@ -4,7 +4,7 @@ import asyncio
 from flujo.domain import Step
 from flujo.domain.plugins import PluginOutcome
 from flujo.testing.utils import StubAgent, DummyPlugin, gather_result
-from flujo.validation import BaseValidator
+from flujo.domain.validation import BaseValidator
 from flujo.domain.validation import ValidationResult
 from tests.conftest import create_test_flujo
 from pydantic import BaseModel

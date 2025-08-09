@@ -280,7 +280,7 @@ telemetry.increment_counter("flujo.your_step.executions")
 telemetry.logfire.set_level("DEBUG")
 
 # Use the tracer for execution flow
-from flujo.console_tracer import ConsoleTracer
+from flujo.infra.console_tracer import ConsoleTracer
 tracer = ConsoleTracer(log_inputs=True, log_outputs=True)
 ```
 

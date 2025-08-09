@@ -1,7 +1,7 @@
 import pytest
 from typing import Any, cast
 from flujo import Step
-from flujo.console_tracer import ConsoleTracer
+from flujo.infra.console_tracer import ConsoleTracer
 from flujo.testing.utils import StubAgent, gather_result
 from flujo.domain.agent_protocol import AsyncAgentProtocol
 from tests.conftest import create_test_flujo

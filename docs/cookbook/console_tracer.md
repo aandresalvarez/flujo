@@ -8,7 +8,7 @@ To use the `ConsoleTracer`, you first need to instantiate it. You can then pass 
 
 ```python
 from flujo import Step, Flujo
-from flujo.console_tracer import ConsoleTracer
+from flujo.infra.console_tracer import ConsoleTracer
 from flujo.testing.utils import StubAgent
 
 # Create a tracer

@@ -4,7 +4,7 @@ from typing import Any, Dict, Optional
 
 from packaging.version import Version, InvalidVersion
 
-from .domain.dsl.pipeline import Pipeline
+from ..domain.dsl.pipeline import Pipeline
 
 
 class PipelineRegistry:
