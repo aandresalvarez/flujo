@@ -18,8 +18,7 @@ from .factories import (
     run_agentic_loop_pipeline,
 )
 
-# Legacy classes (deprecated)
-from .default import Default
+# Legacy classes (deprecated) - removed in FSD-007
 
 __all__ = [
     # Factory functions (recommended)
@@ -28,6 +27,4 @@ __all__ = [
     "make_agentic_loop_pipeline",
     "run_default_pipeline",
     "run_agentic_loop_pipeline",
-    # Legacy classes (deprecated)
-    "Default",
 ]
