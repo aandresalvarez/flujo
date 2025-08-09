@@ -127,30 +127,15 @@ class ExecutionManager(Generic[ContextT]):
             )
             usage_limit_exceeded = False  # Track if a usage limit exception was raised
 
-            # ✅ CRITICAL FIX: Persist state BEFORE step execution for crash recovery
-            # This ensures state is saved even if the process crashes during step execution
+            # ✅ CRITICAL FIX: Persist state AFTER step execution for crash recovery
+            # This ensures state reflects the completed step for proper resumption
             # OPTIMIZATION: Only persist if we have a state backend and run_id, and not in test mode
-            if (run_id is not None and 
+            persist_state_after_step = (run_id is not None and 
                 not isinstance(step, LoopStep) and 
                 not self.inside_loop_step and
                 self.state_manager.state_backend is not None and
                 not os.getenv("FLUJO_TEST_MODE") and
-                not os.getenv("CI") == "true"):
-                
-                # OPTIMIZATION: Use lightweight persistence for performance
-                await self.state_manager.persist_workflow_state_optimized(
-                    run_id=run_id,
-                    context=context,
-                    current_step_index=idx,  # Show current step index (about to start this step)
-                    last_step_output=data
-                    if idx == start_idx
-                    else result.step_history[-1].output
-                    if result.step_history
-                    else None,
-                    status="running",
-                    state_created_at=state_created_at,
-                    step_history=result.step_history,
-                )
+                not os.getenv("CI") == "true")
 
             try:
                 try:
@@ -214,6 +199,19 @@ class ExecutionManager(Generic[ContextT]):
                         # Record step result in persistence backend
                         if run_id is not None:
                             await self.state_manager.record_step_result(run_id, step_result, idx)
+                        
+                        # ✅ CRITICAL FIX: Persist state AFTER successful step execution for crash recovery
+                        # This ensures the current_step_index reflects the next step to be executed
+                        if persist_state_after_step and step_result.success:
+                            await self.state_manager.persist_workflow_state_optimized(
+                                run_id=run_id,
+                                context=context,
+                                current_step_index=idx + 1,  # Next step to be executed
+                                last_step_output=step_result.output,
+                                status="running",
+                                state_created_at=state_created_at,
+                                step_history=result.step_history,
+                            )
 
                     # ✅ 4. Check if step failed and halt execution
                     if step_result and not step_result.success:

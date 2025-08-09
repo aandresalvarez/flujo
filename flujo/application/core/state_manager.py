@@ -392,12 +392,16 @@ class StateManager(Generic[ContextT]):
         if step_history is not None:
             for step_result in step_history:
                 try:
-                    # OPTIMIZATION: Only serialize essential fields
+                    # OPTIMIZATION: Only serialize essential fields including output for crash recovery
                     serialized_step_history.append({
                         "name": step_result.name,
+                        "output": step_result.output,
                         "success": step_result.success,
                         "cost_usd": step_result.cost_usd,
                         "token_counts": step_result.token_counts,
+                        "attempts": step_result.attempts,
+                        "latency_s": step_result.latency_s,
+                        "feedback": step_result.feedback,
                     })
                 except Exception:
                     continue
@@ -416,8 +420,10 @@ class StateManager(Generic[ContextT]):
         }
 
         if state_created_at is not None:
-            state_data["created_at"] = state_created_at.isoformat()
-        state_data["updated_at"] = datetime.now().isoformat()
+            state_data["created_at"] = state_created_at
+        else:
+            state_data["created_at"] = datetime.now()
+        state_data["updated_at"] = datetime.now()
 
         # OPTIMIZATION: Use async persistence to avoid blocking
         try:

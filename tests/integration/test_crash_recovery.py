@@ -43,7 +43,10 @@ from flujo.application.runner import Flujo
 from flujo.domain import Step
 from flujo.domain.models import PipelineContext
 from flujo.state.backends.{"file" if backend_type == "FileBackend" else "sqlite"} import {backend_type}
-from tests.conftest import create_test_flujo
+
+# Disable test mode for crash recovery testing
+if 'FLUJO_TEST_MODE' in os.environ:
+    del os.environ['FLUJO_TEST_MODE']
 
 class Ctx(PipelineContext):
     pass
@@ -58,12 +61,13 @@ class CrashAgent:
 async def main():
     backend = {backend_type}(Path(r'{path}'))
     pipeline = Step.from_callable(transform, name='transform') >> Step.from_callable(CrashAgent().run, name='crash')
-    runner = create_test_flujo(
+    runner = Flujo(
         pipeline,
         context_model=Ctx,
         state_backend=backend,
         delete_on_completion=False,
-        initial_context_data={{'run_id': '{run_id}'}}
+        pipeline_name="crash_test",
+        pipeline_id="crash_test_id"
     )
     async for _ in runner.run_async('start', initial_context_data={{'initial_prompt': 'start', 'run_id': '{run_id}'}}):
         pass

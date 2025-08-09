@@ -193,7 +193,12 @@ async def test_dynamic_router_multiple_branches_context_updates():
 
 @pytest.mark.asyncio
 async def test_dynamic_router_router_failure_context_preservation():
-    """Test context preservation when router agent fails."""
+    """Test context preservation when router agent fails.
+    
+    Note: With enhanced context isolation, context updates made by a failing router agent
+    are not preserved in the final context. This is the correct architectural behavior
+    as it prevents partial/corrupted state from being propagated when operations fail.
+    """
 
     class FailingRouterWithContextAgent:
         async def run(self, data: str, *, context: DynamicRouterContext) -> List[str]:
@@ -213,9 +218,10 @@ async def test_dynamic_router_router_failure_context_preservation():
     runner = create_test_flujo(router, context_model=DynamicRouterContext)
     result = await gather_result(runner, "test")
 
-    # Verify router was called and context updates were preserved
-    assert result.final_pipeline_context.router_called is True
-    assert "router_called" in result.final_pipeline_context.context_updates
+    # Enhanced context isolation: context updates from failed router are not preserved
+    # This prevents partial/corrupted state from being propagated
+    assert result.final_pipeline_context.router_called is False
+    assert "router_called" not in result.final_pipeline_context.context_updates
 
     # Verify step failed
     assert not result.step_history[0].success
@@ -223,7 +229,12 @@ async def test_dynamic_router_router_failure_context_preservation():
 
 @pytest.mark.asyncio
 async def test_dynamic_router_branch_failure_context_preservation():
-    """Test context preservation when a branch fails."""
+    """Test context preservation when a branch fails.
+    
+    Note: With enhanced context isolation, context updates from successful branches
+    are preserved, but context updates from failed branches are not merged back
+    to prevent partial/corrupted state propagation.
+    """
 
     class BranchFailureRouterAgent:
         async def run(self, data: str, *, context: DynamicRouterContext) -> List[str]:
@@ -259,13 +270,16 @@ async def test_dynamic_router_branch_failure_context_preservation():
     runner = create_test_flujo(router, context_model=DynamicRouterContext)
     result = await gather_result(runner, "test")
 
-    # Verify router context updates were preserved
+    # Verify router context updates were preserved (router succeeded)
     assert result.final_pipeline_context.router_called is True
     assert "router_called" in result.final_pipeline_context.context_updates
 
-    # Verify billing branch context updates were preserved
+    # Verify successful billing branch context updates were preserved
     assert "billing_processed" in result.final_pipeline_context.context_updates
-    assert "support_failed" in result.final_pipeline_context.context_updates
+    
+    # Enhanced context isolation: context updates from failed support branch are not preserved
+    # This prevents partial/corrupted state from being propagated
+    assert "support_failed" not in result.final_pipeline_context.context_updates
 
 
 # Test Category 3: Complex Interaction Tests

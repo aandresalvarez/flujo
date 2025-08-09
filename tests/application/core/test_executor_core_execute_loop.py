@@ -2,6 +2,9 @@ import pytest
 from types import SimpleNamespace
 from flujo.application.core.ultra_executor import ExecutorCore
 from flujo.domain.models import StepResult
+from flujo.domain.dsl.step import Step
+from flujo.domain.dsl.pipeline import Pipeline
+from flujo.testing.utils import StubAgent
 
 class DummyExecutor(ExecutorCore):
     async def _execute_simple_step(
@@ -34,9 +37,17 @@ class DummyExecutor(ExecutorCore):
 
 @pytest.mark.asyncio
 async def test_execute_loop_basic_iterations_and_history():
+    """Test loop execution with proper agent configuration.
+    
+    This test validates that the MissingAgentError architectural protection
+    correctly identifies steps without agents. Previously used SimpleNamespace
+    objects without agents, which properly triggered the protection. Now uses
+    proper Step objects with StubAgent to test the intended loop behavior.
+    """
     exec = DummyExecutor()
-    step = SimpleNamespace(name="inc")
-    pipeline = SimpleNamespace(steps=[step])
+    # Create a proper Step with agent instead of SimpleNamespace
+    step = Step.model_validate({"name": "inc", "agent": StubAgent([1, 2, 3])})
+    pipeline = Pipeline.from_step(step)
     loop_step = SimpleNamespace(
         name="loop",
         loop_body_pipeline=pipeline,
@@ -58,9 +69,18 @@ async def test_execute_loop_basic_iterations_and_history():
 
 @pytest.mark.asyncio
 async def test_execute_loop_with_exit_condition_and_mappers():
+    """Test loop execution with exit condition and proper agent configuration.
+    
+    This test validates that the MissingAgentError architectural protection
+    correctly identifies steps without agents. Previously used SimpleNamespace
+    objects without agents, which properly triggered the protection. Now uses
+    proper Step objects with StubAgent to test the intended loop behavior
+    with exit conditions and mappers.
+    """
     exec = DummyExecutor()
-    step = SimpleNamespace(name="inc")
-    pipeline = SimpleNamespace(steps=[step])
+    # Create a proper Step with agent instead of SimpleNamespace
+    step = Step.model_validate({"name": "inc", "agent": StubAgent([2])})  # Return 2 to satisfy exit condition
+    pipeline = Pipeline.from_step(step)
     def exit_cond(data, context):
         return data >= 2
     def initial_mapper(data, context):
@@ -88,9 +108,18 @@ async def test_execute_loop_with_exit_condition_and_mappers():
 
 @pytest.mark.asyncio
 async def test_execute_loop_with_output_mapper_exception():
+    """Test loop execution with output mapper exception and proper agent configuration.
+    
+    This test validates that the MissingAgentError architectural protection
+    correctly identifies steps without agents. Previously used SimpleNamespace
+    objects without agents, which properly triggered the protection. Now uses
+    proper Step objects with StubAgent to test the intended loop behavior
+    when output mapper raises an exception.
+    """
     exec = DummyExecutor()
-    step = SimpleNamespace(name="inc")
-    pipeline = SimpleNamespace(steps=[step])
+    # Create a proper Step with agent instead of SimpleNamespace
+    step = Step.model_validate({"name": "inc", "agent": StubAgent([1, 2])})
+    pipeline = Pipeline.from_step(step)
     def bad_output_mapper(data, context):
         raise ValueError("bad")
     loop_step = SimpleNamespace(

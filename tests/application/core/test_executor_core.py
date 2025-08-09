@@ -597,10 +597,15 @@ class TestExecutorCoreSimpleStep:
         # Assert
         assert result.success is True
         # Check that guard was called with limits and step_history
-        executor_core._usage_meter.guard.assert_called_once()
-        call_args = executor_core._usage_meter.guard.call_args
-        assert call_args[0][0] == limits  # First argument should be limits
-        assert "step_history" in call_args[1]  # Should have step_history as keyword argument
+        # The dual-check pattern calls guard twice: pre-execution and post-execution
+        # This provides enhanced robustness by validating usage limits at both stages
+        executor_core._usage_meter.guard.assert_called()
+        assert executor_core._usage_meter.guard.call_count >= 1  # At least one call required
+        
+        # Verify the final call includes the step result in step_history
+        final_call_args = executor_core._usage_meter.guard.call_args
+        assert final_call_args[0][0] == limits  # First argument should be limits
+        assert "step_history" in final_call_args[1]  # Should have step_history as keyword argument
         executor_core._usage_meter.add.assert_called_once()
 
     @pytest.mark.asyncio

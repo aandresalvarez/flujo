@@ -55,41 +55,51 @@ class TestExecutorCoreFallback:
 
     @pytest.fixture
     def create_step_with_fallback(self):
-        """Helper to create a step with fallback configuration."""
+        """Helper to create a step with fallback configuration using real Step objects.
+        
+        This fixture creates real Step objects instead of Mock objects to prevent
+        infinite fallback chains that occur when Mock objects automatically create
+        recursive fallback_step attributes. The InfiniteFallbackError protection
+        is working correctly - the issue was Mock objects creating infinite chains.
+        """
+        from flujo.domain.dsl.step import Step, StepConfig
+        from flujo.domain.processors import AgentProcessors
 
         def _create_step(primary_fails=True, fallback_succeeds=True):
-            primary_step = Mock()
-            primary_step.name = "primary_step"
-            primary_step.agent = Mock()
+            # Create real primary step with mocked agent
+            primary_agent = Mock()
             if primary_fails:
-                primary_step.agent.run = AsyncMock(side_effect=Exception("Primary failed"))
+                primary_agent.run = AsyncMock(side_effect=Exception("Primary failed"))
             else:
-                primary_step.agent.run = AsyncMock(return_value="primary success")
-            primary_step.config.max_retries = 1
-            primary_step.config.temperature = 0.7
-            primary_step.processors = Mock()
-            primary_step.processors.prompt_processors = []
-            primary_step.processors.output_processors = []
-            primary_step.processors.process = AsyncMock(return_value="processed output")
-            primary_step.validators = []
-            primary_step.plugins = []
+                primary_agent.run = AsyncMock(return_value="primary success")
 
-            fallback_step = Mock()
-            fallback_step.name = "fallback_step"
-            fallback_step.agent = Mock()
+            primary_step = Step(
+                name="primary_step",
+                agent=primary_agent,
+                config=StepConfig(max_retries=1, temperature=0.7),
+                processors=AgentProcessors(),
+                validators=[],
+                plugins=[],
+            )
+
+            # Create real fallback step with mocked agent
+            fallback_agent = Mock()
             if fallback_succeeds:
-                fallback_step.agent.run = AsyncMock(return_value="fallback success")
+                fallback_agent.run = AsyncMock(return_value="fallback success")
             else:
-                fallback_step.agent.run = AsyncMock(side_effect=Exception("Fallback failed"))
-            fallback_step.config.max_retries = 1
-            fallback_step.config.temperature = 0.7
-            fallback_step.processors = Mock()
-            fallback_step.processors.prompt_processors = []
-            fallback_step.processors.output_processors = []
-            fallback_step.processors.process = AsyncMock(return_value="processed output")
-            fallback_step.validators = []
-            fallback_step.plugins = []
+                fallback_agent.run = AsyncMock(side_effect=Exception("Fallback failed"))
 
+            fallback_step = Step(
+                name="fallback_step",
+                agent=fallback_agent,
+                config=StepConfig(max_retries=1, temperature=0.7),
+                processors=AgentProcessors(),
+                validators=[],
+                plugins=[],
+            )
+
+            # Set up the fallback relationship - this will NOT create infinite chains
+            # because these are real Step objects, not Mock objects
             primary_step.fallback_step = fallback_step
             return primary_step, fallback_step
 
@@ -381,19 +391,21 @@ class TestExecutorCoreFallback:
 
     @pytest.mark.asyncio
     async def test_fallback_with_none_feedback(self, executor_core, create_step_with_fallback):
-        """Test fallback handling when primary step has no feedback."""
-        # Arrange
+        """Test fallback handling when primary step has no feedback.
+        
+        This test verifies that when the primary step fails and fallback succeeds,
+        the feedback is cleared (set to None) on successful fallback execution.
+        The InfiniteFallbackError protection is working correctly by preventing
+        Mock objects from creating infinite fallback chains.
+        """
+        # Arrange - Use real Step objects that have proper fallback behavior
         primary_step, fallback_step = create_step_with_fallback(
             primary_fails=True, fallback_succeeds=True
         )
 
-        # Configure executor - provide enough side effects for all retry attempts
-        executor_core._agent_runner.run.side_effect = [
-            Exception("Primary failed"),  # First attempt fails
-            Exception("Primary failed"),  # Second attempt fails  
-            Exception("Primary failed"),  # Third attempt fails
-            Exception("Primary failed"),  # Fourth attempt fails (all retries exhausted)
-        ]
+        # No need to override executor_core._agent_runner.run.side_effect
+        # because the create_step_with_fallback fixture already configures
+        # individual agent behaviors correctly for real Step objects
 
         # Act
         result = await executor_core._execute_simple_step(
@@ -454,22 +466,23 @@ class TestExecutorCoreFallback:
 
     @pytest.mark.asyncio
     async def test_fallback_with_usage_limits(self, executor_core, create_step_with_fallback):
-        """Test fallback behavior with usage limits."""
-        # Arrange
+        """Test fallback behavior with usage limits.
+        
+        This test verifies that fallback execution respects usage limits and
+        properly tracks usage across primary failure and fallback success.
+        The InfiniteFallbackError protection prevents infinite Mock chains.
+        """
+        # Arrange - Use real Step objects with proper fallback behavior
         primary_step, fallback_step = create_step_with_fallback(
             primary_fails=True, fallback_succeeds=True
         )
         limits = UsageLimits(total_cost_usd_limit=0.5, total_tokens_limit=100)
 
-        # Configure executor - provide enough side effects for all retry attempts
-        executor_core._agent_runner.run.side_effect = [
-            Exception("Primary failed"),  # First attempt fails
-            Exception("Primary failed"),  # Second attempt fails  
-            Exception("Primary failed"),  # Third attempt fails
-            Exception("Primary failed"),  # Fourth attempt fails (all retries exhausted)
-        ]
+        # No need to override executor_core._agent_runner.run.side_effect
+        # because the create_step_with_fallback fixture already configures
+        # individual agent behaviors correctly for real Step objects
 
-        # Mock usage extraction
+        # Mock usage extraction to simulate cost tracking
         with patch("flujo.cost.extract_usage_metrics") as mock_extract:
             mock_extract.side_effect = [
                 (10, 5, 0.1),  # Primary: 10 prompt, 5 completion, $0.1
@@ -598,33 +611,52 @@ class TestExecutorCoreFallback:
             assert result.output == "fallback success"
 
     @pytest.mark.asyncio
-    async def test_fallback_metadata_preservation(self, executor_core, create_step_with_fallback):
-        """Test that metadata is properly preserved during fallback."""
-        # Arrange
-        primary_step, fallback_step = create_step_with_fallback(
-            primary_fails=True, fallback_succeeds=True
+    async def test_fallback_metadata_preservation(self):
+        """Test that metadata is properly preserved during fallback.
+        
+        This test verifies that when fallback is triggered, the system properly
+        preserves metadata about the original error and fallback trigger.
+        Uses a real ExecutorCore to ensure individual step agents are called.
+        The InfiniteFallbackError protection prevents infinite Mock chains.
+        """
+        from flujo.domain.dsl.step import Step, StepConfig
+        from flujo.domain.processors import AgentProcessors
+        from flujo.application.core.ultra_executor import ExecutorCore
+
+        # Define agents with specific behaviors
+        class FailingPrimaryAgent:
+            async def run(self, data, **kwargs):
+                raise Exception("Primary failed")
+
+        class SucceedingFallbackAgent:
+            async def run(self, data, **kwargs):
+                return "fallback success"
+
+        # Create real Step objects with proper fallback behavior
+        fallback_step = Step(
+            name="fallback_step",
+            agent=SucceedingFallbackAgent(),
+            config=StepConfig(max_retries=1, temperature=0.7),
+            processors=AgentProcessors(),
+            validators=[],
+            plugins=[],
         )
 
-        # Configure executor - provide enough side effects for all retry attempts
-        executor_core._agent_runner.run.side_effect = [
-            Exception("Primary failed"),  # First attempt fails
-            Exception("Primary failed"),  # Second attempt fails  
-            Exception("Primary failed"),  # Third attempt fails
-            Exception("Primary failed"),  # Fourth attempt fails (all retries exhausted)
-        ]
+        primary_step = Step(
+            name="primary_step",
+            agent=FailingPrimaryAgent(),
+            config=StepConfig(max_retries=1, temperature=0.7),
+            processors=AgentProcessors(),
+            validators=[],
+            plugins=[],
+            fallback_step=fallback_step,
+        )
+
+        # Use a real ExecutorCore so individual step agents are called
+        executor_core = ExecutorCore()
 
         # Act
-        result = await executor_core._execute_simple_step(
-            primary_step,
-            "test data",
-            None,  # context
-            None,  # resources
-            None,  # limits
-            False,  # stream
-            None,  # on_chunk
-            "cache_key",
-            None,  # breach_event
-        )
+        result = await executor_core.execute(primary_step, "test data")
 
         # Assert
         assert result.success is True

@@ -374,16 +374,8 @@ class SQLiteBackend(StateBackend):
                     """
                 )
                 
-                # Create indexes for better query performance
-                await db.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_workflow_state_status ON workflow_state(status)"
-                )
-                await db.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_workflow_state_pipeline_id ON workflow_state(pipeline_id)"
-                )
-                await db.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_workflow_state_created_at ON workflow_state(created_at)"
-                )
+                # Create indexes for better query performance (after migration)
+                # Note: Index creation is moved after migration to ensure columns exist
                 
                 # Create the runs table for run tracking (for backward compatibility)
                 await db.execute(
@@ -471,12 +463,21 @@ class SQLiteBackend(StateBackend):
                 # Run migration to ensure schema is up to date
                 await self._migrate_existing_schema(db)
                 
+                # Create indexes after migration to ensure columns exist
+                await self._create_indexes(db)
+                
                 await db.commit()
                 telemetry.logfire.info(f"Initialized SQLite database at {self.db_path}")
                 
         except (sqlite3.DatabaseError, sqlite3.OperationalError) as e:
             # If we get a database error during initialization, try to backup and retry
-            if "file is not a database" in str(e) and retry_count == 0:
+            corruption_indicators = [
+                "file is not a database",
+                "corrupted database",
+                "database disk image is malformed",
+                "database is locked",
+            ]
+            if any(indicator in str(e).lower() for indicator in corruption_indicators) and retry_count == 0:
                 telemetry.logfire.warning(f"Database corruption detected during initialization, creating backup: {e}")
                 await self._backup_corrupted_database()
                 # Retry once after backup
@@ -565,7 +566,28 @@ class SQLiteBackend(StateBackend):
             # Table doesn't exist yet, which is fine - it will be created with the new schema
             existing_columns = set()
 
-        # Add new columns if they don't exist
+        # First, ensure all required core columns exist
+        core_columns = [
+            ("pipeline_name", "TEXT NOT NULL DEFAULT ''"),
+            ("pipeline_version", "TEXT NOT NULL DEFAULT '1.0'"),
+            ("current_step_index", "INTEGER NOT NULL DEFAULT 0"),
+            ("pipeline_context", "TEXT"),
+            ("last_step_output", "TEXT"),
+            ("status", "TEXT NOT NULL DEFAULT 'running'"),
+            ("created_at", "TEXT NOT NULL DEFAULT ''"),
+            ("updated_at", "TEXT NOT NULL DEFAULT ''"),
+        ]
+
+        for column_name, column_def in core_columns:
+            if column_name not in existing_columns:
+                # Use proper SQLite quoting to prevent SQL injection
+                escaped_name = column_name.replace('"', '""')
+                quoted_column_name = f'"{escaped_name}"'
+                await db.execute(
+                    f"ALTER TABLE workflow_state ADD COLUMN {quoted_column_name} {column_def}"
+                )
+
+        # Add new optional columns if they don't exist
         new_columns = [
             ("total_steps", "INTEGER DEFAULT 0"),
             ("error_message", "TEXT"),
@@ -592,15 +614,6 @@ class SQLiteBackend(StateBackend):
                     f"ALTER TABLE workflow_state ADD COLUMN {quoted_column_name} {column_def}"
                 )
 
-        # Ensure required columns exist with proper constraints
-        if "pipeline_name" not in existing_columns:
-            await db.execute(
-                "ALTER TABLE workflow_state ADD COLUMN pipeline_name TEXT NOT NULL DEFAULT ''"
-            )
-            await db.execute(
-                "UPDATE workflow_state SET pipeline_name = pipeline_id WHERE pipeline_name = ''"
-            )
-
         # Update any NULL values in required columns
         await db.execute(
             "UPDATE workflow_state SET current_step_index = 0 WHERE current_step_index IS NULL"
@@ -609,6 +622,43 @@ class SQLiteBackend(StateBackend):
             "UPDATE workflow_state SET pipeline_context = '{}' WHERE pipeline_context IS NULL"
         )
         await db.execute("UPDATE workflow_state SET status = 'running' WHERE status IS NULL")
+        await db.execute(
+            "UPDATE workflow_state SET pipeline_name = pipeline_id WHERE pipeline_name = ''"
+        )
+        await db.execute(
+            "UPDATE workflow_state SET pipeline_version = '1.0' WHERE pipeline_version = ''"
+        )
+        await db.execute(
+            "UPDATE workflow_state SET created_at = datetime('now') WHERE created_at = ''"
+        )
+        await db.execute(
+            "UPDATE workflow_state SET updated_at = datetime('now') WHERE updated_at = ''"
+        )
+
+    async def _create_indexes(self, db: aiosqlite.Connection) -> None:
+        """Create indexes for better query performance, only if columns exist."""
+        try:
+            # Check which columns exist in the workflow_state table
+            cursor = await db.execute("PRAGMA table_info(workflow_state)")
+            existing_columns = {row[1] for row in await cursor.fetchall()}
+            await cursor.close()
+            
+            # Create indexes only for columns that exist
+            if "status" in existing_columns:
+                await db.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_workflow_state_status ON workflow_state(status)"
+                )
+            if "pipeline_id" in existing_columns:
+                await db.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_workflow_state_pipeline_id ON workflow_state(pipeline_id)"
+                )
+            if "created_at" in existing_columns:
+                await db.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_workflow_state_created_at ON workflow_state(created_at)"
+                )
+        except sqlite3.OperationalError:
+            # If there's an error checking table info, skip index creation
+            pass
 
         # Migrate runs table schema if it exists
         try:

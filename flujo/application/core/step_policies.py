@@ -1402,62 +1402,59 @@ class DefaultAgentStepExecutor:
                         failed_validations = [r for r in validation_results if not getattr(r, "is_valid", False)]
                         if failed_validations:
                             validation_passed = False
-                            if attempt < total_attempts:
-                                telemetry.logfire.warning(
-                                    f"Step '{step.name}' validation failed: {failed_validations[0].feedback}"
+                            # ✅ CRITICAL FIX: Never retry agent execution on validation failure
+                            # Validation failures should preserve output and proceed to fallback handling
+                            # Final validation failure: attempt fallback if present
+                            def _format_validation_feedback() -> str:
+                                return (
+                                    f"Validation failed: {core._format_feedback(failed_validations[0].feedback, 'Agent execution failed')}"
                                 )
-                                continue
-                            else:
-                                # Final validation failure: attempt fallback if present
-                                def _format_validation_feedback() -> str:
-                                    return (
-                                        f"Validation failed after max retries: {core._format_feedback(failed_validations[0].feedback, 'Agent execution failed')}"
+                            fb_msg = _format_validation_feedback()
+                            # Try fallback if configured
+                            if getattr(step, "fallback_step", None) is not None:
+                                try:
+                                    fb_res = await core.execute(
+                                        step=step.fallback_step,
+                                        data=data,
+                                        context=attempt_context,
+                                        resources=resources,
+                                        limits=limits,
+                                        stream=stream,
+                                        on_chunk=on_chunk,
+                                        cache_key=None,
+                                        breach_event=breach_event,
+                                        _fallback_depth=_fallback_depth + 1,
                                     )
-                                fb_msg = _format_validation_feedback()
-                                # Try fallback if configured
-                                if getattr(step, "fallback_step", None) is not None:
-                                    try:
-                                        fb_res = await core.execute(
-                                            step=step.fallback_step,
-                                            data=data,
-                                            context=attempt_context,
-                                            resources=resources,
-                                            limits=limits,
-                                            stream=stream,
-                                            on_chunk=on_chunk,
-                                            cache_key=None,
-                                            breach_event=breach_event,
-                                            _fallback_depth=_fallback_depth + 1,
-                                        )
-                                        # Accumulate metrics
-                                        result.cost_usd = (result.cost_usd or 0.0) + (fb_res.cost_usd or 0.0)
-                                        result.token_counts = (result.token_counts or 0) + (fb_res.token_counts or 0)
-                                        result.metadata_["fallback_triggered"] = True
-                                        result.metadata_["original_error"] = fb_msg
-                                        if fb_res.success:
-                                            # Adopt fallback success output but preserve original validation failure in feedback
-                                            fb_res.metadata_ = {**(fb_res.metadata_ or {}), **result.metadata_}
-                                            fb_res.feedback = fb_msg
-                                            return fb_res
-                                        else:
-                                            # Compose failure feedback
-                                            result.success = False
-                                            result.feedback = f"Original error: {fb_msg}; Fallback error: {fb_res.feedback}"
-                                            result.output = processed_output
-                                            result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
-                                            telemetry.logfire.error(
-                                                f"Step '{step.name}' validation failed and fallback failed"
-                                            )
-                                            return result
-                                    except Exception as fb_e:
+                                    # Accumulate metrics
+                                    result.cost_usd = (result.cost_usd or 0.0) + (fb_res.cost_usd or 0.0)
+                                    result.token_counts = (result.token_counts or 0) + (fb_res.token_counts or 0)
+                                    result.metadata_["fallback_triggered"] = True
+                                    result.metadata_["original_error"] = fb_msg
+                                    if fb_res.success:
+                                        # Adopt fallback success output but preserve original validation failure in feedback
+                                        fb_res.metadata_ = {**(fb_res.metadata_ or {}), **result.metadata_}
+                                        fb_res.feedback = fb_msg
+                                        return fb_res
+                                    else:
+                                        # Compose failure feedback
                                         result.success = False
-                                        result.feedback = f"Original error: {fb_msg}; Fallback execution failed: {fb_e}"
+                                        result.feedback = f"Original error: {fb_msg}; Fallback error: {fb_res.feedback}"
                                         result.output = processed_output
                                         result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
                                         telemetry.logfire.error(
-                                            f"Step '{step.name}' validation failed and fallback raised: {fb_e}"
+                                            f"Step '{step.name}' validation failed and fallback failed"
                                         )
                                         return result
+                                except Exception as fb_e:
+                                    result.success = False
+                                    result.feedback = f"Original error: {fb_msg}; Fallback execution failed: {fb_e}"
+                                    result.output = processed_output
+                                    result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
+                                    telemetry.logfire.error(
+                                        f"Step '{step.name}' validation failed and fallback raised: {fb_e}"
+                                    )
+                                    return result
+                            else:
                                 # No fallback configured
                                 result.success = False
                                 result.feedback = fb_msg
@@ -1469,51 +1466,51 @@ class DefaultAgentStepExecutor:
                                 return result
                 except Exception as e:
                     validation_passed = False
-                    if attempt < total_attempts:
-                        telemetry.logfire.warning(f"Step '{step.name}' validation failed: {e}")
-                        continue
-                    else:
-                        fb_msg = f"Validation failed after max retries: {str(e)}"
-                        if getattr(step, "fallback_step", None) is not None:
-                            try:
-                                fb_res = await core.execute(
-                                    step=step.fallback_step,
-                                    data=data,
-                                    context=attempt_context,
-                                    resources=resources,
-                                    limits=limits,
-                                    stream=stream,
-                                    on_chunk=on_chunk,
-                                    cache_key=None,
-                                    breach_event=breach_event,
-                                    _fallback_depth=_fallback_depth + 1,
-                                )
-                                result.cost_usd = (result.cost_usd or 0.0) + (fb_res.cost_usd or 0.0)
-                                result.token_counts = (result.token_counts or 0) + (fb_res.token_counts or 0)
-                                result.metadata_["fallback_triggered"] = True
-                                result.metadata_["original_error"] = fb_msg
-                                if fb_res.success:
-                                    fb_res.metadata_ = {**(fb_res.metadata_ or {}), **result.metadata_}
-                                    fb_res.feedback = fb_msg
-                                    return fb_res
-                                else:
-                                    result.success = False
-                                    result.feedback = f"Original error: {fb_msg}; Fallback error: {fb_res.feedback}"
-                                    result.output = processed_output
-                                    result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
-                                    telemetry.logfire.error(
-                                        f"Step '{step.name}' validation failed and fallback failed"
-                                    )
-                                    return result
-                            except Exception as fb_e:
+                    # ✅ CRITICAL FIX: Never retry agent execution on validation failure
+                    # Validation failures should preserve output and fail immediately
+                    fb_msg = f"Validation failed: {str(e)}"
+                    if getattr(step, "fallback_step", None) is not None:
+                        try:
+                            fb_res = await core.execute(
+                                step=step.fallback_step,
+                                data=data,
+                                context=attempt_context,
+                                resources=resources,
+                                limits=limits,
+                                stream=stream,
+                                on_chunk=on_chunk,
+                                cache_key=None,
+                                breach_event=breach_event,
+                                _fallback_depth=_fallback_depth + 1,
+                            )
+                            result.cost_usd = (result.cost_usd or 0.0) + (fb_res.cost_usd or 0.0)
+                            result.token_counts = (result.token_counts or 0) + (fb_res.token_counts or 0)
+                            result.metadata_["fallback_triggered"] = True
+                            result.metadata_["original_error"] = fb_msg
+                            if fb_res.success:
+                                fb_res.metadata_ = {**(fb_res.metadata_ or {}), **result.metadata_}
+                                fb_res.feedback = fb_msg
+                                return fb_res
+                            else:
                                 result.success = False
-                                result.feedback = f"Original error: {fb_msg}; Fallback execution failed: {fb_e}"
+                                result.feedback = f"Original error: {fb_msg}; Fallback error: {fb_res.feedback}"
                                 result.output = processed_output
                                 result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
                                 telemetry.logfire.error(
-                                    f"Step '{step.name}' validation failed and fallback raised: {fb_e}"
+                                    f"Step '{step.name}' validation failed and fallback failed"
                                 )
                                 return result
+                        except Exception as fb_e:
+                            result.success = False
+                            result.feedback = f"Original error: {fb_msg}; Fallback execution failed: {fb_e}"
+                            result.output = processed_output
+                            result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
+                            telemetry.logfire.error(
+                                f"Step '{step.name}' validation failed and fallback raised: {fb_e}"
+                            )
+                            return result
+                    else:
+                        # No fallback configured, preserve output and fail
                         result.success = False
                         result.feedback = fb_msg
                         result.output = processed_output
