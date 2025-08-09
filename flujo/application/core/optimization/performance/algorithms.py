@@ -532,53 +532,39 @@ class OptimizedSerializer:
             return json.dumps(obj, separators=(",", ":")).encode("utf-8")
 
     def _serialize_object(self, obj: Any) -> bytes:
-        """Serialize complex objects."""
-        # Handle BaseModel efficiently
-        if isinstance(obj, BaseModel):
-            try:
-                if self.format == "orjson" and HAS_ORJSON:
-                    return orjson.dumps(obj.model_dump(), option=orjson.OPT_SORT_KEYS)
-                else:
-                    import json
+        """Serialize complex objects using unified serialization."""
+        from flujo.utils.serialization import safe_serialize
+        
+        try:
+            # Use unified serialization logic first
+            serialized_obj = safe_serialize(obj, mode="default")
+            
+            # Then encode to bytes using the appropriate library
+            if self.format == "orjson" and HAS_ORJSON:
+                return orjson.dumps(serialized_obj, option=orjson.OPT_SORT_KEYS)
+            else:
+                import json
 
-                    return json.dumps(
-                        obj.model_dump(), sort_keys=True, separators=(",", ":")
-                    ).encode("utf-8")
-            except Exception:
-                pass
-
-        # Handle dictionaries and lists
-        if isinstance(obj, (dict, list, tuple, set)):
-            try:
-                # Convert sets and tuples to lists for JSON compatibility
-                serializable_obj = obj
-                if isinstance(obj, set):
-                    serializable_obj = sorted(list(obj), key=str)
-                elif isinstance(obj, tuple):
-                    serializable_obj = list(obj)
-
-                if self.format == "orjson" and HAS_ORJSON:
-                    return orjson.dumps(serializable_obj, option=orjson.OPT_SORT_KEYS)
-                else:
-                    import json
-
-                    return json.dumps(
-                        serializable_obj, sort_keys=True, separators=(",", ":")
-                    ).encode("utf-8")
-            except Exception:
-                pass
-
-        # Fallback to string representation
-        return str(obj).encode("utf-8", errors="ignore")
+                return json.dumps(
+                    serialized_obj, sort_keys=True, separators=(",", ":")
+                ).encode("utf-8")
+        except Exception:
+            # Fallback to string representation
+            return str(obj).encode("utf-8", errors="ignore")
 
     def _deserialize_data(self, data: bytes) -> Any:
-        """Deserialize data using the selected format."""
+        """Deserialize data using the selected format and unified deserialization."""
+        from flujo.utils.serialization import safe_deserialize
+        
+        # First decode from bytes
         if self.format == "orjson" and HAS_ORJSON:
-            return orjson.loads(data)
+            raw_data = orjson.loads(data)
         else:
             import json
-
-            return json.loads(data.decode("utf-8"))
+            raw_data = json.loads(data.decode("utf-8"))
+        
+        # Then apply unified deserialization logic if needed
+        return safe_deserialize(raw_data)
 
     def _cache_serialization(self, obj_id: int, result: bytes, obj: Any) -> None:
         """Cache serialization result."""

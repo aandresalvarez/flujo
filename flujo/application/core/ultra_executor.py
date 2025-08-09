@@ -1622,7 +1622,7 @@ class ITelemetry(Protocol):
 
 
 class OrjsonSerializer:
-    """Fast JSON serializer using orjson if available."""
+    """Fast JSON serializer using orjson if available, unified with flujo.utils.serialization."""
 
     def __init__(self) -> None:
         try:
@@ -1637,17 +1637,31 @@ class OrjsonSerializer:
             self._use_orjson = False
 
     def serialize(self, obj: Any) -> bytes:
+        """Serialize using unified serialization then encode to bytes."""
+        from flujo.utils.serialization import safe_serialize
+        
+        # Use unified serialization logic first
+        serialized_obj = safe_serialize(obj, mode="default")
+        
+        # Then encode to bytes using the appropriate library
         if self._use_orjson:
-            return self._orjson.dumps(obj, option=self._orjson.OPT_SORT_KEYS)
+            return self._orjson.dumps(serialized_obj, option=self._orjson.OPT_SORT_KEYS)
         else:
-            s = self._json.dumps(obj, sort_keys=True, separators=(",", ":"))
+            s = self._json.dumps(serialized_obj, sort_keys=True, separators=(",", ":"))
             return s.encode("utf-8")
 
     def deserialize(self, blob: bytes) -> Any:
+        """Deserialize using appropriate library then unified deserialization."""
+        from flujo.utils.serialization import safe_deserialize
+        
+        # First decode from bytes
         if self._use_orjson:
-            return self._orjson.loads(blob)
+            raw_data = self._orjson.loads(blob)
         else:
-            return self._json.loads(blob.decode("utf-8"))
+            raw_data = self._json.loads(blob.decode("utf-8"))
+        
+        # Then apply unified deserialization logic if needed
+        return safe_deserialize(raw_data)
 
 
 class Blake3Hasher:
