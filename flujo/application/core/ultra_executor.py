@@ -605,22 +605,22 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             elif hasattr(step, "meta") and step.meta.get("is_validation_step", False):
                 telemetry.logfire.debug(f"Routing validation step to SimpleStep policy: {step.name}")
                 result = await self.simple_step_executor.execute(
-                    self, step, data, context, resources, limits, stream, on_chunk, cache_key, None, _fallback_depth
+                    self, step, data, context, resources, limits, stream, on_chunk, cache_key, breach_event, _fallback_depth
                 )
             elif stream:
                 telemetry.logfire.debug(f"Routing streaming step to SimpleStep policy: {step.name}")
                 result = await self.simple_step_executor.execute(
-                    self, step, data, context, resources, limits, stream, on_chunk, cache_key, None, _fallback_depth
+                    self, step, data, context, resources, limits, stream, on_chunk, cache_key, breach_event, _fallback_depth
                 )
             elif hasattr(step, 'fallback_step') and step.fallback_step is not None and not hasattr(step.fallback_step, '_mock_name'):
                 telemetry.logfire.debug(f"Routing to SimpleStep policy with fallback: {step.name}")
                 result = await self.simple_step_executor.execute(
-                    self, step, data, context, resources, limits, stream, on_chunk, cache_key, None, _fallback_depth
+                    self, step, data, context, resources, limits, stream, on_chunk, cache_key, breach_event, _fallback_depth
                 )
             else:
                 telemetry.logfire.debug(f"Routing to AgentStep policy: {step.name}")
                 result = await self.agent_step_executor.execute(
-                    self, step, data, context, resources, limits, stream, on_chunk, cache_key, None, _fallback_depth
+                    self, step, data, context, resources, limits, stream, on_chunk, cache_key, breach_event, _fallback_depth
                 )
         except InfiniteFallbackError as e:
             # ENHANCED BEHAVIOR: Distinguish between framework loop detection vs direct agent exceptions
