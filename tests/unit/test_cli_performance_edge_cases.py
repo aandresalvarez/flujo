@@ -410,19 +410,28 @@ class TestCLIErrorHandling:
         """Fails gracefully when database path is unwritable (not root, Unix)."""
         if hasattr(os, "geteuid") and os.geteuid() == 0:
             pytest.skip("Test not valid when running as root")
-        os.environ["FLUJO_STATE_URI"] = f"sqlite://{unwritable_db_path}"
-        result = subprocess.run(
-            ["python", "-m", "flujo.cli.main", "lens", "show"],
-            capture_output=True,
-            text=True,
-            env=os.environ.copy(),
-        )
-        assert result.returncode != 0, "Should fail with invalid database path"
-        assert (
-            "not writable" in result.stderr
-            or "Error" in result.stderr
-            or "Permission denied" in result.stderr
-        )
+        
+        original_uri = os.environ.get("FLUJO_STATE_URI")
+        try:
+            os.environ["FLUJO_STATE_URI"] = f"sqlite://{unwritable_db_path}"
+            result = subprocess.run(
+                ["python", "-m", "flujo.cli.main", "lens", "show"],
+                capture_output=True,
+                text=True,
+                env=os.environ.copy(),
+            )
+            assert result.returncode != 0, "Should fail with invalid database path"
+            assert (
+                "not writable" in result.stderr
+                or "Error" in result.stderr
+                or "Permission denied" in result.stderr
+            )
+        finally:
+            # Clean up: restore original environment
+            if original_uri is None:
+                os.environ.pop("FLUJO_STATE_URI", None)
+            else:
+                os.environ["FLUJO_STATE_URI"] = original_uri
 
     @pytest.mark.skipif(platform.system() != "Windows", reason="Windows-specific test")
     def test_cli_skipped_on_windows(self):
@@ -433,15 +442,31 @@ class TestCLIErrorHandling:
     def test_cli_skipped_as_root(self, unwritable_db_path):
         """Test is skipped if running as root (Unix)."""
         if os.geteuid() == 0:
-            os.environ["FLUJO_STATE_URI"] = f"sqlite://{unwritable_db_path}"
-            pytest.skip("Test not valid when running as root")
+            original_uri = os.environ.get("FLUJO_STATE_URI")
+            try:
+                os.environ["FLUJO_STATE_URI"] = f"sqlite://{unwritable_db_path}"
+                pytest.skip("Test not valid when running as root")
+            finally:
+                # Clean up even if skipping
+                if original_uri is None:
+                    os.environ.pop("FLUJO_STATE_URI", None)
+                else:
+                    os.environ["FLUJO_STATE_URI"] = original_uri
 
     def test_cli_with_malformed_environment_variable(self):
         """Test CLI behavior with malformed environment variable."""
-        os.environ["FLUJO_STATE_URI"] = "invalid://uri"
-        runner = CliRunner()
-        result = runner.invoke(app, ["lens", "list"])
-        assert result.exit_code != 0, "Should fail with malformed URI"
+        original_uri = os.environ.get("FLUJO_STATE_URI")
+        try:
+            os.environ["FLUJO_STATE_URI"] = "invalid://uri"
+            runner = CliRunner()
+            result = runner.invoke(app, ["lens", "list"])
+            assert result.exit_code != 0, "Should fail with malformed URI"
+        finally:
+            # Clean up: restore original environment
+            if original_uri is None:
+                os.environ.pop("FLUJO_STATE_URI", None)
+            else:
+                os.environ["FLUJO_STATE_URI"] = original_uri
 
     def test_cli_with_missing_environment_variable(self):
         """Test CLI behavior with missing environment variable."""

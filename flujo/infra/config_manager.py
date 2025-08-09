@@ -296,9 +296,17 @@ class ConfigManager:
     def get_state_uri(self, force_reload: bool = False) -> Optional[str]:
         """Get the state URI from configuration.
         
+        Implements the precedence: Environment Variables > TOML File > None
+        
         Args:
             force_reload: If True, bypass the cache and reload from file
         """
+        # 1. Check environment variable first (highest precedence)
+        env_uri = os.environ.get("FLUJO_STATE_URI")
+        if env_uri:
+            return env_uri
+        
+        # 2. Check TOML file configuration
         config = self.load_config(force_reload=force_reload)
         return config.state_uri
 
