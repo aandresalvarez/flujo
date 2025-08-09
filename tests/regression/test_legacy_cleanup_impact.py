@@ -36,7 +36,7 @@ class TestLegacyFunctionUsageAnalysis:
         # step_logic module was intentionally removed during refactoring
         # This test verifies that the module no longer exists
         with pytest.raises(ModuleNotFoundError):
-            # step_logic module was intentionally removed during refactoring
+
             # The functionality has been migrated to ultra_executor
             pass  # This should raise ModuleNotFoundError
 

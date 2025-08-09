@@ -49,5 +49,5 @@ class LocalBackend(ExecutionBackend):
             breach_event=request.breach_event,
             context_setter=lambda result, ctx: None,  # Default context setter for backend calls
         )
-        
+
         return await self._executor.execute(frame)

@@ -28,18 +28,18 @@ class UsageGovernor(Generic[ContextT]):
     ) -> bool:
         """
         Efficiently checks usage limits using running totals.
-        
+
         This method calculates the prospective total usage (current + step) and compares
         it against the configured limits. It returns True if any limit would be breached
         by executing the step, False otherwise.
-        
+
         Args:
             current_total_cost: The total cost accumulated so far
             current_total_tokens: The total tokens accumulated so far
             step_cost: The cost of the step being considered
             step_tokens: The tokens of the step being considered
             span: Optional telemetry span (unused in this implementation)
-            
+
         Returns:
             True if executing the step would breach any limit, False otherwise
         """
@@ -103,7 +103,7 @@ class UsageGovernor(Generic[ContextT]):
             total_tokens = sum(
                 getattr(step, "token_counts", 0) for step in pipeline_result.step_history
             )
-        
+
         if (
             self.usage_limits.total_tokens_limit is not None
             and total_tokens > self.usage_limits.total_tokens_limit

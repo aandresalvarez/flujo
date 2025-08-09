@@ -2,20 +2,17 @@ from __future__ import annotations
 
 """Main execution manager that orchestrates pipeline execution components."""
 
-import asyncio
 from datetime import datetime
 from typing import Any, AsyncIterator, Generic, Optional, TypeVar
-import os # Added for os.getenv
+import os  # Added for os.getenv
 
 from flujo.domain.backends import ExecutionBackend
 from flujo.domain.models import (
     BaseModel,
     PipelineResult,
     StepResult,
-    UsageLimits,
 )
-from flujo.domain.dsl import Pipeline, Step, LoopStep
-from flujo.domain.resources import AppResources
+# from flujo.domain.dsl import LoopStep  # Commented to avoid circular import
 from flujo.exceptions import (
     ContextInheritanceError,
     PipelineAbortSignal,
@@ -23,13 +20,10 @@ from flujo.exceptions import (
     PausedException,
     UsageLimitExceededError,
     NonRetryableError,
-    MockDetectionError,
 )
-from flujo.state import StateBackend
 from flujo.infra import telemetry
 from flujo.application.core.context_adapter import _inject_context, _build_context_update
 from .context_manager import ContextManager
-from flujo.utils.formatting import format_cost
 
 from .step_coordinator import StepCoordinator
 from .state_manager import StateManager
@@ -130,12 +124,16 @@ class ExecutionManager(Generic[ContextT]):
             # ✅ CRITICAL FIX: Persist state AFTER step execution for crash recovery
             # This ensures state reflects the completed step for proper resumption
             # OPTIMIZATION: Only persist if we have a state backend and run_id, and not in test mode
-            persist_state_after_step = (run_id is not None and 
-                not isinstance(step, LoopStep) and 
-                not self.inside_loop_step and
-                self.state_manager.state_backend is not None and
-                not os.getenv("FLUJO_TEST_MODE") and
-                not os.getenv("CI") == "true")
+            # Local import to avoid circular dependency
+            from flujo.domain.dsl.loop import LoopStep
+            persist_state_after_step = (
+                run_id is not None
+                and not isinstance(step, LoopStep)
+                and not self.inside_loop_step
+                and self.state_manager.state_backend is not None
+                and not os.getenv("FLUJO_TEST_MODE")
+                and not os.getenv("CI") == "true"
+            )
 
             try:
                 try:
@@ -199,7 +197,7 @@ class ExecutionManager(Generic[ContextT]):
                         # Record step result in persistence backend
                         if run_id is not None:
                             await self.state_manager.record_step_result(run_id, step_result, idx)
-                        
+
                         # ✅ CRITICAL FIX: Persist state AFTER successful step execution for crash recovery
                         # This ensures the current_step_index reflects the next step to be executed
                         if persist_state_after_step and step_result.success:
@@ -218,6 +216,7 @@ class ExecutionManager(Generic[ContextT]):
                         # Raise PricingNotConfiguredError if strict pricing failure was encountered but swallowed upstream
                         try:
                             from flujo.exceptions import PricingNotConfiguredError as _PNC
+
                             fb = step_result.feedback or ""
                             if (
                                 "Strict pricing is enabled" in fb
@@ -251,7 +250,8 @@ class ExecutionManager(Generic[ContextT]):
                         try:
                             # Local import to avoid module-level dependency
                             from ...domain.dsl.loop import LoopStep as _LoopStep
-                            if isinstance(step, _LoopStep) and hasattr(step, 'iterable_input'):
+
+                            if isinstance(step, _LoopStep) and hasattr(step, "iterable_input"):
                                 # Let the loop handler control success/failure; do not halt here.
                                 yield result
                                 return
@@ -273,7 +273,7 @@ class ExecutionManager(Generic[ContextT]):
                         yield result
                         return
 
-                except NonRetryableError as e:
+                except NonRetryableError:
                     raise
                 except Exception as e:
                     # Ensure redirect-loop propagates as an exception to satisfy tests
@@ -281,12 +281,14 @@ class ExecutionManager(Generic[ContextT]):
                         raise
                     try:
                         from flujo.exceptions import InfiniteRedirectError as CoreIRE
+
                         if isinstance(e, CoreIRE):
                             raise
                     except Exception:
                         pass
                     try:
                         from flujo.application.runner import InfiniteRedirectError as RunnerIRE
+
                         if isinstance(e, RunnerIRE):
                             raise
                     except Exception:
@@ -333,7 +335,9 @@ class ExecutionManager(Generic[ContextT]):
                             run_id=run_id,
                             context=context,
                             current_step_index=idx,
-                            last_step_output=(step_result.output if step_result is not None else data),
+                            last_step_output=(
+                                step_result.output if step_result is not None else data
+                            ),
                             status="paused",
                             state_created_at=state_created_at,
                             step_history=result.step_history,
@@ -438,10 +442,9 @@ class ExecutionManager(Generic[ContextT]):
 
                 # Check if this is a crash recovery scenario (state existed before execution)
                 # In crash recovery, all steps are re-executed from the beginning
-                is_crash_recovery = (
-                    state_created_at is not None
-                    and len(result.step_history) == len(self.pipeline.steps)
-                )
+                is_crash_recovery = state_created_at is not None and len(
+                    result.step_history
+                ) == len(self.pipeline.steps)
 
                 if is_hitl_resumption:
                     # For HITL resumption scenarios, use double the pipeline length

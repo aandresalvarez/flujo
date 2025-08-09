@@ -25,7 +25,6 @@ class TestFallbackLoopDetection:
         Step.model_validate({"name": "step1", "agent": StubAgent(["ok"])})
         Step.model_validate({"name": "step2", "agent": StubAgent(["ok"])})
 
-
         # Should detect loop when same object is added again
         # Note: This test is now testing the integration rather than the isolated function
         # The actual loop detection happens in the executor during execution

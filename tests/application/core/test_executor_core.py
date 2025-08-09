@@ -2122,9 +2122,7 @@ class TestExecutorCoreFunctionalEquivalence:
 
         # The new implementation should still return True
         new_result = self.executor._is_complex_step(complex_step)
-        assert new_result, (
-            "New implementation should still identify complex steps correctly"
-        )
+        assert new_result, "New implementation should still identify complex steps correctly"
 
         # Create a step that would have been simple in the old implementation
         simple_step = Mock()
@@ -2135,9 +2133,7 @@ class TestExecutorCoreFunctionalEquivalence:
 
         # The new implementation should still return False
         new_result = self.executor._is_complex_step(simple_step)
-        assert not new_result, (
-            "New implementation should still identify simple steps correctly"
-        )
+        assert not new_result, "New implementation should still identify simple steps correctly"
 
     def test_functional_equivalence_backward_compatibility(self):
         """Test that backward compatibility is maintained."""
@@ -2206,9 +2202,7 @@ class TestExecutorCoreFunctionalEquivalence:
 
         # New implementation should return True (uses is_complex property)
         new_result = self.executor._is_complex_step(custom_complex_step)
-        assert new_result, (
-            "New implementation should return True for steps with is_complex=True"
-        )
+        assert new_result, "New implementation should return True for steps with is_complex=True"
 
         # This demonstrates the key improvement: extensibility without core changes
         print(

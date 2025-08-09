@@ -318,7 +318,7 @@ class TestLegacyFunctionIntegration:
         """Test that deprecation warnings are emitted for legacy functions."""
         # The legacy functions were removed during refactoring
         # This test now verifies that the new architecture is used instead
-        with pytest.raises(ImportError, match="cannot import name '_handle_cache_step'"):
+        with pytest.raises(ModuleNotFoundError):
             # Try to import the removed function
             pass
 

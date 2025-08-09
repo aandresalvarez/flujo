@@ -1,6 +1,5 @@
 """Error utilities for consistent feedback formatting and error extraction."""
 
-from typing import Any
 
 
 def format_feedback(exc: Exception) -> str:

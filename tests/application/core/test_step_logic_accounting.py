@@ -36,7 +36,6 @@ class CostlyOutput:
 from flujo.domain.plugins import ValidationPlugin
 
 
-
 class DummyPlugin(ValidationPlugin):
     """A dummy plugin for testing."""
 
