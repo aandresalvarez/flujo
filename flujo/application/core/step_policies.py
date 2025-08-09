@@ -17,6 +17,149 @@ import copy
 import time
 from flujo.domain.dsl.step import MergeStrategy, BranchFailureStrategy
 
+# --- Usage Governor for parallel execution ---
+class _ParallelUsageGovernor:
+    """Usage governor for parallel step execution."""
+    
+    def __init__(self, limits):
+        self.limits = limits
+        self.total_cost = 0.0
+        self.total_tokens = 0
+        self.limit_breached = asyncio.Event()
+        self.limit_breach_error = None
+    
+    async def add_usage(self, cost_delta, token_delta, result):
+        """Add usage and check limits."""
+        self.total_cost += cost_delta
+        self.total_tokens += token_delta
+        
+        # Check limits only if limits are configured
+        if self.limits is not None:
+            # Check cost limit breach
+            if self.limits.total_cost_usd_limit is not None and self.total_cost > self.limits.total_cost_usd_limit:
+                from flujo.utils.formatting import format_cost
+                formatted_limit = format_cost(self.limits.total_cost_usd_limit)
+                self.limit_breach_error = UsageLimitExceededError(
+                    f"Cost limit of ${formatted_limit} exceeded"
+                )
+                self.limit_breached.set()
+                return True
+            
+            # Check token limit breach
+            if self.limits.total_tokens_limit is not None and self.total_tokens > self.limits.total_tokens_limit:
+                self.limit_breach_error = UsageLimitExceededError(
+                    f"Token limit of {self.limits.total_tokens_limit} exceeded"
+                )
+                self.limit_breached.set()
+                return True
+        
+        return False
+    
+    def breached(self):
+        """Check if limits have been breached."""
+        return self.limit_breached.is_set()
+    
+    def get_error(self):
+        """Get the breach error if any."""
+        return self.limit_breach_error
+
+# --- Pipeline execution utility for policies ---
+async def _execute_pipeline_via_policies(
+    core: Any,
+    pipeline: Any,
+    data: Any,
+    context: Optional[Any],
+    resources: Optional[Any],
+    limits: Optional[Any],
+    breach_event: Optional[Any],
+    context_setter: Optional[Callable[[Any, Optional[Any]], None]] = None
+) -> Any:
+    """
+    Execute a pipeline using the policy-driven step routing system.
+    This replaces core._execute_pipeline calls in policies to make them self-contained.
+    """
+    from flujo.domain.models import PipelineResult
+    from flujo.exceptions import PausedException
+    
+    # Execute each step in the pipeline sequentially using the policy system
+    current_data = data
+    current_context = context
+    total_cost = 0.0
+    total_tokens = 0
+    total_latency = 0.0
+    step_history: list[Any] = []
+    all_successful = True
+    feedback = ""
+    
+    telemetry.logfire.info(f"[Policy] _execute_pipeline_via_policies starting with {len(pipeline.steps)} steps")
+    for step in pipeline.steps:
+        try:
+            telemetry.logfire.info(f"[Policy] _execute_pipeline_via_policies executing step {getattr(step, 'name', 'unnamed')}")
+            
+            # Use the core's policy-driven execute method instead of _execute_simple_step
+            step_result = await core.execute(
+                step=step,
+                data=current_data,
+                context=current_context,
+                resources=resources,
+                limits=limits,
+                stream=False,
+                on_chunk=None,
+                cache_key=None,
+                breach_event=breach_event,
+                context_setter=context_setter,
+                _fallback_depth=0
+            )
+            
+            # Update tracking variables
+            total_cost += step_result.cost_usd
+            total_tokens += step_result.token_counts
+            total_latency += step_result.latency_s
+            step_history.append(step_result)
+            
+            if not step_result.success:
+                all_successful = False
+                feedback = step_result.feedback
+            # Even on failure, we still record but do not break; loop logic may continue
+            
+            # Update data for next step
+            current_data = step_result.output if step_result.output is not None else current_data
+            current_context = step_result.branch_context if step_result.branch_context is not None else current_context
+            
+        except PausedException as e:
+            telemetry.logfire.info(f"[Policy] _execute_pipeline_via_policies caught PausedException: {str(e)}")
+            raise e  # Re-raise for proper handling
+        except Exception as e:
+            telemetry.logfire.error(f"[Policy] _execute_pipeline_via_policies step failed: {str(e)}")
+            # Create a failure result
+            failure_result = StepResult(
+                name=getattr(step, 'name', 'unknown'),
+                output=None,
+                success=False,
+                attempts=1,
+                latency_s=0.0,
+                token_counts=0,
+                cost_usd=0.0,
+                feedback=str(e),
+                branch_context=current_context,
+                metadata_={}
+            )
+            step_history.append(failure_result)
+            all_successful = False
+            feedback = str(e)
+            break
+    
+    # Create and return PipelineResult
+    return PipelineResult(
+        step_history=step_history,
+        total_cost_usd=total_cost,
+        total_tokens=total_tokens,
+        total_latency_s=total_latency,
+        final_pipeline_context=current_context,
+        success=all_successful,
+        feedback=feedback
+    )
+
 # --- Timeout runner policy ---
 class TimeoutRunner(Protocol):
     async def run_with_timeout(self, coro: Awaitable[Any], timeout_s: Optional[float]) -> Any:
@@ -198,10 +341,11 @@ class DefaultSimpleStepExecutor:
         _fallback_depth: int = 0,
     ) -> StepResult:
         telemetry.logfire.debug(
-            f"[Policy] SimpleStep(delegate-to-core): {getattr(step, 'name', '<unnamed>')} depth={_fallback_depth}"
+            f"[Policy] SimpleStep(self-contained): {getattr(step, 'name', '<unnamed>')} depth={_fallback_depth}"
         )
-        # Delegate to core's canonical implementation to preserve legacy semantics expected by tests
-        return await core._execute_simple_step(
+        # Use self-contained policy implementation instead of delegating to core
+        return await _execute_simple_step_policy_impl(
+            core,
             step,
             data,
             context,
@@ -1655,8 +1799,9 @@ class DefaultLoopStepExecutor:
                 original_cache_enabled = getattr(core, "_enable_cache", True)
                 try:
                     setattr(core, "_enable_cache", False)
-                    telemetry.logfire.info(f"[POLICY] About to call core._execute_pipeline for iteration {iteration_count}")
-                    pipeline_result = await core._execute_pipeline(
+                    telemetry.logfire.info(f"[POLICY] About to call _execute_pipeline_via_policies for iteration {iteration_count}")
+                    pipeline_result = await _execute_pipeline_via_policies(
+                        core,
                         body_pipeline,
                         current_data,
                         iteration_context,
@@ -1665,7 +1810,7 @@ class DefaultLoopStepExecutor:
                         None,
                         context_setter,
                     )
-                    telemetry.logfire.info(f"[POLICY] core._execute_pipeline completed for iteration {iteration_count}")
+                    telemetry.logfire.info(f"[POLICY] _execute_pipeline_via_policies completed for iteration {iteration_count}")
                 except PausedException as e:
                     # ✅ FLUJO BEST PRACTICE: Control Flow Exception Pattern
                     # 
@@ -1730,8 +1875,9 @@ class DefaultLoopStepExecutor:
                 original_cache_enabled = getattr(core, "_enable_cache", True)
                 try:
                     setattr(core, "_enable_cache", False)
-                    telemetry.logfire.info(f"[POLICY] About to call core._execute_pipeline for iteration {iteration_count}")
-                    pipeline_result = await core._execute_pipeline(
+                    telemetry.logfire.info(f"[POLICY] About to call _execute_pipeline_via_policies for iteration {iteration_count}")
+                    pipeline_result = await _execute_pipeline_via_policies(
+                        core,
                         body_pipeline,
                         current_data,
                         iteration_context,
@@ -1740,7 +1886,7 @@ class DefaultLoopStepExecutor:
                         None,
                         context_setter,
                     )
-                    telemetry.logfire.info(f"[POLICY] core._execute_pipeline completed for iteration {iteration_count}")
+                    telemetry.logfire.info(f"[POLICY] _execute_pipeline_via_policies completed for iteration {iteration_count}")
                 except PausedException as e:
                     # ✅ FLUJO BEST PRACTICE: Control Flow Exception Pattern
                     # 
@@ -2133,7 +2279,7 @@ class DefaultParallelStepExecutor:
             result.latency_s = time.monotonic() - start_time
             return result
         # Set up usage governor
-        usage_governor = core._ParallelUsageGovernor(limits) if limits else None
+        usage_governor = _ParallelUsageGovernor(limits) if limits else None
         if breach_event is None and limits is not None:
             breach_event = asyncio.Event()
         # Tracking variables
@@ -2155,8 +2301,8 @@ class DefaultParallelStepExecutor:
                 if step_executor is not None:
                     branch_result = await step_executor(branch_pipeline, data, branch_context, resources, breach_event)
                 else:
-                    pipeline_result = await core._execute_pipeline(
-                        branch_pipeline, data, branch_context, resources, limits, breach_event, context_setter
+                    pipeline_result = await _execute_pipeline_via_policies(
+                        core, branch_pipeline, data, branch_context, resources, limits, breach_event, context_setter
                     )
                     pipeline_success = all(s.success for s in pipeline_result.step_history) if pipeline_result.step_history else False
                     
@@ -2643,9 +2789,11 @@ class DefaultDynamicRouterStepExecutor:
             context_include_keys=router_step.context_include_keys,
             field_mapping=router_step.field_mapping,
         )
-        # Delegate via core's parallel handler to satisfy legacy expectations
-        parallel_result = await core._handle_parallel_step(
-            parallel_step=temp_parallel_step,
+        # Use the DefaultParallelStepExecutor policy directly instead of legacy core method
+        parallel_executor = DefaultParallelStepExecutor()
+        parallel_result = await parallel_executor.execute(
+            core=core,
+            step=temp_parallel_step,
             data=data,
             context=context,
             resources=resources,
