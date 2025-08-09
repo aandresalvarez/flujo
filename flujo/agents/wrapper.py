@@ -27,7 +27,7 @@ from ..domain.agent_protocol import AsyncAgentProtocol, AgentInT, AgentOutT
 from ..domain.processors import AgentProcessors
 from ..exceptions import OrchestratorError, OrchestratorRetryError
 from ..utils.serialization import safe_serialize
-from ..processors.repair import DeterministicRepairProcessor
+from .repair import DeterministicRepairProcessor
 from ..infra.telemetry import logfire
 
 # Import the agent factory from the new dedicated module
@@ -37,17 +37,8 @@ from .factory import make_agent, _unwrap_type_adapter
 from ..prompts import REPAIR_SYS, _format_repair_prompt
 
 
-def get_raw_output_from_exception(exc: Exception) -> str:
-    """Best-effort extraction of raw output from validation-related exceptions."""
-    if hasattr(exc, "message"):
-        msg = getattr(exc, "message")
-        if isinstance(msg, str):
-            return msg
-    if exc.args:
-        first = exc.args[0]
-        if isinstance(first, str):
-            return first
-    return str(exc)
+# Import from utils to avoid circular imports
+from .utils import get_raw_output_from_exception
 
 
 class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentInT, AgentOutT]):
@@ -244,8 +235,8 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                     }
                     prompt = _format_repair_prompt(prompt_data)
                     # Import here to avoid circular imports and allow monkeypatching
-                    from flujo.infra.agents import get_repair_agent as infra_get_repair_agent
-                    repair_agent = infra_get_repair_agent()
+                    from .repair import get_repair_agent as repair_get_repair_agent
+                    repair_agent = repair_get_repair_agent()
                     # Extract the actual string output from the repair agent response
                     repair_response = await repair_agent.run(prompt)
                     # Handle case where repair agent returns ProcessedOutputWithUsage
@@ -367,7 +358,7 @@ def make_agent_async(
         (e.g., temperature, model_settings, max_tokens, etc.)
     """
     # Check if this is an image generation model
-    from ..infra.agents import _is_image_generation_model, _attach_image_cost_post_processor
+    from .recipes import _is_image_generation_model, _attach_image_cost_post_processor
 
     is_image_model = _is_image_generation_model(model)
 
@@ -405,19 +396,4 @@ def make_agent_async(
     )
 
 
-def make_repair_agent(model: str | None = None) -> AsyncAgentWrapper[Any, str]:
-    """Create the internal JSON repair agent."""
-    from flujo.infra.settings import settings
-    model_name = model or settings.default_repair_model
-    return make_agent_async(model_name, REPAIR_SYS, str, auto_repair=False)
 
-
-_repair_agent: AsyncAgentWrapper[Any, str] | None = None
-
-
-def get_repair_agent() -> AsyncAgentWrapper[Any, str]:
-    """Lazily create the internal repair agent."""
-    global _repair_agent
-    if _repair_agent is None:
-        _repair_agent = make_repair_agent()
-    return _repair_agent

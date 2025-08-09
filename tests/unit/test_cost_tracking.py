@@ -1791,7 +1791,7 @@ class TestImageCostPostProcessorAttachment:
             mock_make_agent.return_value = (mock_agent, mock_processors)
 
             # Mock the post-processor attachment
-            with patch("flujo.infra.agents._attach_image_cost_post_processor") as mock_attach:
+            with patch("flujo.agents.recipes._attach_image_cost_post_processor") as mock_attach:
                 # Create an agent with an image model
                 make_agent_async(
                     model="openai:dall-e-3",
