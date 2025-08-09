@@ -5,14 +5,14 @@ from pydantic import BaseModel
 from flujo.application.core.context_manager import ContextManager
 
 
-class TestContext(BaseModel):
-    """Test context class for testing."""
+class MockContext(BaseModel):
+    """Mock context class for testing."""
     value: int = 0
     nested: dict = {}
     scratchpad: dict = {}
 
 
-class TestContextManager:
+class MockContextManager:
     """Test suite for ContextManager."""
 
     def test_isolate_none_context(self):
@@ -22,7 +22,7 @@ class TestContextManager:
 
     def test_isolate_basic_context(self):
         """Test basic context isolation."""
-        original = TestContext(value=42, nested={"key": "value"})
+        original = MockContext(value=42, nested={"key": "value"})
         isolated = ContextManager.isolate(original)
         
         assert isolated is not original
@@ -37,7 +37,7 @@ class TestContextManager:
 
     def test_isolate_with_include_keys(self):
         """Test context isolation with specific keys."""
-        original = TestContext(value=42, nested={"key": "value"}, scratchpad={"data": "test"})
+        original = MockContext(value=42, nested={"key": "value"}, scratchpad={"data": "test"})
         isolated = ContextManager.isolate(original, include_keys=["value", "scratchpad"])
         
         assert isolated.value == 42
@@ -52,20 +52,20 @@ class TestContextManager:
 
     def test_merge_with_none_source(self):
         """Test merging when source context is None."""
-        target = TestContext(value=10, nested={"existing": "data"})
+        target = MockContext(value=10, nested={"existing": "data"})
         result = ContextManager.merge(target, None)
         assert result is target
 
     def test_merge_with_none_target(self):
         """Test merging when target context is None."""
-        source = TestContext(value=20, nested={"new": "data"})
+        source = MockContext(value=20, nested={"new": "data"})
         result = ContextManager.merge(None, source)
         assert result is source
 
     def test_merge_basic_contexts(self):
         """Test basic context merging."""
-        target = TestContext(value=10, nested={"existing": "data"}, scratchpad={"old": "value"})
-        source = TestContext(value=20, nested={"new": "data"}, scratchpad={"new": "value"})
+        target = MockContext(value=10, nested={"existing": "data"}, scratchpad={"old": "value"})
+        source = MockContext(value=20, nested={"new": "data"}, scratchpad={"new": "value"})
         
         result = ContextManager.merge(target, source)
         
@@ -79,8 +79,8 @@ class TestContextManager:
 
     def test_merge_preserves_target_structure(self):
         """Test that merging preserves the target context structure."""
-        target = TestContext(value=10)
-        source = TestContext(value=20, nested={"key": "value"}, scratchpad={"data": "test"})
+        target = MockContext(value=10)
+        source = MockContext(value=20, nested={"key": "value"}, scratchpad={"data": "test"})
         
         result = ContextManager.merge(target, source)
         
@@ -96,12 +96,12 @@ class TestContextManager:
 
     def test_merge_deep_nested_structures(self):
         """Test merging with deeply nested structures."""
-        target = TestContext(
+        target = MockContext(
             value=1,
             nested={"level1": {"level2": {"target": "data"}}},
             scratchpad={"deep": {"nested": {"target": "value"}}}
         )
-        source = TestContext(
+        source = MockContext(
             value=2,
             nested={"level1": {"level2": {"source": "data"}}},
             scratchpad={"deep": {"nested": {"source": "value"}}}
@@ -117,8 +117,8 @@ class TestContextManager:
 
     def test_merge_handles_missing_attributes(self):
         """Test that merging handles missing attributes gracefully."""
-        target = TestContext(value=10)
-        source = TestContext(value=20, nested={"key": "value"})
+        target = MockContext(value=10)
+        source = MockContext(value=20, nested={"key": "value"})
         
         result = ContextManager.merge(target, source)
         
@@ -128,7 +128,7 @@ class TestContextManager:
 
     def test_isolate_preserves_metadata(self):
         """Test that isolation preserves context metadata."""
-        original = TestContext(value=42)
+        original = MockContext(value=42)
         original.__dict__["_metadata"] = {"test": "data"}
         
         isolated = ContextManager.isolate(original)
@@ -139,12 +139,12 @@ class TestContextManager:
 
     def test_merge_with_complex_types(self):
         """Test merging with complex data types."""
-        target = TestContext(
+        target = MockContext(
             value=1,
             nested={"list": [1, 2, 3], "dict": {"a": 1, "b": 2}},
             scratchpad={"set": {1, 2, 3}}
         )
-        source = TestContext(
+        source = MockContext(
             value=2,
             nested={"list": [4, 5], "dict": {"c": 3}},
             scratchpad={"set": {4, 5}}
@@ -161,7 +161,7 @@ class TestContextManager:
     def test_context_isolation_integration(self):
         """Integration test for context isolation workflow."""
         # Create initial context
-        original = TestContext(value=0, scratchpad={"counter": 0})
+        original = MockContext(value=0, scratchpad={"counter": 0})
         
         # Isolate for parallel execution
         branch1_context = ContextManager.isolate(original)
