@@ -264,9 +264,11 @@ class DummyRemoteBackend(ExecutionBackend):
                     for k, v in value.items():
                         # For dict reconstruction, preserve the value even if original doesn't have that key
                         original_value = original.get(k)
-                        reconstructed_dict[k] = (
-                            reconstruct(original_value, v) if original_value is not None else v
-                        )
+                        # Enhanced: Handle None values more gracefully in reconstruction
+                        if original_value is not None:
+                            reconstructed_dict[k] = reconstruct(original_value, v)
+                        else:
+                            reconstructed_dict[k] = v
                     return reconstructed_dict
                 else:
                     return original

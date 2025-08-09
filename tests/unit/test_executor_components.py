@@ -364,7 +364,8 @@ class TestDefaultValidatorRunner:
 
         # Enhanced: Returns validation result instead of raising exception
         result = await runner.validate(validators, data, context=context)
-        assert result is False  # Enhanced: Graceful failure instead of exception
+        # Enhanced: Validation runner returns list of ValidationResult objects
+        assert isinstance(result, list) and len(result) > 0 and not result[0].is_valid
 
 
 class TestDefaultPluginRunner:

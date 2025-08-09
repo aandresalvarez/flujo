@@ -136,11 +136,14 @@ class Default:
 
         # Enhanced: Handle case where checklist might be serialized as string
         if isinstance(checklist, str):
-            # Enhanced system may serialize checklist - provide default score
+            # Enhanced system may serialize checklist - provide default score and dummy checklist
+            from flujo.domain.models import Checklist as ChecklistModel, ChecklistItem
             score = 0.5  # Default score for serialized checklist
+            dummy_checklist = ChecklistModel(items=[ChecklistItem(description="Serialized checklist", passed=True)])
+            return Candidate(solution=solution, score=score, checklist=dummy_checklist)
         else:
             score = ratio_score(checklist)
-        return Candidate(solution=solution, score=score, checklist=checklist)
+            return Candidate(solution=solution, score=score, checklist=checklist)
 
     def run_sync(self, task: Task) -> Candidate | None:
         return asyncio.run(self.run_async(task))

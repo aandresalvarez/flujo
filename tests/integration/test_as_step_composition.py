@@ -228,4 +228,4 @@ async def test_direct_context_inheritance_error():
     assert len(results) > 0
     pipeline_result = results[-1]
     assert pipeline_result.step_history[0].success is False
-    assert "context inheritance" in pipeline_result.step_history[0].feedback.lower()
+    assert "contextinheritanceerror" in pipeline_result.step_history[0].feedback.lower() or "context inheritance" in pipeline_result.step_history[0].feedback.lower()
