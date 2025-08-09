@@ -31,13 +31,11 @@ class BaseModel(PydanticBaseModel):
         Returns:
             Serialized representation of the model
         """
-        from flujo.utils.serialization import safe_serialize_basemodel
+        from flujo.utils.serialization import safe_serialize
         
-        # Use the specialized BaseModel serialization with mode-specific circular reference handling
-        return safe_serialize_basemodel(
-            self,
-            mode=mode
-        )
+        # Delegate all serialization to the centralized utility.
+        # We pass `self` to be serialized.
+        return safe_serialize(self, mode=mode)
 
     def model_dump_json(self, **kwargs: Any) -> str:
         """
