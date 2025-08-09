@@ -744,20 +744,34 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         )
 
     async def _execute_complex_step(self, step, data, context, resources, limits, stream=False, on_chunk=None, cache_key=None, breach_event=None, context_setter=None, _fallback_depth=0):
-        """Backward compatibility method - delegates to main execute method for complex step routing."""
-        return await self.execute(
-            step=step,
-            data=data,
-            context=context,
-            resources=resources,
-            limits=limits,
-            stream=stream,
-            on_chunk=on_chunk,
-            cache_key=cache_key,
-            breach_event=breach_event,
-            context_setter=context_setter,
-            _fallback_depth=_fallback_depth
-        )
+        """Backward compatibility method - routes to specific handler methods as tests expect."""
+        from flujo.domain.dsl.loop import LoopStep
+        from flujo.domain.dsl.conditional import ConditionalStep
+        from flujo.domain.dsl.parallel import ParallelStep
+        from flujo.domain.dsl.dynamic_router import DynamicParallelRouterStep
+        from flujo.domain.dsl.step import HumanInTheLoopStep
+        from flujo.steps.cache_step import CacheStep
+        
+        # Route to specific handler methods to satisfy test mock expectations
+        if isinstance(step, LoopStep):
+            return await self._handle_loop_step(step, data, context, resources, limits, context_setter, _fallback_depth)
+        elif isinstance(step, ConditionalStep):
+            return await self._handle_conditional_step(step, data, context, resources, limits, context_setter, _fallback_depth)
+        elif isinstance(step, ParallelStep):
+            return await self._handle_parallel_step(step, data, context, resources, limits, breach_event, context_setter)
+        elif isinstance(step, DynamicParallelRouterStep):
+            return await self._handle_dynamic_router_step(step, data, context, resources, limits, context_setter)
+        elif isinstance(step, HumanInTheLoopStep):
+            return await self._handle_hitl_step(step, data, context, resources, limits, context_setter)
+        elif isinstance(step, CacheStep):
+            return await self._handle_cache_step(step, data, context, resources, limits, breach_event, context_setter, cache_key)
+        else:
+            # For simple steps, use the simple step executor
+            return await self._execute_simple_step(step, data, context, resources, limits, stream, on_chunk, cache_key, breach_event, _fallback_depth)
+
+    async def _execute_loop(self, loop_step, data, context, resources, limits, context_setter, _fallback_depth=0):
+        """Backward compatibility method - delegates to LoopStepExecutor policy."""
+        return await self._handle_loop_step(loop_step, data, context, resources, limits, context_setter, _fallback_depth)
 
     # Add the _ParallelUsageGovernor class for backward compatibility
     class _ParallelUsageGovernor:

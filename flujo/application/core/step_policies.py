@@ -662,9 +662,9 @@ async def _execute_simple_step_policy_impl(
                         raise
                     # Retry plugin-originated errors here to ensure agent is re-run on next loop iteration
                     # Only continue when there is another attempt available
-                    if attempt < max_retries:
+                    if attempt < total_attempts:
                         telemetry.logfire.warning(
-                            f"Step '{step.name}' plugin execution attempt {attempt}/{max_retries} failed: {e}"
+                            f"Step '{step.name}' plugin execution attempt {attempt}/{total_attempts} failed: {e}"
                         )
                         # Enrich next attempt input with feedback signal
                         try:
@@ -796,7 +796,7 @@ async def _execute_simple_step_policy_impl(
                         )
                         return result
                     # Only continue when there is another attempt available
-                    if attempt < max_retries:
+                    if attempt < total_attempts:
                         telemetry.logfire.warning(
                             f"Step '{step.name}' validation exception attempt {attempt}: {validation_error}"
                         )
@@ -986,9 +986,9 @@ async def _execute_simple_step_policy_impl(
             if agent_error.__class__.__name__ in {"PluginError", "_PluginError"}:
                 # Retry plugin-originated errors up to max_retries, then handle fallback/failure
                 # Only continue when there is another attempt available
-                if attempt < max_retries:
+                if attempt < total_attempts:
                     telemetry.logfire.warning(
-                        f"Step '{step.name}' plugin execution attempt {attempt}/{max_retries} failed: {agent_error}"
+                        f"Step '{step.name}' plugin execution attempt {attempt}/{total_attempts} failed: {agent_error}"
                     )
                     telemetry.logfire.info(
                         f"[Policy] Retrying after plugin failure: next attempt will be {attempt + 1}"
@@ -1065,7 +1065,7 @@ async def _execute_simple_step_policy_impl(
                         return result
                 # No fallback configured
                 return result
-            if attempt < max_retries:
+            if attempt < total_attempts:
                 telemetry.logfire.warning(
                     f"Step '{step.name}' agent execution attempt {attempt} failed: {agent_error}"
                 )
