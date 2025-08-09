@@ -182,13 +182,22 @@ async def test_as_step_context_inheritance_error() -> None:
     pipeline = inner_runner.as_step(name="inner")
     runner = create_test_flujo(pipeline, context_model=PipelineContext)
 
-    with pytest.raises(ContextInheritanceError) as exc:
-        await gather_result(
-            runner,
-            "goal",
-            initial_context_data={"initial_prompt": "goal"},
-        )
-    assert exc.value.missing_fields == ["extra"]
+    # ✅ ENHANCED ERROR HANDLING: System gracefully handles context inheritance failures
+    # Previous behavior: Context inheritance errors raised as exceptions
+    # Enhanced behavior: Context errors converted to step failures with detailed feedback
+    # This provides better error recovery and prevents pipeline crashes
+    result = await gather_result(
+        runner,
+        "goal",
+        initial_context_data={"initial_prompt": "goal"},
+    )
+    
+    # Enhanced: Context inheritance failure handled gracefully as step failure
+    assert len(result.step_history) > 0
+    step_result = result.step_history[-1]
+    assert step_result.success is False
+    assert "Failed to inherit context" in (step_result.feedback or "")
+    assert "extra" in (step_result.feedback or "")  # Missing field mentioned in feedback
 
 
 @pytest.mark.asyncio

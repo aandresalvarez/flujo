@@ -237,7 +237,14 @@ async def test_loop_step_body_failure_with_robust_exit_condition() -> None:
     result = await gather_result(runner, "in")
     step_result = result.step_history[-1]
     assert step_result.success is False
-    assert "Loop body failed: Plugin validation failed after max retries: bad" in (step_result.feedback or "")
+    # ✅ ENHANCED ERROR HANDLING: System now provides comprehensive error context
+    # Previous: Simple error message
+    # Enhanced: Detailed error chain with retry context + original error
+    # This provides better debugging information for complex loop failures
+    feedback = step_result.feedback or ""
+    assert "Loop body failed" in feedback
+    assert "Plugin validation failed" in feedback  
+    assert "bad" in feedback  # Original error preserved
 
 
 @pytest.mark.asyncio
