@@ -27,7 +27,7 @@ from flujo.domain.models import PipelineResult
 from ..domain.scoring import ratio_score
 
 if TYPE_CHECKING:  # pragma: no cover - used for typing only
-    from ..infra.agents import AsyncAgentProtocol
+    from ..agents import AsyncAgentProtocol
 
 # Type adapter for command validation
 _command_adapter: TypeAdapter[AgentCommand] = TypeAdapter(AgentCommand)
@@ -467,7 +467,7 @@ async def _invoke(
 ) -> Any:
     """Helper function to invoke an agent with proper error handling."""
     from flujo.application.runner import _accepts_param
-    from flujo.infra.agents import AsyncAgentWrapper
+    from flujo.agents import AsyncAgentWrapper
 
     try:
         # If this is a pydantic-ai agent wrapper, never pass context (it will error)

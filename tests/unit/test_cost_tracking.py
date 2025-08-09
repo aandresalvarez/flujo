@@ -1625,7 +1625,7 @@ class TestImageModelDetection:
 
     def test_is_image_generation_model_with_dall_e(self):
         """Test detection of DALL-E models."""
-        from flujo.infra.agents import _is_image_generation_model
+        from flujo.agents import _is_image_generation_model
 
         # Test various DALL-E model formats
         assert _is_image_generation_model("openai:dall-e-3") is True
@@ -1635,7 +1635,7 @@ class TestImageModelDetection:
 
     def test_is_image_generation_model_with_other_image_models(self):
         """Test detection of other image generation models."""
-        from flujo.infra.agents import _is_image_generation_model
+        from flujo.agents import _is_image_generation_model
 
         # Test other image models
         assert _is_image_generation_model("midjourney:v6") is True
@@ -1644,7 +1644,7 @@ class TestImageModelDetection:
 
     def test_is_image_generation_model_with_chat_models(self):
         """Test that chat models are not detected as image models."""
-        from flujo.infra.agents import _is_image_generation_model
+        from flujo.agents import _is_image_generation_model
 
         # Test chat models (should return False)
         assert _is_image_generation_model("openai:gpt-4o") is False
@@ -1654,7 +1654,7 @@ class TestImageModelDetection:
 
     def test_is_image_generation_model_with_edge_cases(self):
         """Test image model detection with edge cases."""
-        from flujo.infra.agents import _is_image_generation_model
+        from flujo.agents import _is_image_generation_model
 
         # Test edge cases
         assert _is_image_generation_model("") is False
@@ -1668,7 +1668,7 @@ class TestImageCostPostProcessorAttachment:
 
     def test_attach_image_cost_post_processor_with_valid_pricing(self):
         """Test attaching post-processor with valid pricing configuration."""
-        from flujo.infra.agents import _attach_image_cost_post_processor
+        from flujo.agents import _attach_image_cost_post_processor
         from unittest.mock import patch
 
         # Create a mock agent
@@ -1700,7 +1700,7 @@ class TestImageCostPostProcessorAttachment:
 
     def test_attach_image_cost_post_processor_with_missing_pricing(self):
         """Test attaching post-processor when pricing is not configured."""
-        from flujo.infra.agents import _attach_image_cost_post_processor
+        from flujo.agents import _attach_image_cost_post_processor
         from unittest.mock import patch
 
         # Create a mock agent
@@ -1723,7 +1723,7 @@ class TestImageCostPostProcessorAttachment:
 
     def test_attach_image_cost_post_processor_with_no_image_pricing(self):
         """Test attaching post-processor when no image pricing is configured."""
-        from flujo.infra.agents import _attach_image_cost_post_processor
+        from flujo.agents import _attach_image_cost_post_processor
         from unittest.mock import patch
 
         # Create a mock agent
@@ -1753,7 +1753,7 @@ class TestImageCostPostProcessorAttachment:
 
     def test_attach_image_cost_post_processor_with_invalid_provider(self):
         """Test attaching post-processor with invalid provider."""
-        from flujo.infra.agents import _attach_image_cost_post_processor
+        from flujo.agents import _attach_image_cost_post_processor
         from unittest.mock import patch
 
         # Create a mock agent
@@ -1776,11 +1776,11 @@ class TestImageCostPostProcessorAttachment:
 
     def test_make_agent_async_with_image_model(self):
         """Test that make_agent_async attaches post-processor for image models."""
-        from flujo.infra.agents import make_agent_async
+        from flujo.agents import make_agent_async
         from unittest.mock import patch
 
         # Mock the make_agent function
-        with patch("flujo.infra.agents.make_agent") as mock_make_agent:
+        with patch("flujo.agents.make_agent") as mock_make_agent:
             # Create a mock agent
             class MockAgent:
                 def __init__(self):
@@ -1804,11 +1804,11 @@ class TestImageCostPostProcessorAttachment:
 
     def test_make_agent_async_with_chat_model(self):
         """Test that make_agent_async doesn't attach post-processor for chat models."""
-        from flujo.infra.agents import make_agent_async
+        from flujo.agents import make_agent_async
         from unittest.mock import patch
 
         # Mock the make_agent function
-        with patch("flujo.infra.agents.make_agent") as mock_make_agent:
+        with patch("flujo.agents.make_agent") as mock_make_agent:
             # Create a mock agent
             class MockAgent:
                 def __init__(self):
@@ -1819,7 +1819,7 @@ class TestImageCostPostProcessorAttachment:
             mock_make_agent.return_value = (mock_agent, mock_processors)
 
             # Mock the post-processor attachment
-            with patch("flujo.infra.agents._attach_image_cost_post_processor") as mock_attach:
+            with patch("flujo.agents._attach_image_cost_post_processor") as mock_attach:
                 # Create an agent with a chat model
                 make_agent_async(
                     model="openai:gpt-4o",

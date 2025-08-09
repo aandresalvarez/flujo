@@ -1,7 +1,7 @@
 # manual_testing/cohort_pipeline.py
 
 from flujo import Step, Pipeline, step
-from flujo.infra.agents import make_agent_async
+from flujo.agents import make_agent_async
 from flujo.domain.models import PipelineContext
 from flujo.infra.settings import settings as flujo_settings
 

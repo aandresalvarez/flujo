@@ -364,7 +364,7 @@ def make_agent_async(
 
     # Import make_agent via infra path to allow test monkeypatching
     try:
-        from flujo.infra.agents import make_agent as infra_make_agent
+        from flujo.agents import make_agent as infra_make_agent
         agent, final_processors = infra_make_agent(
             model,
             system_prompt,

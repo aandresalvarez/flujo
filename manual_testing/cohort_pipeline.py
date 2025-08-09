@@ -1,7 +1,7 @@
 # manual_testing/cohort_pipeline.py
 
 from flujo import Step, Pipeline
-from flujo.infra.agents import make_agent_async
+from flujo.agents import make_agent_async
 from flujo.infra.settings import settings as flujo_settings
 
 # Define the AI agent that will assess the cohort definition

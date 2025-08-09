@@ -1,6 +1,6 @@
 import pytest
 from flujo.domain.agent_protocol import AgentProtocol
-from flujo.infra.agents import (
+from flujo.agents import (
     make_review_agent,
     make_solution_agent,
     make_validator_agent,

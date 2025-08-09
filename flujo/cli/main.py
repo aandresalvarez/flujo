@@ -10,7 +10,7 @@ import os
 import yaml
 from pathlib import Path
 from flujo.domain.models import Task, Checklist
-from flujo.infra.agents import (
+from flujo.agents import (
     make_self_improvement_agent,
     make_review_agent,
     make_solution_agent,

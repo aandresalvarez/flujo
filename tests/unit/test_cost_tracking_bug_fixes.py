@@ -14,7 +14,7 @@ from unittest.mock import Mock, AsyncMock, patch
 
 from flujo.cost import extract_usage_metrics
 from flujo.domain.models import UsageLimits
-from flujo.infra.agents import AsyncAgentWrapper
+from flujo.agents import AsyncAgentWrapper
 
 
 class TestBug1MetricsLostDuringOutputProcessing:

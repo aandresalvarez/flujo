@@ -13,7 +13,7 @@ The agent infrastructure provides a clean, decoupled approach to creating and co
 Creates a review agent that generates quality checklists.
 
 ```python
-from flujo.infra.agents import make_review_agent
+from flujo.agents import make_review_agent
 
 # Create with default settings
 review_agent = make_review_agent()
@@ -33,7 +33,7 @@ review_agent = make_review_agent(
 Creates a solution agent that generates the main output.
 
 ```python
-from flujo.infra.agents import make_solution_agent
+from flujo.agents import make_solution_agent
 
 # Create with default settings
 solution_agent = make_solution_agent()
@@ -53,7 +53,7 @@ solution_agent = make_solution_agent(
 Creates a validator agent that evaluates solutions against checklists.
 
 ```python
-from flujo.infra.agents import make_validator_agent
+from flujo.agents import make_validator_agent
 
 # Create with default settings
 validator_agent = make_validator_agent()
@@ -121,7 +121,7 @@ code_review_agent = make_agent_async(
 
 ```python
 from flujo import Step, Flujo
-from flujo.infra.agents import make_review_agent, make_solution_agent, make_validator_agent
+from flujo.agents import make_review_agent, make_solution_agent, make_validator_agent
 
 # Create a pipeline using factory functions
 pipeline = (
@@ -139,7 +139,7 @@ result = runner.run("Write a Python function to calculate fibonacci numbers")
 
 ```python
 from flujo.recipes.factories import make_default_pipeline
-from flujo.infra.agents import make_review_agent, make_solution_agent, make_validator_agent
+from flujo.agents import make_review_agent, make_solution_agent, make_validator_agent
 
 # Create a pipeline using the factory functions
 pipeline = make_default_pipeline(
@@ -153,7 +153,7 @@ pipeline = make_default_pipeline(
 
 ```python
 from flujo.recipes.factories import make_default_pipeline
-from flujo.infra.agents import make_review_agent, make_solution_agent, make_validator_agent
+from flujo.agents import make_review_agent, make_solution_agent, make_validator_agent
 
 # Create a pipeline using the factory
 pipeline = make_default_pipeline(
@@ -284,7 +284,7 @@ Focus on:
 Leverage type hints for better IDE support:
 
 ```python
-from flujo.infra.agents import make_review_agent
+from flujo.agents import make_review_agent
 from flujo.models import Checklist
 
 # Type hints help with IDE support

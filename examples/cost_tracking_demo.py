@@ -8,7 +8,7 @@ Make sure you have a flujo.toml file with cost configuration before running this
 
 import asyncio
 from flujo import Step, Flujo, UsageLimits
-from flujo.infra.agents import make_agent_async
+from flujo.agents import make_agent_async
 from flujo.exceptions import UsageLimitExceededError
 
 

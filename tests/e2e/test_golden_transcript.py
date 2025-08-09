@@ -14,7 +14,7 @@ except ImportError:  # pragma: no cover - skip if dependency missing
     pytest.skip("vcrpy not installed", allow_module_level=True)
 from flujo.recipes.factories import make_default_pipeline, run_default_pipeline
 from flujo.domain.models import Task, Candidate
-from flujo.infra.agents import (
+from flujo.agents import (
     make_review_agent,
     make_solution_agent,
     make_validator_agent,

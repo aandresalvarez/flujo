@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 from pydantic import SecretStr, BaseModel, TypeAdapter
 from typing import List, Dict, Union
 
-from flujo.infra.agents import (
+from flujo.agents import (
     AsyncAgentWrapper,
     NoOpReflectionAgent,
     LoggingReviewAgent,
@@ -85,7 +85,7 @@ async def test_noop_reflection_agent() -> None:
 
 def test_get_reflection_agent_disabled(monkeypatch) -> None:
     import importlib
-    import flujo.infra.agents as agents_mod
+    import flujo.agents as agents_mod
     import sys
     from flujo.infra.settings import Settings
 
@@ -95,7 +95,7 @@ def test_get_reflection_agent_disabled(monkeypatch) -> None:
     monkeypatch.setattr(settings_module, "settings", disabled_settings)
     importlib.reload(agents_mod)
 
-    from flujo.infra.agents import get_reflection_agent, NoOpReflectionAgent
+    from flujo.agents import get_reflection_agent, NoOpReflectionAgent
 
     agent = get_reflection_agent()
     assert isinstance(agent, NoOpReflectionAgent)
@@ -181,7 +181,7 @@ def test_make_agent_async_injects_key(monkeypatch) -> None:
     from flujo.infra import settings as settings_mod
 
     monkeypatch.setattr(settings_mod, "openai_api_key", SecretStr("test-key"))
-    from flujo.infra.agents import make_agent_async
+    from flujo.agents import make_agent_async
 
     wrapper = make_agent_async("openai:gpt-4o", "sys", str)
     assert wrapper is not None
@@ -193,7 +193,7 @@ def test_make_agent_async_missing_key(monkeypatch) -> None:
     from flujo.infra import settings as settings_mod
 
     settings_mod.anthropic_api_key = None
-    from flujo.infra.agents import make_agent_async
+    from flujo.agents import make_agent_async
     from flujo.exceptions import ConfigurationError
 
     with pytest.raises(ConfigurationError):
@@ -297,7 +297,7 @@ def test_make_self_improvement_agent_uses_settings_default(monkeypatch) -> None:
         "flujo.infra.settings.default_self_improvement_model",
         "model_from_settings",
     )
-    from flujo.infra.agents import make_self_improvement_agent
+    from flujo.agents import make_self_improvement_agent
 
     make_self_improvement_agent()
     assert called["model"] == "model_from_settings"
@@ -318,7 +318,7 @@ def test_make_repair_agent_uses_settings_default(monkeypatch) -> None:
         "flujo.infra.settings.default_repair_model",
         "model_from_settings",
     )
-    from flujo.infra.agents import make_repair_agent
+    from flujo.agents import make_repair_agent
 
     make_repair_agent()
     assert called["model"] == "model_from_settings"
@@ -335,7 +335,7 @@ def test_make_self_improvement_agent_uses_override_model(monkeypatch) -> None:
         "flujo.agents.wrapper.make_agent_async",
         fake_make,
     )
-    from flujo.infra.agents import make_self_improvement_agent
+    from flujo.agents import make_self_improvement_agent
 
     make_self_improvement_agent(model="override_model")
     assert called["model"] == "override_model"
@@ -352,7 +352,7 @@ def test_make_repair_agent_uses_override_model(monkeypatch) -> None:
         "flujo.agents.wrapper.make_agent_async",
         fake_make,
     )
-    from flujo.infra.agents import make_repair_agent
+    from flujo.agents import make_repair_agent
 
     make_repair_agent(model="override_model")
     assert called["model"] == "override_model"
@@ -498,7 +498,7 @@ async def test_make_agent_async_type_adapter_union_types(monkeypatch) -> None:
 
 def test_unwrap_type_adapter_function() -> None:
     """Test the _unwrap_type_adapter helper function directly."""
-    from flujo.infra.agents import _unwrap_type_adapter
+    from flujo.agents import _unwrap_type_adapter
 
     class MyModel(BaseModel):
         value: int
