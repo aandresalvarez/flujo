@@ -1,6 +1,6 @@
 import pytest
 from pydantic import BaseModel, TypeAdapter
-from flujo.processors.repair import DeterministicRepairProcessor
+from flujo.agents.repair import DeterministicRepairProcessor
 from flujo.agents import AsyncAgentWrapper
 from flujo.exceptions import OrchestratorError
 from flujo import agents as agents_mod

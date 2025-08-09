@@ -1,8 +1,8 @@
 """
-Integration test for the refactored, context-driven Default recipe.
+Integration test for the default pipeline factory.
 
-This test verifies that the `Default` recipe correctly uses the `Flujo` engine
-and a `Typed Pipeline Context` to manage the data flow between agents,
+This test verifies that the `make_default_pipeline` factory correctly creates
+a pipeline that uses the `Flujo` engine and manages the data flow between agents,
 ensuring each agent receives the appropriate inputs.
 """
 
@@ -15,7 +15,7 @@ from flujo.domain.models import Task, Candidate, Checklist, ChecklistItem
 
 @pytest.fixture
 def mock_agents() -> dict[str, AsyncMock]:
-    """Provides a dictionary of mocked agents for the Default recipe."""
+    """Provides a dictionary of mocked agents for the default pipeline."""
     # The review agent returns a simple checklist.
     review_agent = AsyncMock()
 
@@ -58,7 +58,7 @@ def mock_agents() -> dict[str, AsyncMock]:
 
 @pytest.mark.asyncio
 async def test_default_recipe_data_flow(mock_agents: dict[str, AsyncMock]):
-    """Tests that the Default recipe orchestrates the agents with the correct data flow."""
+    """Tests that the default pipeline factory creates a pipeline that orchestrates the agents with the correct data flow."""
     # Create the default pipeline with our mocked agents.
     pipeline = make_default_pipeline(
         review_agent=mock_agents["review"],

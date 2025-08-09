@@ -45,7 +45,7 @@ pip install flujo[bench]
 
 ## API
 
-> **Note:** The class-based `Default` recipe is deprecated. Use the new `make_default_pipeline` factory function for full transparency, composability, and future YAML/AI support.
+Use the `make_default_pipeline` factory function for full transparency, composability, and future YAML/AI support.
 
 ```python
 from flujo.recipes.factories import make_default_pipeline, run_default_pipeline

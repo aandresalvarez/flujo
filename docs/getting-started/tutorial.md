@@ -100,9 +100,9 @@ result: PipelineResult[str] = runner.run(
 print(result.step_history[-1].output)  # HELLO!
 ```
 
-## 4. The Budget-Aware Workflow: Customizing Agents for `Default`
+## 4. The Budget-Aware Workflow: Customizing Agents for Default Pipeline
 
-The `Default` recipe is still handy for simple, fixed workflows. You can customize its agents to mix models for cost and quality.
+The default pipeline factory is handy for simple, fixed workflows. You can customize its agents to mix models for cost and quality.
 
 Professional AI workflows often involve a mix of models to balance cost, speed, and quality. Here, we'll use a **cheaper, faster model** for the initial draft (solution agent) but retain the **smarter models** for the critical thinking roles (planning, quality control, and strategy).
 
@@ -114,7 +114,7 @@ from flujo.infra import init_telemetry
 from flujo.models import Task
 from flujo.infra.agents import make_review_agent, make_validator_agent
 init_telemetry()
-print("🚀 Building a workflow with a custom Solution Agent for the Default recipe...")
+print("🚀 Building a workflow with a custom Solution Agent for the default pipeline...")
 FAST_SOLUTION_PROMPT = "You are a creative but junior marketing copywriter. Write a catchy and concise slogan. Be quick and creative."
 fast_copywriter_agent = make_agent_async("openai:gpt-4o-mini", FAST_SOLUTION_PROMPT, str)
 pipeline = make_default_pipeline(
@@ -294,7 +294,7 @@ This confirms that the `solution_agent` recognized it needed information, called
 ---
 
 This concludes our tour! You've journeyed from a simple prompt to a sophisticated, tool-using AI system. You've learned to:
--   Understand the core concepts of **Default recipes and Agents**.
+-   Understand the core concepts of **default pipeline factories and Agents**.
 -   Run a basic multi-agent task and interpret its self-correction process.
 -   Control the definition of quality using **weighted scoring**.
 -   Optimize workflows by **mixing different AI models**.

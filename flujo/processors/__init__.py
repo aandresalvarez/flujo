@@ -5,7 +5,8 @@ from .common import (
     EnforceJsonResponse,
     SerializePydantic,
 )
-from .repair import DeterministicRepairProcessor
+# Import from the new location per FSD-005.3
+from ..agents.repair import DeterministicRepairProcessor
 
 __all__ = [
     "Processor",

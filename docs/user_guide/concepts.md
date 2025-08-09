@@ -24,9 +24,9 @@ pipeline = make_agentic_loop_pipeline(
 )
 ```
 
-## The Default Recipe (Simplified)
+## The Default Pipeline Factory (Simplified)
 
-The **`Default` recipe** is a convenient helper that runs a **fixed Review →
+The **`make_default_pipeline`** factory is a convenient helper that creates a **fixed Review →
 Solution → Validate workflow**. It's useful when you want a quick,
 opinionated pipeline without planning logic. Under the hood it uses the same
 Pipeline DSL described later.
@@ -140,7 +140,7 @@ Steps declare a `context` parameter to access or modify this object. See
 
 Every run automatically receives a `PipelineContext` instance. It includes a `run_id`, the initial prompt, a mutable `scratchpad` dictionary and a record of all human interactions (`hitl_history`). This allows agents to share state without additional setup.
 
-The built-in [**Default recipe**](#the-default-recipe) uses this DSL under the hood. When you need different logic, you can use the same tools directly through the `Flujo` engine. The DSL also supports advanced constructs like [**LoopStep**](pipeline_looping.md) for iteration and [**ConditionalStep**](pipeline_branching.md) for branching workflows.
+The built-in [**default pipeline factory**](#the-default-pipeline-factory-simplified) uses this DSL under the hood. When you need different logic, you can use the same tools directly through the `Flujo` engine. The DSL also supports advanced constructs like [**LoopStep**](pipeline_looping.md) for iteration and [**ConditionalStep**](pipeline_branching.md) for branching workflows.
 
 ```python
 from flujo import Step, Flujo
