@@ -731,16 +731,20 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             self, conditional_step, data, context, resources, limits, context_setter, _fallback_depth
         )
 
-    async def _handle_hitl_step(self, hitl_step, data, context, resources, limits, context_setter):
+    async def _handle_hitl_step(self, hitl_step=None, data=None, context=None, resources=None, limits=None, context_setter=None, *, step=None):
         """Backward compatibility method - delegates to HitlStepExecutor policy."""
+        # Handle backward compatibility for different parameter names
+        actual_step = step if step is not None else hitl_step
         return await self.hitl_step_executor.execute(
-            self, hitl_step, data, context, resources, limits, context_setter
+            self, actual_step, data, context, resources, limits, context_setter
         )
 
-    async def _handle_cache_step(self, cache_step, data, context, resources, limits, breach_event, context_setter, cache_key):
+    async def _handle_cache_step(self, cache_step=None, data=None, context=None, resources=None, limits=None, breach_event=None, context_setter=None, cache_key=None, step_executor=None, *, step=None):
         """Backward compatibility method - delegates to CacheStepExecutor policy."""
+        # Handle backward compatibility for different parameter names
+        actual_step = step if step is not None else cache_step
         return await self.cache_step_executor.execute(
-            self, cache_step, data, context, resources, limits, breach_event, context_setter, cache_key
+            self, actual_step, data, context, resources, limits, breach_event, context_setter, cache_key
         )
 
     async def _handle_dynamic_router_step(self, router_step, data, context, resources, limits, context_setter):

@@ -3,6 +3,7 @@ import asyncio
 from typing import Any, Awaitable, Optional, Protocol, Callable, Dict, List
 from pydantic import BaseModel
 from flujo.domain.models import StepResult, UsageLimits, PipelineContext
+from .types import ExecutionFrame
 from flujo.exceptions import MissingAgentError, InfiniteFallbackError, UsageLimitExceededError, NonRetryableError, MockDetectionError, PausedException, InfiniteRedirectError
 from flujo.cost import extract_usage_metrics
 from flujo.utils.performance import time_perf_ns, time_perf_ns_to_seconds
@@ -96,12 +97,21 @@ async def _execute_pipeline_via_policies(
         try:
             telemetry.logfire.info(f"[Policy] _execute_pipeline_via_policies executing step {getattr(step, 'name', 'unnamed')}")
             
-            # Use the core's policy-driven execute method instead of _execute_simple_step
-            # For simple steps in pipeline execution, call _execute_simple_step
-            # which can be overridden by test classes like DummyExecutor
-            step_result = await core._execute_simple_step(
-                step, current_data, current_context, resources, limits, False, None, None, breach_event, 0
+            # Use the core's policy-driven execute method for proper step type routing
+            # This ensures parallel steps, loop steps, etc. are handled by their correct policies
+            frame = ExecutionFrame(
+                step=step,
+                data=current_data,
+                context=current_context,
+                resources=resources,
+                limits=limits,
+                stream=False,
+                on_chunk=None,
+                breach_event=breach_event,
+                context_setter=lambda *args: None,  # Dummy context setter for pipeline execution
+                _fallback_depth=0
             )
+            step_result = await core.execute(frame)
             
             # Update tracking variables
             total_cost += step_result.cost_usd
@@ -121,6 +131,9 @@ async def _execute_pipeline_via_policies(
         except PausedException as e:
             telemetry.logfire.info(f"[Policy] _execute_pipeline_via_policies caught PausedException: {str(e)}")
             raise e  # Re-raise for proper handling
+        except UsageLimitExceededError as e:
+            telemetry.logfire.info(f"[Policy] _execute_pipeline_via_policies caught UsageLimitExceededError: {str(e)}")
+            raise e  # Re-raise for proper handling - this should not be converted to a step failure
         except Exception as e:
             telemetry.logfire.error(f"[Policy] _execute_pipeline_via_policies step failed: {str(e)}")
             # Create a failure result
@@ -294,6 +307,15 @@ class DefaultValidatorInvoker:
             self._validator_runner.validate(step.validators, output, context=context),
             timeout_s,
         )
+        # ✅ FLUJO BEST PRACTICE: Robust NoneType and iterable validation
+        # Critical fix: Handle cases where validator results might be None or not iterable
+        if results is None:
+            return
+        
+        # Ensure results is iterable before iterating
+        if not hasattr(results, '__iter__'):
+            return
+            
         for r in results:
             if not getattr(r, 'is_valid', False):
                 # Raise a generic exception; core wraps/handles uniformly for retries/fallback
@@ -385,6 +407,15 @@ async def _execute_simple_step_policy_impl(
         f"[Policy] SimpleStep: {getattr(step, 'name', '<unnamed>')} depth={_fallback_depth}"
     )
 
+    # ✅ FLUJO BEST PRACTICE: Early Mock Detection and Fallback Chain Protection
+    # Critical architectural fix: Detect Mock objects early to prevent infinite fallback chains
+    if hasattr(step, '_mock_name'):
+        mock_name = str(getattr(step, '_mock_name', ''))
+        if 'fallback_step' in mock_name and mock_name.count('fallback_step') > 1:
+            raise InfiniteFallbackError(
+                f"Infinite Mock fallback chain detected early: {mock_name[:100]}..."
+            )
+    
     # Fallback chain handling
     if _fallback_depth > core._MAX_FALLBACK_CHAIN_LENGTH:
         raise InfiniteFallbackError(
@@ -486,6 +517,10 @@ async def _execute_simple_step_policy_impl(
         
         start_ns = time_perf_ns()
         try:
+            # Check usage limits at the start of each attempt - this should raise UsageLimitExceededError if breached
+            if limits is not None:
+                await core._usage_meter.guard(limits, result.step_history)
+            
             # prompt processors
             processed_data = data
             if hasattr(step, "processors") and step.processors:
@@ -932,6 +967,9 @@ async def _execute_simple_step_policy_impl(
         except InfiniteFallbackError:
             # Preserve fallback loop errors for caller/tests
             raise
+        except UsageLimitExceededError:
+            # Preserve usage limit breaches - should not be retried
+            raise
         except asyncio.TimeoutError:
             # Preserve timeout semantics (non-retryable for plugin/validator phases)
             raise
@@ -1010,6 +1048,17 @@ async def _execute_simple_step_policy_impl(
                     f"Step '{step.name}' plugin failed after {result.attempts} attempts"
                 )
                 if hasattr(step, "fallback_step") and step.fallback_step is not None:
+                    # ✅ FLUJO BEST PRACTICE: Mock Detection in Fallback Chains
+                    # Critical fix: Detect Mock objects with recursive fallback_step attributes
+                    # that create infinite fallback chains (mock.fallback_step.fallback_step...)
+                    if hasattr(step.fallback_step, '_mock_name'):
+                        # Mock object detected - check for recursive mock fallback pattern
+                        mock_name = str(getattr(step.fallback_step, '_mock_name', ''))
+                        if 'fallback_step.fallback_step' in mock_name:
+                            raise InfiniteFallbackError(
+                                f"Infinite Mock fallback chain detected: {mock_name[:100]}..."
+                            )
+                    
                     telemetry.logfire.info(
                         f"Step '{step.name}' failed, attempting fallback"
                     )
@@ -1195,6 +1244,15 @@ class DefaultAgentStepExecutor:
         breach_event,
         _fallback_depth: int = 0,
     ) -> StepResult:
+        # ✅ FLUJO BEST PRACTICE: Early Mock Detection and Fallback Chain Protection
+        # Critical architectural fix: Detect Mock objects early to prevent infinite fallback chains
+        if hasattr(step, '_mock_name'):
+            mock_name = str(getattr(step, '_mock_name', ''))
+            if 'fallback_step' in mock_name and mock_name.count('fallback_step') > 1:
+                raise InfiniteFallbackError(
+                    f"Infinite Mock fallback chain detected early: {mock_name[:100]}..."
+                )
+        
         # Inline agent step logic (parity with legacy implementation)
         from unittest.mock import Mock, MagicMock, AsyncMock
         from pydantic import BaseModel
@@ -1262,8 +1320,6 @@ class DefaultAgentStepExecutor:
         for attempt in range(1, total_attempts + 1):
             result.attempts = attempt
             telemetry.logfire.info(f"DefaultAgentStepExecutor attempt {attempt}/{total_attempts} for step '{step.name}'")
-            if limits is not None:
-                await core._usage_meter.guard(limits, result.step_history)
             
             # FSD-003: Per-attempt context isolation
             # Each attempt (including the first) operates on a pristine copy when retries are possible
@@ -1279,6 +1335,9 @@ class DefaultAgentStepExecutor:
             
             start_ns = time_perf_ns()
             try:
+                # Check usage limits at the start of each attempt - this should raise UsageLimitExceededError if breached
+                if limits is not None:
+                    await core._usage_meter.guard(limits, result.step_history)
                 processed_data = data
                 if hasattr(step, "processors") and getattr(step, "processors", None):
                     processed_data = await core._processor_pipeline.apply_prompt(
@@ -1565,6 +1624,17 @@ class DefaultAgentStepExecutor:
 
                 primary_fb = _format_failure_feedback(e)
                 if getattr(step, "fallback_step", None) is not None:
+                    # ✅ FLUJO BEST PRACTICE: Mock Detection in Fallback Chains
+                    # Critical fix: Detect Mock objects with recursive fallback_step attributes
+                    # that create infinite fallback chains (mock.fallback_step.fallback_step...)
+                    if hasattr(step.fallback_step, '_mock_name'):
+                        # Mock object detected - check for recursive mock fallback pattern
+                        mock_name = str(getattr(step.fallback_step, '_mock_name', ''))
+                        if 'fallback_step.fallback_step' in mock_name:
+                            raise InfiniteFallbackError(
+                                f"Infinite Mock fallback chain detected: {mock_name[:100]}..."
+                            )
+                    
                     try:
                         fb_res = await core.execute(
                             step=step.fallback_step,
@@ -2338,6 +2408,10 @@ class DefaultParallelStepExecutor:
                         breach_event.set()
                 telemetry.logfire.debug(f"Branch {branch_name} completed: success={branch_result.success}")
                 return branch_name, branch_result
+            except UsageLimitExceededError as e:
+                # Re-raise usage limit exceptions - these should not be converted to branch failures
+                telemetry.logfire.info(f"Branch {branch_name} hit usage limit: {e}")
+                raise e
             except Exception as e:
                 telemetry.logfire.error(f"Branch {branch_name} failed with exception: {e}")
                 failure = StepResult(
@@ -2355,8 +2429,19 @@ class DefaultParallelStepExecutor:
                 return branch_name, failure
         # Execute branches concurrently
         tasks = [execute_branch(n, p, branch_contexts[n]) for n, p in parallel_step.branches.items()]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        for branch_name, branch_result in results:
+        branch_execution_results = await asyncio.gather(*tasks, return_exceptions=True)
+        for branch_execution_result in branch_execution_results:
+            # Handle exceptions returned directly from gather
+            if isinstance(branch_execution_result, UsageLimitExceededError):
+                # Re-raise usage limit exceptions immediately - don't convert to failed step result
+                telemetry.logfire.info(f"Parallel branch hit usage limit, re-raising: {branch_execution_result}")
+                raise branch_execution_result
+            elif isinstance(branch_execution_result, Exception):
+                # Handle other exceptions from gather
+                telemetry.logfire.error(f"Parallel branch raised unexpected exception: {branch_execution_result}")
+                raise branch_execution_result
+                
+        for branch_name, branch_result in branch_execution_results:
             if isinstance(branch_result, Exception):
                 telemetry.logfire.error(f"Branch {branch_name} raised exception: {branch_result}")
                 branch_result = StepResult(

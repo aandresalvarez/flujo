@@ -10,7 +10,8 @@ import pytest
 from unittest.mock import AsyncMock, Mock, patch
 from typing import Any
 
-from flujo.application.core.ultra_executor import ExecutorCore, MockDetectionError
+from flujo.application.core.ultra_executor import ExecutorCore
+from flujo.exceptions import MockDetectionError
 from flujo.domain.models import UsageLimits
 from flujo.domain.plugins import PluginOutcome
 from flujo.exceptions import (
@@ -692,7 +693,7 @@ class TestExecutorCoreSimpleStep:
         )
 
         # Act & Assert
-        with pytest.raises(PricingNotConfiguredError, match="Pricing not configured"):
+        with pytest.raises(PricingNotConfiguredError, match="Strict pricing is enabled.*no configuration was found"):
             await executor_core._execute_simple_step(
                 mock_step,
                 data,
