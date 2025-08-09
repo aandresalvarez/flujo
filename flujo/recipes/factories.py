@@ -224,6 +224,8 @@ def make_agentic_loop_pipeline(
                     if isinstance(context, PipelineContext):
                         context.scratchpad["paused_step_input"] = cmd
                     # Do NOT create or append a log entry here; only log on resume
+                    from flujo.infra import telemetry
+                    telemetry.logfire.info(f"_CommandExecutor raising PausedException for question: {cmd.question}")
                     raise PausedException(message=cmd.question)
                 elif cmd.type == "finish":
                     exec_result = cmd.final_answer

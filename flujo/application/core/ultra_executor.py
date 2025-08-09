@@ -82,6 +82,7 @@ from ...exceptions import (
     ContextInheritanceError,
     MissingAgentError,
     NonRetryableError,
+    PipelineAbortSignal,
 )
 from flujo.utils.formatting import format_cost
 
@@ -1386,6 +1387,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             MissingAgentError,
         ) as e:
             # Re-raise critical exceptions immediately
+            telemetry.logfire.info(f"_execute_simple_step caught critical exception {type(e).__name__} for step '{step.name}' - re-raising")
             raise
 
     async def _execute_agent_step(
@@ -1486,8 +1488,10 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         feedback = ""
         
         from ...exceptions import PausedException as _HITLPaused
+        telemetry.logfire.info(f"_execute_pipeline starting with {len(pipeline.steps)} steps")
         for step in pipeline.steps:
             try:
+                telemetry.logfire.info(f"_execute_pipeline executing step {getattr(step, 'name', 'unnamed')}")
                 # Execute the step directly via simple-step executor to honor overrides
                 step_result = await self._execute_simple_step(
                     step,
@@ -1523,6 +1527,13 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             except _HITLPaused as e:
                 # Propagate HITL pause to caller so orchestrator can handle it
                 telemetry.logfire.info(f"_execute_pipeline caught PausedException: {str(e)}")
+                raise
+            except PipelineAbortSignal as e:
+                # Propagate pipeline abort signals (including HITL pauses) to caller
+                telemetry.logfire.info(f"_execute_pipeline caught PipelineAbortSignal: {str(e)}")
+                # Convert PipelineAbortSignal back to PausedException if it came from HITL
+                if "Paused for HITL" in str(e):
+                    raise _HITLPaused(str(e))
                 raise
             except Exception as e:
                 all_successful = False
@@ -3250,10 +3261,24 @@ class OptimizedExecutorCore(ExecutorCore):
             iteration_step_history: list[StepResult] = []
             iteration_failed = False
             for inner_step in body_steps:
-                # If inner_step is a complex step (e.g., nested LoopStep), delegate to core.execute
-                is_complex = getattr(inner_step, 'is_complex', False)
-                if is_complex:
-                    tmp_res = await self.execute(
+                try:
+                    # If inner_step is a complex step (e.g., nested LoopStep), delegate to core.execute
+                    is_complex = getattr(inner_step, 'is_complex', False)
+                    if is_complex:
+                        tmp_res = await self.execute(
+                            inner_step,
+                            current_data,
+                            current_context,
+                            resources,
+                            limits,
+                            False,
+                            None,
+                            None,
+                            None,
+                            0,
+                        )
+                    else:
+                        tmp_res = await self._execute_simple_step(
                         inner_step,
                         current_data,
                         current_context,
@@ -3264,20 +3289,18 @@ class OptimizedExecutorCore(ExecutorCore):
                         None,
                         None,
                         0,
-                    )
-                else:
-                    tmp_res = await self._execute_simple_step(
-                    inner_step,
-                    current_data,
-                    current_context,
-                    resources,
-                    limits,
-                    False,
-                    None,
-                    None,
-                    None,
-                    0,
-                    )
+                        )
+                except PausedException as e:
+                    # Handle HITL pause according to Flujo Team Guide principles
+                    telemetry.logfire.info(f"LoopStep '{loop_step.name}' paused by HITL at iteration {iteration_count}.")
+                    
+                    # Update the main loop's context to reflect the paused state
+                    if current_context is not None and hasattr(current_context, 'scratchpad'):
+                        current_context.scratchpad['status'] = 'paused'
+                        current_context.scratchpad['pause_message'] = str(e)
+                    
+                    # Re-raise the exception to preserve control flow
+                    raise e
                 # Normalize StepResult to ensure step_history is a list (pydantic validation)
                 try:
                     sh = tmp_res.step_history if isinstance(getattr(tmp_res, "step_history", None), list) else []

@@ -1126,6 +1126,7 @@ class DefaultAgentStepExecutor:
         # Attempt loop
         for attempt in range(1, total_attempts + 1):
             result.attempts = attempt
+            telemetry.logfire.info(f"DefaultAgentStepExecutor attempt {attempt}/{total_attempts} for step '{step.name}'")
             if limits is not None:
                 await core._usage_meter.guard(limits, result.step_history)
             
@@ -1410,8 +1411,8 @@ class DefaultAgentStepExecutor:
                         NonRetryableError,
                     ),
                 ):
-                    telemetry.logfire.error(
-                        f"Step '{step.name}' encountered a non-retryable exception: {type(e).__name__}"
+                    telemetry.logfire.info(
+                        f"Step '{step.name}' encountered a non-retryable exception: {type(e).__name__} - re-raising"
                     )
                     raise e
                 if attempt < total_attempts:
@@ -1516,6 +1517,8 @@ class DefaultLoopStepExecutor:
         from .context_manager import ContextManager
         from flujo.infra import telemetry
         telemetry.logfire.info(f"[POLICY] DefaultLoopStepExecutor executing '{getattr(loop_step,'name','<unnamed>')}'")
+        telemetry.logfire.info(f"[POLICY] Loop body pipeline: {getattr(loop_step, 'loop_body_pipeline', 'NONE')}")
+        telemetry.logfire.info(f"[POLICY] Core has _execute_pipeline: {hasattr(core, '_execute_pipeline')}")
         from flujo.domain.dsl.pipeline import Pipeline
         start_time = time.monotonic()
         iteration_results: list[StepResult] = []
@@ -1604,6 +1607,7 @@ class DefaultLoopStepExecutor:
                 original_cache_enabled = getattr(core, "_enable_cache", True)
                 try:
                     setattr(core, "_enable_cache", False)
+                    telemetry.logfire.info(f"[POLICY] About to call core._execute_pipeline for iteration {iteration_count}")
                     pipeline_result = await core._execute_pipeline(
                         body_pipeline,
                         current_data,
@@ -1613,16 +1617,29 @@ class DefaultLoopStepExecutor:
                         None,
                         context_setter,
                     )
+                    telemetry.logfire.info(f"[POLICY] core._execute_pipeline completed for iteration {iteration_count}")
                 except PausedException as e:
                     # 1. A HITL step inside the loop body has paused execution.
                     telemetry.logfire.info(f"LoopStep '{loop_step.name}' paused by HITL at iteration {iteration_count}.")
 
-                    # 2. Update the main loop's context to reflect the paused state.
+                    # 2. Merge any context updates from the iteration context before updating status.
+                    #    This ensures paused_step_input and other HITL state is properly transferred.
+                    if iteration_context is not None and current_context is not None:
+                        try:
+                            from flujo.utils.context import safe_merge_context_updates
+                            safe_merge_context_updates(current_context, iteration_context)
+                        except Exception:
+                            # Fallback to basic merge if safe_merge fails
+                            merged_context = ContextManager.merge(current_context, iteration_context)
+                            if merged_context:
+                                current_context = merged_context
+
+                    # 3. Update the main loop's context to reflect the paused state.
                     if current_context is not None and hasattr(current_context, 'scratchpad'):
                         current_context.scratchpad['status'] = 'paused'
                         current_context.scratchpad['pause_message'] = str(e)
 
-                    # 3. Stop the loop immediately and re-raise the exception.
+                    # 4. Stop the loop immediately and re-raise the exception.
                     #    This is crucial to signal the top-level runner to halt.
                     raise e
                 except Exception as e:
@@ -1668,6 +1685,7 @@ class DefaultLoopStepExecutor:
                 original_cache_enabled = getattr(core, "_enable_cache", True)
                 try:
                     setattr(core, "_enable_cache", False)
+                    telemetry.logfire.info(f"[POLICY] About to call core._execute_pipeline for iteration {iteration_count}")
                     pipeline_result = await core._execute_pipeline(
                         body_pipeline,
                         current_data,
@@ -1677,16 +1695,29 @@ class DefaultLoopStepExecutor:
                         None,
                         context_setter,
                     )
+                    telemetry.logfire.info(f"[POLICY] core._execute_pipeline completed for iteration {iteration_count}")
                 except PausedException as e:
                     # 1. A HITL step inside the loop body has paused execution.
                     telemetry.logfire.info(f"LoopStep '{loop_step.name}' paused by HITL at iteration {iteration_count}.")
 
-                    # 2. Update the main loop's context to reflect the paused state.
+                    # 2. Merge any context updates from the iteration context before updating status.
+                    #    This ensures paused_step_input and other HITL state is properly transferred.
+                    if iteration_context is not None and current_context is not None:
+                        try:
+                            from flujo.utils.context import safe_merge_context_updates
+                            safe_merge_context_updates(current_context, iteration_context)
+                        except Exception:
+                            # Fallback to basic merge if safe_merge fails
+                            merged_context = ContextManager.merge(current_context, iteration_context)
+                            if merged_context:
+                                current_context = merged_context
+
+                    # 3. Update the main loop's context to reflect the paused state.
                     if current_context is not None and hasattr(current_context, 'scratchpad'):
                         current_context.scratchpad['status'] = 'paused'
                         current_context.scratchpad['pause_message'] = str(e)
 
-                    # 3. Stop the loop immediately and re-raise the exception.
+                    # 4. Stop the loop immediately and re-raise the exception.
                     #    This is crucial to signal the top-level runner to halt.
                     raise e
                 except Exception as e:
