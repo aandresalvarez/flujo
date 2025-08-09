@@ -1,7 +1,6 @@
 """Settings and configuration for flujo."""
 
 import os
-import threading
 from typing import Callable, ClassVar, Dict, Literal, Optional, cast
 
 import dotenv
@@ -82,13 +81,13 @@ class Settings(BaseSettings):
     )
 
     # --- Orchestrator Tuning ---
-    max_iters: int = 5
-    k_variants: int = 3
-    reflection_limit: int = 3
-    scorer: Literal["ratio", "weighted", "reward"] = "ratio"
-    t_schedule: list[float] = [1.0, 0.8, 0.5, 0.2]
-    otlp_endpoint: Optional[str] = None
-    agent_timeout: int = 60  # Timeout in seconds for agent calls
+    max_iters: int = Field(5, validation_alias="MAX_ITERS")
+    k_variants: int = Field(3, validation_alias="K_VARIANTS") 
+    reflection_limit: int = Field(3, validation_alias="REFLECTION_LIMIT")
+    scorer: Literal["ratio", "weighted", "reward"] = Field("ratio", validation_alias="SCORER")
+    t_schedule: list[float] = Field([1.0, 0.8, 0.5, 0.2], validation_alias="T_SCHEDULE")
+    otlp_endpoint: Optional[str] = Field(None, validation_alias="OTLP_ENDPOINT")
+    agent_timeout: int = Field(60, validation_alias="AGENT_TIMEOUT")  # Timeout in seconds for agent calls
 
     model_config: ClassVar[SettingsConfigDict] = {
         "env_file": ".env",
@@ -173,47 +172,16 @@ if settings.openai_api_key:
     os.environ.setdefault("OPENAI_API_KEY", settings.openai_api_key.get_secret_value())
 
 
-# Thread-local cache for settings to avoid repeated imports and ensure thread safety
-# We use thread-local storage instead of lru_cache because:
-# 1. Thread safety: Different threads can have different settings (useful for testing)
-# 2. Dynamic configuration: Settings can change during runtime via config files
-# 3. Proper isolation: Each thread gets its own cached settings instance
-_thread_local_settings = threading.local()
+# Note: The global get_settings() function now delegates to ConfigManager
+# which handles caching and proper settings precedence internally
 
 
 def get_settings() -> Settings:
     """Get the current settings instance.
 
-    This function provides a way to get settings that may be overridden
-    by configuration files. It will use the configuration manager if available,
-    otherwise fall back to the default settings.
-
-    The result is cached per thread to avoid repeated import overhead and ensure thread safety.
+    This function delegates to ConfigManager.get_settings() which implements
+    the proper precedence: Defaults < TOML File < Environment Variables.
     """
-    if not hasattr(_thread_local_settings, "cached_settings"):
-        # Use lazy import to avoid circular dependency
-        try:
-            # Import here to avoid circular dependency
-            from .config_manager import get_config_manager
-
-            config_manager = get_config_manager()
-            _thread_local_settings.cached_settings = config_manager.get_settings()
-        except ImportError:
-            # Fall back to default settings if config manager is not available due to import issues
-            _thread_local_settings.cached_settings = settings
-        except (RuntimeError, AttributeError) as e:
-            # Log the specific error for debugging purposes
-            import logging
-
-            logging.error(f"Error while retrieving settings: {e}")
-            # Fall back to default settings if there is an error
-            _thread_local_settings.cached_settings = settings
-        except Exception as e:
-            # Log the unexpected error for debugging purposes
-            import logging
-
-            logging.error(f"Unexpected error while retrieving settings: {type(e).__name__}: {e}")
-            # Fall back to default settings if there is an unexpected error
-            _thread_local_settings.cached_settings = settings
-
-    return cast(Settings, _thread_local_settings.cached_settings)
+    from .config_manager import get_config_manager
+    
+    return get_config_manager().get_settings()
