@@ -215,6 +215,21 @@ def _serialize_for_key(
         _seen = set()
     if isinstance(obj, PRIMITIVE_TYPES):
         return str(obj)
+    
+    # Handle tuples specially for keys to preserve format
+    if isinstance(obj, tuple):
+        try:
+            # Convert tuple to string directly
+            items = []
+            for item in obj:
+                if isinstance(item, PRIMITIVE_TYPES):
+                    items.append(str(item))
+                else:
+                    items.append(_serialize_for_key(item, _seen, default_serializer, _recursion_depth + 1, mode))
+            return f"({', '.join(items)})"
+        except Exception:
+            return str(obj)
+    
     obj_id = id(obj)
     custom_serializer = lookup_custom_serializer(obj)
     added_to_seen = False  # Track if we added obj_id to _seen in this call
@@ -409,8 +424,38 @@ def safe_serialize(
 ) -> Any:
     """
     Safely serialize an object with intelligent fallback handling.
-    Handles circular references robustly by only clearing the _seen set at the top-level call.
-    The circular_ref_placeholder controls what is returned for circular references (default '<circular-ref>').
+    
+    This is the unified serialization function that handles all edge cases and special types,
+    consolidating logic from BaseModel.model_dump and other specialized serializers.
+    
+    Handles circular references robustly with mode-specific behavior:
+    - "default" mode: Returns appropriate placeholders (None for objects, {} for dicts, [] for lists)
+    - "cache" mode: Returns "<ClassName circular>" placeholders
+    - Custom modes: Uses the circular_ref_placeholder parameter
+    
+    Features:
+    - Circular reference detection with mode-specific handling
+    - Custom serializer registry support
+    - Comprehensive type handling (datetime, Enum, complex, bytes, etc.)
+    - Pydantic model support with manual field serialization for Flujo models
+    - Dataclass support
+    - Collections (list, tuple, dict, set) with recursive serialization
+    - Callable object handling with mock detection
+    - Error recovery with fallback strategies
+    
+    Args:
+        obj: The object to serialize
+        default_serializer: Optional fallback serializer for unknown types
+        _seen: Internal circular reference tracking set
+        _recursion_depth: Internal recursion depth counter
+        circular_ref_placeholder: What to return for circular references (overridden by mode)
+        mode: Serialization mode ("default", "cache", or custom)
+        
+    Returns:
+        Serialized representation of the object
+        
+    Raises:
+        TypeError: For unserializable objects when no fallback is available
     """
     PRIMITIVE_TYPES = (str, int, float, bool, type(None))
     if _seen is None:
@@ -420,10 +465,48 @@ def safe_serialize(
     if isinstance(obj, (datetime, date, time)):
         return obj.isoformat()
 
+    # Handle Enum objects specifically - don't add to _seen
+    if isinstance(obj, Enum):
+        try:
+            return obj.value
+        except (AttributeError, TypeError):
+            return str(obj)
+
+    # Handle circular references for non-primitive types
     if not isinstance(obj, PRIMITIVE_TYPES):
         obj_id = id(obj)
         if obj_id in _seen:
-            return circular_ref_placeholder
+            # If a specific circular_ref_placeholder was provided (not the default), use it
+            if circular_ref_placeholder != "<circular-ref>":
+                return circular_ref_placeholder
+            
+            # Handle mode-specific circular reference behavior for default placeholder
+            if mode == "cache":
+                # Generate class-specific circular reference marker
+                class_name = getattr(obj.__class__, "__name__", type(obj).__name__)
+                return f"<{class_name} circular>"
+            elif mode == "default":
+                # For default mode, check if this is a Flujo BaseModel for special handling
+                try:
+                    from flujo.domain.base_model import BaseModel as FlujoBaseModel
+                    is_flujo_model = isinstance(obj, FlujoBaseModel)
+                except ImportError:
+                    is_flujo_model = False
+                
+                if is_flujo_model:
+                    return None
+                elif isinstance(obj, dict):
+                    return {}
+                elif isinstance(obj, (list, tuple)):
+                    return []
+                elif isinstance(obj, (set, frozenset)):
+                    return []
+                else:
+                    # For other objects in default mode, use the circular_ref_placeholder
+                    return circular_ref_placeholder
+            else:
+                # For other modes, use the provided placeholder
+                return circular_ref_placeholder
         _seen.add(obj_id)
 
     # Limit recursion depth to prevent stack overflow
@@ -431,7 +514,7 @@ def safe_serialize(
         return f"<max-depth-exceeded: {type(obj).__name__}>"
 
     try:
-        # Check for custom serializers first (including for Enum objects)
+        # Check for custom serializers first
         custom_serializer = lookup_custom_serializer(obj)
         if custom_serializer:
             try:
@@ -451,13 +534,6 @@ def safe_serialize(
                 # For other exceptions, fall through to default handling
                 pass
 
-        # Handle Enum objects specifically - don't add to _seen
-        if isinstance(obj, Enum):
-            try:
-                return obj.value
-            except (AttributeError, TypeError):
-                return str(obj)
-
         if obj is None:
             return None
         if isinstance(obj, (str, int, bool)):
@@ -476,14 +552,27 @@ def safe_serialize(
             return base64.b64encode(obj).decode("ascii")
         if isinstance(obj, complex):
             return {"real": obj.real, "imag": obj.imag}
+        # Handle mock objects specifically before anything else
+        # Be more specific about Mock detection to avoid false positives with test classes
+        if hasattr(obj, "__class__") and (
+            obj.__class__.__name__ in ("Mock", "MagicMock", "AsyncMock", "NonCallableMock", "CallableMixin") or
+            (hasattr(obj.__class__, "__module__") and obj.__class__.__module__ and 
+             "unittest.mock" in obj.__class__.__module__)
+        ):
+            # Handle mock objects for testing with improved detection
+            try:
+                # print(f"DEBUG: Found mock object early: {obj.__class__.__name__}")
+                mock_result = serialize_mock_object(obj, mode, _seen)
+                # print(f"DEBUG: Mock serialization succeeded early: {type(mock_result)}")
+                return mock_result
+            except Exception as e:
+                # If mock serialization fails, fall back to string representation
+                # print(f"DEBUG: Mock serialization failed early: {e}")
+                return f"Mock({obj.__class__.__name__})"
+                
         if callable(obj):
             if hasattr(obj, "__name__"):
                 return obj.__name__
-            # Handle mock objects gracefully for testing
-            elif hasattr(obj, "__class__") and (
-                "Mock" in obj.__class__.__name__ or "mock" in obj.__class__.__name__.lower()
-            ):
-                return f"Mock({type(obj).__name__})"
             else:
                 return repr(obj)
         if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
@@ -498,9 +587,8 @@ def safe_serialize(
                 )
                 for k, v in dataclasses.asdict(obj).items()
             }
-        # Handle Pydantic models (especially our custom BaseModel) first
+        # Handle Pydantic models with enhanced Flujo BaseModel support
         if hasattr(obj, "model_dump"):
-            # For our custom BaseModel that need circular reference tracking at the model level
             # Check if this is a subclass of our custom BaseModel (from flujo.domain.base_model)
             try:
                 from flujo.domain.base_model import BaseModel as FlujoBaseModel
@@ -509,7 +597,7 @@ def safe_serialize(
                 is_flujo_model = False
             
             if is_flujo_model:
-                # This is a flujo BaseModel - we need to manually serialize to handle circular refs
+                # This is a flujo BaseModel - manually serialize fields to handle circular refs with mode
                 try:
                     result = {}
                     for name in getattr(obj.__class__, "model_fields", {}):
@@ -629,26 +717,24 @@ def safe_serialize(
                 )
                 for item in obj
             ]
-        # Handle regular objects with __dict__ attributes (like mock classes in tests)
+        
+
+        # Handle regular objects with __dict__ attributes
         # Only serialize as dict for specific known types, not arbitrary objects
         if hasattr(obj, "__dict__") and not isinstance(obj, type):
             # Check if there's a custom serializer first
             if lookup_custom_serializer(obj) is not None:
-                # Let the custom serializer handle it
+                # Let the custom serializer handle it - should have been processed above
                 pass
             elif hasattr(obj, "model_dump") or (HAS_PYDANTIC and isinstance(obj, BaseModel)):
                 # Let Pydantic models be handled by their specific logic
                 pass
-            elif hasattr(obj, "__class__") and (
-                "Mock" in obj.__class__.__name__ or "mock" in obj.__class__.__name__.lower()
-            ):
-                # Handle mock objects for testing with improved detection
-                return serialize_mock_object(obj, mode)
-            # For other objects with __dict__, raise TypeError to enforce explicit serialization
-            raise TypeError(
-                f"Object of type {type(obj).__name__} is not serializable. "
-                f"Register a custom serializer using register_custom_serializer({type(obj).__name__}, lambda obj: obj.__dict__) or provide a default_serializer."
-            )
+            else:
+                # For other objects with __dict__, raise TypeError to enforce explicit serialization
+                raise TypeError(
+                    f"Object of type {type(obj).__name__} is not serializable. "
+                    f"Register a custom serializer using register_custom_serializer({type(obj).__name__}, lambda obj: obj.__dict__) or provide a default_serializer."
+                )
         # If we get here, we have an unknown type
         if default_serializer:
             return default_serializer(obj)
@@ -656,16 +742,10 @@ def safe_serialize(
             # For objects with __dict__ that aren't handled by custom serializers,
             # we should raise TypeError as expected by tests
             if hasattr(obj, "__dict__") and not isinstance(obj, type):
-                # Check if this is a mock object or test object that should be handled gracefully
-                if hasattr(obj, "__class__") and (
-                    "Mock" in obj.__class__.__name__ or "mock" in obj.__class__.__name__.lower()
-                ):
-                    return serialize_mock_object(obj, mode)
-                else:
-                    raise TypeError(
-                        f"Object of type {type(obj).__name__} is not serializable. "
-                        f"Register a custom serializer using register_custom_serializer({type(obj).__name__}, lambda obj: obj.__dict__) or provide a default_serializer."
-                    )
+                raise TypeError(
+                    f"Object of type {type(obj).__name__} is not serializable. "
+                    f"Register a custom serializer using register_custom_serializer({type(obj).__name__}, lambda obj: obj.__dict__) or provide a default_serializer."
+                )
             else:
                 return handle_unknown_type(obj)
     except Exception as e:
@@ -684,9 +764,17 @@ def safe_serialize(
             else:
                 return f"<serialization-error: {type(obj).__name__} - {str(e)}>"
     finally:
-        # Clean up the seen set only at the top level
+        # Clean up the seen set only at the top level to ensure proper circular reference tracking
         if _recursion_depth == 0 and _seen:
             _seen.clear()
+        # For non-primitives, remove from seen set when exiting this scope to allow reprocessing
+        # in different branches of the object graph
+        elif not isinstance(obj, PRIMITIVE_TYPES) and obj is not None:
+            try:
+                _seen.discard(id(obj))
+            except (TypeError, AttributeError):
+                # Some objects might not have stable IDs or might be unhashable
+                pass
 
 
 def serialize_agent_response(response: Any, mode: str = "default") -> Dict[str, Any]:
@@ -749,12 +837,14 @@ def serialize_agent_response(response: Any, mode: str = "default") -> Dict[str, 
     return result
 
 
-def serialize_mock_object(mock_obj: Any, mode: str = "default") -> Dict[str, Any]:
+def serialize_mock_object(mock_obj: Any, mode: str = "default", _seen: Optional[Set[int]] = None) -> Dict[str, Any]:
     """
     Serialize Mock objects for testing scenarios with improved detection.
 
     Args:
         mock_obj: A Mock object to serialize
+        mode: Serialization mode
+        _seen: Set of seen object IDs for circular reference detection
 
     Returns:
         A serializable dictionary representation of the Mock object
@@ -766,23 +856,31 @@ def serialize_mock_object(mock_obj: Any, mode: str = "default") -> Dict[str, Any
         "attributes": {},
     }
 
-    # Serialize all attributes of the mock object
+    # Only serialize user-added attributes, not internal mock attributes
     if hasattr(mock_obj, "__dict__"):
         for key, value in mock_obj.__dict__.items():
-            try:
-                result["attributes"][key] = safe_serialize(value, mode=mode)
-            except Exception as e:
-                result["attributes"][key] = f"<unserializable: {type(value).__name__} - {str(e)}>"
+            # Only include non-mock attributes (user-added ones)
+            if not key.startswith('_mock_') and not key.startswith('method_calls'):
+                try:
+                    # Simple serialization for basic types only
+                    if value is None or isinstance(value, (str, int, float, bool, list, dict)):
+                        result["attributes"][key] = value
+                    else:
+                        result["attributes"][key] = str(value)
+                except Exception:
+                    result["attributes"][key] = f"<unserializable: {type(value).__name__}>"
 
-    # Handle special Mock attributes
-    for attr in ["_mock_name", "_mock_parent", "_mock_return_value", "_mock_side_effect"]:
-        if hasattr(mock_obj, attr):
-            try:
-                result["attributes"][attr] = safe_serialize(getattr(mock_obj, attr), mode=mode)
-            except Exception:
-                result["attributes"][attr] = (
-                    f"<unserializable: {type(getattr(mock_obj, attr)).__name__}>"
-                )
+    # Add basic mock state info
+    try:
+        if hasattr(mock_obj, '_mock_name') and mock_obj._mock_name:
+            result["attributes"]["_mock_name"] = str(mock_obj._mock_name)
+        if hasattr(mock_obj, '_mock_called'):
+            result["attributes"]["_mock_called"] = bool(mock_obj._mock_called)
+        if hasattr(mock_obj, '_mock_call_count'):
+            result["attributes"]["_mock_call_count"] = int(mock_obj._mock_call_count)
+    except Exception:
+        # If we can't get mock state, that's fine
+        pass
 
     return result
 
@@ -868,109 +966,20 @@ def safe_serialize_basemodel(
     """
     Specialized serialization for BaseModel instances with mode-specific circular reference handling.
     
+    DEPRECATED: This function now delegates to the enhanced safe_serialize function.
+    Use safe_serialize directly for new code.
+    
     This function implements the specific circular reference behavior expected by Flujo BaseModel:
     - "default" mode: Returns None for circular references (for BaseModel objects) or {} for dicts
     - "cache" mode: Returns "<ClassName> circular>" placeholders
     """
-    if _seen is None:
-        _seen = set()
-
-    # Handle primitive types
-    if obj is None or isinstance(obj, (str, int, float, bool)):
-        return obj
-
-    # Handle datetime objects specifically to prevent infinite recursion - don't add to _seen
-    if isinstance(obj, (datetime, date, time)):
-        return obj.isoformat()
-    
-    # Handle Enum objects - don't add to _seen
-    if isinstance(obj, Enum):
-        try:
-            return obj.value
-        except (AttributeError, TypeError):
-            return str(obj)
-
-    # Handle circular references for non-primitive types
-    obj_id = id(obj)
-    if obj_id in _seen:
-        # Handle mode-specific circular reference behavior
-        if mode == "cache":
-            # Generate class-specific circular reference marker
-            class_name = getattr(obj.__class__, "__name__", type(obj).__name__)
-            return f"<{class_name} circular>"
-        else:  # mode == "default"
-            # For default mode, return an appropriate placeholder based on type
-            if isinstance(obj, dict):
-                return {}
-            elif isinstance(obj, list):
-                return []
-            else:
-                return None
-    
-    _seen.add(obj_id)
-
-    try:
-        # Check if this is a Flujo BaseModel
-        try:
-            from flujo.domain.base_model import BaseModel as FlujoBaseModel
-            is_flujo_model = isinstance(obj, FlujoBaseModel)
-        except ImportError:
-            is_flujo_model = False
-        
-        if is_flujo_model:
-            # Manually serialize BaseModel fields
-            result = {}
-            for name in getattr(obj.__class__, "model_fields", {}):
-                value = getattr(obj, name, None)
-                result[name] = safe_serialize_basemodel(value, mode, _seen)
-            return result
-        
-        # Handle lists and tuples
-        if isinstance(obj, (list, tuple)):
-            serialized_list = []
-            for item in obj:
-                serialized_list.append(safe_serialize_basemodel(item, mode, _seen))
-            return serialized_list if isinstance(obj, list) else tuple(serialized_list)
-        
-        # Handle dictionaries
-        if isinstance(obj, dict):
-            result = {}
-            for k, v in obj.items():
-                # Serialize key (always convert to string for JSON compatibility)
-                if k is None or isinstance(k, (str, int, float, bool)):
-                    key_str = str(k)
-                else:
-                    key_str = str(safe_serialize_basemodel(k, mode, _seen))
-                # Serialize value
-                result[key_str] = safe_serialize_basemodel(v, mode, _seen)
-            return result
-        
-        # Handle sets
-        if isinstance(obj, (set, frozenset)):
-            return [safe_serialize_basemodel(item, mode, _seen) for item in obj]
-        
-        # Check for custom serializers first
-        custom_serializer = lookup_custom_serializer(obj)
-        if custom_serializer:
-            try:
-                serialized_result = custom_serializer(obj)
-                return safe_serialize_basemodel(serialized_result, mode, _seen)
-            except Exception as e:
-                # Re-raise specific exceptions that should not be caught
-                if isinstance(e, (ValueError, TypeError)) and "failed" in str(e).lower():
-                    raise
-                # For other exceptions, fall through to default handling
-                pass
-        
-        # For other types, delegate to safe_serialize with the standard placeholder
-        return safe_serialize(
-            obj,
-            circular_ref_placeholder="<circular-ref>",
-            mode=mode,
-            _seen=_seen,
-        )
-    finally:
-        _seen.discard(obj_id)
+    # Delegate to the enhanced safe_serialize function
+    return safe_serialize(
+        obj,
+        mode=mode,
+        _seen=_seen,
+        _recursion_depth=0,
+    )
 
 
 def reset_custom_serializer_registry() -> None:
