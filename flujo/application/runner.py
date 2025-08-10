@@ -298,8 +298,8 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         This method acts as the Composition Root, assembling all the
         components needed for optimal execution.
         """
-        from ..application.core.ultra_executor import (
-            ExecutorCore,
+        from ..application.core.ultra_executor import ExecutorCore
+        from ..application.core.default_components import (
             OrjsonSerializer,
             Blake3Hasher,
             InMemoryLRUBackend,

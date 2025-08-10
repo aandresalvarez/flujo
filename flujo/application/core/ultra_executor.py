@@ -18,10 +18,7 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import copy
-import hashlib
 import time
-from abc import abstractmethod
-from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import (
     Any,
@@ -29,9 +26,7 @@ from typing import (
     Callable,
     Dict,
     Generic,
-    List,
     Optional,
-    Protocol,
 )
 
 # Import Mock types for mock detection
@@ -54,24 +49,18 @@ else:  # pragma: no cover - mock types only used for isinstance checks in tests
             pass
 
 
-from ...application.core.context_manager import _accepts_param
 from ...domain.dsl.conditional import ConditionalStep
 from ...domain.dsl.dynamic_router import DynamicParallelRouterStep
 from ...domain.dsl.loop import LoopStep
 from ...domain.dsl.parallel import ParallelStep
 from ...domain.dsl.step import HumanInTheLoopStep, Step
 from ...domain.models import PipelineResult, StepResult, UsageLimits
-from ...domain.validation import ValidationResult
 from ...exceptions import (
-    ContextInheritanceError,
     InfiniteFallbackError,
-    InfiniteRedirectError,
     NonRetryableError,
-    PausedException,
     UsageLimitExceededError,
 )
 from ...infra import telemetry
-from ...signature_tools import analyze_signature
 from ...steps.cache_step import CacheStep
 from ...utils.context import safe_merge_context_updates
 from .step_policies import (
@@ -101,6 +90,30 @@ from .step_policies import (
     ValidatorInvoker,
 )
 from .types import TContext_w_Scratch
+from .default_components import (
+    DefaultAgentRunner,
+    DefaultProcessorPipeline,
+    DefaultValidatorRunner,
+    DefaultPluginRunner,
+    ThreadSafeMeter,
+    InMemoryLRUBackend,
+    DefaultTelemetry,
+    OrjsonSerializer,
+    Blake3Hasher,
+    DefaultCacheKeyGenerator,
+    _LRUCache,
+)
+from .executor_protocols import (
+    IAgentRunner,
+    IProcessorPipeline,
+    IValidatorRunner,
+    IPluginRunner,
+    IUsageMeter,
+    ITelemetry,
+    ISerializer,
+    IHasher,
+    ICacheBackend,
+)
 
 
 # Compatibility class for tests
@@ -1138,216 +1151,36 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         return feedback
 
 
-class DefaultProcessorPipeline:
-    """Default processor pipeline implementation."""
+CacheKeyGenerator = DefaultCacheKeyGenerator
+UltraStepExecutor = ExecutorCore
 
-    async def apply_prompt(self, processors: Any, data: Any, *, context: Any) -> Any:
-        """Apply prompt processors sequentially."""
-        import inspect
-
-        # Handle both list of processors and object with prompt_processors attribute
-        processor_list = processors
-        if hasattr(processors, "prompt_processors"):
-            processor_list = processors.prompt_processors
-
-        if not processor_list:
-            return data
-
-        processed_data = data
-        for proc in processor_list:
-            try:
-                fn = getattr(proc, "process", proc)
-                if inspect.iscoroutinefunction(fn):
-                    try:
-                        processed_data = await fn(processed_data, context=context)
-                    except TypeError:
-                        processed_data = await fn(processed_data)
-                else:
-                    try:
-                        processed_data = fn(processed_data, context=context)
-                    except TypeError:
-                        processed_data = fn(processed_data)
-            except Exception as e:
-                # Prompt processor failures should fail the step
-                try:
-                    telemetry.logfire.error(f"Prompt processor failed: {e}")
-                except Exception:
-                    pass
-                raise e  # Re-raise to fail the step
-
-        return processed_data
-
-    async def apply_output(self, processors: Any, data: Any, *, context: Any) -> Any:
-        """Apply output processors sequentially."""
-        import inspect
-
-        # Handle both list of processors and object with output_processors attribute
-        processor_list = processors
-        if hasattr(processors, "output_processors"):
-            processor_list = processors.output_processors
-
-        if not processor_list:
-            return data
-
-        processed_data = data
-        for proc in processor_list:
-            try:
-                fn = getattr(proc, "process", proc)
-                if inspect.iscoroutinefunction(fn):
-                    try:
-                        processed_data = await fn(processed_data, context=context)
-                    except TypeError:
-                        processed_data = await fn(processed_data)
-                else:
-                    try:
-                        processed_data = fn(processed_data, context=context)
-                    except TypeError:
-                        processed_data = fn(processed_data)
-            except Exception as e:
-                # Output processor failures should be re-raised to trigger fallback
-                try:
-                    telemetry.logfire.error(f"Output processor failed: {e}")
-                except Exception:
-                    pass
-                raise e  # Re-raise to trigger fallback logic
-
-        return processed_data
-
-
-class DefaultValidatorRunner:
-    """Default validator runner implementation."""
-
-    async def validate(
-        self, validators: List[Any], data: Any, *, context: Any
-    ) -> List[ValidationResult]:
-        """Run validators and return validation results."""
-        if not validators:
-            return []
-
-        validation_results = []
-        for validator in validators:
-            try:
-                result = await validator.validate(data, context=context)
-                if isinstance(result, ValidationResult):
-                    validation_results.append(result)
-                elif hasattr(result, "is_valid"):
-                    # Handle mock objects or other objects with is_valid attribute
-                    feedback = getattr(result, "feedback", None)
-                    if hasattr(feedback, "_mock_name"):  # It's a Mock object
-                        feedback = None
-
-                    validator_name = getattr(validator, "name", None)
-                    if hasattr(validator_name, "_mock_name"):  # It's a Mock object
-                        validator_name = type(validator).__name__
-                    elif validator_name is None:
-                        validator_name = type(validator).__name__
-
-                    validation_results.append(
-                        ValidationResult(
-                            is_valid=result.is_valid,
-                            feedback=feedback,
-                            validator_name=validator_name,
-                        )
-                    )
-                else:
-                    # Handle case where validator doesn't return ValidationResult
-                    # Create a failed ValidationResult
-                    validation_results.append(
-                        ValidationResult(
-                            is_valid=False,
-                            feedback=f"Validator {type(validator).__name__} returned invalid result type",
-                            validator_name=type(validator).__name__,
-                        )
-                    )
-            except Exception as e:
-                # Create a failed ValidationResult for the exception
-                validation_results.append(
-                    ValidationResult(
-                        is_valid=False,
-                        feedback=f"Validator {type(validator).__name__} failed: {e}",
-                        validator_name=type(validator).__name__,
-                    )
-                )
-
-        return validation_results
-
-
-def _should_pass_context_to_plugin(context: Optional[Any], func: Callable[..., Any]) -> bool:
-    """Determine if context should be passed to a plugin based on signature analysis."""
-    if context is None:
-        return False
-
-    import inspect
-
-    sig = inspect.signature(func)
-    has_explicit_context = any(
-        p.kind == inspect.Parameter.KEYWORD_ONLY and p.name == "context"
-        for p in sig.parameters.values()
-    )
-    return has_explicit_context
-
-
-def _should_pass_resources_to_plugin(resources: Optional[Any], func: Callable[..., Any]) -> bool:
-    """Determine if resources should be passed to a plugin based on signature analysis."""
-    if resources is None:
-        return False
-
-    import inspect
-
-    sig = inspect.signature(func)
-    has_explicit_resources = any(
-        p.kind == inspect.Parameter.KEYWORD_ONLY and p.name == "resources"
-        for p in sig.parameters.values()
-    )
-    return has_explicit_resources
-
-
-class DefaultPluginRunner:
-    """Default plugin runner implementation."""
-
-    async def run_plugins(
-        self,
-        plugins: List[tuple[Any, int]],
-        data: Any,
-        *,
-        context: Any,
-        resources: Optional[Any] = None,
-    ) -> Any:
-        """Run plugins and return processed data."""
-        from ...domain.plugins import PluginOutcome
-
-        processed_data = data
-        for plugin, priority in sorted(plugins, key=lambda x: x[1], reverse=True):
-            try:
-                # Check if the plugin accepts context and resources parameters
-                plugin_kwargs = {}
-                if _should_pass_context_to_plugin(context, plugin.validate):
-                    plugin_kwargs["context"] = context
-                if _should_pass_resources_to_plugin(resources, plugin.validate):
-                    plugin_kwargs["resources"] = resources
-
-                # Call the plugin's validate method
-                result = await plugin.validate(processed_data, **plugin_kwargs)
-
-                if isinstance(result, PluginOutcome):
-                    if not result.success:
-                        # On failure, return PluginOutcome for retry or fallback
-                        return result
-                    # On success, apply new_solution if provided, otherwise preserve input data
-                    if result.new_solution is not None:
-                        processed_data = result.new_solution
-                    # Continue to next plugin
-                    continue
-                else:
-                    processed_data = result
-
-            except Exception as e:
-                # Plugin execution failed - raise exception for step logic to handle
-                plugin_name = getattr(plugin, "name", type(plugin).__name__)
-                telemetry.logfire.error(f"Plugin {plugin_name} failed: {e}")
-                raise ValueError(f"Plugin {plugin_name} failed: {e}")
-
-        return processed_data
+# Public API for backward compatibility and clarity
+__all__ = [
+    # Core executor and aliases
+    "ExecutorCore",
+    "UltraStepExecutor",
+    "CacheKeyGenerator",
+    # Default components
+    "OrjsonSerializer",
+    "Blake3Hasher",
+    "InMemoryLRUBackend",
+    "ThreadSafeMeter",
+    "DefaultAgentRunner",
+    "DefaultProcessorPipeline",
+    "DefaultValidatorRunner",
+    "DefaultPluginRunner",
+    "DefaultTelemetry",
+    # Protocol interfaces (re-exported)
+    "IAgentRunner",
+    "IProcessorPipeline",
+    "IValidatorRunner",
+    "IPluginRunner",
+    "IUsageMeter",
+    "ITelemetry",
+    "ISerializer",
+    "IHasher",
+    "ICacheBackend",
+]
 
 
 # Stub classes for backward compatibility
@@ -1414,52 +1247,6 @@ class OptimizationConfig:
 
 
 @dataclass
-class _LRUCache:
-    """LRU cache implementation with TTL support."""
-
-    max_size: int = 1024
-    ttl: int = 3600
-    _store: OrderedDict[str, tuple[StepResult, float]] = field(
-        init=False, default_factory=OrderedDict
-    )
-
-    def __post_init__(self):
-        """Validate parameters."""
-        if self.max_size <= 0:
-            raise ValueError("max_size must be positive")
-        if self.ttl < 0:
-            raise ValueError("ttl must be non-negative")
-
-    def set(self, key: str, value: StepResult):
-        """Set a value in the cache."""
-        current_time = time.monotonic()
-
-        # Remove oldest entries if at capacity
-        while len(self._store) >= self.max_size:
-            self._store.popitem(last=False)
-
-        self._store[key] = (value, current_time)
-        self._store.move_to_end(key)
-
-    def get(self, key: str) -> Optional[StepResult]:
-        """Get a value from the cache."""
-        if key not in self._store:
-            return None
-
-        value, timestamp = self._store[key]
-        current_time = time.monotonic()
-
-        # Check TTL (0 means never expire)
-        if self.ttl > 0 and current_time - timestamp > self.ttl:
-            del self._store[key]
-            return None
-
-        # Move to end (most recently used)
-        self._store.move_to_end(key)
-        return value
-
-
-@dataclass
 class _UsageTracker:
     """Usage tracking implementation."""
 
@@ -1499,512 +1286,12 @@ class _UsageTracker:
             return self.total_cost_usd, total_tokens
 
 
-# --------------------------------------------------------------------------- #
-# ★ Protocol Interfaces
-# --------------------------------------------------------------------------- #
-
-
-class ISerializer(Protocol):
-    """Interface for object serialization."""
-
-    @abstractmethod
-    def serialize(self, obj: Any) -> bytes:
-        """Serialize an object to bytes."""
-        ...
-
-    @abstractmethod
-    def deserialize(self, blob: bytes) -> Any:
-        """Deserialize bytes back to an object."""
-        ...
-
-
-class IHasher(Protocol):
-    """Interface for deterministic hashing."""
-
-    @abstractmethod
-    def digest(self, data: bytes) -> str:
-        """Generate a deterministic hash digest from bytes."""
-        ...
-
-
-class ICacheBackend(Protocol):
-    """Interface for caching step results."""
-
-    @abstractmethod
-    async def get(self, key: str) -> Optional[StepResult]:
-        """Retrieve a cached result by key."""
-        ...
-
-    @abstractmethod
-    async def put(self, key: str, value: StepResult, ttl_s: int):
-        """Store a result in cache with TTL."""
-        ...
-
-    @abstractmethod
-    async def clear(self):
-        """Clear all cached entries."""
-        ...
-
-
-class IUsageMeter(Protocol):
-    """Interface for tracking and enforcing usage limits."""
-
-    @abstractmethod
-    async def add(self, cost_usd: float, prompt_tokens: int, completion_tokens: int):
-        """Add usage metrics to cumulative totals."""
-        ...
-
-    @abstractmethod
-    async def guard(self, limits: UsageLimits, step_history: Optional[List[Any]] = None):
-        """Check if current usage exceeds limits, raise if so."""
-        ...
-
-    @abstractmethod
-    async def snapshot(self) -> tuple[float, int, int]:
-        """Get current (cost, prompt_tokens, completion_tokens)."""
-        ...
-
-
-class IAgentRunner(Protocol):
-    """Interface for running agents with proper parameter handling."""
-
-    @abstractmethod
-    async def run(
-        self,
-        agent: Any,
-        payload: Any,
-        *,
-        context: Any,
-        resources: Any,
-        options: Dict[str, Any],
-        stream: bool = False,
-        on_chunk: Optional[Callable[[Any], Awaitable[None]]] = None,
-        breach_event: Optional[Any] = None,
-    ) -> Any:
-        """Run an agent and return raw output."""
-        ...
-
-
-class IProcessorPipeline(Protocol):
-    """Interface for running prompt and output processors."""
-
-    @abstractmethod
-    async def apply_prompt(self, processors: Any, data: Any, *, context: Any) -> Any:
-        """Apply prompt processors to input data."""
-        ...
-
-    @abstractmethod
-    async def apply_output(self, processors: Any, data: Any, *, context: Any) -> Any:
-        """Apply output processors to agent output."""
-        ...
-
-
-class IValidatorRunner(Protocol):
-    """Interface for running validators."""
-
-    @abstractmethod
-    async def validate(self, validators: List[Any], data: Any, *, context: Any):
-        """Run validators and raise ValueError on first failure."""
-        ...
-
-
-class IPluginRunner(Protocol):
-    """Interface for running plugins."""
-
-    @abstractmethod
-    async def run_plugins(
-        self,
-        plugins: List[tuple[Any, int]],
-        data: Any,
-        *,
-        context: Any,
-        resources: Optional[Any] = None,
-    ) -> Any:
-        """Run plugins and return processed data."""
-        ...
-
-
-class ITelemetry(Protocol):
-    """Interface for telemetry operations."""
-
-    @abstractmethod
-    def trace(self, name: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-        """Create a telemetry trace decorator."""
-        ...
+# Protocol interfaces are defined in executor_protocols.py (single source of truth)
 
 
 # --------------------------------------------------------------------------- #
 # ★ Default Implementations
 # --------------------------------------------------------------------------- #
-
-
-class OrjsonSerializer:
-    """Fast JSON serializer using orjson if available, unified with flujo.utils.serialization."""
-
-    def __init__(self) -> None:
-        try:
-            import orjson
-
-            self._orjson = orjson
-            self._use_orjson = True
-        except ImportError:
-            import json
-
-            self._json = json
-            self._use_orjson = False
-
-    def serialize(self, obj: Any) -> bytes:
-        """Serialize using unified serialization then encode to bytes."""
-        from flujo.utils.serialization import safe_serialize
-
-        # Use unified serialization logic first
-        serialized_obj = safe_serialize(obj, mode="default")
-
-        # Then encode to bytes using the appropriate library
-        if self._use_orjson:
-            return self._orjson.dumps(serialized_obj, option=self._orjson.OPT_SORT_KEYS)
-        else:
-            s = self._json.dumps(serialized_obj, sort_keys=True, separators=(",", ":"))
-            return s.encode("utf-8")
-
-    def deserialize(self, blob: bytes) -> Any:
-        """Deserialize using appropriate library then unified deserialization."""
-        from flujo.utils.serialization import safe_deserialize
-
-        # First decode from bytes
-        if self._use_orjson:
-            raw_data = self._orjson.loads(blob)
-        else:
-            raw_data = self._json.loads(blob.decode("utf-8"))
-
-        # Then apply unified deserialization logic if needed
-        return safe_deserialize(raw_data)
-
-
-class Blake3Hasher:
-    """Fast cryptographic hasher using Blake3 if available."""
-
-    def __init__(self) -> None:
-        try:
-            import blake3
-
-            self._blake3 = blake3
-            self._use_blake3 = True
-        except ImportError:
-            self._use_blake3 = False
-
-    def digest(self, data: bytes) -> str:
-        if self._use_blake3:
-            return self._blake3.blake3(data).hexdigest()
-        else:
-            return hashlib.blake2b(data, digest_size=32).hexdigest()
-
-
-@dataclass
-class InMemoryLRUBackend:
-    """O(1) LRU cache with TTL support."""
-
-    max_size: int = 1024
-    ttl_s: int = 3600
-    _lock: asyncio.Lock = field(init=False, default_factory=asyncio.Lock)
-    _store: OrderedDict[str, tuple[StepResult, float, int]] = field(
-        init=False, default_factory=OrderedDict
-    )
-
-    async def get(self, key: str) -> Optional[StepResult]:
-        """Retrieve a cached result by key."""
-        async with self._lock:
-            if key not in self._store:
-                return None
-
-            result, timestamp, access_count = self._store[key]
-            current_time = time.monotonic()
-
-            # Check TTL
-            if current_time - timestamp > self.ttl_s:
-                del self._store[key]
-                return None
-
-            # Move to end (most recently used)
-            self._store.move_to_end(key)
-            self._store[key] = (result, timestamp, access_count + 1)
-            # Return a deep copy to prevent mutation of cached data
-            return result.model_copy(deep=True)
-
-    async def put(self, key: str, value: StepResult, ttl_s: int):
-        """Store a result in cache with TTL."""
-        async with self._lock:
-            current_time = time.monotonic()
-
-            # Remove oldest entries if at capacity
-            while len(self._store) >= self.max_size:
-                self._store.popitem(last=False)
-
-            self._store[key] = (value, current_time, 0)
-            self._store.move_to_end(key)
-
-    async def clear(self):
-        """Clear all cached entries."""
-        async with self._lock:
-            self._store.clear()
-
-
-@dataclass
-class ThreadSafeMeter:
-    """Thread-safe usage meter with atomic operations."""
-
-    total_cost_usd: float = 0.0
-    prompt_tokens: int = 0
-    completion_tokens: int = 0
-    _lock: asyncio.Lock = field(init=False, default_factory=asyncio.Lock)
-
-    async def add(self, cost_usd: float, prompt_tokens: int, completion_tokens: int):
-        async with self._lock:
-            self.total_cost_usd += cost_usd
-            self.prompt_tokens += prompt_tokens
-            self.completion_tokens += completion_tokens
-
-    async def guard(self, limits: UsageLimits, step_history: Optional[List[Any]] = None):
-        async with self._lock:
-            # Use precise comparison for floating point
-            # Handle case where limits might contain Mock objects (for testing)
-            if (
-                limits.total_cost_usd_limit is not None
-                and isinstance(limits.total_cost_usd_limit, (int, float))
-                and self.total_cost_usd - limits.total_cost_usd_limit > 1e-9
-            ):
-                raise UsageLimitExceededError(
-                    f"Cost limit of ${limits.total_cost_usd_limit} exceeded (current: ${self.total_cost_usd})",
-                    PipelineResult(
-                        step_history=step_history or [], total_cost_usd=self.total_cost_usd
-                    ),
-                )
-
-            total_tokens = self.prompt_tokens + self.completion_tokens
-            if (
-                limits.total_tokens_limit is not None
-                and isinstance(limits.total_tokens_limit, (int, float))
-                and total_tokens - limits.total_tokens_limit > 0
-            ):
-                raise UsageLimitExceededError(
-                    f"Token limit of {limits.total_tokens_limit} exceeded (current: {total_tokens})",
-                    PipelineResult(
-                        step_history=step_history or [], total_cost_usd=self.total_cost_usd
-                    ),
-                )
-
-    async def snapshot(self) -> tuple[float, int, int]:
-        async with self._lock:
-            return self.total_cost_usd, self.prompt_tokens, self.completion_tokens
-
-
-class DefaultAgentRunner:
-    """Default agent runner with parameter filtering and streaming support."""
-
-    async def run(
-        self,
-        agent: Any,
-        payload: Any,
-        *,
-        context: Any,
-        resources: Any,
-        options: Dict[str, Any],
-        stream: bool = False,
-        on_chunk: Optional[Callable[[Any], Awaitable[None]]] = None,
-        breach_event: Optional[Any] = None,
-    ) -> Any:
-        """Run agent with proper parameter filtering and fallback strategies."""
-        import inspect
-        from ...application.core.context_manager import _should_pass_context
-
-        if agent is None:
-            raise RuntimeError("Agent is None")
-
-        # Extract the target agent (handle wrapped agents)
-        target_agent = getattr(agent, "_agent", agent)
-
-        # Find the executable function
-        executable_func = None
-        if stream:
-            # For streaming, prefer stream method
-            if hasattr(agent, "stream"):
-                executable_func = getattr(agent, "stream")
-            elif hasattr(target_agent, "stream"):
-                executable_func = getattr(target_agent, "stream")
-            elif hasattr(agent, "run"):
-                executable_func = getattr(agent, "run")
-            elif hasattr(target_agent, "run"):
-                executable_func = getattr(target_agent, "run")
-            elif callable(target_agent):
-                executable_func = target_agent
-            else:
-                raise RuntimeError(f"Agent {type(agent).__name__} has no executable method")
-        else:
-            # For non-streaming, prefer run method
-            if hasattr(agent, "run"):
-                executable_func = getattr(agent, "run")
-            elif hasattr(target_agent, "run"):
-                executable_func = getattr(target_agent, "run")
-            elif callable(target_agent):
-                executable_func = target_agent
-            else:
-                raise RuntimeError(f"Agent {type(agent).__name__} has no executable method")
-
-        # Build filtered kwargs based on function signature
-        filtered_kwargs: Dict[str, Any] = {}
-
-        # For mocks, pass all parameters
-        if isinstance(executable_func, (Mock, MagicMock, AsyncMock)):
-            filtered_kwargs.update(options)
-            if context is not None:
-                filtered_kwargs["context"] = context
-            if resources is not None:
-                filtered_kwargs["resources"] = resources
-            if breach_event is not None:
-                filtered_kwargs["breach_event"] = breach_event
-        else:
-            # For real functions, analyze signature
-            try:
-                spec = analyze_signature(executable_func)
-
-                # Add context if the function accepts it
-                if _should_pass_context(spec, context, executable_func):
-                    filtered_kwargs["context"] = context
-
-                # Add resources if the function accepts it
-                if resources is not None and _accepts_param(executable_func, "resources"):
-                    filtered_kwargs["resources"] = resources
-
-                # Add other options based on function signature
-                for key, value in options.items():
-                    if value is not None and _accepts_param(executable_func, key):
-                        filtered_kwargs[key] = value
-
-                # Add breach_event if the function accepts it
-                if breach_event is not None and _accepts_param(executable_func, "breach_event"):
-                    filtered_kwargs["breach_event"] = breach_event
-            except Exception:
-                # If signature analysis fails, try basic parameter passing
-                filtered_kwargs.update(options)
-                if context is not None:
-                    filtered_kwargs["context"] = context
-                if resources is not None:
-                    filtered_kwargs["resources"] = resources
-                if breach_event is not None:
-                    filtered_kwargs["breach_event"] = breach_event
-
-        # Execute the agent
-        try:
-            if stream:
-                # Handle streaming (with or without on_chunk callback)
-                if inspect.isasyncgenfunction(executable_func):
-                    # It's an async generator function.
-                    # Calling it returns an async generator object.
-                    async_generator = executable_func(payload, **filtered_kwargs)
-                    chunks = []
-                    async for chunk in async_generator:
-                        chunks.append(chunk)
-                        if on_chunk is not None:
-                            await on_chunk(chunk)
-
-                    # Return concatenated result based on chunk types
-                    if chunks:
-                        if all(isinstance(chunk, str) for chunk in chunks):
-                            return "".join(chunks)
-                        elif all(isinstance(chunk, bytes) for chunk in chunks):
-                            return b"".join(chunks)
-                        else:
-                            # Mixed types, return string representation
-                            return str(chunks)
-                    else:
-                        # Empty stream
-                        return "" if on_chunk is None else chunks
-
-                elif inspect.iscoroutinefunction(executable_func):
-                    # It's a regular async function. Await it to get the result.
-                    result = await executable_func(payload, **filtered_kwargs)
-                    # Check if the result itself is an async iterator (e.g., returned from another function)
-                    if hasattr(result, "__aiter__"):
-                        chunks = []
-                        async for chunk in result:
-                            chunks.append(chunk)
-                            if on_chunk is not None:
-                                await on_chunk(chunk)
-
-                        # Return concatenated result based on chunk types
-                        if chunks:
-                            if all(isinstance(chunk, str) for chunk in chunks):
-                                return "".join(chunks)
-                            elif all(isinstance(chunk, bytes) for chunk in chunks):
-                                return b"".join(chunks)
-                            else:
-                                # Mixed types, return string representation
-                                return str(chunks)
-                        else:
-                            # Empty stream
-                            return "" if on_chunk is None else chunks
-                    else:
-                        # Treat as a single chunk
-                        if on_chunk is not None:
-                            await on_chunk(result)
-                        return result
-                else:
-                    # It's a synchronous function.
-                    result = executable_func(payload, **filtered_kwargs)
-                    # Treat as a single chunk
-                    if on_chunk is not None:
-                        await on_chunk(result)
-                    return result
-            else:
-                # Non-streaming execution
-                if inspect.iscoroutinefunction(executable_func):
-                    return await executable_func(payload, **filtered_kwargs)
-                else:
-                    result = executable_func(payload, **filtered_kwargs)
-                    if inspect.iscoroutine(result):
-                        return await result
-                    return result
-        except (
-            PausedException,
-            InfiniteFallbackError,
-            InfiniteRedirectError,
-            ContextInheritanceError,
-        ) as e:
-            # Re-raise critical exceptions immediately
-            raise e
-
-
-class DefaultCacheKeyGenerator:
-    """Default cache key generator implementation."""
-
-    def __init__(self, hasher: Any = None):
-        self._hasher = hasher or Blake3Hasher()
-
-    def generate_key(self, step: Any, data: Any, context: Any, resources: Any) -> str:
-        """Generate a simple deterministic cache key based on step name and input."""
-        step_name = getattr(step, "name", str(type(step).__name__))
-        data_str = str(data) if data is not None else ""
-        key_bytes = f"{step_name}:{data_str}".encode("utf-8")
-        return self._hasher.digest(key_bytes)
-
-
-# Alias for backward compatibility
-CacheKeyGenerator = DefaultCacheKeyGenerator
-
-# Alias for backward compatibility
-UltraStepExecutor = ExecutorCore
-
-
-class DefaultTelemetry:
-    """Default telemetry implementation."""
-
-    def trace(self, name: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-        """Create a telemetry trace decorator."""
-
-        def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
-            return func
-
-        return decorator
 
 
 class OptimizedExecutorCore(ExecutorCore):
