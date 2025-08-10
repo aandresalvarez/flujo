@@ -209,6 +209,98 @@ context.some_field = new_value  # This bypasses validation and won't persist cor
 
 ---
 
+## **3.5 Idempotency in Step Policies (NEW)**
+
+**This is a critical architectural principle that emerged during the refactor and is essential for robust workflow execution.**
+
+### **✅ Core Principle: Step Execution Must Be Idempotent**
+
+Step execution, especially within retries, must be **idempotent with respect to the pipeline context**. A failed attempt should not "poison" the context for the next attempt.
+
+### **✅ The Correct Pattern: Context Isolation for Complex Steps**
+
+The `ExecutorCore` automatically handles context isolation for retries in `_execute_simple_step`. For complex steps like `LoopStep` and `ParallelStep`, you **must do this manually**.
+
+```python
+# In a policy for a complex step (e.g., LoopStep)
+from flujo.application.core.context_manager import ContextManager
+from typing import Any, Dict, Optional, List
+from flujo.domain.models import PipelineContext, StepResult
+from flujo.domain.dsl import Step
+from flujo.application.core.execution_frame import ExecutionFrame
+
+class DefaultLoopStepExecutor:
+    """Executor policy for LoopStep with proper context isolation."""
+
+    async def execute(
+        self,
+        core: ExecutorCore,
+        step: "LoopStep",  # Use string for forward references
+        data: Any,
+        context: Optional[PipelineContext],
+        execution_id: str,
+        step_id: str
+    ) -> StepResult:
+        """Execute loop with proper context isolation for idempotency."""
+        
+        # Store the original context for merging results
+        current_context: PipelineContext = context or PipelineContext()
+        loop_results: List[Any] = []
+        
+        # ... inside the loop ...
+        for iteration in range(max_loops):
+            # ✅ Create a pristine, isolated context for this iteration
+            iteration_context: PipelineContext = ContextManager.isolate(current_context)
+            
+            # Execute the loop body with the isolated context
+            iteration_result: StepResult = await core.execute(
+                frame=ExecutionFrame(
+                    step=step.body,
+                    data=data,
+                    context=iteration_context,
+                    execution_id=execution_id,
+                    step_id=f"{step_id}_iteration_{iteration}"
+                )
+            )
+            
+            # Only merge the context back if the iteration was successful
+            if iteration_result.success:
+                ContextManager.merge(current_context, iteration_context)
+                loop_results.append(iteration_result.output)
+            else:
+                # Failed iteration doesn't affect the main context
+                # This ensures idempotency - retry won't see "poisoned" state
+                continue
+        
+        return StepResult(success=True, output=loop_results)
+```
+
+### **❌ Anti-Pattern: Mutating Shared Context**
+
+```python
+# ❌ NEVER pass the same context object into multiple parallel branches
+# or successive loop iterations without isolating it first.
+
+class WrongLoopStepExecutor:
+    """❌ WRONG - This breaks idempotency and can cause context corruption."""
+    
+    async def execute(self, core: ExecutorCore, step: "LoopStep", data: Any, context: PipelineContext) -> StepResult:
+        # ❌ This is a bug! All iterations share and mutate the same context object.
+        for item in items:
+            # ❌ Shared context gets corrupted across iterations
+            await core.execute(..., context=context)  # BUG: Same context object!
+        
+        return StepResult(success=True, output=result)
+```
+
+**Why This Matters:**
+- **Retry Safety**: If a step fails and retries, it must see the same initial state
+- **Parallel Execution**: Multiple branches must not interfere with each other's context
+- **Loop Consistency**: Each iteration must start with a clean, predictable state
+- **Debugging**: Isolated contexts make it easier to trace execution flow
+
+---
+
 ## **4. Agent and Configuration Management**
 
 ### **✅ Agent Creation and Usage**
@@ -714,9 +806,185 @@ When tests fail, follow this methodology:
 2. **Fix the root cause** - Optimize the code, fix resource leaks, improve test isolation
 3. **Only adjust thresholds** if investigation proves the original threshold was unrealistic
 
+### **🎯 LESSON 7: Be Mindful of the Hot Path (NEW)**
+
+**The policy-driven architecture introduces layers of abstraction for correctness and maintainability. While generally fast, be mindful of performance in code that runs thousands of times per second (e.g., inside a tight loop).**
+
+#### **✅ Best Practices for Performance-Sensitive Code:**
+
+**1. Cache Results:**
+```python
+from typing import Dict, Any, Optional
+from functools import lru_cache
+
+class OptimizedStepExecutor:
+    """Step executor with performance optimizations for hot paths."""
+    
+    def __init__(self) -> None:
+        # Cache expensive calculations that are repeated
+        self._validation_cache: Dict[str, bool] = {}
+        self._config_cache: Dict[str, Any] = {}
+    
+    @lru_cache(maxsize=128)
+    def _expensive_validation(self, data_hash: str) -> bool:
+        """Cache validation results for repeated data patterns."""
+        # Expensive validation logic here
+        return validation_result
+    
+    def _get_cached_config(self, config_key: str) -> Any:
+        """Cache configuration lookups for frequently accessed settings."""
+        if config_key not in self._config_cache:
+            self._config_cache[config_key] = self._load_config(config_key)
+        return self._config_cache[config_key]
+```
+
+**2. Avoid Object Creation in Loops:**
+```python
+from typing import List, Any
+from flujo.domain.models import StepResult
+
+class OptimizedLoopExecutor:
+    """Loop executor that minimizes object creation in hot paths."""
+    
+    def __init__(self) -> None:
+        # Pre-allocate frequently used objects
+        self._success_template: StepResult = StepResult(success=True, output=None)
+        self._failure_template: StepResult = StepResult(success=False, feedback="")
+    
+    async def execute_loop(self, items: List[Any]) -> List[StepResult]:
+        """Execute loop with minimal object creation."""
+        results: List[StepResult] = []
+        
+        for item in items:
+            # ✅ Reuse template objects instead of creating new ones
+            if self._process_item(item):
+                result: StepResult = StepResult(
+                    success=True,
+                    output=item
+                )
+            else:
+                result: StepResult = StepResult(
+                    success=False,
+                    feedback=f"Failed to process {item}"
+                )
+            
+            results.append(result)
+        
+        return results
+```
+
+**3. Profile Before Optimizing:**
+```python
+import cProfile
+import pstats
+from typing import Any, Callable
+
+def profile_performance(func: Callable, *args, **kwargs) -> None:
+    """Profile function performance to identify real bottlenecks."""
+    profiler: cProfile.Profile = cProfile.Profile()
+    
+    try:
+        # Profile the function execution
+        profiler.enable()
+        result: Any = func(*args, **kwargs)
+        profiler.disable()
+        
+        # Analyze results
+        stats: pstats.Stats = pstats.Stats(profiler)
+        stats.sort_stats('cumulative')
+        stats.print_stats(20)  # Top 20 time-consuming operations
+        
+        return result
+        
+    except Exception as e:
+        profiler.disable()
+        raise e
+
+# Usage: Profile before optimizing
+async def optimize_hot_path() -> None:
+    """Profile and optimize performance-critical code."""
+    
+    # Profile the current implementation
+    result: Any = await profile_performance(
+        current_implementation, 
+        test_data
+    )
+    
+    # Only optimize what the profiler shows as slow
+    # Don't guess - let the data guide your optimization
+```
+
+#### **❌ Performance Anti-Patterns:**
+
+**1. Premature Optimization:**
+```python
+# ❌ Don't optimize without profiling
+def over_optimized_function(data: List[str]) -> List[str]:
+    # ❌ This complexity is unnecessary if the function isn't actually slow
+    return [item.upper() for item in data if item and len(item) > 0]
+
+# ✅ Simple and clear - optimize only if profiling shows it's needed
+def simple_function(data: List[str]) -> List[str]:
+    return [item.upper() for item in data if item]
+```
+
+**2. Ignoring the Hot Path:**
+```python
+# ❌ Don't ignore performance in frequently executed code
+async def frequently_called_function() -> None:
+    # ❌ This runs thousands of times - every millisecond matters
+    expensive_operation()  # Could be cached
+    file_io_operation()    # Could be batched
+    network_call()         # Could be async
+
+# ✅ Profile and optimize the hot path
+async def optimized_frequently_called_function() -> None:
+    # ✅ Optimized for the hot path
+    cached_result = await self._get_cached_result()
+    batched_operations = await self._batch_operations()
+    # Network calls only when necessary
+```
+
+#### **Performance Monitoring in Production:**
+
+```python
+from typing import Dict, Any
+import time
+from flujo.telemetry import metrics
+
+class PerformanceAwareExecutor:
+    """Executor that monitors performance in production."""
+    
+    async def execute_with_monitoring(self, step: Step, data: Any) -> StepResult:
+        """Execute step with performance monitoring."""
+        start_time: float = time.time()
+        
+        try:
+            result: StepResult = await self._execute_step(step, data)
+            
+            # Record performance metrics
+            execution_time: float = time.time() - start_time
+            metrics.record_step_execution_time(step.step_id, execution_time)
+            
+            return result
+            
+        except Exception as e:
+            # Record error metrics
+            execution_time: float = time.time() - start_time
+            metrics.record_step_error(step.step_id, execution_time, str(e))
+            raise e
+```
+
+**Key Principles:**
+- **Profile First**: Use `cProfile` or similar tools to identify real bottlenecks
+- **Cache Wisely**: Cache expensive operations that are repeated
+- **Minimize Allocation**: Avoid creating objects in tight loops
+- **Monitor Production**: Track performance metrics to catch regressions
+- **Optimize Incrementally**: Make small, measured improvements rather than big changes
+
 ---
 
-## **13. Type Safety and Code Quality Maintenance (NEW)**
+## **12. Type Safety and Code Quality Maintenance (NEW)**
 
 *These lessons were learned during the systematic fixing of 161 mypy errors and represent critical engineering principles that every team member must internalize to prevent type annotation debt accumulation.*
 
