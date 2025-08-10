@@ -2030,15 +2030,20 @@ class DefaultLoopStepExecutor:
             f"[POLICY] DefaultLoopStepExecutor executing '{getattr(loop_step, 'name', '<unnamed>')}'"
         )
         telemetry.logfire.debug(f"Handling LoopStep '{getattr(loop_step, 'name', '<unnamed>')}'")
-        telemetry.logfire.info(
-            f"[POLICY] Loop body pipeline: {getattr(loop_step, 'loop_body_pipeline', 'NONE')}"
+        # Resolve body pipeline for logging with attribute fallback for test doubles
+        _bp = (
+            loop_step.get_loop_body_pipeline()
+            if hasattr(loop_step, "get_loop_body_pipeline")
+            else getattr(loop_step, "loop_body_pipeline", None)
         )
+        telemetry.logfire.info(f"[POLICY] Loop body pipeline: {_bp}")
         telemetry.logfire.info(
             f"[POLICY] Core has _execute_pipeline: {hasattr(core, '_execute_pipeline')}"
         )
 
         start_time = time.monotonic()
         iteration_results: list[StepResult] = []
+        iteration_count = 0
         current_data = data
         current_context = context or PipelineContext(initial_prompt=str(data))
         # Reset MapStep internal state between runs to ensure reusability (no-op for plain LoopStep)
@@ -2053,7 +2058,11 @@ class DefaultLoopStepExecutor:
         except Exception:
             pass
         # Apply initial input mapper
-        initial_mapper = getattr(loop_step, "initial_input_to_loop_body_mapper", None)
+        initial_mapper = (
+            loop_step.get_initial_input_to_loop_body_mapper()
+            if hasattr(loop_step, "get_initial_input_to_loop_body_mapper")
+            else getattr(loop_step, "initial_input_to_loop_body_mapper", None)
+        )
         if initial_mapper:
             try:
                 current_data = initial_mapper(current_data, current_context)
@@ -2072,7 +2081,21 @@ class DefaultLoopStepExecutor:
                     step_history=[],
                 )
         # Validate body pipeline
-        body_pipeline = getattr(loop_step, "loop_body_pipeline", None)
+        body_pipeline = (
+            loop_step.get_loop_body_pipeline()
+            if hasattr(loop_step, "get_loop_body_pipeline")
+            else getattr(loop_step, "loop_body_pipeline", None)
+        )
+        try:
+            if (
+                body_pipeline is not None
+                and (not hasattr(body_pipeline, "steps") or not isinstance(body_pipeline.steps, list))
+            ):
+                alt = getattr(loop_step, "loop_body_pipeline", None)
+                if alt is not None and hasattr(alt, "steps") and isinstance(alt.steps, list):
+                    body_pipeline = alt
+        except Exception:
+            pass
         if body_pipeline is None or not getattr(body_pipeline, "steps", []):
             return StepResult(
                 name=loop_step.name,
@@ -2088,7 +2111,19 @@ class DefaultLoopStepExecutor:
                 step_history=[],
             )
         # Determine max_loops after initial mapper (MapStep sets it dynamically)
-        max_loops = getattr(loop_step, "max_loops", 5)
+        max_loops = (
+            loop_step.get_max_loops()
+            if hasattr(loop_step, "get_max_loops")
+            else getattr(loop_step, "max_loops", 1)
+        )
+        # Normalize mocked/non-int values
+        if not isinstance(max_loops, int):
+            ml = getattr(loop_step, "max_loops", None)
+            if isinstance(ml, int):
+                max_loops = ml
+            else:
+                mr = getattr(loop_step, "max_retries", None)
+                max_loops = mr if isinstance(mr, int) else 1
         try:
             items_len = (
                 len(getattr(loop_step, "_items_var").get())
@@ -2116,8 +2151,13 @@ class DefaultLoopStepExecutor:
             iteration_context = (
                 ContextManager.isolate(current_context) if current_context is not None else None
             )
-            body_step = body_pipeline.steps[0]
-            config = getattr(body_step, "config", None)
+            config = None
+            try:
+                if hasattr(body_pipeline, "steps") and getattr(body_pipeline, "steps"):
+                    body_step = body_pipeline.steps[0]
+                    config = getattr(body_step, "config", None)
+            except Exception:
+                config = None
             # For loop bodies, disable retries when a fallback is configured OR plugins are present.
             # This prevents retries from overshadowing plugin failures (e.g., agent exhaustion)
             # and aligns loop tests that assert specific plugin failure messaging.
@@ -2338,7 +2378,11 @@ class DefaultLoopStepExecutor:
                             current_context, pipeline_result.final_pipeline_context
                         )
                         current_context = merged_ctx or pipeline_result.final_pipeline_context
-                    iter_mapper = getattr(loop_step, "iteration_input_mapper", None)
+                    iter_mapper = (
+                        loop_step.get_iteration_input_mapper()
+                        if hasattr(loop_step, "get_iteration_input_mapper")
+                        else getattr(loop_step, "iteration_input_mapper", None)
+                    )
                     if iter_mapper and iteration_count < max_loops:
                         try:
                             current_data = iter_mapper(
@@ -2376,7 +2420,11 @@ class DefaultLoopStepExecutor:
                 elif pipeline_result.final_pipeline_context is not None:
                     current_context = pipeline_result.final_pipeline_context
 
-                cond = getattr(loop_step, "exit_condition_callable", None)
+                cond = (
+                    loop_step.get_exit_condition_callable()
+                    if hasattr(loop_step, "get_exit_condition_callable")
+                    else getattr(loop_step, "exit_condition_callable", None)
+                )
                 if cond:
                     try:
                         # Use the last successful output if available; otherwise, current_data
@@ -2499,7 +2547,11 @@ class DefaultLoopStepExecutor:
                     and cumulative_tokens > limits.total_tokens_limit
                 ):
                     _raise_limit_breach(f"Token limit of {limits.total_tokens_limit} exceeded")
-            cond = getattr(loop_step, "exit_condition_callable", None)
+            cond = (
+                loop_step.get_exit_condition_callable()
+                if hasattr(loop_step, "get_exit_condition_callable")
+                else getattr(loop_step, "exit_condition_callable", None)
+            )
             if cond:
                 try:
                     if cond(current_data, current_context):
@@ -2525,7 +2577,11 @@ class DefaultLoopStepExecutor:
                         },
                         step_history=iteration_results,
                     )
-            iter_mapper = getattr(loop_step, "iteration_input_mapper", None)
+            iter_mapper = (
+                loop_step.get_iteration_input_mapper()
+                if hasattr(loop_step, "get_iteration_input_mapper")
+                else getattr(loop_step, "iteration_input_mapper", None)
+            )
             if iter_mapper and iteration_count < max_loops:
                 try:
                     current_data = iter_mapper(current_data, current_context, iteration_count)
@@ -2550,7 +2606,25 @@ class DefaultLoopStepExecutor:
                         step_history=iteration_results,
                     )
         final_output = current_data
-        output_mapper = getattr(loop_step, "loop_output_mapper", None)
+        is_map_step = hasattr(loop_step, "iterable_input")
+        output_mapper = (
+            loop_step.get_loop_output_mapper()
+            if hasattr(loop_step, "get_loop_output_mapper")
+            else getattr(loop_step, "loop_output_mapper", None)
+        )
+        if is_map_step:
+            # For MapStep, construct final output as collected results + last output
+            try:
+                if hasattr(loop_step, "_results_var"):
+                    results = list(getattr(loop_step, "_results_var").get())
+                else:
+                    results = list(getattr(loop_step, "results", []) or [])
+            except Exception:
+                results = list(getattr(loop_step, "results", []) or [])
+            if current_data is not None:
+                results.append(current_data)
+            final_output = results
+            output_mapper = None  # Skip custom mapper for MapStep final aggregation
         if output_mapper:
             try:
                 # Maintain attempts semantics for post-loop adapter: reflect the number
@@ -2611,7 +2685,11 @@ class DefaultLoopStepExecutor:
         # Detect refine-style loop (generator >> _capture_artifact >> critic) to set mixed-failure
         # messaging even when exit was due to max_loops.
         try:
-            bp = getattr(loop_step, "loop_body_pipeline", None)
+            bp = (
+                loop_step.get_loop_body_pipeline()
+                if hasattr(loop_step, "get_loop_body_pipeline")
+                else getattr(loop_step, "loop_body_pipeline", None)
+            )
             if bp is not None and getattr(bp, "steps", None):
                 any(
                     getattr(s, "name", "") == "_capture_artifact" for s in bp.steps
