@@ -134,7 +134,7 @@ def create_test_step(name="test_step", agent=None, fallback=None):
     """Create a properly configured test step."""
     from flujo.domain.dsl.step import Step, StepConfig
     from flujo.domain.processors import AgentProcessors
-    
+
     step = Step(
         name=name,
         agent=agent or create_test_agent(),
@@ -143,10 +143,10 @@ def create_test_step(name="test_step", agent=None, fallback=None):
         validators=[],
         plugins=[],
     )
-    
+
     if fallback:
         step.fallback_step = fallback
-    
+
     return step
 ```
 
@@ -158,7 +158,7 @@ mock_step.fallback_step = Mock()  # Creates infinite chain
 
 # After (proper):
 primary_step = create_test_step("primary_step")
-fallback_step = create_test_step("fallback_step") 
+fallback_step = create_test_step("fallback_step")
 primary_step.fallback_step = fallback_step
 ```
 
@@ -171,7 +171,7 @@ primary_step.fallback_step = fallback_step
 ### **Daily Progress Checklist**
 ```bash
 # Run this daily to track progress
-echo "=== FLUJO TEST PROGRESS ===" 
+echo "=== FLUJO TEST PROGRESS ==="
 echo "Date: $(date)"
 echo "Total tests: $(make test-fast 2>/dev/null | grep -E 'passed|failed' | tail -1)"
 echo "Failed count: $(make test-fast 2>/dev/null | grep 'FAILED' | wc -l)"
@@ -189,7 +189,7 @@ echo "============================="
 
 ### **Success Milestones**
 - [ ] **Day 1**: Confirmed analysis is correct (84 failures categorized)
-- [ ] **Day 3**: Fixed usage tracking patterns (80 failures remaining)  
+- [ ] **Day 3**: Fixed usage tracking patterns (80 failures remaining)
 - [ ] **Week 1**: Documented architectural compliance (70 failures remaining)
 - [ ] **Week 2**: Updated test fixtures (50 failures remaining)
 - [ ] **Week 3**: Addressed configuration issues (30 failures remaining)
@@ -202,7 +202,7 @@ echo "============================="
 
 ### **❌ Don't Do This**
 1. **Disable architectural protections**: Never remove `InfiniteFallbackError` checks
-2. **Weaken Mock detection**: Never allow Mock objects in production paths  
+2. **Weaken Mock detection**: Never allow Mock objects in production paths
 3. **Skip documentation**: Always explain why test expectations changed
 4. **Rush changes**: Always validate each change maintains safety
 
@@ -250,7 +250,7 @@ See: FLUJO_TEAM_GUIDE.md section on fallback chain protection
 
 ### **If You Get Stuck**
 1. **Check the patterns**: Most fixes follow the same patterns shown above
-2. **Review the strategic plan**: `FLUJO_REMAINING_84_TESTS_STRATEGIC_PLAN.md`  
+2. **Review the strategic plan**: `FLUJO_REMAINING_84_TESTS_STRATEGIC_PLAN.md`
 3. **Validate architectural compliance**: Ensure changes align with Flujo Team Guide
 4. **Test incrementally**: Don't batch multiple changes together
 

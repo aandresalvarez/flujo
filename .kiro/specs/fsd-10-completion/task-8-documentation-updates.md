@@ -99,9 +99,9 @@ if getattr(step, 'is_complex', False):
 ```python
 class MyCustomComplexStep(Step):
     """A custom complex step that requires special handling."""
-    
+
     is_complex = True  # Declare complexity at the class level
-    
+
     def __init__(self, name: str, **kwargs):
         super().__init__(name=name, **kwargs)
         # Additional initialization...
@@ -111,11 +111,11 @@ class MyCustomComplexStep(Step):
 ```python
 class AdaptiveStep(Step):
     """A step with dynamic complexity based on configuration."""
-    
+
     def __init__(self, name: str, use_complex_handling: bool = False, **kwargs):
         super().__init__(name=name, **kwargs)
         self._use_complex_handling = use_complex_handling
-    
+
     @property
     def is_complex(self) -> bool:
         """Dynamic complexity based on configuration."""
@@ -240,7 +240,7 @@ The documentation supports:
 With Task #8 successfully completed, the FSD-10 completion is progressing excellently:
 
 1. **✅ Task 1**: Analysis of current implementation - COMPLETED
-2. **✅ Task 2**: Verification of refactoring approach - COMPLETED  
+2. **✅ Task 2**: Verification of refactoring approach - COMPLETED
 3. **✅ Task 3**: Implementation of refactoring - COMPLETED
 4. **✅ Task 4**: Test suite updates - COMPLETED
 5. **✅ Task 5**: Functional equivalence verification - COMPLETED
@@ -252,4 +252,4 @@ With Task #8 successfully completed, the FSD-10 completion is progressing excell
 - Task 9: Create extensibility demonstration
 - Task 10: Final validation and cleanup
 
-The documentation updates provide comprehensive guidance for developers to understand and extend Flujo's step complexity detection system, demonstrating the significant architectural improvements achieved through the object-oriented refactoring. 
+The documentation updates provide comprehensive guidance for developers to understand and extend Flujo's step complexity detection system, demonstrating the significant architectural improvements achieved through the object-oriented refactoring.

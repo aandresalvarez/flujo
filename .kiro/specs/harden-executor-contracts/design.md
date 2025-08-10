@@ -81,7 +81,7 @@ class DefaultPluginRunner:
 # flujo/domain/dsl/step.py
 class Step(BaseModel, Generic[StepInT, StepOutT]):
     # ... existing fields ...
-    
+
     @property
     def is_complex(self) -> bool:
         """Indicates whether this step requires complex handling."""

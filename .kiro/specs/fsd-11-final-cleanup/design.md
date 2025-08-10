@@ -219,4 +219,4 @@ The cleanup follows first principles by:
 - **Simplifying Architecture**: Remove unnecessary layers and indirection
 - **Improving Maintainability**: Create a clean, focused codebase
 
-This final step ensures Flujo's architecture is clean, lean, and ready for future development while maintaining all production characteristics and functionality. 
+This final step ensures Flujo's architecture is clean, lean, and ready for future development while maintaining all production characteristics and functionality.

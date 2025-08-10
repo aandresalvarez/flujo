@@ -22,7 +22,7 @@ The fixes will target three main components:
 
 **Component**: `flujo/application/core/ultra_executor.py` (or related parallel execution logic)
 
-**Current Issue**: 
+**Current Issue**:
 - `test_proactive_cancellation_with_multiple_branches` expects execution < 0.3s but takes ~0.52s
 - `test_proactive_cancellation_token_limits` expects execution < 0.4s but takes ~0.55s
 
@@ -88,7 +88,7 @@ The testing strategy will be:
 - Tests measure execution time and expect fast cancellation
 - The `breach_event` parameter should enable early termination
 
-#### Loop Attempt Tests  
+#### Loop Attempt Tests
 - Both tests use `UsageLimits(total_cost_usd_limit=0.25)`
 - Both use agents with `cost=0.1` per iteration
 - Mathematical expectation: 3 iterations × $0.1 = $0.3 (exceeds $0.25 limit)
@@ -96,7 +96,7 @@ The testing strategy will be:
 
 #### Cost Calculation Tests
 - `test_governor_loop_with_nested_parallel_limit`: Expects $0.6 total cost
-- `test_usage_limits_enforcement_loop_steps`: Expects $1.2 total cost  
+- `test_usage_limits_enforcement_loop_steps`: Expects $1.2 total cost
 - Both involve loop steps with specific cost-per-iteration agents
 - Current implementation appears to be over-calculating costs
 

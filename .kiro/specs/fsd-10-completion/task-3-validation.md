@@ -88,4 +88,4 @@ The refactoring of the `_is_complex_step` method to use an object-oriented appro
 3. **Architectural improvements achieved** - Better separation of concerns and encapsulation
 4. **Performance maintained** - No performance degradation detected
 
-The refactoring successfully transforms the method from a procedural approach using `isinstance` checks to an object-oriented approach using the `is_complex` property, while maintaining all existing functionality and improving code quality. 
+The refactoring successfully transforms the method from a procedural approach using `isinstance` checks to an object-oriented approach using the `is_complex` property, while maintaining all existing functionality and improving code quality.

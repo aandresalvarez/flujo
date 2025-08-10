@@ -21,7 +21,7 @@ grep -r "InfiniteFallbackError" tests/application/core/
 
 **Expected Findings Checklist**:
 - [ ] Tests using `mock.fallback_step.fallback_step...` patterns
-- [ ] `InfiniteFallbackError` being raised correctly  
+- [ ] `InfiniteFallbackError` being raised correctly
 - [ ] Test fixtures creating invalid Mock hierarchies
 - [ ] Architectural protection working as designed
 
@@ -46,7 +46,7 @@ primary_step = Step(
 )
 
 fallback_step = Step(
-    name="fallback_step", 
+    name="fallback_step",
     agent=create_test_agent(),  # Real agent
     config=StepConfig(max_retries=1),
     processors=AgentProcessors(),
@@ -84,7 +84,7 @@ grep -r "MockDetectionError" tests/
 - [ ] Validate MockDetectionError is correctly preventing test pollution
 - [ ] Update test architecture to use real domain objects
 
-#### **Day 3-4: Agent Validation Fixes** 
+#### **Day 3-4: Agent Validation Fixes**
 ```bash
 # Analyze agent validation failures
 pytest tests/application/core/test_executor_core_execute_loop.py -v --tb=long
@@ -246,7 +246,7 @@ def test_backend_setup():
 
 **Tasks**:
 - [ ] Test file backend operations
-- [ ] Test SQLite backend operations  
+- [ ] Test SQLite backend operations
 - [ ] Validate persistence mechanisms
 
 #### **Day 4-5: Final Validation & Documentation**
@@ -265,7 +265,7 @@ def test_backend_setup():
 - [ ] Validate against Flujo Team Guide principles
 - [ ] Ensure no architectural weakening
 
-### **After Each Change**  
+### **After Each Change**
 - [ ] Test runs without hanging or crashing
 - [ ] Error messages are meaningful
 - [ ] Performance is maintained or improved
@@ -315,14 +315,14 @@ time make test-fast
 def test_example():
     """
     Test description...
-    
+
     ARCHITECTURAL NOTE: This test was updated during the 84-test
     resolution project to align with enhanced architectural behavior.
-    
+
     Previous expectation: [describe old behavior]
     Current behavior: [describe new improved behavior]
     Reason for change: [explain why new behavior is better]
-    
+
     See: FLUJO_REMAINING_84_TESTS_STRATEGIC_PLAN.md
     """
 ```

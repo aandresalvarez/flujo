@@ -103,14 +103,14 @@ config = OptimizationConfig(
     # Memory optimizations
     object_pool_max_size=100,
     object_pool_cleanup_threshold=0.8,
-    
+
     # Execution optimizations
     max_concurrent_executions=20,
-    
+
     # Telemetry optimizations
     telemetry_batch_size=50,
     telemetry_flush_interval_seconds=60.0,
-    
+
     # Cache optimizations
     enable_cache_optimization=True,
     cache_max_size=1000,
@@ -125,11 +125,11 @@ config = OptimizationConfig(
     # Memory optimizations
     object_pool_max_size=20,
     object_pool_cleanup_threshold=0.7,
-    
+
     # Cache optimizations
     cache_max_size=200,
     cache_compression=True,
-    
+
     # Performance thresholds
     memory_pressure_threshold_mb=200.0,
 )
@@ -142,11 +142,11 @@ config = OptimizationConfig(
     # Execution optimizations
     enable_step_optimization=True,
     enable_algorithm_optimization=True,
-    
+
     # Telemetry optimizations
     telemetry_batch_size=5,
     telemetry_flush_interval_seconds=10.0,
-    
+
     # Error handling
     circuit_breaker_failure_threshold=5,
     circuit_breaker_recovery_timeout_seconds=30,
@@ -359,6 +359,6 @@ Remember that the goal of optimizations is to improve performance, not to add co
 
 ---
 
-*Documentation Version: 1.0*  
-*Last Updated: January 2025*  
-*Based on: ExecutorCore Optimization Performance Analysis* 
+*Documentation Version: 1.0*
+*Last Updated: January 2025*
+*Based on: ExecutorCore Optimization Performance Analysis*

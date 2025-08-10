@@ -4,8 +4,8 @@
 
 ### Primary Issue: Context Updates Not Applied in Loop Iterations
 
-**Severity**: High  
-**Impact**: Breaks core state management functionality  
+**Severity**: High
+**Impact**: Breaks core state management functionality
 **Affected Components**: `Step.loop_until()`, `@step(updates_context=True)`
 
 ### Problem Summary
@@ -29,7 +29,7 @@ The context updates returned by `@step(updates_context=True)` decorated function
 ### Affected Code Path
 1. `Step.loop_until()` creates a loop with `loop_body_pipeline`
 2. `@step(updates_context=True)` returns dictionary of updates
-3. Context updates should be applied via `_inject_context()` 
+3. Context updates should be applied via `_inject_context()`
 4. **BUG**: Updates were not reflected in subsequent iterations
 
 ### Code Location
@@ -240,6 +240,6 @@ async def assess_definition(definition: str, *, context: MyContext) -> dict:
 
 ---
 
-**Status**: ✅ **COMPLETED**  
-**Impact**: 🔴 **CRITICAL** - Core functionality restored  
-**Quality**: 🟢 **PRODUCTION READY** - Comprehensive testing and documentation 
+**Status**: ✅ **COMPLETED**
+**Impact**: 🔴 **CRITICAL** - Core functionality restored
+**Quality**: 🟢 **PRODUCTION READY** - Comprehensive testing and documentation

@@ -1277,8 +1277,8 @@ class SQLiteBackend(StateBackend):
                     await db.execute(
                         """
                         INSERT OR REPLACE INTO runs (
-                            run_id, pipeline_id, pipeline_name, pipeline_version, status, 
-                            created_at, updated_at, execution_time_ms, memory_usage_mb, 
+                            run_id, pipeline_id, pipeline_name, pipeline_version, status,
+                            created_at, updated_at, execution_time_ms, memory_usage_mb,
                             total_steps, error_message
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
@@ -1310,7 +1310,7 @@ class SQLiteBackend(StateBackend):
                     await db.execute(
                         """
                         INSERT OR REPLACE INTO steps (
-                            run_id, step_name, step_index, status, output, cost_usd, 
+                            run_id, step_name, step_index, status, output, cost_usd,
                             token_counts, execution_time_ms, created_at
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
@@ -1339,7 +1339,7 @@ class SQLiteBackend(StateBackend):
                     await db.execute(
                         """
                         UPDATE runs
-                        SET status = ?, updated_at = ?, execution_time_ms = ?, 
+                        SET status = ?, updated_at = ?, execution_time_ms = ?,
                             memory_usage_mb = ?, total_steps = ?, error_message = ?
                         WHERE run_id = ?
                         """,
@@ -1363,8 +1363,8 @@ class SQLiteBackend(StateBackend):
             async with aiosqlite.connect(self.db_path) as db:
                 cursor = await db.execute(
                     """
-                    SELECT run_id, pipeline_name, pipeline_version, status, created_at, updated_at, 
-                           execution_time_ms, memory_usage_mb, total_steps, error_message 
+                    SELECT run_id, pipeline_name, pipeline_version, status, created_at, updated_at,
+                           execution_time_ms, memory_usage_mb, total_steps, error_message
                     FROM runs WHERE run_id = ?
                     """,
                     (run_id,),

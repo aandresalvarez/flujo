@@ -23,7 +23,7 @@ async def main():
     step = Step.validate_step(agent, plugins=[(plugin, 0)], validators=[FailValidator()])
     runner = create_test_flujo(step)
     result = await gather_result(runner, "in")
-    
+
     print(f"Step success: {result.step_history[0].success}")
     print(f"Step feedback: {result.step_history[0].feedback}")
     print(f"Expected 'plugin fail' in feedback: {'plugin fail' in (result.step_history[0].feedback or '')}")

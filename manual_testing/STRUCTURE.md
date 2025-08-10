@@ -164,4 +164,4 @@ examples/
 └── ...
 ```
 
-Each step can follow the same pattern, making the structure scalable and maintainable. 
+Each step can follow the same pattern, making the structure scalable and maintainable.

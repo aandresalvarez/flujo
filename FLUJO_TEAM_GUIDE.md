@@ -35,7 +35,7 @@ When implementing exceptions that control workflow execution (like `PausedExcept
    # In flujo/application/core/optimized_error_handler.py
    from typing import Dict, Type
    from flujo.application.core.error_categories import ErrorCategory
-   
+
    class ErrorClassifier:
        def __init__(self) -> None:
            # Type-safe category mappings with explicit typing
@@ -49,12 +49,12 @@ When implementing exceptions that control workflow execution (like `PausedExcept
    # In _register_default_strategies()
    from typing import Set
    from flujo.application.core.recovery_strategies import RecoveryStrategy, RecoveryAction
-   
+
    def _register_default_strategies(self) -> None:
        """Register default recovery strategies with proper typing."""
        # Type-safe error type sets
        control_flow_exceptions: Set[Type[Exception]] = {YourCustomException}
-       
+
        control_flow_strategy = RecoveryStrategy(
            name="your_control_flow",
            error_types=control_flow_exceptions,
@@ -69,18 +69,18 @@ When implementing exceptions that control workflow execution (like `PausedExcept
    from typing import Union
    from flujo.domain.models import StepResult
    from flujo.application.core.exceptions import PausedException, PipelineAbortSignal, InfiniteRedirectError
-   
+
    async def execute(self, core: ExecutorCore, step: Step, data: Any, context: Optional[PipelineContext]) -> StepResult:
        try:
            # Your step logic here
            result: Any = await self._execute_step_logic(step, data, context)
            return StepResult(success=True, output=result)
-           
+
        except Exception as e:
            # 1. First, immediately check for and re-raise control flow exceptions.
            if isinstance(e, (PausedException, PipelineAbortSignal, InfiniteRedirectError)):
                raise e  # Let the runner orchestrate.
-               
+
            # 2. For all other exceptions, create a failure StepResult.
            # The runner's retry/fallback logic will handle this result.
            error_feedback: str = f"Step failed: {e}"
@@ -100,7 +100,7 @@ async def execute(self, core: ExecutorCore, step: Step, data: Any, context: Opti
         # Execute agent runner with proper typing
         result: Any = await core._agent_runner.run(step, data, context)
         return StepResult(success=True, output=result)
-        
+
     except PausedException as e:
         # ❌ This breaks pause/resume workflows!
         # Converting control flow exception to data failure breaks orchestration
@@ -126,7 +126,7 @@ from flujo.application.core.execution_frame import ExecutionFrame
 
 class DefaultYourStepExecutor:
     """Executor policy for YourStep with complete type safety."""
-    
+
     async def execute(
         self,
         core: ExecutorCore,
@@ -138,7 +138,7 @@ class DefaultYourStepExecutor:
         # ... other parameters from ExecutionFrame ...
     ) -> StepResult:
         """Execute the step with complete type safety.
-        
+
         Args:
             core: The executor core for recursive execution
             step: The step instance to execute
@@ -146,16 +146,16 @@ class DefaultYourStepExecutor:
             context: Optional pipeline context
             execution_id: Unique execution identifier
             step_id: Unique step identifier
-            
+
         Returns:
             StepResult: Execution result with success/failure status
         """
         # 1. Validate inputs with proper typing
         validation_errors: List[str] = []
-        
+
         # 2. Handle caching (if applicable)
         cache_key: str = f"{execution_id}:{step_id}"
-        
+
         # 3. Execute core logic with proper exception handling
         try:
             result: StepResult = await self._execute_core_logic(step, data, context)
@@ -163,7 +163,7 @@ class DefaultYourStepExecutor:
         except Exception as e:
             error_feedback: str = f"Step execution failed: {e}"
             return StepResult(success=False, feedback=error_feedback)
-        
+
         # 4. Handle context updates/merging
         # 5. Return results
 ```
@@ -181,23 +181,23 @@ from flujo.domain.models import PipelineContext
 from flujo.utils.context import safe_merge_context_updates
 
 async def execute_with_context_isolation(
-    self, 
-    parent_context: PipelineContext, 
+    self,
+    parent_context: PipelineContext,
     branch_data: Dict[str, Any]
 ) -> PipelineContext:
     """Execute with proper context isolation and typing."""
-    
+
     # For isolation (parallel branches, loop iterations)
     isolated_context: PipelineContext = ContextManager.isolate(parent_context)
-    
+
     # For merging a single branch's context back into the main context
     ContextManager.merge(parent_context, isolated_context)
-    
+
     # For applying a dictionary of updates to an existing context
     # Use explicit typing for the updates dictionary
     updates_dict: Dict[str, Any] = {"branch_result": branch_data}
     safe_merge_context_updates(parent_context, updates_dict)
-    
+
     return parent_context
 ```
 
@@ -248,25 +248,25 @@ class YourStepConfig(BaseModel):
 
 class YourCustomStep(Step[Dict[str, Any], Dict[str, Any]]):
     """Custom step with complete type safety and configuration."""
-    
+
     # Step-specific configuration with explicit typing
     your_config: YourStepConfig
-    
+
     # Additional step properties with proper types
     step_name: str
     description: Optional[str] = None
-    
+
     @property
     def is_complex(self) -> bool:
         """Mark as complex to ensure it's routed by the dispatcher
         to its dedicated policy, not the simple step handler."""
         return True
-    
+
     @property
     def input_type(self) -> type:
         """Return the expected input type for type checking."""
         return Dict[str, Any]
-    
+
     @property
     def output_type(self) -> type:
         """Return the expected output type for type checking."""
@@ -284,7 +284,7 @@ from flujo.domain.dsl.your_step import YourCustomStep, YourStepConfig
 
 class DefaultYourCustomStepExecutor:
     """Executor policy for YourCustomStep with complete type safety."""
-    
+
     async def execute(
         self,
         core: ExecutorCore,
@@ -295,7 +295,7 @@ class DefaultYourCustomStepExecutor:
         step_id: str
     ) -> StepResult:
         """Execute YourCustomStep with proper error handling and typing.
-        
+
         Args:
             core: Executor core for recursive execution
             step: YourCustomStep instance with configuration
@@ -303,27 +303,27 @@ class DefaultYourCustomStepExecutor:
             context: Optional pipeline context
             execution_id: Unique execution identifier
             step_id: Unique step identifier
-            
+
         Returns:
             StepResult: Success/failure result with output/feedback
         """
         # Extract configuration with proper typing
         config: YourStepConfig = step.your_config
-        
+
         # Implementation following the policy pattern with type safety
         try:
             # Your step logic here with explicit typing
             result: Dict[str, Any] = await self._process_data(data, config, context)
             return StepResult(success=True, output=result)
-            
+
         except Exception as e:
             error_feedback: str = f"YourCustomStep failed: {e}"
             return StepResult(success=False, feedback=error_feedback)
-    
+
     async def _process_data(
-        self, 
-        data: Dict[str, Any], 
-        config: YourStepConfig, 
+        self,
+        data: Dict[str, Any],
+        config: YourStepConfig,
         context: Optional[PipelineContext]
     ) -> Dict[str, Any]:
         """Process data according to step configuration."""
@@ -342,14 +342,14 @@ from flujo.application.core.execution_frame import ExecutionFrame
 # 1. Update the constructor to accept the new policy with proper typing
 class ExecutorCore:
     def __init__(
-        self, 
+        self,
         agent_runner: Any,
         your_custom_step_executor: Optional[DefaultYourCustomStepExecutor] = None,
         # ... other parameters ...
     ) -> None:
         """Initialize ExecutorCore with injected policies."""
         # ... other initialization ...
-        
+
         # Type-safe policy injection with fallback to default
         self.your_custom_step_executor: DefaultYourCustomStepExecutor = (
             your_custom_step_executor or DefaultYourCustomStepExecutor()
@@ -359,7 +359,7 @@ class ExecutorCore:
 async def execute(self, frame: ExecutionFrame) -> Any:
     """Execute step with proper type checking and policy routing."""
     step: Any = frame.step
-    
+
     # Type-safe step routing with explicit policy delegation
     if isinstance(step, YourCustomStep):
         # Delegate to the injected policy with complete frame
@@ -371,7 +371,7 @@ async def execute(self, frame: ExecutionFrame) -> Any:
             execution_id=frame.execution_id,
             step_id=frame.step_id
         )
-    
+
     # ... handle other step types ...
 ```
 
@@ -407,14 +407,14 @@ from flujo.utils.context import safe_merge_context_updates
 from flujo.domain.models import YourContextModel
 
 def correct_context_update(
-    main_context: PipelineContext, 
+    main_context: PipelineContext,
     new_value: str
 ) -> None:
     """Update context safely with proper typing and validation."""
-    
+
     # Create a source context or dict with the updates
     updates_to_apply: YourContextModel = YourContextModel(some_field=new_value)
-    
+
     # Safely merge the changes into the main context
     # This respects validation and maintains type safety
     safe_merge_context_updates(main_context, updates_to_apply)
@@ -444,17 +444,17 @@ async def correct_exception_handling() -> StepResult:
     try:
         result: Any = await operation()
         return StepResult(success=True, output=result)
-        
+
     except Exception as e:
         # Use the error classification system to determine the nature of the error
         error_context: ErrorContext = ErrorContext.from_exception(e)
         classifier: ErrorClassifier = ErrorClassifier()
         classifier.classify_error(error_context)
-        
+
         # Re-raise control flow exceptions to let the runner handle them
         if error_context.category == ErrorCategory.CONTROL_FLOW:
             raise e  # Let the runner orchestrate
-        
+
         # For other exceptions, create a rich failure result with proper typing
         error_feedback: str = f"Step failed: {e}"
         return StepResult(success=False, feedback=error_feedback)
@@ -470,7 +470,7 @@ from flujo.application.core.execution_frame import ExecutionFrame
 class ExecutorCore:
     async def execute(self, frame: ExecutionFrame) -> Any:
         step: Any = frame.step
-        
+
         # ❌ NEVER do this - ExecutorCore becomes a monolithic implementer
         if isinstance(step, LoopStep):
             # Complex loop logic here...
@@ -487,11 +487,11 @@ class ExecutorCore:
         self.loop_step_executor: DefaultLoopStepExecutor = (
             loop_step_executor or DefaultLoopStepExecutor()
         )
-    
+
     async def execute(self, frame: ExecutionFrame) -> Any:
         """Execute step by delegating to appropriate policy."""
         step: Any = frame.step
-        
+
         # ✅ ALWAYS do this - delegate to the injected policy
         if isinstance(step, LoopStep):
             # Delegate to the injected policy with complete frame
@@ -522,7 +522,7 @@ from flujo.domain.models import StepResult
 async def test_fallback_behavior() -> None:
     """Test fallback behavior with proper typing."""
     result: StepResult = await execute_step_with_failing_processor()
-    
+
     # Originally expected: assert result.output == "fallback success"
     # Changed to mask issue: assert result.output == "primary success"  # ❌ WRONG!
     # This hides the real bug and creates technical debt
@@ -537,11 +537,11 @@ from flujo.domain.models import StepResult
 async def test_fallback_behavior() -> None:
     """Test fallback behavior with proper typing and expectations."""
     result: StepResult = await execute_step_with_failing_processor()
-    
+
     # Test fails? Investigate WHY the fallback isn't triggering
     # Fix the underlying processor error handling logic
     # Keep the original expectation: assert result.output == "fallback success"
-    
+
     # Verify the fallback mechanism works as expected
     assert result.output == "fallback success", (
         f"Expected fallback success, got: {result.output}. "
@@ -587,13 +587,13 @@ def test_performance_overhead() -> None:
     """Test performance overhead with proper investigation."""
     # Performance test failing? Investigate WHY
     # Common causes: resource contention, parallel test interference, memory leaks
-    
+
     # Fix: Proper test isolation, resource cleanup, worker-specific resources
     # Keep original thresholds to maintain performance standards
-    
+
     threshold: float = get_performance_threshold()
     measured_overhead: float = measure_actual_overhead()
-    
+
     # Use descriptive assertion messages for debugging
     assert measured_overhead <= threshold, (
         f"Performance overhead {measured_overhead} exceeds threshold {threshold}. "
@@ -621,16 +621,16 @@ from flujo.application.core.processors import Processor
 
 class DefaultProcessorPipeline:
     """Processor pipeline with proper error handling and typing."""
-    
+
     async def apply_prompt(
-        self, 
-        processors: List[Processor], 
-        data: Any, 
+        self,
+        processors: List[Processor],
+        data: Any,
         context: Optional[PipelineContext]
     ) -> Any:
         """Apply processors to data with proper error handling."""
         processed_data: Any = data
-        
+
         for proc in processors:
             try:
                 processed_data = await proc.process(data)
@@ -639,22 +639,22 @@ class DefaultProcessorPipeline:
                 # This prevents proper error handling and fallback logic
                 telemetry.logfire.error(f"Processor failed: {e}")
                 processed_data = data  # Continue with original data
-                
+
         return processed_data
 
 # ✅ PROPER FIX: Re-raise exceptions to fail the step as expected
 class FixedProcessorPipeline:
     """Fixed processor pipeline that properly handles errors."""
-    
+
     async def apply_prompt(
-        self, 
-        processors: List[Processor], 
-        data: Any, 
+        self,
+        processors: List[Processor],
+        data: Any,
         context: Optional[PipelineContext]
     ) -> Any:
         """Apply processors to data with proper error propagation."""
         processed_data: Any = data
-        
+
         for proc in processors:
             try:
                 processed_data = await proc.process(data)
@@ -744,27 +744,27 @@ from typing import Any, Dict, List, Optional, Union
 from flujo.domain.models import StepResult, PipelineContext
 
 def process_data(
-    input_data: str, 
-    config: Dict[str, Any], 
+    input_data: str,
+    config: Dict[str, Any],
     context: Optional[PipelineContext] = None
 ) -> StepResult:
     """Process input data according to configuration.
-    
+
     Args:
         input_data: The string data to process
         config: Configuration dictionary with processing options
         context: Optional pipeline context for state management
-        
+
     Returns:
         StepResult: Success/failure result with feedback
     """
     # Local variables must have explicit types
     processed_items: List[str] = []
     metadata: Dict[str, Any] = {}
-    
+
     # Dictionary/list comprehensions need explicit types
     filtered_data: List[str] = [item for item in input_data.split() if item]
-    
+
     # Return type must match the declared return type
     return StepResult(success=True, feedback="Processing completed")
 
@@ -839,10 +839,10 @@ def format_cost(value) -> str:
 # ✅ Solution: Add explicit type annotations
 def format_cost(value: Union[float, int]) -> str:
     """Format cost value as currency string.
-    
+
     Args:
         value: Numeric cost value (float or int)
-        
+
     Returns:
         Formatted currency string
     """
@@ -898,7 +898,7 @@ from flujo.domain.models import StepResult, PipelineContext
 
 class DefaultYourStepExecutor:
     """Executor policy for YourStep with complete type safety."""
-    
+
     async def execute(
         self,
         core: ExecutorCore,
@@ -909,7 +909,7 @@ class DefaultYourStepExecutor:
         step_id: str
     ) -> StepResult:
         """Execute the step with complete type safety.
-        
+
         Args:
             core: The executor core for recursive execution
             step: The step instance to execute
@@ -917,28 +917,28 @@ class DefaultYourStepExecutor:
             context: Optional pipeline context
             execution_id: Unique execution identifier
             step_id: Unique step identifier
-            
+
         Returns:
             StepResult: Execution result with success/failure status
         """
         # Local variables with explicit types
         step_history: List[Any] = []
         validation_errors: List[str] = []
-        
+
         try:
             # Your step logic here
             result: StepResult = await self._execute_core_logic(step, data, context)
             return result
-            
+
         except Exception as e:
             # Handle exceptions with proper typing
             error_msg: str = f"Step execution failed: {e}"
             return StepResult(success=False, feedback=error_msg)
-    
+
     async def _execute_core_logic(
-        self, 
-        step: "YourStepType", 
-        data: Any, 
+        self,
+        step: "YourStepType",
+        data: Any,
         context: Optional[PipelineContext]
     ) -> StepResult:
         """Execute the core logic with proper error handling."""

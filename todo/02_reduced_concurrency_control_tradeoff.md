@@ -91,7 +91,7 @@ watcher_task = asyncio.create_task(breach_watcher(), name="breach_watcher")
 # Example: Processing large datasets in parallel
 parallel_step = Step.parallel(
     branches={
-        f"processor_{i}": data_processing_pipeline 
+        f"processor_{i}": data_processing_pipeline
         for i in range(100)  # 100 concurrent processors
     }
 )
@@ -137,11 +137,11 @@ from concurrent.futures import ThreadPoolExecutor
 
 class ConcurrencyLimitedParallelStep:
     """Custom parallel step with external concurrency control."""
-    
+
     def __init__(self, max_concurrency: int = 4):
         self.max_concurrency = max_concurrency
         self.semaphore = asyncio.Semaphore(max_concurrency)
-    
+
     async def execute_branches(self, branches: Dict[str, Any]) -> Dict[str, Any]:
         """Execute branches with controlled concurrency."""
         async def limited_branch(key: str, branch: Any) -> tuple[str, Any]:
@@ -149,12 +149,12 @@ class ConcurrencyLimitedParallelStep:
                 # Execute branch logic
                 result = await self.execute_branch(branch)
                 return key, result
-        
+
         tasks = [
-            limited_branch(key, branch) 
+            limited_branch(key, branch)
             for key, branch in branches.items()
         ]
-        
+
         results = await asyncio.gather(*tasks, return_exceptions=True)
         return dict(results)
 
@@ -190,27 +190,27 @@ import asyncio
 
 class ResourceAwareExecutor:
     """Executor that monitors system resources."""
-    
+
     def __init__(self, max_cpu_percent: float = 80, max_memory_percent: float = 80):
         self.max_cpu_percent = max_cpu_percent
         self.max_memory_percent = max_memory_percent
-    
+
     async def execute_with_monitoring(self, parallel_step: Any) -> Any:
         """Execute with resource monitoring."""
         async def monitor_resources():
             while True:
                 cpu_percent = psutil.cpu_percent()
                 memory_percent = psutil.virtual_memory().percent
-                
+
                 if cpu_percent > self.max_cpu_percent or memory_percent > self.max_memory_percent:
                     # Trigger backpressure or cancellation
                     await self.handle_resource_pressure()
-                
+
                 await asyncio.sleep(1)
-        
+
         # Start monitoring in background
         monitor_task = asyncio.create_task(monitor_resources())
-        
+
         try:
             # Execute parallel step
             result = await self.execute_parallel_step(parallel_step)
@@ -227,7 +227,7 @@ class ResourceAwareExecutor:
 ```python
 class ConcurrencyConfig:
     """Configuration for parallel step concurrency control."""
-    
+
     def __init__(
         self,
         max_concurrent_branches: Optional[int] = None,
@@ -256,43 +256,43 @@ async def _handle_parallel_step_enhanced(
     **kwargs
 ) -> StepResult:
     """Enhanced parallel step execution with configurable concurrency control."""
-    
+
     # Determine concurrency limits
     if concurrency_config.cpu_based_limits:
         cpu_count = multiprocessing.cpu_count()
         max_concurrent = concurrency_config.max_concurrent_branches or min(10, cpu_count * 2)
     else:
         max_concurrent = concurrency_config.max_concurrent_branches or 10
-    
+
     # Create semaphore for controlled concurrency
     semaphore = asyncio.Semaphore(max_concurrent)
-    
+
     # Track running tasks and completion order
     running_tasks: Dict[str, asyncio.Task[Any]] = {}
     completion_order = []
     completion_lock = asyncio.Lock()
-    
+
     async def run_branch_with_control(key: str, branch_pipe: Any) -> tuple[str, StepResult]:
         """Execute branch with concurrency control."""
         async with semaphore:
             try:
                 # Execute branch logic
                 result = await self._execute_branch(branch_pipe, **kwargs)
-                
+
                 # Track completion order
                 if concurrency_config.completion_tracking:
                     async with completion_lock:
                         completion_order.append(key)
-                
+
                 return key, result
-                
+
             except asyncio.CancelledError:
                 return key, StepResult(
                     name=f"branch::{key}",
                     success=False,
                     feedback="Cancelled due to concurrency control"
                 )
-    
+
     # Create tasks with controlled concurrency
     for key, branch_pipe in parallel_step.branches.items():
         task = asyncio.create_task(
@@ -300,7 +300,7 @@ async def _handle_parallel_step_enhanced(
             name=f"branch_{key}"
         )
         running_tasks[key] = task
-    
+
     # Breach watcher for usage limits
     if concurrency_config.breach_watcher and kwargs.get("breach_event"):
         async def breach_watcher():
@@ -312,12 +312,12 @@ async def _handle_parallel_step_enhanced(
                             task.cancel()
             except asyncio.CancelledError:
                 pass
-        
+
         watcher_task = asyncio.create_task(breach_watcher(), name="breach_watcher")
         all_tasks = list(running_tasks.values()) + [watcher_task]
     else:
         all_tasks = list(running_tasks.values())
-    
+
     # Execute with timeout
     try:
         branch_results_list = await asyncio.wait_for(
@@ -330,7 +330,7 @@ async def _handle_parallel_step_enhanced(
             if not task.done():
                 task.cancel()
         branch_results_list = [None] * len(running_tasks)
-    
+
     # Process results
     branch_results = {}
     for i, (key, result) in enumerate(zip(running_tasks.keys(), branch_results_list)):
@@ -342,7 +342,7 @@ async def _handle_parallel_step_enhanced(
             )
         else:
             branch_results[key] = result[1]  # Extract StepResult from tuple
-    
+
     # Build final result
     return self._build_parallel_result(branch_results, completion_order)
 ```
@@ -351,7 +351,7 @@ async def _handle_parallel_step_enhanced(
 ```python
 class ParallelStep:
     """Enhanced parallel step with concurrency control."""
-    
+
     def __init__(
         self,
         branches: Dict[str, Any],
@@ -412,17 +412,17 @@ parallel_step = Step.parallel(
 def test_concurrency_limits():
     """Test that concurrency limits are respected."""
     config = ConcurrencyConfig(max_concurrent_branches=2)
-    
+
     # Create parallel step with 4 branches
     parallel_step = Step.parallel(
         branches={f"branch{i}": pipeline for i in range(4)}
     )
-    
+
     # Execute with concurrency limit
     result = await executor._handle_parallel_step_enhanced(
         parallel_step, config
     )
-    
+
     # Verify that only 2 branches ran concurrently
     # (This would require monitoring the semaphore usage)
     assert result.success
@@ -436,12 +436,12 @@ def test_adaptive_concurrency():
         adaptive_limits=True,
         cpu_based_limits=True
     )
-    
+
     # Mock high CPU usage
     with patch('multiprocessing.cpu_count', return_value=8):
         parallel_step = Step.parallel(branches=branches)
         result = await executor.execute(parallel_step, concurrency_config=config)
-        
+
         # Verify adaptive behavior
         assert result.success
 ```
@@ -454,12 +454,12 @@ def test_concurrency_performance():
     baseline_time = await measure_execution_time(
         executor._handle_parallel_step_simple
     )
-    
+
     # Enhanced: With concurrency control
     enhanced_time = await measure_execution_time(
         executor._handle_parallel_step_enhanced
     )
-    
+
     # Ensure overhead is acceptable (<20% increase)
     assert enhanced_time <= baseline_time * 1.2
 ```
@@ -533,4 +533,4 @@ This enhancement restores sophisticated concurrency control capabilities while m
 1. **Real-time concurrency metrics** (active tasks, queue depth)
 2. **Resource utilization tracking** (CPU, memory, I/O)
 3. **Performance alerts** for resource exhaustion
-4. **Concurrency visualization** in monitoring dashboards 
+4. **Concurrency visualization** in monitoring dashboards

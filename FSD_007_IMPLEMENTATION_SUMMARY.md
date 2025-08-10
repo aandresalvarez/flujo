@@ -79,7 +79,7 @@ from flujo.agents.repair import DeterministicRepairProcessor
 
 ### ✅ Definition of Done Checklist
 1. **Default recipe module deleted**: ✅ Already removed
-2. **Pipeline DSL shim deleted**: ✅ Already removed  
+2. **Pipeline DSL shim deleted**: ✅ Already removed
 3. **All tests passing**: ✅ 2248 passed, 6 skipped
 4. **No deprecation warnings**: ✅ Cleanup eliminated all warnings
 5. **Documentation consistency**: ✅ All references updated

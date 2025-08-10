@@ -8,8 +8,8 @@ This document provides a comprehensive analysis of the current `_is_complex_step
 
 ### Location and Method Signature
 
-**File:** `flujo/application/core/ultra_executor.py`  
-**Method:** `_is_complex_step(self, step: Any) -> bool`  
+**File:** `flujo/application/core/ultra_executor.py`
+**Method:** `_is_complex_step(self, step: Any) -> bool`
 **Lines:** 1188-1230
 
 ### Current Implementation
@@ -218,4 +218,4 @@ The refactoring to use the object-oriented `is_complex` property approach will:
 - Maintain backward compatibility
 - Enable algebraic closure for all step types
 
-All required step types already have the `is_complex` property implemented, making the refactoring straightforward and safe. 
+All required step types already have the `is_complex` property implemented, making the refactoring straightforward and safe.

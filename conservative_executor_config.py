@@ -12,42 +12,42 @@ def get_conservative_optimized_config() -> OptimizationConfig:
         enable_memory_optimization=False,
         object_pool_max_size=100,  # Minimal if enabled
         object_pool_cleanup_threshold=0.9,  # Less aggressive cleanup
-        
+
         # Execution optimizations - SELECTIVE
         enable_step_optimization=False,  # Disable if causing overhead
         enable_algorithm_optimization=False,  # Disable if causing overhead
         enable_concurrency_optimization=False,  # Disable if causing overhead
         max_concurrent_executions=8,  # Conservative concurrency
-        
+
         # Telemetry optimizations - MINIMAL
         enable_optimized_telemetry=False,  # Disable to reduce overhead
         enable_performance_monitoring=False,  # Disable to reduce overhead
         telemetry_batch_size=50,  # Smaller batches
         telemetry_flush_interval_seconds=10.0,  # Less frequent flushing
-        
+
         # Error handling optimizations - MINIMAL
         enable_optimized_error_handling=False,  # Disable if causing overhead
         enable_circuit_breaker=False,  # Disable if causing overhead
         error_cache_size=50,  # Minimal cache
         circuit_breaker_failure_threshold=10,  # Less sensitive
         circuit_breaker_recovery_timeout_seconds=60,  # Longer recovery
-        
+
         # Cache optimizations - MINIMAL
         enable_cache_optimization=False,  # Disable if causing overhead
         cache_compression=False,
         cache_ttl_seconds=7200,  # Longer TTL
         cache_max_size=500,  # Smaller cache
-        
+
         # Performance thresholds - RELAXED
         slow_execution_threshold_ms=2000.0,  # Less sensitive
         memory_pressure_threshold_mb=1000.0,  # Higher threshold
         cpu_usage_threshold_percent=90.0,  # Less aggressive
-        
+
         # Automatic optimization - DISABLED
         enable_automatic_optimization=False,  # Disable to prevent overhead
         optimization_analysis_interval_seconds=300.0,  # Less frequent
         performance_degradation_threshold=0.5,  # Less sensitive
-        
+
         # Backward compatibility
         maintain_backward_compatibility=True,
         allow_runtime_changes=False,  # Disable runtime changes

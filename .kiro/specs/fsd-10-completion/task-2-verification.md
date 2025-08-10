@@ -146,4 +146,4 @@ def is_complex(self) -> bool:
 3. **Implementation quality** is consistent and follows best practices
 4. **Architectural compliance** supports the object-oriented refactoring goals
 
-The foundation is solid for proceeding with Task #3 (refactoring the `_is_complex_step` method to use the object-oriented approach). 
+The foundation is solid for proceeding with Task #3 (refactoring the `_is_complex_step` method to use the object-oriented approach).

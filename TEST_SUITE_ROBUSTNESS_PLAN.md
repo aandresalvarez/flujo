@@ -14,10 +14,10 @@ This document outlines a comprehensive plan to make the Flujo test suite more ro
 class TestContext(BaseModel):
     counter: int = 0
 
-# After  
+# After
 class TestContext(BaseModel):
     counter: int = 0
-    
+
     def __init__(self, **data):
         super().__init__(**data)
 ```
@@ -116,13 +116,13 @@ def monitor_resources():
     process = psutil.Process()
     initial_memory = process.memory_info().rss
     initial_cpu = process.cpu_percent()
-    
+
     yield
-    
+
     # Check for resource leaks
     final_memory = process.memory_info().rss
     memory_increase = final_memory - initial_memory
-    
+
     if memory_increase > 100 * 1024 * 1024:  # 100MB
         pytest.fail(f"Memory leak detected: {memory_increase / 1024 / 1024:.2f}MB increase")
 ```
@@ -168,12 +168,12 @@ def isolate_test_environment():
     """Ensure each test runs in isolation."""
     # Create temporary directory
     temp_dir = tempfile.mkdtemp()
-    
+
     yield temp_dir
-    
+
     # Cleanup
     shutil.rmtree(temp_dir, ignore_errors=True)
-    
+
     # Reset asyncio event loop
     try:
         loop = asyncio.get_event_loop()
@@ -193,16 +193,16 @@ import statistics
 
 class PerformanceBaseline:
     """Track performance baselines for tests."""
-    
+
     def __init__(self):
         self.baselines = {}
-    
+
     def record(self, test_name: str, duration: float):
         """Record test duration."""
         if test_name not in self.baselines:
             self.baselines[test_name] = []
         self.baselines[test_name].append(duration)
-    
+
     def get_baseline(self, test_name: str) -> float:
         """Get baseline duration for a test."""
         if test_name not in self.baselines:
@@ -220,10 +220,10 @@ def measure_performance(request, performance_baseline):
     start_time = time.perf_counter()
     yield
     duration = time.perf_counter() - start_time
-    
+
     test_name = request.node.name
     baseline = performance_baseline.get_baseline(test_name)
-    
+
     # Fail if test is 10x slower than baseline
     if duration > baseline * 10:
         pytest.fail(f"Test {test_name} is {duration/baseline:.1f}x slower than baseline")
@@ -241,11 +241,11 @@ from pathlib import Path
 
 class TestHealthMonitor:
     """Monitor test suite health."""
-    
+
     def __init__(self):
         self.health_file = Path("test_health.json")
         self.load_health_data()
-    
+
     def load_health_data(self):
         """Load historical health data."""
         if self.health_file.exists():
@@ -253,7 +253,7 @@ class TestHealthMonitor:
                 self.health_data = json.load(f)
         else:
             self.health_data = {"runs": []}
-    
+
     def record_run(self, passed: int, failed: int, skipped: int, duration: float):
         """Record test run results."""
         run_data = {
@@ -265,29 +265,29 @@ class TestHealthMonitor:
             "total": passed + failed + skipped,
             "success_rate": passed / (passed + failed) if (passed + failed) > 0 else 0
         }
-        
+
         self.health_data["runs"].append(run_data)
-        
+
         # Keep only last 100 runs
         if len(self.health_data["runs"]) > 100:
             self.health_data["runs"] = self.health_data["runs"][-100:]
-        
+
         self.save_health_data()
-    
+
     def save_health_data(self):
         """Save health data to file."""
         with open(self.health_file, "w") as f:
             json.dump(self.health_data, f, indent=2)
-    
+
     def get_health_report(self) -> dict:
         """Generate health report."""
         if not self.health_data["runs"]:
             return {"status": "no_data"}
-        
+
         recent_runs = self.health_data["runs"][-10:]
         avg_success_rate = sum(r["success_rate"] for r in recent_runs) / len(recent_runs)
         avg_duration = sum(r["duration"] for r in recent_runs) / len(recent_runs)
-        
+
         return {
             "status": "healthy" if avg_success_rate > 0.95 else "degraded",
             "avg_success_rate": avg_success_rate,
@@ -306,18 +306,18 @@ from pathlib import Path
 
 def analyze_test_suite():
     """Analyze test suite for potential issues."""
-    
+
     # Collect test information
     result = subprocess.run([
         "uv", "run", "pytest", "tests/", "--collect-only", "-q"
     ], capture_output=True, text=True)
-    
+
     # Parse test collection
     tests = []
     for line in result.stdout.split('\n'):
         if '::' in line and 'test_' in line:
             tests.append(line.strip())
-    
+
     # Analyze test distribution
     analysis = {
         "total_tests": len(tests),
@@ -327,16 +327,16 @@ def analyze_test_suite():
         "slow_tests": 0,  # Would need to check markers
         "fast_tests": 0
     }
-    
+
     # Generate recommendations
     recommendations = []
-    
+
     if analysis["unit_tests"] < analysis["total_tests"] * 0.6:
         recommendations.append("Consider adding more unit tests")
-    
+
     if analysis["integration_tests"] > analysis["total_tests"] * 0.4:
         recommendations.append("Consider reducing integration test count")
-    
+
     return {
         "analysis": analysis,
         "recommendations": recommendations
@@ -434,4 +434,4 @@ def analyze_test_suite():
 4. **Alerting**: Notify on test failures
 5. **Reporting**: Generate comprehensive reports
 
-This plan will make the test suite robust, maintainable, and future-proof! 🎉 
+This plan will make the test suite robust, maintainable, and future-proof! 🎉

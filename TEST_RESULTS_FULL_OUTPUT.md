@@ -4,7 +4,7 @@
 
 ### **Key Metrics:**
 - **Total Tests**: 2,315
-- **Passing**: 2,038 (88.0%) 
+- **Passing**: 2,038 (88.0%)
 - **Failing**: 270 (11.7%)
 - **Skipped**: 7
 - **Error**: 1

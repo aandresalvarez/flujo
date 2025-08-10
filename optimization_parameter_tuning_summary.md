@@ -10,7 +10,7 @@
 
 This task involved tuning optimization parameters for the ExecutorCore optimization components, including:
 - Object pool sizes, cache configurations, and concurrency limits
-- Telemetry sampling rates and batch processing parameters  
+- Telemetry sampling rates and batch processing parameters
 - Adaptive resource management thresholds
 
 ## Approach Taken

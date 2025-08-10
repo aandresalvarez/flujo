@@ -100,7 +100,7 @@ class CustomTelemetryHandler(TelemetryHandler):
     def handle_metric(self, metric_name, value, timestamp, tags=None):
         # Send to your monitoring system (e.g., Prometheus, DataDog, etc.)
         self.send_to_monitoring_system(metric_name, value, timestamp, tags)
-    
+
     def handle_batch(self, metrics_batch):
         # Handle batch of metrics for efficiency
         self.send_batch_to_monitoring_system(metrics_batch)
@@ -204,17 +204,17 @@ class PerformanceAlerter:
         self.critical_thresholds = critical_thresholds
         self.warning_thresholds = warning_thresholds
         self.baseline_metrics = self.load_baseline_metrics()
-    
+
     def check_metrics(self, current_metrics):
         alerts = []
-        
+
         for metric_name, current_value in current_metrics.items():
             baseline_value = self.baseline_metrics.get(metric_name)
             if baseline_value is None:
                 continue
-                
+
             regression = (current_value - baseline_value) / baseline_value
-            
+
             if regression > self.critical_thresholds.get(metric_name, float('inf')):
                 alerts.append({
                     'level': 'CRITICAL',
@@ -231,7 +231,7 @@ class PerformanceAlerter:
                     'baseline': baseline_value,
                     'regression': regression
                 })
-        
+
         return alerts
 ```
 
@@ -244,7 +244,7 @@ import psutil
 def monitor_cpu_usage():
     cpu_percent = psutil.cpu_percent(interval=1)
     cpu_per_core = psutil.cpu_percent(interval=1, percpu=True)
-    
+
     return {
         'cpu_total_percent': cpu_percent,
         'cpu_per_core': cpu_per_core,
@@ -257,7 +257,7 @@ def monitor_cpu_usage():
 ```python
 def monitor_memory_usage():
     memory = psutil.virtual_memory()
-    
+
     return {
         'memory_total_gb': memory.total / (1024**3),
         'memory_available_gb': memory.available / (1024**3),
@@ -325,19 +325,19 @@ import tracemalloc
 
 def detect_memory_leaks():
     tracemalloc.start()
-    
+
     # Run your workload
     for i in range(1000):
         run_single_operation()
-        
+
         if i % 100 == 0:
             current, peak = tracemalloc.get_traced_memory()
             print(f"Iteration {i}: Current={current/1024/1024:.1f}MB, Peak={peak/1024/1024:.1f}MB")
-    
+
     # Get top memory consumers
     snapshot = tracemalloc.take_snapshot()
     top_stats = snapshot.statistics('lineno')
-    
+
     print("Top 10 memory consumers:")
     for stat in top_stats[:10]:
         print(stat)
@@ -348,23 +348,23 @@ def detect_memory_leaks():
 def analyze_memory_usage():
     import gc
     import sys
-    
+
     # Force garbage collection
     gc.collect()
-    
+
     # Get object counts by type
     object_counts = {}
     for obj in gc.get_objects():
         obj_type = type(obj).__name__
         object_counts[obj_type] = object_counts.get(obj_type, 0) + 1
-    
+
     # Sort by count
     sorted_counts = sorted(object_counts.items(), key=lambda x: x[1], reverse=True)
-    
+
     print("Top object types by count:")
     for obj_type, count in sorted_counts[:20]:
         print(f"{obj_type}: {count}")
-    
+
     # Get total memory usage
     total_size = sys.getsizeof(gc.get_objects())
     print(f"Total tracked object size: {total_size / 1024 / 1024:.1f}MB")
@@ -382,15 +382,15 @@ class DeadlockDetector:
         self.lock_owners = {}
         self.lock_waiters = {}
         self.detection_interval = 5.0
-        
+
     def register_lock_acquisition(self, lock_id, thread_id):
         self.lock_owners[lock_id] = thread_id
-        
+
     def register_lock_wait(self, lock_id, thread_id):
         if lock_id not in self.lock_waiters:
             self.lock_waiters[lock_id] = []
         self.lock_waiters[lock_id].append(thread_id)
-        
+
     def detect_deadlocks(self):
         # Simple cycle detection in lock dependency graph
         for lock_id, waiters in self.lock_waiters.items():
@@ -405,7 +405,7 @@ class DeadlockDetector:
 ```python
 def analyze_thread_pool():
     import concurrent.futures
-    
+
     # Monitor thread pool executor
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
         # Submit tasks and monitor
@@ -413,11 +413,11 @@ def analyze_thread_pool():
         for i in range(100):
             future = executor.submit(sample_task, i)
             futures.append(future)
-        
+
         # Monitor completion
         completed = 0
         start_time = time.time()
-        
+
         for future in concurrent.futures.as_completed(futures):
             completed += 1
             elapsed = time.time() - start_time
@@ -431,12 +431,12 @@ def analyze_thread_pool():
 ```python
 def analyze_cache_performance():
     cache_stats = executor.get_cache_statistics()
-    
+
     print(f"Cache hit rate: {cache_stats['hit_rate']:.2%}")
     print(f"Cache miss rate: {cache_stats['miss_rate']:.2%}")
     print(f"Cache size: {cache_stats['size']} items")
     print(f"Cache memory usage: {cache_stats['memory_usage_mb']:.1f}MB")
-    
+
     # Analyze cache key patterns
     key_patterns = analyze_cache_keys(cache_stats['keys'])
     print("Most common key patterns:")
@@ -448,14 +448,14 @@ def analyze_cache_performance():
 ```python
 def analyze_cache_evictions():
     eviction_stats = executor.get_cache_eviction_statistics()
-    
+
     print(f"Total evictions: {eviction_stats['total_evictions']}")
     print(f"Eviction rate: {eviction_stats['eviction_rate']:.2f}/sec")
-    
+
     # Analyze eviction reasons
     for reason, count in eviction_stats['eviction_reasons'].items():
         print(f"  {reason}: {count} evictions")
-    
+
     # Analyze evicted key patterns
     evicted_patterns = analyze_evicted_keys(eviction_stats['evicted_keys'])
     print("Most evicted key patterns:")
@@ -473,25 +473,25 @@ import io
 
 def profile_executor_performance():
     profiler = cProfile.Profile()
-    
+
     # Profile the execution
     profiler.enable()
-    
+
     # Run your workload
     for i in range(100):
         executor.execute(sample_workflow)
-    
+
     profiler.disable()
-    
+
     # Analyze results
     s = io.StringIO()
     ps = pstats.Stats(profiler, stream=s)
     ps.sort_stats('cumulative')
     ps.print_stats(20)
-    
+
     profile_output = s.getvalue()
     print(profile_output)
-    
+
     return profile_output
 ```
 
@@ -503,11 +503,11 @@ from memory_profiler import profile
 def memory_profile_executor():
     # Create executor
     executor = UltraExecutor(config)
-    
+
     # Run workload
     for i in range(100):
         result = executor.execute(sample_workflow)
-    
+
     # Clean up
     del executor
 ```
@@ -518,26 +518,26 @@ class PerformanceRegressionDetector:
     def __init__(self, baseline_file='baseline_performance.json'):
         self.baseline_file = baseline_file
         self.baseline_metrics = self.load_baseline()
-        
+
     def load_baseline(self):
         try:
             with open(self.baseline_file, 'r') as f:
                 return json.load(f)
         except FileNotFoundError:
             return {}
-    
+
     def save_baseline(self, metrics):
         with open(self.baseline_file, 'w') as f:
             json.dump(metrics, f, indent=2)
-    
+
     def detect_regressions(self, current_metrics, threshold=0.1):
         regressions = []
-        
+
         for metric_name, current_value in current_metrics.items():
             baseline_value = self.baseline_metrics.get(metric_name)
             if baseline_value is None:
                 continue
-                
+
             if isinstance(current_value, (int, float)) and isinstance(baseline_value, (int, float)):
                 change = (current_value - baseline_value) / baseline_value
                 if abs(change) > threshold:
@@ -548,7 +548,7 @@ class PerformanceRegressionDetector:
                         'change_percent': change * 100,
                         'regression': change > 0  # Assuming higher is worse
                     })
-        
+
         return regressions
 ```
 
@@ -570,26 +570,26 @@ from scripts.performance_validation import run_performance_validation
 
 def collect_metrics(config_file=None):
     """Collect current performance metrics."""
-    
+
     # Load configuration
     config = load_config(config_file) if config_file else None
-    
+
     # Run performance validation
     results = run_performance_validation(
         use_optimized=bool(config),
         config=config,
         iterations=10  # Fewer iterations for monitoring
     )
-    
+
     # Add timestamp and system info
     results['timestamp'] = datetime.now().isoformat()
     results['system_info'] = get_system_info()
-    
+
     return results
 
 def export_metrics(metrics, output_format='json'):
     """Export metrics in specified format."""
-    
+
     if output_format == 'json':
         print(json.dumps(metrics, indent=2))
     elif output_format == 'prometheus':
@@ -600,12 +600,12 @@ def export_metrics(metrics, output_format='json'):
 def main():
     parser = argparse.ArgumentParser(description='Collect ExecutorCore performance metrics')
     parser.add_argument('--config', help='Configuration file path')
-    parser.add_argument('--format', choices=['json', 'prometheus', 'csv'], 
+    parser.add_argument('--format', choices=['json', 'prometheus', 'csv'],
                        default='json', help='Output format')
     parser.add_argument('--interval', type=int, help='Collection interval in seconds')
-    
+
     args = parser.parse_args()
-    
+
     if args.interval:
         # Continuous collection
         while True:
@@ -705,6 +705,6 @@ The tools and methodologies provided in this guide enable effective performance 
 
 ---
 
-*Guide Version: 1.0*  
-*Last Updated: July 31, 2025*  
+*Guide Version: 1.0*
+*Last Updated: July 31, 2025*
 *Based on: ExecutorCore Optimization Performance Analysis*

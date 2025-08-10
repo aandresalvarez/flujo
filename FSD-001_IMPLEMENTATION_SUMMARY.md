@@ -163,7 +163,7 @@ The consolidated `ContextManager` class provides:
 The ContextManager is now properly integrated into:
 
 1. **ParallelStepExecutor**: Isolates context for each branch, merges results safely
-2. **ConditionalStepExecutor**: Isolates context for selected branch, merges results safely  
+2. **ConditionalStepExecutor**: Isolates context for selected branch, merges results safely
 3. **LoopStepExecutor**: Isolates context for each iteration, merges results safely
 
 ### Error Handling
@@ -239,4 +239,4 @@ The FSD-001 implementation is complete and ready for production use. Future enha
 1. **Performance optimizations** for large context objects
 2. **Advanced merging strategies** for specific use cases
 3. **Context validation** and schema enforcement
-4. **Context persistence** and recovery mechanisms 
+4. **Context persistence** and recovery mechanisms

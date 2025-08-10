@@ -102,15 +102,15 @@ def _is_complex_step(self, step: Any) -> bool:
         HumanInTheLoopStep,
     )):
         return True
-    
+
     # Check for validation steps
     if hasattr(step, "meta") and step.meta and step.meta.get("is_validation_step", False):
         return True
-    
+
     # Check for steps with plugins
     if hasattr(step, "plugins") and step.plugins:
         return True
-    
+
     return False
 ```
 
@@ -124,15 +124,15 @@ def _is_complex_step(self, step: Any) -> bool:
     # Use the is_complex property if available
     if getattr(step, 'is_complex', False):
         return True
-    
+
     # Maintain existing logic for validation steps
     if hasattr(step, "meta") and step.meta and step.meta.get("is_validation_step", False):
         return True
-    
+
     # Maintain existing logic for plugin steps
     if hasattr(step, "plugins") and step.plugins:
         return True
-    
+
     return False
 ```
 
@@ -163,4 +163,4 @@ The comprehensive test suite should include:
 ## Progress Summary
 - **Completed**: 0/10 tasks (0%)
 - **Remaining**: 10/10 tasks (100%)
-- **Status**: 🔄 IN PROGRESS - Ready to begin implementation 
+- **Status**: 🔄 IN PROGRESS - Ready to begin implementation

@@ -7,39 +7,39 @@ def fix_executor_file():
     # Read the original file
     with open('flujo/application/core/ultra_executor.py', 'r') as f:
         content = f.read()
-    
+
     # Find the first ExecutorCore class (line 1169)
     first_executor_start = content.find('class ExecutorCore(Generic[TContext_w_Scratch]):')
     if first_executor_start == -1:
         print("Could not find first ExecutorCore class")
         return
-    
+
     # Find the end of the first ExecutorCore class by finding the next class
     search_start = first_executor_start + 100  # Start searching after the class definition
     next_class_start = content.find('\nclass DefaultProcessorPipeline:', search_start)
     if next_class_start == -1:
         print("Could not find end of first ExecutorCore class")
         return
-    
+
     # Remove the first ExecutorCore class and all duplicate classes until the second ExecutorCore
     second_executor_start = content.find('class ExecutorCore(Generic[TContext_w_Scratch]):', next_class_start)
     if second_executor_start == -1:
         print("Could not find second ExecutorCore class")
         return
-    
+
     # Keep everything before the first ExecutorCore, then skip to the second ExecutorCore
     before_first = content[:first_executor_start]
     after_second = content[second_executor_start:]
-    
+
     # Add a comment where the first ExecutorCore was
     fixed_content = before_first + "# Removed duplicate ExecutorCore class - using the one below\n\n" + after_second
-    
+
     # Now fix the execute method in the remaining ExecutorCore
     # Find the routing logic that needs to be replaced
     old_routing = """        # Check if this is a complex step that needs special handling
         is_complex = self._is_complex_step(step)
         print(f"🔍 Step {step.name} is_complex: {is_complex}")
-        
+
         if is_complex:
             print(f"🔍 Executing complex step: {step.name}")
             telemetry.logfire.debug(f"Complex step detected: {step.name}")
@@ -71,7 +71,7 @@ def fix_executor_file():
             breach_event,
             _fallback_depth,
         )"""
-    
+
     new_routing = """        # Consistent step routing following the recursive execution model
         # Route to appropriate handler based on step type
         if isinstance(step, LoopStep):
@@ -114,7 +114,7 @@ def fix_executor_file():
             return await self._execute_agent_step(
                 step, data, context, resources, limits, stream, on_chunk, cache_key, breach_event, _fallback_depth
             )"""
-    
+
     # Replace the routing logic
     if old_routing in fixed_content:
         fixed_content = fixed_content.replace(old_routing, new_routing)
@@ -122,11 +122,11 @@ def fix_executor_file():
     else:
         print("Could not find routing logic to replace")
         return
-    
+
     # Write the fixed content back
     with open('flujo/application/core/ultra_executor.py', 'w') as f:
         f.write(fixed_content)
-    
+
     print("Successfully fixed ultra_executor.py")
 
 if __name__ == "__main__":

@@ -1,8 +1,8 @@
 # Fallback Execution Diagnostic Report
 
 ## **Issue Summary**
-**Date:** 2025-08-05  
-**Component:** `flujo/application/core/ultra_executor.py`  
+**Date:** 2025-08-05
+**Component:** `flujo/application/core/ultra_executor.py`
 **Issue:** Fallback error propagation not working as expected in test `test_fallback_failure_propagates`
 
 ## **Current Test Failure**
@@ -51,21 +51,21 @@ try:
         breach_event=breach_event,
         _fallback_depth=_fallback_depth + 1
     )
-    
+
     # Mark as fallback triggered and preserve original error
     if fallback_result.metadata_ is None:
         fallback_result.metadata_ = {}
     fallback_result.metadata_["fallback_triggered"] = True
     fallback_result.metadata_["original_error"] = result.feedback
-    
+
     # Accumulate metrics from primary step
     fallback_result.cost_usd += result.cost_usd
     fallback_result.token_counts += result.token_counts
     fallback_result.latency_s += result.latency_s
-    
+
     if fallback_result.success:
         return fallback_result
-    
+
     # If fallback step failed (not an exception), return new StepResult
     print('DEBUG: Returning combined feedback StepResult')  # ← Never executed
     from flujo.domain.models import StepResult
@@ -198,5 +198,5 @@ Is the current fallback design correct:
 **Priority:** High - This affects core fallback functionality and test reliability.
 
 ---
-*Report generated: 2025-08-05*  
-*Status: Awaiting expert review* 
+*Report generated: 2025-08-05*
+*Status: Awaiting expert review*

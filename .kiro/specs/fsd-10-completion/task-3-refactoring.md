@@ -53,19 +53,19 @@ def _is_complex_step(self, step: Any) -> bool:
 ```python
 def _is_complex_step(self, step: Any) -> bool:
     """Check if step needs complex handling using an object-oriented approach.
-    
+
     This method uses the `is_complex` property to determine step complexity,
     following Flujo's architectural principles of algebraic closure and
     the Open-Closed Principle. Every step type is a first-class citizen
     in the execution graph, enabling extensibility without core changes.
-    
+
     The method maintains backward compatibility by preserving existing logic
     for validation steps and plugin steps that don't implement the `is_complex`
     property.
-    
+
     Args:
         step: The step to check for complexity
-        
+
     Returns:
         True if the step requires complex handling, False otherwise
     """
@@ -118,19 +118,19 @@ if getattr(step, 'is_complex', False):
 **After:**
 ```python
 """Check if step needs complex handling using an object-oriented approach.
-    
+
 This method uses the `is_complex` property to determine step complexity,
 following Flujo's architectural principles of algebraic closure and
 the Open-Closed Principle. Every step type is a first-class citizen
 in the execution graph, enabling extensibility without core changes.
-    
+
 The method maintains backward compatibility by preserving existing logic
 for validation steps and plugin steps that don't implement the `is_complex`
 property.
-    
+
 Args:
     step: The step to check for complexity
-    
+
 Returns:
     True if the step requires complex handling, False otherwise
 """
@@ -260,4 +260,4 @@ class NewComplexStep(Step[Any, Any]):
 6. **Enhanced extensibility** following the Open-Closed Principle
 7. **Achieved algebraic closure** where every step type is a first-class citizen
 
-The foundation is now solid for proceeding with Task #4 (creating comprehensive test suite for the refactored method). 
+The foundation is now solid for proceeding with Task #4 (creating comprehensive test suite for the refactored method).

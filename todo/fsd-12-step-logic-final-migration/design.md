@@ -151,8 +151,8 @@ StepExecutor = Callable[[Any, Any, Optional[Any], Optional[Any], Optional[Any]],
 class IUsageGovernor(Protocol):
     @abstractmethod
     async def govern_parallel_execution(
-        self, 
-        limits: UsageLimits, 
+        self,
+        limits: UsageLimits,
         step_history: List[Any]
     ) -> None:
         """Govern usage limits for parallel step execution."""
@@ -164,7 +164,7 @@ class IContextManager(Protocol):
     @abstractmethod
     def should_pass_context(self, context: Optional[Any], func: Callable[..., Any]) -> bool:
         """Determine if context should be passed to plugins/processors."""
-    
+
     @abstractmethod
     def set_final_context(self, result: PipelineResult[Any], context: Optional[Any]) -> None:
         """Set final context after step execution."""
@@ -275,4 +275,4 @@ class NewStepType(Step[Any, Any]):
 6. **Functional Equivalence**: The migrated elements produce identical results to the current implementation
 7. **Performance**: No degradation in performance characteristics, with potential improvements
 8. **Testing**: All existing tests continue to pass
-9. **Clean Architecture**: Complete removal of step_logic.py dependencies 
+9. **Clean Architecture**: Complete removal of step_logic.py dependencies

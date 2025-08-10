@@ -64,7 +64,7 @@ All complex step types have properly typed `is_complex` properties:
 def is_complex(self) -> bool:
     return True
 
-# ParallelStep  
+# ParallelStep
 @property
 def is_complex(self) -> bool:
     return True
@@ -171,4 +171,4 @@ The refactoring of the `_is_complex_step` method to use an object-oriented appro
 - **Extensibility** - Type-safe extension points for new step types
 - **Performance** - Efficient property-based approach without type checking overhead
 
-The refactoring successfully transforms the method to use object-oriented principles while maintaining and improving type safety throughout the codebase. 
+The refactoring successfully transforms the method to use object-oriented principles while maintaining and improving type safety throughout the codebase.

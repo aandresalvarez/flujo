@@ -1,4 +1,4 @@
- 
+
 ## FSD-13: Fortifying the Execution Core - Requirements
 
 This document outlines the concrete functional and non-functional requirements for the FSD-13 initiative, which aims to complete the migration of execution logic into the `ExecutorCore` and harden it for production use. All requirements must be met to consider this initiative complete.

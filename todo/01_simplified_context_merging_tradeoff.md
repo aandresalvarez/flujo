@@ -96,7 +96,7 @@ def custom_merge_strategy(context, branch_results):
                 # Deep merge dictionaries
                 if isinstance(context.data, dict) and isinstance(branch_ctx.data, dict):
                     context.data = deep_merge_dict(context.data, branch_ctx.data)
-            
+
             # Accumulate counters
             if hasattr(branch_ctx, "counter") and hasattr(context, "counter"):
                 context.counter += branch_ctx.counter
@@ -115,7 +115,7 @@ class WorkflowContext(BaseModel):
     branch1_data: Dict[str, Any] = {}
     branch2_data: Dict[str, Any] = {}
     shared_counters: Dict[str, int] = {}
-    
+
     def accumulate_counters(self):
         """Manual counter accumulation."""
         total = sum(self.shared_counters.values())
@@ -143,7 +143,7 @@ def post_process_context(context, branch_results):
 ```python
 class MergeConfig:
     """Configuration for context merging behavior."""
-    
+
     def __init__(
         self,
         deep_merge_dicts: bool = True,
@@ -168,57 +168,57 @@ def enhanced_merge_context(
 ) -> bool:
     """
     Enhanced context merging with configurable behavior.
-    
+
     Args:
         target_context: Target context to merge into
         source_context: Source context to merge from
         config: Merge configuration
-        
+
     Returns:
         True if merge was successful, False otherwise
     """
     if target_context is None or source_context is None:
         return False
-    
+
     try:
         for field_name in dir(source_context):
             if field_name.startswith('_') or field_name in config.excluded_fields:
                 continue
-                
+
             if not hasattr(target_context, field_name):
                 continue
-                
+
             source_value = getattr(source_context, field_name)
             target_value = getattr(target_context, field_name)
-            
+
             # Deep dictionary merging
-            if (config.deep_merge_dicts and 
-                isinstance(target_value, dict) and 
+            if (config.deep_merge_dicts and
+                isinstance(target_value, dict) and
                 isinstance(source_value, dict)):
                 merged_dict = deep_merge_dict(target_value, source_value)
                 setattr(target_context, field_name, merged_dict)
-                
+
             # List deduplication
-            elif (config.deduplicate_lists and 
-                  isinstance(target_value, list) and 
+            elif (config.deduplicate_lists and
+                  isinstance(target_value, list) and
                   isinstance(source_value, list)):
                 new_items = [item for item in source_value if item not in target_value]
                 if new_items:
                     target_value.extend(new_items)
-                    
+
             # Counter accumulation
-            elif (config.accumulate_counters and 
+            elif (config.accumulate_counters and
                   field_name in config.counter_fields and
-                  isinstance(target_value, (int, float)) and 
+                  isinstance(target_value, (int, float)) and
                   isinstance(source_value, (int, float))):
                 setattr(target_context, field_name, target_value + source_value)
-                
+
             # Simple replacement for other types
             else:
                 setattr(target_context, field_name, source_value)
-                
+
         return True
-        
+
     except Exception as e:
         logger.error(f"Failed to merge context: {e}")
         return False
@@ -229,11 +229,11 @@ def enhanced_merge_context(
 # In _handle_parallel_step method
 def _handle_parallel_step(self, parallel_step, ...):
     # ... existing logic ...
-    
+
     # Enhanced context merging
     if context is not None and parallel_step.merge_strategy != MergeStrategy.NO_MERGE:
         merge_config = getattr(parallel_step, "merge_config", MergeConfig())
-        
+
         for branch_result in branch_results.values():
             branch_ctx = getattr(branch_result, "branch_context", None)
             if branch_ctx is not None:
@@ -277,20 +277,20 @@ def test_deep_dict_merging():
     """Test deep dictionary merging."""
     context = TestContext(data={"a": {"b": 1, "c": 2}})
     branch_ctx = TestContext(data={"a": {"b": 3, "d": 4}})
-    
+
     config = MergeConfig(deep_merge_dicts=True)
     enhanced_merge_context(context, branch_ctx, config)
-    
+
     assert context.data == {"a": {"b": 3, "c": 2, "d": 4}}
 
 def test_counter_accumulation():
     """Test counter field accumulation."""
     context = TestContext(counter=5, processed=10)
     branch_ctx = TestContext(counter=3, processed=5)
-    
+
     config = MergeConfig(accumulate_counters=True)
     enhanced_merge_context(context, branch_ctx, config)
-    
+
     assert context.counter == 8
     assert context.processed == 15
 ```
@@ -307,7 +307,7 @@ def test_parallel_step_with_enhanced_merging():
             accumulate_counters=True
         )
     )
-    
+
     result = await executor.execute(parallel_step, data, context)
     assert result.success
     # Verify enhanced merging worked correctly
@@ -360,4 +360,4 @@ def test_parallel_step_with_enhanced_merging():
 
 ## Notes
 
-This enhancement restores sophisticated context merging capabilities while maintaining the reliability improvements from the deadlock fix. The implementation is designed to be opt-in and backward compatible. 
+This enhancement restores sophisticated context merging capabilities while maintaining the reliability improvements from the deadlock fix. The implementation is designed to be opt-in and backward compatible.

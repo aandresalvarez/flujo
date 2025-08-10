@@ -17,7 +17,7 @@ The `ProviderPricing` model was extended to support image generation pricing:
 ```python
 class ProviderPricing(BaseModel):
     """Pricing information for a specific provider and model."""
-    
+
     prompt_tokens_per_1k: float = Field(..., description="Cost per 1K prompt tokens in USD")
     completion_tokens_per_1k: float = Field(..., description="Cost per 1K completion tokens in USD")
     # Image generation pricing (optional)
@@ -37,7 +37,7 @@ A reusable post-processor function was created to calculate and inject image gen
 def _image_cost_post_processor(run_result: Any, pricing_data: dict, **kwargs) -> Any:
     """
     A pydantic-ai post-processor that calculates and injects image generation cost.
-    
+
     This function is designed to be attached to a pydantic-ai Agent's post_processors list.
     It receives the AgentRunResult after an API call and calculates the cost based on
     the number of images generated and the pricing configuration.
@@ -45,22 +45,22 @@ def _image_cost_post_processor(run_result: Any, pricing_data: dict, **kwargs) ->
     # Check if the run_result has usage information
     if not hasattr(run_result, 'usage') or not run_result.usage:
         return run_result
-    
+
     # Check if this is an image generation response
     if not hasattr(run_result.usage, 'details') or not run_result.usage.details:
         return run_result
-    
+
     image_count = run_result.usage.details.get("images", 0)
     if image_count == 0:
         return run_result
-    
+
     # Determine price key from agent call parameters
     size = kwargs.get("size", "1024x1024")
     quality = kwargs.get("quality", "standard")
     price_key = f"price_per_image_{quality}_{size}"
-    
+
     price_per_image = pricing_data.get(price_key)
-    
+
     if price_per_image is None:
         # Handle missing price - log warning and set cost to 0.0
         run_result.usage.cost_usd = 0.0
@@ -68,7 +68,7 @@ def _image_cost_post_processor(run_result: Any, pricing_data: dict, **kwargs) ->
         # Calculate and set the cost
         total_cost = image_count * price_per_image
         run_result.usage.cost_usd = total_cost
-    
+
     return run_result
 ```
 
@@ -88,10 +88,10 @@ def make_agent_async(
     **kwargs: Any,
 ) -> AsyncAgentWrapper[Any, Any]:
     """Creates a pydantic_ai.Agent and returns an AsyncAgentWrapper exposing .run_async."""
-    
+
     # Check if this is an image generation model
     is_image_model = _is_image_generation_model(model)
-    
+
     agent, final_processors = make_agent(
         model,
         system_prompt,
@@ -99,11 +99,11 @@ def make_agent_async(
         processors=processors,
         **kwargs,
     )
-    
+
     # If this is an image model, attach the image cost post-processor
     if is_image_model:
         _attach_image_cost_post_processor(agent, model)
-    
+
     return AsyncAgentWrapper(
         agent,
         max_retries=max_retries,
@@ -121,13 +121,13 @@ A function to detect image generation models:
 ```python
 def _is_image_generation_model(model: str) -> bool:
     """Check if the model is an image generation model."""
-    
+
     # Extract the model name from the provider:model format
     if ":" in model:
         model_name = model.split(":", 1)[1].lower()
     else:
         model_name = model.lower()
-    
+
     # Check for common image generation model patterns
     image_model_patterns = [
         "dall-e",  # OpenAI DALL-E models
@@ -135,7 +135,7 @@ def _is_image_generation_model(model: str) -> bool:
         "stable-diffusion",  # Stable Diffusion models
         "imagen",  # Google Imagen models
     ]
-    
+
     return any(pattern in model_name for pattern in image_model_patterns)
 ```
 
@@ -146,36 +146,36 @@ A function to attach the image cost post-processor to agents:
 ```python
 def _attach_image_cost_post_processor(agent: Any, model: str) -> None:
     """Attach the image cost post-processor to an agent."""
-    
+
     # Extract provider and model name
     provider, model_name = extract_provider_and_model(model)
-    
+
     if provider is None:
         return
-    
+
     # Get pricing configuration
     pricing = get_provider_pricing(provider, model_name)
-    
+
     if pricing is None:
         return
-    
+
     # Extract image pricing data from the pricing object
     pricing_data = {}
     for field_name, field_value in pricing.model_dump().items():
         if field_name.startswith("price_per_image_") and field_value is not None:
             pricing_data[field_name] = field_value
-    
+
     if not pricing_data:
         return
-    
+
     # Create a partial function with the pricing data bound
     from functools import partial
     post_processor = partial(_image_cost_post_processor, pricing_data=pricing_data)
-    
+
     # Attach the post-processor to the agent
     if not hasattr(agent, 'post_processors'):
         agent.post_processors = []
-    
+
     agent.post_processors.append(post_processor)
 ```
 
@@ -353,8 +353,8 @@ validator_agent = make_agent_async("openai:gpt-4o", "Validate responses", str)
 
 # Create a complex pipeline
 pipeline = (
-    Step.solution(chat_agent) >> 
-    Step.validate(validator_agent) >> 
+    Step.solution(chat_agent) >>
+    Step.validate(validator_agent) >>
     Step.reflect(image_agent)
 )
 
@@ -418,4 +418,4 @@ The solution follows Flujo's architectural principles of:
 - **Encapsulation**: Pricing logic is encapsulated within the post-processor
 - **Single Responsibility**: Each component has a clear, focused purpose
 - **Robust Error Handling**: Graceful degradation when pricing is missing
-- **Comprehensive Testing**: Full test coverage for all scenarios 
+- **Comprehensive Testing**: Full test coverage for all scenarios

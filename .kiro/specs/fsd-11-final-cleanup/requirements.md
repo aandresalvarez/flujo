@@ -213,4 +213,4 @@ The requirements ensure that:
 - **Performance is preserved** while reducing complexity
 - **Maintainability is improved** by eliminating technical debt
 
-This final step ensures Flujo's architecture is clean, lean, and ready for future development while maintaining all production characteristics and functionality. 
+This final step ensures Flujo's architecture is clean, lean, and ready for future development while maintaining all production characteristics and functionality.

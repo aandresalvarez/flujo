@@ -35,15 +35,15 @@ def _is_complex_step(self, step: Any) -> bool:
         HumanInTheLoopStep,
     )):
         return True
-    
+
     # Check for validation steps
     if hasattr(step, "meta") and step.meta and step.meta.get("is_validation_step", False):
         return True
-    
+
     # Check for steps with plugins
     if hasattr(step, "plugins") and step.plugins:
         return True
-    
+
     return False
 ```
 
@@ -208,4 +208,4 @@ class NewComplexStep(Step[Any, Any]):
 5. **Extensibility**: New complex step types can be added without core changes
 6. **Functional Equivalence**: The refactored method produces identical results to the current implementation
 7. **Performance**: No degradation in performance characteristics, with potential improvements
-8. **Testing**: All existing tests continue to pass 
+8. **Testing**: All existing tests continue to pass

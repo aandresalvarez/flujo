@@ -28,7 +28,7 @@ class InputValidator(BaseValidator):
 # Use in your pipeline
 pipeline = (
     Step.validate(validators=[InputValidator()])
-    >> Step.solution(agent)  
+    >> Step.solution(agent)
     >> Step.validate(validators=[output_validator])
 )
 ```

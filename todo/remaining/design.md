@@ -1,8 +1,8 @@
- 
+
 ## FSD-13: Fortifying the Execution Core
 
-**Status:** Proposed  
-**Author:** Flujo Architecture Team  
+**Status:** Proposed
+**Author:** Flujo Architecture Team
 **Date:** 2023-10-27
 
 ---

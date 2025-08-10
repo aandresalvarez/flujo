@@ -241,4 +241,4 @@ The optimizations are designed to be:
 - **Automatic** - No user intervention required
 - **Safe** - Graceful fallbacks for missing dependencies
 - **Measurable** - Comprehensive benchmarking included
-- **Maintainable** - Clean, well-documented code 
+- **Maintainable** - Clean, well-documented code

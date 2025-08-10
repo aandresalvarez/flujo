@@ -62,7 +62,7 @@ class RefinementContext(PipelineContext):
 async def assess_and_refine(definition: str, *, context: RefinementContext) -> dict:
     """Assess definition clarity and update context."""
     context.iteration_count += 1
-    
+
     # Simulate AI assessment
     if "clear" in definition.lower() or context.iteration_count >= 3:
         context.is_clear = True

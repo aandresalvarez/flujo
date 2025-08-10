@@ -166,4 +166,4 @@ The test results confirm that Task #4 has been **successfully completed**:
 - **Maintainability:** Clear, well-documented tests
 - **Reliability:** All tests pass consistently
 
-The comprehensive test suite ensures that our refactored `_is_complex_step` method is robust, maintainable, and ready for production use while preserving all existing functionality. 
+The comprehensive test suite ensures that our refactored `_is_complex_step` method is robust, maintainable, and ready for production use while preserving all existing functionality.

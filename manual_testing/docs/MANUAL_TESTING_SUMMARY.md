@@ -44,7 +44,7 @@ This directory contains comprehensive manual testing scripts for **Step 1: The C
 
 **Example 3: "patients with heart problems"**
 ```
-🤖 Agent Response: Could you clarify what specific types of heart problems are included in this cohort definition? For example, is it meant to include conditions such as heart failure, myocardial infarction, arrhythmia, or all heart-related conditions?
+🤖 Agent Response: Could you clarify what specific types of heart problems are included in this cohort definition? For example, is it meant to include conditions such as heart failure, myocardial infraction, arrhythmia, or all heart-related conditions?
 ❓ RESULT: Definition needs CLARIFICATION
 ```
 
@@ -162,4 +162,4 @@ This manual testing foundation can be extended for the remaining steps:
 - **Step 4**: Human Interaction (HITL)
 - **Step 5**: Professional Refinement (structured outputs)
 
-Each step can build upon these testing patterns to validate new concepts while ensuring existing functionality remains intact. 
+Each step can build upon these testing patterns to validate new concepts while ensuring existing functionality remains intact.

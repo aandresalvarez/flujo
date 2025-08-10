@@ -283,7 +283,7 @@ class TestStep1CoreAgentic:
 
         # Test with the real pipeline
         from manual_testing.examples.cohort_pipeline import CohortContext
-        
+
         runner = Flujo(
             COHORT_CLARIFICATION_PIPELINE,
             pipeline_name="integration_test",

@@ -59,7 +59,7 @@ except PausedException as e:
     # Use Flujo's error classification system
     error_context = ErrorContext.from_exception(e)
     classifier.classify_error(error_context)
-    
+
     if error_context.category == ErrorCategory.CONTROL_FLOW:
         raise e  # ✅ Re-raise for proper workflow control
 ```

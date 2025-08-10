@@ -1,8 +1,8 @@
 # Flujo Test Failures Analysis: Comprehensive Root Cause Analysis
 
-**Date:** 2024-01-XX  
-**Analysis Scope:** `make test-fast-verbose` results  
-**Total Tests:** 2,105 (521 failed, 1566 passed, 5 skipped, 13 errors)  
+**Date:** 2024-01-XX
+**Analysis Scope:** `make test-fast-verbose` results
+**Total Tests:** 2,105 (521 failed, 1566 passed, 5 skipped, 13 errors)
 **Success Rate:** 74.4%
 
 ---
@@ -65,19 +65,19 @@ while attempts <= max_retries:
 async def _execute_agent_step(self, ...) -> StepResult:
     attempts = 0
     accumulated_feedback = []
-    
+
     while attempts <= max_retries:
         attempts += 1
         result.attempts = attempts
-        
+
         try:
             # Execute agent
             output = await self._agent_runner.run(...)
-            
+
             # Apply processors
             if hasattr(step, "processors") and step.processors:
                 output = await self._processor_pipeline.apply_output(...)
-            
+
             # Apply validators - SEPARATE EXCEPTION HANDLING
             if hasattr(step, "validators") and step.validators:
                 try:
@@ -88,7 +88,7 @@ async def _execute_agent_step(self, ...) -> StepResult:
                     result.feedback = f"Validation failed: {validation_error}"
                     result.output = output  # Keep the output for fallback
                     return result
-            
+
             # Apply plugins - SEPARATE EXCEPTION HANDLING
             if hasattr(step, "plugins") and step.plugins:
                 try:
@@ -99,17 +99,17 @@ async def _execute_agent_step(self, ...) -> StepResult:
                     result.feedback = f"Plugin failed: {plugin_error}"
                     result.output = output  # Keep the output for fallback
                     return result
-            
+
             # Success path
             result.output = output
             result.success = True
             return result
-            
+
         except (AgentError, NetworkError, TimeoutError) as agent_error:
             # ONLY retry for actual agent failures
             error_msg = f"Attempt {attempts} failed: {str(agent_error)}"
             accumulated_feedback.append(error_msg)
-            
+
             if attempts <= max_retries:
                 data = self._clone_payload_for_retry(data, accumulated_feedback)
                 continue
@@ -144,10 +144,10 @@ class ExecutionManager:
     async def execute_steps(self, pipeline: Pipeline, ...) -> PipelineResult:
         for step in pipeline.steps:
             result = await self._step_coordinator.execute_step(step, ...)
-            
+
             # Usage check happens BEFORE adding to history
             await self._usage_governor.guard(limits, pipeline_result.step_history)
-            
+
             # History updated AFTER check - WRONG ORDER!
             pipeline_result.step_history.append(result)
 ```
@@ -165,23 +165,23 @@ class ExecutionManager:
 class ExecutionManager:
     async def execute_steps(self, pipeline: Pipeline, ...) -> PipelineResult:
         pipeline_result = PipelineResult(step_history=[], total_cost_usd=0.0, total_tokens=0)
-        
+
         for step in pipeline.steps:
             # Execute step
             result = await self._step_coordinator.execute_step(step, ...)
-            
+
             # IMMEDIATE: Add step to history FIRST
             pipeline_result.step_history.append(result)
-            
+
             # IMMEDIATE: Update running totals
             pipeline_result.total_cost_usd += result.cost_usd
             pipeline_result.total_tokens += result.token_counts
-            
+
             # THEN check limits with correct totals
             await self._usage_governor.guard(limits, pipeline_result.step_history)
-            
+
             # If we get here, limits are OK, continue to next step
-        
+
         return pipeline_result
 
 # FIXED PARALLEL USAGE GOVERNANCE
@@ -189,29 +189,29 @@ class ExecutorCore:
     async def _handle_parallel_step(self, ...) -> StepResult:
         # Create parallel usage governor for this parallel step
         parallel_governor = self._ParallelUsageGovernor(limits)
-        
+
         async def run_branch_with_usage_tracking(branch_pipe: Any) -> StepResult:
             result = await self.execute(branch_pipe, ...)
-            
+
             # Track usage for this branch
             await parallel_governor.add_usage(
-                result.cost_usd, 
-                result.token_counts, 
+                result.cost_usd,
+                result.token_counts,
                 result
             )
-            
+
             return result
-        
+
         # Execute all branches with usage tracking
         branch_results = await asyncio.gather(*[
             run_branch_with_usage_tracking(branch)
             for branch in parallel_step.branches.values()
         ])
-        
+
         # Aggregate results
         total_cost = sum(r.cost_usd for r in branch_results)
         total_tokens = sum(r.token_counts for r in branch_results)
-        
+
         return StepResult(
             cost_usd=total_cost,
             token_counts=total_tokens,
@@ -245,9 +245,9 @@ async def _handle_loop_step(self, ...) -> StepResult:
     for iteration in range(max_iterations):
         # WRONG: Fresh copy for each iteration
         iteration_context = copy.deepcopy(context)  # ← LOSES PREVIOUS UPDATES
-        
+
         result = await self.execute(step.body, data, iteration_context, ...)
-        
+
         # WRONG: Updates not propagated to next iteration
         # context remains unchanged
 ```
@@ -263,29 +263,29 @@ async def _handle_loop_step(self, ...) -> StepResult:
 # FIXED LOOP CONTEXT PROPAGATION
 async def _handle_loop_step(self, ...) -> StepResult:
     current_context = context  # Start with original context
-    
+
     for iteration in range(max_iterations):
         # Pass current context (with previous updates) to this iteration
         result = await self.execute(
-            step.body, 
-            data, 
+            step.body,
+            data,
             current_context,  # ← PASS BY REFERENCE
-            resources, 
-            limits, 
-            stream, 
-            on_chunk, 
-            breach_event, 
+            resources,
+            limits,
+            stream,
+            on_chunk,
+            breach_event,
             context_setter
         )
-        
+
         # CRITICAL: Update context for next iteration
         if result.branch_context is not None:
             current_context = result.branch_context  # ← PROPAGATE UPDATES
-        
+
         # Check exit condition
         if step.exit_condition and step.exit_condition(result.output, current_context):
             break
-    
+
     return StepResult(
         output=result.output,
         success=result.success,
@@ -300,12 +300,12 @@ async def _handle_parallel_step(self, ...) -> StepResult:
         self.execute(branch, data, context, ...)
         for branch in parallel_step.branches.values()
     ])
-    
+
     # CRITICAL: Merge branch contexts back to main context
     for result in branch_results:
         if result.branch_context is not None:
             context = self._safe_merge_context_updates(context, result.branch_context)
-    
+
     return StepResult(
         output={key: result.output for key, result in zip(parallel_step.branches.keys(), branch_results)},
         success=all(r.success for r in branch_results),
@@ -339,7 +339,7 @@ async def _handle_hitl_step(self, ...) -> StepResult:
 
 **Problem Pattern:**
 ```
-pydantic_core.ValidationError: Input should be 'a', 'b' or 'c' 
+pydantic_core.ValidationError: Input should be 'a', 'b' or 'c'
 [type=enum, input_value={'_value_': 'a', '_name_'...}]
 ```
 
@@ -356,7 +356,7 @@ class TypeAwareSerializer:
             return json.dumps(obj.model_dump()).encode()
         else:
             return json.dumps(obj).encode()
-    
+
     def deserialize(self, blob: bytes) -> Any:
         data = json.loads(blob.decode())
         return self._reconstruct_type(data)
@@ -381,7 +381,7 @@ assert 'Cost limit of $1.2 exceeded' in 'Cost limit of $1.20 exceeded'
 def test_cost_limit_exceeded():
     with pytest.raises(UsageLimitExceededError) as exc_info:
         # ... test code ...
-    
+
     # Use regex instead of exact match
     assert re.search(r"Cost limit of \$1\.2\d* exceeded", str(exc_info.value))
 ```
@@ -432,4 +432,4 @@ The test failures reveal **three critical systemic issues** in the FSD-13 migrat
 3. **Usage governance** and **context propagation** are equally critical (35% + 20%)
 4. **Test design issues** are minimal (5% of failures)
 
-This analysis provides a **clear, actionable roadmap** to achieve 95%+ test pass rate within 3 weeks, while maintaining Flujo's **dual architecture philosophy** and **production readiness**. 
+This analysis provides a **clear, actionable roadmap** to achieve 95%+ test pass rate within 3 weeks, while maintaining Flujo's **dual architecture philosophy** and **production readiness**.

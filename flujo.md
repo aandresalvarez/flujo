@@ -79,7 +79,7 @@ Before diving into the detailed pillars, here are key architectural patterns tha
 3. Register the policy in `ExecutorCore.execute()` dispatcher
 4. Use existing context management, error handling, and telemetry systems
 
-#### **Pattern 3: Cross-Cutting Concerns** 
+#### **Pattern 3: Cross-Cutting Concerns**
 **Problem**: Need to add logging, metrics, or custom behavior across all step types.
 
 **✅ Architectural Solution**:
@@ -133,7 +133,7 @@ Flujo provides a suite of tools for monitoring, debugging, and managing pipeline
 
 ### **Conclusion**
 
-Flujo's architecture presents a mature and robust solution for modern AI engineering. The clean separation between its intuitive **declarative shell** and its powerful, now **policy-driven execution core** delivers both an excellent developer experience and the resilience required for production systems. 
+Flujo's architecture presents a mature and robust solution for modern AI engineering. The clean separation between its intuitive **declarative shell** and its powerful, now **policy-driven execution core** delivers both an excellent developer experience and the resilience required for production systems.
 
 **The documented architectural patterns** ensure developers can leverage Flujo's sophisticated systems (error classification, recovery strategies, hook system, state management) rather than implementing ad-hoc solutions. By following these patterns - particularly for control flow exception handling, custom step types, and cross-cutting concerns - developers build applications that are not only correct but also consistent with Flujo's architectural philosophy.
 

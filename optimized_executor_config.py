@@ -12,34 +12,34 @@ def get_optimized_config() -> OptimizationConfig:
         enable_memory_optimization=True,
         object_pool_max_size=500,
         object_pool_cleanup_threshold=0.75,
-        
+
         # Execution optimizations
         enable_step_optimization=True,
         enable_algorithm_optimization=True,
         enable_concurrency_optimization=True,
         max_concurrent_executions=24,
-        
+
         # Telemetry optimizations
         enable_optimized_telemetry=True,
         enable_performance_monitoring=True,
         telemetry_batch_size=400,
         telemetry_flush_interval_seconds=2.0,
-        
+
         # Cache optimizations
         enable_cache_optimization=True,
         cache_ttl_seconds=1800,
         cache_max_size=1000,
-        
+
         # Performance thresholds (optimized)
         slow_execution_threshold_ms=500.0,
         memory_pressure_threshold_mb=250.0,
         cpu_usage_threshold_percent=70.0,
-        
+
         # Automatic optimization
         enable_automatic_optimization=True,
         optimization_analysis_interval_seconds=30.0,
         performance_degradation_threshold=0.15,
-        
+
         # Backward compatibility
         maintain_backward_compatibility=True,
         allow_runtime_changes=True,

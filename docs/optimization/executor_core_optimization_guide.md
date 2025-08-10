@@ -115,7 +115,7 @@ config = OptimizationConfig(
     enable_object_pool=True,
     object_pool_max_size=50,
     object_pool_cleanup_threshold=0.9,
-    
+
     # Context optimization
     enable_context_optimization=True,
     enable_memory_optimization=True,
@@ -252,14 +252,14 @@ config = OptimizationConfig(
     # Memory optimizations
     object_pool_max_size=100,
     object_pool_cleanup_threshold=0.8,
-    
+
     # Execution optimizations
     max_concurrent_executions=20,
-    
+
     # Telemetry optimizations
     telemetry_batch_size=50,
     telemetry_flush_interval_seconds=60.0,
-    
+
     # Cache optimizations
     enable_cache_optimization=True,
     cache_max_size=1000,
@@ -275,11 +275,11 @@ config = OptimizationConfig(
     # Memory optimizations
     object_pool_max_size=20,
     object_pool_cleanup_threshold=0.7,
-    
+
     # Cache optimizations
     cache_max_size=200,
     cache_compression=True,
-    
+
     # Performance thresholds
     memory_pressure_threshold_mb=200.0,
 )
@@ -293,11 +293,11 @@ config = OptimizationConfig(
     # Execution optimizations
     enable_step_optimization=True,
     enable_algorithm_optimization=True,
-    
+
     # Telemetry optimizations
     telemetry_batch_size=5,
     telemetry_flush_interval_seconds=10.0,
-    
+
     # Error handling
     circuit_breaker_failure_threshold=5,
     circuit_breaker_recovery_timeout_seconds=30,
@@ -331,14 +331,14 @@ config = OptimizationConfig(
     # Memory optimizations for large datasets
     object_pool_max_size=100,
     enable_memory_optimization=True,
-    
+
     # Execution optimizations for repeated operations
     enable_step_optimization=True,
     enable_algorithm_optimization=True,
-    
+
     # Concurrency for parallel processing
     max_concurrent_executions=10,
-    
+
     # Cache for repeated operations
     enable_cache_optimization=True,
     cache_max_size=1000,
@@ -359,15 +359,15 @@ config = OptimizationConfig(
     # Low latency optimizations
     enable_step_optimization=True,
     enable_algorithm_optimization=True,
-    
+
     # Minimal telemetry overhead
     telemetry_batch_size=5,
     telemetry_flush_interval_seconds=10.0,
-    
+
     # Fast error recovery
     circuit_breaker_failure_threshold=3,
     circuit_breaker_recovery_timeout_seconds=30,
-    
+
     # Minimal memory usage
     object_pool_max_size=20,
     cache_max_size=100,
@@ -394,7 +394,7 @@ executor = OptimizedExecutorCore(optimization_config=config)
 
 # Execute with monitoring
 result, metrics = await executor.execute_with_monitoring(
-    batch_process_step, 
+    batch_process_step,
     batch_data
 )
 
@@ -493,11 +493,11 @@ for rec in recommendations:
 async def monitor_performance():
     while True:
         stats = executor.get_optimization_stats()
-        
+
         print(f"Memory usage: {stats['memory']['usage_mb']}MB")
         print(f"Cache hit rate: {stats['cache']['hit_rate']:.2%}")
         print(f"Average execution time: {stats['execution']['avg_time_ms']}ms")
-        
+
         await asyncio.sleep(10)
 
 # Start monitoring
@@ -547,7 +547,7 @@ for rec in recommendations:
     print(f"Recommendation: {rec['description']}")
     print(f"Impact: {rec['impact']}")
     print(f"Priority: {rec['priority']}")
-    
+
     if rec['automatic']:
         print("This can be applied automatically")
     else:

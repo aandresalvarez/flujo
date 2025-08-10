@@ -360,8 +360,8 @@ validator_agent = make_agent_async("openai:gpt-4o", "Validate responses", str)
 
 # Create a complex pipeline
 pipeline = (
-    Step.solution(chat_agent) >> 
-    Step.validate(validator_agent) >> 
+    Step.solution(chat_agent) >>
+    Step.validate(validator_agent) >>
     Step.reflect(image_agent)
 )
 

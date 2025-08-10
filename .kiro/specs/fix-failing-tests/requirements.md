@@ -13,7 +13,7 @@ This document outlines the requirements for fixing the 6 remaining failing tests
 #### Acceptance Criteria
 
 1. WHEN `test_proactive_cancellation_with_multiple_branches` runs THEN the execution time SHALL be less than 0.3 seconds
-2. WHEN `test_proactive_cancellation_token_limits` runs THEN the execution time SHALL be less than 0.4 seconds  
+2. WHEN `test_proactive_cancellation_token_limits` runs THEN the execution time SHALL be less than 0.4 seconds
 3. WHEN proactive cancellation is triggered THEN it SHALL cancel parallel branches efficiently
 4. WHEN token limits are reached THEN cancellation SHALL occur within the expected timeframe
 
@@ -24,7 +24,7 @@ This document outlines the requirements for fixing the 6 remaining failing tests
 #### Acceptance Criteria
 
 1. WHEN `test_governor_with_loop_step` runs THEN the loop step SHALL report exactly 3 attempts
-2. WHEN `test_governor_halts_loop_step_mid_iteration` runs THEN the loop step SHALL report exactly 3 attempts  
+2. WHEN `test_governor_halts_loop_step_mid_iteration` runs THEN the loop step SHALL report exactly 3 attempts
 3. WHEN a loop step reaches its exit condition THEN the attempt count SHALL match the number of iterations executed
 4. WHEN a loop step is halted mid-iteration THEN the attempt count SHALL reflect the actual iterations completed
 

@@ -37,15 +37,15 @@ def _is_complex_step(self, step: Any) -> bool:
         HumanInTheLoopStep,
     )):
         return True
-    
+
     # Check for validation steps
     if hasattr(step, "meta") and step.meta and step.meta.get("is_validation_step", False):
         return True
-    
+
     # Check for steps with plugins
     if hasattr(step, "plugins") and step.plugins:
         return True
-    
+
     return False
 ```
 
@@ -62,19 +62,19 @@ The new implementation uses a property-based approach:
 ```python
 def _is_complex_step(self, step: Any) -> bool:
     """Check if step needs complex handling using an object-oriented approach.
-    
+
     This method uses the `is_complex` property to determine step complexity,
     following Flujo's architectural principles of algebraic closure and
     the Open-Closed Principle. Every step type is a first-class citizen
     in the execution graph, enabling extensibility without core changes.
-    
+
     The method maintains backward compatibility by preserving existing logic
     for validation steps and plugin steps that don't implement the `is_complex`
     property.
-    
+
     Args:
         step: The step to check for complexity
-        
+
     Returns:
         True if the step requires complex handling, False otherwise
     """
@@ -141,9 +141,9 @@ To add a new complex step type, simply implement the `is_complex` property:
 ```python
 class MyCustomComplexStep(Step):
     """A custom complex step that requires special handling."""
-    
+
     is_complex = True  # Declare complexity at the class level
-    
+
     def __init__(self, name: str, **kwargs):
         super().__init__(name=name, **kwargs)
         # Additional initialization...
@@ -156,9 +156,9 @@ For simple steps, no special configuration is needed:
 ```python
 class MyCustomSimpleStep(Step):
     """A custom simple step that uses standard handling."""
-    
+
     # No is_complex property needed - defaults to False
-    
+
     def __init__(self, name: str, **kwargs):
         super().__init__(name=name, **kwargs)
         # Additional initialization...
@@ -171,11 +171,11 @@ For steps that need dynamic complexity detection, implement a property:
 ```python
 class DynamicComplexityStep(Step):
     """A step with dynamic complexity based on configuration."""
-    
+
     def __init__(self, name: str, use_complex_handling: bool = False, **kwargs):
         super().__init__(name=name, **kwargs)
         self._use_complex_handling = use_complex_handling
-    
+
     @property
     def is_complex(self) -> bool:
         """Dynamic complexity based on configuration."""
@@ -219,9 +219,9 @@ from flujo import Step
 
 class MyLoopStep(Step):
     """A custom loop step that requires complex handling."""
-    
+
     is_complex = True  # Declare as complex
-    
+
     def __init__(self, name: str, loop_body, **kwargs):
         super().__init__(name=name, **kwargs)
         self.loop_body = loop_body
@@ -233,11 +233,11 @@ class MyLoopStep(Step):
 ```python
 class AdaptiveStep(Step):
     """A step that adapts its complexity based on input size."""
-    
+
     def __init__(self, name: str, threshold: int = 1000, **kwargs):
         super().__init__(name=name, **kwargs)
         self.threshold = threshold
-    
+
     @property
     def is_complex(self) -> bool:
         """Complex if input size exceeds threshold."""
@@ -250,7 +250,7 @@ class AdaptiveStep(Step):
 ```python
 class PluginStep(Step):
     """A step that uses plugins for enhanced functionality."""
-    
+
     def __init__(self, name: str, plugins: List[Any] = None, **kwargs):
         super().__init__(name=name, **kwargs)
         self.plugins = plugins or []
@@ -314,4 +314,4 @@ The object-oriented approach to step complexity detection provides significant a
 - **✅ Full Backward Compatibility**: All existing code continues to work
 - **✅ Maintained Performance**: No performance regression
 
-This refactoring demonstrates Flujo's commitment to robust, extensible architecture while maintaining the reliability and performance that users expect. 
+This refactoring demonstrates Flujo's commitment to robust, extensible architecture while maintaining the reliability and performance that users expect.

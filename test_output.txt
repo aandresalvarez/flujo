@@ -326,10 +326,10 @@ ____ TestExecutorCoreConditionalStep.test_handle_conditional_step_signature ____
 tests/application/core/test_executor_core_conditional_step.py:54: in test_handle_conditional_step_signature
     assert params == expected_params
 E   AssertionError: assert ['step', 'dat..._setter', ...] == ['conditional...ntext_setter']
-E     
+E
 E     At index 0 diff: 'step' != 'conditional_step'
 E     Left contains one more item: 'fallback_depth'
-E     
+E
 E     Full diff:
 E       [
 E     -     'conditional_step',
@@ -386,7 +386,7 @@ _ TestExecutorCoreConditionalStep.test_handle_conditional_step_integration_with_
 tests/application/core/test_executor_core_conditional_step.py:261: in test_handle_conditional_step_integration_with_execute_complex_step
     assert result.name == "test_conditional"
 E   AssertionError: assert 'test_agent' == 'test_conditional'
-E     
+E
 E     - test_conditional
 E     + test_agent
 _ TestExecutorCoreConditionalStepDispatch.test_execute_complex_step_conditionalstep_telemetry_logging _
@@ -574,9 +574,9 @@ _______ TestExecutorCoreFallback.test_fallback_with_usage_meter_tracking _______
 tests/application/core/test_executor_core_fallback.py:1159: in test_fallback_with_usage_meter_tracking
     assert calls[0].args == (0.0, 0, 1)
 E   assert (0.1, 10, 5) == (0.0, 0, 1)
-E     
+E
 E     At index 0 diff: 0.1 != 0.0
-E     
+E
 E     Full diff:
 E       (
 E     -     0.0,
@@ -606,7 +606,7 @@ E    +  where False = StepResult(name='fallback_step', output=None, success=Fals
 2025-08-05 14:57:06,174 - flujo - WARNING - Step 'primary_step' agent execution attempt 2 failed: Primary failed
 2025-08-05 14:57:06,174 - flujo - INFO - Step 'primary_step' failed, attempting fallback
 2025-08-05 14:57:06,174 - flujo - WARNING - Step 'fallback_step' agent execution attempt 1 failed: Primary failed
-2025-08-05 14:57:06,175 - flujo - WARNING - Step 'fallback_step' agent execution attempt 2 failed: 
+2025-08-05 14:57:06,175 - flujo - WARNING - Step 'fallback_step' agent execution attempt 2 failed:
 ----------------------------- Captured stderr call -----------------------------
 2025-08-05 14:57:06,174 - flujo - ERROR - Step 'primary_step' agent failed after 3 attempts
 2025-08-05 14:57:06,175 - flujo - ERROR - Step 'fallback_step' agent failed after 3 attempts
@@ -616,7 +616,7 @@ WARNING  flujo:telemetry.py:54 Step 'primary_step' agent execution attempt 2 fai
 ERROR    flujo:telemetry.py:54 Step 'primary_step' agent failed after 3 attempts
 INFO     flujo:telemetry.py:54 Step 'primary_step' failed, attempting fallback
 WARNING  flujo:telemetry.py:54 Step 'fallback_step' agent execution attempt 1 failed: Primary failed
-WARNING  flujo:telemetry.py:54 Step 'fallback_step' agent execution attempt 2 failed: 
+WARNING  flujo:telemetry.py:54 Step 'fallback_step' agent execution attempt 2 failed:
 ERROR    flujo:telemetry.py:54 Step 'fallback_step' agent failed after 3 attempts
 __________ TestExecutorCoreFallback.test_fallback_with_plugin_runner ___________
 [gw0] darwin -- Python 3.11.0 /Users/alvaro/Documents/Code/flujo/.venv/bin/python3
@@ -629,7 +629,7 @@ E    +  where False = StepResult(name='fallback_step', output=None, success=Fals
 2025-08-05 14:57:06,190 - flujo - WARNING - Step 'primary_step' agent execution attempt 2 failed: Primary failed
 2025-08-05 14:57:06,190 - flujo - INFO - Step 'primary_step' failed, attempting fallback
 2025-08-05 14:57:06,190 - flujo - WARNING - Step 'fallback_step' agent execution attempt 1 failed: Primary failed
-2025-08-05 14:57:06,190 - flujo - WARNING - Step 'fallback_step' agent execution attempt 2 failed: 
+2025-08-05 14:57:06,190 - flujo - WARNING - Step 'fallback_step' agent execution attempt 2 failed:
 ----------------------------- Captured stderr call -----------------------------
 2025-08-05 14:57:06,190 - flujo - ERROR - Step 'primary_step' agent failed after 3 attempts
 2025-08-05 14:57:06,190 - flujo - ERROR - Step 'fallback_step' agent failed after 3 attempts
@@ -639,7 +639,7 @@ WARNING  flujo:telemetry.py:54 Step 'primary_step' agent execution attempt 2 fai
 ERROR    flujo:telemetry.py:54 Step 'primary_step' agent failed after 3 attempts
 INFO     flujo:telemetry.py:54 Step 'primary_step' failed, attempting fallback
 WARNING  flujo:telemetry.py:54 Step 'fallback_step' agent execution attempt 1 failed: Primary failed
-WARNING  flujo:telemetry.py:54 Step 'fallback_step' agent execution attempt 2 failed: 
+WARNING  flujo:telemetry.py:54 Step 'fallback_step' agent execution attempt 2 failed:
 ERROR    flujo:telemetry.py:54 Step 'fallback_step' agent failed after 3 attempts
 __________ TestExecutorCoreFallback.test_fallback_with_cache_backend ___________
 [gw0] darwin -- Python 3.11.0 /Users/alvaro/Documents/Code/flujo/.venv/bin/python3
@@ -671,7 +671,7 @@ E    +  where False = StepResult(name='fallback_step', output=None, success=Fals
 2025-08-05 14:57:06,276 - flujo - WARNING - Step 'primary_step' agent execution attempt 2 failed: Primary failed
 2025-08-05 14:57:06,276 - flujo - INFO - Step 'primary_step' failed, attempting fallback
 2025-08-05 14:57:06,276 - flujo - WARNING - Step 'fallback_step' agent execution attempt 1 failed: Primary failed
-2025-08-05 14:57:06,276 - flujo - WARNING - Step 'fallback_step' agent execution attempt 2 failed: 
+2025-08-05 14:57:06,276 - flujo - WARNING - Step 'fallback_step' agent execution attempt 2 failed:
 ----------------------------- Captured stderr call -----------------------------
 2025-08-05 14:57:06,276 - flujo - ERROR - Step 'primary_step' agent failed after 3 attempts
 2025-08-05 14:57:06,276 - flujo - ERROR - Step 'fallback_step' agent failed after 3 attempts
@@ -681,14 +681,14 @@ WARNING  flujo:telemetry.py:54 Step 'primary_step' agent execution attempt 2 fai
 ERROR    flujo:telemetry.py:54 Step 'primary_step' agent failed after 3 attempts
 INFO     flujo:telemetry.py:54 Step 'primary_step' failed, attempting fallback
 WARNING  flujo:telemetry.py:54 Step 'fallback_step' agent execution attempt 1 failed: Primary failed
-WARNING  flujo:telemetry.py:54 Step 'fallback_step' agent execution attempt 2 failed: 
+WARNING  flujo:telemetry.py:54 Step 'fallback_step' agent execution attempt 2 failed:
 ERROR    flujo:telemetry.py:54 Step 'fallback_step' agent failed after 3 attempts
 _______ TestExecutorCoreFallback.test_fallback_integration_real_pipeline _______
 [gw0] darwin -- Python 3.11.0 /Users/alvaro/Documents/Code/flujo/.venv/bin/python3
 tests/application/core/test_executor_core_fallback.py:1450: in test_fallback_integration_real_pipeline
     assert result.output == "fallback success"
 E   AssertionError: assert 'primary success' == 'fallback success'
-E     
+E
 E     - fallback success
 E     + primary success
 ----------------------------- Captured stdout call -----------------------------
@@ -726,7 +726,7 @@ _________ TestExecutorCoreFallback.test_fallback_on_validator_failure __________
 tests/application/core/test_executor_core_fallback.py:1580: in test_fallback_on_validator_failure
     assert result.output == "fallback success"
 E   AssertionError: assert 'processed: primary success' == 'fallback success'
-E     
+E
 E     - fallback success
 E     + processed: primary success
 ----------------------------- Captured stdout call -----------------------------
@@ -922,7 +922,7 @@ ________________________ test_pause_and_resume_in_loop _________________________
 tests/integration/test_agentic_loop_recipe.py:101: in test_pause_and_resume_in_loop
     assert ctx.scratchpad["status"] == "paused"
 E   AssertionError: assert 'failed' == 'paused'
-E     
+E
 E     - paused
 E     + failed
 ----------------------------- Captured stdout call -----------------------------
@@ -1149,7 +1149,7 @@ ______________________ test_loop_step_fallback_continues _______________________
 tests/integration/test_caching_and_fallbacks.py:135: in test_loop_step_fallback_continues
     assert sr.success is True
 E   AssertionError: assert False is True
-E    +  where False = StepResult(name='loop', output=PluginOutcome(success=True, feedback=None, redirect_to=None, new_solution=None), succes...led'}, hitl_history=[], command_log=[]), metadata_={'iterations': 2, 'exit_reason': 'max_iterations'}, step_history=[]).success
+E    +  where False = StepResult(name='loop', output=PluginOutcome(success=True, feedback=None, redirect_to=None, new_solution=None), success...led'}, hitl_history=[], command_log=[]), metadata_={'iterations': 2, 'exit_reason': 'max_iterations'}, step_history=[]).success
 ----------------------------- Captured stdout call -----------------------------
 [KIRO DEBUG] === HANDLE LOOP STEP === loop
 2025-08-05 14:57:07,452 - flujo - INFO - LoopStep 'loop': Starting Iteration 1/2
@@ -1595,7 +1595,7 @@ _____________________ test_fallback_with_complex_metadata ______________________
 tests/unit/test_fallback_edge_cases.py:435: in test_fallback_with_complex_metadata
     assert sr.metadata_["original_error"] == "complex failed"
 E   AssertionError: assert 'Plugin valid...omplex failed' == 'complex failed'
-E     
+E
 E     - complex failed
 E     + Plugin validation failed: complex failed
 ----------------------------- Captured stdout call -----------------------------
@@ -2628,7 +2628,7 @@ _____________________ test_prompt_processor_modifies_input _____________________
 tests/integration/test_processors.py:51: in test_prompt_processor_modifies_input
     assert agent.inputs[0] == "hello world"
 E   AssertionError: assert 'hello' == 'hello world'
-E     
+E
 E     - hello world
 E     + hello
 ----------------------------- Captured stdout call -----------------------------
@@ -3577,9 +3577,9 @@ ___________ test_pipeline_handles_streaming_agent_failure_gracefully ___________
 tests/integration/test_streaming_pipeline.py:101: in test_pipeline_handles_streaming_agent_failure_gracefully
     assert collected == ["H", "e", "l"]
 E   AssertionError: assert ['H', 'e', 'l...'e', 'l', ...] == ['H', 'e', 'l']
-E     
+E
 E     Left contains 6 more items, first extra item: 'H'
-E     
+E
 E     Full diff:
 E       [
 E           'H',
@@ -3708,7 +3708,7 @@ tests/unit/test_ultra_executor_v2.py:341: in test_agent_id_stability
     assert key1 == key2  # Same config should produce same key
     ^^^^^^^^^^^^^^^^^^^
 E   AssertionError: assert '2770702b9b25...7f7e243a064d1' == 'a512b2dc57c1...07a66a56c57d9'
-E     
+E
 E     - a512b2dc57c11187373b2ff49ab710aad1d94fee4a8602f9e9507a66a56c57d9
 E     + 2770702b9b25191adf2b2fe8356cde7536c87244bd87747b0c37f7e243a064d1
 ____________ TestBackwardCompatibility.test_execute_step_signature _____________
@@ -3745,7 +3745,7 @@ _____________________ test_golden_transcript_agentic_loop ______________________
 tests/e2e/test_golden_transcript_agentic_loop.py:124: in test_golden_transcript_agentic_loop
     assert final_context.scratchpad.get("status") == "paused"
 E   AssertionError: assert 'failed' == 'paused'
-E     
+E
 E     - paused
 E     + failed
 ----------------------------- Captured stdout call -----------------------------
@@ -3775,8 +3775,8 @@ E     + failed
 [DEBUG] No new items to add to list field: hitl_history
 [DEBUG] Skipping excluded field: command_log
 [DEBUG] Processing field: final_state
-[DEBUG] current_value: 
-[DEBUG] actual_source_value: 
+[DEBUG] current_value:
+[DEBUG] actual_source_value:
 [DEBUG] Field unchanged: final_state
 [DEBUG] Total fields updated: 0
 [DEBUG] Validation errors: []
@@ -4152,8 +4152,8 @@ E    +  where False = StepResult(name='error_loop', output=None, success=False, 
 [DEBUG] actual_source_value: 0
 [DEBUG] Field unchanged: accumulated_value
 [DEBUG] Processing field: loop_exit_reason
-[DEBUG] current_value: 
-[DEBUG] actual_source_value: 
+[DEBUG] current_value:
+[DEBUG] actual_source_value:
 [DEBUG] Field unchanged: loop_exit_reason
 [DEBUG] Processing field: final_state
 [DEBUG] current_value: {}
@@ -4196,8 +4196,8 @@ E    +  where False = StepResult(name='error_loop', output=None, success=False, 
 [DEBUG] actual_source_value: 0
 [DEBUG] Field unchanged: accumulated_value
 [DEBUG] Processing field: loop_exit_reason
-[DEBUG] current_value: 
-[DEBUG] actual_source_value: 
+[DEBUG] current_value:
+[DEBUG] actual_source_value:
 [DEBUG] Field unchanged: loop_exit_reason
 [DEBUG] Processing field: final_state
 [DEBUG] current_value: {}
@@ -4220,9 +4220,9 @@ ___________________________ test_map_over_sequential ___________________________
 tests/integration/test_map_over_step.py:28: in test_map_over_sequential
     assert result.step_history[-1].output == [2, 4, 6]
 E   assert [2] == [2, 4, 6]
-E     
+E
 E     Right contains 2 more items, first extra item: 4
-E     
+E
 E     Full diff:
 E       [
 E           2,
@@ -4253,9 +4253,9 @@ ____________________________ test_map_over_parallel ____________________________
 tests/integration/test_map_over_step.py:43: in test_map_over_parallel
     assert result.step_history[-1].output == [0, 1, 2, 3]
 E   assert [0] == [0, 1, 2, 3]
-E     
+E
 E     Right contains 3 more items, first extra item: 1
-E     
+E
 E     Full diff:
 E       [
 E           0,
@@ -4287,9 +4287,9 @@ ______________________ test_map_over_reusable_after_empty ______________________
 tests/integration/test_map_over_step.py:81: in test_map_over_reusable_after_empty
     assert second.step_history[-1].output == [6, 8]
 E   assert [6] == [6, 8]
-E     
+E
 E     Right contains one more item: 8
-E     
+E
 E     Full diff:
 E       [
 E           6,
@@ -4334,9 +4334,9 @@ ________________________ test_map_over_concurrent_runs _________________________
 tests/integration/test_map_over_step.py:98: in test_map_over_concurrent_runs
     assert r1.step_history[-1].output == [2, 4]
 E   assert [2] == [2, 4]
-E     
+E
 E     Right contains one more item: 4
-E     
+E
 E     Full diff:
 E       [
 E           2,
@@ -4865,10 +4865,10 @@ FAILED tests/application/core/test_executor_core_loop_step_migration.py::TestLoo
 FAILED tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_handle_loop_step_cost_limits - Failed: DID NOT RAISE <class 'flujo.exceptions.UsageLimitExceededError'>
 FAILED tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_handle_loop_step_token_limits - Failed: DID NOT RAISE <class 'flujo.exceptions.UsageLimitExceededError'>
 FAILED tests/application/core/test_executor_core_conditional_step.py::TestExecutorCoreConditionalStep::test_handle_conditional_step_signature - AssertionError: assert ['step', 'dat..._setter', ...] == ['conditional...ntext_setter']
-  
+
   At index 0 diff: 'step' != 'conditional_step'
   Left contains one more item: 'fallback_depth'
-  
+
   Full diff:
     [
   -     'conditional_step',
@@ -4883,7 +4883,7 @@ FAILED tests/application/core/test_executor_core_conditional_step.py::TestExecut
 FAILED tests/application/core/test_executor_core_conditional_step.py::TestExecutorCoreConditionalStep::test_handle_conditional_step_parameter_passing - AssertionError: assert ExecutionFrame(step=<Mock spec='Step' id='4616419856'>, data='test_data', context=<Mock id='4616407248'>, resources=<M... stream=False, on_chunk=None, breach_event=None, context_setter=<Mock id='4616410128'>, result=None, _fallback_depth=0) == <Mock spec='Step' id='4616419856'>
 FAILED tests/application/core/test_executor_core_conditional_step.py::TestExecutorCoreConditionalStep::test_handle_conditional_step_with_limits_and_context_setter - AssertionError: Expected 'mock' to have been called once. Called 0 times.
 FAILED tests/application/core/test_executor_core_conditional_step.py::TestExecutorCoreConditionalStep::test_handle_conditional_step_integration_with_execute_complex_step - AssertionError: assert 'test_agent' == 'test_conditional'
-  
+
   - test_conditional
   + test_agent
 FAILED tests/application/core/test_executor_core_conditional_step_dispatch.py::TestExecutorCoreConditionalStepDispatch::test_execute_complex_step_conditionalstep_telemetry_logging - assert False
@@ -4908,9 +4908,9 @@ FAILED tests/application/core/test_executor_core_fallback.py::TestExecutorCoreFa
 FAILED tests/application/core/test_executor_core_fallback.py::TestExecutorCoreFallback::test_fallback_with_multiple_retries - AssertionError: assert 4 == 5
  +  where 4 = StepResult(name='fallback_step', output='fallback success', success=True, attempts=4, latency_s=0.10023279199376703, t...riggered': True, 'original_error': 'Agent execution failed with Exception: Primary failed attempt 3'}, step_history=[]).attempts
 FAILED tests/application/core/test_executor_core_fallback.py::TestExecutorCoreFallback::test_fallback_with_usage_meter_tracking - assert (0.1, 10, 5) == (0.0, 0, 1)
-  
+
   At index 0 diff: 0.1 != 0.0
-  
+
   Full diff:
     (
   -     0.0,
@@ -4934,12 +4934,12 @@ FAILED tests/application/core/test_executor_core_fallback.py::TestExecutorCoreFa
 FAILED tests/application/core/test_executor_core_fallback.py::TestExecutorCoreFallback::test_fallback_with_telemetry - AssertionError: assert False is True
  +  where False = StepResult(name='fallback_step', output=None, success=False, attempts=6, latency_s=0.0005385010153986514, token_counts...fallback_triggered': True, 'original_error': 'Agent execution failed with Exception: Primary failed'}, step_history=[]).success
 FAILED tests/application/core/test_executor_core_fallback.py::TestExecutorCoreFallback::test_fallback_integration_real_pipeline - AssertionError: assert 'primary success' == 'fallback success'
-  
+
   - fallback success
   + primary success
 FAILED tests/application/core/test_executor_core_fallback.py::TestExecutorCoreFallback::test_fallback_on_plugin_failure - AttributeError: 'StepResult' object has no attribute 'metadata'
 FAILED tests/application/core/test_executor_core_fallback.py::TestExecutorCoreFallback::test_fallback_on_validator_failure - AssertionError: assert 'processed: primary success' == 'fallback success'
-  
+
   - fallback success
   + processed: primary success
 FAILED tests/application/core/test_executor_core_fallback.py::TestExecutorCoreFallback::test_fallback_on_complex_failure_chain - TypeError: argument of type 'NoneType' is not iterable
@@ -4956,7 +4956,7 @@ FAILED tests/integration/test_dynamic_router_with_context_updates.py::test_dynam
 FAILED tests/integration/test_embedding_cost_integration.py::TestEmbeddingCostIntegration::test_embedding_cost_tracking_strict_mode_failure - Failed: DID NOT RAISE <class 'flujo.exceptions.PricingNotConfiguredError'>
 FAILED tests/integration/test_embedding_regression.py::TestEmbeddingRegression::test_strict_mode_behavior_unchanged - Failed: DID NOT RAISE <class 'flujo.exceptions.PricingNotConfiguredError'>
 FAILED tests/integration/test_agentic_loop_recipe.py::test_pause_and_resume_in_loop - AssertionError: assert 'failed' == 'paused'
-  
+
   - paused
   + failed
 FAILED tests/integration/test_executor_core_architecture_validation.py::TestComponentIntegration::test_component_interface_optimization - AssertionError: Serializer should be called
@@ -4982,7 +4982,7 @@ name
 FAILED tests/integration/test_parallel_step_enhancements.py::test_context_include_keys_isolation - AttributeError: 'LargeContext' object has no attribute 'initial_prompt'
 FAILED tests/integration/test_caching_and_fallbacks.py::test_caching_pipeline_speed_and_hits - AssertionError: assert ({'cache_hit': True} is None or 'cache_hit' not in {'cache_hit': True})
 FAILED tests/integration/test_caching_and_fallbacks.py::test_loop_step_fallback_continues - AssertionError: assert False is True
- +  where False = StepResult(name='loop', output=PluginOutcome(success=True, feedback=None, redirect_to=None, new_solution=None), succes...led'}, hitl_history=[], command_log=[]), metadata_={'iterations': 2, 'exit_reason': 'max_iterations'}, step_history=[]).success
+ +  where False = StepResult(name='loop', output=PluginOutcome(success=True, feedback=None, redirect_to=None, new_solution=None), success...led'}, hitl_history=[], command_log=[]), metadata_={'iterations': 2, 'exit_reason': 'max_iterations'}, step_history=[]).success
 FAILED tests/integration/test_validation_persistence.py::test_persist_feedback_and_results - assert ([])
  +  where [] = Ctx(feedback_history=[], validation_history=[]).feedback_history
 FAILED tests/integration/test_validation_persistence.py::test_persist_results_on_success - assert 0 == 1
@@ -5026,7 +5026,7 @@ FAILED tests/unit/test_fallback_edge_cases.py::test_fallback_with_high_cost_agen
 FAILED tests/unit/test_fallback_edge_cases.py::test_fallback_with_negative_metrics - AssertionError: assert -0.2 == -0.1
  +  where -0.2 = StepResult(name='fb', output='negative', success=True, attempts=2, latency_s=0.00022316598667204381, token_counts=-10,... metadata_={'fallback_triggered': True, 'original_error': 'Plugin validation failed: primary failed'}, step_history=[]).cost_usd
 FAILED tests/unit/test_fallback_edge_cases.py::test_fallback_with_complex_metadata - AssertionError: assert 'Plugin valid...omplex failed' == 'complex failed'
-  
+
   - complex failed
   + Plugin validation failed: complex failed
 FAILED tests/integration/test_parallel_step_enhancements.py::test_context_include_keys_with_nonexistent_fields - AttributeError: 'LargeContext' object has no attribute 'initial_prompt'
@@ -5049,7 +5049,7 @@ FAILED tests/integration/test_pipeline_runner.py::test_timeout_and_redirect_loop
 FAILED tests/integration/test_pipeline_runner_with_resources.py::test_resources_passed_to_plugin - assert False
  +  where False = StepResult(name='plugin_step', output='queried_products', success=False, attempts=1, latency_s=-334744522224296.5, tok....validate() missing 1 required keyword-only argument: 'resources'", branch_context=None, metadata_={}, step_history=[]).success
 FAILED tests/integration/test_processors.py::test_prompt_processor_modifies_input - AssertionError: assert 'hello' == 'hello world'
-  
+
   - hello world
   + hello
 FAILED tests/integration/test_processors.py::test_processor_receives_context - AssertionError: assert False
@@ -5075,9 +5075,9 @@ FAILED tests/integration/test_stateful_hitl.py::test_stateful_hitl_resume - KeyE
 FAILED tests/integration/test_streaming_pipeline.py::test_non_streaming_pipeline - AssertionError: assert 2 == 1
  +  where 2 = len(['ok', PipelineResult(step_history=[StepResult(name='solution', output='ok', success=True, attempts=1, latency_s=0.000...'latency_s': 0.000252834, 'cost_usd': 0.0, 'token_counts': 1}, children=[], status='completed')], status='completed'))])
 FAILED tests/integration/test_streaming_pipeline.py::test_pipeline_handles_streaming_agent_failure_gracefully - AssertionError: assert ['H', 'e', 'l...'e', 'l', ...] == ['H', 'e', 'l']
-  
+
   Left contains 6 more items, first extra item: 'H'
-  
+
   Full diff:
     [
         'H',
@@ -5104,13 +5104,13 @@ FAILED tests/unit/test_ultra_executor_cumulative_limits.py::TestUltraExecutorCum
 FAILED tests/unit/test_ultra_executor_cumulative_limits.py::TestUltraExecutorCumulativeLimits::test_usage_tracker_zero_limits - AttributeError: '_UsageTracker' object has no attribute 'get_current_totals'
 FAILED tests/unit/test_ultra_executor_cumulative_limits.py::TestUltraExecutorCumulativeLimits::test_usage_tracker_precision_handling - AttributeError: '_UsageTracker' object has no attribute 'get_current_totals'
 FAILED tests/unit/test_ultra_executor_v2.py::TestCacheKeyGeneration::test_agent_id_stability - AssertionError: assert '2770702b9b25...7f7e243a064d1' == 'a512b2dc57c1...07a66a56c57d9'
-  
+
   - a512b2dc57c11187373b2ff49ab710aad1d94fee4a8602f9e9507a66a56c57d9
   + 2770702b9b25191adf2b2fe8356cde7536c87244bd87747b0c37f7e243a064d1
 FAILED tests/unit/test_ultra_executor_v2.py::TestBackwardCompatibility::test_execute_step_signature - TypeError: unsupported operand type(s) for +: 'Mock' and 'int'
 FAILED tests/unit/test_ultra_executor_v2.py::TestErrorHandling::test_usage_limit_exception_propagation - Failed: DID NOT RAISE <class 'flujo.exceptions.UsageLimitExceededError'>
 FAILED tests/e2e/test_golden_transcript_agentic_loop.py::test_golden_transcript_agentic_loop - AssertionError: assert 'failed' == 'paused'
-  
+
   - paused
   + failed
 FAILED tests/e2e/test_golden_transcript_dynamic_parallel.py::test_golden_transcript_dynamic_parallel - AssertionError: assert 0 == 1
@@ -5135,9 +5135,9 @@ FAILED tests/integration/test_loop_step_execution.py::test_loop_step_error_loggi
 FAILED tests/integration/test_loop_with_context_updates.py::test_loop_with_context_updates_error_handling - AssertionError: assert False is True
  +  where False = StepResult(name='error_loop', output=None, success=False, attempts=2, latency_s=0.0011529590119607747, token_counts=0,...reason='', final_state={}), metadata_={'iterations': 2, 'exit_reason': 'condition_with_body_failure'}, step_history=[]).success
 FAILED tests/integration/test_map_over_step.py::test_map_over_sequential - assert [2] == [2, 4, 6]
-  
+
   Right contains 2 more items, first extra item: 4
-  
+
   Full diff:
     [
         2,
@@ -5145,9 +5145,9 @@ FAILED tests/integration/test_map_over_step.py::test_map_over_sequential - asser
   -     6,
     ]
 FAILED tests/integration/test_map_over_step.py::test_map_over_parallel - assert [0] == [0, 1, 2, 3]
-  
+
   Right contains 3 more items, first extra item: 1
-  
+
   Full diff:
     [
         0,
@@ -5156,18 +5156,18 @@ FAILED tests/integration/test_map_over_step.py::test_map_over_parallel - assert 
   -     3,
     ]
 FAILED tests/integration/test_map_over_step.py::test_map_over_reusable_after_empty - assert [6] == [6, 8]
-  
+
   Right contains one more item: 8
-  
+
   Full diff:
     [
         6,
   -     8,
     ]
 FAILED tests/integration/test_map_over_step.py::test_map_over_concurrent_runs - assert [2] == [2, 4]
-  
+
   Right contains one more item: 4
-  
+
   Full diff:
     [
         2,

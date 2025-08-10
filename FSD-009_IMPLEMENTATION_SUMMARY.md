@@ -15,7 +15,7 @@ Successfully implemented FSD-009 to establish `flujo/utils/serialization.py` as 
   - `model_dump_json()` uses unified `serialize_to_json()`
   - Mode-specific circular reference handling ("default" vs "cache")
 
-### ✅ 2. Comprehensive Serialization Utilities 
+### ✅ 2. Comprehensive Serialization Utilities
 - **File**: `flujo/utils/serialization.py`
 - **Achievement**: Complete unified system with:
   - Global custom serializer registry (`register_custom_serializer`)
@@ -25,7 +25,7 @@ Successfully implemented FSD-009 to establish `flujo/utils/serialization.py` as 
   - Specialized BaseModel serialization (`safe_serialize_basemodel`)
 
 ### ✅ 3. Performance-Optimized Serializers Unified
-- **Files**: 
+- **Files**:
   - `flujo/application/core/ultra_executor.py` (OrjsonSerializer)
   - `flujo/application/core/algorithm_optimizations.py` (OptimizedSerializer)
   - `flujo/application/core/optimization/performance/algorithms.py`

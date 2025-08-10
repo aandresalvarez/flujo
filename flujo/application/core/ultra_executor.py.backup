@@ -157,7 +157,7 @@ from .step_policies import (
 class ExecutorCore(Generic[TContext_w_Scratch]):
     """
     Ultra-optimized step executor with modular, policy-driven architecture.
-    
+
     This implementation provides:
     - Consistent step routing in the main execute() method
     - Proper _execute_agent_step with separated try-catch blocks for validators, plugins, and agents
@@ -228,7 +228,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             raise ValueError("cache_ttl must be non-negative")
         if concurrency_limit is not None and concurrency_limit <= 0:
             raise ValueError("concurrency_limit must be positive if specified")
-            
+
         self._agent_runner = agent_runner or DefaultAgentRunner()
         self._processor_pipeline = processor_pipeline or DefaultProcessorPipeline()
         self._validator_runner = validator_runner or DefaultValidatorRunner()
@@ -239,15 +239,15 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         self._enable_cache = enable_cache
         self._step_history_so_far: list[StepResult] = []
         self._concurrency_limit = concurrency_limit
-        
+
         # Store additional components for compatibility
         self._serializer = serializer or OrjsonSerializer()
         self._hasher = hasher or Blake3Hasher()
         self._cache_key_generator = cache_key_generator or DefaultCacheKeyGenerator(self._hasher)
-        
+
         self._cache_locks: Dict[str, asyncio.Lock] = {}
         self._cache_locks_lock = asyncio.Lock()
-        
+
         # Assign policies
         self.timeout_runner = timeout_runner or DefaultTimeoutRunner()
         self.unpacker = unpacker or DefaultAgentResultUnpacker()
@@ -261,19 +261,19 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         self.dynamic_router_step_executor = dynamic_router_step_executor or DefaultDynamicRouterStepExecutor()
         self.hitl_step_executor = hitl_step_executor or DefaultHitlStepExecutor()
         self.cache_step_executor = cache_step_executor or DefaultCacheStepExecutor()
-        
+
     @property
     def cache(self) -> _LRUCache:
         """Get the cache instance."""
         if not hasattr(self, '_cache'):
             self._cache = _LRUCache(max_size=self._concurrency_limit * 100, ttl=3600)
         return self._cache
-        
+
     def clear_cache(self):
         """Clear the cache."""
         if hasattr(self, '_cache'):
             self._cache.clear()
-        
+
     def _cache_key(self, frame: Any) -> str:
         """Generate cache key for a frame."""
         if not self._enable_cache:
@@ -281,7 +281,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         return self._cache_key_generator.generate_key(
             frame.step, frame.data, frame.context, getattr(frame, 'resources', None)
         )
-        
+
     def _hash_obj(self, obj: Any) -> str:
         """Hash an object for cache key generation."""
         if obj is None:
@@ -302,25 +302,25 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
     def _isolate_context(self, context: Optional[TContext_w_Scratch]) -> Optional[TContext_w_Scratch]:
         """
         Create isolated context copy for branch execution.
-        
+
         Args:
             context: The context to isolate
-            
+
         Returns:
             Isolated context copy or None if input is None
         """
         if context is None:
             return None
-            
+
         import copy
         try:
             # Deep copy the context to ensure complete isolation
             isolated_context = copy.deepcopy(context)
-            
+
             # Ensure scratchpad is also deep copied if it exists
             if hasattr(isolated_context, 'scratchpad') and hasattr(context, 'scratchpad'):
                 isolated_context.scratchpad = copy.deepcopy(context.scratchpad)
-                
+
             return isolated_context
         except Exception as e:
             # Fallback to shallow copy if deep copy fails
@@ -329,19 +329,19 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             except Exception:
                 # Last resort: return original (risky but better than crashing)
                 return context
-    
+
     def _merge_context_updates(
-        self, 
-        main_context: Optional[TContext_w_Scratch], 
+        self,
+        main_context: Optional[TContext_w_Scratch],
         branch_context: Optional[TContext_w_Scratch]
     ) -> Optional[TContext_w_Scratch]:
         """
         Merge branch context updates back to main context using safe_merge_context_updates.
-        
+
         Args:
             main_context: The main context to update
             branch_context: The branch context with updates
-            
+
         Returns:
             Updated main context or None if both inputs are None
         """
@@ -351,9 +351,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             return branch_context
         elif branch_context is None:
             return main_context
-            
+
         from ...utils.context import safe_merge_context_updates
-        
+
         try:
             # Use safe_merge_context_updates for proper merging
             success = safe_merge_context_updates(main_context, branch_context)
@@ -364,19 +364,19 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 try:
                     # Create a new context of the same type
                     new_context = type(main_context)(initial_prompt=main_context.initial_prompt)
-                    
+
                     # Copy all fields from main context
                     for field_name in dir(main_context):
                         if not field_name.startswith('_'):
                             if hasattr(main_context, field_name):
                                 setattr(new_context, field_name, getattr(main_context, field_name))
-                    
+
                     # Update with branch context values
                     for field_name in dir(branch_context):
                         if not field_name.startswith('_'):
                             if hasattr(branch_context, field_name):
                                 setattr(new_context, field_name, getattr(branch_context, field_name))
-                    
+
                     return new_context
                 except Exception as manual_error:
                     # Final fallback to branch context
@@ -390,19 +390,19 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 if hasattr(self._telemetry, 'logfire'):
                     self._telemetry.logfire.error(f"Context merge failed: {e}")
             return branch_context
-    
+
     def _accumulate_loop_context(
-        self, 
+        self,
         current_context: Optional[TContext_w_Scratch],
         iteration_context: Optional[TContext_w_Scratch]
     ) -> Optional[TContext_w_Scratch]:
         """
         Accumulate context changes across loop iterations.
-        
+
         Args:
             current_context: The current accumulated context
             iteration_context: The context from the current iteration
-            
+
         Returns:
             Accumulated context
         """
@@ -410,29 +410,29 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             return iteration_context
         elif iteration_context is None:
             return current_context
-            
+
         # For loop iterations, we want to accumulate changes
         # Use the merge function to combine contexts
         merged_context = self._merge_context_updates(current_context, iteration_context)
-        
+
         # Accumulate context changes using safe_merge_context_updates
         return merged_context
-    
+
     def _update_context_state(
-        self, 
-        context: Optional[TContext_w_Scratch], 
+        self,
+        context: Optional[TContext_w_Scratch],
         state: str
     ) -> None:
         """
         Update context state for proper lifecycle management.
-        
+
         Args:
             context: The context to update
             state: The new state ('running', 'paused', 'completed', 'failed')
         """
         if context is None:
             return
-            
+
         try:
             # Update scratchpad with state information
             if hasattr(context, 'scratchpad'):
@@ -448,25 +448,25 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 else:
                     # Fallback for telemetry without logfire
                     pass
-    
+
     def _preserve_branch_modifications(
-        self, 
+        self,
         main_context: Optional[TContext_w_Scratch],
         branch_result: StepResult
     ) -> Optional[TContext_w_Scratch]:
         """
         Preserve modifications from successful branches.
-        
+
         Args:
             main_context: The main context
             branch_result: The result from a branch execution
-            
+
         Returns:
             Updated main context with branch modifications
         """
         if branch_result.branch_context is None:
             return main_context
-            
+
         # Only preserve modifications from successful branches
         if branch_result.success:
             return self._merge_context_updates(main_context, branch_result.branch_context)
@@ -485,7 +485,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         # Handle both old and new signatures
         # Old signature: execute(step, data, context, resources, limits, ...)
         # New signature: execute(frame, step, data, context, resources, limits, ...)
-        
+
         # Extract parameters based on signature
         if len(args) >= 2 and not hasattr(args[0], 'step'):
             # Old signature: execute(step, data, ...)
@@ -520,7 +520,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             # Handle Mock objects in _fallback_depth
             if hasattr(_fallback_depth, '_mock_name'):
                 _fallback_depth = 0
-            
+
             if frame is not None:
                 if hasattr(frame, 'step'):
                     # Extract parameters from the ExecutionFrame
@@ -538,10 +538,10 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     # Handle Mock objects in _fallback_depth
                     if hasattr(_fallback_depth, '_mock_name'):
                         _fallback_depth = 0
-        
+
         if step is None:
             raise ValueError("Step must be provided")
-        
+
         telemetry.logfire.debug("=== EXECUTOR CORE EXECUTE ===")
         telemetry.logfire.debug(f"Step type: {type(step)}")
         telemetry.logfire.debug(f"Step name: {getattr(step, 'name', 'unknown')}")
@@ -621,23 +621,23 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             result = await self.agent_step_executor.execute(
                 self, step, data, context, resources, limits, stream, on_chunk, cache_key, None, _fallback_depth
             )
-        
+
         # Finalization: do not re-apply processors for fallback results; fallback step execution owns all processing
 
         # Cache successful results (skip LoopStep/MapStep)
         if cache_key and self._enable_cache and result is not None and result.success and not isinstance(step, LoopStep) and not (isinstance(getattr(result, 'metadata_', None), dict) and result.metadata_.get('no_cache')):
             await self._cache_backend.put(cache_key, result, ttl_s=3600)  # 1 hour TTL
             telemetry.logfire.debug(f"Cached result for step: {step.name}")
-        
+
         return result
 
     # Backward compatibility method for old execute signature
     async def execute_old_signature(self, step: Any, data: Any, **kwargs) -> StepResult:
         """Backward compatibility method for old execute signature."""
         return await self.execute(step=step, data=data, **kwargs)
-    
 
-    
+
+
 
 
     async def execute_step(
@@ -660,7 +660,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         # Handle backward compatibility aliases
         if usage_limits is not None and limits is None:
             limits = usage_limits
-            
+
         return await self.execute(
             step=step,
             data=data,
@@ -693,27 +693,27 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         )
 
 
-        
+
         # --- 0. Fallback Loop Detection ---
         if _fallback_depth > self._MAX_FALLBACK_CHAIN_LENGTH:
             raise InfiniteFallbackError(f"Fallback chain length exceeded maximum of {self._MAX_FALLBACK_CHAIN_LENGTH}")
-        
+
         # Get current fallback chain and check for loops
         fallback_chain = self._fallback_chain.get([])
-        
+
         # Only add to chain if this is a fallback execution (depth > 0)
         if _fallback_depth > 0:
             if step in fallback_chain:
                 raise InfiniteFallbackError(f"Fallback loop detected: step '{step.name}' already in fallback chain")
-            
+
             # Add current step to fallback chain for loop detection
             new_chain = fallback_chain + [step]
             self._fallback_chain.set(new_chain)
-        
+
         # --- 0. Pre-execution Validation for Agent Steps ---
         if step.agent is None:
             raise MissingAgentError(f"Step '{step.name}' has no agent configured")
-        
+
         def _unpack_agent_result(output: Any) -> Any:
             """Unpack agent result if it's wrapped in a response object."""
             # Preserve Pydantic models directly
@@ -747,7 +747,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             # Use the globally imported Mock types
             if isinstance(obj, (Mock, MagicMock, AsyncMock)):
                 raise MockDetectionError(f"Step '{step.name}' returned a Mock object. This is usually due to an unconfigured mock in a test.")
-            
+
             # Only check direct Mock objects, not nested structures
             # This matches the test expectation that nested mocks should not be detected
 
@@ -768,7 +768,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 metadata_={},
                 step_history=[],
             )
-            
+
             start_time = time.monotonic()
             # Track primary (pre-fallback) token usage to add to fallback tokens per spec
             primary_tokens_total: int = 0
@@ -777,15 +777,15 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 max_retries = step.config.max_retries
             else:
                 max_retries = getattr(step, "max_retries", 2)
-            
+
             # Disable retries for streaming output to avoid duplicate chunks
             if stream:
                 max_retries = 0
-            
+
             # Handle Mock objects for max_retries
             if hasattr(max_retries, '_mock_name') or isinstance(max_retries, (Mock, MagicMock, AsyncMock)):
                 max_retries = 2  # Default value for Mock objects
-            
+
             # FSD-003: Implement idempotent context updates for step retries
             # Capture pristine context snapshot before any retry attempts
             total_attempts = max_retries + 1
@@ -794,13 +794,13 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 from flujo.application.core.context_manager import ContextManager
                 pre_attempt_context = ContextManager.isolate(context)
                 telemetry.logfire.info(f"[UltraExecutor] Creating pre-attempt context snapshot for step '{step.name}' (total_attempts={total_attempts})")
-            
+
             # FIXED: Use loop-based retry mechanism to avoid infinite recursion
             # max_retries = 2 means 1 initial + 2 retries = 3 total attempts
             for attempt in range(1, max_retries + 2):  # +2 because we want max_retries + 1 total attempts
                 result.attempts = attempt
                 telemetry.logfire.info(f"[UltraExecutor] _execute_simple_step attempt {attempt} for step '{step.name}'")
-                
+
                 # FSD-003: Per-attempt context isolation
                 # Each attempt (including the first) operates on a pristine copy when retries are possible
                 if total_attempts > 1 and pre_attempt_context is not None:
@@ -810,7 +810,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         telemetry.logfire.info(f"[UltraExecutor] Attempt {attempt}: attempt_context.branch_count={attempt_context.branch_count}, pre_attempt_context.branch_count={pre_attempt_context.branch_count}")
                 else:
                     attempt_context = context
-                
+
                 try:
                     # --- 1. Processor Pipeline (apply_prompt) ---
                     processed_data = data
@@ -818,7 +818,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         processed_data = await self._processor_pipeline.apply_prompt(
                             step.processors, data, context=attempt_context
                         )
-                    
+
                     # --- 2. Build sampling options from StepConfig ---
                     options = {}
                     cfg = getattr(step, "config", None)
@@ -829,7 +829,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             options["top_k"] = cfg.top_k
                         if getattr(cfg, "top_p", None) is not None:
                             options["top_p"] = cfg.top_p
-                    
+
                     # --- 3. Agent Execution (Inside Retry Loop) ---
                     agent_output = await self._agent_runner.run(
                         agent=step.agent,
@@ -841,11 +841,11 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         on_chunk=on_chunk,
                         breach_event=breach_event,
                     )
-                    
+
                     # --- 2.5. Mock Detection (Inside Retry Loop, Before Exception Handling) ---
                     if isinstance(agent_output, (Mock, MagicMock, AsyncMock)):
                         raise MockDetectionError(f"Step '{step.name}' returned a Mock object")
-                    
+
                     # Only check for mock objects at the top level, not in nested structures
                     # This allows test infrastructure to use mock objects in nested structures
                     def _detect_mock_objects_in_output(obj: Any) -> None:
@@ -854,10 +854,10 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         if isinstance(obj, (Mock, MagicMock, AsyncMock)):
                             raise MockDetectionError(f"Step '{step.name}' returned a Mock object")
                         # Do NOT check nested structures - this allows test infrastructure to use mock objects
-                    
+
                     # Perform mock detection in all environments for robust testing
                     _detect_mock_objects_in_output(agent_output)
-                    
+
                     # Extract usage metrics
                     from ...cost import extract_usage_metrics
                     prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
@@ -865,7 +865,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     )
                     result.cost_usd = cost_usd
                     result.token_counts = prompt_tokens + completion_tokens
-                    
+
                     # Track usage metrics
                     await self._usage_meter.add(cost_usd, prompt_tokens, completion_tokens)
                     primary_tokens_total += (prompt_tokens + completion_tokens)
@@ -876,9 +876,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             primary_first_cost = cost_usd
                         except Exception:
                             pass
-                    
+
                     # Usage governance check moved to after successful execution
-                    
+
                     # --- 3. Processor Pipeline (apply_output) ---
                     processed_output = agent_output
                     if hasattr(step, "processors") and step.processors:
@@ -914,7 +914,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             # If no fallback, escalate as PluginError
                             raise PluginError(str(e))
                         telemetry.logfire.info(f"Output processors finished for step '{step.name}'")
-                    
+
                     # --- Hybrid Plugin + Validator Check for validation steps ---
                     # Only run hybrid check for DSL-defined validation steps
                     meta = getattr(step, "meta", None)
@@ -981,7 +981,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             processed_output = processed_output.new_solution
                         # If any plugin produced a PluginOutcome.success=False earlier, we would have raised above
                         # Here, treat PluginOutcome.success=True but explicit failure signals as errors are already handled
-                    
+
                     # --- 5. Validator Runner (if validators exist) ---
                     # Gather validators from both the step and processors container for full compatibility
                     _validators: list[Any] = []
@@ -1003,7 +1003,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             validation_results = await self._validator_runner.validate(
                                 _validators, processed_output, context=context
                             )
-                            
+
                             # Check if any validation failed
                             failed_validations = [r for r in validation_results if not r.is_valid]
                             if failed_validations:
@@ -1025,11 +1025,11 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                                     telemetry.logfire.error(
                                         f"Step '{step.name}' validation attempt {attempt} failed after max retries: {failed_validations[0].feedback}"
                                     )
-                                    
+
                                     # --- 7. Fallback Logic for Validation Failure ---
                                     if hasattr(step, 'fallback_step') and step.fallback_step is not None:
                                         telemetry.logfire.info(f"Step '{step.name}' validation failed, attempting fallback")
-                                    
+
                                         # Check for fallback loop before executing
                                         if step.fallback_step in fallback_chain:
                                             raise InfiniteFallbackError(f"Fallback loop detected: step '{step.fallback_step.name}' already in fallback chain")
@@ -1080,7 +1080,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                                             return result
                                     # No fallback configured: return failure result
                                     return result
-                                    
+
                         except Exception as validation_error:
                             # Handle validation exceptions: fail fast if no fallback, otherwise retry then fallback
                             if not hasattr(step, 'fallback_step') or step.fallback_step is None:
@@ -1156,13 +1156,13 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                                     result.feedback = f"Original error: {result.feedback}; Fallback error: {fallback_error}"
                                     return result
                             return result
-                    
+
                     # --- 6. Success - Return Result ---
                     result.success = True
                     result.output = processed_output
                     result.latency_s = time.monotonic() - start_time
                     result.feedback = None  # None for successful runs
-                    
+
                     # FSD-003: Post-success context merge for ultra executor
                     # Only commit context changes if the step succeeds
                     if total_attempts > 1 and context is not None and attempt_context is not None and attempt_context is not context:
@@ -1172,7 +1172,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         telemetry.logfire.info(f"[UltraExecutor] Merged successful attempt {attempt} context back to main context")
                         if hasattr(context, 'branch_count'):
                             telemetry.logfire.info(f"[UltraExecutor] Context after merge: branch_count={context.branch_count}")
-                    
+
                     result.branch_context = context
 
                     # Optional fallback-on-success orchestration (disabled by default)
@@ -1231,14 +1231,14 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         telemetry.logfire.debug(f"Cached result for step: {step.name}")
 
                     return result
-                    
+
                 except MockDetectionError:
                     # MockDetectionError should be raised immediately - don't retry
                     raise
                 except PausedException:
                     # ✅ FLUJO BEST PRACTICE: Control Flow Exception Pattern
                     # CRITICAL: PausedException should NEVER be retried - it's a control flow signal
-                    # 
+                    #
                     # TASK 7 IMPLEMENTATION: Fix HITL State Handling in Loops
                     # Previously, PausedException from HITL steps (like AskHumanCommand) would be caught
                     # by the retry loop and treated as a failed attempt, causing loops to fail instead
@@ -1257,7 +1257,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     if isinstance(agent_error, (NonRetryableError, PricingNotConfiguredError)):
                         # Non-retryable errors should be raised immediately
                         raise agent_error
-                    
+
                     # Retry semantics for simple steps:
                     # - Retry agent and plugin failures
                     # - Do NOT retry validation failures
@@ -1281,13 +1281,13 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             result.feedback = f"Agent execution failed with {type(agent_error).__name__}: {str(agent_error)}"
                         result.output = None
                         result.latency_s = time.monotonic() - start_time
-                        
+
                         # FIXED: Usage Governance Integration - Check limits even on failure
                         if limits:
                             await self._usage_meter.guard(limits, step_history=[result])
-                    
+
                     telemetry.logfire.error(f"Step '{step.name}' agent failed after {result.attempts} attempts")
-                    
+
                     # FSD-003: For failed steps, return the attempt context from the last attempt
                     # This prevents context accumulation across retry attempts while preserving
                     # the effect of a single execution attempt
@@ -1301,15 +1301,15 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         result.branch_context = context
                         if hasattr(context, 'branch_count') if context else False:
                             telemetry.logfire.info(f"[UltraExecutor] FAILED: Using original context.branch_count = {context.branch_count}")
-                    
+
                     # --- 7. Fallback Logic ---
                     if hasattr(step, 'fallback_step') and step.fallback_step is not None:
                         telemetry.logfire.info(f"Step '{step.name}' failed, attempting fallback")
-                        
+
                         # Check for fallback loop before executing
                         if step.fallback_step in fallback_chain:
                             raise InfiniteFallbackError(f"Fallback loop detected: step '{step.fallback_step.name}' already in fallback chain")
-                        
+
                         try:
                             # Execute fallback step using public execute API
                             fallback_result = await self.execute(
@@ -1323,7 +1323,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                                 breach_event=breach_event,
                                 _fallback_depth=_fallback_depth + 1,
                             )
-                            
+
                             # Mark as fallback triggered and preserve original error
                             if fallback_result.metadata_ is None:
                                 fallback_result.metadata_ = {}
@@ -1341,7 +1341,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                                     fallback_result.cost_usd = (fallback_result.cost_usd or 0.0) + (primary_first_cost or 0.0)
                             except Exception:
                                 pass
-                            
+
                             if fallback_result.success:
                                 # On successful fallback, clear feedback per spec
                                 fallback_result.feedback = None
@@ -1358,15 +1358,15 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             # Return the original failure with fallback error info
                             result.feedback = f"Original error: {result.feedback}; Fallback error: {str(fallback_error)}"
                             return result
-                    
+
                     return result
-            
+
             # This should never be reached, but just in case
             result.success = False
             result.feedback = "Unexpected execution path"
             result.latency_s = time.monotonic() - start_time
             return result
-                
+
         except (
             PausedException,
             InfiniteFallbackError,
@@ -1383,17 +1383,17 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
 
 
 
-    
 
-    
 
-    
 
-    
 
-    
 
-    
+
+
+
+
+
+
     def _is_complex_step(self, step: Any) -> bool:
         """Check if step needs complex handling using an object-oriented approach.
 
@@ -1433,7 +1433,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
 
         telemetry.logfire.debug(f"Simple step detected: {step.name}")
         return False
-        
+
 
 
 
@@ -1565,13 +1565,13 @@ class DefaultValidatorRunner:
                     feedback = getattr(result, 'feedback', None)
                     if hasattr(feedback, '_mock_name'):  # It's a Mock object
                         feedback = None
-                    
+
                     validator_name = getattr(validator, 'name', None)
                     if hasattr(validator_name, '_mock_name'):  # It's a Mock object
                         validator_name = type(validator).__name__
                     elif validator_name is None:
                         validator_name = type(validator).__name__
-                    
+
                     validation_results.append(ValidationResult(
                         is_valid=result.is_valid,
                         feedback=feedback,
@@ -1592,7 +1592,7 @@ class DefaultValidatorRunner:
                     feedback=f"Validator {type(validator).__name__} failed: {e}",
                     validator_name=type(validator).__name__
                 ))
-        
+
         return validation_results
 
 
@@ -1626,11 +1626,11 @@ def _should_pass_resources_to_plugin(resources: Optional[Any], func: Callable[..
 
 class DefaultPluginRunner:
     """Default plugin runner implementation."""
-    
+
     async def run_plugins(self, plugins: List[tuple[Any, int]], data: Any, *, context: Any, resources: Optional[Any] = None) -> Any:
         """Run plugins and return processed data."""
         from ...domain.plugins import PluginOutcome
-        
+
         processed_data = data
         for plugin, priority in sorted(plugins, key=lambda x: x[1], reverse=True):
             try:
@@ -1640,7 +1640,7 @@ class DefaultPluginRunner:
                     plugin_kwargs["context"] = context
                 if _should_pass_resources_to_plugin(resources, plugin.validate):
                     plugin_kwargs["resources"] = resources
-                
+
                 # Call the plugin's validate method
                 result = await plugin.validate(processed_data, **plugin_kwargs)
 
@@ -1655,13 +1655,13 @@ class DefaultPluginRunner:
                     continue
                 else:
                     processed_data = result
-                    
+
             except Exception as e:
                 # Plugin execution failed - raise exception for step logic to handle
                 plugin_name = getattr(plugin, "name", type(plugin).__name__)
                 telemetry.logfire.error(f"Plugin {plugin_name} failed: {e}")
                 raise ValueError(f"Plugin {plugin_name} failed: {e}")
-        
+
         return processed_data
 
 
@@ -1679,32 +1679,32 @@ class OptimizationConfig:
         self.enable_optimized_error_handling = kwargs.get('enable_optimized_error_handling', True)
         self.enable_circuit_breaker = kwargs.get('enable_circuit_breaker', True)
         self.maintain_backward_compatibility = kwargs.get('maintain_backward_compatibility', True)
-        
+
         # Performance tuning parameters
         self.object_pool_max_size = kwargs.get('object_pool_max_size', 1000)
         self.telemetry_batch_size = kwargs.get('telemetry_batch_size', 100)
         self.cpu_usage_threshold_percent = kwargs.get('cpu_usage_threshold_percent', 80.0)
-        
+
         # Store any additional arguments
         for key, value in kwargs.items():
             if not hasattr(self, key):
                 setattr(self, key, value)
-    
+
     def validate(self):
         """Validate the configuration and return any issues."""
         issues = []
-        
+
         if self.object_pool_max_size <= 0:
             issues.append("object_pool_max_size must be positive")
-        
+
         if self.telemetry_batch_size <= 0:
             issues.append("telemetry_batch_size must be positive")
-        
+
         if not (0.0 <= self.cpu_usage_threshold_percent <= 100.0):
             issues.append("cpu_usage_threshold_percent must be between 0.0 and 100.0")
-        
+
         return issues
-    
+
     def to_dict(self):
         """Convert configuration to dictionary."""
         return {
@@ -1730,38 +1730,38 @@ class _LRUCache:
     _store: OrderedDict[str, tuple[StepResult, float]] = field(
         init=False, default_factory=OrderedDict
     )
-    
+
     def __post_init__(self):
         """Validate parameters."""
         if self.max_size <= 0:
             raise ValueError("max_size must be positive")
         if self.ttl < 0:
             raise ValueError("ttl must be non-negative")
-    
+
     def set(self, key: str, value: StepResult):
         """Set a value in the cache."""
         current_time = time.monotonic()
-        
+
         # Remove oldest entries if at capacity
         while len(self._store) >= self.max_size:
             self._store.popitem(last=False)
-        
+
         self._store[key] = (value, current_time)
         self._store.move_to_end(key)
-    
+
     def get(self, key: str) -> Optional[StepResult]:
         """Get a value from the cache."""
         if key not in self._store:
             return None
-        
+
         value, timestamp = self._store[key]
         current_time = time.monotonic()
-        
+
         # Check TTL (0 means never expire)
         if self.ttl > 0 and current_time - timestamp > self.ttl:
             del self._store[key]
             return None
-        
+
         # Move to end (most recently used)
         self._store.move_to_end(key)
         return value
@@ -1774,14 +1774,14 @@ class _UsageTracker:
     prompt_tokens: int = 0
     completion_tokens: int = 0
     _lock: asyncio.Lock = field(init=False, default_factory=asyncio.Lock)
-    
+
     async def add(self, cost_usd: float, tokens: int):
         """Add usage to the tracker."""
         async with self._lock:
             self.total_cost_usd += cost_usd
             self.prompt_tokens += tokens
             self.completion_tokens += 0  # Default to 0 for backward compatibility
-            
+
     async def guard(self, limits: UsageLimits):
         """Check if current usage exceeds limits."""
         async with self._lock:
@@ -1794,7 +1794,7 @@ class _UsageTracker:
     async def snapshot(self) -> tuple[float, int, int]:
         async with self._lock:
             return self.total_cost_usd, self.prompt_tokens, self.completion_tokens
-    
+
     async def get_current_totals(self) -> tuple[float, int]:
         """Return current cost and token totals for backward compatibility with tests."""
         async with self._lock:
@@ -2126,7 +2126,7 @@ class DefaultAgentRunner:
 
         # Build filtered kwargs based on function signature
         filtered_kwargs: Dict[str, Any] = {}
-        
+
         # For mocks, pass all parameters
         if isinstance(executable_func, (Mock, MagicMock, AsyncMock)):
             filtered_kwargs.update(options)
@@ -2140,7 +2140,7 @@ class DefaultAgentRunner:
             # For real functions, analyze signature
             try:
                 spec = analyze_signature(executable_func)
-                
+
                 # Add context if the function accepts it
                 if _should_pass_context(spec, context, executable_func):
                     filtered_kwargs["context"] = context
@@ -2180,7 +2180,7 @@ class DefaultAgentRunner:
                         chunks.append(chunk)
                         if on_chunk is not None:
                             await on_chunk(chunk)
-                    
+
                     # Return concatenated result based on chunk types
                     if chunks:
                         if all(isinstance(chunk, str) for chunk in chunks):
@@ -2193,7 +2193,7 @@ class DefaultAgentRunner:
                     else:
                         # Empty stream
                         return "" if on_chunk is None else chunks
-                        
+
                 elif inspect.iscoroutinefunction(executable_func):
                     # It's a regular async function. Await it to get the result.
                     result = await executable_func(payload, **filtered_kwargs)
@@ -2204,7 +2204,7 @@ class DefaultAgentRunner:
                              chunks.append(chunk)
                              if on_chunk is not None:
                                  await on_chunk(chunk)
-                         
+
                          # Return concatenated result based on chunk types
                          if chunks:
                              if all(isinstance(chunk, str) for chunk in chunks):
@@ -2255,10 +2255,10 @@ class DefaultProcessorPipeline:
         """Apply prompt processors sequentially."""
         if not processors:
             return data
-        
+
         processed_data = data
         processor_list = processors if isinstance(processors, list) else getattr(processors, "prompt_processors", [])
-        
+
         for proc in processor_list:
             try:
                 telemetry.logfire.info(f"Applying output processor: {getattr(proc, 'name', type(proc).__name__)}")
@@ -2277,17 +2277,17 @@ class DefaultProcessorPipeline:
                 # Treat output processor failure as plugin error to enable fallback paths
                 telemetry.logfire.error(f"Output processor failed: {e}")
                 raise PluginError(str(e))
-        
+
         return processed_data
 
     async def apply_output(self, processors: Any, data: Any, *, context: Any) -> Any:
         """Apply output processors sequentially."""
         if not processors:
             return data
-        
+
         processed_data = data
         processor_list = processors if isinstance(processors, list) else getattr(processors, "output_processors", [])
-        
+
         for proc in processor_list:
             try:
                 fn = getattr(proc, "process", proc)
@@ -2305,17 +2305,17 @@ class DefaultProcessorPipeline:
                 # Treat output processor failure as plugin error to enable fallback paths
                 telemetry.logfire.error(f"Output processor failed: {e}")
                 raise PluginError(str(e))
-        
+
         return processed_data
 
 
 
 class DefaultCacheKeyGenerator:
     """Default cache key generator implementation."""
-    
+
     def __init__(self, hasher: Any = None):
         self._hasher = hasher or Blake3Hasher()
-    
+
     def generate_key(self, step: Any, data: Any, context: Any, resources: Any) -> str:
         """Generate a simple deterministic cache key based on step name and input."""
         step_name = getattr(step, 'name', str(type(step).__name__))
@@ -2333,7 +2333,7 @@ UltraStepExecutor = ExecutorCore
 
 class DefaultTelemetry:
     """Default telemetry implementation."""
-    
+
     def trace(self, name: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         """Create a telemetry trace decorator."""
         def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
@@ -2343,7 +2343,7 @@ class DefaultTelemetry:
 
 class OptimizedExecutorCore(ExecutorCore):
     """Optimized version of ExecutorCore with additional performance features."""
-    
+
     def get_optimization_stats(self):
         """Get optimization statistics."""
         return {
@@ -2359,14 +2359,14 @@ class OptimizedExecutorCore(ExecutorCore):
             },
             'optimization_config': OptimizationConfig().to_dict(),
         }
-    
+
     def get_config_manager(self):
         """Get configuration manager."""
         return {
             'current_config': OptimizationConfig(),
             'available_configs': ['default', 'high_performance', 'memory_efficient'],
         }
-    
+
     def get_performance_recommendations(self):
         """Get performance recommendations."""
         return [
@@ -2466,6 +2466,3 @@ def _build_agent_options(self, cfg: Any) -> dict[str, Any]:
         if val is not None:
             opts[key] = val
     return opts
-
-
-

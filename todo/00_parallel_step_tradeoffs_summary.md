@@ -99,7 +99,7 @@ class WorkflowContext(BaseModel):
 # 3. Post-merge processing
 def post_process_context(context, branch_results):
     total_processed = sum(
-        getattr(r, "processed_count", 0) 
+        getattr(r, "processed_count", 0)
         for r in branch_results.values()
     )
     context.total_processed = total_processed
@@ -111,12 +111,12 @@ def post_process_context(context, branch_results):
 class ConcurrencyLimitedParallelStep:
     def __init__(self, max_concurrency: int = 4):
         self.semaphore = asyncio.Semaphore(max_concurrency)
-    
+
     async def execute_branches(self, branches):
         async def limited_branch(key, branch):
             async with self.semaphore:
                 return await self.execute_branch(branch)
-        
+
         tasks = [limited_branch(key, branch) for key, branch in branches.items()]
         return await asyncio.gather(*tasks)
 
@@ -134,7 +134,7 @@ class ResourceAwareExecutor:
                 if psutil.cpu_percent() > 80:
                     await self.handle_resource_pressure()
                 await asyncio.sleep(1)
-        
+
         monitor_task = asyncio.create_task(monitor_resources())
         try:
             return await self.execute_parallel_step(parallel_step)
@@ -225,4 +225,4 @@ The solution successfully resolved the deadlock issue while maintaining the fund
 
 - [01_simplified_context_merging_tradeoff.md](./01_simplified_context_merging_tradeoff.md) - Detailed context merging enhancement plan
 - [02_reduced_concurrency_control_tradeoff.md](./02_reduced_concurrency_control_tradeoff.md) - Detailed concurrency control enhancement plan
-- [HYBRID_SOLUTION_IMPLEMENTATION_SUMMARY.md](../HYBRID_SOLUTION_IMPLEMENTATION_SUMMARY.md) - Original deadlock fix documentation 
+- [HYBRID_SOLUTION_IMPLEMENTATION_SUMMARY.md](../HYBRID_SOLUTION_IMPLEMENTATION_SUMMARY.md) - Original deadlock fix documentation

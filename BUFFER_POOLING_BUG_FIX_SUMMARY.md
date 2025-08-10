@@ -9,7 +9,7 @@ This document summarizes the critical bug fix implemented for the buffer pooling
 ### 1. Critical Buffer Leak
 **Problem**: When buffer pooling was enabled, buffers retrieved from the pool by `get_scratch_buffer()` were not stored in task-local storage. Consequently, `clear_scratch_buffer()` could not retrieve and return them to the pool, leading to buffer leaks and pool depletion.
 
-**Impact**: 
+**Impact**:
 - Memory leaks in high-concurrency scenarios
 - Pool depletion over time
 - Potential performance degradation
@@ -76,7 +76,7 @@ def clear_scratch_buffer() -> None:
     """Clear the task-local scratch buffer for reuse."""
     # Get current buffer from task-local storage
     task_buffer: Optional[bytearray] = _scratch_buffer_var.get()
-    
+
     if task_buffer is None:
         # No buffer exists, create one and clear it for consistency
         buffer = _get_thread_scratch_buffer()
@@ -202,4 +202,4 @@ print(f"Pool utilization: {stats['utilization']:.2%}")
 
 ## Conclusion
 
-This fix provides a robust, memory-safe, and consistent buffer management system that addresses the critical issues while maintaining backward compatibility and performance. The comprehensive test suite ensures reliability and prevents regressions. 
+This fix provides a robust, memory-safe, and consistent buffer management system that addresses the critical issues while maintaining backward compatibility and performance. The comprehensive test suite ensures reliability and prevents regressions.
