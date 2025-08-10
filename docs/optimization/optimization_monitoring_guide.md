@@ -168,7 +168,7 @@ print(f"Metrics collected: {telemetry_stats.get('metrics_collected', 'N/A')}")
 ### Basic Monitoring Setup
 
 ```python
-from flujo.application.core.ultra_executor import ExecutorCore as OptimizedExecutorCore, OptimizationConfig
+from flujo.application.core.executor_core import OptimizedExecutorCore, OptimizationConfig
 import asyncio
 import time
 

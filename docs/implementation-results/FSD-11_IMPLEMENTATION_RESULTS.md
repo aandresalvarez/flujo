@@ -12,14 +12,14 @@ The original FSD-11 implementation was incomplete. The framework was inspecting 
 
 The issue was identified in two places:
 
-1. **Step Logic (`flujo/application/core/ultra_executor.py`)**: The signature analysis was performed on the wrapper instead of the underlying agent
+1. **Step Logic (`flujo/application/core/executor_core.py`)**: The signature analysis was performed on the wrapper instead of the underlying agent
 2. **AsyncAgentWrapper (`flujo/infra/agents.py`)**: The wrapper was not properly filtering context arguments before passing them to the underlying agent
 
 ## Implementation
 
 ### 1. Fixed Signature Analysis in Step Logic
 
-**File**: `flujo/application/core/ultra_executor.py`
+**File**: `flujo/application/core/executor_core.py`
 
 **Changes**:
 - Added proper inspection of the underlying agent's signature for `AsyncAgentWrapper` instances

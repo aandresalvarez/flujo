@@ -38,7 +38,7 @@ This documentation provides comprehensive guidance for using and configuring Exe
 ### Basic Usage
 
 ```python
-from flujo.application.core.ultra_executor import ExecutorCore as OptimizedExecutorCore
+from flujo.application.core.executor_core import OptimizedExecutorCore
 
 # Create optimized executor with default settings
 executor = OptimizedExecutorCore()
@@ -50,7 +50,7 @@ result = await executor.execute(step, data, context=context)
 ### Custom Configuration
 
 ```python
-from flujo.application.core.ultra_executor import OptimizationConfig
+from flujo.application.core.executor_core import OptimizationConfig
 
 # Create custom optimization configuration
 config = OptimizationConfig(
@@ -240,11 +240,11 @@ def debug_memory_usage(executor):
 
 ```python
 # Old code
-from flujo.application.core.ultra_executor import ExecutorCore
+from flujo.application.core.executor_core import ExecutorCore
 executor = ExecutorCore()
 
 # New optimized code
-from flujo.application.core.ultra_executor import ExecutorCore as OptimizedExecutorCore
+from flujo.application.core.executor_core import OptimizedExecutorCore
 executor = OptimizedExecutorCore()  # Drop-in replacement
 ```
 

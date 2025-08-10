@@ -10,8 +10,7 @@ This guide provides comprehensive instructions for monitoring ExecutorCore perfo
 
 #### Enable Performance Monitoring
 ```python
-from flujo.application.core.optimization_config import OptimizationConfig
-from flujo.application.core.ultra_executor import UltraExecutor
+from flujo.application.core.executor_core import OptimizationConfig, OptimizedExecutorCore
 
 config = OptimizationConfig(
     enable_performance_monitoring=True,
@@ -21,7 +20,7 @@ config = OptimizationConfig(
     performance_metrics_export=True       # Export metrics for external systems
 )
 
-executor = UltraExecutor(config)
+executor = OptimizedExecutorCore(optimization_config=config)
 ```
 
 #### Access Performance Metrics

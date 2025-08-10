@@ -32,7 +32,7 @@ This guide provides solutions for common issues encountered when using ExecutorC
 #### Step 1: Identify the Problematic Component
 ```python
 # Test each optimization component individually
-from flujo.application.core.ultra_executor import OptimizationConfig
+from flujo.application.core.executor_core import OptimizationConfig
 
 # Test baseline performance
 baseline_executor = ExecutorCore()

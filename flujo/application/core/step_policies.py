@@ -81,110 +81,10 @@ class _ParallelUsageGovernor:
         return self.limit_breach_error
 
 
-# --- Pipeline execution utility for policies ---
-async def _execute_pipeline_via_policies(
-    core: Any,
-    pipeline: Any,
-    data: Any,
-    context: Optional[Any],
-    resources: Optional[Any],
-    limits: Optional[Any],
-    breach_event: Optional[Any],
-    context_setter: Optional[Callable[[Any, Optional[Any]], None]] = None,
-) -> PipelineResult[Any]:
-    """
-    Execute a pipeline using the policy-driven step routing system.
-    This replaces core._execute_pipeline calls in policies to make them self-contained.
-    """
-    from flujo.domain.models import PipelineResult
-    from flujo.exceptions import PausedException, UsageLimitExceededError
-
-    # Execute each step in the pipeline sequentially using the policy system
-    current_data = data
-    current_context = context
-    total_cost = 0.0
-    total_tokens = 0
-    total_latency = 0.0
-    step_history: list[Any] = []
-
-    telemetry.logfire.info(
-        f"[Policy] _execute_pipeline_via_policies starting with {len(pipeline.steps)} steps"
-    )
-    for step in pipeline.steps:
-        try:
-            telemetry.logfire.info(
-                f"[Policy] _execute_pipeline_via_policies executing step {getattr(step, 'name', 'unnamed')}"
-            )
-
-            # Use the core's policy-driven execute method for proper step type routing
-            # This ensures parallel steps, loop steps, etc. are handled by their correct policies
-            frame = ExecutionFrame(
-                step=step,
-                data=current_data,
-                context=current_context,
-                resources=resources,
-                limits=limits,
-                stream=False,
-                on_chunk=None,
-                breach_event=breach_event,
-                context_setter=lambda *args: None,  # Dummy context setter for pipeline execution
-                _fallback_depth=0,
-            )
-            step_result = await core.execute(frame)
-
-            # Update tracking variables
-            total_cost += step_result.cost_usd
-            total_tokens += step_result.token_counts
-            total_latency += step_result.latency_s
-            step_history.append(step_result)
-
-            # Even on failure, we still record but do not break; loop logic may continue
-
-            # Update data for next step
-            current_data = step_result.output if step_result.output is not None else current_data
-            current_context = (
-                step_result.branch_context
-                if step_result.branch_context is not None
-                else current_context
-            )
-
-        except PausedException as e:
-            telemetry.logfire.info(
-                f"[Policy] _execute_pipeline_via_policies caught PausedException: {str(e)}"
-            )
-            raise e  # Re-raise for proper handling
-        except UsageLimitExceededError as e:
-            telemetry.logfire.info(
-                f"[Policy] _execute_pipeline_via_policies caught UsageLimitExceededError: {str(e)}"
-            )
-            raise e  # Re-raise for proper handling - this should not be converted to a step failure
-        except Exception as e:
-            telemetry.logfire.error(
-                f"[Policy] _execute_pipeline_via_policies step failed: {str(e)}"
-            )
-            # Create a failure result
-            failure_result = StepResult(
-                name=getattr(step, "name", "unknown"),
-                output=None,
-                success=False,
-                attempts=1,
-                latency_s=0.0,
-                token_counts=0,
-                cost_usd=0.0,
-                feedback=str(e),
-                branch_context=current_context,
-                metadata_={},
-            )
-            step_history.append(failure_result)
-            break
-
-    # Create and return PipelineResult
-    return PipelineResult(
-        step_history=step_history,
-        total_cost_usd=total_cost,
-        total_tokens=total_tokens,
-        final_pipeline_context=current_context,
-    )
+"""
+Note: The pipeline orchestration helper has moved to ExecutorCore._execute_pipeline_via_policies
+to centralize orchestration logic. Policy code should delegate to the core instead of re-implementing it.
+"""
 
 
 # --- Timeout runner policy ---
@@ -2179,8 +2079,7 @@ class DefaultLoopStepExecutor:
                     telemetry.logfire.info(
                         f"[POLICY] About to call _execute_pipeline_via_policies for iteration {iteration_count}"
                     )
-                    pipeline_result = await _execute_pipeline_via_policies(
-                        core,
+                    pipeline_result = await core._execute_pipeline_via_policies(
                         body_pipeline,
                         current_data,
                         iteration_context,
@@ -2274,8 +2173,7 @@ class DefaultLoopStepExecutor:
                     telemetry.logfire.info(
                         f"[POLICY] About to call _execute_pipeline_via_policies for iteration {iteration_count}"
                     )
-                    pipeline_result = await _execute_pipeline_via_policies(
-                        core,
+                    pipeline_result = await core._execute_pipeline_via_policies(
                         body_pipeline,
                         current_data,
                         iteration_context,
@@ -2807,8 +2705,7 @@ class DefaultParallelStepExecutor:
                         branch_pipeline, data, branch_context, resources, breach_event
                     )
                 else:
-                    pipeline_result = await _execute_pipeline_via_policies(
-                        core,
+                    pipeline_result = await core._execute_pipeline_via_policies(
                         branch_pipeline,
                         data,
                         branch_context,

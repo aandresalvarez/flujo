@@ -20,7 +20,7 @@ from ...domain.dsl.loop import LoopStep
 from ...domain.dsl.parallel import ParallelStep
 from ...domain.dsl.step import HumanInTheLoopStep, Step
 from ...domain.models import PipelineResult, StepResult, UsageLimits
-from ...exceptions import InfiniteFallbackError, UsageLimitExceededError
+from ...exceptions import InfiniteFallbackError, UsageLimitExceededError, PausedException
 from ...infra import telemetry
 from ...steps.cache_step import CacheStep
 from ...utils.context import safe_merge_context_updates
@@ -833,10 +833,103 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         breach_event: Any,
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
     ) -> PipelineResult[Any]:
-        from flujo.application.core.step_policies import _execute_pipeline_via_policies
+        return await self._execute_pipeline_via_policies(
+            pipeline, data, context, resources, limits, breach_event, context_setter
+        )
 
-        return await _execute_pipeline_via_policies(
-            self, pipeline, data, context, resources, limits, breach_event, context_setter
+    async def _execute_pipeline_via_policies(
+        self,
+        pipeline: Any,
+        data: Any,
+        context: Optional[Any],
+        resources: Optional[Any],
+        limits: Optional[Any],
+        breach_event: Optional[Any],
+        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]] = None,
+    ) -> PipelineResult[Any]:
+        """Execute all steps in a pipeline using policy routing.
+
+        This centralizes the orchestration pattern used by policies when
+        delegating back to the core for sequential pipeline execution.
+        """
+        current_data = data
+        current_context = context
+        total_cost = 0.0
+        total_tokens = 0
+        total_latency = 0.0
+        step_history: list[Any] = []
+
+        telemetry.logfire.info(
+            f"[Core] _execute_pipeline_via_policies starting with {len(pipeline.steps)} steps"
+        )
+        for step in pipeline.steps:
+            try:
+                telemetry.logfire.info(
+                    f"[Core] _execute_pipeline_via_policies executing step {getattr(step, 'name', 'unnamed')}"
+                )
+
+                frame = ExecutionFrame(
+                    step=step,
+                    data=current_data,
+                    context=current_context,
+                    resources=resources,
+                    limits=limits,
+                    stream=False,
+                    on_chunk=None,
+                    breach_event=breach_event,
+                    context_setter=(context_setter or (lambda _r, _c: None)),
+                    _fallback_depth=0,
+                )
+                step_result = await self.execute(frame)
+
+                total_cost += step_result.cost_usd
+                total_tokens += step_result.token_counts
+                total_latency += step_result.latency_s
+                step_history.append(step_result)
+
+                current_data = (
+                    step_result.output if step_result.output is not None else current_data
+                )
+                current_context = (
+                    step_result.branch_context
+                    if step_result.branch_context is not None
+                    else current_context
+                )
+
+            except PausedException as e:
+                telemetry.logfire.info(
+                    f"[Core] _execute_pipeline_via_policies caught PausedException: {str(e)}"
+                )
+                raise e
+            except UsageLimitExceededError as e:
+                telemetry.logfire.info(
+                    f"[Core] _execute_pipeline_via_policies caught UsageLimitExceededError: {str(e)}"
+                )
+                raise e
+            except Exception as e:
+                telemetry.logfire.error(
+                    f"[Core] _execute_pipeline_via_policies step failed: {str(e)}"
+                )
+                failure_result = StepResult(
+                    name=getattr(step, "name", "unknown"),
+                    output=None,
+                    success=False,
+                    attempts=1,
+                    latency_s=0.0,
+                    token_counts=0,
+                    cost_usd=0.0,
+                    feedback=str(e),
+                    branch_context=current_context,
+                    metadata_={},
+                )
+                step_history.append(failure_result)
+                break
+
+        return PipelineResult(
+            step_history=step_history,
+            total_cost_usd=total_cost,
+            total_tokens=total_tokens,
+            final_pipeline_context=current_context,
         )
 
     async def _handle_loop_step(

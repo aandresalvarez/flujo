@@ -19,7 +19,7 @@ The ExecutorCore optimization system provides comprehensive performance improvem
 ### Basic Usage
 
 ```python
-from flujo.application.core.ultra_executor import ExecutorCore as OptimizedExecutorCore, OptimizationConfig
+from flujo.application.core.executor_core import OptimizedExecutorCore, OptimizationConfig
 
 # Create optimized executor with default settings
 executor = OptimizedExecutorCore()
@@ -324,7 +324,7 @@ executor = OptimizedExecutorCore(optimization_config=config)
 ### Example 1: Data Processing Pipeline
 
 ```python
-from flujo.application.core.ultra_executor import ExecutorCore as OptimizedExecutorCore, OptimizationConfig
+from flujo.application.core.executor_core import OptimizedExecutorCore, OptimizationConfig
 
 # Configuration for data processing
 config = OptimizationConfig(
@@ -602,11 +602,11 @@ test_results = await executor.execute_with_monitoring(test_step, test_data)
 
 ```python
 # Old code
-from flujo.application.core.ultra_executor import ExecutorCore
+from flujo.application.core.executor_core import ExecutorCore
 executor = ExecutorCore()
 
 # New optimized code
-from flujo.application.core.ultra_executor import ExecutorCore as OptimizedExecutorCore
+from flujo.application.core.executor_core import OptimizedExecutorCore
 executor = OptimizedExecutorCore()  # Drop-in replacement
 ```
 

@@ -6,6 +6,15 @@ Of course. Here is a new iteration of the Developer Guide, incorporating the min
 
 This guide is for the Flujo core team—developers building and maintaining the framework itself. It covers architectural principles, contribution patterns, and the critical anti-patterns that ensure Flujo remains robust and maintainable.
 
+> Note: Module Decomposition Completed
+>
+> The legacy monolithic module `flujo/application/core/ultra_executor.py` has been decomposed. The responsibilities are now split across:
+> - `flujo/application/core/executor_core.py`: ExecutorCore and related public types/exports.
+> - `flujo/application/core/executor_protocols.py`: Protocol interfaces (e.g., ISerializer, IHasher, ICacheBackend, IAgentRunner).
+> - `flujo/application/core/default_components.py`: Default concrete implementations (e.g., OrjsonSerializer, Blake3Hasher, InMemoryLRUBackend, ThreadSafeMeter, DefaultAgentRunner).
+>
+> When updating the executor or composing defaults, import from these modules instead of `ultra_executor`. Policy implementations remain in `flujo/application/core/step_policies.py`.
+
 ## **1. The Golden Rule: Respect the Policy-Driven Architecture**
 
 Flujo's core strength is the **separation between the DSL and the Execution Core via Policies**. This is the most important principle to understand.
@@ -425,11 +434,11 @@ class DefaultYourCustomStepExecutor:
 
 ### **Step 3: Register in ExecutorCore**
 ```python
-# In flujo/application/core/ultra_executor.py
+# In flujo/application/core/executor_core.py
 from typing import Optional, Any
 from flujo.application.core.step_policies import DefaultYourCustomStepExecutor
 from flujo.domain.dsl.your_step import YourCustomStep
-from flujo.application.core.execution_frame import ExecutionFrame
+from flujo.application.core.types import ExecutionFrame
 
 # 1. Update the constructor to accept the new policy with proper typing
 class ExecutorCore:

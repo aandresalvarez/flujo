@@ -21,10 +21,10 @@ from typing import Any, Dict, List
 from dataclasses import dataclass
 from datetime import datetime
 
-from flujo.application.core.ultra_executor import (
+from flujo.application.core.executor_core import (
     OptimizedExecutorCore,
     OptimizationConfig,
-    ExecutorCore
+    ExecutorCore,
 )
 
 # Configure logging

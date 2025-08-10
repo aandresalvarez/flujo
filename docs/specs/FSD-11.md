@@ -108,7 +108,7 @@ def _accepts_param(func: Callable[..., Any], param: str) -> bool:
 
 ### 5.2. Runner Invocation Logic Modification
 
-The core change will be in `flujo/application/core/ultra_executor.py`, within the `_execute_step_logic` function (or a helper it calls).
+The core change will be in `flujo/application/core/executor_core.py`, within the step execution dispatch (or a helper it calls).
 
 **Current (Simplified) Logic:**
 ```python
