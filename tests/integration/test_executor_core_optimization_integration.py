@@ -15,7 +15,7 @@ import os
 from typing import Any
 from unittest.mock import Mock
 
-from flujo.application.core.ultra_executor import (
+from flujo.application.core.executor_core import (
     OptimizationConfig,
     OptimizedExecutorCore,
 )

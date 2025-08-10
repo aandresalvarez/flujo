@@ -4,7 +4,7 @@ import pytest
 from unittest.mock import Mock, AsyncMock, patch
 from flujo.domain.dsl.loop import LoopStep
 from flujo.domain.models import StepResult
-from flujo.application.core.ultra_executor import ExecutorCore
+from flujo.application.core.executor_core import ExecutorCore
 
 
 class TestExecutorCoreLoopStepDispatch:

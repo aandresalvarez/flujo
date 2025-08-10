@@ -7,7 +7,7 @@ and ensure backward compatibility.
 
 import pytest
 from unittest.mock import AsyncMock, Mock
-from flujo.application.core.ultra_executor import ExecutorCore
+from flujo.application.core.executor_core import ExecutorCore
 from flujo.domain.models import UsageLimits
 from flujo.domain.dsl.step import Step
 from flujo.domain.dsl.step import StepConfig

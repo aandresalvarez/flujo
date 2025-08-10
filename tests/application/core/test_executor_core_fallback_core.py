@@ -11,7 +11,7 @@ This test suite covers all aspects of fallback execution including:
 
 import pytest
 from unittest.mock import AsyncMock, Mock, patch
-from flujo.application.core.ultra_executor import ExecutorCore
+from flujo.application.core.executor_core import ExecutorCore
 from flujo.domain.models import UsageLimits
 from flujo.exceptions import (
     UsageLimitExceededError,

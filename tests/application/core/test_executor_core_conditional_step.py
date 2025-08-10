@@ -6,7 +6,7 @@ from flujo.domain.dsl.conditional import ConditionalStep
 from flujo.domain.dsl import Pipeline, Step
 from flujo.domain.dsl.step import StepConfig
 from flujo.domain.models import StepResult, UsageLimits
-from flujo.application.core.ultra_executor import ExecutorCore
+from flujo.application.core.executor_core import ExecutorCore
 from flujo.application.core.step_policies import DefaultConditionalStepExecutor
 
 

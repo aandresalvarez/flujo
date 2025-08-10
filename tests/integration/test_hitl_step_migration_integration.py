@@ -12,7 +12,7 @@ Version: 1.0
 import pytest
 from unittest.mock import Mock
 
-from flujo.application.core.ultra_executor import ExecutorCore
+from flujo.application.core.executor_core import ExecutorCore
 from flujo.domain.dsl.step import HumanInTheLoopStep
 from flujo.domain.models import PipelineContext, UsageLimits
 from flujo.exceptions import PausedException

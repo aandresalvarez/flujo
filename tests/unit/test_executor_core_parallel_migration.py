@@ -11,7 +11,7 @@ processed as real steps, ensuring test integrity and preventing test pollution.
 import pytest
 from unittest.mock import AsyncMock, patch
 
-from flujo.application.core.ultra_executor import ExecutorCore
+from flujo.application.core.executor_core import ExecutorCore
 from flujo.domain.dsl.parallel import ParallelStep
 from flujo.domain.dsl.dynamic_router import DynamicParallelRouterStep
 from flujo.domain.dsl.step import Step, MergeStrategy, BranchFailureStrategy

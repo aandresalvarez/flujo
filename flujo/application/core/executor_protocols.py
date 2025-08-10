@@ -67,3 +67,16 @@ class ICacheBackend(Protocol):
     async def get(self, key: str) -> Optional[StepResult]: ...
     async def put(self, key: str, value: StepResult, ttl_s: int) -> None: ...
     async def clear(self) -> None: ...
+
+
+__all__ = [
+    "IAgentRunner",
+    "IProcessorPipeline",
+    "IValidatorRunner",
+    "IPluginRunner",
+    "IUsageMeter",
+    "ITelemetry",
+    "ISerializer",
+    "IHasher",
+    "ICacheBackend",
+]

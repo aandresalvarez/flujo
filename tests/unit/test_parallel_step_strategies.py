@@ -6,7 +6,7 @@ from typing import Any, Dict
 
 import pytest
 
-from flujo.application.core.ultra_executor import ExecutorCore
+from flujo.application.core.executor_core import ExecutorCore
 from flujo.domain.models import BaseModel
 from flujo.domain.dsl.parallel import ParallelStep
 from flujo.domain.dsl.step import Step, BranchFailureStrategy, MergeStrategy
@@ -711,7 +711,7 @@ async def test_parallel_usage_limit_enforced_atomically(caplog):
         return await step.agent.run(input_data, breach_event=breach_event)
 
     # Run the parallel step logic and expect UsageLimitExceededError
-    from flujo.application.core.ultra_executor import ExecutorCore
+    from flujo.application.core.executor_core import ExecutorCore
 
     # Execute the parallel step
     breach_event = asyncio.Event()

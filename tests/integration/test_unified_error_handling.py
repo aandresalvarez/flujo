@@ -41,7 +41,7 @@ async def test_simple_step_returns_stepresult_on_failure():
         {"name": "failing", "agent": FailingAgent(), "config": {"max_retries": 1}}
     )
 
-    from flujo.application.core.ultra_executor import ExecutorCore as UltraStepExecutor
+    from flujo.application.core.executor_core import ExecutorCore as UltraStepExecutor
 
     executor = UltraStepExecutor()
 
@@ -60,7 +60,7 @@ async def test_streaming_step_returns_stepresult_on_failure():
         {"name": "failing", "agent": FailingAgent(), "config": {"max_retries": 1}}
     )
 
-    from flujo.application.core.ultra_executor import ExecutorCore as UltraStepExecutor
+    from flujo.application.core.executor_core import ExecutorCore as UltraStepExecutor
 
     executor = UltraStepExecutor()
 
@@ -84,7 +84,7 @@ async def test_complex_step_returns_stepresult_on_failure():
         }
     )
 
-    from flujo.application.core.ultra_executor import ExecutorCore as UltraStepExecutor
+    from flujo.application.core.executor_core import ExecutorCore as UltraStepExecutor
 
     executor = UltraStepExecutor()
 
@@ -106,7 +106,7 @@ async def test_critical_exceptions_are_re_raised():
         {"name": "paused", "agent": CriticalFailingAgent(), "config": {"max_retries": 1}}
     )
 
-    from flujo.application.core.ultra_executor import ExecutorCore as UltraStepExecutor
+    from flujo.application.core.executor_core import ExecutorCore as UltraStepExecutor
 
     executor = UltraStepExecutor()
 
@@ -121,7 +121,7 @@ async def test_critical_exceptions_are_re_raised():
 @pytest.mark.asyncio
 async def test_consistent_api_contract():
     """Test that the API contract is consistent across different step types."""
-    from flujo.application.core.ultra_executor import ExecutorCore as UltraStepExecutor
+    from flujo.application.core.executor_core import ExecutorCore as UltraStepExecutor
 
     executor = UltraStepExecutor()
 
@@ -161,7 +161,7 @@ async def test_error_information_preservation():
         {"name": "failing", "agent": FailingAgent(), "config": {"max_retries": 1}}
     )
 
-    from flujo.application.core.ultra_executor import ExecutorCore as UltraStepExecutor
+    from flujo.application.core.executor_core import ExecutorCore as UltraStepExecutor
 
     executor = UltraStepExecutor()
 
@@ -213,7 +213,7 @@ async def test_timing_preservation_for_failed_steps():
         {"name": "slow", "agent": SlowFailingAgent(), "config": {"max_retries": 1}}
     )
 
-    from flujo.application.core.ultra_executor import ExecutorCore as UltraStepExecutor
+    from flujo.application.core.executor_core import ExecutorCore as UltraStepExecutor
 
     executor = UltraStepExecutor()
 

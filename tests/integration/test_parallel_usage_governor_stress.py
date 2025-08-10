@@ -7,7 +7,7 @@ and maintains accurate cost tracking across multiple concurrent branches.
 import asyncio
 import pytest
 
-from flujo.application.core.ultra_executor import ExecutorCore
+from flujo.application.core.executor_core import ExecutorCore
 from flujo.domain.models import StepResult, UsageLimits
 
 

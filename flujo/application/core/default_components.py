@@ -144,6 +144,9 @@ class _LRUCache:
         self._store.move_to_end(key)
         return value
 
+    def clear(self) -> None:
+        self._store.clear()
+
 
 @dataclass
 class InMemoryLRUBackend:
@@ -204,8 +207,12 @@ class ThreadSafeMeter:
                 and isinstance(limits.total_cost_usd_limit, (int, float))
                 and self.total_cost_usd - limits.total_cost_usd_limit > 1e-9
             ):
+                msg = (
+                    f"Cost limit of ${limits.total_cost_usd_limit} exceeded "
+                    f"(current: ${self.total_cost_usd})"
+                )
                 raise UsageLimitExceededError(
-                    f"Cost limit of ${limits.total_cost_usd_limit} exceeded (current: ${self.total_cost_usd})",
+                    msg,
                     PipelineResult(
                         step_history=step_history or [], total_cost_usd=self.total_cost_usd
                     ),
@@ -217,8 +224,11 @@ class ThreadSafeMeter:
                 and isinstance(limits.total_tokens_limit, (int, float))
                 and total_tokens - limits.total_tokens_limit > 0
             ):
+                msg = (
+                    f"Token limit of {limits.total_tokens_limit} exceeded (current: {total_tokens})"
+                )
                 raise UsageLimitExceededError(
-                    f"Token limit of {limits.total_tokens_limit} exceeded (current: {total_tokens})",
+                    msg,
                     PipelineResult(
                         step_history=step_history or [], total_cost_usd=self.total_cost_usd
                     ),
@@ -332,10 +342,13 @@ class DefaultValidatorRunner:
                         )
                     )
                 else:
+                    feedback_msg = (
+                        f"Validator {type(validator).__name__} returned invalid result type"
+                    )
                     validation_results.append(
                         ValidationResult(
                             is_valid=False,
-                            feedback=f"Validator {type(validator).__name__} returned invalid result type",
+                            feedback=feedback_msg,
                             validator_name=type(validator).__name__,
                         )
                     )
@@ -566,3 +579,22 @@ class DefaultTelemetry:
             return func
 
         return decorator
+
+
+__all__ = [
+    # Serialization / hashing
+    "OrjsonSerializer",
+    "Blake3Hasher",
+    "DefaultCacheKeyGenerator",
+    # Caching / usage
+    "_LRUCache",
+    "InMemoryLRUBackend",
+    "ThreadSafeMeter",
+    # Runners
+    "DefaultProcessorPipeline",
+    "DefaultValidatorRunner",
+    "DefaultPluginRunner",
+    "DefaultAgentRunner",
+    # Telemetry
+    "DefaultTelemetry",
+]

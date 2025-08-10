@@ -771,15 +771,18 @@ async def _execute_simple_step_policy_impl(
                     telemetry.logfire.error(
                         f"Step '{step.name}' plugin failed after {result.attempts} attempts"
                     )
-                    if hasattr(step, "fallback_step") and step.fallback_step is not None:
+                    fb_step = getattr(step, "fallback_step", None)
+                    if hasattr(fb_step, "_mock_name") and not hasattr(fb_step, "agent"):
+                        fb_step = None
+                    if fb_step is not None:
                         telemetry.logfire.info(f"Step '{step.name}' failed, attempting fallback")
-                        if step.fallback_step in fallback_chain:
+                        if fb_step in fallback_chain:
                             raise InfiniteFallbackError(
-                                f"Fallback loop detected: step '{step.fallback_step.name}' already in fallback chain"
+                                f"Fallback loop detected: step '{getattr(fb_step, 'name', '<unnamed>')}' already in fallback chain"
                             )
                         try:
                             fallback_result = await core.execute(
-                                step=step.fallback_step,
+                                step=fb_step,
                                 data=data,
                                 context=context,
                                 resources=resources,
@@ -1428,7 +1431,7 @@ class DefaultAgentStepExecutor:
             raise MissingAgentError(f"Step '{step.name}' has no agent configured")
 
         result = StepResult(
-            name=getattr(step, "name", core._safe_step_name(step)),
+            name=core._safe_step_name(step),
             output=None,
             success=False,
             attempts=1,
@@ -1587,10 +1590,13 @@ class DefaultAgentStepExecutor:
 
                             fb_msg = _format_validation_feedback()
                             # Try fallback if configured
-                            if getattr(step, "fallback_step", None) is not None:
+                            fb_step = getattr(step, "fallback_step", None)
+                            if hasattr(fb_step, "_mock_name") and not hasattr(fb_step, "agent"):
+                                fb_step = None
+                            if fb_step is not None:
                                 try:
                                     fb_res = await core.execute(
-                                        step=step.fallback_step,
+                                        step=fb_step,
                                         data=data,
                                         context=attempt_context,
                                         resources=resources,
@@ -1667,10 +1673,13 @@ class DefaultAgentStepExecutor:
                     # ✅ CRITICAL FIX: Never retry agent execution on validation failure
                     # Validation failures should preserve output and fail immediately
                     fb_msg = f"Validation failed: {str(e)}"
-                    if getattr(step, "fallback_step", None) is not None:
+                    fb_step = getattr(step, "fallback_step", None)
+                    if hasattr(fb_step, "_mock_name") and not hasattr(fb_step, "agent"):
+                        fb_step = None
+                    if fb_step is not None:
                         try:
                             fb_res = await core.execute(
-                                step=step.fallback_step,
+                                step=fb_step,
                                 data=data,
                                 context=attempt_context,
                                 resources=resources,
@@ -1845,7 +1854,14 @@ class DefaultAgentStepExecutor:
                     return f"Agent execution failed with {type(err).__name__}: {str(err)}"
 
                 primary_fb = _format_failure_feedback(e)
-                if getattr(step, "fallback_step", None) is not None:
+                fb_candidate = getattr(step, "fallback_step", None)
+                # Treat auto-created Mock fallback as absent to avoid infinite chains
+                try:
+                    if hasattr(fb_candidate, "_mock_name") and not hasattr(fb_candidate, "agent"):
+                        fb_candidate = None
+                except Exception:
+                    pass
+                if fb_candidate is not None:
                     # ✅ FLUJO BEST PRACTICE: Mock Detection in Fallback Chains
                     # Critical fix: Detect Mock objects with recursive fallback_step attributes
                     # that create infinite fallback chains (mock.fallback_step.fallback_step...)
@@ -1859,7 +1875,7 @@ class DefaultAgentStepExecutor:
 
                     try:
                         fb_res = await core.execute(
-                            step=step.fallback_step,
+                            step=fb_candidate,
                             data=data,
                             context=attempt_context,
                             resources=resources,

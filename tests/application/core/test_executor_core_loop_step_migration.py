@@ -14,7 +14,7 @@ from flujo.domain.dsl.loop import LoopStep
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.dsl.step import Step
 from flujo.domain.models import BaseModel, UsageLimits
-from flujo.application.core.ultra_executor import ExecutorCore
+from flujo.application.core.executor_core import ExecutorCore
 from flujo.exceptions import UsageLimitExceededError
 from flujo.testing.utils import StubAgent
 

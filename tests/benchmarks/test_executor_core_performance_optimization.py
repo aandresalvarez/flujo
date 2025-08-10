@@ -17,7 +17,7 @@ from contextlib import contextmanager
 from typing import Dict, Optional
 from unittest.mock import Mock, AsyncMock
 
-from flujo.application.core.ultra_executor import ExecutorCore
+from flujo.application.core.executor_core import ExecutorCore
 from flujo.domain.dsl.step import Step, StepConfig
 from flujo.testing.utils import StubAgent
 

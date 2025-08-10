@@ -11,7 +11,7 @@ import pytest
 
 # step_logic module was intentionally removed during refactoring
 # The functionality has been migrated to ultra_executor
-from flujo.application.core.ultra_executor import ExecutorCore
+from flujo.application.core.executor_core import ExecutorCore
 from flujo.domain.dsl.step import HumanInTheLoopStep
 from flujo.steps.cache_step import CacheStep
 from flujo.domain.models import StepResult
@@ -66,7 +66,7 @@ class TestFunctionRemovalValidation:
         print("step_logic module successfully removed")
 
         # Test that the new handler exists and can be called
-        from flujo.application.core.ultra_executor import ExecutorCore
+        from flujo.application.core.executor_core import ExecutorCore
 
         # Verify that the new architecture is available
         executor = ExecutorCore()
@@ -332,7 +332,7 @@ class TestLegacyFunctionIntegration:
             importlib.import_module("flujo.application.core.step_logic")
 
         # Verify that the new architecture is available
-        from flujo.application.core.ultra_executor import ExecutorCore
+        from flujo.application.core.executor_core import ExecutorCore
 
         executor = ExecutorCore()
         assert hasattr(executor, "_handle_cache_step")
@@ -344,7 +344,7 @@ class TestLegacyFunctionIntegration:
         """Test that backward compatibility is maintained for core functionality."""
         # The legacy functions were removed during refactoring
         # This test now verifies that the new architecture maintains the same interface
-        from flujo.application.core.ultra_executor import ExecutorCore
+        from flujo.application.core.executor_core import ExecutorCore
 
         # Verify that the new architecture provides the same functionality
         executor = ExecutorCore()
@@ -396,7 +396,7 @@ class TestLegacyCleanupSafety:
         """Test that error handling is preserved in the new architecture."""
         # The legacy functions were removed during refactoring
         # This test now verifies that error handling works in the new architecture
-        from flujo.application.core.ultra_executor import ExecutorCore
+        from flujo.application.core.executor_core import ExecutorCore
 
         # Verify that the new architecture provides proper error handling
         executor = ExecutorCore()
@@ -439,7 +439,7 @@ class TestLegacyCleanupSafety:
         """Test that performance is not degraded in the new architecture."""
         # The legacy functions were removed during refactoring
         # This test now verifies that performance is maintained in the new architecture
-        from flujo.application.core.ultra_executor import ExecutorCore
+        from flujo.application.core.executor_core import ExecutorCore
         import time
 
         # Verify that the new architecture is available and performant

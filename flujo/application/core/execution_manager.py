@@ -71,7 +71,7 @@ class ExecutionManager(Generic[ContextT]):
         # ✅ NEW: Store the backend, create default if None
         if backend is None:
             from flujo.infra.backends import LocalBackend
-            from flujo.application.core.ultra_executor import ExecutorCore
+            from flujo.application.core.executor_core import ExecutorCore
 
             executor: ExecutorCore[Any] = ExecutorCore()
             self.backend: Any = LocalBackend(executor)

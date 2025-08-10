@@ -14,7 +14,7 @@ import pytest
 
 # step_logic module was intentionally removed during refactoring
 # The functionality has been migrated to ultra_executor
-from flujo.application.core.ultra_executor import ExecutorCore
+from flujo.application.core.executor_core import ExecutorCore
 from flujo.steps.cache_step import CacheStep
 from flujo.domain.models import StepResult
 
@@ -52,7 +52,7 @@ class TestCleanupPerformanceImpact:
             self._measure_import_time("flujo.application.core.step_logic")
 
         # Test that importing ultra_executor is fast
-        executor_import_time = self._measure_import_time("flujo.application.core.ultra_executor")
+        executor_import_time = self._measure_import_time("flujo.application.core.executor_core")
         assert executor_import_time < 1.0
 
     async def test_memory_usage_improvement(self):
@@ -87,7 +87,7 @@ class TestFunctionCallPerformance:
     async def test_delegation_performance(self):
         """Test performance of delegation to ExecutorCore."""
         # Test that delegation is fast
-        with patch("flujo.application.core.ultra_executor.ExecutorCore") as mock_executor_class:
+        with patch("flujo.application.core.executor_core.ExecutorCore") as mock_executor_class:
             mock_executor = Mock()
             mock_executor_class.return_value = mock_executor
             mock_executor._handle_loop_step = AsyncMock(return_value=StepResult(name="test"))

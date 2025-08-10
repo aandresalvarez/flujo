@@ -12,7 +12,7 @@ import pytest
 
 # step_logic module was intentionally removed during refactoring
 # The functionality has been migrated to ultra_executor
-from flujo.application.core.ultra_executor import ExecutorCore
+from flujo.application.core.executor_core import ExecutorCore
 from flujo.domain.dsl.step import HumanInTheLoopStep
 from flujo.steps.cache_step import CacheStep
 from flujo.domain.models import StepResult

@@ -3,7 +3,7 @@ from typing import Any
 import pytest
 
 from flujo.application.core.context_manager import ContextManager
-from flujo.application.core.ultra_executor import ExecutorCore
+from flujo.application.core.executor_core import ExecutorCore
 from flujo.domain.models import StepResult, PipelineResult, PipelineContext
 
 

@@ -15,7 +15,7 @@ from flujo.exceptions import (
 )
 
 if TYPE_CHECKING:
-    from flujo.application.core.ultra_executor import ExecutorCore
+    from flujo.application.core.executor_core import ExecutorCore
 from flujo.cost import extract_usage_metrics
 from flujo.utils.performance import time_perf_ns, time_perf_ns_to_seconds
 from flujo.infra import telemetry
@@ -267,7 +267,7 @@ async def _execute_agent_step(
                             result.token_counts += prompt_tokens + completion_tokens
                             processed_output = _unpack_agent_result(redirected_output)
                         elif hasattr(plugin_result, "success") and not plugin_result.success:
-                            from flujo.application.core.ultra_executor import PluginError
+                            from flujo.application.core.executor_core import PluginError
 
                             raise PluginError(
                                 plugin_result.feedback or "Plugin failed without feedback"
@@ -340,7 +340,7 @@ async def _execute_agent_step(
             # Max retries exceeded
             result.success = False
             # Import PluginError here to avoid circular import
-            from flujo.application.core.ultra_executor import PluginError
+            from flujo.application.core.executor_core import PluginError
 
             if isinstance(e, PluginError):
                 msg = str(e)

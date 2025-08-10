@@ -13,11 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `DefaultAgentRunner`, `DefaultProcessorPipeline`, `DefaultValidatorRunner`, `DefaultPluginRunner`
   - `DefaultTelemetry`, `DefaultCacheKeyGenerator`
 - `__all__` export list in `core/ultra_executor.py` to define the public API and re-export interfaces and defaults for backward compatibility.
+- `__all__` in `core/default_components.py` and `core/executor_protocols.py` for explicit public surfaces.
 
 ### Changed
 - Consolidated Protocol interfaces into `core/executor_protocols.py` as the single source of truth; removed duplicates from `ultra_executor.py`.
 - `ultra_executor.py` now imports default components from `core/default_components.py` and stays focused on orchestration and policy routing.
 - `application/runner.py` composition updated to import defaults from `core/default_components.py`.
+- Classified `PipelineAbortSignal` as a control-flow category in `core/optimized_error_handler.py` to align with FSD-009 (non-retryable control flow).
+ - Restored `_UsageTracker` compatibility shim in `core/ultra_executor.py` to satisfy legacy tests while usage metering moves to `ThreadSafeMeter`.
 
 ### Migration
 - Recommended imports:

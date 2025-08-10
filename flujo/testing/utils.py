@@ -113,7 +113,7 @@ class DummyRemoteBackend(ExecutionBackend):
         self.recorded_requests: List[StepExecutionRequest] = []
 
         # ✅ Create ExecutorCore and inject into LocalBackend
-        from ..application.core.ultra_executor import ExecutorCore
+        from ..application.core.executor_core import ExecutorCore
 
         executor: ExecutorCore[Any] = ExecutorCore()
         self.local = LocalBackend(executor=executor, agent_registry=self.agent_registry)

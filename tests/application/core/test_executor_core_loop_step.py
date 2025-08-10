@@ -5,7 +5,7 @@ from unittest.mock import Mock, AsyncMock
 from flujo.domain.dsl.loop import LoopStep
 from flujo.domain.dsl import Pipeline
 from flujo.domain.models import StepResult, UsageLimits
-from flujo.application.core.ultra_executor import ExecutorCore
+from flujo.application.core.executor_core import ExecutorCore
 from flujo.application.core.step_policies import DefaultLoopStepExecutor
 
 
@@ -156,7 +156,7 @@ class TestExecutorCoreLoopStep:
         """Test LoopStep handling with None parameters."""
         with pytest.MonkeyPatch().context() as m:
             m.setattr(
-                "flujo.application.core.ultra_executor.ExecutorCore._handle_loop_step",
+                "flujo.application.core.executor_core.ExecutorCore._handle_loop_step",
                 AsyncMock(return_value=StepResult(name="test_loop", success=True)),
             )
 

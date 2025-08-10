@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock
 
-from flujo.application.core.ultra_executor import ExecutorCore
+from flujo.application.core.executor_core import ExecutorCore
 from flujo.application.core.step_policies import DefaultSimpleStepExecutor
 from flujo.domain.dsl.step import Step
 from flujo.testing.utils import StubAgent, DummyPlugin

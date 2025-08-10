@@ -10,7 +10,7 @@ import pytest
 from unittest.mock import AsyncMock, Mock, patch
 from typing import Any
 
-from flujo.application.core.ultra_executor import ExecutorCore
+from flujo.application.core.executor_core import ExecutorCore
 from flujo.exceptions import MockDetectionError
 from flujo.domain.models import UsageLimits, StepResult
 from flujo.domain.plugins import PluginOutcome
@@ -449,7 +449,7 @@ class TestExecutorCoreSimpleStep:
         # ✅ ENHANCED PLUGIN ARCHITECTURE: Use the real plugin redirector with enhanced capabilities
         # Previous: Direct plugin runner override
         # Enhanced: Plugin redirector with timeout handling, redirect detection, and robust error handling
-        from flujo.application.core.ultra_executor import DefaultPluginRunner
+        from flujo.application.core.executor_core import DefaultPluginRunner
         from flujo.application.core.step_policies import DefaultPluginRedirector
 
         plugin_runner = DefaultPluginRunner()
@@ -1067,7 +1067,7 @@ class TestExecutorCoreFallbackLogic:
         # Patch execute to return proper StepResult for fallback step
         def mock_execute(step, *args, **kwargs):
             if step == fallback_step:
-                from flujo.application.core.ultra_executor import StepResult
+                from flujo.application.core.executor_core import StepResult
 
                 return StepResult(
                     name="fallback_step",

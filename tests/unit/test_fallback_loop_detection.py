@@ -11,7 +11,7 @@ from flujo.domain.dsl import Step, StepConfig
 from flujo.testing.utils import StubAgent, DummyPlugin, gather_result
 from flujo.domain.plugins import PluginOutcome
 from flujo.application.runner import InfiniteFallbackError
-from flujo.application.core.ultra_executor import ExecutorCore
+from flujo.application.core.executor_core import ExecutorCore
 from flujo.domain.models import StepResult
 from tests.conftest import create_test_flujo
 
@@ -284,7 +284,7 @@ class TestFallbackLoopDetection:
     @pytest.mark.asyncio
     async def test_fallback_loop_direct_step_logic(self):
         """Test fallback loop detection by directly calling step logic with recursion."""
-        from flujo.application.core.ultra_executor import ExecutorCore
+        from flujo.application.core.executor_core import ExecutorCore
 
         plugin = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="err")])
 

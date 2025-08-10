@@ -13,7 +13,7 @@ import time
 from typing import Any, List, Optional
 from unittest.mock import Mock, AsyncMock
 
-from flujo.application.core.ultra_executor import (
+from flujo.application.core.executor_core import (
     ExecutorCore,
     ISerializer,
     IHasher,

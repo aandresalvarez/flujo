@@ -5,7 +5,7 @@ import asyncio
 from typing import Any
 import time
 
-from flujo.application.core.ultra_executor import ExecutorCore
+from flujo.application.core.executor_core import ExecutorCore
 from flujo.domain.dsl.parallel import ParallelStep
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.dsl.step import Step

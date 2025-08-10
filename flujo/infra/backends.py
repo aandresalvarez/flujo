@@ -9,7 +9,7 @@ from ..domain.models import StepResult
 from ..application.core.types import ExecutionFrame
 
 if TYPE_CHECKING:
-    from ..application.core.ultra_executor import ExecutorCore
+    from ..application.core.executor_core import ExecutorCore
 
     pass
 

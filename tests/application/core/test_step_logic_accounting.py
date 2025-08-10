@@ -7,7 +7,7 @@ import pytest
 from flujo.domain.dsl.step import Step, StepConfig
 from flujo.domain.models import StepResult
 from flujo.domain.plugins import PluginOutcome, ValidationPlugin
-from flujo.application.core.ultra_executor import ExecutorCore
+from flujo.application.core.executor_core import ExecutorCore
 
 
 class StubAgent:

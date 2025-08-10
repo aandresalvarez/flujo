@@ -263,6 +263,7 @@ class ErrorClassifier:
             "AttributeError": ErrorCategory.CONFIGURATION,
             # Control flow exceptions
             "PausedException": ErrorCategory.CONTROL_FLOW,
+            "PipelineAbortSignal": ErrorCategory.CONTROL_FLOW,
             "InfiniteFallbackError": ErrorCategory.CONTROL_FLOW,
             "InfiniteRedirectError": ErrorCategory.CONTROL_FLOW,
         }

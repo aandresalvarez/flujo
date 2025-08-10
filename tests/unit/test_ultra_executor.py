@@ -16,7 +16,7 @@ import pytest
 from unittest.mock import Mock
 from typing import Any
 
-from flujo.application.core.ultra_executor import (
+from flujo.application.core.executor_core import (
     # Interfaces
     OrjsonSerializer,
     Blake3Hasher,

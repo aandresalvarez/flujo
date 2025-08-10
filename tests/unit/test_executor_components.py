@@ -12,7 +12,7 @@ import asyncio
 from unittest.mock import Mock, AsyncMock
 from typing import Any
 
-from flujo.application.core.ultra_executor import (
+from flujo.application.core.executor_core import (
     # Default implementations
     OrjsonSerializer,
     Blake3Hasher,
@@ -466,7 +466,7 @@ class TestFlujoCompositionRoot:
 
         # Verify it has an ExecutorCore
         assert hasattr(backend, "_executor")
-        from flujo.application.core.ultra_executor import ExecutorCore
+        from flujo.application.core.executor_core import ExecutorCore
 
         assert isinstance(backend._executor, ExecutorCore)
 

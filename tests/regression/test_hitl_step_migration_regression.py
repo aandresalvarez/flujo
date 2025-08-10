@@ -8,7 +8,7 @@ maintains backward compatibility and preserves all existing behaviors.
 import pytest
 from unittest.mock import Mock
 
-from flujo.application.core.ultra_executor import ExecutorCore
+from flujo.application.core.executor_core import ExecutorCore
 from flujo.domain.dsl.step import HumanInTheLoopStep
 from flujo.domain.models import PipelineContext
 from flujo.exceptions import PausedException

@@ -7,7 +7,7 @@ including unusual data types, complex scenarios, and error handling.
 
 import pytest
 from unittest.mock import AsyncMock, Mock, patch
-from flujo.application.core.ultra_executor import ExecutorCore
+from flujo.application.core.executor_core import ExecutorCore
 from flujo.domain.models import UsageLimits
 from flujo.exceptions import (
     UsageLimitExceededError,
@@ -1415,7 +1415,7 @@ class TestExecutorCoreFallback:
     async def test_fallback_integration_real_pipeline(self):
         from flujo.domain.dsl.step import Step, StepConfig
         from flujo.domain.processors import AgentProcessors
-        from flujo.application.core.ultra_executor import ExecutorCore
+        from flujo.application.core.executor_core import ExecutorCore
 
         # Define real async agents
         class PrimaryAgent:
@@ -1469,7 +1469,7 @@ class TestExecutorCoreFallback:
         """Integration test: fallback when primary succeeds but plugin fails after retries."""
         from flujo.domain.dsl.step import Step, StepConfig
         from flujo.domain.processors import AgentProcessors
-        from flujo.application.core.ultra_executor import ExecutorCore
+        from flujo.application.core.executor_core import ExecutorCore
 
         # Define agents
         class PrimaryAgent:
@@ -1532,7 +1532,7 @@ class TestExecutorCoreFallback:
         """Integration test: fallback when primary and plugin succeed but validator fails after retries."""
         from flujo.domain.dsl.step import Step, StepConfig
         from flujo.domain.processors import AgentProcessors
-        from flujo.application.core.ultra_executor import ExecutorCore
+        from flujo.application.core.executor_core import ExecutorCore
 
         # Define agents
         class PrimaryAgent:
@@ -1585,7 +1585,7 @@ class TestExecutorCoreFallback:
         """Integration test: complex failure chain - primary fails → plugin fails → validator fails → fallback succeeds."""
         from flujo.domain.dsl.step import Step, StepConfig
         from flujo.domain.processors import AgentProcessors
-        from flujo.application.core.ultra_executor import ExecutorCore
+        from flujo.application.core.executor_core import ExecutorCore
 
         # Define agents
         class PrimaryAgent:
@@ -1638,7 +1638,7 @@ class TestExecutorCoreFallback:
         """Integration test: fallback with retry logic - primary fails after retries → fallback succeeds."""
         from flujo.domain.dsl.step import Step, StepConfig
         from flujo.domain.processors import AgentProcessors
-        from flujo.application.core.ultra_executor import ExecutorCore
+        from flujo.application.core.executor_core import ExecutorCore
 
         # Track retry attempts
         retry_count = 0
@@ -1685,7 +1685,7 @@ class TestExecutorCoreFallback:
         """Integration test: fallback with streaming output processing."""
         from flujo.domain.dsl.step import Step, StepConfig
         from flujo.domain.processors import AgentProcessors
-        from flujo.application.core.ultra_executor import ExecutorCore
+        from flujo.application.core.executor_core import ExecutorCore
 
         # Define agents
         class PrimaryAgent:
@@ -1732,7 +1732,7 @@ class TestExecutorCoreFallback:
         """Integration test: fallback preserves and passes context correctly."""
         from flujo.domain.dsl.step import Step, StepConfig
         from flujo.domain.processors import AgentProcessors
-        from flujo.application.core.ultra_executor import ExecutorCore
+        from flujo.application.core.executor_core import ExecutorCore
 
         # Define agents that use context
         class PrimaryAgent:

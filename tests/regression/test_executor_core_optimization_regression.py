@@ -12,7 +12,7 @@ import pytest
 import time
 from unittest.mock import Mock, AsyncMock
 
-from flujo.application.core.ultra_executor import (
+from flujo.application.core.executor_core import (
     ExecutorCore,
     OptimizedExecutorCore,
     OptimizationConfig,

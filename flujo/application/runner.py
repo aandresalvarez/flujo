@@ -298,7 +298,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         This method acts as the Composition Root, assembling all the
         components needed for optimal execution.
         """
-        from ..application.core.ultra_executor import ExecutorCore
+        from ..application.core.executor_core import ExecutorCore
         from ..application.core.default_components import (
             OrjsonSerializer,
             Blake3Hasher,
@@ -444,7 +444,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         try:
             from flujo.infra import telemetry
 
-            telemetry.logfire.info(
+            telemetry.logfire.debug(
                 f"Runner.run_async received initial_context_data keys={list(initial_context_data.keys()) if isinstance(initial_context_data, dict) else None}"
             )
         except Exception:

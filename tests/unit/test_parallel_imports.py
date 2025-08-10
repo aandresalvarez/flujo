@@ -1,6 +1,6 @@
-"""Tests for flujo.application.core.ultra_executor module imports."""
+"""Tests for flujo.application.core.executor_core module imports."""
 
-from flujo.application.core.ultra_executor import ExecutorCore, StepExecutor
+from flujo.application.core.executor_core import ExecutorCore, StepExecutor
 
 
 def test_parallel_imports():
