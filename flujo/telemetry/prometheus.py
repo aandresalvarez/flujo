@@ -111,7 +111,15 @@ def start_prometheus_server(port: int, backend: StateBackend) -> tuple[Callable[
     collector = PrometheusCollector(backend)
     # Register collector, ignore if already registered
     try:
-        REGISTRY.register(collector)
+        from typing import TYPE_CHECKING, cast
+
+        if TYPE_CHECKING:
+            # Precise type for register at type-check time
+            from prometheus_client.registry import Collector as _PromCollector
+
+            REGISTRY.register(cast(_PromCollector, collector))
+        else:  # runtime path
+            REGISTRY.register(collector)
     except ValueError:
         # Already registered, ignore
         pass

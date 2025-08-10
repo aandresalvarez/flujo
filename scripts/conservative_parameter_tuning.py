@@ -15,11 +15,13 @@ import sys
 import time
 from pathlib import Path
 
+# Import after path setup
+from flujo.application.core.ultra_executor import OptimizedExecutorCore
+
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from flujo.application.core.ultra_executor import OptimizedExecutorCore
 
 def create_conservative_optimized_config():
     """Create a conservative optimized configuration that minimizes overhead."""

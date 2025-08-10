@@ -1,6 +1,6 @@
 from __future__ import annotations
 import asyncio
-from typing import Any, Awaitable, Optional, Protocol, Callable, Dict, List
+from typing import Any, Awaitable, Optional, Protocol, Callable, Dict, List, Tuple
 from pydantic import BaseModel
 from flujo.domain.models import StepResult, UsageLimits, PipelineContext
 from .types import ExecutionFrame
@@ -31,14 +31,14 @@ import time
 class _ParallelUsageGovernor:
     """Usage governor for parallel step execution."""
 
-    def __init__(self, limits):
+    def __init__(self, limits: Optional[Any]) -> None:
         self.limits = limits
         self.total_cost = 0.0
         self.total_tokens = 0
         self.limit_breached = asyncio.Event()
-        self.limit_breach_error = None
+        self.limit_breach_error: Optional[Exception] = None
 
-    async def add_usage(self, cost_delta, token_delta, result):
+    async def add_usage(self, cost_delta: float, token_delta: int, result: Any) -> bool:
         """Add usage and check limits."""
         self.total_cost += cost_delta
         self.total_tokens += token_delta
@@ -72,11 +72,11 @@ class _ParallelUsageGovernor:
 
         return False
 
-    def breached(self):
+    def breached(self) -> bool:
         """Check if limits have been breached."""
         return self.limit_breached.is_set()
 
-    def get_error(self):
+    def get_error(self) -> Optional[Exception]:
         """Get the breach error if any."""
         return self.limit_breach_error
 
@@ -91,13 +91,13 @@ async def _execute_pipeline_via_policies(
     limits: Optional[Any],
     breach_event: Optional[Any],
     context_setter: Optional[Callable[[Any, Optional[Any]], None]] = None,
-) -> Any:
+) -> PipelineResult[Any]:
     """
     Execute a pipeline using the policy-driven step routing system.
     This replaces core._execute_pipeline calls in policies to make them self-contained.
     """
     from flujo.domain.models import PipelineResult
-    from flujo.exceptions import PausedException
+    from flujo.exceptions import PausedException, UsageLimitExceededError
 
     # Execute each step in the pipeline sequentially using the policy system
     current_data = data
@@ -106,8 +106,6 @@ async def _execute_pipeline_via_policies(
     total_tokens = 0
     total_latency = 0.0
     step_history: list[Any] = []
-    all_successful = True
-    feedback = ""
 
     telemetry.logfire.info(
         f"[Policy] _execute_pipeline_via_policies starting with {len(pipeline.steps)} steps"
@@ -140,9 +138,6 @@ async def _execute_pipeline_via_policies(
             total_latency += step_result.latency_s
             step_history.append(step_result)
 
-            if not step_result.success:
-                all_successful = False
-                feedback = step_result.feedback
             # Even on failure, we still record but do not break; loop logic may continue
 
             # Update data for next step
@@ -181,8 +176,6 @@ async def _execute_pipeline_via_policies(
                 metadata_={},
             )
             step_history.append(failure_result)
-            all_successful = False
-            feedback = str(e)
             break
 
     # Create and return PipelineResult
@@ -190,10 +183,7 @@ async def _execute_pipeline_via_policies(
         step_history=step_history,
         total_cost_usd=total_cost,
         total_tokens=total_tokens,
-        total_latency_s=total_latency,
         final_pipeline_context=current_context,
-        success=all_successful,
-        feedback=feedback,
     )
 
 
@@ -251,7 +241,6 @@ class DefaultPluginRedirector:
         resources: Any,
         timeout_s: Optional[float],
     ) -> Any:
-
         telemetry.logfire.info("[Redirector] Start plugin redirect loop")
         redirect_chain: list[Any] = []
         original_agent = getattr(step, "agent", None)
@@ -388,7 +377,7 @@ class SimpleStepExecutor(Protocol):
 class DefaultSimpleStepExecutor:
     async def execute(
         self,
-        core,
+        core: Any,
         step: Any,
         data: Any,
         context: Optional[Any],
@@ -473,7 +462,7 @@ async def _execute_simple_step_policy_impl(
     if getattr(step, "agent", None) is None:
         raise MissingAgentError(f"Step '{step.name}' has no agent configured")
 
-    result = StepResult(
+    result: StepResult = StepResult(
         name=core._safe_step_name(step),
         output=None,
         success=False,
@@ -557,11 +546,14 @@ async def _execute_simple_step_policy_impl(
                 f"[SimpleStep] Isolated context for simple step attempt {attempt}, original context preserved"
             )
             # Debug: Check if isolation worked
-            if hasattr(attempt_context, "branch_count") and hasattr(
-                pre_attempt_context, "branch_count"
+            if (
+                attempt_context is not None
+                and pre_attempt_context is not None
+                and hasattr(attempt_context, "branch_count")
+                and hasattr(pre_attempt_context, "branch_count")
             ):
                 telemetry.logfire.info(
-                    f"[SimpleStep] Attempt {attempt}: attempt_context.branch_count={attempt_context.branch_count}, pre_attempt_context.branch_count={pre_attempt_context.branch_count}"
+                    f"[SimpleStep] Attempt {attempt}: attempt_context.branch_count={getattr(attempt_context, 'branch_count', 'N/A')}, pre_attempt_context.branch_count={getattr(pre_attempt_context, 'branch_count', 'N/A')}"
                 )
         else:
             attempt_context = context
@@ -1363,16 +1355,16 @@ async def _execute_simple_step_policy_impl(
                 telemetry.logfire.info(
                     "[SimpleStep] FAILED: Setting branch_context to attempt_context (prevents retry accumulation)"
                 )
-                if hasattr(attempt_context, "branch_count"):
+                if attempt_context is not None and hasattr(attempt_context, "branch_count"):
                     telemetry.logfire.info(
-                        f"[SimpleStep] FAILED: Final attempt_context.branch_count = {attempt_context.branch_count}"
+                        f"[SimpleStep] FAILED: Final attempt_context.branch_count = {getattr(attempt_context, 'branch_count', 'N/A')}"
                     )
                     telemetry.logfire.info(
                         f"[SimpleStep] FAILED: Original context.branch_count = {getattr(context, 'branch_count', 'N/A')}"
                     )
             else:
                 result.branch_context = context
-                if hasattr(context, "branch_count") if context else False:
+                if context is not None and hasattr(context, "branch_count"):
                     telemetry.logfire.info(
                         f"[SimpleStep] FAILED: Using original context.branch_count = {context.branch_count}"
                     )
@@ -1406,16 +1398,16 @@ class AgentStepExecutor(Protocol):
 class DefaultAgentStepExecutor:
     async def execute(
         self,
-        core,
-        step,
-        data,
-        context,
-        resources,
-        limits,
-        stream,
-        on_chunk,
-        cache_key,
-        breach_event,
+        core: Any,
+        step: Any,
+        data: Any,
+        context: Optional[Any],
+        resources: Optional[Any],
+        limits: Optional[UsageLimits],
+        stream: bool,
+        on_chunk: Optional[Callable[[Any], Awaitable[None]]],
+        cache_key: Optional[str],
+        breach_event: Optional[Any],
         _fallback_depth: int = 0,
     ) -> StepResult:
         # ✅ FLUJO BEST PRACTICE: Early Mock Detection and Fallback Chain Protection
@@ -1430,13 +1422,6 @@ class DefaultAgentStepExecutor:
         # Inline agent step logic (parity with legacy implementation)
         from unittest.mock import Mock, MagicMock, AsyncMock
         from pydantic import BaseModel
-        from flujo.exceptions import (
-            PausedException,
-            InfiniteFallbackError,
-            InfiniteRedirectError,
-            UsageLimitExceededError,
-            NonRetryableError,
-        )
         import time
 
         if getattr(step, "agent", None) is None:
@@ -1510,11 +1495,14 @@ class DefaultAgentStepExecutor:
                     f"[AgentStep] Isolated context for attempt {attempt}, original context preserved"
                 )
                 # Debug: Check if isolation worked
-                if hasattr(attempt_context, "branch_count") and hasattr(
-                    pre_attempt_context, "branch_count"
+                if (
+                    attempt_context is not None
+                    and pre_attempt_context is not None
+                    and hasattr(attempt_context, "branch_count")
+                    and hasattr(pre_attempt_context, "branch_count")
                 ):
                     telemetry.logfire.info(
-                        f"[AgentStep] Attempt {attempt}: attempt_context.branch_count={attempt_context.branch_count}, pre_attempt_context.branch_count={pre_attempt_context.branch_count}"
+                        f"[AgentStep] Attempt {attempt}: attempt_context.branch_count={getattr(attempt_context, 'branch_count', 'N/A')}, pre_attempt_context.branch_count={getattr(pre_attempt_context, 'branch_count', 'N/A')}"
                     )
             else:
                 attempt_context = context
@@ -1769,8 +1757,6 @@ class DefaultAgentStepExecutor:
                                 processed_output = processed_output["output"]
                     except Exception as e:
                         # Preserve critical errors
-                        from flujo.exceptions import InfiniteRedirectError
-
                         if isinstance(e, InfiniteRedirectError):
                             raise
                         result.success = False
@@ -1953,7 +1939,10 @@ class LoopStepExecutor(Protocol):
         context: Optional[Any],
         resources: Optional[Any],
         limits: Optional[UsageLimits],
-        context_setter: Optional[Callable[[Any, Optional[Any]], None]],
+        stream: bool,
+        on_chunk: Optional[Callable[[Any], Awaitable[None]]],
+        cache_key: Optional[str],
+        breach_event: Optional[Any],
         _fallback_depth: int = 0,
     ) -> StepResult: ...
 
@@ -2000,12 +1989,12 @@ class DefaultLoopStepExecutor:
 
     async def execute(
         self,
-        core,
-        step,
-        data,
-        context,
-        resources,
-        limits,
+        core: Any,
+        step: Any,
+        data: Any,
+        context: Optional[Any],
+        resources: Optional[Any],
+        limits: Optional[UsageLimits],
         stream: bool,
         on_chunk: Optional[Callable[[Any], Awaitable[None]]],
         cache_key: Optional[str],
@@ -2087,9 +2076,8 @@ class DefaultLoopStepExecutor:
             else getattr(loop_step, "loop_body_pipeline", None)
         )
         try:
-            if (
-                body_pipeline is not None
-                and (not hasattr(body_pipeline, "steps") or not isinstance(body_pipeline.steps, list))
+            if body_pipeline is not None and (
+                not hasattr(body_pipeline, "steps") or not isinstance(body_pipeline.steps, list)
             ):
                 alt = getattr(loop_step, "loop_body_pipeline", None)
                 if alt is not None and hasattr(alt, "steps") and isinstance(alt.steps, list):
@@ -2528,7 +2516,6 @@ class DefaultLoopStepExecutor:
                             step_history=[loop_step_result],
                             total_cost_usd=prev_cumulative_cost,
                             total_tokens=prev_cumulative_tokens,
-                            total_latency_s=0.0,
                             final_pipeline_context=prev_current_context,
                         ),
                     )
@@ -2638,7 +2625,6 @@ class DefaultLoopStepExecutor:
                 # Pass the UNPACKED data to the mapper
                 mapped = output_mapper(unpacked_data, current_context)
                 try:
-
                     # Wrap mapped output into a StepResult-like structure only for attempts adjustment
                     # The outer pipeline will record this as a separate step; we emulate attempts via metadata
                     # by injecting a tiny marker on the context, which downstream recording respects.
@@ -2691,9 +2677,7 @@ class DefaultLoopStepExecutor:
                 else getattr(loop_step, "loop_body_pipeline", None)
             )
             if bp is not None and getattr(bp, "steps", None):
-                any(
-                    getattr(s, "name", "") == "_capture_artifact" for s in bp.steps
-                )
+                any(getattr(s, "name", "") == "_capture_artifact" for s in bp.steps)
         except Exception:
             pass
         # Messaging and success rules:
@@ -2738,7 +2722,7 @@ class ParallelStepExecutor(Protocol):
         limits: Optional[UsageLimits],
         breach_event: Optional[Any],
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
-        parallel_step: Optional[ParallelStep] = None,
+        parallel_step: Optional[ParallelStep[Any]] = None,
         step_executor: Optional[Callable[..., Awaitable[StepResult]]] = None,
     ) -> StepResult: ...
 
@@ -2746,16 +2730,16 @@ class ParallelStepExecutor(Protocol):
 class DefaultParallelStepExecutor:
     async def execute(
         self,
-        core,
-        step,
-        data,
-        context,
-        resources,
-        limits,
-        breach_event,
-        context_setter,
-        parallel_step=None,
-        step_executor=None,
+        core: Any,
+        step: Any,
+        data: Any,
+        context: Optional[Any],
+        resources: Optional[Any],
+        limits: Optional[UsageLimits],
+        breach_event: Optional[Any],
+        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
+        parallel_step: Optional[ParallelStep[Any]] = None,
+        step_executor: Optional[Callable[..., Awaitable[StepResult]]] = None,
     ) -> StepResult:
         # Actual parallel-step execution logic extracted from legacy `_handle_parallel_step`
         if parallel_step is not None:
@@ -2797,7 +2781,9 @@ class DefaultParallelStepExecutor:
             branch_contexts[branch_name] = branch_context
 
         # Branch executor
-        async def execute_branch(branch_name: str, branch_pipeline: Any, branch_context: Any):
+        async def execute_branch(
+            branch_name: str, branch_pipeline: Any, branch_context: Any
+        ) -> Tuple[str, StepResult]:
             try:
                 telemetry.logfire.debug(f"Executing branch: {branch_name}")
                 if step_executor is not None:
@@ -2899,7 +2885,11 @@ class DefaultParallelStepExecutor:
             execute_branch(n, p, branch_contexts[n]) for n, p in parallel_step.branches.items()
         ]
         branch_execution_results = await asyncio.gather(*tasks, return_exceptions=True)
-        for branch_execution_result in branch_execution_results:
+
+        # Process results and handle exceptions
+        for i, branch_execution_result in enumerate(branch_execution_results):
+            branch_name = list(parallel_step.branches.keys())[i]
+
             # Handle exceptions returned directly from gather
             if isinstance(branch_execution_result, UsageLimitExceededError):
                 # Re-raise usage limit exceptions immediately - don't convert to failed step result
@@ -2914,7 +2904,25 @@ class DefaultParallelStepExecutor:
                 )
                 raise branch_execution_result
 
-        for branch_name, branch_result in branch_execution_results:
+            # At this point, branch_execution_result should be a tuple (branch_name, StepResult)
+            if isinstance(branch_execution_result, tuple) and len(branch_execution_result) == 2:
+                branch_name, branch_result = branch_execution_result
+            else:
+                # Fallback: create a failed result
+                telemetry.logfire.error(
+                    f"Unexpected result format from branch {branch_name}: {branch_execution_result}"
+                )
+                branch_result = StepResult(
+                    name=f"{parallel_step.name}_{branch_name}",
+                    output=None,
+                    success=False,
+                    attempts=1,
+                    latency_s=0.0,
+                    token_counts=0,
+                    cost_usd=0.0,
+                    feedback=f"Branch execution failed with unexpected result format: {branch_execution_result}",
+                    metadata_={},
+                )
             if isinstance(branch_result, Exception):
                 telemetry.logfire.error(f"Branch {branch_name} raised exception: {branch_result}")
                 branch_result = StepResult(
@@ -3011,12 +3019,16 @@ class DefaultParallelStepExecutor:
                     parallel_step.merge_strategy(context, branch_ctxs)
 
                 # Special handling for executed_branches field - merge it back to context
-                if hasattr(context, "executed_branches"):
+                if context is not None and hasattr(context, "executed_branches"):
                     # Get all executed branches from branch contexts
                     all_executed_branches = []
                     for bc in branch_ctxs.values():
-                        if hasattr(bc, "executed_branches") and bc.executed_branches:
-                            all_executed_branches.extend(bc.executed_branches)
+                        if (
+                            bc is not None
+                            and hasattr(bc, "executed_branches")
+                            and getattr(bc, "executed_branches", None)
+                        ):
+                            all_executed_branches.extend(getattr(bc, "executed_branches"))
 
                     # Handle executed_branches based on merge strategy
                     if parallel_step.merge_strategy == MergeStrategy.OVERWRITE:
@@ -3030,11 +3042,15 @@ class DefaultParallelStepExecutor:
                             context.executed_branches = [last_successful_branch]
 
                             # Also handle branch_results for OVERWRITE strategy
-                            if hasattr(context, "branch_results"):
+                            if context is not None and hasattr(context, "branch_results"):
                                 # Get the branch_results from the last successful branch context
                                 last_branch_ctx = branch_ctxs.get(last_successful_branch)
-                                if last_branch_ctx and hasattr(last_branch_ctx, "branch_results"):
-                                    context.branch_results = last_branch_ctx.branch_results.copy()
+                                if last_branch_ctx is not None and hasattr(
+                                    last_branch_ctx, "branch_results"
+                                ):
+                                    context.branch_results = getattr(
+                                        last_branch_ctx, "branch_results"
+                                    ).copy()
                                 else:
                                     # If no branch_results in context, create from current results
                                     context.branch_results = {
@@ -3044,7 +3060,7 @@ class DefaultParallelStepExecutor:
                                     }
                         else:
                             context.executed_branches = []
-                            if hasattr(context, "branch_results"):
+                            if context is not None and hasattr(context, "branch_results"):
                                 context.branch_results = {}
                     else:
                         # For other strategies, add all successful branches
@@ -3065,12 +3081,16 @@ class DefaultParallelStepExecutor:
                         context.executed_branches = unique_branches
 
                         # Handle branch_results for other strategies
-                        if hasattr(context, "branch_results"):
+                        if context is not None and hasattr(context, "branch_results"):
                             # Merge branch_results from all successful branches
                             merged_branch_results = {}
                             for bc in branch_ctxs.values():
-                                if hasattr(bc, "branch_results") and bc.branch_results:
-                                    merged_branch_results.update(bc.branch_results)
+                                if (
+                                    bc is not None
+                                    and hasattr(bc, "branch_results")
+                                    and getattr(bc, "branch_results", None)
+                                ):
+                                    merged_branch_results.update(getattr(bc, "branch_results"))
                             context.branch_results = merged_branch_results
 
                 result.branch_context = context
@@ -3090,7 +3110,7 @@ class DefaultParallelStepExecutor:
         else:
             # Enhanced detailed failure feedback aggregation
             total_branches = len(parallel_step.branches)
-            successful_branches = total_branches - len(failure_messages)
+            successful_branches_count = total_branches - len(failure_messages)
 
             # Format detailed failure information following Flujo best practices
             if len(failure_messages) == 1:
@@ -3099,8 +3119,8 @@ class DefaultParallelStepExecutor:
             else:
                 # Multiple failures - structured list with summary
                 summary = f"Parallel step failed: {len(failure_messages)} of {total_branches} branches failed"
-                if successful_branches > 0:
-                    summary += f" ({successful_branches} succeeded)"
+                if successful_branches_count > 0:
+                    summary += f" ({successful_branches_count} succeeded)"
                 detailed_feedback = "; ".join(failure_messages)
                 result.feedback = f"{summary}. Failures: {detailed_feedback}"
         return result
@@ -3123,13 +3143,13 @@ class ConditionalStepExecutor(Protocol):
 class DefaultConditionalStepExecutor:
     async def execute(
         self,
-        core,
-        conditional_step,
-        data,
-        context,
-        resources,
-        limits,
-        context_setter,
+        core: Any,
+        conditional_step: Any,
+        data: Any,
+        context: Optional[Any],
+        resources: Optional[Any],
+        limits: Optional[UsageLimits],
+        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
         _fallback_depth: int = 0,
     ) -> StepResult:
         """Handle ConditionalStep execution with proper context isolation and merging."""
@@ -3264,7 +3284,6 @@ class DefaultConditionalStepExecutor:
                                 step_history=step_history,
                                 total_cost_usd=total_cost,
                                 total_tokens=total_tokens,
-                                total_latency_s=total_latency,
                                 final_pipeline_context=result.branch_context,
                             )
                             context_setter(pipeline_result, context)
@@ -3304,14 +3323,14 @@ class DynamicRouterStepExecutor(Protocol):
 class DefaultDynamicRouterStepExecutor:
     async def execute(
         self,
-        core,
-        router_step,
-        data,
-        context,
-        resources,
-        limits,
-        context_setter,
-        step=None,
+        core: Any,
+        router_step: Any,
+        data: Any,
+        context: Optional[Any],
+        resources: Optional[Any],
+        limits: Optional[UsageLimits],
+        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
+        step: Optional[Any] = None,
     ) -> StepResult:
         """Handle DynamicParallelRouterStep execution with proper branch selection and parallel delegation."""
 
@@ -3319,7 +3338,9 @@ class DefaultDynamicRouterStepExecutor:
         telemetry.logfire.debug(f"Dynamic router step name: {router_step.name}")
 
         # Phase 1: Execute the router agent to decide which branches to run
-        router_agent_step = Step(name=f"{router_step.name}_router", agent=router_step.router_agent)
+        router_agent_step: Any = Step(
+            name=f"{router_step.name}_router", agent=router_step.router_agent
+        )
         router_frame = ExecutionFrame(
             step=router_agent_step,
             data=data,
@@ -3329,7 +3350,9 @@ class DefaultDynamicRouterStepExecutor:
             stream=False,
             on_chunk=None,
             breach_event=None,
-            context_setter=context_setter,
+            context_setter=(
+                context_setter if context_setter is not None else (lambda _pr, _ctx: None)
+            ),
         )
         router_result = await core.execute(router_frame)
 
@@ -3372,7 +3395,7 @@ class DefaultDynamicRouterStepExecutor:
             )
 
         # Phase 2: Execute selected branches in parallel via policy
-        temp_parallel_step = ParallelStep(
+        temp_parallel_step: Any = ParallelStep(
             name=router_step.name,
             branches=selected_branches,
             merge_strategy=router_step.merge_strategy,
@@ -3407,7 +3430,6 @@ class DefaultDynamicRouterStepExecutor:
                         step_history=[parallel_result],
                         total_cost_usd=parallel_result.cost_usd,
                         total_tokens=parallel_result.token_counts,
-                        total_latency_s=parallel_result.latency_s,
                         final_pipeline_context=parallel_result.branch_context,
                     )
                     context_setter(pipeline_result, context)
@@ -3442,13 +3464,13 @@ class HitlStepExecutor(Protocol):
 class DefaultHitlStepExecutor:
     async def execute(
         self,
-        core,
-        step,
-        data,
-        context,
-        resources,
-        limits,
-        context_setter,
+        core: Any,
+        step: HumanInTheLoopStep,
+        data: Any,
+        context: Optional[Any],
+        resources: Optional[Any],
+        limits: Optional[UsageLimits],
+        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
     ) -> StepResult:
         """Handle Human-In-The-Loop step execution."""
         import time
@@ -3520,17 +3542,17 @@ class CacheStepExecutor(Protocol):
 class DefaultCacheStepExecutor:
     async def execute(
         self,
-        core,
-        cache_step,
-        data,
-        context,
-        resources,
-        limits,
-        breach_event,
-        context_setter,
-        step_executor=None,
+        core: Any,
+        cache_step: CacheStep[Any, Any],
+        data: Any,
+        context: Optional[Any],
+        resources: Optional[Any],
+        limits: Optional[UsageLimits],
+        breach_event: Optional[Any],
+        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
+        step_executor: Optional[Callable[..., Awaitable[StepResult]]] = None,
         # Backward-compat: expose 'step' in signature for legacy inspection
-        step=None,
+        step: Optional[Any] = None,
     ) -> StepResult:
         """Handle CacheStep execution with concurrency control and resilience."""
         try:
@@ -3576,7 +3598,9 @@ class DefaultCacheStepExecutor:
                     stream=False,
                     on_chunk=None,
                     breach_event=breach_event,
-                    context_setter=context_setter,
+                    context_setter=(
+                        context_setter if context_setter is not None else (lambda _pr, _ctx: None)
+                    ),
                     _fallback_depth=0,
                 )
                 result = await core.execute(frame)
@@ -3597,7 +3621,9 @@ class DefaultCacheStepExecutor:
             stream=False,
             on_chunk=None,
             breach_event=breach_event,
-            context_setter=context_setter,
+            context_setter=(
+                context_setter if context_setter is not None else (lambda _pr, _ctx: None)
+            ),
             _fallback_depth=0,
         )
         return await core.execute(frame)

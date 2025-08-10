@@ -27,10 +27,6 @@ from flujo.application.core.ultra_executor import (
     ExecutorCore,
     DefaultCacheKeyGenerator as CacheKeyGenerator,
 )
-
-# Alias for backward compatibility
-UltraStepExecutor = ExecutorCore
-
 from flujo.domain.models import StepResult, UsageLimits, BaseModel
 from flujo.domain.dsl.step import Step, StepConfig
 from flujo.domain.validation import ValidationResult
@@ -38,6 +34,9 @@ from flujo.exceptions import (
     UsageLimitExceededError,
     PausedException,
 )
+
+# Alias for backward compatibility
+UltraStepExecutor = ExecutorCore
 
 
 class UltraTestContext(BaseModel):

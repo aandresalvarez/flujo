@@ -1,4 +1,4 @@
-def format_cost(value) -> str:
+def format_cost(value: float | int) -> str:
     """
     Format a cost value for display, following production-grade standards.
 

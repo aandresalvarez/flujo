@@ -183,7 +183,7 @@ def register_custom_type(type_class: Type[T]) -> None:
     if hasattr(type_class, "__name__"):
         # Check if this is a Flujo BaseModel to avoid circular dependency
         from flujo.domain.base_model import BaseModel as FlujoBaseModel
-        
+
         def safe_serialize_custom_type(obj: Any) -> Any:
             """Safe serializer that avoids circular dependency with Flujo BaseModel."""
             if isinstance(obj, FlujoBaseModel):
@@ -203,7 +203,7 @@ def register_custom_type(type_class: Type[T]) -> None:
             else:
                 # For other objects, use __dict__
                 return obj.__dict__
-        
+
         # Register for serialization
         register_custom_serializer(type_class, safe_serialize_custom_type)
 

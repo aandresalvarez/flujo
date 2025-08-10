@@ -6,9 +6,9 @@ following the Open-Closed Principle and algebraic closure.
 """
 
 import asyncio
-from typing import Any, List, Optional
+from typing import Any, List
 
-from flujo import Flujo, Step, Pipeline, step
+from flujo import Flujo, Step, step
 from flujo.models import PipelineResult
 
 
@@ -175,16 +175,16 @@ async def demonstrate_extensibility():
     runner = Flujo(pipeline)
     
     print("\n📋 Pipeline Configuration:")
-    print(f"   - Data Generator: Simple step (no complexity declaration)")
-    print(f"   - Data Validator: Simple step (no complexity declaration)")
-    print(f"   - Batch Processor: Complex step (is_complex = True)")
-    print(f"   - Adaptive Processor: Dynamic complexity (property-based)")
-    print(f"   - Retry Processor: Complex step (is_complex = True)")
+    print("   - Data Generator: Simple step (no complexity declaration)")
+    print("   - Data Validator: Simple step (no complexity declaration)")
+    print("   - Batch Processor: Complex step (is_complex = True)")
+    print("   - Adaptive Processor: Dynamic complexity (property-based)")
+    print("   - Retry Processor: Complex step (is_complex = True)")
     
     print("\n🔄 Executing pipeline...")
     result: PipelineResult = await runner.run(10)
     
-    print(f"\n✅ Pipeline completed successfully!")
+    print("\n✅ Pipeline completed successfully!")
     print(f"   Final output: {result.step_history[-1].output}")
     print(f"   Total steps executed: {len(result.step_history)}")
     

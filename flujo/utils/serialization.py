@@ -215,7 +215,7 @@ def _serialize_for_key(
         _seen = set()
     if isinstance(obj, PRIMITIVE_TYPES):
         return str(obj)
-    
+
     # Handle tuples specially for keys to preserve format
     if isinstance(obj, tuple):
         try:
@@ -225,11 +225,15 @@ def _serialize_for_key(
                 if isinstance(item, PRIMITIVE_TYPES):
                     items.append(str(item))
                 else:
-                    items.append(_serialize_for_key(item, _seen, default_serializer, _recursion_depth + 1, mode))
+                    items.append(
+                        _serialize_for_key(
+                            item, _seen, default_serializer, _recursion_depth + 1, mode
+                        )
+                    )
             return f"({', '.join(items)})"
         except Exception:
             return str(obj)
-    
+
     obj_id = id(obj)
     custom_serializer = lookup_custom_serializer(obj)
     added_to_seen = False  # Track if we added obj_id to _seen in this call
@@ -424,15 +428,15 @@ def safe_serialize(
 ) -> Any:
     """
     Safely serialize an object with intelligent fallback handling.
-    
+
     This is the unified serialization function that handles all edge cases and special types,
     consolidating logic from BaseModel.model_dump and other specialized serializers.
-    
+
     Handles circular references robustly with mode-specific behavior:
     - "default" mode: Returns appropriate placeholders (None for objects, {} for dicts, [] for lists)
     - "cache" mode: Returns "<ClassName circular>" placeholders
     - Custom modes: Uses the circular_ref_placeholder parameter
-    
+
     Features:
     - Circular reference detection with mode-specific handling
     - Custom serializer registry support
@@ -442,7 +446,7 @@ def safe_serialize(
     - Collections (list, tuple, dict, set) with recursive serialization
     - Callable object handling with mock detection
     - Error recovery with fallback strategies
-    
+
     Args:
         obj: The object to serialize
         default_serializer: Optional fallback serializer for unknown types
@@ -450,10 +454,10 @@ def safe_serialize(
         _recursion_depth: Internal recursion depth counter
         circular_ref_placeholder: What to return for circular references (overridden by mode)
         mode: Serialization mode ("default", "cache", or custom)
-        
+
     Returns:
         Serialized representation of the object
-        
+
     Raises:
         TypeError: For unserializable objects when no fallback is available
     """
@@ -479,7 +483,7 @@ def safe_serialize(
             # If a specific circular_ref_placeholder was provided (not the default), use it
             if circular_ref_placeholder != "<circular-ref>":
                 return circular_ref_placeholder
-            
+
             # Handle mode-specific circular reference behavior for default placeholder
             if mode == "cache":
                 # Generate class-specific circular reference marker
@@ -489,10 +493,11 @@ def safe_serialize(
                 # For default mode, check if this is a Flujo BaseModel for special handling
                 try:
                     from flujo.domain.base_model import BaseModel as FlujoBaseModel
+
                     is_flujo_model = isinstance(obj, FlujoBaseModel)
                 except ImportError:
                     is_flujo_model = False
-                
+
                 if is_flujo_model:
                     return None
                 elif isinstance(obj, dict):
@@ -555,9 +560,13 @@ def safe_serialize(
         # Handle mock objects specifically before anything else
         # Be more specific about Mock detection to avoid false positives with test classes
         if hasattr(obj, "__class__") and (
-            obj.__class__.__name__ in ("Mock", "MagicMock", "AsyncMock", "NonCallableMock", "CallableMixin") or
-            (hasattr(obj.__class__, "__module__") and obj.__class__.__module__ and 
-             "unittest.mock" in obj.__class__.__module__)
+            obj.__class__.__name__
+            in ("Mock", "MagicMock", "AsyncMock", "NonCallableMock", "CallableMixin")
+            or (
+                hasattr(obj.__class__, "__module__")
+                and obj.__class__.__module__
+                and "unittest.mock" in obj.__class__.__module__
+            )
         ):
             # Handle mock objects for testing with improved detection
             try:
@@ -565,11 +574,11 @@ def safe_serialize(
                 mock_result = serialize_mock_object(obj, mode, _seen)
                 # print(f"DEBUG: Mock serialization succeeded early: {type(mock_result)}")
                 return mock_result
-            except Exception as e:
+            except Exception:
                 # If mock serialization fails, fall back to string representation
                 # print(f"DEBUG: Mock serialization failed early: {e}")
                 return f"Mock({obj.__class__.__name__})"
-                
+
         if callable(obj):
             if hasattr(obj, "__name__"):
                 return obj.__name__
@@ -592,10 +601,11 @@ def safe_serialize(
             # Check if this is a subclass of our custom BaseModel (from flujo.domain.base_model)
             try:
                 from flujo.domain.base_model import BaseModel as FlujoBaseModel
+
                 is_flujo_model = isinstance(obj, FlujoBaseModel)
             except ImportError:
                 is_flujo_model = False
-            
+
             if is_flujo_model:
                 # This is a flujo BaseModel - manually serialize fields to handle circular refs with mode
                 try:
@@ -717,7 +727,6 @@ def safe_serialize(
                 )
                 for item in obj
             ]
-        
 
         # Handle regular objects with __dict__ attributes
         # Only serialize as dict for specific known types, not arbitrary objects
@@ -787,10 +796,11 @@ def serialize_agent_response(response: Any, mode: str = "default") -> Dict[str, 
     Returns:
         A serializable dictionary representation of the AgentResponse
     """
-    result = {
+    result: Dict[str, Any] = {
         "content": getattr(response, "content", getattr(response, "output", None)),
         "metadata": {},
     }
+    metadata: Dict[str, Any] = result["metadata"]
 
     # Handle usage information if present
     if hasattr(response, "usage"):
@@ -798,22 +808,22 @@ def serialize_agent_response(response: Any, mode: str = "default") -> Dict[str, 
             try:
                 usage_info = response.usage()
                 if hasattr(usage_info, "request_tokens") and hasattr(usage_info, "response_tokens"):
-                    result["metadata"]["usage"] = {
+                    metadata["usage"] = {
                         "request_tokens": usage_info.request_tokens,
                         "response_tokens": usage_info.response_tokens,
                     }
                 elif hasattr(usage_info, "model_dump"):
                     # Handle Pydantic usage models
-                    result["metadata"]["usage"] = usage_info.model_dump()
+                    metadata["usage"] = usage_info.model_dump()
                 else:
                     # Fallback for other usage objects
-                    result["metadata"]["usage"] = safe_serialize(usage_info, mode=mode)
+                    metadata["usage"] = safe_serialize(usage_info, mode=mode)
             except Exception:
                 # If usage() fails, just skip it
                 pass
         else:
             # Direct usage attribute
-            result["metadata"]["usage"] = safe_serialize(response.usage, mode=mode)
+            metadata["usage"] = safe_serialize(response.usage, mode=mode)
 
     # Handle additional attributes that might be present
     for attr in [
@@ -825,19 +835,21 @@ def serialize_agent_response(response: Any, mode: str = "default") -> Dict[str, 
         "token_counts",
     ]:
         if hasattr(response, attr):
-            result["metadata"][attr] = getattr(response, attr)
+            metadata[attr] = getattr(response, attr)
 
     # Handle metadata field if present
     if hasattr(response, "metadata"):
         if hasattr(response.metadata, "model_dump"):
-            result["metadata"].update(response.metadata.model_dump())
+            metadata.update(response.metadata.model_dump())
         else:
-            result["metadata"].update(safe_serialize(response.metadata, mode=mode))
+            metadata.update(safe_serialize(response.metadata, mode=mode))
 
     return result
 
 
-def serialize_mock_object(mock_obj: Any, mode: str = "default", _seen: Optional[Set[int]] = None) -> Dict[str, Any]:
+def serialize_mock_object(
+    mock_obj: Any, mode: str = "default", _seen: Optional[Set[int]] = None
+) -> Dict[str, Any]:
     """
     Serialize Mock objects for testing scenarios with improved detection.
 
@@ -849,7 +861,7 @@ def serialize_mock_object(mock_obj: Any, mode: str = "default", _seen: Optional[
     Returns:
         A serializable dictionary representation of the Mock object
     """
-    result = {
+    result: Dict[str, Any] = {
         "type": "Mock",
         "class_name": type(mock_obj).__name__,
         "module": getattr(mock_obj, "__module__", "unknown"),
@@ -860,7 +872,7 @@ def serialize_mock_object(mock_obj: Any, mode: str = "default", _seen: Optional[
     if hasattr(mock_obj, "__dict__"):
         for key, value in mock_obj.__dict__.items():
             # Only include non-mock attributes (user-added ones)
-            if not key.startswith('_mock_') and not key.startswith('method_calls'):
+            if not key.startswith("_mock_") and not key.startswith("method_calls"):
                 try:
                     # Simple serialization for basic types only
                     if value is None or isinstance(value, (str, int, float, bool, list, dict)):
@@ -872,11 +884,11 @@ def serialize_mock_object(mock_obj: Any, mode: str = "default", _seen: Optional[
 
     # Add basic mock state info
     try:
-        if hasattr(mock_obj, '_mock_name') and mock_obj._mock_name:
+        if hasattr(mock_obj, "_mock_name") and mock_obj._mock_name:
             result["attributes"]["_mock_name"] = str(mock_obj._mock_name)
-        if hasattr(mock_obj, '_mock_called'):
+        if hasattr(mock_obj, "_mock_called"):
             result["attributes"]["_mock_called"] = bool(mock_obj._mock_called)
-        if hasattr(mock_obj, '_mock_call_count'):
+        if hasattr(mock_obj, "_mock_call_count"):
             result["attributes"]["_mock_call_count"] = int(mock_obj._mock_call_count)
     except Exception:
         # If we can't get mock state, that's fine
@@ -944,7 +956,7 @@ def serialize_to_json(obj: Any, mode: str = "default", **kwargs: Any) -> str:
     Raises:
         TypeError: If the object cannot be serialized to JSON
     """
-    serialized = safe_serialize(obj, mode=mode)
+    serialized: Any = safe_serialize(obj, mode=mode)
     return json.dumps(serialized, sort_keys=True, **kwargs)
 
 
@@ -956,9 +968,6 @@ def serialize_to_json_robust(obj: Any, **kwargs: Any) -> str:
     import json
 
     return json.dumps(robust_serialize(obj), **kwargs)
-
-
-
 
 
 def reset_custom_serializer_registry() -> None:

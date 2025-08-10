@@ -26,12 +26,12 @@ class ContextManager:
                 # Fallback to manual key-based copy
                 try:
                     data = {k: getattr(context, k) for k in include_keys if hasattr(context, k)}
-                    return type(context)(**data)  # type: ignore
+                    return type(context)(**data)
                 except Exception:
                     pass
         try:
             # Use pydantic's deep copy when available
-            return context.model_copy(deep=True)  # type: ignore
+            return context.model_copy(deep=True)
         except Exception:
             return copy.deepcopy(context)
 

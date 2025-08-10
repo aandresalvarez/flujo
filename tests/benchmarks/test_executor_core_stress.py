@@ -14,7 +14,7 @@ import os
 import gc
 from unittest.mock import Mock, AsyncMock
 
-from flujo.application.core.ultra_executor import OptimizationConfig
+from flujo.application.core.ultra_executor import OptimizationConfig, OptimizedExecutorCore
 from flujo.application.core.adaptive_resource_manager import (
     get_global_adaptive_resource_manager,
     ResourceType,

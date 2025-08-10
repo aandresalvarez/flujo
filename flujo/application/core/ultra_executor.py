@@ -35,11 +35,24 @@ from typing import (
 )
 
 # Import Mock types for mock detection
-try:
-    from unittest.mock import AsyncMock, MagicMock, Mock
-except ImportError:
-    # Fallback for environments where unittest.mock is not available
-    Mock = MagicMock = AsyncMock = type("Mock", (), {})
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from unittest.mock import AsyncMock, MagicMock, Mock  # pragma: no cover
+else:  # pragma: no cover - mock types only used for isinstance checks in tests
+    try:
+        from unittest.mock import AsyncMock, MagicMock, Mock  # type: ignore
+    except Exception:
+
+        class Mock:  # minimal runtime fallbacks
+            pass
+
+        class MagicMock(Mock):
+            pass
+
+        class AsyncMock(Mock):
+            pass
+
 
 from ...application.core.context_manager import _accepts_param
 from ...domain.dsl.conditional import ConditionalStep
@@ -99,6 +112,7 @@ class _Frame:
     data: Any
     context: Optional[Any] = None
     resources: Optional[Any] = None
+
 
 # Type alias for step executor function signature
 StepExecutor = Callable[
@@ -309,7 +323,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         if context is None:
             return None
 
-
         try:
             # Deep copy the context to ensure complete isolation
             isolated_context = copy.deepcopy(context)
@@ -349,17 +362,20 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         elif branch_context is None:
             return main_context
 
-
         try:
             # Use safe_merge_context_updates for proper merging
-            success = safe_merge_context_updates(main_context, branch_context)
+            from typing import cast as _cast, Any as _Any
+
+            success = safe_merge_context_updates(
+                _cast(_Any, main_context), _cast(_Any, branch_context)
+            )
             if success:
                 return main_context
             else:
                 # If merge fails, try manual field-by-field copying
                 try:
                     # Create a new context of the same type
-                    new_context = type(main_context)(initial_prompt=main_context.initial_prompt)
+                    new_context = copy.copy(main_context)
 
                     # Copy all fields from main context
                     for field_name in dir(main_context):
@@ -861,6 +877,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         original_context_setter = getattr(self, "_context_setter", None)
         try:
             self._context_setter = context_setter
+            # Map legacy _handle_loop_step signature to policy execute signature
             return await self.loop_step_executor.execute(
                 self,
                 loop_step,
@@ -868,10 +885,10 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 context,
                 resources,
                 limits,
-                False,
-                None,
-                None,
-                None,
+                False,  # stream
+                None,  # on_chunk
+                None,  # cache_key
+                None,  # breach_event
                 _fallback_depth,
             )
         finally:
@@ -1639,10 +1656,10 @@ class OrjsonSerializer:
     def serialize(self, obj: Any) -> bytes:
         """Serialize using unified serialization then encode to bytes."""
         from flujo.utils.serialization import safe_serialize
-        
+
         # Use unified serialization logic first
         serialized_obj = safe_serialize(obj, mode="default")
-        
+
         # Then encode to bytes using the appropriate library
         if self._use_orjson:
             return self._orjson.dumps(serialized_obj, option=self._orjson.OPT_SORT_KEYS)
@@ -1653,13 +1670,13 @@ class OrjsonSerializer:
     def deserialize(self, blob: bytes) -> Any:
         """Deserialize using appropriate library then unified deserialization."""
         from flujo.utils.serialization import safe_deserialize
-        
+
         # First decode from bytes
         if self._use_orjson:
             raw_data = self._orjson.loads(blob)
         else:
             raw_data = self._json.loads(blob.decode("utf-8"))
-        
+
         # Then apply unified deserialization logic if needed
         return safe_deserialize(raw_data)
 
@@ -2143,8 +2160,7 @@ async def _execute_plugins_with_redirects(
                 processed = self._unpack_agent_output(raw)
                 continue
             if not outcome.success:
-                from ...exceptions import PluginError
-
+                # Use local PluginError classification to signal retryable plugin failure
                 raise PluginError(outcome.feedback or "Plugin failed without feedback")
             if outcome.new_solution is not None:
                 processed = outcome.new_solution
@@ -2161,7 +2177,6 @@ async def _execute_validators(
     timeout_s: float | None,
 ) -> None:
     """Run validators and raise ValidationError on first failure."""
-    from ...exceptions import ValidationError
 
     if not getattr(step, "validators", []):
         return
@@ -2171,6 +2186,7 @@ async def _execute_validators(
     )
     for r in results:
         if not getattr(r, "is_valid", False):
+            # Use local ValidationError classification to signal retryable validation failure
             raise ValidationError(r.feedback)
 
 

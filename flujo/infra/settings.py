@@ -98,7 +98,7 @@ class Settings(BaseSettings):
     }
 
     @model_validator(mode="after")
-    def load_dynamic_api_keys(self) -> "Settings":
+    def load_dynamic_api_keys(self: "Settings") -> "Settings":
         """Load any additional *_API_KEY variables from the environment."""
         handled_keys: set[str] = set()
         for field in self.__class__.model_fields.values():

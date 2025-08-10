@@ -6,7 +6,7 @@ from typing import Any, Dict, List, AsyncIterator, Iterator, Optional
 from contextlib import contextmanager
 import ast
 
-from flujo.domain.plugins import PluginOutcome
+from flujo.domain.plugins import PluginOutcome, ValidationPlugin
 from flujo.domain.backends import ExecutionBackend, StepExecutionRequest
 from flujo.domain.agent_protocol import AsyncAgentProtocol
 from flujo.infra.backends import LocalBackend
@@ -58,9 +58,6 @@ class StubAgent:
 
     async def run_async(self, data: Any = None, **kwargs: Any) -> Any:
         return await self.run(data, **kwargs)
-
-
-from flujo.domain.plugins import ValidationPlugin
 
 
 class DummyPlugin(ValidationPlugin):

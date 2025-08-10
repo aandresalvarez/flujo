@@ -186,7 +186,9 @@ class TestMemoryUsageAnalysis:
         # step_logic module was intentionally removed during refactoring
         # This test verifies that the module no longer exists
         with pytest.raises(ModuleNotFoundError):
-            import flujo.application.core.step_logic  # This module should be removed
+            import importlib
+
+            importlib.import_module("flujo.application.core.step_logic")
 
         print("step_logic module successfully removed")
 
@@ -195,7 +197,9 @@ class TestMemoryUsageAnalysis:
         # step_logic module was intentionally removed during refactoring
         # This test verifies that the module no longer exists
         with pytest.raises(ModuleNotFoundError):
-            import flujo.application.core.step_logic  # This module should be removed
+            import importlib
+
+            importlib.import_module("flujo.application.core.step_logic")
 
         print("step_logic module successfully removed")
 
@@ -208,7 +212,9 @@ class TestCleanupCompleteness:
         # step_logic module was intentionally removed during refactoring
         # This test verifies that the module no longer exists
         with pytest.raises(ModuleNotFoundError):
-            import flujo.application.core.step_logic  # This module should be removed
+            import importlib
+
+            importlib.import_module("flujo.application.core.step_logic")
 
         print("step_logic module successfully removed")
 

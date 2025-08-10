@@ -33,44 +33,79 @@ When implementing exceptions that control workflow execution (like `PausedExcept
 1. **Register in Error Classification System**:
    ```python
    # In flujo/application/core/optimized_error_handler.py
-   self._category_mappings = {
-       "YourCustomException": ErrorCategory.CONTROL_FLOW,
-   }
+   from typing import Dict, Type
+   from flujo.application.core.error_categories import ErrorCategory
+   
+   class ErrorClassifier:
+       def __init__(self) -> None:
+           # Type-safe category mappings with explicit typing
+           self._category_mappings: Dict[str, ErrorCategory] = {
+               "YourCustomException": ErrorCategory.CONTROL_FLOW,
+           }
    ```
 
 2. **Create a Non-Retryable Recovery Strategy**:
    ```python
    # In _register_default_strategies()
-   control_flow_strategy = RecoveryStrategy(
-       name="your_control_flow",
-       error_types={YourCustomException},
-       max_retries=0,  # Never retry control flow exceptions
-       primary_action=RecoveryAction.ESCALATE # Escalate immediately to the runner
-   )
+   from typing import Set
+   from flujo.application.core.recovery_strategies import RecoveryStrategy, RecoveryAction
+   
+   def _register_default_strategies(self) -> None:
+       """Register default recovery strategies with proper typing."""
+       # Type-safe error type sets
+       control_flow_exceptions: Set[Type[Exception]] = {YourCustomException}
+       
+       control_flow_strategy = RecoveryStrategy(
+           name="your_control_flow",
+           error_types=control_flow_exceptions,
+           max_retries=0,  # Never retry control flow exceptions
+           primary_action=RecoveryAction.ESCALATE  # Escalate immediately to the runner
+       )
    ```
 
 3. **Use in Step Policies**:
    ```python
    # In a step policy's main try/except block
-   except Exception as e:
-       # 1. First, immediately check for and re-raise control flow exceptions.
-       if isinstance(e, (PausedException, PipelineAbortSignal, InfiniteRedirectError)):
-           raise e  # Let the runner orchestrate.
+   from typing import Union
+   from flujo.domain.models import StepResult
+   from flujo.application.core.exceptions import PausedException, PipelineAbortSignal, InfiniteRedirectError
+   
+   async def execute(self, core: ExecutorCore, step: Step, data: Any, context: Optional[PipelineContext]) -> StepResult:
+       try:
+           # Your step logic here
+           result: Any = await self._execute_step_logic(step, data, context)
+           return StepResult(success=True, output=result)
            
-       # 2. For all other exceptions, create a failure StepResult.
-       # The runner's retry/fallback logic will handle this result.
-       return StepResult(success=False, feedback=f"Step failed: {e}")
+       except Exception as e:
+           # 1. First, immediately check for and re-raise control flow exceptions.
+           if isinstance(e, (PausedException, PipelineAbortSignal, InfiniteRedirectError)):
+               raise e  # Let the runner orchestrate.
+               
+           # 2. For all other exceptions, create a failure StepResult.
+           # The runner's retry/fallback logic will handle this result.
+           error_feedback: str = f"Step failed: {e}"
+           return StepResult(success=False, feedback=error_feedback)
    ```
 
 ### **❌ The Fatal Anti-Pattern**
 
 **NEVER do this in step policies**:
 ```python
-try:
-    result = await core._agent_runner.run(...)
-except PausedException as e:
-    # ❌ This breaks pause/resume workflows!
-    return StepResult(success=False, feedback=str(e))
+from typing import Any, Optional
+from flujo.domain.models import StepResult, PipelineContext
+from flujo.application.core.exceptions import PausedException
+
+async def execute(self, core: ExecutorCore, step: Step, data: Any, context: Optional[PipelineContext]) -> StepResult:
+    try:
+        # Execute agent runner with proper typing
+        result: Any = await core._agent_runner.run(step, data, context)
+        return StepResult(success=True, output=result)
+        
+    except PausedException as e:
+        # ❌ This breaks pause/resume workflows!
+        # Converting control flow exception to data failure breaks orchestration
+        error_feedback: str = str(e)
+        return StepResult(success=False, feedback=error_feedback)
 ```
 **This converts a control flow exception into a data-level failure, breaking the entire workflow orchestration system.**
 
@@ -80,21 +115,55 @@ except PausedException as e:
 
 ### **✅ Policy Class Structure**
 
-Every policy should follow this pattern:
+Every policy should follow this pattern with complete type safety:
 
 ```python
+from typing import Any, Optional, Dict, List
+from flujo.application.core import ExecutorCore
+from flujo.domain.dsl import Step
+from flujo.domain.models import StepResult, PipelineContext
+from flujo.application.core.execution_frame import ExecutionFrame
+
 class DefaultYourStepExecutor:
+    """Executor policy for YourStep with complete type safety."""
+    
     async def execute(
         self,
         core: ExecutorCore,
-        step: YourStepType,
+        step: "YourStepType",  # Use string for forward references
         data: Any,
         context: Optional[PipelineContext],
+        execution_id: str,
+        step_id: str,
         # ... other parameters from ExecutionFrame ...
     ) -> StepResult:
-        # 1. Validate inputs
+        """Execute the step with complete type safety.
+        
+        Args:
+            core: The executor core for recursive execution
+            step: The step instance to execute
+            data: Input data for the step
+            context: Optional pipeline context
+            execution_id: Unique execution identifier
+            step_id: Unique step identifier
+            
+        Returns:
+            StepResult: Execution result with success/failure status
+        """
+        # 1. Validate inputs with proper typing
+        validation_errors: List[str] = []
+        
         # 2. Handle caching (if applicable)
+        cache_key: str = f"{execution_id}:{step_id}"
+        
         # 3. Execute core logic with proper exception handling
+        try:
+            result: StepResult = await self._execute_core_logic(step, data, context)
+            return result
+        except Exception as e:
+            error_feedback: str = f"Step execution failed: {e}"
+            return StepResult(success=False, feedback=error_feedback)
+        
         # 4. Handle context updates/merging
         # 5. Return results
 ```
@@ -103,19 +172,33 @@ class DefaultYourStepExecutor:
 
 ### **✅ Context Management in Policies**
 
-Always use the centralized utilities for safety and consistency.
+Always use the centralized utilities for safety and consistency with proper typing:
 
 ```python
-# For isolation (parallel branches, loop iterations)
+from typing import Dict, Any, Optional
 from flujo.application.core.context_manager import ContextManager
-isolated_context = ContextManager.isolate(parent_context)
-
-# For merging a single branch's context back into the main context
-ContextManager.merge(main_context, successful_branch_context)
-
-# For applying a dictionary of updates to an existing context
+from flujo.domain.models import PipelineContext
 from flujo.utils.context import safe_merge_context_updates
-safe_merge_context_updates(target_context, source_with_updates)
+
+async def execute_with_context_isolation(
+    self, 
+    parent_context: PipelineContext, 
+    branch_data: Dict[str, Any]
+) -> PipelineContext:
+    """Execute with proper context isolation and typing."""
+    
+    # For isolation (parallel branches, loop iterations)
+    isolated_context: PipelineContext = ContextManager.isolate(parent_context)
+    
+    # For merging a single branch's context back into the main context
+    ContextManager.merge(parent_context, isolated_context)
+    
+    # For applying a dictionary of updates to an existing context
+    # Use explicit typing for the updates dictionary
+    updates_dict: Dict[str, Any] = {"branch_result": branch_data}
+    safe_merge_context_updates(parent_context, updates_dict)
+    
+    return parent_context
 ```
 
 ### **❌ Anti-Pattern: Direct Context Manipulation**
@@ -153,42 +236,143 @@ When adding a new step type to Flujo:
 ### **Step 1: Define the Step Class**
 ```python
 # In a new module like flujo/domain/dsl/your_step.py
+from typing import Any, Dict, Optional
 from flujo.domain.dsl import Step
+from pydantic import BaseModel, Field
 
-class YourCustomStep(Step[InputType, OutputType]):
-    # Step-specific configuration
-    your_config: YourConfigType
+class YourStepConfig(BaseModel):
+    """Configuration for YourCustomStep with proper typing."""
+    max_retries: int = Field(default=3, description="Maximum retry attempts")
+    timeout_seconds: float = Field(default=30.0, description="Operation timeout")
+    custom_option: Optional[str] = Field(default=None, description="Optional custom setting")
 
+class YourCustomStep(Step[Dict[str, Any], Dict[str, Any]]):
+    """Custom step with complete type safety and configuration."""
+    
+    # Step-specific configuration with explicit typing
+    your_config: YourStepConfig
+    
+    # Additional step properties with proper types
+    step_name: str
+    description: Optional[str] = None
+    
     @property
     def is_complex(self) -> bool:
-        # Mark as complex to ensure it's routed by the dispatcher
-        # to its dedicated policy, not the simple step handler.
+        """Mark as complex to ensure it's routed by the dispatcher
+        to its dedicated policy, not the simple step handler."""
         return True
+    
+    @property
+    def input_type(self) -> type:
+        """Return the expected input type for type checking."""
+        return Dict[str, Any]
+    
+    @property
+    def output_type(self) -> type:
+        """Return the expected output type for type checking."""
+        return Dict[str, Any]
 ```
 
 ### **Step 2: Create the Policy**
 ```python
 # In flujo/application/core/step_policies.py
+from typing import Any, Dict, Optional, List
+from flujo.application.core import ExecutorCore
+from flujo.domain.dsl import Step
+from flujo.domain.models import StepResult, PipelineContext
+from flujo.domain.dsl.your_step import YourCustomStep, YourStepConfig
+
 class DefaultYourCustomStepExecutor:
-    async def execute(self, core, step, data, context, ...):
-        # Implementation following the policy pattern
+    """Executor policy for YourCustomStep with complete type safety."""
+    
+    async def execute(
+        self,
+        core: ExecutorCore,
+        step: YourCustomStep,
+        data: Dict[str, Any],
+        context: Optional[PipelineContext],
+        execution_id: str,
+        step_id: str
+    ) -> StepResult:
+        """Execute YourCustomStep with proper error handling and typing.
+        
+        Args:
+            core: Executor core for recursive execution
+            step: YourCustomStep instance with configuration
+            data: Input data dictionary
+            context: Optional pipeline context
+            execution_id: Unique execution identifier
+            step_id: Unique step identifier
+            
+        Returns:
+            StepResult: Success/failure result with output/feedback
+        """
+        # Extract configuration with proper typing
+        config: YourStepConfig = step.your_config
+        
+        # Implementation following the policy pattern with type safety
+        try:
+            # Your step logic here with explicit typing
+            result: Dict[str, Any] = await self._process_data(data, config, context)
+            return StepResult(success=True, output=result)
+            
+        except Exception as e:
+            error_feedback: str = f"YourCustomStep failed: {e}"
+            return StepResult(success=False, feedback=error_feedback)
+    
+    async def _process_data(
+        self, 
+        data: Dict[str, Any], 
+        config: YourStepConfig, 
+        context: Optional[PipelineContext]
+    ) -> Dict[str, Any]:
+        """Process data according to step configuration."""
+        # Implementation here
+        pass
 ```
 
 ### **Step 3: Register in ExecutorCore**
 ```python
 # In flujo/application/core/ultra_executor.py
+from typing import Optional, Any
+from flujo.application.core.step_policies import DefaultYourCustomStepExecutor
+from flujo.domain.dsl.your_step import YourCustomStep
+from flujo.application.core.execution_frame import ExecutionFrame
 
-# 1. Update the constructor to accept the new policy
+# 1. Update the constructor to accept the new policy with proper typing
 class ExecutorCore:
-    def __init__(self, ..., your_custom_step_executor=None):
-        # ...
-        self.your_custom_step_executor = your_custom_step_executor or DefaultYourCustomStepExecutor()
+    def __init__(
+        self, 
+        agent_runner: Any,
+        your_custom_step_executor: Optional[DefaultYourCustomStepExecutor] = None,
+        # ... other parameters ...
+    ) -> None:
+        """Initialize ExecutorCore with injected policies."""
+        # ... other initialization ...
+        
+        # Type-safe policy injection with fallback to default
+        self.your_custom_step_executor: DefaultYourCustomStepExecutor = (
+            your_custom_step_executor or DefaultYourCustomStepExecutor()
+        )
 
-# 2. Update the dispatcher to use the injected policy
-async def execute(self, frame: ExecutionFrame, ...):
-    step = frame.step
+# 2. Update the dispatcher to use the injected policy with type safety
+async def execute(self, frame: ExecutionFrame) -> Any:
+    """Execute step with proper type checking and policy routing."""
+    step: Any = frame.step
+    
+    # Type-safe step routing with explicit policy delegation
     if isinstance(step, YourCustomStep):
-        return await self.your_custom_step_executor.execute(self, frame)
+        # Delegate to the injected policy with complete frame
+        return await self.your_custom_step_executor.execute(
+            core=self,
+            step=step,
+            data=frame.data,
+            context=frame.context,
+            execution_id=frame.execution_id,
+            step_id=frame.step_id
+        )
+    
+    # ... handle other step types ...
 ```
 
 ### **Step 4: Add Tests**
@@ -206,57 +390,119 @@ async def execute(self, frame: ExecutionFrame, ...):
 
 ### **❌ Pitfall: Context Mutation Instead of Updates**
 ```python
-# ❌ Wrong
+# ❌ Wrong - Direct context mutation bypasses validation
 # In a policy, you might be tempted to directly change the context.
 # This bypasses validation and can lead to inconsistent state.
-context.some_field = new_value
+from typing import Any, Dict
+from flujo.domain.models import PipelineContext
 
-# ✅ Correct Architectural Pattern
+def wrong_context_update(context: PipelineContext, new_value: str) -> None:
+    # ❌ NEVER do this - bypasses validation and type safety
+    context.some_field = new_value  # mypy error: no such attribute
+
+# ✅ Correct Architectural Pattern with Type Safety
 # Use `safe_merge_context_updates` from `flujo.utils.context` to apply changes.
 # This ensures validation is respected and is the canonical way to merge state.
 from flujo.utils.context import safe_merge_context_updates
+from flujo.domain.models import YourContextModel
 
-# Create a source context or dict with the updates
-updates_to_apply = YourContextModel(some_field=new_value)
-
-# Safely merge the changes into the main context
-safe_merge_context_updates(main_context, updates_to_apply)
+def correct_context_update(
+    main_context: PipelineContext, 
+    new_value: str
+) -> None:
+    """Update context safely with proper typing and validation."""
+    
+    # Create a source context or dict with the updates
+    updates_to_apply: YourContextModel = YourContextModel(some_field=new_value)
+    
+    # Safely merge the changes into the main context
+    # This respects validation and maintains type safety
+    safe_merge_context_updates(main_context, updates_to_apply)
 ```
 
 ### **❌ Pitfall: Exception Swallowing**
 ```python
-# ❌ Wrong
-try:
-    result = await operation()
-except Exception:
-    return StepResult(success=False)  # Lost the original exception!
+# ❌ Wrong - Exception swallowing loses critical error information
+from typing import Any, Optional
+from flujo.domain.models import StepResult
 
-# ✅ Correct
-try:
-    result = await operation()
-except Exception as e:
-    # Use the error classification system to determine the nature of the error
-    error_context = ErrorContext.from_exception(e)
-    classifier.classify_error(error_context)
-    
-    # Re-raise control flow exceptions to let the runner handle them
-    if error_context.category == ErrorCategory.CONTROL_FLOW:
-        raise e
-    
-    # For other exceptions, create a rich failure result
-    return StepResult(success=False, feedback=f"Step failed: {e}")
+async def wrong_exception_handling() -> StepResult:
+    try:
+        result: Any = await operation()
+        return StepResult(success=True, output=result)
+    except Exception:
+        # ❌ NEVER do this - lost the original exception!
+        return StepResult(success=False)  # No feedback about what went wrong
+
+# ✅ Correct - Proper exception handling with type safety
+from flujo.application.core.error_categories import ErrorCategory
+from flujo.application.core.error_context import ErrorContext
+from flujo.application.core.error_classifier import ErrorClassifier
+
+async def correct_exception_handling() -> StepResult:
+    """Handle exceptions properly with error classification and typing."""
+    try:
+        result: Any = await operation()
+        return StepResult(success=True, output=result)
+        
+    except Exception as e:
+        # Use the error classification system to determine the nature of the error
+        error_context: ErrorContext = ErrorContext.from_exception(e)
+        classifier: ErrorClassifier = ErrorClassifier()
+        classifier.classify_error(error_context)
+        
+        # Re-raise control flow exceptions to let the runner handle them
+        if error_context.category == ErrorCategory.CONTROL_FLOW:
+            raise e  # Let the runner orchestrate
+        
+        # For other exceptions, create a rich failure result with proper typing
+        error_feedback: str = f"Step failed: {e}"
+        return StepResult(success=False, feedback=error_feedback)
 ```
 
 ### **❌ Pitfall: Policy Logic in ExecutorCore**
 ```python
-# ❌ Wrong - in ExecutorCore.execute()
-if isinstance(step, LoopStep):
-    # Complex loop logic here...
+# ❌ Wrong - Putting policy logic directly in ExecutorCore
+from typing import Any
+from flujo.domain.dsl.loop import LoopStep
+from flujo.application.core.execution_frame import ExecutionFrame
 
-# ✅ Correct - in ExecutorCore.execute()
-if isinstance(step, LoopStep):
-    # Delegate to the injected policy
-    return await self.loop_step_executor.execute(self, frame)
+class ExecutorCore:
+    async def execute(self, frame: ExecutionFrame) -> Any:
+        step: Any = frame.step
+        
+        # ❌ NEVER do this - ExecutorCore becomes a monolithic implementer
+        if isinstance(step, LoopStep):
+            # Complex loop logic here...
+            # This violates the policy-driven architecture
+            loop_result: Any = await self._handle_loop_logic(step, frame)
+            return loop_result
+
+# ✅ Correct - Delegate to injected policies with type safety
+from flujo.application.core.step_policies import DefaultLoopStepExecutor
+
+class ExecutorCore:
+    def __init__(self, loop_step_executor: Optional[DefaultLoopStepExecutor] = None) -> None:
+        """Initialize with injected policies."""
+        self.loop_step_executor: DefaultLoopStepExecutor = (
+            loop_step_executor or DefaultLoopStepExecutor()
+        )
+    
+    async def execute(self, frame: ExecutionFrame) -> Any:
+        """Execute step by delegating to appropriate policy."""
+        step: Any = frame.step
+        
+        # ✅ ALWAYS do this - delegate to the injected policy
+        if isinstance(step, LoopStep):
+            # Delegate to the injected policy with complete frame
+            return await self.loop_step_executor.execute(
+                core=self,
+                step=step,
+                data=frame.data,
+                context=frame.context,
+                execution_id=frame.execution_id,
+                step_id=frame.step_id
+            )
 ```
 
 ---
@@ -270,20 +516,37 @@ if isinstance(step, LoopStep):
 **❌ The Dangerous Anti-Pattern:**
 ```python
 # ❌ NEVER DO THIS - Masking real issues
-def test_fallback_behavior():
-    result = await execute_step_with_failing_processor()
+from typing import Any
+from flujo.domain.models import StepResult
+
+async def test_fallback_behavior() -> None:
+    """Test fallback behavior with proper typing."""
+    result: StepResult = await execute_step_with_failing_processor()
+    
     # Originally expected: assert result.output == "fallback success"
     # Changed to mask issue: assert result.output == "primary success"  # ❌ WRONG!
+    # This hides the real bug and creates technical debt
 ```
 
 **✅ The Engineering Excellence Pattern:**
 ```python
 # ✅ ALWAYS DO THIS - Investigate and fix root causes
-def test_fallback_behavior():
-    result = await execute_step_with_failing_processor()
+from typing import Any
+from flujo.domain.models import StepResult
+
+async def test_fallback_behavior() -> None:
+    """Test fallback behavior with proper typing and expectations."""
+    result: StepResult = await execute_step_with_failing_processor()
+    
     # Test fails? Investigate WHY the fallback isn't triggering
     # Fix the underlying processor error handling logic
     # Keep the original expectation: assert result.output == "fallback success"
+    
+    # Verify the fallback mechanism works as expected
+    assert result.output == "fallback success", (
+        f"Expected fallback success, got: {result.output}. "
+        "Investigate why fallback didn't trigger."
+    )
 ```
 
 **Critical Principle:** Test failures are symptoms pointing to real bugs. Changing test expectations to make them pass masks real regressions and creates technical debt.
@@ -293,19 +556,49 @@ def test_fallback_behavior():
 **❌ The Dangerous Anti-Pattern:**
 ```python
 # ❌ NEVER DO THIS - Hiding performance regressions
-def get_performance_threshold():
+from typing import float
+
+def get_performance_threshold() -> float:
+    """Get performance threshold for overhead tests."""
     # Originally: return 1700.0  # 17x overhead limit
     # Changed to hide issue: return 2100.0  # ❌ WRONG! This hides real performance problems
+    # This allows performance regressions to slip into production
+    return 2100.0
+
+# ❌ NEVER DO THIS - Adjusting thresholds to mask problems
+def test_performance_overhead() -> None:
+    """Test performance overhead with adjusted threshold."""
+    threshold: float = get_performance_threshold()
+    # Test passes with higher threshold, but performance is actually worse
+    assert measured_overhead <= threshold  # This hides the real issue
 ```
 
 **✅ The Engineering Excellence Pattern:**
 ```python
 # ✅ ALWAYS DO THIS - Fix the underlying performance issues
-def test_performance_overhead():
+from typing import float
+
+def get_performance_threshold() -> float:
+    """Get performance threshold for overhead tests."""
+    # Keep original threshold to catch real performance regressions
+    return 1700.0  # 17x overhead limit - don't change this!
+
+def test_performance_overhead() -> None:
+    """Test performance overhead with proper investigation."""
     # Performance test failing? Investigate WHY
     # Common causes: resource contention, parallel test interference, memory leaks
+    
     # Fix: Proper test isolation, resource cleanup, worker-specific resources
     # Keep original thresholds to maintain performance standards
+    
+    threshold: float = get_performance_threshold()
+    measured_overhead: float = measure_actual_overhead()
+    
+    # Use descriptive assertion messages for debugging
+    assert measured_overhead <= threshold, (
+        f"Performance overhead {measured_overhead} exceeds threshold {threshold}. "
+        "Investigate resource contention, memory leaks, or algorithm regressions."
+    )
 ```
 
 **Critical Principle:** Performance thresholds exist to catch regressions. Raising them to make tests pass allows real performance problems to slip into production.
@@ -322,21 +615,53 @@ def test_performance_overhead():
 **✅ Root Cause Analysis (What We Did Right):**
 ```python
 # Investigation revealed the real issue:
+from typing import Any, List, Optional
+from flujo.domain.models import PipelineContext
+from flujo.application.core.processors import Processor
+
 class DefaultProcessorPipeline:
-    async def apply_prompt(self, processors, data, context):
+    """Processor pipeline with proper error handling and typing."""
+    
+    async def apply_prompt(
+        self, 
+        processors: List[Processor], 
+        data: Any, 
+        context: Optional[PipelineContext]
+    ) -> Any:
+        """Apply processors to data with proper error handling."""
+        processed_data: Any = data
+        
         for proc in processors:
             try:
                 processed_data = await proc.process(data)
             except Exception as e:
                 # ❌ BUG: Silently swallowing exceptions!
+                # This prevents proper error handling and fallback logic
                 telemetry.logfire.error(f"Processor failed: {e}")
                 processed_data = data  # Continue with original data
+                
         return processed_data
 
 # ✅ PROPER FIX: Re-raise exceptions to fail the step as expected
+class FixedProcessorPipeline:
+    """Fixed processor pipeline that properly handles errors."""
+    
+    async def apply_prompt(
+        self, 
+        processors: List[Processor], 
+        data: Any, 
+        context: Optional[PipelineContext]
+    ) -> Any:
+        """Apply processors to data with proper error propagation."""
+        processed_data: Any = data
+        
+        for proc in processors:
+            try:
+                processed_data = await proc.process(data)
             except Exception as e:
+                # ✅ FIXED: Log the error and re-raise to fail the step properly
                 telemetry.logfire.error(f"Processor failed: {e}")
-                raise e  # Let the step fail properly
+                raise e  # Let the step fail properly, triggering fallback logic
 ```
 
 ### **🎯 LESSON 4: First Principles Debugging Methodology**
@@ -391,7 +716,239 @@ When tests fail, follow this methodology:
 
 ---
 
-## **12. Engineering Excellence Checklist**
+## **13. Type Safety and Code Quality Maintenance (NEW)**
+
+*These lessons were learned during the systematic fixing of 161 mypy errors and represent critical engineering principles that every team member must internalize to prevent type annotation debt accumulation.*
+
+### **🎯 LESSON 7: Never Let Type Errors Accumulate**
+
+**❌ The Dangerous Anti-Pattern:**
+- Adding new code without type annotations
+- Ignoring mypy errors during development
+- Running `make all` only before releases
+- Allowing type annotation debt to accumulate (like the 161 errors we just fixed)
+
+**✅ The Engineering Excellence Pattern:**
+- **Every commit must pass `make all`** - no exceptions
+- **Fix type errors immediately** when they appear
+- **Run type checking during development**, not just before commits
+- **Treat mypy errors as blocking issues**, not technical debt
+
+### **🎯 LESSON 8: Type Annotation Standards**
+
+**Required Type Annotations - ALWAYS include these:**
+
+```python
+# ✅ ALWAYS annotate these with explicit types:
+from typing import Any, Dict, List, Optional, Union
+from flujo.domain.models import StepResult, PipelineContext
+
+def process_data(
+    input_data: str, 
+    config: Dict[str, Any], 
+    context: Optional[PipelineContext] = None
+) -> StepResult:
+    """Process input data according to configuration.
+    
+    Args:
+        input_data: The string data to process
+        config: Configuration dictionary with processing options
+        context: Optional pipeline context for state management
+        
+    Returns:
+        StepResult: Success/failure result with feedback
+    """
+    # Local variables must have explicit types
+    processed_items: List[str] = []
+    metadata: Dict[str, Any] = {}
+    
+    # Dictionary/list comprehensions need explicit types
+    filtered_data: List[str] = [item for item in input_data.split() if item]
+    
+    # Return type must match the declared return type
+    return StepResult(success=True, feedback="Processing completed")
+
+# ❌ NEVER leave these untyped - this creates technical debt:
+def process_data(input_data, config, context=None):  # Missing types
+    result = []  # Missing type annotation
+    return result  # Missing return type
+```
+
+**Type Annotation Checklist - Verify every function:**
+- [ ] All function parameters have explicit type annotations
+- [ ] All function return types are specified with `-> ReturnType`
+- [ ] All local variables are typed when initialized: `var: Type = value`
+- [ ] All dictionary/list comprehensions have explicit types: `result: List[Type] = [...]`
+- [ ] All `Any` types are justified and documented with `# type: ignore` comments explaining why
+- [ ] All generic types use proper syntax: `Dict[str, Any]`, `List[StepResult]`
+
+### **🎯 LESSON 9: Daily Code Quality Practices**
+
+**Before Every Commit - This is MANDATORY:**
+1. **Run `make all`** - This must pass with 0 errors (no exceptions)
+2. **Fix any mypy errors** - Don't commit with type errors
+3. **Fix any linting issues** - Unused variables, imports, etc.
+4. **Run relevant tests** - Ensure no regressions
+
+**During Development - Don't wait until the end:**
+1. **Run `make all` frequently** - Every 10-15 minutes of coding
+2. **Use IDE type checking** - Enable real-time mypy integration
+3. **Fix type errors as you go** - Don't let them accumulate
+4. **Use type stubs** - Create `.pyi` files for external libraries if needed
+
+### **🎯 LESSON 10: Preventing Type Error Accumulation**
+
+**Team Practices - These are non-negotiable:**
+- **Type Safety Gate**: No PR can be merged if `make all` fails
+- **Regular Type Audits**: Weekly runs of `make all` on the entire codebase
+- **Type Error Budget**: Maximum of 5 mypy errors allowed at any time
+- **Immediate Fix Policy**: Type errors must be fixed within 24 hours
+
+**Code Review Requirements - Every reviewer must check:**
+- [ ] Does this code have complete type annotations?
+- [ ] Does `make all` pass with this change?
+- [ ] Are there any `Any` types that could be more specific?
+- [ ] Does this change introduce new type errors?
+- [ ] Are all local variables properly typed?
+
+### **🎯 LESSON 11: Type Error Recovery Strategy**
+
+**When Type Errors Accumulate (Current Situation - 161 errors):**
+1. **Stop new feature development** - Focus on type safety first
+2. **Systematic fixing approach**:
+   - Start with linting errors (easier to fix)
+   - Then fix mypy errors file by file
+   - Re-run `make all` after each file to track progress
+3. **Set daily targets** - Aim to reduce errors by 20-30 per day
+4. **Document patterns** - Create templates for common type fixes
+
+**Prevention for Future - Implement these safeguards:**
+- **Automated Type Checking**: Integrate mypy into CI/CD pipeline
+- **Pre-commit Hooks**: Run `make all` before allowing commits
+- **Type Safety Metrics**: Track type annotation coverage over time
+- **IDE Integration**: Enforce mypy checking in all development environments
+
+### **🎯 LESSON 12: Common Type Error Patterns and Solutions**
+
+**Pattern 1: Missing Type Annotations**
+```python
+# ❌ Problem: Missing type annotations cause mypy errors
+def format_cost(value) -> str:
+    return f"${value:.2f}"
+
+# ✅ Solution: Add explicit type annotations
+def format_cost(value: Union[float, int]) -> str:
+    """Format cost value as currency string.
+    
+    Args:
+        value: Numeric cost value (float or int)
+        
+    Returns:
+        Formatted currency string
+    """
+    return f"${value:.2f}"
+```
+
+**Pattern 2: Dictionary Access on Potentially Non-Dictionary Types**
+```python
+# ❌ Problem: Mypy can't guarantee result["metadata"] is a dict
+result: Dict[str, Any] = {"content": "data", "metadata": {}}
+result["metadata"]["usage"] = {"tokens": 100}  # mypy error
+
+# ✅ Solution: Use explicit typing and intermediate variables
+result: Dict[str, Any] = {"content": "data", "metadata": {}}
+metadata: Dict[str, Any] = result["metadata"]
+metadata["usage"] = {"tokens": 100}  # mypy happy
+```
+
+**Pattern 3: Attribute Access on Potentially None Types**
+```python
+# ❌ Problem: Accessing attributes without null checks
+def process_response(response: Optional[Response]) -> str:
+    return response.content  # mypy error: response might be None
+
+# ✅ Solution: Add explicit null checks
+def process_response(response: Optional[Response]) -> str:
+    if response is None:
+        raise ValueError("Response cannot be None")
+    return response.content  # mypy happy
+```
+
+**Pattern 4: List Operations with Incompatible Types**
+```python
+# ❌ Problem: Appending potentially None values to typed lists
+feedback_list: List[str] = []
+feedback_list.append(result.feedback)  # mypy error if feedback can be None
+
+# ✅ Solution: Add null checks before appending
+feedback_list: List[str] = []
+if result.feedback is not None:
+    feedback_list.append(result.feedback)  # mypy happy
+```
+
+### **🎯 LESSON 13: Type Safety in Policy Classes**
+
+**Policy Class Type Safety - Always follow this pattern:**
+
+```python
+from typing import Any, Dict, List, Optional, Union
+from flujo.application.core import ExecutorCore
+from flujo.domain.dsl import Step
+from flujo.domain.models import StepResult, PipelineContext
+
+class DefaultYourStepExecutor:
+    """Executor policy for YourStep with complete type safety."""
+    
+    async def execute(
+        self,
+        core: ExecutorCore,
+        step: "YourStepType",  # Use string for forward references
+        data: Any,
+        context: Optional[PipelineContext],
+        execution_id: str,
+        step_id: str
+    ) -> StepResult:
+        """Execute the step with complete type safety.
+        
+        Args:
+            core: The executor core for recursive execution
+            step: The step instance to execute
+            data: Input data for the step
+            context: Optional pipeline context
+            execution_id: Unique execution identifier
+            step_id: Unique step identifier
+            
+        Returns:
+            StepResult: Execution result with success/failure status
+        """
+        # Local variables with explicit types
+        step_history: List[Any] = []
+        validation_errors: List[str] = []
+        
+        try:
+            # Your step logic here
+            result: StepResult = await self._execute_core_logic(step, data, context)
+            return result
+            
+        except Exception as e:
+            # Handle exceptions with proper typing
+            error_msg: str = f"Step execution failed: {e}"
+            return StepResult(success=False, feedback=error_msg)
+    
+    async def _execute_core_logic(
+        self, 
+        step: "YourStepType", 
+        data: Any, 
+        context: Optional[PipelineContext]
+    ) -> StepResult:
+        """Execute the core logic with proper error handling."""
+        # Implementation here
+        pass
+```
+
+---
+
+## **14. Engineering Excellence Checklist (UPDATED)**
 
 Before committing any code changes, ask yourself:
 
@@ -400,7 +957,12 @@ Before committing any code changes, ask yourself:
 - [ ] **Are all test failures caused by legitimate bugs in my code?** Have I fixed the root causes?
 - [ ] **Did I follow first principles debugging?** Did I trace execution paths and find the real issue?
 - [ ] **Will future developers understand why this change was made?** Is it documented in commit messages?
+- [ ] **Does `make all` pass with 0 errors?** Have I fixed all type and linting issues?
+- [ ] **Are all my functions and variables properly typed?** Have I added complete type annotations?
+- [ ] **Did I run type checking during development?** Or did I wait until the end?
+- [ ] **Are there any `Any` types that could be more specific?** Have I minimized type ambiguity?
+- [ ] **Does this change introduce new type errors?** Have I verified mypy is happy?
 
 ---
 
-This guide ensures that all Flujo core team members build features that are architecturally consistent, performant, and maintainable. The patterns here have been battle-tested and should be followed religiously to maintain Flujo's quality and reliability.
+This guide ensures that all Flujo core team members build features that are architecturally consistent, performant, maintainable, and **type-safe**. The patterns here have been battle-tested and should be followed religiously to maintain Flujo's quality, reliability, and prevent the accumulation of technical debt like the 161 mypy errors we just systematically resolved.

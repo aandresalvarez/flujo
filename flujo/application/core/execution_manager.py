@@ -1,10 +1,10 @@
-from __future__ import annotations
-
 """Main execution manager that orchestrates pipeline execution components."""
 
+from __future__ import annotations
+
+import os
 from datetime import datetime
 from typing import Any, AsyncIterator, Generic, Optional, TypeVar
-import os  # Added for os.getenv
 
 from flujo.domain.backends import ExecutionBackend
 from flujo.domain.models import (
@@ -12,7 +12,6 @@ from flujo.domain.models import (
     PipelineResult,
     StepResult,
 )
-# from flujo.domain.dsl import LoopStep  # Commented to avoid circular import
 from flujo.exceptions import (
     ContextInheritanceError,
     PipelineAbortSignal,
@@ -23,12 +22,14 @@ from flujo.exceptions import (
 )
 from flujo.infra import telemetry
 from flujo.application.core.context_adapter import _inject_context, _build_context_update
-from .context_manager import ContextManager
 
+from .context_manager import ContextManager
 from .step_coordinator import StepCoordinator
 from .state_manager import StateManager
 from .type_validator import TypeValidator
 from .usage_governor import UsageGovernor
+
+# from flujo.domain.dsl import LoopStep  # Commented to avoid circular import
 
 ContextT = TypeVar("ContextT", bound=BaseModel)
 
@@ -116,9 +117,6 @@ class ExecutionManager(Generic[ContextT]):
         """
         for idx, step in enumerate(self.pipeline.steps[start_idx:], start=start_idx):
             step_result = None
-            should_add_step_result = (
-                True  # Default to adding step result unless explicitly prevented
-            )
             usage_limit_exceeded = False  # Track if a usage limit exception was raised
 
             # ✅ CRITICAL FIX: Persist state AFTER step execution for crash recovery
@@ -126,6 +124,7 @@ class ExecutionManager(Generic[ContextT]):
             # OPTIMIZATION: Only persist if we have a state backend and run_id, and not in test mode
             # Local import to avoid circular dependency
             from flujo.domain.dsl.loop import LoopStep
+
             persist_state_after_step = (
                 run_id is not None
                 and not isinstance(step, LoopStep)
@@ -175,7 +174,13 @@ class ExecutionManager(Generic[ContextT]):
                     if step_result:
                         # Merge branch context from complex step handlers
                         if step_result.branch_context is not None and context is not None:
-                            context = ContextManager.merge(context, step_result.branch_context)
+                            # Merge with explicit cast to satisfy generic ContextT
+                            from typing import cast
+
+                            merged = ContextManager.merge(
+                                context, cast(Any, step_result.branch_context)
+                            )
+                            context = cast(Optional[ContextT], merged)
                         # --- CONTEXT UPDATE PATCH ---
                         if getattr(step, "updates_context", False) and context is not None:
                             update_data = _build_context_update(step_result.output)
@@ -299,7 +304,6 @@ class ExecutionManager(Generic[ContextT]):
                     # Ensure the step result is added to history before re-raising the exception
                     if step_result is not None and step_result not in result.step_history:
                         self.step_coordinator.update_pipeline_result(result, step_result)
-                    should_add_step_result = False
                     usage_limit_exceeded = True
                     raise  # Re-raise the correctly populated exception.
                 except PipelineAbortSignal:
@@ -316,7 +320,6 @@ class ExecutionManager(Generic[ContextT]):
                                 scratch["status"] = "paused"
                     except Exception:
                         pass
-                    should_add_step_result = False  # Prevent duplicate addition in finally block
                     self.set_final_context(result, context)
                     yield result
                     return
@@ -342,7 +345,6 @@ class ExecutionManager(Generic[ContextT]):
                             state_created_at=state_created_at,
                             step_history=result.step_history,
                         )
-                    should_add_step_result = False  # Prevent duplicate addition in finally block
                     self.set_final_context(result, context)
                     yield result
                     return

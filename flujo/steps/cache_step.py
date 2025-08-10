@@ -45,7 +45,7 @@ def _serialize_for_cache_key(
     obj: Any, visited: Optional[Set[int]] = None, _is_root: bool = True
 ) -> Any:
     """Best-effort conversion of arbitrary objects to cacheable structures for cache keys using unified serialization."""
-    from flujo.utils.serialization import safe_serialize, lookup_custom_serializer
+    from flujo.utils.serialization import lookup_custom_serializer
     from flujo.domain.dsl import Step
 
     if obj is None:
@@ -76,7 +76,7 @@ def _serialize_for_cache_key(
     # Handle primitives first - don't add to visited set
     if isinstance(obj, (int, float, str, bool)):
         return obj
-    
+
     visited.add(obj_id)
     try:
         # Check for custom serializers first
@@ -93,12 +93,12 @@ def _serialize_for_cache_key(
                 d = obj.model_dump(mode="cache")
                 if "run_id" in d:
                     d.pop("run_id", None)
-                
+
                 # Special-case for Step agent field
                 if isinstance(obj, Step) and "agent" in d:
                     original_agent = getattr(obj, "agent", None)
                     d["agent"] = type(original_agent).__name__ if original_agent else "<unknown>"
-                
+
                 result_dict = {}
                 for k in sorted(d.keys(), key=str):
                     v = d[k]
@@ -126,11 +126,13 @@ def _serialize_for_cache_key(
                 custom_serializer_v = lookup_custom_serializer(v)
                 if custom_serializer_v is not None:
                     try:
-                        result[k] = _serialize_for_cache_key(custom_serializer_v(v), visited, _is_root=False)
+                        result[k] = _serialize_for_cache_key(
+                            custom_serializer_v(v), visited, _is_root=False
+                        )
                         continue
                     except Exception:
                         pass
-                
+
                 if hasattr(v, "model_dump"):
                     try:
                         v_dict = v.model_dump(mode="cache")
@@ -174,7 +176,7 @@ def _serialize_for_cache_key(
             return str(obj)
         except Exception:
             return f"<unserializable: {type(obj).__name__}>"
-        
+
     finally:
         visited.discard(obj_id)
 
@@ -184,7 +186,7 @@ def _sort_set_deterministically(
 ) -> list[Any]:
     """Sort a set or frozenset deterministically for cache key generation using unified serialization."""
     from flujo.utils.serialization import safe_serialize
-    
+
     if visited is None:
         visited = set()
 
@@ -269,17 +271,17 @@ def _get_stable_repr(obj: Any, visited: Optional[Set[int]] = None) -> str:
 def _serialize_list_for_key(obj_list: list[Any], visited: Optional[Set[int]] = None) -> list[Any]:
     """Serialize list for cache key."""
     from flujo.utils.serialization import lookup_custom_serializer
-    
+
     if visited is None:
         visited = set()
-    
+
     result_list: list[Any] = []
     for v in obj_list:
         # Only check for circular references for container/object types
         if isinstance(v, (int, float, str, bool, type(None))):
             result_list.append(v)
             continue
-            
+
         obj_id = id(v)
         if obj_id in visited:
             if hasattr(v, "model_dump"):
@@ -291,45 +293,53 @@ def _serialize_list_for_key(obj_list: list[Any], visited: Optional[Set[int]] = N
             else:
                 result_list.append("<circular>")
             continue
-            
+
         visited.add(obj_id)
         try:
             # Check for custom serializers first
             custom_serializer = lookup_custom_serializer(v)
             if custom_serializer is not None:
                 try:
-                    result_list.append(_serialize_for_cache_key(custom_serializer(v), visited, _is_root=False))
+                    result_list.append(
+                        _serialize_for_cache_key(custom_serializer(v), visited, _is_root=False)
+                    )
                     continue
                 except Exception:
                     pass
-            
+
             if hasattr(v, "model_dump"):
                 try:
                     d = v.model_dump(mode="cache")
                     if "run_id" in d:
                         d.pop("run_id", None)
-                    result_list.append({
-                        k: _serialize_for_cache_key(d[k], visited, _is_root=False)
-                        for k in sorted(d.keys(), key=str)
-                    })
+                    result_list.append(
+                        {
+                            k: _serialize_for_cache_key(d[k], visited, _is_root=False)
+                            for k in sorted(d.keys(), key=str)
+                        }
+                    )
                 except Exception:
                     # For exceptions during model_dump, use unserializable fallback
                     result_list.append(f"<unserializable: {type(v).__name__}>")
             elif isinstance(v, dict):
-                result_list.append({
-                    k: _serialize_for_cache_key(v[k], visited, _is_root=False)
-                    for k in sorted(v.keys(), key=str)
-                })
+                result_list.append(
+                    {
+                        k: _serialize_for_cache_key(v[k], visited, _is_root=False)
+                        for k in sorted(v.keys(), key=str)
+                    }
+                )
             elif isinstance(v, (list, tuple)):
                 result_list.append(_serialize_list_for_key(list(v), visited))
             elif isinstance(v, (set, frozenset)):
-                result_list.append(_serialize_list_for_key(_sort_set_deterministically(v, visited), visited))
+                result_list.append(
+                    _serialize_list_for_key(_sort_set_deterministically(v, visited), visited)
+                )
             else:
                 result_list.append(_serialize_for_cache_key(v, visited, _is_root=False))
-                
+
         finally:
             visited.discard(obj_id)
-    
+
     return result_list
 
 

@@ -100,7 +100,7 @@ class StepResult(BaseModel):
 
     @field_validator("step_history", mode="before")
     @classmethod
-    def _normalize_step_history(cls, v):
+    def _normalize_step_history(cls, v: Any) -> List["StepResult"]:
         # Accept None and coerce to empty list for backward compatibility in tests
         return [] if v is None else v
 

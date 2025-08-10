@@ -186,9 +186,15 @@ def safe_merge_context_updates(
                 # Add boolean fields that might have been excluded
                 model_class = type(source_context)
                 if hasattr(model_class, "__fields__"):
-                    for field_name, field_info in model_class.__fields__.items():
-                        if field_info.type_ is bool and field_name not in source_fields:
-                            source_fields[field_name] = getattr(source_context, field_name)
+                    fields = getattr(model_class, "__fields__")
+                    if hasattr(fields, "items"):
+                        for field_name, field_info in fields.items():
+                            if (
+                                hasattr(field_info, "type_")
+                                and field_info.type_ is bool
+                                and field_name not in source_fields
+                            ):
+                                source_fields[field_name] = getattr(source_context, field_name)
             except TypeError:
                 source_fields = source_context.dict()
         else:
@@ -232,7 +238,9 @@ def safe_merge_context_updates(
                 # Perform deep merge for dictionaries and lists
                 if isinstance(current_value, dict) and isinstance(actual_source_value, dict):
                     logger.debug(f"Merging dictionaries for field: {field_name}")
-                    merged_value = deep_merge_dict(current_value, actual_source_value)
+                    merged_value: dict[str, Any] = deep_merge_dict(
+                        current_value, actual_source_value
+                    )
                     if merged_value != current_value:
                         setattr(target_context, field_name, merged_value)
                         updated_count += 1
@@ -240,7 +248,9 @@ def safe_merge_context_updates(
                 elif isinstance(current_value, list) and isinstance(actual_source_value, list):
                     logger.debug(f"Merging lists for field: {field_name}")
                     # For lists, extend with new items to avoid duplicates
-                    new_items = [item for item in actual_source_value if item not in current_value]
+                    new_items: list[Any] = [
+                        item for item in actual_source_value if item not in current_value
+                    ]
                     if new_items:
                         current_value.extend(new_items)
                         updated_count += 1
@@ -266,16 +276,16 @@ def safe_merge_context_updates(
                         ValidationError,
                     ) as e:
                         # Enhanced error handling for loop context updates
-                        error_msg = f"Failed to update field '{field_name}': {e}"
+                        error_msg: str = f"Failed to update field '{field_name}': {e}"
                         logger.warning(error_msg)
                         validation_errors.append(error_msg)
                         continue
 
             except (AttributeError, TypeError, ValidationError) as e:
                 # Skip fields that can't be accessed or set
-                error_msg = f"Skipping field '{field_name}' due to access/set error: {e}"
-                logger.debug(error_msg)
-                validation_errors.append(error_msg)
+                skip_error_msg: str = f"Skipping field '{field_name}' due to access/set error: {e}"
+                logger.debug(skip_error_msg)
+                validation_errors.append(skip_error_msg)
                 continue
 
         logger.debug(f"Total fields updated: {updated_count}")

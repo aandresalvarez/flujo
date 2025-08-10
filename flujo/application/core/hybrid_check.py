@@ -22,7 +22,7 @@ async def run_hybrid_check(
     output = data
     plugin_feedbacks: List[str] = []
     for plugin, priority in sorted(plugins, key=lambda x: x[1], reverse=True):
-        plugin_kwargs = {}
+        plugin_kwargs: dict[str, Any] = {}
         # decide whether to pass context/resources (import helpers accordingly)
         try:
             result = await plugin.validate(output, **plugin_kwargs)
@@ -30,7 +30,8 @@ async def run_hybrid_check(
             raise ValueError(str(e))
         if isinstance(result, PluginOutcome):
             if not result.success:
-                plugin_feedbacks.append(result.feedback)
+                if result.feedback is not None:
+                    plugin_feedbacks.append(result.feedback)
             else:
                 if result.new_solution is not None:
                     output = result.new_solution

@@ -1,7 +1,6 @@
 """Error utilities for consistent feedback formatting and error extraction."""
 
 
-
 def format_feedback(exc: Exception) -> str:
     """Return canonical feedback string expected by legacy tests."""
     return f"Agent execution failed with {exc.__class__.__name__}: {exc}"

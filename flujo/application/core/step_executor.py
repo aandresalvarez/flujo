@@ -68,7 +68,6 @@ async def _execute_agent_step(
 
     # Helper functions for agent result processing
     def _unpack_agent_result(output: Any) -> Any:
-
         if isinstance(output, BaseModel):
             return output
         if hasattr(output, "output"):
@@ -118,11 +117,14 @@ async def _execute_agent_step(
                 f"[StepExecutor] Isolated context for attempt {attempt}, original context preserved"
             )
             # Debug: Check if isolation worked
-            if hasattr(attempt_context, "branch_count") and hasattr(
-                pre_attempt_context, "branch_count"
+            if (
+                attempt_context is not None
+                and pre_attempt_context is not None
+                and hasattr(attempt_context, "branch_count")
+                and hasattr(pre_attempt_context, "branch_count")
             ):
                 telemetry.logfire.info(
-                    f"[StepExecutor] Attempt {attempt}: attempt_context.branch_count={attempt_context.branch_count}, pre_attempt_context.branch_count={pre_attempt_context.branch_count}"
+                    f"[StepExecutor] Attempt {attempt}: attempt_context.branch_count={getattr(attempt_context, 'branch_count', 'N/A')}, pre_attempt_context.branch_count={getattr(pre_attempt_context, 'branch_count', 'N/A')}"
                 )
         else:
             attempt_context = context
@@ -359,16 +361,16 @@ async def _execute_agent_step(
                 telemetry.logfire.info(
                     "[StepExecutor] FAILED: Setting branch_context to attempt_context (prevents retry accumulation)"
                 )
-                if hasattr(attempt_context, "branch_count"):
+                if attempt_context is not None and hasattr(attempt_context, "branch_count"):
                     telemetry.logfire.info(
-                        f"[StepExecutor] FAILED: Final attempt_context.branch_count = {attempt_context.branch_count}"
+                        f"[StepExecutor] FAILED: Final attempt_context.branch_count = {getattr(attempt_context, 'branch_count', 'N/A')}"
                     )
                     telemetry.logfire.info(
                         f"[StepExecutor] FAILED: Original context.branch_count = {getattr(context, 'branch_count', 'N/A')}"
                     )
             else:
                 result.branch_context = context
-                if hasattr(context, "branch_count") if context else False:
+                if context is not None and hasattr(context, "branch_count"):
                     telemetry.logfire.info(
                         f"[StepExecutor] FAILED: Using original context.branch_count = {context.branch_count}"
                     )

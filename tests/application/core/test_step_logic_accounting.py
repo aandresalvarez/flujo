@@ -6,7 +6,7 @@ import pytest
 
 from flujo.domain.dsl.step import Step, StepConfig
 from flujo.domain.models import StepResult
-from flujo.domain.plugins import PluginOutcome
+from flujo.domain.plugins import PluginOutcome, ValidationPlugin
 from flujo.application.core.ultra_executor import ExecutorCore
 
 
@@ -31,9 +31,6 @@ class CostlyOutput:
         self.output = output
         self.token_counts = token_counts
         self.cost_usd = cost_usd
-
-
-from flujo.domain.plugins import ValidationPlugin
 
 
 class DummyPlugin(ValidationPlugin):

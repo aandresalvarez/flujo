@@ -5,7 +5,7 @@ from typing import Any, Optional
 from unittest.mock import AsyncMock
 from flujo.domain.dsl import Pipeline, Step, StepConfig
 from flujo.domain.models import PipelineContext
-from flujo.domain.plugins import PluginOutcome
+from flujo.domain.plugins import PluginOutcome, ValidationPlugin
 from tests.conftest import create_test_flujo
 
 
@@ -19,9 +19,6 @@ class MockAgentWithContext:
         """Run method that expects 'context' parameter."""
         await self.run_mock(data, context=context, **kwargs)
         return {"output": f"Processed: {data}"}
-
-
-from flujo.domain.plugins import ValidationPlugin
 
 
 class MockPluginWithContext(ValidationPlugin):

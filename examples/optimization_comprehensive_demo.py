@@ -185,12 +185,12 @@ class OptimizationDemo:
         
         # Test object pooling
         for i in range(10):
-            result = await memory_executor.execute(memory_intensive_step, self.test_data[0])
+            await memory_executor.execute(memory_intensive_step, self.test_data[0])
         
         # Test context optimization
         context = {"session_id": "demo_session", "user_id": "demo_user"}
         for data in self.test_data:
-            result = await memory_executor.execute(
+            await memory_executor.execute(
                 context_intensive_step, 
                 data, 
                 context=context
@@ -274,14 +274,14 @@ class OptimizationDemo:
         for data in self.test_data:
             cpu_tasks.append(performance_executor.execute(cpu_intensive_step, data))
         
-        cpu_results = await asyncio.gather(*cpu_tasks)
+        await asyncio.gather(*cpu_tasks)
         
         # Test parallel processing
         parallel_tasks = []
         for data in self.test_data:
             parallel_tasks.append(performance_executor.execute(parallel_step, data))
         
-        parallel_results = await asyncio.gather(*parallel_tasks)
+        await asyncio.gather(*parallel_tasks)
         
         end_time = time.perf_counter()
         performance_time = (end_time - start_time) * 1000
@@ -454,7 +454,7 @@ class OptimizationDemo:
         
         # Get performance recommendations
         recommendations = monitoring_executor.get_performance_recommendations()
-        logger.info(f"\nPerformance Recommendations:")
+        logger.info("\nPerformance Recommendations:")
         for rec in recommendations:
             logger.info(f"  - {rec.get('description', 'N/A')}")
             logger.info(f"    Impact: {rec.get('impact', 'N/A')}")

@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, AsyncIterator, Generic, Optional, TypeVar, Literal
 
 from flujo.domain.backends import ExecutionBackend, StepExecutionRequest
+from flujo.domain.dsl.step import Step
 from flujo.domain.models import BaseModel, StepResult, PipelineContext, PipelineResult, UsageLimits
 from flujo.domain.resources import AppResources
 from flujo.exceptions import (

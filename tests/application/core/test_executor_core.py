@@ -12,7 +12,7 @@ from typing import Any
 
 from flujo.application.core.ultra_executor import ExecutorCore
 from flujo.exceptions import MockDetectionError
-from flujo.domain.models import UsageLimits
+from flujo.domain.models import UsageLimits, StepResult
 from flujo.domain.plugins import PluginOutcome
 from flujo.exceptions import (
     UsageLimitExceededError,
@@ -1136,8 +1136,6 @@ class TestExecutorCoreFallbackLogic:
         ]
 
         # Configure the mocked execute method for failed fallback
-        from flujo.domain.models import StepResult
-        from unittest.mock import patch
 
         with patch.object(executor_core, "execute", new_callable=AsyncMock) as mock_execute:
             mock_execute.return_value = StepResult(
@@ -1215,8 +1213,6 @@ class TestExecutorCoreFallbackLogic:
         executor_core._processor_pipeline.apply_output.return_value = "primary success"
 
         # Configure the mocked execute method for fallback with specific metrics
-        from flujo.domain.models import StepResult
-        from unittest.mock import patch
 
         with patch.object(executor_core, "execute", new_callable=AsyncMock) as mock_execute:
             mock_execute.return_value = StepResult(
@@ -1298,8 +1294,6 @@ class TestExecutorCoreFallbackLogic:
         ]
 
         # Configure the mocked execute method for fallback
-        from flujo.domain.models import StepResult
-        from unittest.mock import patch
 
         with patch.object(executor_core, "execute", new_callable=AsyncMock) as mock_execute:
             mock_execute.return_value = StepResult(
@@ -1368,8 +1362,6 @@ class TestExecutorCoreFallbackLogic:
         ]
 
         # Configure the mocked execute method for fallback
-        from flujo.domain.models import StepResult
-        from unittest.mock import patch
 
         with patch.object(executor_core, "execute", new_callable=AsyncMock) as mock_execute:
             mock_execute.return_value = StepResult(
@@ -1437,7 +1429,6 @@ class TestExecutorCoreFallbackLogic:
         ]
 
         # Configure the mocked execute method to raise an exception
-        from unittest.mock import patch
 
         with patch.object(executor_core, "execute", new_callable=AsyncMock) as mock_execute:
             mock_execute.side_effect = Exception("Fallback execution failed")
@@ -1487,12 +1478,6 @@ class TestExecutorCoreObjectOrientedComplexStep:
     @pytest.mark.asyncio
     async def test_object_oriented_property_detection(self, executor_core):
         """Test that the refactored method correctly uses the is_complex property."""
-        from flujo.domain.dsl.step import HumanInTheLoopStep
-        from flujo.domain.dsl.loop import LoopStep
-        from flujo.domain.dsl.parallel import ParallelStep
-        from flujo.domain.dsl.conditional import ConditionalStep
-        from flujo.steps.cache_step import CacheStep
-        from flujo.domain.dsl.dynamic_router import DynamicParallelRouterStep
 
         # Test all complex step types using object-oriented approach
         test_cases = [

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Type, TypeVar, get_args, get_origin, Union
 
-# from ...domain.dsl.step import Step  # Avoiding circular import
+from flujo.domain.dsl.step import Step
 from ...exceptions import TypeMismatchError
 from .context_manager import _types_compatible
 

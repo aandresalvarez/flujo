@@ -252,7 +252,7 @@ class ConfigManager:
 
         return settings
 
-    def _is_field_set_by_env(self, field_name: str, field_info) -> bool:
+    def _is_field_set_by_env(self, field_name: str, field_info: Any) -> bool:
         """Check if a field was set by an environment variable.
 
         This method checks all possible environment variable names for a field,

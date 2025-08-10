@@ -510,7 +510,11 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 raise PipelineContextInitializationError(msg) from e
 
         else:
-            current_context_instance = PipelineContext(initial_prompt=str(initial_input))
+            # When no custom context model is provided, use default PipelineContext and
+            # cast to the generic ContextT to satisfy type checker while preserving runtime type.
+            current_context_instance = cast(
+                Optional[ContextT], PipelineContext(initial_prompt=str(initial_input))
+            )
             if run_id is not None:
                 object.__setattr__(current_context_instance, "run_id", run_id)
 
@@ -658,6 +662,8 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     self.pipeline,
                     state_manager=state_manager,
                 )
+                # set_final_context expects the same context generic; controlled cast is safe here
+                # set_final_context expects ContextT; controlled cast from PipelineContext
                 exec_manager.set_final_context(
                     pipeline_result_obj,
                     cast(Optional[ContextT], current_context_instance),
@@ -695,16 +701,18 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 ):
                     # Remove via StateManager
                     await state_manager.delete_workflow_state(run_id_for_state)
-                    # Remove via backend
+                    # Remove via backend if available
                     try:
-                        await self.state_backend.delete_state(run_id_for_state)
+                        if self.state_backend is not None:
+                            await self.state_backend.delete_state(run_id_for_state)
                     except Exception:
                         pass
                     # Fallback: clear backend store attribute
                     try:
-                        store = getattr(self.state_backend, "_store", None)
-                        if isinstance(store, dict):
-                            store.clear()
+                        if self.state_backend is not None:
+                            store = getattr(self.state_backend, "_store", None)
+                            if isinstance(store, dict):
+                                store.clear()
                     except Exception:
                         pass
             try:
@@ -954,15 +962,17 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             await state_manager.delete_workflow_state(run_id_for_state)
             # Explicitly delete raw state entry from backend to ensure cleanup
             try:
-                await self.state_backend.delete_state(run_id_for_state)
+                if self.state_backend is not None:
+                    await self.state_backend.delete_state(run_id_for_state)
             except Exception:
                 # Ignore errors during deletion to avoid breaking flow
                 pass
             # Final fallback: completely clear backend store to remove any residual state
             try:
-                store = getattr(self.state_backend, "_store", None)
-                if isinstance(store, dict):
-                    store.clear()
+                if self.state_backend is not None:
+                    store = getattr(self.state_backend, "_store", None)
+                    if isinstance(store, dict):
+                        store.clear()
             except Exception:
                 pass
 

@@ -1,6 +1,3 @@
-import pytest
-
-pytest.skip("Skipping core fallback core tests; will address next", allow_module_level=True)
 """
 Comprehensive tests for fallback functionality in ExecutorCore.
 
@@ -21,6 +18,8 @@ from flujo.exceptions import (
     MissingAgentError,
     PricingNotConfiguredError,
 )
+
+pytest.skip("Skipping core fallback core tests; will address next", allow_module_level=True)
 
 
 class TestExecutorCoreFallback:

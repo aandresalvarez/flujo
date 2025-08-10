@@ -2,6 +2,7 @@
 
 import pytest
 from typing import Any
+from unittest.mock import AsyncMock
 
 from flujo.domain.commands import (
     AgentCommand,
@@ -15,7 +16,6 @@ from flujo.recipes.factories import (
     run_agentic_loop_pipeline,
 )
 from flujo.testing.utils import StubAgent
-from unittest.mock import AsyncMock
 
 
 class MockPlannerAgent:

@@ -6,52 +6,17 @@ from typing import Any, Dict, List, Optional, Union, cast
 import typer
 import click
 import json
-import os
-import yaml
 from pathlib import Path
-from flujo.domain.models import Task, Checklist
-from flujo.agents import (
-    make_self_improvement_agent,
-    make_review_agent,
-    make_solution_agent,
-    make_validator_agent,
-    get_reflection_agent,
-)
-from flujo.recipes.factories import make_default_pipeline, run_default_pipeline
-from flujo.application.eval_adapter import run_pipeline_async
-from flujo.application.self_improvement import (
-    evaluate_and_improve,
-    SelfImprovementAgent,
-    ImprovementReport,
-)
-from flujo.domain.models import ImprovementSuggestion
-from flujo.application.runner import Flujo
-from flujo.infra.config_manager import load_settings
 from flujo.infra.config_manager import get_cli_defaults as _get_cli_defaults
 from flujo.exceptions import ConfigurationError, SettingsError
 from flujo.infra import telemetry
 from typing_extensions import Annotated
-from rich.table import Table
 from rich.console import Console
-from flujo.domain.dsl import Pipeline, Step
-import runpy
-from flujo.domain.agent_protocol import AsyncAgentProtocol
-from ..utils.serialization import safe_serialize, safe_deserialize
+from ..utils.serialization import safe_serialize, safe_deserialize as _safe_deserialize
 from .lens import lens_app
 from .helpers import (
-    load_pipeline_from_file,
-    load_dataset_from_file,
-    parse_context_data,
-    validate_context_model,
-    load_weights_file,
-    create_agents_for_solve,
-    run_solve_pipeline,
     run_benchmark_pipeline,
     create_benchmark_table,
-    setup_json_output_mode,
-    create_improvement_report_table,
-    format_improvement_suggestion,
-    create_pipeline_results_table,
     setup_solve_command_environment,
     execute_solve_pipeline,
     setup_run_command_environment,
@@ -67,17 +32,48 @@ from .helpers import (
     validate_pipeline_file,
 )
 import click.testing
+
+# Expose Flujo class for tests that monkeypatch flujo.cli.main.Flujo.run
+from flujo.application.runner import Flujo as _Flujo  # re-export for test monkeypatch compatibility
+
+# Import Flujo class for testing compatibility - commented out as unused
+# from flujo.application.runner import Flujo
+
+# Import functions that tests expect to monkeypatch - these are module-level imports
+# that can be properly monkeypatched in tests
+from flujo.recipes.factories import run_default_pipeline as _run_default_pipeline
+from flujo.agents.recipes import (
+    make_review_agent as _make_review_agent,
+    make_solution_agent as _make_solution_agent,
+    make_validator_agent as _make_validator_agent,
+    get_reflection_agent as _get_reflection_agent,
+    make_self_improvement_agent as _make_self_improvement_agent,
+)
+from flujo.application.self_improvement import (
+    evaluate_and_improve as _evaluate_and_improve,
+    SelfImprovementAgent as _SelfImprovementAgent,
+    ImprovementReport as _ImprovementReport,
+)
+from flujo.application.eval_adapter import run_pipeline_async as _run_pipeline_async
+
 # Removed override that blanked stderr; tests expect real stderr content
-try:
-    # For Click versions that mix stderr and stdout, expose stderr property
-    # that returns the combined output so tests can assert on it.
-    if not hasattr(click.testing.Result, "_flujo_stderr_shim"):
-        def _stderr(self):  # type: ignore[override]
-            return getattr(self, "output", "")
-        click.testing.Result.stderr = property(_stderr)  # type: ignore[attr-defined]
-        click.testing.Result._flujo_stderr_shim = True  # type: ignore[attr-defined]
-except Exception:
-    pass
+from typing import TYPE_CHECKING
+
+# Re-export Flujo after all imports to satisfy linting (E402)
+Flujo = _Flujo
+
+if not TYPE_CHECKING:
+    try:
+        if not hasattr(click.testing.Result, "_flujo_stderr_shim"):
+
+            def _stderr(self: click.testing.Result) -> str:
+                return getattr(self, "output", "")
+
+            # Assign property at runtime; typing not enforced here
+            click.testing.Result.stderr = property(_stderr)  # type: ignore[assignment]
+            setattr(click.testing.Result, "_flujo_stderr_shim", True)
+    except Exception:
+        pass
 
 # Type definitions for CLI
 WeightsType = List[Dict[str, Union[str, float]]]
@@ -88,8 +84,6 @@ ScorerType = (
 
 
 app: typer.Typer = typer.Typer(rich_markup_mode="markdown")
-# Ensure CLI has a name attribute for testing invocation
-app.name = "flujo"
 
 # Initialize telemetry at the start of CLI execution
 telemetry.init_telemetry()
@@ -173,11 +167,12 @@ def solve(
             validator_model=validator_model,
             reflection_model=reflection_model,
         )
-        
+
         # Load settings for reflection limit
         from flujo.infra.config_manager import load_settings
+
         settings = load_settings()
-        
+
         # Execute pipeline using helper function
         best = execute_solve_pipeline(
             prompt=prompt,
@@ -186,10 +181,10 @@ def solve(
             agents=agents,
             settings=settings,
         )
-        
+
         # Output result
         typer.echo(json.dumps(safe_serialize(best.model_dump()), indent=2))
-        
+
     except KeyboardInterrupt:
         logfire.info("Aborted by user (KeyboardInterrupt). Closing spans and exiting.")
         raise typer.Exit(130)
@@ -246,7 +241,7 @@ def bench(
 
         # Run benchmark using helper function
         times, scores = run_benchmark_pipeline(prompt, rounds, logfire)
-        
+
         # Create and display results table using helper function
         table = create_benchmark_table(times, scores)
         console: Console = Console()
@@ -473,30 +468,32 @@ def run(
         )
         pipeline_name = cast(str, cli_args["pipeline_name"])
         json_output = cast(bool, cli_args["json_output"])
-        
+
         # Detect raw flags to support JSON mode when alias parsing fails
         ctx = click.get_current_context()
         if not json_output and any(flag in ctx.args for flag in ("--json", "--json-output")):
             json_output = True
-            
+
         # Set up command environment using helper function
-        pipeline_obj, pipeline_name, input_data, initial_context_data, context_model_class = setup_run_command_environment(
-            pipeline_file=pipeline_file,
-            pipeline_name=pipeline_name,
-            json_output=json_output,
-            input_data=input_data,
-            context_model=context_model,
-            context_data=context_data,
-            context_file=context_file,
+        pipeline_obj, pipeline_name, input_data, initial_context_data, context_model_class = (
+            setup_run_command_environment(
+                pipeline_file=pipeline_file,
+                pipeline_name=pipeline_name,
+                json_output=json_output,
+                input_data=input_data,
+                context_model=context_model,
+                context_data=context_data,
+                context_file=context_file,
+            )
         )
-        
+
         # Create Flujo runner using helper function
         runner = create_flujo_runner(
             pipeline=pipeline_obj,
             context_model_class=context_model_class,
             initial_context_data=initial_context_data,
         )
-        
+
         # Execute pipeline using helper function
         result = execute_pipeline_with_output_handling(
             runner=runner,
@@ -504,16 +501,17 @@ def run(
             run_id=run_id,
             json_output=json_output,
         )
-        
+
         # Handle output
         if json_output:
             typer.echo(result)
         else:
             display_pipeline_results(result, run_id, json_output)
-            
+
     except Exception as e:
         try:
             import os
+
             os.makedirs("output", exist_ok=True)
             with open("output/last_run_error.txt", "w") as f:
                 f.write(repr(e))
@@ -609,9 +607,76 @@ if __name__ == "__main__":
     except (SettingsError, ConfigurationError) as e:
         typer.echo(f"[red]Settings error: {e}[/red]", err=True)
         raise typer.Exit(2)
-def get_cli_defaults(command: str):
+
+
+def get_cli_defaults(command: str) -> Dict[str, Any]:
     """Pass-through for tests to monkeypatch at flujo.cli.main level.
 
     Delegates to the real config manager function unless monkeypatched in tests.
     """
     return _get_cli_defaults(command)
+
+
+# Compatibility functions for testing - re-export functions that tests expect to monkeypatch
+# These maintain the testing interface while the actual implementations live elsewhere
+
+
+def run_default_pipeline(pipeline: Any, task: Any) -> Any:
+    """Compatibility function for testing - re-exports from recipes.factories."""
+    return _run_default_pipeline(pipeline, task)
+
+
+def make_review_agent(model: str | None = None) -> Any:
+    """Compatibility function for testing - re-exports from agents.recipes."""
+    return _make_review_agent(model)
+
+
+def make_solution_agent(model: str | None = None) -> Any:
+    """Compatibility function for testing - re-exports from agents.recipes."""
+    return _make_solution_agent(model)
+
+
+def make_validator_agent(model: str | None = None) -> Any:
+    """Compatibility function for testing - re-exports from agents.recipes."""
+    return _make_validator_agent(model)
+
+
+def get_reflection_agent(model: str | None = None) -> Any:
+    """Compatibility function for testing - re-exports from agents.recipes."""
+    return _get_reflection_agent(model)
+
+
+def make_default_pipeline(**kwargs: Any) -> Any:
+    """Compatibility function for testing - re-exports from recipes.factories."""
+    from flujo.recipes.factories import make_default_pipeline as _make_default_pipeline
+
+    return _make_default_pipeline(**kwargs)
+
+
+"""Typed re-exports for helpers/tests and mypy visibility."""
+
+
+# Serialization helper
+def safe_deserialize(obj: Any) -> Any:
+    return _safe_deserialize(obj)
+
+
+# Async pipeline runner
+run_pipeline_async = _run_pipeline_async
+
+# Self-improvement API
+evaluate_and_improve = _evaluate_and_improve
+SelfImprovementAgent = _SelfImprovementAgent
+ImprovementReport = _ImprovementReport
+
+
+def make_self_improvement_agent(model: str | None = None) -> Any:
+    """Compatibility function for testing - re-exports from agents.recipes."""
+    return _make_self_improvement_agent(model)
+
+
+def load_settings() -> Any:
+    """Compatibility function for testing - re-exports from config_manager."""
+    from flujo.infra.config_manager import load_settings as _load_settings
+
+    return _load_settings()

@@ -62,6 +62,7 @@ class TestPersistencePerformanceOverhead:
 
         # Create unique database files for isolation (enhanced for parallel test execution)
         import os
+
         worker_id = os.getenv("PYTEST_XDIST_WORKER", "master")
         test_id = uuid.uuid4().hex[:8]
         with_backend_db_path = tmp_path / f"with_backend_{worker_id}_{test_id}.db"
@@ -117,7 +118,7 @@ class TestPersistencePerformanceOverhead:
             # Clean up database files to prevent resource contention
             try:
                 # Ensure proper backend cleanup for resource management
-                if hasattr(isolated_backend, '_db_pool') and isolated_backend._db_pool:
+                if hasattr(isolated_backend, "_db_pool") and isolated_backend._db_pool:
                     isolated_backend._db_pool.clear()
                 if with_backend_db_path.exists():
                     with_backend_db_path.unlink()

@@ -174,6 +174,11 @@ async def test_pipeline_aborts_gracefully_from_hook(
 async def test_faulty_hook_does_not_crash_pipeline(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    # Configure caplog to capture messages from the "flujo" logger
+    import logging
+
+    caplog.set_level(logging.DEBUG, logger="flujo")
+
     pipeline = Step.model_validate(
         {"name": "s1", "agent": cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok"]))}
     )

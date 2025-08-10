@@ -1,26 +1,22 @@
 """
-Regression tests for HumanInTheLoopStep migration to ExecutorCore.
+Regression tests for HITL step migration.
 
-This test suite validates that the migrated HITL step logic preserves
-all existing functionality and behaviors, ensuring no regressions
-from the legacy implementation.
-
-Author: Flujo Team
-Version: 1.0
+This test suite ensures that the migrated HITL step implementation
+maintains backward compatibility and preserves all existing behaviors.
 """
 
 import pytest
 from unittest.mock import Mock
 
 from flujo.application.core.ultra_executor import ExecutorCore
+from flujo.domain.dsl.step import HumanInTheLoopStep
+from flujo.domain.models import PipelineContext
+from flujo.exceptions import PausedException
 
 # Legacy implementation is not available in the current codebase
 # The regression tests will focus on ensuring the new implementation
 # maintains the expected behavior without comparing to legacy
 legacy_handle_hitl_step = None
-from flujo.domain.dsl.step import HumanInTheLoopStep
-from flujo.domain.models import PipelineContext
-from flujo.exceptions import PausedException
 
 
 class TestHITLStepMigrationRegression:

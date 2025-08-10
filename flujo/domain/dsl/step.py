@@ -21,6 +21,7 @@ from typing import (
     overload,
     Union,
     cast,
+    TYPE_CHECKING,
 )
 import contextvars
 import inspect
@@ -34,17 +35,16 @@ from ..plugins import ValidationPlugin
 from ..validation import Validator
 
 from ..processors import AgentProcessors
-from flujo.infra.caching import CacheBackend
 from ...exceptions import StepInvocationError
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover
-    from flujo.steps.cache_step import CacheStep
+    from flujo.infra.caching import CacheBackend
     from .loop import LoopStep, MapStep
     from .conditional import ConditionalStep
     from .parallel import ParallelStep
     from .pipeline import Pipeline
     from .dynamic_router import DynamicParallelRouterStep
+    from flujo.steps.cache_step import CacheStep
 
 # Type variables
 StepInT = TypeVar("StepInT")
@@ -544,8 +544,8 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         max_refinements: int = 5,
         feedback_mapper: Optional[Callable[[Any, RefinementCheck], Any]] = None,
         **config_kwargs: Any,
-    ) -> "LoopStep[ContextModelT]":
-        """Convenience for the generator -> critic refinement loop pattern."""
+    ) -> "Pipeline[Any, Any]":
+        """Build a refinement loop pipeline: generator >> capture >> critic >> post-mapper."""
         from .loop import LoopStep  # local import
 
         last_artifact_var: contextvars.ContextVar[Any | None] = contextvars.ContextVar(
@@ -596,7 +596,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             return result
 
         # Build the core loop step without output mapping
-        core_loop = LoopStep[ContextModelT](
+        core_loop = LoopStep[Any](
             name=name,
             loop_body_pipeline=generator_then_save >> critic_pipeline,
             exit_condition_callable=_exit_condition,

@@ -14,10 +14,9 @@ Key Demonstrations:
 
 import asyncio
 import time
-from typing import Any, List, Dict, Optional, Callable, ClassVar
+from typing import List, Dict, ClassVar
 
-from flujo import Flujo, Step, Pipeline, step
-from flujo.models import PipelineResult
+from flujo import Flujo, Step, step
 
 
 # =============================================================================
@@ -53,10 +52,10 @@ class CircuitBreakerStep(Step):
         # Check circuit breaker state
         if self.state == "OPEN":
             if current_time - self.last_failure_time > self.recovery_timeout:
-                print(f"🔄 Circuit breaker transitioning to HALF_OPEN")
+                print("🔄 Circuit breaker transitioning to HALF_OPEN")
                 self.state = "HALF_OPEN"
             else:
-                print(f"🚫 Circuit breaker is OPEN - request rejected")
+                print("🚫 Circuit breaker is OPEN - request rejected")
                 raise Exception("Circuit breaker is OPEN - service unavailable")
         
         try:
@@ -69,7 +68,7 @@ class CircuitBreakerStep(Step):
             
             # Reset on success
             if self.state == "HALF_OPEN":
-                print(f"🔄 Circuit breaker reset to CLOSED")
+                print("🔄 Circuit breaker reset to CLOSED")
                 self.state = "CLOSED"
                 self.failure_count = 0
             
@@ -195,7 +194,7 @@ class CachingStep(Step):
         
         # Cache miss - process the data
         self.cache_misses += 1
-        print(f"💾 Cache MISS - processing data")
+        print("💾 Cache MISS - processing data")
         
         # Simulate processing
         await asyncio.sleep(0.1)  # Simulate processing time
@@ -315,12 +314,12 @@ async def demonstrate_open_closed_principle():
     runner = Flujo(pipeline)
     
     print("📋 Pipeline Configuration (All Custom Steps Automatically Detected):")
-    print(f"   - Data Generator: Simple step (no complexity declaration)")
-    print(f"   - Data Validator: Simple step (no complexity declaration)")
-    print(f"   - Circuit Breaker: Complex step (is_complex = True)")
-    print(f"   - Rate Limiter: Complex step (is_complex = True)")
-    print(f"   - Cache Step: Complex step (is_complex = True)")
-    print(f"   - Adaptive Processor: Dynamic complexity (property-based)")
+    print("   - Data Generator: Simple step (no complexity declaration)")
+    print("   - Data Validator: Simple step (no complexity declaration)")
+    print("   - Circuit Breaker: Complex step (is_complex = True)")
+    print("   - Rate Limiter: Complex step (is_complex = True)")
+    print("   - Cache Step: Complex step (is_complex = True)")
+    print("   - Adaptive Processor: Dynamic complexity (property-based)")
     print()
     
     print("🔄 Executing pipeline with custom complex steps...")
@@ -328,7 +327,7 @@ async def demonstrate_open_closed_principle():
     async for item in runner.run_async(8):
         result = item
     
-    print(f"\n✅ Pipeline completed successfully!")
+    print("\n✅ Pipeline completed successfully!")
     print(f"   Final output: {result.step_history[-1].output}")
     print(f"   Total steps executed: {len(result.step_history)}")
     
