@@ -320,6 +320,19 @@ class ExecutionManager(Generic[ContextT]):
                                 scratch["status"] = "paused"
                     except Exception:
                         pass
+                    # Persist paused state for stateful HITL
+                    if run_id is not None:
+                        await self.state_manager.persist_workflow_state(
+                            run_id=run_id,
+                            context=context,
+                            current_step_index=idx,
+                            last_step_output=(
+                                step_result.output if step_result is not None else data
+                            ),
+                            status="paused",
+                            state_created_at=state_created_at,
+                            step_history=result.step_history,
+                        )
                     self.set_final_context(result, context)
                     yield result
                     return
@@ -452,7 +465,7 @@ class ExecutionManager(Generic[ContextT]):
                     # For HITL resumption scenarios, use double the pipeline length
                     final_step_index = len(self.pipeline.steps) * 2
                 elif is_crash_recovery:
-                    # For crash recovery scenarios, increment by 1
+                    # For crash recovery scenarios, increment by 1 (legacy expectation)
                     final_step_index = len(self.pipeline.steps) + 1
                 else:
                     # For normal completion

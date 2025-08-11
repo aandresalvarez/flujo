@@ -4,9 +4,10 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, Generic, Optional, TypeVar, Tuple
 
-from flujo.domain.models import PipelineContext, PipelineResult, StepResult, BaseModel
+from flujo.domain.models import StepResult, BaseModel, PipelineResult
 from flujo.state.backends import StateBackend
 from flujo.state.models import WorkflowState
+from .state_serializer import StateSerializer
 
 logger = logging.getLogger(__name__)
 
@@ -16,10 +17,15 @@ ContextT = TypeVar("ContextT", bound=BaseModel)
 class StateManager(Generic[ContextT]):
     """Intelligent state manager with caching and delta-based persistence."""
 
-    def __init__(self, state_backend: Optional[StateBackend] = None) -> None:
-        """Initialize state manager with optional backend."""
+    def __init__(
+        self,
+        state_backend: Optional[StateBackend] = None,
+        serializer: Optional[StateSerializer[ContextT]] = None,
+    ) -> None:
+        """Initialize state manager with optional backend and serializer."""
         self.state_backend = state_backend
-        # Cache for serialization results to avoid redundant work
+        self._serializer: StateSerializer[ContextT] = serializer or StateSerializer()
+        # Legacy caches retained for compatibility; StateSerializer holds the authoritative caches.
         self._serialization_cache: Dict[str, Any] = {}
         self._context_hash_cache: Dict[str, str] = {}
 
@@ -188,10 +194,7 @@ class StateManager(Generic[ContextT]):
         # Reconstruct context from persisted state
         context: Optional[ContextT] = None
         if wf_state.pipeline_context is not None:
-            if context_model is not None:
-                context = context_model.model_validate(wf_state.pipeline_context)
-            else:
-                context = PipelineContext.model_validate(wf_state.pipeline_context)  # type: ignore
+            context = self._serializer.deserialize_context(wf_state.pipeline_context, context_model)
 
             # Restore pipeline metadata from state
             if context is not None and hasattr(context, "pipeline_name"):
@@ -245,56 +248,9 @@ class StateManager(Generic[ContextT]):
 
         if context is not None:
             try:
-                import sys
-
-                memory_usage_mb = sys.getsizeof(context) / (1024 * 1024)
-
-                # First principles: Only serialize if context has actually changed
-                if self._should_serialize_context(context, run_id):
-                    # Check cache first
-                    cached = self._get_cached_serialization(context, run_id)
-                    if cached is not None:
-                        pipeline_context = cached
-                        logger.debug(f"Using cached serialization for run {run_id}")
-                    else:
-                        # Optimize serialization based on context size
-                        logger.debug(f"About to serialize context for run {run_id}")
-                        # Always use the most efficient serialization method
-                        pipeline_context = context.model_dump()
-                        logger.debug(f"Successfully serialized context for run {run_id}")
-
-                        # Cache the result
-                        self._cache_serialization(context, run_id, pipeline_context)
-                        logger.debug(f"Serialized and cached context for run {run_id}")
-                else:
-                    # Context hasn't changed, use cached or minimal serialization
-                    cached = self._get_cached_serialization(context, run_id)
-                    if cached is not None:
-                        pipeline_context = cached
-                    else:
-                        # Fallback to comprehensive serialization to prevent data loss
-                        pipeline_context = {
-                            "initial_prompt": getattr(context, "initial_prompt", ""),
-                            "pipeline_id": getattr(context, "pipeline_id", "unknown"),
-                            "pipeline_name": getattr(context, "pipeline_name", "unknown"),
-                            "pipeline_version": getattr(context, "pipeline_version", "latest"),
-                            "total_steps": getattr(context, "total_steps", 0),
-                            "error_message": getattr(context, "error_message", None),
-                            "run_id": getattr(context, "run_id", ""),
-                            "created_at": getattr(context, "created_at", None),
-                            "updated_at": getattr(context, "updated_at", None),
-                        }
-                        # Include any additional fields that might be present
-                        for field_name in [
-                            "status",
-                            "current_step",
-                            "last_error",
-                            "metadata",
-                        ]:
-                            if hasattr(context, field_name):
-                                pipeline_context[field_name] = getattr(context, field_name, None)
-                    logger.debug(f"Skipped context serialization for unchanged run {run_id}")
-
+                # Avoid costly size introspection to minimize overhead
+                memory_usage_mb = None
+                pipeline_context = self._serializer.serialize_context_for_state(context, run_id)
             except Exception as e:
                 logger.warning(f"Failed to serialize context for run {run_id}: {e}")
                 # Comprehensive fallback to prevent data loss even in error cases
@@ -309,14 +265,7 @@ class StateManager(Generic[ContextT]):
                 }
 
         # Serialize step history with error handling
-        serialized_step_history = []
-        if step_history is not None:
-            for step_result in step_history:
-                try:
-                    serialized_step_history.append(step_result.model_dump())
-                except Exception:
-                    # Skip invalid step results to avoid breaking persistence
-                    continue
+        serialized_step_history = self._serializer.serialize_step_history_full(step_history)
 
         state_data = {
             "run_id": run_id,
@@ -357,29 +306,7 @@ class StateManager(Generic[ContextT]):
         pipeline_context = None
         if context is not None:
             try:
-                # OPTIMIZATION: Skip expensive change detection in performance mode
-                # Use minimal serialization to reduce overhead
-                pipeline_context = {
-                    "initial_prompt": getattr(context, "initial_prompt", ""),
-                    "pipeline_id": getattr(context, "pipeline_id", "unknown"),
-                    "pipeline_name": getattr(context, "pipeline_name", "unknown"),
-                    "pipeline_version": getattr(context, "pipeline_version", "latest"),
-                    "run_id": getattr(context, "run_id", ""),
-                }
-                # Only include essential fields to minimize serialization overhead
-
-                # OPTIMIZATION: For large contexts, use even more minimal serialization
-                context_size = len(str(context))
-                if context_size > 10000:  # Large context threshold
-                    # For very large contexts, only persist essential metadata
-                    pipeline_context = {
-                        "initial_prompt": getattr(context, "initial_prompt", "")[:1000],  # Truncate
-                        "pipeline_id": getattr(context, "pipeline_id", "unknown"),
-                        "pipeline_name": getattr(context, "pipeline_name", "unknown"),
-                        "run_id": getattr(context, "run_id", ""),
-                        "context_size": context_size,  # Track size for debugging
-                    }
-
+                pipeline_context = self._serializer.serialize_context_minimal(context)
             except Exception as e:
                 logger.warning(f"Failed to serialize context for run {run_id}: {e}")
                 pipeline_context = {
@@ -390,25 +317,7 @@ class StateManager(Generic[ContextT]):
 
         # OPTIMIZATION: Skip step history serialization for performance
         # Only serialize essential metadata
-        serialized_step_history = []
-        if step_history is not None:
-            for step_result in step_history:
-                try:
-                    # OPTIMIZATION: Only serialize essential fields including output for crash recovery
-                    serialized_step_history.append(
-                        {
-                            "name": step_result.name,
-                            "output": step_result.output,
-                            "success": step_result.success,
-                            "cost_usd": step_result.cost_usd,
-                            "token_counts": step_result.token_counts,
-                            "attempts": step_result.attempts,
-                            "latency_s": step_result.latency_s,
-                            "feedback": step_result.feedback,
-                        }
-                    )
-                except Exception:
-                    continue
+        serialized_step_history = self._serializer.serialize_step_history_minimal(step_history)
 
         # OPTIMIZATION: Use minimal state data structure
         state_data = {
@@ -619,32 +528,8 @@ class StateManager(Generic[ContextT]):
             raise ValueError(f"Unknown trace tree type: {type(trace_tree)}")
 
     def clear_cache(self, run_id: Optional[str] = None) -> None:
-        """Clear serialization cache for a specific run or all runs with intelligent cleanup."""
-        if run_id is None:
-            # Clear all caches
-            self._serialization_cache.clear()
-            self._context_hash_cache.clear()
-            logger.debug("Cleared all cache entries")
-        else:
-            # Clear cache for specific run with proper run_id handling
-            keys_to_remove = []
-            for key in self._serialization_cache.keys():
-                try:
-                    # Parse the cache key to extract run_id
-                    key_run_id, _ = self._parse_cache_key(key)
-                    if key_run_id == run_id:
-                        keys_to_remove.append(key)
-                except ValueError:
-                    # Handle legacy cache keys that might still use the old format
-                    # For legacy keys, we can't safely extract run_id, so we skip them
-                    # This is safe as the cache will eventually be cleared anyway
-                    continue
-
-            # Remove the serialization cache entries
-            for key in keys_to_remove:
-                del self._serialization_cache[key]
-
-            # Remove the corresponding hash cache entry
-            self._context_hash_cache.pop(run_id, None)
-
-            logger.debug(f"Cleared {len(keys_to_remove)} cache entries for run_id: {run_id}")
+        """Clear serialization cache for a specific run or all runs."""
+        self._serializer.clear_cache(run_id)
+        logger.debug(
+            f"Cleared {'all' if run_id is None else 'scoped'} cache entries via StateSerializer"
+        )
