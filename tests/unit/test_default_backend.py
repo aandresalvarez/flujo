@@ -12,6 +12,8 @@ async def test_runner_uses_sqlite_by_default(tmp_path: Path, monkeypatch) -> Non
     monkeypatch.chdir(tmp_path)
     # Temporarily disable test mode to test actual default behavior
     monkeypatch.delenv("FLUJO_TEST_MODE", raising=False)
+    # Also ensure CI environment variables don't interfere
+    monkeypatch.delenv("CI", raising=False)
 
     async def s(data: int) -> int:
         return data + 1

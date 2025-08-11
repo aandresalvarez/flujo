@@ -38,7 +38,8 @@ from ..prompts import _format_repair_prompt
 
 
 # Import from utils to avoid circular imports
-from .utils import get_raw_output_from_exception
+# Import the module (not the symbol) so tests can monkeypatch it
+from . import utils as agents_utils
 
 
 class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentInT, AgentOutT]):
@@ -212,7 +213,8 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                 logfire.warn(
                     f"Agent validation failed. Initiating automated repair. Error: {last_exc}"
                 )
-                raw_output = get_raw_output_from_exception(last_exc)
+                # Use module reference to allow monkeypatching in tests
+                raw_output = agents_utils.get_raw_output_from_exception(last_exc)
                 try:
                     cleaner = DeterministicRepairProcessor()
                     cleaned = await cleaner.process(raw_output)

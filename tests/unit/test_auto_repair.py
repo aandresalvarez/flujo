@@ -40,6 +40,15 @@ async def test_async_agent_wrapper_deterministic_repair(monkeypatch) -> None:
         "get_raw_output_from_exception",
         lambda exc: '{"value":1} trailing',
     )
+    
+    # Mock the repair agent to avoid real API calls
+    class MockRepairAgent:
+        async def run(self, prompt):
+            return '{"value":1}'
+    
+    from flujo.agents import repair as repair_mod
+    monkeypatch.setattr(repair_mod, "get_repair_agent", lambda: MockRepairAgent())
+    
     result = await wrapper.run_async("prompt")
     assert result.value == 1
 
