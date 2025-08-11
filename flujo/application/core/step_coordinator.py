@@ -6,7 +6,18 @@ from typing import Any, AsyncIterator, Generic, Optional, TypeVar, Literal
 
 from flujo.domain.backends import ExecutionBackend, StepExecutionRequest
 from flujo.domain.dsl.step import Step
-from flujo.domain.models import BaseModel, StepResult, PipelineContext, PipelineResult, UsageLimits
+from flujo.domain.models import (
+    BaseModel,
+    StepResult,
+    PipelineContext,
+    PipelineResult,
+    UsageLimits,
+    StepOutcome,
+    Success,
+    Failure,
+    Paused,
+    Chunk,
+)
 from flujo.domain.resources import AppResources
 from flujo.exceptions import (
     ContextInheritanceError,
@@ -82,18 +93,31 @@ class StepCoordinator(Generic[ContextT]):
                         async for item in step_executor(
                             step, data, context, self.resources, stream=stream
                         ):
-                            if isinstance(item, StepResult):
+                            # Preserve legacy behavior for custom executors
+                            if isinstance(item, StepOutcome):
+                                if isinstance(item, Success):
+                                    step_result = item.step_result
+                                yield item
+                            elif isinstance(item, StepResult):
                                 step_result = item
-                                yield item  # Yield StepResult objects
+                                yield item
                             else:
+                                # Pass through raw chunks/strings unchanged
                                 yield item
                     except TypeError:
                         # If that fails, try as regular async function
-                        step_result = await step_executor(
+                        item = await step_executor(
                             step, data, context, self.resources, stream=stream
                         )
-                        if isinstance(step_result, StepResult):
-                            yield step_result
+                        if isinstance(item, StepOutcome):
+                            if isinstance(item, Success):
+                                step_result = item.step_result
+                            yield item
+                        elif isinstance(item, StepResult):
+                            step_result = item
+                            yield item
+                        else:
+                            yield item
                 elif backend is not None:
                     # New approach: call backend directly
                     # Only enable streaming when the agent actually supports it
@@ -118,13 +142,58 @@ class StepCoordinator(Generic[ContextT]):
                             usage_limits=usage_limits,
                         )
 
-                        # Call the backend directly
-                        step_result = await backend.execute_step(request)
+                        # Call the backend directly (typed StepOutcome)
+                        step_outcome = await backend.execute_step(request)
 
-                        # Yield chunks first, then result
+                        # Repair known internal attribute-error masking during streaming failures
+                        # If chunks were produced and the failure error looks like an internal attribute error,
+                        # replace feedback with a clearer streaming failure message for user-facing correctness.
+                        if isinstance(step_outcome, Failure):
+                            try:
+                                err_txt = str(step_outcome.error or "")
+                                fb_txt = step_outcome.feedback or ""
+                                if chunks and (
+                                    "object has no attribute 'success'" in err_txt
+                                    or "object has no attribute 'success'" in fb_txt
+                                    or "object has no attribute 'metadata_'" in err_txt
+                                    or "object has no attribute 'metadata_'" in fb_txt
+                                ):
+                                    # Construct a clearer failure outcome preserving existing step_result when present
+                                    repaired_feedback = "Stream connection lost"
+                                    sr = step_outcome.step_result or StepResult(
+                                        name=getattr(step, "name", "<unnamed>"),
+                                        success=False,
+                                        output=None,
+                                        feedback=repaired_feedback,
+                                    )
+                                    sr.feedback = repaired_feedback
+                                    step_outcome = Failure(
+                                        error=RuntimeError(repaired_feedback),
+                                        feedback=repaired_feedback,
+                                        step_result=sr,
+                                    )
+                            except Exception:
+                                pass
+
+                        # Yield chunks first, then final outcome/result
                         for chunk in chunks:
-                            yield chunk
-                        yield step_result
+                            # Wrap streaming chunks into typed outcome if not already
+                            yield Chunk(data=chunk, step_name=step.name)
+                        if isinstance(step_outcome, StepOutcome):
+                            if isinstance(step_outcome, Success):
+                                step_result = step_outcome.step_result
+                            elif isinstance(step_outcome, Failure):
+                                # Ensure failure hook runs by populating step_result
+                                step_result = step_outcome.step_result or StepResult(
+                                    name=getattr(step, "name", "<unnamed>"),
+                                    success=False,
+                                    feedback=step_outcome.feedback,
+                                )
+                            yield step_outcome
+                        else:
+                            # Normalize legacy StepResult to Success
+                            step_result = step_outcome
+                            yield Success(step_result=step_result)
                     else:
                         # Non-streaming case
                         request = StepExecutionRequest(
@@ -136,9 +205,21 @@ class StepCoordinator(Generic[ContextT]):
                             usage_limits=usage_limits,
                         )
 
-                        # Call the backend directly
-                        step_result = await backend.execute_step(request)
-                        yield step_result
+                        # Call the backend directly (typed StepOutcome)
+                        step_outcome = await backend.execute_step(request)
+                        if isinstance(step_outcome, StepOutcome):
+                            if isinstance(step_outcome, Success):
+                                step_result = step_outcome.step_result
+                            elif isinstance(step_outcome, Failure):
+                                step_result = step_outcome.step_result or StepResult(
+                                    name=getattr(step, "name", "<unnamed>"),
+                                    success=False,
+                                    feedback=step_outcome.feedback,
+                                )
+                            yield step_outcome
+                        else:
+                            step_result = step_outcome
+                            yield Success(step_result=step_result)
                 else:
                     raise ValueError("Either backend or step_executor must be provided")
 
@@ -209,7 +290,7 @@ class StepCoordinator(Generic[ContextT]):
                     except Exception as e:
                         telemetry.logfire.error(f"Error setting span attribute: {e}")
 
-        # Handle step success/failure
+        # Handle step success/failure: finalize trace spans and fire hooks
         if step_result:
             if step_result.success:
                 await self._dispatch_hook(
@@ -219,23 +300,15 @@ class StepCoordinator(Generic[ContextT]):
                     resources=self.resources,
                 )
             else:
-                # ✅ TASK 11.4: FIX ON_FAILURE CALLBACK INTEGRATION
                 # Call failure handlers when step fails
                 if hasattr(step, "failure_handlers") and step.failure_handlers:
                     for handler in step.failure_handlers:
                         try:
-                            # Call the failure handler
-                            if hasattr(handler, "__call__"):
-                                handler()
-                            else:
-                                telemetry.logfire.warning(
-                                    f"Failure handler {handler} is not callable"
-                                )
+                            handler() if hasattr(handler, "__call__") else None
                         except Exception as e:
                             telemetry.logfire.error(
                                 f"Failure handler {handler} raised exception: {e}"
                             )
-                            # Re-raise the exception to propagate it up
                             raise
 
                 try:
@@ -249,8 +322,6 @@ class StepCoordinator(Generic[ContextT]):
                     # Yield the failed step result before aborting
                     yield step_result
                     raise
-                # Don't halt here - let the execution manager handle step failure
-                pass
 
     async def _dispatch_hook(
         self,

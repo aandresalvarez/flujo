@@ -1,6 +1,6 @@
 """Domain models for flujo."""
 
-from typing import Any, List, Optional, Literal, Dict, Generic
+from typing import Any, List, Optional, Literal, Dict, Generic, TypeVar, Union
 from pydantic import Field, ConfigDict, field_validator
 from typing import ClassVar
 from datetime import datetime, timezone
@@ -9,6 +9,55 @@ from enum import Enum
 
 from .types import ContextT
 from .base_model import BaseModel
+
+# ---------------------------------------------------------------------------
+# StepOutcome algebraic data type (FSD-008)
+# ---------------------------------------------------------------------------
+
+T = TypeVar("T")
+
+
+class StepOutcome(BaseModel, Generic[T]):
+    """Typed, serializable outcome for a single step execution.
+
+    Subclasses represent explicit terminal conditions a step can reach.
+    This replaces exception-driven control flow for non-error states.
+    """
+
+
+class Success(StepOutcome[T]):
+    """Successful completion with a concrete StepResult payload."""
+
+    step_result: "StepResult"
+
+
+class Failure(StepOutcome[T]):
+    """Recoverable failure with partial result and feedback for callers/tests."""
+
+    error: Any
+    feedback: str | None = None
+    step_result: Optional["StepResult"] = None
+
+
+class Paused(StepOutcome[T]):
+    """Human-in-the-loop pause. Contains message and optional token for resumption."""
+
+    message: str
+    state_token: Any | None = None
+
+
+class Aborted(StepOutcome[T]):
+    """Execution was intentionally aborted (e.g., circuit breaker, governance)."""
+
+    reason: str
+
+
+class Chunk(StepOutcome[T]):
+    """Streaming data chunk emitted during step execution."""
+
+    data: Any
+    # Optionally link to the step name for traceability during streaming
+    step_name: str | None = None
 
 __all__ = [
     "Task",

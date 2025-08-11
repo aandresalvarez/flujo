@@ -43,6 +43,11 @@ from ..domain.models import (
     PipelineContext,
     HumanInteraction,
     ExecutedCommandLog,
+    StepOutcome,
+    Success,
+    Failure,
+    Paused,
+    Chunk,
 )
 from ..domain.commands import AgentCommand
 from pydantic import TypeAdapter
@@ -729,6 +734,61 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         yield pipeline_result_obj
         return
 
+    async def run_outcomes_async(
+        self,
+        initial_input: RunnerInT,
+        *,
+        run_id: str | None = None,
+        initial_context_data: Optional[Dict[str, Any]] = None,
+    ) -> AsyncIterator[StepOutcome[StepResult]]:
+        """Run the pipeline and yield typed StepOutcome events.
+
+        - Non-streaming: yields a single Success containing the final StepResult
+        - Streaming: yields zero or more Chunk items and a final Success
+        - Failure: yields Failure outcome immediately when a step fails
+        - Pause: yields Paused when a HITL step pauses execution
+        """
+        # Execute underlying steps, translating legacy values to StepOutcome
+        pipeline_result_obj: PipelineResult[ContextT] = PipelineResult()
+        last_step_result: StepResult | None = None
+        try:
+            async for item in self.run_async(
+                initial_input, run_id=run_id, initial_context_data=initial_context_data
+            ):
+                if isinstance(item, StepOutcome):
+                    if isinstance(item, Success):
+                        last_step_result = item.step_result
+                    yield item
+                elif isinstance(item, StepResult):
+                    last_step_result = item
+                    yield Success(step_result=item)
+                elif isinstance(item, PipelineResult):
+                    pipeline_result_obj = item
+                else:
+                    # Streaming chunk (legacy); wrap into Chunk outcome
+                    yield Chunk(data=item)
+        except PipelineAbortSignal:
+            # Try to extract pause message from context if present
+            try:
+                ctx = pipeline_result_obj.final_pipeline_context
+                msg = None
+                if isinstance(ctx, PipelineContext):
+                    msg = ctx.scratchpad.get("pause_message")
+            except Exception:
+                msg = None
+            yield Paused(message=msg or "Paused for HITL")
+            return
+
+        # Emit final Success outcome when we have a last step result
+        if pipeline_result_obj.step_history:
+            last = pipeline_result_obj.step_history[-1]
+            yield Success(step_result=last)
+        elif last_step_result is not None:
+            yield Success(step_result=last_step_result)
+        else:
+            # Synthesize a minimal final result when no steps ran
+            yield Success(step_result=StepResult(name="<no-steps>", success=True))
+
     async def stream_async(
         self,
         initial_input: RunnerInT,
@@ -749,11 +809,16 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             if final_result is not None:
                 yield final_result
         else:
-            # Streaming pipeline: yield all items (chunks and final result)
+            # Streaming pipeline: unwrap typed Chunk outcomes into raw chunks for legacy contract
             async for item in self.run_async(
                 initial_input, initial_context_data=initial_context_data
             ):
-                yield item
+                from ..domain.models import Chunk as _Chunk
+
+                if isinstance(item, _Chunk):
+                    yield item.data
+                else:
+                    yield item
 
     def run(
         self,

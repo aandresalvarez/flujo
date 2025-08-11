@@ -307,7 +307,25 @@ class DummyRemoteBackend(ExecutionBackend):
             stream=bool(reconstructed_payload["stream"]),
         )
 
-        return await self.local.execute_step(reconstructed_request)
+        # Delegate to local backend which may return typed outcomes
+        outcome = await self.local.execute_step(reconstructed_request)
+        try:
+            from flujo.domain.models import StepOutcome, Success, Failure, Paused, StepResult
+            from flujo.exceptions import PausedException
+            if isinstance(outcome, StepOutcome):
+                if isinstance(outcome, Success):
+                    return outcome.step_result
+                if isinstance(outcome, Failure):
+                    return outcome.step_result or StepResult(
+                        name=getattr(reconstructed_request.step, "name", "<unnamed>"),
+                        success=False,
+                        feedback=outcome.feedback,
+                    )
+                if isinstance(outcome, Paused):
+                    raise PausedException(outcome.message)
+        except Exception:
+            pass
+        return outcome
 
 
 @contextmanager

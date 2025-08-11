@@ -11,6 +11,12 @@ from flujo.domain.models import (
     BaseModel,
     PipelineResult,
     StepResult,
+    StepOutcome,
+    Success,
+    Failure,
+    Paused,
+    Aborted,
+    Chunk,
 )
 from flujo.exceptions import (
     ContextInheritanceError,
@@ -147,9 +153,71 @@ class ExecutionManager(Generic[ContextT]):
                         step_executor=step_executor,  # Pass legacy step_executor for backward compatibility
                         usage_limits=self.usage_governor.usage_limits,  # Pass usage limits to coordinator
                     ):
-                        if isinstance(item, StepResult):
+                        # Accept both StepOutcome and legacy values
+                        if isinstance(item, StepOutcome):
+                            if isinstance(item, Success):
+                                step_result = item.step_result
+                            elif isinstance(item, Failure):
+                                try:
+                                    telemetry.logfire.error(
+                                        f"[DEBUG] Failure outcome: feedback={item.feedback}, error={item.error}"
+                                    )
+                                except Exception:
+                                    pass
+                                # Append partial result and terminate
+                                step_result = item.step_result or StepResult(
+                                    name=getattr(step, "name", "<unnamed>"), success=False, feedback=item.feedback
+                                )
+                                # Finalize tracing for failure before terminating
+                                try:
+                                    await self.step_coordinator._dispatch_hook(
+                                        "on_step_failure",
+                                        step_result=step_result,
+                                        context=context,
+                                        resources=self.step_coordinator.resources,
+                                    )
+                                except Exception:
+                                    pass
+                                # Sanitize feedback if the partial result captured an internal attribute error
+                                try:
+                                    fb_lower = (step_result.feedback or "").lower()
+                                    if (
+                                        "object has no attribute 'success'" in fb_lower
+                                        or "object has no attribute 'metadata_'" in fb_lower
+                                    ):
+                                        step_result.feedback = item.feedback or (
+                                            str(item.error) if item.error is not None else step_result.feedback
+                                        )
+                                except Exception:
+                                    pass
+                                if step_result not in result.step_history:
+                                    self.step_coordinator.update_pipeline_result(result, step_result)
+                                # Stop pipeline on failure
+                                self.set_final_context(result, context)
+                                yield result
+                                return
+                            elif isinstance(item, Paused):
+                                # Update context scratchpad and raise abort to halt
+                                if context is not None and hasattr(context, "scratchpad"):
+                                    context.scratchpad["status"] = "paused"
+                                    context.scratchpad["pause_message"] = item.message
+                                raise PipelineAbortSignal("Paused for HITL")
+                            elif isinstance(item, Chunk):
+                                # Pass through streaming chunks
+                                yield item
+                            elif isinstance(item, Aborted):
+                                # Immediate termination without error
+                                self.set_final_context(result, context)
+                                yield result
+                                return
+                            else:
+                                # Unknown outcome: ignore
+                                pass
+                        elif isinstance(item, StepResult):
+                            # Legacy path
                             step_result = item
                         else:
+                            # Legacy streaming chunk; forward as-is
                             yield item
 
                     # ✅ TASK 7.1: FIX ORDER OF OPERATIONS

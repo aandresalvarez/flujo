@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .dsl import Step
 
-from .models import StepResult, UsageLimits
+from .models import StepResult, UsageLimits, StepOutcome
 from .resources import AppResources
 from .agent_protocol import AsyncAgentProtocol
 
@@ -47,6 +47,6 @@ class ExecutionBackend(Protocol):
 
     agent_registry: Dict[str, AsyncAgentProtocol[Any, Any]]
 
-    async def execute_step(self, request: StepExecutionRequest) -> StepResult:
-        """Execute a single step and return the result."""
+    async def execute_step(self, request: StepExecutionRequest) -> StepOutcome[StepResult]:
+        """Execute a single step and return a typed outcome."""
         ...

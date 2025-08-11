@@ -1,6 +1,6 @@
 from __future__ import annotations
 import asyncio
-from typing import Any, Awaitable, Optional, Protocol, Callable, Dict, List, Tuple
+from typing import Any, Awaitable, Optional, Protocol, Callable, Dict, List, Tuple, Union
 from pydantic import BaseModel
 from flujo.domain.models import StepResult, UsageLimits, PipelineContext, StepOutcome, Success, Failure, Paused
 from .types import ExecutionFrame
@@ -79,6 +79,45 @@ class _ParallelUsageGovernor:
     def get_error(self) -> Optional[Exception]:
         """Get the breach error if any."""
         return self.limit_breach_error
+
+
+def _wrap_outcome(sr: StepResult) -> StepOutcome[StepResult]:
+    """Wrap a StepResult into a typed StepOutcome (Success/Failure)."""
+    if sr.success:
+        return Success(step_result=sr)
+    return Failure(error=Exception(sr.feedback or "step failed"), feedback=sr.feedback, step_result=sr)
+
+
+def _unwrap_outcome_to_step_result(
+    outcome: StepOutcome[StepResult] | StepResult,
+    *,
+    step_name: str,
+) -> StepResult:
+    """Normalize StepOutcome to StepResult for internal policy logic.
+
+    - Success -> underlying StepResult
+    - Failure -> attached partial StepResult (or synthesized minimal failure)
+    - Paused -> re-raise control-flow exception to honor Flujo patterns
+    - Raw StepResult -> returned as-is
+    """
+    if isinstance(outcome, StepResult):
+        return outcome
+    if isinstance(outcome, Success):
+        return outcome.step_result
+    if isinstance(outcome, Failure):
+        if outcome.step_result is not None:
+            return outcome.step_result
+        return StepResult(
+            name=step_name,
+            success=False,
+            feedback=outcome.feedback or (str(outcome.error) if outcome.error is not None else None),
+        )
+    if isinstance(outcome, Paused):
+        from flujo.exceptions import PausedException
+
+        raise PausedException(outcome.message)
+    # Unknown outcome types (Chunk/Aborted) should be mapped to a failed result for safety
+    return StepResult(name=step_name, success=False, feedback=f"Unsupported outcome type: {type(outcome).__name__}")
 
 
 """
@@ -293,7 +332,7 @@ class DefaultSimpleStepExecutor:
             f"[Policy] SimpleStep(self-contained): {getattr(step, 'name', '<unnamed>')} depth={_fallback_depth}"
         )
         # Use self-contained policy implementation instead of delegating to core
-        return await _execute_simple_step_policy_impl(
+        sr = await _execute_simple_step_policy_impl(
             core,
             step,
             data,
@@ -306,6 +345,7 @@ class DefaultSimpleStepExecutor:
             breach_event,
             _fallback_depth,
         )
+        return sr
 
 
 async def _execute_simple_step_policy_impl(
@@ -322,6 +362,8 @@ async def _execute_simple_step_policy_impl(
     _fallback_depth: int,
 ) -> StepResult:
     """Full SimpleStep execution logic migrated from core into policy."""
+    # Local override: ensure this helper returns StepResult, not StepOutcome, within this function.
+    _wrap_outcome = (lambda sr: sr)
     from unittest.mock import Mock, MagicMock, AsyncMock
     from .hybrid_check import run_hybrid_check
     from flujo.exceptions import (
@@ -501,16 +543,9 @@ async def _execute_simple_step_policy_impl(
 
             # usage metrics (allow strict pricing to bubble up)
             try:
-                try:
-                    prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
-                        raw_output=agent_output, agent=step.agent, step_name=step.name
-                    )
-                except Exception as e_usage:
-                    # Preserve strict pricing behavior by surfacing configuration errors
-                    from flujo.exceptions import PricingNotConfiguredError
-                    if isinstance(e_usage, PricingNotConfiguredError):
-                        raise
-                    raise
+                prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
+                    raw_output=agent_output, agent=step.agent, step_name=step.name
+                )
             except Exception as e_usage:
                 from flujo.exceptions import PricingNotConfiguredError
 
@@ -688,7 +723,7 @@ async def _execute_simple_step_policy_impl(
                                 f"Fallback loop detected: step '{getattr(fb_step, 'name', '<unnamed>')}' already in fallback chain"
                             )
                         try:
-                            fallback_result = await core.execute(
+                            _outcome = await core.execute(
                                 step=fb_step,
                                 data=data,
                                 context=context,
@@ -698,6 +733,9 @@ async def _execute_simple_step_policy_impl(
                                 on_chunk=on_chunk,
                                 breach_event=breach_event,
                                 _fallback_depth=_fallback_depth + 1,
+                            )
+                            fallback_result = _unwrap_outcome_to_step_result(
+                                _outcome, step_name=getattr(fb_step, 'name', core._safe_step_name(step))
                             )
                             if fallback_result.metadata_ is None:
                                 fallback_result.metadata_ = {}
@@ -748,7 +786,6 @@ async def _execute_simple_step_policy_impl(
                                 f"Original error: {result.feedback}; Fallback error: {fb_err}"
                             )
                             return result
-                    return result
                 # Normalize dict-based outputs from plugins
                 if isinstance(processed_output, dict) and "output" in processed_output:
                     processed_output = processed_output["output"]
@@ -846,7 +883,7 @@ async def _execute_simple_step_policy_impl(
                                 f"Fallback loop detected: step '{step.fallback_step.name}' already in fallback chain"
                             )
                         try:
-                            fallback_result = await core.execute(
+                            _outcome = await core.execute(
                                 step=step.fallback_step,
                                 data=data,
                                 context=context,
@@ -856,6 +893,12 @@ async def _execute_simple_step_policy_impl(
                                 on_chunk=on_chunk,
                                 breach_event=breach_event,
                                 _fallback_depth=_fallback_depth + 1,
+                            )
+                            fallback_result = _unwrap_outcome_to_step_result(
+                                _outcome,
+                                step_name=getattr(
+                                    step.fallback_step, 'name', core._safe_step_name(step)
+                                ),
                             )
                             if fallback_result.metadata_ is None:
                                 fallback_result.metadata_ = {}
@@ -994,6 +1037,14 @@ async def _execute_simple_step_policy_impl(
             # Preserve timeout semantics (non-retryable for plugin/validator phases)
             raise
         except Exception as agent_error:
+            try:
+                telemetry.logfire.error(
+                    f"[DEBUG] Agent exception in DefaultAgentStepExecutor: {type(agent_error).__name__}: {agent_error}"
+                )
+                import traceback as _tb
+                telemetry.logfire.error(_tb.format_exc())
+            except Exception:
+                pass
             # Use Flujo's sophisticated error classification system
             from flujo.application.core.optimized_error_handler import (
                 ErrorClassifier,
@@ -1014,7 +1065,7 @@ async def _execute_simple_step_policy_impl(
                     f"Re-raising control flow exception: {type(agent_error).__name__}"
                 )
                 raise agent_error
-            from flujo.exceptions import PricingNotConfiguredError, MissingAgentError
+            from flujo.exceptions import PricingNotConfiguredError
 
             # Strict pricing surfacing: treat pricing errors as non-retryable and re-raise immediately
             try:
@@ -1035,7 +1086,7 @@ async def _execute_simple_step_policy_impl(
             except PricingNotConfiguredError:
                 raise
             # Also treat declared non-retryable errors as immediate
-            if isinstance(agent_error, (NonRetryableError, PricingNotConfiguredError, MissingAgentError)):
+            if isinstance(agent_error, (NonRetryableError, PricingNotConfiguredError)):
                 raise agent_error
             # Do not retry for plugin-originated errors; proceed to fallback handling
             if agent_error.__class__.__name__ in {"PluginError", "_PluginError"}:
@@ -1060,11 +1111,11 @@ async def _execute_simple_step_policy_impl(
                         pass
                     continue
                 result.success = False
-            msg = str(agent_error)
-            if msg.startswith("Plugin validation failed"):
-                result.feedback = f"Plugin execution failed after max retries: {msg}"
-            else:
-                result.feedback = f"Plugin validation failed after max retries: {msg}"
+                msg = str(agent_error)
+                if msg.startswith("Plugin validation failed"):
+                    result.feedback = f"Plugin execution failed after max retries: {msg}"
+                else:
+                    result.feedback = f"Plugin validation failed after max retries: {msg}"
                 result.output = None
                 result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
                 if limits:
@@ -1090,7 +1141,7 @@ async def _execute_simple_step_policy_impl(
                             f"Fallback loop detected: step '{step.fallback_step.name}' already in fallback chain"
                         )
                     try:
-                        fallback_result = await core.execute(
+                        _outcome = await core.execute(
                             step=step.fallback_step,
                             data=data,
                             context=context,
@@ -1100,6 +1151,9 @@ async def _execute_simple_step_policy_impl(
                             on_chunk=on_chunk,
                             breach_event=breach_event,
                             _fallback_depth=_fallback_depth + 1,
+                        )
+                        fallback_result = _unwrap_outcome_to_step_result(
+                            _outcome, step_name=getattr(step.fallback_step, 'name', core._safe_step_name(step))
                         )
                         if fallback_result.metadata_ is None:
                             fallback_result.metadata_ = {}
@@ -1190,7 +1244,7 @@ async def _execute_simple_step_policy_impl(
                         f"Fallback loop detected: step '{step.fallback_step.name}' already in fallback chain"
                     )
                 try:
-                    fallback_result = await core.execute(
+                    _outcome = await core.execute(
                         step=step.fallback_step,
                         data=data,
                         context=context,
@@ -1200,6 +1254,9 @@ async def _execute_simple_step_policy_impl(
                         on_chunk=on_chunk,
                         breach_event=breach_event,
                         _fallback_depth=_fallback_depth + 1,
+                    )
+                    fallback_result = _unwrap_outcome_to_step_result(
+                        _outcome, step_name=getattr(step.fallback_step, 'name', core._safe_step_name(step))
                     )
                     if fallback_result.metadata_ is None:
                         fallback_result.metadata_ = {}
@@ -1256,8 +1313,8 @@ async def _execute_simple_step_policy_impl(
                     )
                     result.feedback = f"Original error: {result.feedback}; Fallback error: {fb_err}"
                     return result
-            # No fallback configured: return the failure result
-            # FSD-003: For failed steps, return the attempt context from the last attempt
+                    # No fallback configured: return the failure result
+                    # FSD-003: For failed steps, return the attempt context from the last attempt
             # This prevents context accumulation across retry attempts while preserving
             # the effect of a single execution attempt
             if total_attempts > 1 and "attempt_context" in locals() and attempt_context is not None:
@@ -1278,7 +1335,8 @@ async def _execute_simple_step_policy_impl(
                     telemetry.logfire.info(
                         f"[SimpleStep] FAILED: Using original context.branch_count = {context.branch_count}"
                     )
-            return result
+            # Preserve original error for higher layers
+            return Failure(error=agent_error, feedback=result.feedback, step_result=result)
 
     # not reached normally
     result.success = False
@@ -1502,7 +1560,7 @@ class DefaultAgentStepExecutor:
                                 fb_step = None
                             if fb_step is not None:
                                 try:
-                                    fb_res = await core.execute(
+                                    _outcome = await core.execute(
                                         step=fb_step,
                                         data=data,
                                         context=attempt_context,
@@ -1513,6 +1571,12 @@ class DefaultAgentStepExecutor:
                                         cache_key=None,
                                         breach_event=breach_event,
                                         _fallback_depth=_fallback_depth + 1,
+                                    )
+                                    fb_res = _unwrap_outcome_to_step_result(
+                                        _outcome,
+                                        step_name=getattr(
+                                            fb_step, 'name', core._safe_step_name(step)
+                                        ),
                                     )
                                     # Accumulate metrics
                                     result.cost_usd = (result.cost_usd or 0.0) + (
@@ -1585,7 +1649,7 @@ class DefaultAgentStepExecutor:
                         fb_step = None
                     if fb_step is not None:
                         try:
-                            fb_res = await core.execute(
+                            _outcome = await core.execute(
                                 step=fb_step,
                                 data=data,
                                 context=attempt_context,
@@ -1596,6 +1660,9 @@ class DefaultAgentStepExecutor:
                                 cache_key=None,
                                 breach_event=breach_event,
                                 _fallback_depth=_fallback_depth + 1,
+                            )
+                            fb_res = _unwrap_outcome_to_step_result(
+                                _outcome, step_name=getattr(fb_step, 'name', core._safe_step_name(step))
                             )
                             result.cost_usd = (result.cost_usd or 0.0) + (fb_res.cost_usd or 0.0)
                             result.token_counts = (result.token_counts or 0) + (
@@ -1750,6 +1817,11 @@ class DefaultAgentStepExecutor:
                     telemetry.logfire.warning(
                         f"Step '{step.name}' agent execution attempt {attempt} failed: {e}"
                     )
+                    try:
+                        import traceback as _tb
+                        telemetry.logfire.error(_tb.format_exc())
+                    except Exception:
+                        pass
                     continue
 
                 # Final failure after all attempts: try fallback if configured
@@ -1781,7 +1853,7 @@ class DefaultAgentStepExecutor:
                             )
 
                     try:
-                        fb_res = await core.execute(
+                        _outcome = await core.execute(
                             step=fb_candidate,
                             data=data,
                             context=attempt_context,
@@ -1792,6 +1864,9 @@ class DefaultAgentStepExecutor:
                             cache_key=None,
                             breach_event=breach_event,
                             _fallback_depth=_fallback_depth + 1,
+                        )
+                        fb_res = _unwrap_outcome_to_step_result(
+                            _outcome, step_name=getattr(fb_candidate, 'name', core._safe_step_name(step))
                         )
                         # Accumulate metrics
                         result.cost_usd = (result.cost_usd or 0.0) + (fb_res.cost_usd or 0.0)
@@ -1867,7 +1942,7 @@ class LoopStepExecutor(Protocol):
         cache_key: Optional[str],
         breach_event: Optional[Any],
         _fallback_depth: int = 0,
-    ) -> "StepOutcome[StepResult]": ...
+    ) -> StepOutcome[StepResult]: ...
 
 
 class DefaultLoopStepExecutor:
@@ -1923,7 +1998,7 @@ class DefaultLoopStepExecutor:
         cache_key: Optional[str],
         breach_event: Optional[Any],
         _fallback_depth: int = 0,
-    ) -> StepResult:
+    ) -> StepOutcome[StepResult]:
         # Use proper variable name to match parameter
         loop_step = step
 
@@ -1979,18 +2054,18 @@ class DefaultLoopStepExecutor:
             try:
                 current_data = initial_mapper(current_data, current_context)
             except Exception as e:
-                return StepResult(
-                    name=loop_step.name,
-                    success=False,
-                    output=None,
-                    attempts=0,
-                    latency_s=time.monotonic() - start_time,
-                    token_counts=0,
-                    cost_usd=0.0,
-                    feedback=f"Error in initial_input_to_loop_body_mapper for LoopStep '{loop_step.name}': {e}",
-                    branch_context=current_context,
-                    metadata_={"iterations": 0, "exit_reason": "initial_input_mapper_error"},
-                    step_history=[],
+                    return StepResult(
+                        name=loop_step.name,
+                        success=False,
+                        output=None,
+                        attempts=0,
+                        latency_s=time.monotonic() - start_time,
+                        token_counts=0,
+                        cost_usd=0.0,
+                        feedback=f"Error in initial_input_to_loop_body_mapper for LoopStep '{loop_step.name}': {e}",
+                        branch_context=current_context,
+                        metadata_={"iterations": 0, "exit_reason": "initial_input_mapper_error"},
+                        step_history=[],
                 )
         # Validate body pipeline
         body_pipeline = (
@@ -2020,7 +2095,7 @@ class DefaultLoopStepExecutor:
                 branch_context=current_context,
                 metadata_={"iterations": 0, "exit_reason": "empty_pipeline"},
                 step_history=[],
-            )
+            ))
         # Determine max_loops after initial mapper (MapStep sets it dynamically)
         max_loops = (
             loop_step.get_max_loops()
@@ -2255,7 +2330,7 @@ class DefaultLoopStepExecutor:
                 body_step = body_pipeline.steps[0]
                 if hasattr(body_step, "fallback_step") and body_step.fallback_step is not None:
                     fallback_step = body_step.fallback_step
-                    fallback_result = await core.execute(
+                    _outcome = await core.execute(
                         step=fallback_step,
                         data=current_data,
                         context=iteration_context,
@@ -2265,6 +2340,9 @@ class DefaultLoopStepExecutor:
                         on_chunk=None,
                         breach_event=None,
                         _fallback_depth=_fallback_depth + 1,
+                    )
+                    fallback_result = _unwrap_outcome_to_step_result(
+                        _outcome, step_name=getattr(fallback_step, 'name', core._safe_step_name(loop_step))
                     )
                     iteration_results.append(fallback_result)
                     current_data = fallback_result.output
@@ -2313,7 +2391,7 @@ class DefaultLoopStepExecutor:
                                     "exit_reason": "iteration_input_mapper_error",
                                 },
                                 step_history=iteration_results,
-                            )
+                            ))
                         # Continue to next iteration without failing the whole loop
                         continue
                 # Before failing the entire loop, merge context and check if the
@@ -2395,7 +2473,7 @@ class DefaultLoopStepExecutor:
                     branch_context=current_context,
                     metadata_={"iterations": iteration_count, "exit_reason": "body_step_error"},
                     step_history=iteration_results,
-                )
+                ))
             iteration_results.extend(pipeline_result.step_history)
             if pipeline_result.step_history:
                 last = pipeline_result.step_history[-1]
@@ -2577,7 +2655,7 @@ class DefaultLoopStepExecutor:
                         "exit_reason": "loop_output_mapper_error",
                     },
                     step_history=iteration_results,
-                )
+                ))
         # If any iteration failed, mark as mixed failure for messaging consistency in refine-style loops
         any_failure = any(not sr.success for sr in iteration_results)
         # Expose loop iteration count to any immediate post-loop adapter step (e.g., refine output mapper)
@@ -2628,7 +2706,7 @@ class DefaultLoopStepExecutor:
             branch_context=current_context,
             metadata_={"iterations": iteration_count, "exit_reason": exit_reason or "max_loops"},
             step_history=iteration_results,
-        )
+        ))
 
 
 # --- Parallel Step Executor policy ---
@@ -2645,7 +2723,7 @@ class ParallelStepExecutor(Protocol):
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
         parallel_step: Optional[ParallelStep[Any]] = None,
         step_executor: Optional[Callable[..., Awaitable[StepResult]]] = None,
-    ) -> StepResult: ...
+    ) -> StepOutcome[StepResult]: ...
 
 
 class DefaultParallelStepExecutor:
@@ -2661,7 +2739,7 @@ class DefaultParallelStepExecutor:
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
         parallel_step: Optional[ParallelStep[Any]] = None,
         step_executor: Optional[Callable[..., Awaitable[StepResult]]] = None,
-    ) -> StepResult:
+    ) -> StepOutcome[StepResult]:
         # Actual parallel-step execution logic extracted from legacy `_handle_parallel_step`
         if parallel_step is not None:
             step = parallel_step
@@ -2679,7 +2757,7 @@ class DefaultParallelStepExecutor:
             result.feedback = "Parallel step has no branches to execute"
             result.output = {}
             result.latency_s = time.monotonic() - start_time
-            return result
+            return result)
         # Set up usage governor
         usage_governor = _ParallelUsageGovernor(limits) if limits else None
         if breach_event is None and limits is not None:
@@ -3043,7 +3121,7 @@ class DefaultParallelStepExecutor:
                     summary += f" ({successful_branches_count} succeeded)"
                 detailed_feedback = "; ".join(failure_messages)
                 result.feedback = f"{summary}. Failures: {detailed_feedback}"
-        return result
+        return result)
 
 
 class ConditionalStepExecutor(Protocol):
@@ -3057,7 +3135,7 @@ class ConditionalStepExecutor(Protocol):
         limits: Optional[UsageLimits],
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
         _fallback_depth: int = 0,
-    ) -> StepResult: ...
+    ) -> StepOutcome[StepResult]: ...
 
 
 class DefaultConditionalStepExecutor:
@@ -3071,7 +3149,7 @@ class DefaultConditionalStepExecutor:
         limits: Optional[UsageLimits],
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
         _fallback_depth: int = 0,
-    ) -> StepResult:
+    ) -> StepOutcome[StepResult]:
         """Handle ConditionalStep execution with proper context isolation and merging."""
         import time
         from flujo.application.core.context_manager import ContextManager
@@ -3120,7 +3198,7 @@ class DefaultConditionalStepExecutor:
                         f"No branch found for key '{branch_key}' and no default branch provided"
                     )
                     result.latency_s = time.monotonic() - start_time
-                    return result
+                    return result)
                 # Record executed branch key (always the evaluated key, even when default is used)
                 result.metadata_["executed_branch_key"] = branch_key
                 telemetry.logfire.info(f"Executing branch for key '{branch_key}'")
@@ -3147,7 +3225,7 @@ class DefaultConditionalStepExecutor:
                         with telemetry.logfire.span(
                             getattr(pipeline_step, "name", str(pipeline_step))
                         ):
-                            step_result = await core.execute(
+                            _outcome = await core.execute(
                                 pipeline_step,
                                 branch_data,
                                 context=branch_context,
@@ -3155,6 +3233,9 @@ class DefaultConditionalStepExecutor:
                                 limits=limits,
                                 context_setter=context_setter,
                                 _fallback_depth=_fallback_depth,
+                            )
+                            step_result = _unwrap_outcome_to_step_result(
+                                _outcome, step_name=getattr(pipeline_step, 'name', 'branch_step')
                             )
                         total_cost += step_result.cost_usd
                         total_tokens += step_result.token_counts
@@ -3168,7 +3249,7 @@ class DefaultConditionalStepExecutor:
                             result.latency_s = total_latency
                             result.token_counts = total_tokens
                             result.cost_usd = total_cost
-                            return result
+                            return result)
                         step_history.append(step_result)
                     # Apply optional branch_output_mapper
                     final_output = branch_data
@@ -3183,7 +3264,7 @@ class DefaultConditionalStepExecutor:
                             result.latency_s = total_latency
                             result.token_counts = total_tokens
                             result.cost_usd = total_cost
-                            return result
+                            return result)
                     result.success = True
                     result.output = final_output
                     result.latency_s = total_latency
@@ -3209,7 +3290,7 @@ class DefaultConditionalStepExecutor:
                             context_setter(pipeline_result, context)
                         except Exception:
                             pass
-                    return result
+                    return result)
             except Exception as e:
                 # Log error for visibility in tests
                 try:
@@ -3219,7 +3300,7 @@ class DefaultConditionalStepExecutor:
                 result.feedback = f"Error executing conditional logic or branch: {e}"
                 result.success = False
         result.latency_s = time.monotonic() - start_time
-        return result
+        return result)
 
 
 # --- Dynamic Router Step Executor policy ---
@@ -3237,7 +3318,7 @@ class DynamicRouterStepExecutor(Protocol):
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
         # Backward-compat: expose 'step' in signature for legacy inspection
         step: Optional[Any] = None,
-    ) -> StepResult: ...
+    ) -> StepOutcome[StepResult]: ...
 
 
 class DefaultDynamicRouterStepExecutor:
@@ -3251,7 +3332,7 @@ class DefaultDynamicRouterStepExecutor:
         limits: Optional[UsageLimits],
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
         step: Optional[Any] = None,
-    ) -> StepResult:
+    ) -> StepOutcome[StepResult]:
         """Handle DynamicParallelRouterStep execution with proper branch selection and parallel delegation."""
 
         telemetry.logfire.debug("=== HANDLE DYNAMIC ROUTER STEP ===")
@@ -3274,23 +3355,10 @@ class DefaultDynamicRouterStepExecutor:
                 context_setter if context_setter is not None else (lambda _pr, _ctx: None)
             ),
         )
-        router_result = await core.execute(router_frame)
-        # Normalize StepOutcome to StepResult for router evaluation
-        if isinstance(router_result, StepOutcome):
-            if isinstance(router_result, Success):
-                router_result = router_result.step_result
-            elif isinstance(router_result, Failure):
-                router_result = router_result.step_result or StepResult(
-                    name=core._safe_step_name(router_step), success=False, feedback=router_result.feedback
-                )
-            elif isinstance(router_result, Paused):
-                from flujo.exceptions import PausedException as _Paused
-
-                raise _Paused(router_result.message)
-            else:
-                router_result = StepResult(
-                    name=core._safe_step_name(router_step), success=False, feedback="Unsupported outcome"
-                )
+        _router_outcome = await core.execute(router_frame)
+        router_result = _unwrap_outcome_to_step_result(
+            _router_outcome, step_name=getattr(router_step, 'name', '<unnamed>')
+        )
 
         # Handle router failure
         if not router_result.success:
@@ -3301,7 +3369,7 @@ class DefaultDynamicRouterStepExecutor:
             )
             result.cost_usd = router_result.cost_usd
             result.token_counts = router_result.token_counts
-            return result
+            return result)
 
         # Process router output to get branch names
         selected_branch_names = router_result.output
@@ -3312,7 +3380,7 @@ class DefaultDynamicRouterStepExecutor:
                 name=core._safe_step_name(router_step),
                 success=False,
                 feedback=f"Router agent must return a list of branch names, got {type(selected_branch_names).__name__}",
-            )
+            ))
 
         # Filter branches based on router's decision
         selected_branches = {
@@ -3328,7 +3396,7 @@ class DefaultDynamicRouterStepExecutor:
                 output={},
                 cost_usd=router_result.cost_usd,
                 token_counts=router_result.token_counts,
-            )
+            ))
 
         # Phase 2: Execute selected branches in parallel via policy
         temp_parallel_step: Any = ParallelStep(
@@ -3341,7 +3409,7 @@ class DefaultDynamicRouterStepExecutor:
         )
         # Use the DefaultParallelStepExecutor policy directly instead of legacy core method
         parallel_executor = DefaultParallelStepExecutor()
-        parallel_result = await parallel_executor.execute(
+        _par_outcome = await parallel_executor.execute(
             core=core,
             step=temp_parallel_step,
             data=data,
@@ -3350,6 +3418,9 @@ class DefaultDynamicRouterStepExecutor:
             limits=limits,
             breach_event=None,
             context_setter=context_setter,
+        )
+        parallel_result = _unwrap_outcome_to_step_result(
+            _par_outcome, step_name=getattr(temp_parallel_step, 'name', router_step.name)
         )
 
         # Add router usage metrics
@@ -3376,7 +3447,7 @@ class DefaultDynamicRouterStepExecutor:
 
         # Record executed branches
         parallel_result.metadata_["executed_branches"] = selected_branch_names
-        return parallel_result
+        return parallel_result)
 
 
 # --- End Dynamic Router Step Executor policy ---
@@ -3452,6 +3523,7 @@ class DefaultHitlStepExecutor:
             message = step.message_for_user if step.message_for_user is not None else str(data)
         except Exception:
             message = "Data conversion failed"
+        # Return typed Paused outcome instead of raising control flow exception
         return Paused(message=message)
 
 
@@ -3472,7 +3544,7 @@ class CacheStepExecutor(Protocol):
         breach_event: Optional[Any],
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
         step_executor: Optional[Callable[..., Awaitable[StepResult]]],
-    ) -> StepResult: ...
+    ) -> StepOutcome[StepResult]: ...
 
 
 class DefaultCacheStepExecutor:
@@ -3489,7 +3561,7 @@ class DefaultCacheStepExecutor:
         step_executor: Optional[Callable[..., Awaitable[StepResult]]] = None,
         # Backward-compat: expose 'step' in signature for legacy inspection
         step: Optional[Any] = None,
-    ) -> StepResult:
+    ) -> StepOutcome[StepResult]:
         """Handle CacheStep execution with concurrency control and resilience."""
         try:
             cache_key = _generate_cache_key(cache_step.wrapped_step, data, context, resources)
@@ -3520,7 +3592,14 @@ class DefaultCacheStepExecutor:
                                     cached_result.feedback = (
                                         f"Context validation failed: {validation_error}"
                                     )
-                        return cached_result
+                        # Return typed outcome based on cached result success
+                        if cached_result.success:
+                            return Success(step_result=cached_result)
+                        return Failure(
+                            error=Exception(cached_result.feedback or "cache failure"),
+                            feedback=cached_result.feedback,
+                            step_result=cached_result,
+                        )
                 except Exception as e:
                     telemetry.logfire.error(
                         f"Cache backend GET failed for step '{cache_step.name}': {e}"
@@ -3539,31 +3618,18 @@ class DefaultCacheStepExecutor:
                     ),
                     _fallback_depth=0,
                 )
-                result = await core.execute(frame)
-                # Normalize to StepResult if policy returned typed outcome
-                if isinstance(result, StepOutcome):
-                    if isinstance(result, Success):
-                        result = result.step_result
-                    elif isinstance(result, Failure):
-                        result = result.step_result or StepResult(
-                            name=core._safe_step_name(cache_step.wrapped_step), success=False, feedback=result.feedback
-                        )
-                    elif isinstance(result, Paused):
-                        from flujo.exceptions import PausedException as _Paused
-
-                        raise _Paused(result.message)
-                    else:
-                        result = StepResult(
-                            name=core._safe_step_name(cache_step.wrapped_step), success=False, feedback="Unsupported outcome"
-                        )
-                if result.success:
+                outcome = await core.execute(frame)
+                if isinstance(outcome, Success):
+                    sr = outcome.step_result
                     try:
-                        await cache_step.cache_backend.set(cache_key, result)
+                        await cache_step.cache_backend.set(cache_key, sr)
                     except Exception as e:
                         telemetry.logfire.error(
                             f"Cache backend SET failed for step '{cache_step.name}': {e}"
                         )
-                return result
+                    return outcome
+                # Forward Failure/Paused directly
+                return outcome
         frame = ExecutionFrame(
             step=cache_step.wrapped_step,
             data=data,
@@ -3578,23 +3644,7 @@ class DefaultCacheStepExecutor:
             ),
             _fallback_depth=0,
         )
-        # Ensure we return StepResult per Cache policy contract
-        result = await core.execute(frame)
-        if isinstance(result, StepOutcome):
-            if isinstance(result, Success):
-                return result.step_result
-            if isinstance(result, Failure):
-                return result.step_result or StepResult(
-                    name=core._safe_step_name(cache_step.wrapped_step), success=False, feedback=result.feedback
-                )
-            if isinstance(result, Paused):
-                from flujo.exceptions import PausedException as _Paused
-
-                raise _Paused(result.message)
-            return StepResult(
-                name=core._safe_step_name(cache_step.wrapped_step), success=False, feedback="Unsupported outcome"
-            )
-        return result
+        return await core.execute(frame)
 
 
 # --- End Cache Step Executor policy ---

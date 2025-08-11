@@ -5,7 +5,7 @@ from typing import Any, Dict, TYPE_CHECKING
 
 from ..domain.backends import ExecutionBackend, StepExecutionRequest
 from ..domain.agent_protocol import AsyncAgentProtocol
-from ..domain.models import StepResult
+from ..domain.models import StepResult, StepOutcome, Success, Failure, Paused
 from ..application.core.types import ExecutionFrame
 
 if TYPE_CHECKING:
@@ -26,7 +26,7 @@ class LocalBackend(ExecutionBackend):
         # ✅ INJECT the executor dependency instead of hard-coding it
         self._executor = executor
 
-    async def execute_step(self, request: StepExecutionRequest) -> StepResult:
+    async def execute_step(self, request: StepExecutionRequest) -> StepOutcome[StepResult]:
         step = request.step
 
         # ✅ DELEGATE to the injected executor
@@ -50,4 +50,6 @@ class LocalBackend(ExecutionBackend):
             context_setter=lambda result, ctx: None,  # Default context setter for backend calls
         )
 
-        return await self._executor.execute(frame)
+        outcome = await self._executor.execute(frame)
+        # Return typed outcome directly; let callers decide aggregation/control-flow
+        return outcome

@@ -19,8 +19,24 @@ from ...domain.dsl.dynamic_router import DynamicParallelRouterStep
 from ...domain.dsl.loop import LoopStep
 from ...domain.dsl.parallel import ParallelStep
 from ...domain.dsl.step import HumanInTheLoopStep, Step
-from ...domain.models import PipelineResult, StepResult, UsageLimits
-from ...exceptions import InfiniteFallbackError, UsageLimitExceededError, PausedException
+from ...domain.models import (
+    PipelineResult,
+    StepResult,
+    UsageLimits,
+    StepOutcome,
+    Success,
+    Failure,
+    Paused,
+)
+from ...exceptions import (
+    InfiniteFallbackError,
+    UsageLimitExceededError,
+    PausedException,
+    MissingAgentError,
+    MockDetectionError,
+    PricingNotConfiguredError,
+    InfiniteRedirectError,
+)
 from ...infra import telemetry
 from ...steps.cache_step import CacheStep
 from ...utils.context import safe_merge_context_updates
@@ -423,6 +439,35 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             pass
         return False
 
+    # ------------------------
+    # Outcome normalization
+    # ------------------------
+    def _unwrap_outcome_to_step_result(self, outcome: StepOutcome[StepResult] | StepResult, step_name: str) -> StepResult:
+        from ...exceptions import PausedException
+        # Already a StepResult
+        if isinstance(outcome, StepResult):
+            return outcome
+        if isinstance(outcome, Success):
+            return outcome.step_result
+        if isinstance(outcome, Failure):
+            if outcome.step_result is not None:
+                return outcome.step_result
+            return StepResult(
+                name=step_name,
+                output=None,
+                success=False,
+                feedback=outcome.feedback or (str(outcome.error) if outcome.error is not None else None),
+            )
+        if isinstance(outcome, Paused):
+            raise PausedException(outcome.message)
+        # For Chunk/Aborted or unknown: synthesize conservative failure
+        return StepResult(
+            name=step_name,
+            output=None,
+            success=False,
+            feedback=f"Unsupported outcome type: {type(outcome).__name__}",
+        )
+
     async def _execute_complex_step(
         self,
         *,
@@ -460,7 +505,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 step, data, context, resources, limits, context_setter
             )
         # Fallback: delegate to general execute (policy routing will decide)
-        return await self.execute(
+        outcome = await self.execute(
             step,
             data,
             context=context,
@@ -472,17 +517,19 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             context_setter=context_setter,
             _fallback_depth=fb_depth,
         )
+        return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
 
     async def execute(
         self,
         frame_or_step: Any | None = None,
         data: Any | None = None,
         **kwargs: Any,
-    ) -> StepResult:
+    ) -> StepOutcome[StepResult] | StepResult:
         # Support both ExecutionFrame and legacy signature (step, data, ...)
         from typing import cast
 
-        if isinstance(frame_or_step, ExecutionFrame):
+        called_with_frame = isinstance(frame_or_step, ExecutionFrame)
+        if called_with_frame:
             frame: ExecutionFrame[Any] = frame_or_step
         else:
             # Accept duck-typed steps for backward compatibility
@@ -545,6 +592,10 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             cached_result.metadata_["cache_hit"] = True
                         except Exception:
                             pass
+                        # For backend/frame calls return StepOutcome; for legacy calls return StepResult
+                        cached_success = Success(step_result=cached_result)
+                        if called_with_frame:
+                            return cached_success
                         return cached_result
             except Exception as e:
                 telemetry.logfire.warning(
@@ -552,12 +603,32 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 )
 
         if isinstance(step, CacheStep):
-            return await self.cache_step_executor.execute(
+            res_any = await self.cache_step_executor.execute(
                 self, step, data, context, resources, limits, breach_event, context_setter, None
             )
+            # Normalize to StepOutcome for consistent handling
+            if isinstance(res_any, StepOutcome):
+                outcome = res_any
+            else:
+                outcome = Success(step_result=res_any) if res_any.success else Failure(
+                    error=Exception(res_any.feedback or "step failed"),
+                    feedback=res_any.feedback,
+                    step_result=res_any,
+                )
+            if called_with_frame:
+                return outcome
+            # Legacy path: unwrap to StepResult or raise on pause
+            if isinstance(outcome, Success):
+                return outcome.step_result
+            if isinstance(outcome, Failure):
+                return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
+            if isinstance(outcome, Paused):
+                raise PausedException(outcome.message)
+            # Fallback: synthesize minimal failure
+            return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
 
         if isinstance(step, ParallelStep):
-            return await self.parallel_step_executor.execute(
+            res_any = await self.parallel_step_executor.execute(
                 self,
                 step,
                 data,
@@ -569,9 +640,26 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 step,
                 None,
             )
+            if isinstance(res_any, StepOutcome):
+                outcome = res_any
+            else:
+                outcome = Success(step_result=res_any) if res_any.success else Failure(
+                    error=Exception(res_any.feedback or "step failed"),
+                    feedback=res_any.feedback,
+                    step_result=res_any,
+                )
+            if called_with_frame:
+                return outcome
+            if isinstance(outcome, Success):
+                return outcome.step_result
+            if isinstance(outcome, Failure):
+                return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
+            if isinstance(outcome, Paused):
+                raise PausedException(outcome.message)
+            return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
 
         if isinstance(step, LoopStep):
-            return await self.loop_step_executor.execute(
+            res_any = await self.loop_step_executor.execute(
                 self,
                 step,
                 data,
@@ -584,21 +672,91 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 breach_event,
                 _fallback_depth,
             )
+            if isinstance(res_any, StepOutcome):
+                outcome = res_any
+            else:
+                outcome = Success(step_result=res_any) if res_any.success else Failure(
+                    error=Exception(res_any.feedback or "step failed"),
+                    feedback=res_any.feedback,
+                    step_result=res_any,
+                )
+            if called_with_frame:
+                return outcome
+            if isinstance(outcome, Success):
+                return outcome.step_result
+            if isinstance(outcome, Failure):
+                return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
+            if isinstance(outcome, Paused):
+                raise PausedException(outcome.message)
+            return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
 
         if isinstance(step, ConditionalStep):
-            return await self.conditional_step_executor.execute(
+            res_any = await self.conditional_step_executor.execute(
                 self, step, data, context, resources, limits, context_setter, _fallback_depth
             )
+            if isinstance(res_any, StepOutcome):
+                outcome = res_any
+            else:
+                outcome = Success(step_result=res_any) if res_any.success else Failure(
+                    error=Exception(res_any.feedback or "step failed"),
+                    feedback=res_any.feedback,
+                    step_result=res_any,
+                )
+            if called_with_frame:
+                return outcome
+            if isinstance(outcome, Success):
+                return outcome.step_result
+            if isinstance(outcome, Failure):
+                return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
+            if isinstance(outcome, Paused):
+                raise PausedException(outcome.message)
+            return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
 
         if isinstance(step, DynamicParallelRouterStep):
-            return await self.dynamic_router_step_executor.execute(
+            res_any = await self.dynamic_router_step_executor.execute(
                 self, step, data, context, resources, limits, context_setter
             )
+            if isinstance(res_any, StepOutcome):
+                outcome = res_any
+            else:
+                outcome = Success(step_result=res_any) if res_any.success else Failure(
+                    error=Exception(res_any.feedback or "step failed"),
+                    feedback=res_any.feedback,
+                    step_result=res_any,
+                )
+            if called_with_frame:
+                return outcome
+            if isinstance(outcome, Success):
+                return outcome.step_result
+            if isinstance(outcome, Failure):
+                return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
+            if isinstance(outcome, Paused):
+                raise PausedException(outcome.message)
+            return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
 
         if isinstance(step, HumanInTheLoopStep):
-            return await self.hitl_step_executor.execute(
+            res_any = await self.hitl_step_executor.execute(
                 self, step, data, context, resources, limits, context_setter
             )
+            outcome: StepOutcome[StepResult]
+            if isinstance(res_any, StepOutcome):
+                outcome = res_any
+            else:
+                outcome = Success(step_result=res_any) if res_any.success else Failure(
+                    error=Exception(res_any.feedback or "step failed"),
+                    feedback=res_any.feedback,
+                    step_result=res_any,
+                )
+            if called_with_frame:
+                return outcome
+            # Legacy behavior: raise on pause, unwrap others
+            if isinstance(outcome, Paused):
+                raise PausedException(outcome.message)
+            if isinstance(outcome, Success):
+                return outcome.step_result
+            if isinstance(outcome, Failure):
+                return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
+            return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
 
         try:
             # Normalize fallback depth defensively
@@ -686,6 +844,49 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     breach_event,
                     fb_depth_norm,
                 )
+            # Normalize policies that return StepOutcome into StepResult for downstream logic
+            from typing import cast as _cast
+            if isinstance(result, StepOutcome):
+                if isinstance(result, Success):
+                    result = result.step_result
+                elif isinstance(result, Failure):
+                    # Prefer attached partial result; synthesize minimal result if missing
+                    if result.step_result is not None:
+                        result = result.step_result
+                    else:
+                        result = StepResult(
+                            name=self._safe_step_name(step),
+                            output=None,
+                            success=False,
+                            attempts=1,
+                            latency_s=0.0,
+                            token_counts=0,
+                            cost_usd=0.0,
+                            feedback=result.feedback if result.feedback is not None else str(result.error),
+                            branch_context=None,
+                            metadata_={"error_type": type(result.error).__name__ if result.error is not None else "Error"},
+                            step_history=[],
+                        )
+                elif isinstance(result, Paused):
+                    if called_with_frame:
+                        return result
+                    raise PausedException(result.message)
+                else:
+                    # Aborted/Chunk or unknown → map to failed StepResult to maintain contract
+                    reason = getattr(result, "reason", None) or "Unsupported outcome type"
+                    result = StepResult(
+                        name=self._safe_step_name(step),
+                        output=None,
+                        success=False,
+                        attempts=1,
+                        latency_s=0.0,
+                        token_counts=0,
+                        cost_usd=0.0,
+                        feedback=str(reason),
+                        branch_context=None,
+                        metadata_={"outcome_type": type(result).__name__},
+                        step_history=[],
+                    )
         except InfiniteFallbackError as e:
             error_msg = str(e)
             step_name = str(getattr(step, "name", type(step).__name__))
@@ -696,7 +897,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 or "Infinite Mock fallback chain detected" in error_msg
             )
             if is_framework_loop_detection:
-                return StepResult(
+                failed_sr = StepResult(
                     name=step_name,
                     output=None,
                     success=False,
@@ -712,8 +913,42 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     },
                     step_history=[],
                 )
+                return Failure(error=e, feedback=failed_sr.feedback, step_result=failed_sr)
             else:
                 raise e
+        except PausedException as e:
+            if called_with_frame:
+                return Paused(message=str(e))
+            raise
+        except (UsageLimitExceededError, MissingAgentError, PricingNotConfiguredError, MockDetectionError, InfiniteRedirectError):
+            # Re-raise well-known control/config exceptions to satisfy legacy tests and semantics
+            raise
+        except Exception as e:
+            try:
+                telemetry.logfire.error(
+                    f"[DEBUG] ExecutorCore caught unexpected exception at step '{step_name}': {type(e).__name__}: {e}"
+                )
+            except Exception:
+                pass
+            step_name = str(getattr(step, "name", type(step).__name__))
+            failed_sr = StepResult(
+                name=step_name,
+                output=None,
+                success=False,
+                attempts=1,
+                latency_s=0.0,
+                token_counts=0,
+                cost_usd=0.0,
+                feedback=str(e),
+                branch_context=None,
+                metadata_={"error_type": type(e).__name__},
+                step_history=[],
+            )
+            outcome = Failure(error=e, feedback=failed_sr.feedback, step_result=failed_sr)
+            if called_with_frame:
+                return outcome
+            # For legacy callers in typed-outcomes migration, return Failure outcome as well
+            return outcome
 
         if (
             cache_key
@@ -729,10 +964,22 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             await self._cache_backend.put(cache_key, result, ttl_s=3600)
             telemetry.logfire.debug(f"Cached result for step: {getattr(step, 'name', '<unnamed>')}")
 
+        final_outcome: StepOutcome[StepResult] = (
+            Success(step_result=result)
+            if result.success
+            else Failure(
+                error=Exception(result.feedback or "step failed"),
+                feedback=result.feedback,
+                step_result=result,
+            )
+        )
+        if called_with_frame:
+            return final_outcome
+        # Legacy callers expect StepResult
         return result
 
     # Backward compatibility method for old execute signature
-    async def execute_old_signature(self, step: Any, data: Any, **kwargs: Any) -> StepResult:
+    async def execute_old_signature(self, step: Any, data: Any, **kwargs: Any) -> StepOutcome[StepResult]:
         return await self.execute(step, data, **kwargs)
 
     async def execute_step(
@@ -754,7 +1001,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             limits = usage_limits
         # Note: No fast-path; delegate to main execute for consistent policy routing
 
-        return await self.execute(
+        outcome = await self.execute(
             step,
             data,
             context=context,
@@ -767,6 +1014,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             result=result,
             _fallback_depth=_fallback_depth,
         )
+        return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
 
     async def _execute_simple_step(
         self,
@@ -782,7 +1030,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         _fallback_depth: int = 0,
         _from_policy: bool = False,
     ) -> StepResult:
-        return await self.simple_step_executor.execute(
+        outcome = await self.simple_step_executor.execute(
             self,
             step,
             data,
@@ -795,6 +1043,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             breach_event,
             _fallback_depth,
         )
+        return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
 
     async def _handle_parallel_step(
         self,
@@ -810,7 +1059,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         step_executor: Optional[Callable[..., Awaitable[StepResult]]] = None,
     ) -> StepResult:
         ps = parallel_step if parallel_step is not None else step
-        return await self.parallel_step_executor.execute(
+        outcome = await self.parallel_step_executor.execute(
             self,
             ps,
             data,
@@ -822,6 +1071,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             ps,
             step_executor,
         )
+        return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(ps))
 
     async def _execute_pipeline(
         self,
@@ -880,7 +1130,33 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     context_setter=(context_setter or (lambda _r, _c: None)),
                     _fallback_depth=0,
                 )
-                step_result = await self.execute(frame)
+                outcome = await self.execute(frame)
+                # Normalize StepOutcome to StepResult for aggregation/history
+                from typing import cast as _cast
+                if isinstance(outcome, Success):
+                    step_result = outcome.step_result
+                elif isinstance(outcome, Failure):
+                    step_result = (
+                        outcome.step_result
+                        if outcome.step_result is not None
+                        else StepResult(
+                            name=getattr(step, "name", "unknown"),
+                            output=None,
+                            success=False,
+                            feedback=outcome.feedback or str(outcome.error),
+                        )
+                    )
+                elif isinstance(outcome, Paused):
+                    # Propagate pause control flow upward to runner/manager
+                    raise PausedException(outcome.message)
+                else:
+                    # Unknown/Chunk/Aborted: synthesize conservative failure result
+                    step_result = StepResult(
+                        name=getattr(step, "name", "unknown"),
+                        output=None,
+                        success=False,
+                        feedback=f"Unsupported outcome type: {type(outcome).__name__}",
+                    )
 
                 total_cost += step_result.cost_usd
                 total_tokens += step_result.token_counts
@@ -993,10 +1269,26 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         _fallback_depth: int = 0,
         **kwargs: Any,
     ) -> StepResult:
-        # Backward-compat: ignore streaming args for HITL; delegate to policy
-        return await self.hitl_step_executor.execute(
+        # Backward-compat: ignore streaming args for HITL; delegate to policy but
+        # raise PausedException for control flow, matching legacy behavior.
+        outcome = await self.hitl_step_executor.execute(
             self, step, data, context, resources, limits, context_setter
         )
+        if isinstance(outcome, Paused):
+            try:
+                if context is not None and hasattr(context, "scratchpad"):
+                    scratch = getattr(context, "scratchpad")
+                    if isinstance(scratch, dict):
+                        scratch["status"] = "paused"
+                        scratch["pause_message"] = outcome.message
+            except Exception:
+                pass
+            raise PausedException(outcome.message)
+        if isinstance(outcome, Success):
+            return outcome.step_result
+        if isinstance(outcome, Failure):
+            return self._unwrap_outcome_to_step_result(outcome, getattr(step, "name", "<hitl>"))
+        return StepResult(name=getattr(step, "name", "<hitl>"), success=False, feedback="Unsupported HITL outcome")
 
     # Legacy compatibility wrappers expected by tests
     async def _execute_loop(
@@ -1059,9 +1351,10 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         _fallback_depth: int = 0,
         **kwargs: Any,
     ) -> StepResult:
-        return await self.conditional_step_executor.execute(
+        outcome = await self.conditional_step_executor.execute(
             self, step, data, context, resources, limits, context_setter, _fallback_depth
         )
+        return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
 
     async def _handle_dynamic_router_step(
         self,
@@ -1074,9 +1367,10 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]] = None,
         **kwargs: Any,
     ) -> StepResult:
-        return await self.dynamic_router_step_executor.execute(
+        outcome = await self.dynamic_router_step_executor.execute(
             self, step, data, context, resources, limits, context_setter
         )
+        return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
 
     def _default_set_final_context(
         self, result: PipelineResult[Any], context: Optional[Any]
