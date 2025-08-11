@@ -125,13 +125,14 @@ class ExecutionManager(Generic[ContextT]):
             # Local import to avoid circular dependency
             from flujo.domain.dsl.loop import LoopStep
 
+            # Persist state after each successful step to support crash recovery and resumption.
+            # Do not suppress this in CI; tests rely on accurate step indexing for resume.
             persist_state_after_step = (
                 run_id is not None
                 and not isinstance(step, LoopStep)
                 and not self.inside_loop_step
                 and self.state_manager.state_backend is not None
                 and not os.getenv("FLUJO_TEST_MODE")
-                and not os.getenv("CI") == "true"
             )
 
             try:

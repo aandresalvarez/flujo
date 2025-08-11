@@ -464,6 +464,9 @@ def get_context_field_safely(context: Any, field_name: str, default: Any = None)
     except (AttributeError, TypeError):
         pass
 
+    # If the field does not exist or cannot be accessed, return the provided default
+    return default
+
     return default
 
 
