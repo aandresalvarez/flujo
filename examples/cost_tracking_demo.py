@@ -8,7 +8,7 @@ Make sure you have a flujo.toml file with cost configuration before running this
 
 import asyncio
 from flujo import Step, Flujo, UsageLimits
-from flujo.infra.agents import make_agent_async
+from flujo.agents import make_agent_async
 from flujo.exceptions import UsageLimitExceededError
 
 
@@ -36,7 +36,7 @@ async def basic_cost_tracking():
     result = await runner.run_async("Write a short poem about coding.")
 
     # Display cost information
-    print(f"\nPipeline completed successfully!")
+    print("\nPipeline completed successfully!")
     print(f"Total steps: {len(result.step_history)}")
 
     total_cost = 0
@@ -79,11 +79,11 @@ async def usage_limits_demo():
     runner = Flujo(pipeline, usage_limits=limits)
 
     try:
-        result = await runner.run_async("Explain quantum computing in detail with many examples.")
+        await runner.run_async("Explain quantum computing in detail with many examples.")
         print("Pipeline completed successfully!")
     except UsageLimitExceededError as e:
         print(f"Pipeline stopped due to usage limits: {e}")
-        print(f"Partial results available:")
+        print("Partial results available:")
 
         # Show partial results
         for step_result in e.partial_result.step_history:

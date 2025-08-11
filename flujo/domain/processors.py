@@ -17,3 +17,5 @@ class AgentProcessors(BaseModel):
 
     prompt_processors: List[Any] = Field(default_factory=list)
     output_processors: List[Any] = Field(default_factory=list)
+    # Optional validators inside processors container (used by integration tests)
+    validators: List[Any] = Field(default_factory=list)

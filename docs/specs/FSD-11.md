@@ -108,7 +108,7 @@ def _accepts_param(func: Callable[..., Any], param: str) -> bool:
 
 ### 5.2. Runner Invocation Logic Modification
 
-The core change will be in `flujo/application/core/step_logic.py`, within the `_run_step_logic` function (or a helper it calls).
+The core change will be in `flujo/application/core/executor_core.py`, within the step execution dispatch (or a helper it calls).
 
 **Current (Simplified) Logic:**
 ```python
@@ -133,7 +133,7 @@ raw_output = await current_agent.run(data, **agent_kwargs)
 
 ### 5.3. Enhanced Error Reporting
 
-The `try...except` block surrounding the agent call in `_run_step_logic` will be modified.
+The `try...except` block surrounding the agent call in `_execute_step_logic` will be modified.
 
 **Current (Simplified) Logic:**
 ```python

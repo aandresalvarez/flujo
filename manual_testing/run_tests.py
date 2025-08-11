@@ -7,7 +7,6 @@ from the organized folder structure.
 """
 
 import sys
-import os
 from pathlib import Path
 
 # Add the project root to the Python path
@@ -40,7 +39,7 @@ def show_menu():
 def run_automated_test(test_name):
     """Run an automated test."""
     print(f"\n🔧 Running automated test: {test_name}")
-    
+
     if test_name == "comprehensive":
         import sys
         sys.path.append("tests/automated")
@@ -67,7 +66,7 @@ def run_automated_test(test_name):
 def run_manual_test(test_name):
     """Run a manual test."""
     print(f"\n🧪 Running manual test: {test_name}")
-    
+
     if test_name == "basic":
         import sys
         sys.path.append("tests/manual")
@@ -93,7 +92,7 @@ def run_manual_test(test_name):
 def show_documentation(doc_name):
     """Show documentation."""
     print(f"\n📚 Showing documentation: {doc_name}")
-    
+
     if doc_name == "manual_summary":
         doc_path = Path("docs/MANUAL_TESTING_SUMMARY.md")
         if doc_path.exists():
@@ -114,7 +113,7 @@ def show_documentation(doc_name):
 def run_example(example_name):
     """Run an example."""
     print(f"\n🔧 Running example: {example_name}")
-    
+
     if example_name == "basic_pipeline":
         import sys
         sys.path.append("examples")
@@ -127,10 +126,10 @@ def main():
     """Main test runner."""
     while True:
         show_menu()
-        
+
         try:
             choice = input("\nEnter your choice (0-10): ").strip()
-            
+
             if choice == "0":
                 print("\n👋 Goodbye!")
                 break
@@ -156,7 +155,7 @@ def main():
                 run_example("basic_pipeline")
             else:
                 print("❌ Invalid choice. Please enter a number between 0-10.")
-                
+
         except KeyboardInterrupt:
             print("\n\n👋 Goodbye!")
             break
@@ -166,4 +165,4 @@ def main():
             traceback.print_exc()
 
 if __name__ == "__main__":
-    main() 
+    main()

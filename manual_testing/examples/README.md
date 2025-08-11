@@ -108,4 +108,4 @@ python -m manual_testing.examples.test_step3
 2. **Context Updates**: Steps can modify shared state using `@step(updates_context=True)`
 3. **Data Flow Control**: Mappers explicitly control what data flows between loop iterations
 4. **Autonomous Pipelines**: Stateful pipelines can run without external intervention
-5. **Explicit State**: Boolean flags and structured data are more robust than string parsing 
+5. **Explicit State**: Boolean flags and structured data are more robust than string parsing

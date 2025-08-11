@@ -1,0 +1,67 @@
+# Flujo Documentation
+
+This directory contains comprehensive documentation for the Flujo framework.
+
+## Documentation Structure
+
+### **For Framework Architecture Understanding**
+- **[`../flujo.md`](../flujo.md)**: Complete architectural overview of Flujo's design
+  - Policy-driven execution core
+  - Declarative DSL
+  - Architectural patterns for common problems
+  - System components and their interactions
+
+### **For End Users (Building with Flujo)**
+- **[`../DEVELOPER_GUIDE.md`](../DEVELOPER_GUIDE.md)**: Practical guide for building applications
+  - Best practices and anti-patterns
+  - Context management
+  - Error handling patterns
+  - Systematic debugging methodology
+  - Quick reference patterns
+
+### **For Core Team (Building Flujo Itself)**
+- **[`../FLUJO_TEAM_GUIDE.md`](../FLUJO_TEAM_GUIDE.md)**: Guide for framework contributors
+  - Policy-driven architecture compliance
+  - Critical exception handling patterns (PausedException, etc.)
+  - Adding new step types and policies
+  - Testing patterns for core development
+  - Code review checklist
+  - Performance optimization using internal systems
+
+## Quick Navigation
+
+| I want to... | Read this |
+|--------------|-----------|
+| Understand Flujo's architecture | [`flujo.md`](../flujo.md) |
+| Build an application with Flujo | [`DEVELOPER_GUIDE.md`](../DEVELOPER_GUIDE.md) |
+| Contribute to Flujo framework | [`FLUJO_TEAM_GUIDE.md`](../FLUJO_TEAM_GUIDE.md) |
+| Debug a control flow issue | [`FLUJO_TEAM_GUIDE.md#2-exception-handling-the-architectural-way`](../FLUJO_TEAM_GUIDE.md#2-exception-handling-the-architectural-way) |
+| Add a new step type | [`FLUJO_TEAM_GUIDE.md#4-adding-new-step-types-the-complete-pattern`](../FLUJO_TEAM_GUIDE.md#4-adding-new-step-types-the-complete-pattern) |
+
+## Key Patterns
+
+### **Control Flow Exception Handling**
+The most critical pattern for both users and contributors:
+
+**❌ Never do this:**
+```python
+try:
+    result = await step_execution()
+except PausedException as e:
+    return StepResult(success=False, error=str(e))  # ❌ Breaks workflow control
+```
+
+**✅ Always do this:**
+```python
+try:
+    result = await step_execution()
+except PausedException as e:
+    # Use Flujo's error classification system
+    error_context = ErrorContext.from_exception(e)
+    classifier.classify_error(error_context)
+
+    if error_context.category == ErrorCategory.CONTROL_FLOW:
+        raise e  # ✅ Re-raise for proper workflow control
+```
+
+This pattern ensures that control flow exceptions (like `PausedException` for HITL workflows) properly pause the entire pipeline instead of being converted to failed results.

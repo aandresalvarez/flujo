@@ -1,6 +1,6 @@
 import pytest
 
-from flujo.processors.repair import DeterministicRepairProcessor, MAX_LITERAL_EVAL_SIZE
+from flujo.agents.repair import DeterministicRepairProcessor, MAX_LITERAL_EVAL_SIZE
 
 
 @pytest.mark.asyncio

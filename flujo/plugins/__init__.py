@@ -2,6 +2,6 @@
 Built-in plugins for flujo.
 """
 
-from .sql_validator import SQLSyntaxValidator
+from typing import List
 
-__all__ = ["SQLSyntaxValidator"]
+__all__: List[str] = []

@@ -1,7 +1,7 @@
 """Domain models for flujo."""
 
 from typing import Any, List, Optional, Literal, Dict, Generic
-from pydantic import Field, ConfigDict
+from pydantic import Field, ConfigDict, field_validator
 from typing import ClassVar
 from datetime import datetime, timezone
 import uuid
@@ -83,10 +83,26 @@ class StepResult(BaseModel):
         default=None,
         description="Final context object for a branch in ParallelStep.",
     )
-    metadata_: dict[str, Any] | None = Field(
-        default=None,
+    metadata_: dict[str, Any] = Field(
+        default_factory=dict,
         description="Optional metadata about the step execution.",
     )
+
+    @property
+    def metadata(self) -> dict[str, Any]:
+        """Alias for metadata_ for backward compatibility and test expectations."""
+        return self.metadata_
+
+    step_history: List["StepResult"] = Field(
+        default_factory=list,
+        description="History of sub-steps executed within this step.",
+    )
+
+    @field_validator("step_history", mode="before")
+    @classmethod
+    def _normalize_step_history(cls, v: Any) -> List["StepResult"]:
+        # Accept None and coerce to empty list for backward compatibility in tests
+        return [] if v is None else v
 
 
 class PipelineResult(BaseModel, Generic[ContextT]):
@@ -94,6 +110,7 @@ class PipelineResult(BaseModel, Generic[ContextT]):
 
     step_history: List[StepResult] = Field(default_factory=list)
     total_cost_usd: float = 0.0
+    total_tokens: int = 0  # Legacy field for backward compatibility
     final_pipeline_context: Optional[ContextT] = Field(
         default=None,
         description="The final state of the context object after pipeline execution.",

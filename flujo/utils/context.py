@@ -128,6 +128,7 @@ def safe_merge_context_updates(
     3. Handling computed fields and validators properly
     4. Gracefully handling equality comparison failures
     5. Enhanced error handling for loop context updates
+    6. Performing deep merges for dictionaries and lists to prevent overwrites
 
     Args:
         target_context: The target context to update
@@ -145,15 +146,57 @@ def safe_merge_context_updates(
     if excluded_fields is None:
         excluded_fields = get_excluded_fields()
 
+    logger.debug("safe_merge_context_updates called")
+    logger.debug("target_context type: %s", type(target_context))
+    logger.debug("source_context type: %s", type(source_context))
+    logger.debug("excluded_fields: %s", excluded_fields)
+
+    def deep_merge_dict(target_dict: dict[str, Any], source_dict: dict[str, Any]) -> dict[str, Any]:
+        """Recursively merge source dictionary into target dictionary."""
+        result = target_dict.copy()
+        for key, source_value in source_dict.items():
+            if key in result and isinstance(result[key], dict) and isinstance(source_value, dict):
+                result[key] = deep_merge_dict(result[key], source_value)
+            elif key in result and isinstance(result[key], list) and isinstance(source_value, list):
+                # For lists, extend with new items to avoid duplicates
+                result[key].extend([item for item in source_value if item not in result[key]])
+            else:
+                result[key] = source_value
+        return result
+
     try:
-        # Get field values using Pydantic's model_dump() method
-        # This works for both Pydantic v1 and v2
+        # Use Pydantic model_dump or dict to get source fields, excluding None for efficiency
+        # But don't exclude defaults for boolean fields as False is a meaningful value
         if hasattr(source_context, "model_dump"):
-            # Pydantic v2 - use model_dump() for better performance and type safety
-            source_fields = source_context.model_dump()
+            try:
+                # Get all fields including boolean fields with False values
+                source_fields = source_context.model_dump(exclude_none=True)
+                # Add boolean fields that might have been excluded
+                model_class = type(source_context)
+                if hasattr(model_class, "model_fields"):
+                    for field_name, field_info in model_class.model_fields.items():
+                        if field_info.annotation is bool and field_name not in source_fields:
+                            source_fields[field_name] = getattr(source_context, field_name)
+            except TypeError:
+                source_fields = source_context.model_dump()
         elif hasattr(source_context, "dict"):
-            # Pydantic v1
-            source_fields = source_context.dict()
+            try:
+                # Get all fields including boolean fields with False values
+                source_fields = source_context.dict(exclude_none=True)
+                # Add boolean fields that might have been excluded
+                model_class = type(source_context)
+                if hasattr(model_class, "__fields__"):
+                    fields = getattr(model_class, "__fields__")
+                    if hasattr(fields, "items"):
+                        for field_name, field_info in fields.items():
+                            if (
+                                hasattr(field_info, "type_")
+                                and field_info.type_ is bool
+                                and field_name not in source_fields
+                            ):
+                                source_fields[field_name] = getattr(source_context, field_name)
+            except TypeError:
+                source_fields = source_context.dict()
         else:
             # Fallback for non-Pydantic objects
             source_fields = {
@@ -161,6 +204,8 @@ def safe_merge_context_updates(
                 for key, value in source_context.__dict__.items()
                 if not key.startswith("_")
             }
+
+        logger.debug("source_fields: %s", source_fields)
 
         # Update only changed fields using setattr to trigger validation
         updated_count = 0
@@ -174,35 +219,77 @@ def safe_merge_context_updates(
 
                 # Skip excluded fields to prevent duplication during loop merging
                 if field_name in excluded_fields:
+                    logger.debug("Skipping excluded field: %s", field_name)
                     continue
 
                 # Check if field exists in target
                 if not hasattr(target_context, field_name):
+                    logger.debug(f"Field not found in target: {field_name}")
                     continue
 
                 # Always get the actual value from the source context for merging
                 actual_source_value = getattr(source_context, field_name)
                 current_value = getattr(target_context, field_name)
 
-                # Compare values safely with enhanced error handling
-                try:
-                    if current_value != actual_source_value:
-                        # Use setattr to trigger Pydantic validation
-                        setattr(target_context, field_name, actual_source_value)
+                logger.debug(f"Processing field: {field_name}")
+                logger.debug(f"current_value: {current_value}")
+                logger.debug(f"actual_source_value: {actual_source_value}")
+
+                # Perform deep merge for dictionaries and lists
+                if isinstance(current_value, dict) and isinstance(actual_source_value, dict):
+                    logger.debug(f"Merging dictionaries for field: {field_name}")
+                    merged_value: dict[str, Any] = deep_merge_dict(
+                        current_value, actual_source_value
+                    )
+                    if merged_value != current_value:
+                        setattr(target_context, field_name, merged_value)
                         updated_count += 1
-                except (TypeError, ValueError, AttributeError, ValidationError) as e:
-                    # Enhanced error handling for loop context updates
-                    error_msg = f"Failed to update field '{field_name}': {e}"
-                    logger.warning(error_msg)
-                    validation_errors.append(error_msg)
-                    continue
+                        logger.debug(f"Updated dict field: {field_name}")
+                elif isinstance(current_value, list) and isinstance(actual_source_value, list):
+                    logger.debug(f"Merging lists for field: {field_name}")
+                    # For lists, extend with new items to avoid duplicates
+                    new_items: list[Any] = [
+                        item for item in actual_source_value if item not in current_value
+                    ]
+                    if new_items:
+                        current_value.extend(new_items)
+                        updated_count += 1
+                        logger.debug(
+                            f"Updated list field: {field_name} with new items: {new_items}"
+                        )
+                    else:
+                        logger.debug(f"No new items to add to list field: {field_name}")
+                else:
+                    # For other types, use simple replacement
+                    try:
+                        if current_value != actual_source_value:
+                            # Use setattr to trigger Pydantic validation
+                            setattr(target_context, field_name, actual_source_value)
+                            updated_count += 1
+                            logger.debug(f"Updated simple field: {field_name}")
+                        else:
+                            logger.debug(f"Field unchanged: {field_name}")
+                    except (
+                        TypeError,
+                        ValueError,
+                        AttributeError,
+                        ValidationError,
+                    ) as e:
+                        # Enhanced error handling for loop context updates
+                        error_msg: str = f"Failed to update field '{field_name}': {e}"
+                        logger.warning(error_msg)
+                        validation_errors.append(error_msg)
+                        continue
 
             except (AttributeError, TypeError, ValidationError) as e:
                 # Skip fields that can't be accessed or set
-                error_msg = f"Skipping field '{field_name}' due to access/set error: {e}"
-                logger.debug(error_msg)
-                validation_errors.append(error_msg)
+                skip_error_msg: str = f"Skipping field '{field_name}' due to access/set error: {e}"
+                logger.debug(skip_error_msg)
+                validation_errors.append(skip_error_msg)
                 continue
+
+        logger.debug(f"Total fields updated: {updated_count}")
+        logger.debug(f"Validation errors: {validation_errors}")
 
         if updated_count > 0:
             # Note: We don't validate the entire context after updates to allow for more flexible handling
@@ -376,6 +463,9 @@ def get_context_field_safely(context: Any, field_name: str, default: Any = None)
             return getattr(context, field_name)
     except (AttributeError, TypeError):
         pass
+
+    # If the field does not exist or cannot be accessed, return the provided default
+    return default
 
     return default
 

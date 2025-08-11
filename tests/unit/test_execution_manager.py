@@ -174,7 +174,7 @@ class TestUsageGovernor:
         usage_governor = UsageGovernor(usage_limits)
         pipeline_result.total_cost_usd = 15.0
 
-        with pytest.raises(UsageLimitExceededError, match="Cost limit of \\$10.0 exceeded"):
+        with pytest.raises(UsageLimitExceededError, match="Cost limit of \\$10 exceeded"):
             usage_governor.check_usage_limits(pipeline_result, None)
 
     def test_check_usage_limits_tokens_exceeded(self, usage_limits, pipeline_result):

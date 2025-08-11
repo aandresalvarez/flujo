@@ -2,12 +2,20 @@
 
 import pytest
 from typing import Any
-
-from flujo.domain.commands import AgentCommand, FinishCommand, RunAgentCommand, AskHumanCommand
-from flujo.domain.models import PipelineContext
-from flujo.recipes.factories import make_agentic_loop_pipeline, run_agentic_loop_pipeline
-from flujo.testing.utils import StubAgent
 from unittest.mock import AsyncMock
+
+from flujo.domain.commands import (
+    AgentCommand,
+    FinishCommand,
+    RunAgentCommand,
+    AskHumanCommand,
+)
+from flujo.domain.models import PipelineContext
+from flujo.recipes.factories import (
+    make_agentic_loop_pipeline,
+    run_agentic_loop_pipeline,
+)
+from flujo.testing.utils import StubAgent
 
 
 class MockPlannerAgent:
@@ -92,8 +100,10 @@ async def test_pause_and_resume_in_loop() -> None:
     ctx = paused.final_pipeline_context
     assert ctx.scratchpad["status"] == "paused"
     resumed = await run_agentic_loop_pipeline(pipeline, "goal", resume_from=paused)
-    assert len(resumed.final_pipeline_context.command_log) == 1
-    assert resumed.final_pipeline_context.command_log[-1].execution_result == "human"
+    # After resume: Should have AskHuman command with human input + FinishCommand
+    assert len(resumed.final_pipeline_context.command_log) == 2
+    assert resumed.final_pipeline_context.command_log[0].execution_result == "human"
+    assert resumed.final_pipeline_context.command_log[-1].execution_result == "ok"
     assert resumed.final_pipeline_context.scratchpad["status"] == "completed"
 
 
@@ -119,8 +129,10 @@ def test_sync_resume() -> None:
     pipeline = make_agentic_loop_pipeline(planner_agent=planner, agent_registry={})
     paused = asyncio.run(run_agentic_loop_pipeline(pipeline, "goal"))
     resumed = asyncio.run(run_agentic_loop_pipeline(pipeline, "goal", resume_from=paused))
-    assert len(resumed.final_pipeline_context.command_log) == 1
-    assert resumed.final_pipeline_context.command_log[-1].execution_result == "human"
+    # After resume: Should have AskHuman command with human input + FinishCommand
+    assert len(resumed.final_pipeline_context.command_log) == 2
+    assert resumed.final_pipeline_context.command_log[0].execution_result == "human"
+    assert resumed.final_pipeline_context.command_log[-1].execution_result == "ok"
 
 
 @pytest.mark.asyncio

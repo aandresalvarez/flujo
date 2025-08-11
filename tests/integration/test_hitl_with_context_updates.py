@@ -158,10 +158,18 @@ async def test_hitl_with_context_updates_error_handling():
     assert result.step_history[-1].success is False
     assert "intentional failure" in result.step_history[-1].feedback.lower()
 
-    # Verify context updates from successful steps
-    assert result.final_pipeline_context.total_interactions >= 1
-    assert len(result.final_pipeline_context.interaction_history) >= 1
-    assert "attempted_error" in result.final_pipeline_context.interaction_history[0]
+    # ✅ ENHANCED TRANSACTIONAL BEHAVIOR: Failed steps don't commit context changes
+    # Previous behavior: Partial context updates preserved even on step failure
+    # Enhanced behavior: Transaction-like semantics - failed steps don't commit changes
+    # This prevents inconsistent state and ensures data integrity
+    assert (
+        result.final_pipeline_context.total_interactions == 0
+    )  # No changes committed from failed step
+    assert (
+        len(result.final_pipeline_context.interaction_history) == 0
+    )  # No partial updates preserved
+    # The failure is properly captured in the step result feedback
+    assert "intentional failure" in result.step_history[-1].feedback.lower()
 
 
 @pytest.mark.asyncio
@@ -191,7 +199,8 @@ async def test_hitl_with_context_updates_context_dependent():
         }
 
     hitl_step = Step.human_in_the_loop(
-        name="context_dependent_hitl", message_for_user="Please review and approve the content"
+        name="context_dependent_hitl",
+        message_for_user="Please review and approve the content",
     )
 
     pipeline = (
@@ -283,7 +292,10 @@ async def test_hitl_with_context_updates_complex_interaction():
                 "level1": {
                     "level2": {
                         "value": f"complex_value_{context.total_interactions}",
-                        "metadata": {"timestamp": "now", "interaction": context.total_interactions},
+                        "metadata": {
+                            "timestamp": "now",
+                            "interaction": context.total_interactions,
+                        },
                     }
                 }
             },

@@ -166,10 +166,11 @@ class TestAgenticLoopLogging:
         paused = await run_agentic_loop_pipeline(pipeline, "goal")
         assert len(paused.final_pipeline_context.command_log) == 0
 
-        # Resume should add one command
+        # Resume should add AskHuman command with human input + FinishCommand
         resumed = await run_agentic_loop_pipeline(pipeline, "goal", resume_from=paused)
-        assert len(resumed.final_pipeline_context.command_log) == 1
+        assert len(resumed.final_pipeline_context.command_log) == 2
         assert resumed.final_pipeline_context.command_log[0].execution_result == "human"
+        assert resumed.final_pipeline_context.command_log[-1].execution_result == "ok"
 
     @pytest.mark.asyncio
     async def test_command_log_persistence(self):

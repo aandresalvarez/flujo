@@ -64,6 +64,13 @@ class DictContainer(BaseModel):
     nested_dict: dict[str, Nested]
     mixed_dict: dict[str, list[int]]
 
+    def model_dump(self, **kwargs):
+        """Override to use standard Pydantic serialization for this test case."""
+        # Use parent's model_dump to avoid custom circular reference logic
+        from pydantic import BaseModel as PydanticBaseModel
+
+        return PydanticBaseModel.model_dump(self, **kwargs)
+
 
 class DictEchoAgent:
     async def run(self, data: DictContainer) -> DictContainer:

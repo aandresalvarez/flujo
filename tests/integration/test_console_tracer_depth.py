@@ -3,7 +3,7 @@ import pytest
 from flujo.domain.dsl import Step
 from flujo.domain.models import StepResult
 from flujo.testing.utils import StubAgent
-from flujo.console_tracer import ConsoleTracer
+from flujo.infra.console_tracer import ConsoleTracer
 from flujo.domain.events import PreStepPayload, PostStepPayload, OnStepFailurePayload
 
 

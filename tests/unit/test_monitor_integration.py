@@ -8,7 +8,7 @@ that changes to the codebase do not introduce unexpected failures or alter expec
 import pytest
 import asyncio
 
-from flujo.monitor import global_monitor, FlujoMonitor
+from flujo.infra.monitor import global_monitor, FlujoMonitor
 from flujo import Step
 from tests.conftest import create_test_flujo
 

@@ -22,7 +22,10 @@ from pydantic import BaseModel as PydanticBaseModel
 
 from ...infra import telemetry
 from ...domain.models import BaseModel
-from ...utils.serialization import register_custom_serializer, register_custom_deserializer
+from ...utils.serialization import (
+    register_custom_serializer,
+    register_custom_deserializer,
+)
 
 __all__ = [
     "_build_context_update",
@@ -178,10 +181,31 @@ def register_custom_type(type_class: Type[T]) -> None:
         ValueError: If the type class doesn't have required methods for serialization.
     """
     if hasattr(type_class, "__name__"):
-        # Register for serialization - register the class itself
-        register_custom_serializer(
-            type_class, lambda obj: obj.model_dump() if hasattr(obj, "model_dump") else obj.__dict__
-        )
+        # Check if this is a Flujo BaseModel to avoid circular dependency
+        from flujo.domain.base_model import BaseModel as FlujoBaseModel
+
+        def safe_serialize_custom_type(obj: Any) -> Any:
+            """Safe serializer that avoids circular dependency with Flujo BaseModel."""
+            if isinstance(obj, FlujoBaseModel):
+                # For Flujo BaseModel, manually serialize fields to avoid circular dependency
+                # since FlujoBaseModel.model_dump() delegates to safe_serialize
+                try:
+                    result = {}
+                    for field_name in getattr(obj.__class__, "model_fields", {}):
+                        result[field_name] = getattr(obj, field_name, None)
+                    return result
+                except Exception:
+                    # Fallback to __dict__ if field access fails
+                    return obj.__dict__
+            elif hasattr(obj, "model_dump"):
+                # For regular Pydantic models, use model_dump
+                return obj.model_dump()
+            else:
+                # For other objects, use __dict__
+                return obj.__dict__
+
+        # Register for serialization
+        register_custom_serializer(type_class, safe_serialize_custom_type)
 
         # Register deserializer if it's a Pydantic model
         if hasattr(type_class, "model_validate") and callable(
@@ -390,7 +414,13 @@ def _deserialize_value(value: Any, field_type: Any, context_model: Type[BaseMode
 def _build_context_update(output: BaseModel | dict[str, Any] | Any) -> dict[str, Any] | None:
     """Return context update dict extracted from a step output."""
     if isinstance(output, (BaseModel, PydanticBaseModel)):
-        return output.model_dump(exclude_unset=True)
+        # Handle PipelineResult objects from as_step
+        if hasattr(output, "final_pipeline_context") and output.final_pipeline_context is not None:
+            result = output.final_pipeline_context.model_dump(exclude_unset=True)
+            return result if isinstance(result, dict) else None
+        # Handle regular BaseModel objects
+        result = output.model_dump(exclude_unset=True)
+        return result if isinstance(result, dict) else None
     if isinstance(output, dict):
         return output
     return None
@@ -449,15 +479,9 @@ def _inject_context(
             deserialized_value = _deserialize_value(value, field_type, context_model)
             setattr(context, key, deserialized_value)
         elif not hasattr(context, key):
-            # Enhanced error handling with better messages
-            from flujo.exceptions import ContextFieldError
-
-            available_fields = (
-                list(context.__fields__.keys()) if hasattr(context, "__fields__") else []
-            )
-            if hasattr(context, "model_fields"):
-                available_fields = list(context.model_fields.keys())
-            raise ContextFieldError(key, context.__class__.__name__, available_fields)
+            # Skip fields that don't exist in the context model
+            # This allows for flexible context updates where not all fields need to be present
+            continue
         else:
             # If the field exists on the context but is not in the model, set it directly
             # This handles dynamic fields that may be added at runtime

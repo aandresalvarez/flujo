@@ -4,7 +4,7 @@ Sometimes you want fast, deterministic checks in addition to an LLM based review
 
 ```python
 from flujo import Step
-from flujo.validation import BaseValidator, ValidationResult
+from flujo.domain.validation import BaseValidator, ValidationResult
 
 class ShortAnswerValidator(BaseValidator):
     async def validate(self, output_to_check: str, *, context=None) -> ValidationResult:

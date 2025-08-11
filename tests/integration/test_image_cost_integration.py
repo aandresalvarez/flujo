@@ -34,7 +34,7 @@ class MockImageGenerationAgent:
         # Manually attach the image cost post-processor
         # Note: This is a test-specific setup that directly calls internal functions
         # In production code, this would be handled by the agent configuration
-        from flujo.infra.agents import _attach_image_cost_post_processor
+        from flujo.agents import _attach_image_cost_post_processor
 
         _attach_image_cost_post_processor(self, self.model_id)
 

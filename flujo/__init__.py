@@ -15,7 +15,7 @@ Key Features:
 
 Quick Start:
     from flujo import Step, Pipeline
-    from flujo.infra.agents import make_agent_async
+    from flujo.agents import make_agent_async
 
     # Create an agent
     agent = make_agent_async("openai:gpt-4o", "You are a helpful assistant.", str)
@@ -35,7 +35,7 @@ from .domain.dsl import Pipeline, Step
 from .domain.dsl.step import step  # Add back the step decorator
 from .domain.models import PipelineResult
 from .infra import init_telemetry
-from .infra.agents import make_agent_async  # Add back the agent factory
+from .agents import make_agent_async  # Add back the agent factory
 from .recipes.factories import (
     make_agentic_loop_pipeline,
     make_default_pipeline,

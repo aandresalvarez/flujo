@@ -21,6 +21,7 @@ from typing import (
     overload,
     Union,
     cast,
+    TYPE_CHECKING,
 )
 import contextvars
 import inspect
@@ -34,17 +35,16 @@ from ..plugins import ValidationPlugin
 from ..validation import Validator
 
 from ..processors import AgentProcessors
-from flujo.caching import CacheBackend
 from ...exceptions import StepInvocationError
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover
-    from flujo.steps.cache_step import CacheStep
+    from flujo.infra.caching import CacheBackend
     from .loop import LoopStep, MapStep
     from .conditional import ConditionalStep
     from .parallel import ParallelStep
     from .pipeline import Pipeline
     from .dynamic_router import DynamicParallelRouterStep
+    from flujo.steps.cache_step import CacheStep
 
 # Type variables
 StepInT = TypeVar("StepInT")
@@ -70,6 +70,7 @@ class MergeStrategy(Enum):
     OVERWRITE = "overwrite"
     MERGE_SCRATCHPAD = "merge_scratchpad"
     CONTEXT_UPDATE = "context_update"  # New strategy for proper context updates with validation
+    KEEP_FIRST = "keep_first"  # Keep first occurrence of each key when merging
 
 
 class BranchFailureStrategy(Enum):
@@ -90,11 +91,22 @@ class StepConfig(BaseModel):
         Optional timeout in seconds for the agent execution.
     temperature:
         Optional temperature setting for LLM based agents.
+    top_k:
+        Optional top-k sampling parameter for LLM based agents.
+    top_p:
+        Optional nucleus sampling parameter for LLM based agents.
+    preserve_fallback_diagnostics:
+        Whether to preserve diagnostic feedback from fallback executions.
+        When True, successful fallbacks retain feedback for monitoring/debugging.
+        When False, successful fallbacks clear feedback for backward compatibility.
     """
 
     max_retries: int = 1
     timeout_s: float | None = None
     temperature: float | None = None
+    top_k: int | None = None
+    top_p: float | None = None
+    preserve_fallback_diagnostics: bool = False
 
 
 class Step(BaseModel, Generic[StepInT, StepOutT]):
@@ -143,6 +155,11 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
 
     __step_input_type__: type[Any] = Any
     __step_output_type__: type[Any] = Any
+
+    @property
+    def is_complex(self) -> bool:
+        # ✅ Base steps are not complex by default.
+        return False
 
     model_config: ClassVar[ConfigDict] = {
         "arbitrary_types_allowed": True,
@@ -411,7 +428,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                     callable_kwargs[first_param.name] = data
 
                 # Add the injected arguments if the callable needs them
-                from flujo.application.context_manager import _accepts_param
+                from flujo.application.core.context_manager import _accepts_param
 
                 if _accepts_param(func, "context") and context is not None:
                     callable_kwargs["context"] = context
@@ -527,8 +544,8 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         max_refinements: int = 5,
         feedback_mapper: Optional[Callable[[Any, RefinementCheck], Any]] = None,
         **config_kwargs: Any,
-    ) -> "LoopStep[ContextModelT]":
-        """Convenience for the generator -> critic refinement loop pattern."""
+    ) -> "Pipeline[Any, Any]":
+        """Build a refinement loop pipeline: generator >> capture >> critic >> post-mapper."""
         from .loop import LoopStep  # local import
 
         last_artifact_var: contextvars.ContextVar[Any | None] = contextvars.ContextVar(
@@ -578,19 +595,29 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                     object.__setattr__(ctx, key, value)
             return result
 
-        def _output_mapper(_out: Any, ctx: BaseModel | None) -> Any:
-            return last_artifact_var.get()
-
-        return LoopStep[ContextModelT](
+        # Build the core loop step without output mapping
+        core_loop = LoopStep[Any](
             name=name,
             loop_body_pipeline=generator_then_save >> critic_pipeline,
             exit_condition_callable=_exit_condition,
             max_loops=max_refinements,
             initial_input_to_loop_body_mapper=_initial_mapper,
             iteration_input_mapper=_iteration_mapper,
-            loop_output_mapper=_output_mapper,
             **config_kwargs,
         )
+
+        # Post-loop mapper that only maps on successful refinement (exit condition)
+        async def _post_output_mapper(out: Any, *, context: BaseModel | None = None) -> Any:
+            # If the critic indicates completion, return the last captured artifact; otherwise, return the check
+            if isinstance(out, RefinementCheck) and out.is_complete:
+                return last_artifact_var.get()
+            return out
+
+        mapper_step = cls.from_callable(
+            _post_output_mapper, name=f"{name}_output_mapper", is_adapter=True
+        )
+        # Compose pipeline: loop then post mapping step
+        return core_loop >> mapper_step
 
     @classmethod
     def branch_on(
@@ -858,6 +885,11 @@ class HumanInTheLoopStep(Step[Any, Any]):
     input_schema: Any | None = Field(default=None)
 
     model_config = {"arbitrary_types_allowed": True}
+
+    @property
+    def is_complex(self) -> bool:
+        # ✅ Override to mark as complex.
+        return True
 
 
 __all__ = [

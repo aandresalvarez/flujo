@@ -6,7 +6,7 @@ from typing import Any, Dict, List, AsyncIterator, Iterator, Optional
 from contextlib import contextmanager
 import ast
 
-from flujo.domain.plugins import PluginOutcome
+from flujo.domain.plugins import PluginOutcome, ValidationPlugin
 from flujo.domain.backends import ExecutionBackend, StepExecutionRequest
 from flujo.domain.agent_protocol import AsyncAgentProtocol
 from flujo.infra.backends import LocalBackend
@@ -60,14 +60,14 @@ class StubAgent:
         return await self.run(data, **kwargs)
 
 
-class DummyPlugin:
+class DummyPlugin(ValidationPlugin):
     """A validation plugin used for testing."""
 
     def __init__(self, outcomes: List[PluginOutcome]):
         self.outcomes = outcomes
         self.call_count = 0
 
-    async def validate(self, data: dict[str, Any]) -> PluginOutcome:
+    async def validate(self, data: dict[str, Any], *, context: Any = None) -> PluginOutcome:
         idx = min(self.call_count, len(self.outcomes) - 1)
         self.call_count += 1
         return self.outcomes[idx]
@@ -111,7 +111,12 @@ class DummyRemoteBackend(ExecutionBackend):
         self.agent_registry = agent_registry or {}
         self.call_counter = 0
         self.recorded_requests: List[StepExecutionRequest] = []
-        self.local = LocalBackend(agent_registry=self.agent_registry)
+
+        # ✅ Create ExecutorCore and inject into LocalBackend
+        from ..application.core.executor_core import ExecutorCore
+
+        executor: ExecutorCore[Any] = ExecutorCore()
+        self.local = LocalBackend(executor=executor, agent_registry=self.agent_registry)
 
     async def execute_step(self, request: StepExecutionRequest) -> StepResult:
         self.call_counter += 1
@@ -190,13 +195,17 @@ class DummyRemoteBackend(ExecutionBackend):
 
         def reconstruct(original: Any, value: Any) -> Any:
             """Rebuild a value using the type of ``original``."""
-            if original is None:
+            if original is None or value is None:
                 return None
             if isinstance(original, FlujoBaseModel):
                 if isinstance(value, dict):
                     fixed_value = {}
                     for k, v in value.items():
-                        fixed_value[k] = reconstruct(getattr(original, k, None), v)
+                        original_field_value = getattr(original, k, None)
+                        reconstructed_value = reconstruct(original_field_value, v)
+                        # Skip None values to avoid Pydantic validation errors for non-optional fields
+                        if reconstructed_value is not None:
+                            fixed_value[k] = reconstructed_value
                     # Apply enhanced cleaning to ensure all string fields are strings
                     fixed_value = _ensure_string_fields_are_strings(fixed_value, original)
                     return type(original).model_validate(fixed_value)
@@ -256,9 +265,11 @@ class DummyRemoteBackend(ExecutionBackend):
                     for k, v in value.items():
                         # For dict reconstruction, preserve the value even if original doesn't have that key
                         original_value = original.get(k)
-                        reconstructed_dict[k] = (
-                            reconstruct(original_value, v) if original_value is not None else v
-                        )
+                        # Enhanced: Handle None values more gracefully in reconstruction
+                        if original_value is not None:
+                            reconstructed_dict[k] = reconstruct(original_value, v)
+                        else:
+                            reconstructed_dict[k] = v
                     return reconstructed_dict
                 else:
                     return original

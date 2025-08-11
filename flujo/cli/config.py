@@ -73,24 +73,17 @@ def _normalize_sqlite_path(uri: str, cwd: Path) -> Path:
 
 
 def load_backend_from_config() -> StateBackend:
-    """Load a state backend based on env var or flujo.toml, with robust error handling."""
+    """Load a state backend based on configuration, with robust error handling."""
     import typer
 
-    # First check environment variable
-    uri = os.getenv("FLUJO_STATE_URI")
-    used_env = True
-
-    # If not found, try to get from configuration file
-    if uri is None:
-        uri = get_state_uri(force_reload=True)
-        used_env = False
+    # Get state URI from ConfigManager (handles env vars + TOML with proper precedence)
+    uri = get_state_uri(force_reload=True)
 
     # Default fallback
     if uri is None:
-        if not used_env:
-            logging.warning(
-                "[flujo.config] FLUJO_STATE_URI not set, using default 'sqlite:///flujo_ops.db'"
-            )
+        logging.warning(
+            "[flujo.config] FLUJO_STATE_URI not set, using default 'sqlite:///flujo_ops.db'"
+        )
         uri = "sqlite:///flujo_ops.db"
 
     parsed = urlparse(uri)
@@ -103,12 +96,14 @@ def load_backend_from_config() -> StateBackend:
         # Do NOT auto-create parent directories; fail if missing
         if not parent_dir.exists():
             typer.echo(
-                f"[red]Error: Database directory '{parent_dir}' does not exist[/red]", err=True
+                f"[red]Error: Database directory '{parent_dir}' does not exist[/red]",
+                err=True,
             )
             raise typer.Exit(1)
         if not os.access(parent_dir, os.W_OK):
             typer.echo(
-                f"[red]Error: Database directory '{parent_dir}' is not writable[/red]", err=True
+                f"[red]Error: Database directory '{parent_dir}' is not writable[/red]",
+                err=True,
             )
             raise typer.Exit(1)
         # Ensure the database file exists with secure permissions (read/write for owner only)

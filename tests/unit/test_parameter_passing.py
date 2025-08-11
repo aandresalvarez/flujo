@@ -1,10 +1,11 @@
 """Test parameter passing to ensure context injection works correctly."""
 
 import pytest
+from typing import Any, Optional
 from unittest.mock import AsyncMock
 from flujo.domain.dsl import Pipeline, Step, StepConfig
 from flujo.domain.models import PipelineContext
-from flujo.domain.plugins import PluginOutcome
+from flujo.domain.plugins import PluginOutcome, ValidationPlugin
 from tests.conftest import create_test_flujo
 
 
@@ -20,16 +21,22 @@ class MockAgentWithContext:
         return {"output": f"Processed: {data}"}
 
 
-class MockPluginWithContext:
+class MockPluginWithContext(ValidationPlugin):
     """Mock plugin that expects 'context' parameter."""
 
-    def __init__(self):
-        self.mock = AsyncMock(return_value=PluginOutcome(success=True, feedback=None))
+    def __init__(self, success: bool = True, feedback: Optional[str] = None):
+        self.success = success
+        self.feedback = feedback
+        self.mock = AsyncMock(
+            return_value=PluginOutcome(success=self.success, feedback=self.feedback)
+        )
 
-    async def validate(self, data, *, context: PipelineContext | None = None, **kwargs):
+    async def validate(
+        self, data: dict[str, Any], *, context: PipelineContext | None = None, **kwargs
+    ) -> PluginOutcome:
         """Validate method that expects 'context' parameter."""
         await self.mock(data, context=context, **kwargs)
-        return PluginOutcome(success=True, feedback=None)
+        return PluginOutcome(success=self.success, feedback=self.feedback)
 
 
 @pytest.mark.asyncio
@@ -61,7 +68,7 @@ async def test_agent_receives_context_parameter():
 async def test_plugin_receives_context_parameter():
     """Test that plugins receive 'context' parameter when they expect it."""
     agent = MockAgentWithContext()
-    plugin = MockPluginWithContext()
+    plugin = MockPluginWithContext(success=True)
 
     step = Step.model_validate(
         {

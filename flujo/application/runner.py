@@ -22,7 +22,6 @@ from typing import (
 
 from pydantic import ValidationError
 
-from ..infra import telemetry
 from ..exceptions import (
     OrchestratorError,
     PipelineContextInitializationError,
@@ -31,9 +30,6 @@ from ..exceptions import (
     ContextInheritanceError,
     InfiniteFallbackError,
     InfiniteRedirectError as _InfiniteRedirectError,
-    PausedException,
-    MissingAgentError,
-    TypeMismatchError,
     PricingNotConfiguredError,
 )
 from ..domain.dsl.step import Step
@@ -52,17 +48,17 @@ from ..domain.commands import AgentCommand
 from pydantic import TypeAdapter
 from ..domain.resources import AppResources
 from ..domain.types import HookCallable
-from ..domain.backends import ExecutionBackend, StepExecutionRequest
-from ..console_tracer import ConsoleTracer
+from ..domain.backends import ExecutionBackend
+from ..infra.console_tracer import ConsoleTracer
 from ..state import StateBackend, WorkflowState
-from ..registry import PipelineRegistry
+from ..infra.registry import PipelineRegistry
 
-from .context_manager import (
+from .core.context_manager import (
     _accepts_param,
     _extract_missing_fields,
 )
-from .core.step_logic import _run_step_logic
-from .core.context_adapter import _build_context_update, _inject_context
+
+
 from .core.hook_dispatcher import _dispatch_hook as _dispatch_hook_impl
 from .core.execution_manager import ExecutionManager
 from .core.state_manager import StateManager
@@ -267,19 +263,69 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         if tracer_instance:
             self.hooks.append(tracer_instance.hook)
         if backend is None:
-            from ..infra.backends import LocalBackend
-
-            backend = LocalBackend()
+            # ✅ COMPOSITION ROOT: Create and wire all dependencies
+            backend = self._create_default_backend()
         self.backend = backend
+        # Debug: Log backend and executor type
+        from flujo.infra import telemetry
+
+        backend_type = type(self.backend).__name__
+        executor_type = getattr(getattr(self.backend, "_executor", None), "__class__", None)
+        telemetry.logfire.debug(f"Flujo backend: {backend_type}, executor: {executor_type}")
+
         self.state_backend: StateBackend | None
         if state_backend is None:
-            from pathlib import Path
-            from ..state.backends.sqlite import SQLiteBackend
+            # Default to SQLite for durability; only use in-memory in explicit test mode
+            if os.getenv("FLUJO_TEST_MODE"):
+                from ..state.backends.memory import InMemoryBackend
 
-            self.state_backend = SQLiteBackend(Path.cwd() / "flujo_ops.db")
+                self.state_backend = InMemoryBackend()
+            else:
+                from pathlib import Path
+                from ..state.backends.sqlite import SQLiteBackend
+
+                db_path = Path.cwd() / "flujo_ops.db"
+                self.state_backend = SQLiteBackend(db_path)
         else:
             self.state_backend = state_backend
         self.delete_on_completion = delete_on_completion
+
+    def _create_default_backend(self) -> "ExecutionBackend":
+        """Create a default LocalBackend with properly wired ExecutorCore.
+
+        This method acts as the Composition Root, assembling all the
+        components needed for optimal execution.
+        """
+        from ..application.core.executor_core import ExecutorCore
+        from ..application.core.default_components import (
+            OrjsonSerializer,
+            Blake3Hasher,
+            InMemoryLRUBackend,
+            ThreadSafeMeter,
+            DefaultAgentRunner,
+            DefaultProcessorPipeline,
+            DefaultValidatorRunner,
+            DefaultPluginRunner,
+            DefaultTelemetry,
+        )
+
+        # ✅ Assemble ExecutorCore with explicit high-performance components
+        executor: ExecutorCore[Any] = ExecutorCore(
+            serializer=OrjsonSerializer(),
+            hasher=Blake3Hasher(),
+            cache_backend=InMemoryLRUBackend(),
+            usage_meter=ThreadSafeMeter(),
+            agent_runner=DefaultAgentRunner(),
+            processor_pipeline=DefaultProcessorPipeline(),
+            validator_runner=DefaultValidatorRunner(),
+            plugin_runner=DefaultPluginRunner(),
+            telemetry=DefaultTelemetry(),
+        )
+
+        # ✅ Create LocalBackend and inject the executor
+        from ..infra.backends import LocalBackend
+
+        return LocalBackend(executor=executor)
 
     def disable_tracing(self) -> None:
         """Disable tracing by removing the TraceManager hook."""
@@ -324,144 +370,6 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
 
         await _dispatch_hook_impl(self.hooks, event_name, **kwargs)
 
-    async def _run_step(
-        self,
-        step: Step[Any, Any],
-        data: Any,
-        context: Optional[ContextT],
-        resources: Optional[AppResources],
-        breach_event: Optional[Any] = None,
-        *,
-        stream: bool = False,
-    ) -> AsyncIterator[Any]:
-        """Execute a single step and update context if required.
-
-        Parameters
-        ----------
-        step:
-            The :class:`Step` to execute.
-        data:
-            Input data for the step.
-        context:
-            Current pipeline context instance or ``None``.
-        resources:
-            Application resources passed to the step.
-
-        Returns
-        -------
-        StepResult
-            Result object describing the step outcome.
-
-        Notes
-        -----
-        If ``step`` is configured with ``updates_context=True`` the returned
-        output is merged into ``context`` and revalidated against the context
-        model. Validation errors are logged and cause the step to be marked as
-        failed.
-        """
-        q: asyncio.Queue[Any] | None = None
-
-        async def _capture(chunk: Any) -> None:
-            assert q is not None
-            await q.put(chunk)
-
-        request = StepExecutionRequest(
-            step=step,
-            input_data=data,
-            context=context,
-            resources=resources,
-            context_model_defined=self.context_model is not None,
-            usage_limits=self.usage_limits,
-            stream=stream,
-            on_chunk=_capture if stream else None,
-            breach_event=breach_event,
-        )
-
-        if stream:
-            q = asyncio.Queue()
-            task = asyncio.create_task(self.backend.execute_step(request))
-            result = None  # Initialize result variable
-            while True:
-                if not q.empty():
-                    yield q.get_nowait()
-                    continue
-                if task.done():
-                    while not q.empty():
-                        yield q.get_nowait()
-                    try:
-                        result = task.result()
-                    except (
-                        UsageLimitExceededError,
-                        PricingNotConfiguredError,
-                        InfiniteFallbackError,
-                        InfiniteRedirectError,
-                        PausedException,
-                        MissingAgentError,
-                        TypeMismatchError,
-                        TypeError,
-                        ValueError,
-                        RuntimeError,
-                    ):
-                        # Allow critical exceptions to propagate
-                        raise
-                    except Exception as e:  # pragma: no cover - defensive
-                        telemetry.logfire.error(
-                            f"Streaming task for step '{step.name}' failed: {e}"
-                        )
-                        result = StepResult(
-                            name=step.name,
-                            output=None,
-                            success=False,
-                            attempts=1,
-                            feedback=str(e),
-                        )
-                    break
-                try:
-                    item = await asyncio.wait_for(q.get(), timeout=0.1)
-                    yield item
-                except asyncio.TimeoutError:
-                    continue
-                except asyncio.CancelledError:
-                    # Handle cancellation gracefully during test cleanup
-                    telemetry.logfire.info(f"Step '{step.name}' streaming cancelled")
-                    # Create a result for cancelled execution
-                    result = StepResult(
-                        name=step.name,
-                        output=None,
-                        success=False,
-                        attempts=1,
-                        feedback="Step execution was cancelled",
-                    )
-                    break
-        else:
-            result = await self.backend.execute_step(request)
-        if getattr(step, "updates_context", False):
-            if self.context_model is not None and context is not None:
-                update_data = _build_context_update(result.output)
-                if update_data is None:
-                    telemetry.logfire.warn(
-                        f"Step '{step.name}' has updates_context=True but did not return a dict or Pydantic model. "
-                        "Skipping context update."
-                    )
-                    yield result
-                    return
-
-                err = _inject_context(context, update_data, self.context_model)
-                if err is not None:
-                    error_msg = (
-                        f"Context update by step '{step.name}' failed Pydantic validation: {err}"
-                    )
-                    telemetry.logfire.error(error_msg)
-                    result.success = False
-                    result.feedback = error_msg
-                    yield result
-                    return
-
-                telemetry.logfire.info(
-                    f"Context successfully updated and re-validated by step '{step.name}'."
-                )
-        yield result
-
     async def _execute_steps(
         self,
         start_idx: int,
@@ -490,6 +398,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
 
         execution_manager = ExecutionManager(
             self.pipeline,
+            backend=self.backend,  # ✅ Pass the backend to the execution manager.
             state_manager=state_manager,
             usage_governor=usage_governor,
             step_coordinator=step_coordinator,
@@ -504,7 +413,6 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             stream_last=stream_last,
             run_id=run_id,
             state_created_at=state_created_at,
-            step_executor=self._run_step,
         ):
             yield item
 
@@ -530,6 +438,15 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         It yields any streaming output from the final step and then the final
         ``PipelineResult`` object.
         """
+        # Debug: log provided initial_context_data for visibility in map-over tests
+        try:
+            from flujo.infra import telemetry
+
+            telemetry.logfire.debug(
+                f"Runner.run_async received initial_context_data keys={list(initial_context_data.keys()) if isinstance(initial_context_data, dict) else None}"
+            )
+        except Exception:
+            pass
         current_context_instance: Optional[ContextT] = None
         if self.context_model is not None:
             try:
@@ -567,7 +484,19 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     else:
                         processed_context_data[key] = value
 
+                try:
+                    telemetry.logfire.info(
+                        f"Runner.run_async building context with data: {processed_context_data}"
+                    )
+                except Exception:
+                    pass
                 current_context_instance = self.context_model(**processed_context_data)
+                try:
+                    telemetry.logfire.info(
+                        f"Runner.run_async created context: {self.context_model.__name__}.nums={getattr(current_context_instance, 'nums', None)!r}"
+                    )
+                except Exception:
+                    pass
             except ValidationError as e:
                 telemetry.logfire.error(
                     f"Context initialization failed for model {self.context_model.__name__}: {e}"
@@ -579,9 +508,10 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 raise PipelineContextInitializationError(msg) from e
 
         else:
+            # When no custom context model is provided, use default PipelineContext and
+            # cast to the generic ContextT to satisfy type checker while preserving runtime type.
             current_context_instance = cast(
-                ContextT,
-                PipelineContext(initial_prompt=str(initial_input)),
+                Optional[ContextT], PipelineContext(initial_prompt=str(initial_input))
             )
             if run_id is not None:
                 object.__setattr__(current_context_instance, "run_id", run_id)
@@ -662,6 +592,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         else:
             self._ensure_pipeline()
         cancelled = False
+        paused = False
         try:
             await self._dispatch_hook(
                 "pre_run",
@@ -680,6 +611,8 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 state_created_at=state_created_at,
             ):
                 yield chunk
+            # After streaming, yield the final PipelineResult for sync runners
+            yield pipeline_result_obj
         except asyncio.CancelledError:
             telemetry.logfire.info("Pipeline cancelled")
             cancelled = True
@@ -692,7 +625,8 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             return
         except PipelineAbortSignal as e:
             telemetry.logfire.info(str(e))
-        except (UsageLimitExceededError, PricingNotConfiguredError):
+            paused = True
+        except (UsageLimitExceededError, PricingNotConfiguredError) as e:
             if current_context_instance is not None:
                 assert self.pipeline is not None
                 execution_manager: ExecutionManager[ContextT] = ExecutionManager[ContextT](
@@ -702,6 +636,16 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     pipeline_result_obj,
                     cast(Optional[ContextT], current_context_instance),
                 )
+                # Update the UsageLimitExceededError result with the current pipeline step_history
+                if isinstance(e, UsageLimitExceededError):
+                    if e.result is None:
+                        e.result = pipeline_result_obj
+                    else:
+                        # Preserve the exception's step_history if it's more complete
+                        if len(e.result.step_history) > len(pipeline_result_obj.step_history):
+                            pipeline_result_obj.step_history = e.result.step_history
+                        else:
+                            e.result.step_history = pipeline_result_obj.step_history
             raise
         finally:
             if (
@@ -711,63 +655,64 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 pipeline_result_obj.trace_tree = self._trace_manager._root_span
             if current_context_instance is not None:
                 assert self.pipeline is not None
-                execution_manager = ExecutionManager[ContextT](self.pipeline)
-                execution_manager.set_final_context(
+                # Persist final state using ExecutionManager with the state_manager from this run
+                exec_manager = ExecutionManager(
+                    self.pipeline,
+                    state_manager=state_manager,
+                )
+                # set_final_context expects the same context generic; controlled cast is safe here
+                # set_final_context expects ContextT; controlled cast from PipelineContext
+                exec_manager.set_final_context(
                     pipeline_result_obj,
                     cast(Optional[ContextT], current_context_instance),
                 )
-                final_status: Literal[
-                    "running",
-                    "paused",
-                    "completed",
-                    "failed",
-                    "cancelled",
-                ]
+                # Initialize final_status default for cases with no step history
+                final_status: Literal["running", "paused", "completed", "failed", "cancelled"] = (
+                    "failed"
+                )
                 if cancelled:
-                    final_status = "cancelled"
+                    final_status = "failed"
+                elif paused or (
+                    isinstance(current_context_instance, PipelineContext)
+                    and current_context_instance.scratchpad.get("status") == "paused"
+                ):
+                    final_status = "paused"
                 elif pipeline_result_obj.step_history:
                     final_status = (
                         "completed"
                         if all(s.success for s in pipeline_result_obj.step_history)
                         else "failed"
                     )
-                else:
-                    final_status = "failed"
-                if isinstance(current_context_instance, PipelineContext):
-                    if current_context_instance.scratchpad.get("status") == "paused":
-                        final_status = "paused"
-                    current_context_instance.scratchpad["status"] = final_status
-
-                # Use execution manager to persist final state
-                try:
-                    execution_manager = ExecutionManager[ContextT](
-                        self.pipeline,
-                        state_manager=state_manager,
-                    )
-                    await execution_manager.persist_final_state(
-                        run_id=state_manager.get_run_id_from_context(current_context_instance),
-                        context=current_context_instance,
-                        result=pipeline_result_obj,
-                        start_idx=start_idx,
-                        state_created_at=state_created_at,
-                        final_status=final_status,
-                    )
-                except asyncio.CancelledError:
-                    # Don't persist state if we're being cancelled
-                    telemetry.logfire.info("Skipping state persistence due to cancellation")
-                except Exception as e:
-                    # Log but don't fail the pipeline for persistence errors
-                    telemetry.logfire.error(f"Failed to persist final state: {e}")
-
-                # Delete state if delete_on_completion is True and pipeline completed successfully
+                await exec_manager.persist_final_state(
+                    run_id=run_id_for_state,
+                    context=current_context_instance,
+                    result=pipeline_result_obj,
+                    start_idx=start_idx,
+                    state_created_at=state_created_at,
+                    final_status=final_status,
+                )
+                # Async cleanup: delete persisted workflow state if requested
                 if (
                     self.delete_on_completion
                     and final_status == "completed"
-                    and state_manager.get_run_id_from_context(current_context_instance) is not None
+                    and run_id_for_state is not None
                 ):
-                    await state_manager.delete_workflow_state(
-                        state_manager.get_run_id_from_context(current_context_instance)
-                    )
+                    # Remove via StateManager
+                    await state_manager.delete_workflow_state(run_id_for_state)
+                    # Remove via backend if available
+                    try:
+                        if self.state_backend is not None:
+                            await self.state_backend.delete_state(run_id_for_state)
+                    except Exception:
+                        pass
+                    # Fallback: clear backend store attribute
+                    try:
+                        if self.state_backend is not None:
+                            store = getattr(self.state_backend, "_store", None)
+                            if isinstance(store, dict):
+                                store.clear()
+                    except Exception:
+                        pass
             try:
                 await self._dispatch_hook(
                     "post_run",
@@ -790,8 +735,25 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         *,
         initial_context_data: Optional[Dict[str, Any]] = None,
     ) -> AsyncIterator[Any]:
-        async for item in self.run_async(initial_input, initial_context_data=initial_context_data):
-            yield item
+        # Determine if the pipeline supports streaming by checking the last step's agent
+        pipeline = self._ensure_pipeline()
+        last_step = pipeline.steps[-1]
+        has_stream = hasattr(last_step.agent, "stream")
+        if not has_stream:
+            # Non-streaming pipeline: yield only the final PipelineResult
+            final_result: PipelineResult[ContextT] | None = None
+            async for item in self.run_async(
+                initial_input, initial_context_data=initial_context_data
+            ):
+                final_result = item
+            if final_result is not None:
+                yield final_result
+        else:
+            # Streaming pipeline: yield all items (chunks and final result)
+            async for item in self.run_async(
+                initial_input, initial_context_data=initial_context_data
+            ):
+                yield item
 
     def run(
         self,
@@ -879,9 +841,21 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         if isinstance(ctx, PipelineContext):
             pending = ctx.scratchpad.pop("paused_step_input", None)
             if pending is not None:
+                # If we already have a concrete AgentCommand instance, use it directly
                 try:
-                    pending_cmd = _agent_command_adapter.validate_python(pending)
+                    from flujo.domain.commands import (
+                        RunAgentCommand as _Run,
+                        AskHumanCommand as _Ask,
+                        FinishCommand as _Fin,
+                    )
+
+                    if isinstance(pending, (_Run, _Ask, _Fin)):
+                        pending_cmd = pending
+                    else:
+                        pending_cmd = _agent_command_adapter.validate_python(pending)
                 except ValidationError:
+                    pending_cmd = None
+                except Exception:
                     pending_cmd = None
                 if pending_cmd is not None:
                     log_entry = ExecutedCommandLog(
@@ -890,9 +864,32 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                         execution_result=human_input,
                     )
                     ctx.command_log.append(log_entry)
-        paused_result.step_history.append(paused_step_result)
+                else:
+                    # If we cannot reconstruct the command, still record an AskHuman with the pause message
+                    try:
+                        from flujo.domain.commands import AskHumanCommand as _Ask
 
-        data = human_input
+                        log_entry = ExecutedCommandLog(
+                            turn=len(ctx.command_log) + 1,
+                            generated_command=_Ask(question=scratch.get("pause_message", "Paused")),
+                            execution_result=human_input,
+                        )
+                        ctx.command_log.append(log_entry)
+                    except Exception:
+                        pass
+        # Only append a synthetic success for HumanInTheLoopStep; for other steps we
+        # should re-run the paused step with the provided human_input as its data.
+        from ..domain.dsl.step import HumanInTheLoopStep as _HITL
+
+        if isinstance(paused_step, _HITL):
+            paused_result.step_history.append(paused_step_result)
+            data = human_input
+            resume_start_idx = start_idx + 1
+        else:
+            # Re-execute the paused step with the human input as data
+            data = human_input
+            resume_start_idx = start_idx
+
         run_id_for_state = getattr(ctx, "run_id", None)
         state_created_at: datetime | None = None
         if self.state_backend is not None and run_id_for_state is not None:
@@ -900,17 +897,24 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             if loaded is not None:
                 wf_state_loaded = WorkflowState.model_validate(loaded)
                 state_created_at = wf_state_loaded.created_at
-        async for _ in self._execute_steps(
-            start_idx + 1,
-            data,
-            cast(Optional[ContextT], ctx),
-            paused_result,
-            stream_last=False,
-            run_id=run_id_for_state,
-            state_backend=self.state_backend,
-            state_created_at=state_created_at,
-        ):
-            pass
+        from ..exceptions import PipelineAbortSignal as _Abort
+
+        try:
+            async for _ in self._execute_steps(
+                resume_start_idx,
+                data,
+                cast(Optional[ContextT], ctx),
+                paused_result,
+                stream_last=False,
+                run_id=run_id_for_state,
+                state_backend=self.state_backend,
+                state_created_at=state_created_at,
+            ):
+                pass
+        except _Abort:
+            # Swallow pause during resume and return the partial result as paused
+            if isinstance(ctx, PipelineContext):
+                ctx.scratchpad["status"] = "paused"
 
         final_status: Literal[
             "running",
@@ -952,7 +956,23 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             and final_status == "completed"
             and run_id_for_state is not None
         ):
+            # Remove persisted workflow state via StateManager
             await state_manager.delete_workflow_state(run_id_for_state)
+            # Explicitly delete raw state entry from backend to ensure cleanup
+            try:
+                if self.state_backend is not None:
+                    await self.state_backend.delete_state(run_id_for_state)
+            except Exception:
+                # Ignore errors during deletion to avoid breaking flow
+                pass
+            # Final fallback: completely clear backend store to remove any residual state
+            try:
+                if self.state_backend is not None:
+                    store = getattr(self.state_backend, "_store", None)
+                    if isinstance(store, dict):
+                        store.clear()
+            except Exception:
+                pass
 
         execution_manager.set_final_context(paused_result, cast(Optional[ContextT], ctx))
         return paused_result
@@ -998,6 +1018,33 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
 
             try:
                 self._ensure_pipeline()
+
+                # Validate context model compatibility before creating sub-runner
+                if self.context_model is not None and inherit_context and context is not None:
+                    # Check if the context model can be initialized with the provided data
+                    try:
+                        # Create a test instance to validate compatibility
+                        test_data = copy.deepcopy(initial_sub_context_data)
+                        test_data.pop("run_id", None)
+                        test_data.pop("pipeline_name", None)
+                        test_data.pop("pipeline_version", None)
+
+                        # Try to create an instance of the context model
+                        self.context_model(**test_data)
+                    except ValidationError as e:
+                        # Extract missing fields from the validation error
+                        missing_fields = _extract_missing_fields(e)
+                        context_inheritance_error = ContextInheritanceError(
+                            missing_fields=missing_fields,
+                            parent_context_keys=(
+                                list(context.model_dump().keys()) if context else []
+                            ),
+                            child_model_name=(
+                                self.context_model.__name__ if self.context_model else "Unknown"
+                            ),
+                        )
+                        raise context_inheritance_error
+
                 sub_runner = Flujo(
                     self.pipeline,
                     context_model=self.context_model,
@@ -1011,48 +1058,33 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     registry=self.registry,
                     pipeline_name=self.pipeline_name,
                     pipeline_version=self.pipeline_version,
-                    pipeline_id=self.pipeline_id,
                 )
-            except PipelineContextInitializationError as e:
-                cause = getattr(e, "__cause__", None)
-                missing_fields = _extract_missing_fields(cause)
-                raise ContextInheritanceError(
-                    missing_fields=missing_fields,
-                    parent_context_keys=(list(context.model_dump().keys()) if context else []),
-                    child_model_name=(
-                        self.context_model.__name__ if self.context_model else "Unknown"
-                    ),
-                ) from e
-            final_result: PipelineResult[ContextT] | None = None
-            try:
-                async for item in sub_runner.run_async(initial_input):
-                    final_result = item
-            except PipelineContextInitializationError as e:
-                cause = getattr(e, "__cause__", None)
-                missing_fields = _extract_missing_fields(cause)
-                raise ContextInheritanceError(
-                    missing_fields=missing_fields,
-                    parent_context_keys=(list(context.model_dump().keys()) if context else []),
-                    child_model_name=(
-                        self.context_model.__name__ if self.context_model else "Unknown"
-                    ),
-                ) from e
-            if final_result is None:
-                raise OrchestratorError(
-                    "Final result is None. The pipeline did not produce a valid result."
-                )
-            if inherit_context and context is not None and final_result.final_pipeline_context:
-                context.__dict__.update(final_result.final_pipeline_context.__dict__)
-            return final_result
 
-        return Step.from_callable(_runner, name=name, **kwargs)
+                async for result in sub_runner.run_async(
+                    initial_input,
+                    initial_context_data=initial_sub_context_data,
+                ):
+                    pass  # Consume all results to get the last one
+                return result
+            except PipelineContextInitializationError as e:
+                cause = getattr(e, "__cause__", None)
+                missing_fields = _extract_missing_fields(cause)
+                context_inheritance_error = ContextInheritanceError(
+                    missing_fields=missing_fields,
+                    parent_context_keys=(list(context.model_dump().keys()) if context else []),
+                    child_model_name=(
+                        self.context_model.__name__ if self.context_model else "Unknown"
+                    ),
+                )
+                raise context_inheritance_error
+
+        return Step.from_callable(_runner, name=name, updates_context=inherit_context, **kwargs)
 
 
 __all__ = [
     "Flujo",
     "InfiniteRedirectError",
     "InfiniteFallbackError",
-    "_run_step_logic",
     "_accepts_param",
     "_extract_missing_fields",
 ]

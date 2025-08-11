@@ -29,11 +29,11 @@ async def main():
     print("Step 3: Running a stateful loop with PipelineContext.\n" + "="*50)
 
     # --- STEP 3: STATE MANAGEMENT ---
-    # 
+    #
     # The pipeline now manages state internally using CohortContext.
     # This is much simpler than Step 2 because we don't need to manually
     # simulate the interaction - the pipeline itself manages the evolving state.
-    # 
+    #
     # Key changes:
     # - Tell the runner about our custom context model
     # - Provide initial context data
@@ -60,7 +60,7 @@ async def main():
 
     print(f"Initial Definition: {initial_definition}")
     print("\nThe pipeline will now run autonomously, refining the definition...")
-    
+
     # Run the pipeline - it will handle the iteration internally
     result: Optional[PipelineResult] = None
     async for item in runner.run_async(

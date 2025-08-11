@@ -1,5 +1,6 @@
 import pytest
 from unittest.mock import MagicMock
+from typing import Any
 from flujo.domain.models import BaseModel
 
 from flujo import Step
@@ -37,8 +38,16 @@ class ResourceUsingAgent(AsyncAgentProtocol):
 
 
 class ResourceUsingPlugin(ValidationPlugin):
-    async def validate(self, data: dict, *, resources: MyResources, **kwargs) -> PluginOutcome:
-        resources.api_client.post("/validate", json=data["output"])
+    async def validate(self, data: Any, *, resources: MyResources, **kwargs) -> PluginOutcome:
+        # Handle both string and dict inputs
+        if isinstance(data, str):
+            output_value = data
+        elif isinstance(data, dict) and "output" in data:
+            output_value = data["output"]
+        else:
+            output_value = str(data)
+
+        resources.api_client.post("/validate", json=output_value)
         return PluginOutcome(success=True)
 
 

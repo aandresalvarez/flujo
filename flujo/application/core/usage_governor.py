@@ -7,6 +7,7 @@ from typing import Any, Optional, TypeVar, Generic
 from ...domain.models import BaseModel, PipelineResult, UsageLimits
 from ...exceptions import UsageLimitExceededError
 from ...infra import telemetry
+from flujo.utils.formatting import format_cost
 
 ContextT = TypeVar("ContextT", bound=BaseModel)
 
@@ -24,77 +25,43 @@ class UsageGovernor(Generic[ContextT]):
         step_cost: float,
         step_tokens: int,
         span: Any | None,
-    ) -> tuple[bool, Optional[PipelineResult[ContextT]]]:
-        """Efficient usage limit check that avoids creating PipelineResult unless needed.
-
-        This method performs both cost and token checks using running totals,
-        only creating a PipelineResult when a limit is actually breached.
-        This is O(1) for the check itself, with PipelineResult creation only
-        when exceptions are raised.
-
-        Args:
-            current_total_cost: Current total cost before this step
-            current_total_tokens: Current total tokens before this step
-            step_cost: Cost of the current step
-            step_tokens: Tokens used by the current step
-            span: Telemetry span for error recording
-
-        Returns:
-            tuple[bool, Optional[PipelineResult]]: (limit_exceeded, pipeline_result_for_exception)
-        """
-        if self.usage_limits is None:
-            return False, None
-
-        potential_total_cost = current_total_cost + step_cost
-        potential_total_tokens = current_total_tokens + step_tokens
-
-        # Check cost limits
-        if (
-            self.usage_limits.total_cost_usd_limit is not None
-            and potential_total_cost > self.usage_limits.total_cost_usd_limit
-        ):
-            # Cost limit exceeded - we need a PipelineResult for the exception
-            return True, None  # PipelineResult will be created by caller
-
-        # Check token limits
-        if (
-            self.usage_limits.total_tokens_limit is not None
-            and potential_total_tokens > self.usage_limits.total_tokens_limit
-        ):
-            # Token limit exceeded - we need a PipelineResult for the exception
-            return True, None  # PipelineResult will be created by caller
-
-        return False, None
-
-    def check_usage_limits_fast(
-        self,
-        current_total_cost: float,
-        step_cost: float,
-        span: Any | None,
     ) -> bool:
-        """Fast cost-only usage limit check without creating PipelineResult objects.
+        """
+        Efficiently checks usage limits using running totals.
 
-        This method performs a lightweight cost check to avoid creating expensive
-        PipelineResult objects for every step. Returns True if limits would be exceeded.
+        This method calculates the prospective total usage (current + step) and compares
+        it against the configured limits. It returns True if any limit would be breached
+        by executing the step, False otherwise.
 
         Args:
-            current_total_cost: Current total cost before this step
-            step_cost: Cost of the current step
-            span: Telemetry span for error recording
+            current_total_cost: The total cost accumulated so far
+            current_total_tokens: The total tokens accumulated so far
+            step_cost: The cost of the step being considered
+            step_tokens: The tokens of the step being considered
+            span: Optional telemetry span (unused in this implementation)
 
         Returns:
-            bool: True if cost limit would be exceeded, False otherwise
+            True if executing the step would breach any limit, False otherwise
         """
+        # If no limits are configured, nothing can be breached
         if self.usage_limits is None:
             return False
 
-        # Check cost limits only (fast path)
-        if (
-            self.usage_limits.total_cost_usd_limit is not None
-            and current_total_cost + step_cost > self.usage_limits.total_cost_usd_limit
-        ):
-            return True
+        # Calculate prospective totals (current + step)
+        prospective_total_cost = current_total_cost + step_cost
+        prospective_total_tokens = current_total_tokens + step_tokens
 
+        # Check cost limit breach
+        if self.usage_limits.total_cost_usd_limit is not None:
+            if prospective_total_cost > self.usage_limits.total_cost_usd_limit:
+                return True
+
+        # Check token limit breach
+        if self.usage_limits.total_tokens_limit is not None:
+            if prospective_total_tokens > self.usage_limits.total_tokens_limit:
+                return True
+
+        # No limits breached
         return False
 
     def check_usage_limits(
@@ -102,10 +69,9 @@ class UsageGovernor(Generic[ContextT]):
         pipeline_result: PipelineResult[ContextT],
         span: Any | None,
     ) -> None:
-        """Check if current usage exceeds configured limits.
-
-        Raises:
-            UsageLimitExceededError: If any limit is exceeded
+        """
+        ✅ REFACTORED: This method now raises the exception but relies on the caller
+        to provide the complete PipelineResult.
         """
         if self.usage_limits is None:
             return
@@ -115,8 +81,11 @@ class UsageGovernor(Generic[ContextT]):
             self.usage_limits.total_cost_usd_limit is not None
             and pipeline_result.total_cost_usd > self.usage_limits.total_cost_usd_limit
         ):
+            # ✅ TASK 7.4: FIX COST LIMIT ERROR MESSAGE FORMATTING
+            # Format cost values to remove trailing zeros (e.g., 0.5 instead of 0.50)
+            formatted_limit = format_cost(self.usage_limits.total_cost_usd_limit)
             error = UsageLimitExceededError(
-                f"Cost limit of ${self.usage_limits.total_cost_usd_limit} exceeded",
+                f"Cost limit of ${formatted_limit} exceeded",
                 pipeline_result,
             )
             if span is not None:
@@ -127,10 +96,14 @@ class UsageGovernor(Generic[ContextT]):
                     pass
             raise error
 
-        # Check token limits
-        total_tokens = sum(
-            getattr(step, "token_counts", 0) for step in pipeline_result.step_history
-        )
+        # Check token limits - calculate from step history if total_tokens is not set
+        total_tokens = pipeline_result.total_tokens
+        if total_tokens == 0 and pipeline_result.step_history:
+            # Aggregate tokens from step history if total_tokens is not set
+            total_tokens = sum(
+                getattr(step, "token_counts", 0) for step in pipeline_result.step_history
+            )
+
         if (
             self.usage_limits.total_tokens_limit is not None
             and total_tokens > self.usage_limits.total_tokens_limit

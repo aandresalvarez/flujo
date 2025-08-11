@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.3] - 2025-08-10
+
+### Added
+- `core/default_components.py`: Centralized default implementations for executor composition
+  - `OrjsonSerializer`, `Blake3Hasher`, `InMemoryLRUBackend`, `ThreadSafeMeter`
+  - `DefaultAgentRunner`, `DefaultProcessorPipeline`, `DefaultValidatorRunner`, `DefaultPluginRunner`
+  - `DefaultTelemetry`, `DefaultCacheKeyGenerator`
+- `__all__` export list in `core/ultra_executor.py` to define the public API and re-export interfaces and defaults for backward compatibility.
+- `__all__` in `core/default_components.py` and `core/executor_protocols.py` for explicit public surfaces.
+
+### Changed
+- Consolidated Protocol interfaces into `core/executor_protocols.py` as the single source of truth; removed duplicates from `ultra_executor.py`.
+- `ultra_executor.py` now imports default components from `core/default_components.py` and stays focused on orchestration and policy routing.
+- `application/runner.py` composition updated to import defaults from `core/default_components.py`.
+- Classified `PipelineAbortSignal` as a control-flow category in `core/optimized_error_handler.py` to align with FSD-009 (non-retryable control flow).
+ - Restored `_UsageTracker` compatibility shim in `core/ultra_executor.py` to satisfy legacy tests while usage metering moves to `ThreadSafeMeter`.
+
+### Migration
+- Recommended imports:
+  - Defaults: `from flujo.application.core.default_components import OrjsonSerializer, ...`
+  - Interfaces: `from flujo.application.core.executor_protocols import IAgentRunner, ...`
+- Backward compatibility: Existing imports from `core/ultra_executor.py` continue to work via re-exports in this release. These re-exports will be deprecated in a future minor release.
+
+### Notes
+- This change aligns with the policy-driven architecture in `FLUJO_TEAM_GUIDE.md` and the FSD for decomposing the ultra executor. No runtime behavior changes are intended.
+
 ## [0.4.35] - 2025-01-15
 
 ### Added

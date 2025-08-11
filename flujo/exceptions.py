@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from flujo.domain.models import PipelineResult
@@ -81,7 +81,10 @@ class ContextInheritanceError(OrchestratorError):
     """Raised when inheriting context for a nested pipeline fails."""
 
     def __init__(
-        self, missing_fields: list[str], parent_context_keys: list[str], child_model_name: str
+        self,
+        missing_fields: list[str],
+        parent_context_keys: list[str],
+        child_model_name: str,
     ) -> None:
         msg = (
             f"Failed to inherit context for {child_model_name}. Missing required fields: "
@@ -96,7 +99,7 @@ class ContextInheritanceError(OrchestratorError):
 class UsageLimitExceededError(OrchestratorError):
     """Raised when a pipeline run exceeds its defined usage limits."""
 
-    def __init__(self, message: str, result: "PipelineResult[Any]") -> None:
+    def __init__(self, message: str, result: Optional["PipelineResult[Any]"] = None) -> None:
         super().__init__(message)
         self.result = result
 
@@ -135,6 +138,18 @@ class TypeMismatchError(ConfigurationError):
 
 class AgentIOValidationError(OrchestratorError):
     """Raised when an agent's input or output validation fails."""
+
+    pass
+
+
+class NonRetryableError(Exception):
+    """Base class for errors that should not be retried in the pipeline."""
+
+    pass
+
+
+class MockDetectionError(NonRetryableError):
+    """Error raised when Mock objects are detected in output."""
 
     pass
 

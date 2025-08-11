@@ -52,34 +52,34 @@ async def test_cohort_definition(definition: str):
     # Display results
     print("\n📊 RESULTS:")
     print(f"{'='*60}")
-    
+
     if result and result.step_history and result.step_history[-1].success:
         final_step = result.step_history[-1]
         agent_response = final_step.output
-        
-        print(f"✅ Pipeline executed successfully!")
-        print(f"🤖 Agent Response:")
+
+        print("✅ Pipeline executed successfully!")
+        print("🤖 Agent Response:")
         print(f"   {agent_response}")
-        
+
         # Analyze the response
         if "[CLARITY_CONFIRMED]" in agent_response:
-            print(f"\n🎉 RESULT: Definition is CLEAR")
-            print(f"   The agent confirmed the definition is complete and clear.")
+            print("\n🎉 RESULT: Definition is CLEAR")
+            print("   The agent confirmed the definition is complete and clear.")
         else:
-            print(f"\n❓ RESULT: Definition needs CLARIFICATION")
-            print(f"   The agent is asking for more specific details.")
-            
+            print("\n❓ RESULT: Definition needs CLARIFICATION")
+            print("   The agent is asking for more specific details.")
+
     else:
-        print(f"❌ Pipeline execution failed!")
+        print("❌ Pipeline execution failed!")
         if result and result.step_history:
             print(f"   Error: {result.step_history[-1].feedback}")
         else:
-            print(f"   No result returned")
+            print("   No result returned")
 
     # Show tracing information
     if result and result.final_pipeline_context and result.final_pipeline_context.run_id:
         run_id = result.final_pipeline_context.run_id
-        print(f"\n🔍 Tracing Information:")
+        print("\n🔍 Tracing Information:")
         print(f"   Run ID: {run_id}")
         print(f"   To inspect trace: flujo lens trace {run_id}")
 
@@ -106,20 +106,20 @@ async def main():
         print(f"\n{'='*60}")
         print("Enter a cohort definition (or 'quit' to exit):")
         print(f"{'='*60}")
-        
+
         definition = input("📝 Cohort Definition: ").strip()
-        
+
         if definition.lower() in ['quit', 'exit', 'q']:
             print("\n👋 Goodbye!")
             break
-        
+
         if not definition:
             print("❌ Please enter a valid cohort definition.")
             continue
-        
+
         # Test the definition
         await test_cohort_definition(definition)
-        
+
         # Ask if user wants to continue
         print(f"\n{'='*60}")
         continue_test = input("Test another definition? (y/n): ").strip().lower()
@@ -128,4 +128,4 @@ async def main():
             break
 
 if __name__ == "__main__":
-    asyncio.run(main()) 
+    asyncio.run(main())

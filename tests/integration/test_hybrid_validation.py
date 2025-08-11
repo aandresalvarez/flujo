@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from flujo.domain import Step
 from flujo.domain.plugins import PluginOutcome
 from flujo.testing.utils import StubAgent, DummyPlugin, gather_result
-from flujo.validation import BaseValidator
+from flujo.domain.validation import BaseValidator
 from flujo.domain.validation import ValidationResult
 from tests.conftest import create_test_flujo
 
@@ -31,7 +31,9 @@ class ContextValidator(BaseValidator):
     ) -> ValidationResult:
         flag = getattr(context, "flag", False) if context else False
         return ValidationResult(
-            is_valid=flag, feedback=None if flag else "flag not set", validator_name=self.name
+            is_valid=flag,
+            feedback=None if flag else "flag not set",
+            validator_name=self.name,
         )
 
 
@@ -72,7 +74,7 @@ async def test_context_aware_validator() -> None:
 @pytest.mark.asyncio
 async def test_aggregated_feedback() -> None:
     agent = StubAgent(["bad"])
-    plugin = DummyPlugin([PluginOutcome(success=False, feedback="plugin fail")])
+    plugin = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="plugin fail")])
     step = Step.validate_step(agent, plugins=[(plugin, 0)], validators=[FailValidator()])
     runner = create_test_flujo(step)
     result = await gather_result(runner, "in")

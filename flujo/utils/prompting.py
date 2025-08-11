@@ -46,8 +46,12 @@ class AdvancedPromptFormatter:
         # If robust_serialize returns a string, it's already serialized
         if isinstance(serialized, str):
             return serialized
-        # Otherwise, serialize to JSON
-        return json.dumps(serialized)
+        # Otherwise, serialize to JSON with fallback handling
+        try:
+            return json.dumps(serialized)
+        except (TypeError, ValueError):
+            # If JSON serialization fails, return a string representation
+            return str(serialized)
 
     def _serialize(self, value: Any) -> str:
         """Serialize ``value`` for interpolation into a template."""

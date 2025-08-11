@@ -1,7 +1,7 @@
 import pytest
 
 from flujo.domain import Step
-from flujo.validation import BaseValidator
+from flujo.domain.validation import BaseValidator
 from flujo.domain.validation import ValidationResult
 from flujo.testing.utils import StubAgent, gather_result
 from tests.conftest import create_test_flujo

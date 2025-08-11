@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 from typing import AsyncIterator
 from typing import Any
 
-from flujo.application.core.ultra_executor import UltraStepExecutor
+from flujo.application.core.executor_core import ExecutorCore as UltraStepExecutor
 from flujo.domain.dsl.step import Step
 from flujo.domain.models import StepResult
 from flujo.domain.resources import AppResources
@@ -69,16 +69,14 @@ class TestStreamingBytesBug:
     @pytest.fixture
     def mock_step(self):
         """Create a mock step for testing."""
-        step = MagicMock(spec=Step)
-        step.name = "test_step"
-        step.processors = None
-        step.config = MagicMock()
-        step.config.max_retries = 3
-        # Ensure it triggers the simple path in UltraStepExecutor
-        step.plugins = None
-        step.validators = None
-        step.fallback_step = None
-        step.callable = None
+        from flujo.testing.utils import StubAgent
+
+        # Create a real Step instance instead of a mock
+        step = Step(
+            name="test_step",
+            agent=StubAgent(["test output"]),  # Default agent, will be overridden in tests
+            persist_feedback_to_context=None,  # Explicitly set to None
+        )
         return step
 
     @pytest.fixture

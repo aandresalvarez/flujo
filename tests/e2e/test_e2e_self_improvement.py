@@ -1,12 +1,14 @@
 import functools
-import vcr
 import pytest
 import httpx
 from flujo.application.eval_adapter import run_pipeline_async
-from flujo.application.self_improvement import evaluate_and_improve, SelfImprovementAgent
+from flujo.application.self_improvement import (
+    evaluate_and_improve,
+    SelfImprovementAgent,
+)
 from flujo.domain.models import ImprovementReport, SuggestionType
 from flujo.domain import Step
-from flujo.validation import BaseValidator, ValidationResult
+from flujo.domain.validation import BaseValidator, ValidationResult
 from flujo.testing.utils import StubAgent
 from tests.conftest import create_test_flujo
 from pydantic_evals import Dataset, Case
@@ -55,7 +57,6 @@ class EchoAgent:
 
 @pytest.mark.e2e
 @pytest.mark.asyncio
-@vcr.use_cassette("tests/e2e/cassettes/self_improvement.yaml")
 async def test_e2e_self_improvement_workflow() -> None:
     solution_agent = StubAgent(
         [

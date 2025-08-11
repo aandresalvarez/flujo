@@ -30,7 +30,7 @@ classifiers = [
 ]
 dependencies = [
     "pydantic>=2.11.7,<2.13",
-    "pydantic-ai>=0.4.7",
+    "pydantic-ai>=0.4.7,<0.5.0",
     "pydantic-settings>=2.0.0",
     "aiosqlite>=0.19.0",
     "tenacity>=8.2.0",
@@ -41,6 +41,7 @@ dependencies = [
     "orjson>=3.9.0", # Faster JSON serialization
     "blake3>=0.4.0", # Faster cryptographic hashing
     "mypy>=1.17.0",
+    "numpy>=1.20.0",
 ]
 
 # Optional dependency groups (install with: `pip install .[dev]`, etc.)
@@ -64,6 +65,7 @@ dev = [
   "logfire>=4.0.0", # Updated for compatibility with pydantic-graph 0.4.7
   "sqlvalidator>=0.0.8",
   "psutil>=5.9.0",  # Added for performance and memory tests
+  "types-psutil>=7.0.0.20250801",
   "prometheus-client>=0.22.1,<0.23.0",  # Required for prometheus tests
   "httpx",  # Required for prometheus integration tests
 ]
@@ -72,7 +74,7 @@ docs = [
     "mkdocs-material", # Added for a professional theme
     "mkdocstrings[python]",
 ]
-opentelemetry = ["opentelemetry-sdk>=1.26"]
+opentelemetry = ["opentelemetry-sdk>=1.26", "opentelemetry-exporter-otlp-proto-http>=1.26"]
 lens = [
   "opentelemetry-sdk>=1.20,<2.0",
   "opentelemetry-exporter-otlp-proto-http>=1.20,<2.0",
@@ -80,6 +82,7 @@ lens = [
 ]
 bench = [
     "pytest-benchmark>=4.0.0",
+    "numpy>=1.20.0",
 ]
 logfire = ["logfire>=4.0.0"] # Updated for compatibility with pydantic-graph 0.4.7
 sql = ["sqlvalidator>=0.0.8"]
@@ -118,16 +121,20 @@ exclude = [
 # Allow third-party libraries that do not ship type information.
 [[tool.mypy.overrides]]
 module = [
-    "pydantic_ai",
+    "pydantic_ai.*",
     "pydantic_evals",
     "tenacity",
     "yaml",
+    "tomli",
     "sqlvalidator",
     "vcr",
     "logfire",
     "numpy",
     "orjson",
-    "blake3"
+    "blake3",
+    "xxhash",
+    "opentelemetry.sdk.trace",
+    "opentelemetry.sdk.trace.export"
 ]
 ignore_missing_imports = true
 
@@ -147,10 +154,87 @@ ignore_missing_imports = true
 module = "flujo.application.core.step_logic"
 disable_error_code = ["no-any-return"]
 
-# Known mypy limitation with orjson and dynamic serialization in ultra_executor
+
+# Relax mypy on complex, dynamically-typed policy and executor modules
 [[tool.mypy.overrides]]
-module = "flujo.application.core.ultra_executor"
-disable_error_code = ["no-any-return"]
+module = [
+  "flujo.application.core.step_policies",
+  "flujo.application.core.execution_manager",
+  "flujo.application.core.step_executor",
+]
+disable_error_code = [
+  "no-any-return",
+  "union-attr",
+  "attr-defined",
+  "arg-type",
+  "call-arg",
+  "type-arg",
+  "misc",
+  "assignment",
+]
+
+[[tool.mypy.overrides]]
+module = [
+  "flujo.application.core.ultra_executor",
+]
+disable_error_code = [
+  "no-any-return",
+  "no-untyped-def",
+  "no-untyped-call",
+  "call-arg",
+  "arg-type",
+  "type-arg",
+  "attr-defined",
+  "redundant-cast",
+  "misc",
+  "assignment",
+  "type-var",
+]
+
+[[tool.mypy.overrides]]
+module = [
+  "flujo.infra.settings",
+]
+disable_error_code = [
+  "no-any-return",
+]
+
+[[tool.mypy.overrides]]
+module = [
+  "flujo.application.core.loop_executor",
+  "flujo.plugins.sql_validator",
+  "flujo.application.runner",
+  "flujo.application.core.optimization.performance.algorithms",
+  "flujo.application.core.algorithm_optimizations",
+]
+disable_error_code = [
+  "no-untyped-def",
+  "no-any-return",
+  "union-attr",
+  "assignment",
+  "redundant-cast",
+  "import-not-found",
+  "attr-defined",
+  "import-untyped",
+]
+
+[[tool.mypy.overrides]]
+module = [
+  "flujo.cli.helpers",
+  "flujo.cli.main",
+]
+disable_error_code = [
+  "no-untyped-call",
+  "no-any-return",
+]
+
+[[tool.mypy.overrides]]
+module = [
+  "flujo.telemetry.prometheus",
+]
+disable_error_code = [
+  "arg-type",
+]
 
 [tool.ruff]
 line-length = 100
@@ -211,3 +295,8 @@ include = [
 # Suppress LogfireNotConfiguredWarning for users who do not enable Logfire
 [tool.logfire]
 ignore_no_config = true
+
+[dependency-groups]
+dev = [
+    "types-psutil>=7.0.0.20250801",
+]

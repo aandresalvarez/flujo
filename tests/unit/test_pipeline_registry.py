@@ -1,5 +1,5 @@
 import pytest
-from flujo.registry import PipelineRegistry
+from flujo.infra.registry import PipelineRegistry
 from flujo.domain import Step, Pipeline
 
 

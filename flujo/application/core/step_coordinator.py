@@ -2,16 +2,25 @@
 
 from __future__ import annotations
 
-from typing import Any, AsyncIterator, Optional, TypeVar, Generic
+from typing import Any, AsyncIterator, Generic, Optional, TypeVar, Literal
 
-from ...domain.dsl.step import Step
-from ...domain.models import BaseModel, PipelineResult, StepResult, PipelineContext
-from ...domain.resources import AppResources
-from ...domain.types import HookCallable
-from typing import Literal
-from ...exceptions import PausedException, PipelineAbortSignal, PipelineContextInitializationError
-from ...infra import telemetry
-from ..core.hook_dispatcher import _dispatch_hook as _dispatch_hook_impl
+from flujo.domain.backends import ExecutionBackend, StepExecutionRequest
+from flujo.domain.dsl.step import Step
+from flujo.domain.models import BaseModel, StepResult, PipelineContext, PipelineResult, UsageLimits
+from flujo.domain.resources import AppResources
+from flujo.exceptions import (
+    ContextInheritanceError,
+    PipelineAbortSignal,
+    PipelineContextInitializationError,
+    PausedException,
+    UsageLimitExceededError,
+    MockDetectionError,
+    NonRetryableError,
+)
+from flujo.infra import telemetry
+
+from flujo.domain.types import HookCallable
+from flujo.application.core.hook_dispatcher import _dispatch_hook
 
 ContextT = TypeVar("ContextT", bound=BaseModel)
 
@@ -29,12 +38,14 @@ class StepCoordinator(Generic[ContextT]):
 
     async def execute_step(
         self,
-        step: Step[Any, Any],
+        step: "Step[Any, Any]",
         data: Any,
         context: Optional[ContextT],
+        backend: Optional[ExecutionBackend] = None,  # ✅ NEW: Receive the backend to call.
         *,
         stream: bool = False,
-        step_executor: Any,  # StepExecutor type
+        step_executor: Optional[Any] = None,  # Legacy parameter for backward compatibility
+        usage_limits: Optional[UsageLimits] = None,  # ✅ NEW: Usage limits for step execution
     ) -> AsyncIterator[Any]:
         """Execute a single step with telemetry and hook management.
 
@@ -42,8 +53,8 @@ class StepCoordinator(Generic[ContextT]):
             step: The step to execute
             data: Input data for the step
             context: Pipeline context
+            backend: The execution backend to call
             stream: Whether to stream output
-            step_executor: Function to execute the step
 
         Yields:
             Step results or streaming chunks
@@ -61,22 +72,133 @@ class StepCoordinator(Generic[ContextT]):
         step_result = None
         with telemetry.logfire.span(step.name) as span:
             try:
-                async for item in step_executor(step, data, context, self.resources, stream=stream):
-                    if isinstance(item, StepResult):
-                        step_result = item
+                # ✅ UPDATE: Support both new backend approach and legacy step_executor
+                # Prioritize step_executor for backward compatibility with tests
+                if step_executor is not None:
+                    # Legacy approach: use step_executor
+                    # Handle both async generators and regular async functions
+                    try:
+                        # Try to use as async generator first
+                        async for item in step_executor(
+                            step, data, context, self.resources, stream=stream
+                        ):
+                            if isinstance(item, StepResult):
+                                step_result = item
+                                yield item  # Yield StepResult objects
+                            else:
+                                yield item
+                    except TypeError:
+                        # If that fails, try as regular async function
+                        step_result = await step_executor(
+                            step, data, context, self.resources, stream=stream
+                        )
+                        if isinstance(step_result, StepResult):
+                            yield step_result
+                elif backend is not None:
+                    # New approach: call backend directly
+                    # Only enable streaming when the agent actually supports it
+                    has_agent_stream = hasattr(step, "agent") and hasattr(
+                        getattr(step, "agent", None), "stream"
+                    )
+                    effective_stream = bool(stream and has_agent_stream)
+                    if effective_stream:
+                        # For streaming, we need to collect chunks and yield them
+                        chunks = []
+
+                        async def on_chunk(chunk: Any) -> None:
+                            chunks.append(chunk)
+
+                        request = StepExecutionRequest(
+                            step=step,
+                            input_data=data,
+                            context=context,
+                            resources=self.resources,
+                            stream=effective_stream,
+                            on_chunk=on_chunk,
+                            usage_limits=usage_limits,
+                        )
+
+                        # Call the backend directly
+                        step_result = await backend.execute_step(request)
+
+                        # Yield chunks first, then result
+                        for chunk in chunks:
+                            yield chunk
+                        yield step_result
                     else:
-                        yield item
+                        # Non-streaming case
+                        request = StepExecutionRequest(
+                            step=step,
+                            input_data=data,
+                            context=context,
+                            resources=self.resources,
+                            stream=False,
+                            usage_limits=usage_limits,
+                        )
+
+                        # Call the backend directly
+                        step_result = await backend.execute_step(request)
+                        yield step_result
+                else:
+                    raise ValueError("Either backend or step_executor must be provided")
+
             except PausedException as e:
-                # Handle pause for human input
+                # Handle pause for human input; mark context and stop executing current step
                 if isinstance(context, PipelineContext):
                     context.scratchpad["status"] = "paused"
                     context.scratchpad["pause_message"] = str(e)
                     scratch = context.scratchpad
                     if "paused_step_input" not in scratch:
                         scratch["paused_step_input"] = data
+                # Do not append a synthetic result; just stop so runner can resume later
+                # Indicate to the ExecutionManager/Runner that execution should stop by raising a sentinel
+                raise PipelineAbortSignal("Paused for HITL")
+            except UsageLimitExceededError:
+                # Re-raise usage limit exceptions to be handled by ExecutionManager
                 raise
             except PipelineContextInitializationError:
                 # Re-raise context initialization errors to be handled by ExecutionManager
+                raise
+            except ContextInheritanceError:
+                # Re-raise context inheritance errors to be handled by ExecutionManager
+                raise
+            except (MockDetectionError, NonRetryableError):
+                # Re-raise mock detection and non-retryable errors immediately
+                raise
+            except Exception as e:
+                # Propagate critical redirect-loop exceptions instead of swallowing into a StepResult
+                if e.__class__.__name__ == "InfiniteRedirectError":
+                    raise
+                try:
+                    from flujo.exceptions import InfiniteRedirectError as CoreIRE
+
+                    if isinstance(e, CoreIRE):
+                        raise
+                except Exception:
+                    pass
+                try:
+                    from flujo.application.runner import InfiniteRedirectError as RunnerIRE
+
+                    if isinstance(e, RunnerIRE):
+                        raise
+                except Exception:
+                    pass
+                # Treat strict pricing as critical and propagate immediately
+                try:
+                    from flujo.exceptions import PricingNotConfiguredError as _PNCE
+
+                    if isinstance(e, _PNCE):
+                        raise
+                    _msg = str(e)
+                    if (
+                        "Strict pricing is enabled" in _msg
+                        or "Pricing not configured" in _msg
+                        or "no configuration was found for provider" in _msg
+                    ):
+                        raise _PNCE(None, "unknown")
+                except Exception:
+                    pass
+                # For all other exceptions, let the manager/pipeline handling proceed (will produce failure result)
                 raise
 
             # Update telemetry span with step metadata
@@ -97,6 +219,25 @@ class StepCoordinator(Generic[ContextT]):
                     resources=self.resources,
                 )
             else:
+                # ✅ TASK 11.4: FIX ON_FAILURE CALLBACK INTEGRATION
+                # Call failure handlers when step fails
+                if hasattr(step, "failure_handlers") and step.failure_handlers:
+                    for handler in step.failure_handlers:
+                        try:
+                            # Call the failure handler
+                            if hasattr(handler, "__call__"):
+                                handler()
+                            else:
+                                telemetry.logfire.warning(
+                                    f"Failure handler {handler} is not callable"
+                                )
+                        except Exception as e:
+                            telemetry.logfire.error(
+                                f"Failure handler {handler} raised exception: {e}"
+                            )
+                            # Re-raise the exception to propagate it up
+                            raise
+
                 try:
                     await self._dispatch_hook(
                         "on_step_failure",
@@ -108,28 +249,23 @@ class StepCoordinator(Generic[ContextT]):
                     # Yield the failed step result before aborting
                     yield step_result
                     raise
-                telemetry.logfire.warn(f"Step '{step.name}' failed. Halting pipeline execution.")
-
-            yield step_result
+                # Don't halt here - let the execution manager handle step failure
+                pass
 
     async def _dispatch_hook(
         self,
         event_name: Literal["pre_run", "post_run", "pre_step", "post_step", "on_step_failure"],
         **kwargs: Any,
     ) -> None:
-        """Dispatch hooks for the given event."""
-        try:
-            await _dispatch_hook_impl(self.hooks, event_name, **kwargs)
-        except PipelineAbortSignal:
-            # Re-raise PipelineAbortSignal so it propagates up to ExecutionManager
-            raise
+        """Dispatch a hook to all registered hook functions."""
+        await _dispatch_hook(self.hooks, event_name, **kwargs)
 
     def update_pipeline_result(
         self,
         result: PipelineResult[ContextT],
         step_result: StepResult,
     ) -> None:
-        """Update pipeline result with step result."""
+        """Update the pipeline result with a step result."""
         result.step_history.append(step_result)
-        # Always recompute total_cost_usd for robustness
-        result.total_cost_usd = sum(s.cost_usd for s in result.step_history)
+        result.total_cost_usd += step_result.cost_usd
+        result.total_tokens += step_result.token_counts

@@ -238,7 +238,12 @@ class TestConfigManager:
             f.write(config_content)
             config_path = f.name
 
+        # Isolate environment variables for this test
+        original_state_uri = os.environ.get("FLUJO_STATE_URI")
         try:
+            # Remove any existing FLUJO_STATE_URI to test TOML file behavior
+            os.environ.pop("FLUJO_STATE_URI", None)
+
             # Test with a real config manager using our test file
             config_manager = ConfigManager(config_path)
 
@@ -250,6 +255,45 @@ class TestConfigManager:
             uri = config_manager.get_state_uri()
             assert uri == "sqlite:///test.db"
         finally:
+            # Restore original environment
+            if original_state_uri is not None:
+                os.environ["FLUJO_STATE_URI"] = original_state_uri
+            os.unlink(config_path)
+
+    def test_state_uri_environment_precedence(self):
+        """Test that environment variables take precedence over TOML file for state_uri."""
+        config_content = """
+        state_uri = "sqlite:///test.db"
+        """
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".toml", delete=False) as f:
+            f.write(config_content)
+            config_path = f.name
+
+        original_state_uri = os.environ.get("FLUJO_STATE_URI")
+        try:
+            # Set environment variable to override TOML value
+            os.environ["FLUJO_STATE_URI"] = "sqlite:///env.db"
+
+            config_manager = ConfigManager(config_path)
+
+            # Environment variable should take precedence
+            uri = config_manager.get_state_uri()
+            assert uri == "sqlite:///env.db"
+
+            # Remove environment variable to test TOML fallback
+            os.environ.pop("FLUJO_STATE_URI", None)
+
+            # Now should get TOML value
+            uri = config_manager.get_state_uri(force_reload=True)
+            assert uri == "sqlite:///test.db"
+
+        finally:
+            # Restore original environment
+            if original_state_uri is not None:
+                os.environ["FLUJO_STATE_URI"] = original_state_uri
+            else:
+                os.environ.pop("FLUJO_STATE_URI", None)
             os.unlink(config_path)
 
     def test_settings_integration(self):

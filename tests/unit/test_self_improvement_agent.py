@@ -1,5 +1,5 @@
 import pytest
-from flujo.infra.agents import SELF_IMPROVE_SYS
+from flujo.prompts import SELF_IMPROVE_SYS
 from flujo.application.self_improvement import SelfImprovementAgent, ImprovementReport
 
 

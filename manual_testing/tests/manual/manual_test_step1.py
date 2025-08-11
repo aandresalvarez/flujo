@@ -56,34 +56,34 @@ async def test_cohort_definition(definition: str, test_name: str):
     # Display results
     print("\n📊 RESULTS:")
     print(f"{'='*60}")
-    
+
     if result and result.step_history and result.step_history[-1].success:
         final_step = result.step_history[-1]
         agent_response = final_step.output
-        
-        print(f"✅ Pipeline executed successfully!")
-        print(f"🤖 Agent Response:")
+
+        print("✅ Pipeline executed successfully!")
+        print("🤖 Agent Response:")
         print(f"   {agent_response}")
-        
+
         # Analyze the response
         if "[CLARITY_CONFIRMED]" in agent_response:
-            print(f"\n🎉 RESULT: Definition is CLEAR")
-            print(f"   The agent confirmed the definition is complete and clear.")
+            print("\n🎉 RESULT: Definition is CLEAR")
+            print("   The agent confirmed the definition is complete and clear.")
         else:
-            print(f"\n❓ RESULT: Definition needs CLARIFICATION")
-            print(f"   The agent is asking for more specific details.")
-            
+            print("\n❓ RESULT: Definition needs CLARIFICATION")
+            print("   The agent is asking for more specific details.")
+
     else:
-        print(f"❌ Pipeline execution failed!")
+        print("❌ Pipeline execution failed!")
         if result and result.step_history:
             print(f"   Error: {result.step_history[-1].feedback}")
         else:
-            print(f"   No result returned")
+            print("   No result returned")
 
     # Show tracing information
     if result and result.final_pipeline_context and result.final_pipeline_context.run_id:
         run_id = result.final_pipeline_context.run_id
-        print(f"\n🔍 Tracing Information:")
+        print("\n🔍 Tracing Information:")
         print(f"   Run ID: {run_id}")
         print(f"   To inspect trace: flujo lens trace {run_id}")
 
@@ -102,14 +102,14 @@ async def main():
     # Test Case 1: Incomplete cohort definition
     incomplete_definition = "patients with diabetes"
     await test_cohort_definition(
-        incomplete_definition, 
+        incomplete_definition,
         "Incomplete Definition"
     )
 
-    # Test Case 2: Complete cohort definition  
+    # Test Case 2: Complete cohort definition
     complete_definition = "adult patients with Type 2 diabetes diagnosed in the last 5 years, currently on metformin therapy"
     await test_cohort_definition(
-        complete_definition, 
+        complete_definition,
         "Complete Definition"
     )
 
@@ -124,4 +124,4 @@ async def main():
     print("=" * 80)
 
 if __name__ == "__main__":
-    asyncio.run(main()) 
+    asyncio.run(main())

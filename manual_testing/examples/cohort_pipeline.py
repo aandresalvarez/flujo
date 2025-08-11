@@ -1,7 +1,7 @@
 # manual_testing/cohort_pipeline.py
 
 from flujo import Step, Pipeline, step
-from flujo.infra.agents import make_agent_async
+from flujo.agents import make_agent_async
 from flujo.domain.models import PipelineContext
 from flujo.infra.settings import settings as flujo_settings
 
@@ -88,6 +88,9 @@ async def assess_and_refine(definition_to_assess: str, *, context: CohortContext
             "clarification_count": context.clarification_count + 1
         }
         return updates
+
+# Alias for backward compatibility with tests
+assess_clarity_step = assess_and_refine
 
 def _simulate_human_clarification(agent_question: str, clarification_count: int) -> str:
     """

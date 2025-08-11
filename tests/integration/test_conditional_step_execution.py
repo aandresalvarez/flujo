@@ -133,7 +133,7 @@ async def test_mappers_applied() -> None:
 
 @pytest.mark.asyncio
 async def test_failure_in_branch_propagates() -> None:
-    fail_plugin = DummyPlugin([PluginOutcome(success=False, feedback="bad")])
+    fail_plugin = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="bad")])
     bad_step = Step.model_validate(
         {"name": "bad", "agent": StubAgent(["oops"]), "plugins": [(fail_plugin, 0)]}
     )
@@ -364,7 +364,9 @@ async def test_conditional_step_overall_span(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_conditional_step_branch_selection_logging_and_span_attributes(monkeypatch) -> None:
+async def test_conditional_step_branch_selection_logging_and_span_attributes(
+    monkeypatch,
+) -> None:
     infos: list[str] = []
     spans: list[str] = []
     attrs: list[tuple[str, Any]] = []

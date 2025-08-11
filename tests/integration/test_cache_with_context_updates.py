@@ -12,7 +12,7 @@ from typing import Any, Dict, List
 from flujo import step, Step
 from flujo.domain.models import PipelineContext
 from flujo.testing.utils import gather_result
-from flujo.caching import InMemoryCache
+from flujo.infra.caching import InMemoryCache
 from tests.conftest import create_test_flujo
 
 
@@ -103,7 +103,14 @@ async def failing_cache_step(data: Any, *, context: CacheContext) -> Dict[str, A
     if data == "fail":
         raise RuntimeError("Intentional failure for cache testing")
 
-    return {"operation_count": context.operation_count, "result": f"success_result_{data}"}
+    return {
+        "operation_count": context.operation_count,
+        "result": f"success_result_{data}",
+    }
+
+
+# Create a step configuration that disables retries for the failing step
+failing_cache_step.config.max_retries = 0
 
 
 # Utility function to create simplified steps

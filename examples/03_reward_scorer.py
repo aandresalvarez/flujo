@@ -1,7 +1,7 @@
 """
 Demonstrates using a model-based reward scorer to evaluate a solution's quality.
 
-This example departs from the Default recipe to show a more advanced pattern:
+This example departs from the default pipeline factory to show a more advanced pattern:
 1. Build a simple, custom pipeline with the Flujo engine and DSL (`Step` and `Pipeline`).
 2. Run the pipeline to generate a solution.
 3. Use the `RewardScorer` to get a final quality score from an LLM judge.

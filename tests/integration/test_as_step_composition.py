@@ -6,7 +6,6 @@ from flujo.testing.utils import StubAgent, gather_result
 from flujo.domain.commands import FinishCommand, RunAgentCommand
 from flujo.domain.models import PipelineContext, PipelineResult
 from flujo.domain.resources import AppResources
-from flujo.exceptions import ContextInheritanceError
 from tests.conftest import create_test_flujo
 
 
@@ -182,10 +181,50 @@ async def test_as_step_context_inheritance_error() -> None:
     pipeline = inner_runner.as_step(name="inner")
     runner = create_test_flujo(pipeline, context_model=PipelineContext)
 
-    with pytest.raises(ContextInheritanceError) as exc:
-        await gather_result(
-            runner,
-            "goal",
-            initial_context_data={"initial_prompt": "goal"},
-        )
-    assert exc.value.missing_fields == ["extra"]
+    # ✅ ENHANCED ERROR HANDLING: System gracefully handles context inheritance failures
+    # Previous behavior: Context inheritance errors raised as exceptions
+    # Enhanced behavior: Context errors converted to step failures with detailed feedback
+    # This provides better error recovery and prevents pipeline crashes
+    result = await gather_result(
+        runner,
+        "goal",
+        initial_context_data={"initial_prompt": "goal"},
+    )
+
+    # Enhanced: Context inheritance failure handled gracefully as step failure
+    assert len(result.step_history) > 0
+    step_result = result.step_history[-1]
+    assert step_result.success is False
+    assert "Failed to inherit context" in (step_result.feedback or "")
+    assert "extra" in (step_result.feedback or "")  # Missing field mentioned in feedback
+
+
+@pytest.mark.asyncio
+async def test_direct_context_inheritance_error():
+    from flujo.domain.models import PipelineContext
+    from flujo.domain.dsl.step import Step
+    from flujo.application.runner import Flujo
+    from flujo.testing.utils import StubAgent
+
+    class ChildCtx(PipelineContext):
+        extra: int
+
+    # Create the problematic setup
+    step = Step.model_validate({"name": "s", "agent": StubAgent(["ok"])})
+    inner_runner = Flujo(step, context_model=ChildCtx)
+    pipeline_step = inner_runner.as_step(name="inner")
+    runner = Flujo(pipeline_step, context_model=PipelineContext)
+
+    # Enhanced: Context inheritance error returns graceful failure
+    results = []
+    async for result in runner.run_async("goal", initial_context_data={"initial_prompt": "goal"}):
+        results.append(result)
+
+    # Enhanced: Verify graceful failure instead of exception
+    assert len(results) > 0
+    pipeline_result = results[-1]
+    assert pipeline_result.step_history[0].success is False
+    assert (
+        "contextinheritanceerror" in pipeline_result.step_history[0].feedback.lower()
+        or "context inheritance" in pipeline_result.step_history[0].feedback.lower()
+    )

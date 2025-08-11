@@ -19,7 +19,10 @@ from flujo.application.runner import Flujo
 from flujo.domain import Step
 from flujo.domain.models import PipelineContext
 from flujo.state.backends.sqlite import SQLiteBackend
-from tests.conftest import create_test_flujo
+
+# Disable test mode for state persistence testing
+if 'FLUJO_TEST_MODE' in os.environ:
+    del os.environ['FLUJO_TEST_MODE']
 
 async def step_one(data: int) -> int:
     return data + 1
@@ -31,12 +34,13 @@ class CrashAgent:
 async def main():
     backend = SQLiteBackend(Path(r'{db_path}'))
     pipeline = Step.from_callable(step_one, name='first') >> Step.from_callable(CrashAgent().run, name='crash')
-    runner = create_test_flujo(
+    runner = Flujo(
         pipeline,
         context_model=PipelineContext,
         state_backend=backend,
         delete_on_completion=False,
-        initial_context_data={{'run_id': '{run_id}'}}
+        pipeline_name="state_test",
+        pipeline_id="state_test_id"
     )
     async for _ in runner.run_async(0, initial_context_data={{'initial_prompt': 'start', 'run_id': '{run_id}'}}):
         pass

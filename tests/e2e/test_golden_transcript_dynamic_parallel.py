@@ -43,13 +43,27 @@ class StubBranchAgent:
 
     async def run(self, data: Any, *, context: DynamicParallelContext = None) -> str:
         """Execute the branch logic."""
+        print(f"[DEBUG] Branch {self.name} called with data: {data}")
+        print(f"[DEBUG] Branch {self.name} context is None: {context is None}")
+
         if self.should_fail:
+            print(f"[DEBUG] Branch {self.name} will fail intentionally")
             raise RuntimeError(f"Intentional failure in {self.name}")
 
         result = f"{self.name}_processed_{data}"
+
         if context:
+            print(
+                f"[DEBUG] Branch {self.name} context.executed_branches before: {context.executed_branches}"
+            )
             context.executed_branches.append(self.name)
             context.branch_results[self.name] = result
+            print(
+                f"[DEBUG] Branch {self.name} context.executed_branches after: {context.executed_branches}"
+            )
+            print(f"[DEBUG] Branch {self.name} context.branch_results: {context.branch_results}")
+        else:
+            print(f"[DEBUG] Branch {self.name} no context provided")
 
         return result
 
@@ -211,7 +225,10 @@ async def test_golden_transcript_dynamic_parallel_empty():
     router_agent = StubRouterAgent([])
 
     # Create branch agents
-    branch_agents = {"branch1": StubBranchAgent("branch1"), "branch2": StubBranchAgent("branch2")}
+    branch_agents = {
+        "branch1": StubBranchAgent("branch1"),
+        "branch2": StubBranchAgent("branch2"),
+    }
 
     # Create the dynamic parallel pipeline
     dynamic_parallel_pipeline = Step.dynamic_parallel_branch(

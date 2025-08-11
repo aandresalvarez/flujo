@@ -2,7 +2,7 @@ import time
 import pytest
 
 from flujo import Step, Flujo
-from flujo.caching import InMemoryCache
+from flujo.infra.caching import InMemoryCache
 from flujo.testing.utils import StubAgent, gather_result, DummyPlugin
 from flujo.domain import Pipeline
 from flujo.domain.dsl import StepConfig
@@ -88,7 +88,7 @@ async def test_cache_keys_distinct_for_same_name_steps() -> None:
 @pytest.mark.asyncio
 async def test_pipeline_step_fallback() -> None:
     s1: Step[Any, Any] = Step.model_validate({"name": "s1", "agent": StubAgent(["a"])})
-    plugin: DummyPlugin = DummyPlugin([PluginOutcome(success=False, feedback="err")])
+    plugin: DummyPlugin = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="err")])
     failing: Step[Any, Any] = Step.model_validate(
         {
             "name": "s2",
@@ -111,7 +111,7 @@ async def test_pipeline_step_fallback() -> None:
 async def test_loop_step_fallback_continues() -> None:
     body_agent: StubAgent = StubAgent(["bad", "done"])
     plugin: DummyPlugin = DummyPlugin(
-        [PluginOutcome(success=False, feedback="err"), PluginOutcome(success=True)]
+        outcomes=[PluginOutcome(success=False, feedback="err"), PluginOutcome(success=True)]
     )
     body: Step[Any, Any] = Step.model_validate(
         {
@@ -141,7 +141,7 @@ async def test_loop_step_fallback_continues() -> None:
 @pytest.mark.asyncio
 async def test_conditional_branch_with_fallback() -> None:
     branch_agent: StubAgent = StubAgent(["bad"])
-    plugin: DummyPlugin = DummyPlugin([PluginOutcome(success=False, feedback="err")])
+    plugin: DummyPlugin = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="err")])
     branch_step: Step[Any, Any] = Step.model_validate(
         {
             "name": "branch",

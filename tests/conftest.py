@@ -4,9 +4,164 @@ from flujo import Flujo
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.dsl import Step
 from flujo.state.backends.base import StateBackend
+from flujo.utils.serialization import register_custom_serializer, reset_custom_serializer_registry
+from collections import OrderedDict, Counter, defaultdict
+from enum import Enum
+import pytest
 
 # Set test mode environment variable
 os.environ["FLUJO_TEST_MODE"] = "1"
+
+
+# Define mock classes that need serialization support
+# These are defined at module level to match the actual test implementations
+
+
+# MockEnum class (from test_serialization_edge_cases.py)
+class MockEnum(Enum):
+    """Mock enum for edge case testing."""
+
+    A = "a"
+    B = "b"
+    C = "c"
+
+
+# Register the MockEnum serializer at module level for all test runs
+register_custom_serializer(MockEnum, lambda obj: obj.value)
+
+
+# UsageResponse class (from test_usage_limits_enforcement.py)
+class UsageResponse:
+    def __init__(self, output: Any, cost: float, tokens: int):
+        self.output = output
+        self.cost_usd = cost
+        self.token_counts = tokens
+
+    def usage(self) -> dict[str, Any]:
+        return {
+            "prompt_tokens": self.token_counts,
+            "completion_tokens": 0,
+            "total_tokens": self.token_counts,
+            "cost_usd": self.cost_usd,
+        }
+
+
+# MockImageResult class (from test_explicit_cost_integration.py)
+class MockImageResult:
+    def __init__(self, cost_usd: float, token_counts: int = 0):
+        self.cost_usd = cost_usd
+        self.token_counts = token_counts
+        self.output = f"Mock image result with cost ${cost_usd} and {token_counts} tokens"
+
+
+# WrappedResult class (from test_pipeline_runner.py and test_fallback.py)
+class WrappedResult:
+    def __init__(self, output: str, token_counts: int = 2, cost_usd: float = 0.1) -> None:
+        self.output = output
+        self.token_counts = token_counts
+        self.cost_usd = cost_usd
+
+
+# AgentResponse class (from test_image_cost_integration.py)
+class AgentResponse:
+    def __init__(self, output: Any, cost_usd: float = 0.0, token_counts: int = 0):
+        self.output = output
+        self.cost_usd = cost_usd
+        self.token_counts = token_counts
+
+
+# MockResponseWithBoth class (from test_explicit_cost_integration.py)
+class MockResponseWithBoth:
+    def __init__(self):
+        self.cost_usd = 0.1
+        self.token_counts = 50
+        self.output = "Mock response with both protocol and usage method"
+
+    def usage(self):
+        class MockUsage:
+            def __init__(self):
+                self.prompt_tokens = 25
+                self.completion_tokens = 25
+                self.total_tokens = 50
+                self.cost_usd = 0.1
+
+        return MockUsage()
+
+
+# MockResponseWithNone class (from test_explicit_cost_integration.py)
+class MockResponseWithNone:
+    def __init__(self):
+        self.cost_usd = None
+        self.token_counts = None
+        self.output = "Mock response with None values"
+
+
+# MockResponseWithUsageOnly class (from test_explicit_cost_integration.py)
+class MockResponseWithUsageOnly:
+    def __init__(self):
+        self.output = "test"
+
+    def usage(self):
+        class MockUsage:
+            def __init__(self):
+                self.prompt_tokens = 10
+                self.completion_tokens = 5
+                self.total_tokens = 15
+                self.cost_usd = 0.05
+
+        return MockUsage()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def register_mock_serializers():
+    """
+    Register custom serializers for mock objects used in tests.
+
+    This fixture automatically runs for all tests and ensures that mock objects
+    like UsageResponse, MockImageResult, and WrappedResult can be properly
+    serialized by the framework's serialization system.
+    """
+    # Register serializers for all mock classes
+    # Use simple __dict__ serialization for all mock objects
+    register_custom_serializer(UsageResponse, lambda obj: obj.__dict__)
+    register_custom_serializer(MockImageResult, lambda obj: obj.__dict__)
+    register_custom_serializer(WrappedResult, lambda obj: obj.__dict__)
+    register_custom_serializer(AgentResponse, lambda obj: obj.__dict__)
+    register_custom_serializer(MockResponseWithBoth, lambda obj: obj.__dict__)
+    register_custom_serializer(MockResponseWithNone, lambda obj: obj.__dict__)
+    register_custom_serializer(MockResponseWithUsageOnly, lambda obj: obj.__dict__)
+
+    # Register serializers for edge case types
+    register_custom_serializer(OrderedDict, lambda obj: dict(obj))
+    register_custom_serializer(Counter, lambda obj: dict(obj))
+    register_custom_serializer(defaultdict, lambda obj: dict(obj))
+
+    # Register serializers for common types that should be preserved
+    import uuid
+    from datetime import datetime, date, time
+    from decimal import Decimal
+
+    register_custom_serializer(uuid.UUID, lambda obj: obj)  # Keep UUID objects as-is
+    register_custom_serializer(datetime, lambda obj: obj)  # Keep datetime objects as-is
+    register_custom_serializer(date, lambda obj: obj)  # Keep date objects as-is
+    register_custom_serializer(time, lambda obj: obj)  # Keep time objects as-is
+    register_custom_serializer(Decimal, lambda obj: obj)  # Keep Decimal objects as-is
+
+    # Register fallback serializer for unknown types with __dict__
+    def fallback_dict_serializer(obj):
+        """Fallback serializer for objects with __dict__ attribute."""
+        if hasattr(obj, "__dict__"):
+            return obj.__dict__
+        return str(obj)
+
+    # Note: The serialization system already handles objects with __dict__ automatically
+    # in the safe_serialize function, so we don't need a fallback serializer
+
+    # Yield to allow tests to run
+    yield
+
+    # Clean up the registry after all tests complete
+    reset_custom_serializer_registry()
 
 
 def create_test_flujo(
@@ -54,28 +209,49 @@ def create_test_flujo(
 
         pipeline_id = f"test_{uuid.uuid4().hex[:8]}"
 
+    # Always use NoOpStateBackend for test isolation unless explicitly overridden
+    if "state_backend" not in kwargs:
+        kwargs["state_backend"] = NoOpStateBackend()
+
     return Flujo(pipeline, pipeline_name=pipeline_name, pipeline_id=pipeline_id, **kwargs)
 
 
 class NoOpStateBackend(StateBackend):
-    """A state backend that does nothing - used to disable state persistence in tests."""
+    """A state backend that simulates real backend behavior for testing while maintaining isolation."""
+
+    def __init__(self):
+        # Store serialized copies to mimic persistent backends (but in memory for tests)
+        self._store: Dict[str, Any] = {}
+        self._trace_store: Dict[str, Any] = {}
 
     async def save_state(self, run_id: str, state: Dict[str, Any]) -> None:
-        # Do nothing - no state persistence
-        pass
+        # Simulate real backend behavior by serializing and storing state
+        from flujo.utils.serialization import safe_serialize
+
+        self._store[run_id] = safe_serialize(state)
 
     async def load_state(self, run_id: str) -> Optional[Dict[str, Any]]:
-        # Return None - no state to load
-        return None
+        # Simulate real backend behavior by deserializing stored state
+        stored = self._store.get(run_id)
+        if stored is None:
+            return None
+        from flujo.utils.serialization import safe_deserialize
+        from copy import deepcopy
+
+        # Return a deserialized copy to avoid accidental mutation
+        return deepcopy(safe_deserialize(stored))
 
     async def delete_state(self, run_id: str) -> None:
-        # Do nothing
-        pass
+        # Simulate real backend behavior by removing stored state
+        self._store.pop(run_id, None)
+        self._trace_store.pop(run_id, None)
 
     async def get_trace(self, run_id: str) -> Any:
-        # Return None - no trace data
-        return None
+        # Simulate real backend behavior by returning stored trace data
+        return self._trace_store.get(run_id)
 
     async def save_trace(self, run_id: str, trace: Any) -> None:
-        # Do nothing - no trace persistence
-        pass
+        # Simulate real backend behavior by storing trace data
+        from flujo.utils.serialization import safe_serialize
+
+        self._trace_store[run_id] = safe_serialize(trace)

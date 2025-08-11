@@ -4,7 +4,7 @@ from flujo.domain.models import BaseModel
 from flujo.domain import Step
 from flujo.domain.models import Checklist, ChecklistItem
 from flujo.testing.utils import StubAgent, gather_result
-from flujo.infra.agents import AsyncAgentWrapper
+from flujo.agents import AsyncAgentWrapper
 from tests.conftest import create_test_flujo
 
 

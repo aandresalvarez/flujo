@@ -13,7 +13,13 @@ from pydantic import TypeAdapter
 
 from ..domain.dsl.pipeline import Pipeline
 from ..domain.dsl.step import Step
-from ..domain.models import PipelineContext, Task, Candidate, Checklist, ExecutedCommandLog
+from ..domain.models import (
+    PipelineContext,
+    Task,
+    Candidate,
+    Checklist,
+    ExecutedCommandLog,
+)
 from ..domain.commands import AgentCommand, FinishCommand
 from ..application.runner import Flujo
 from ..testing.utils import gather_result
@@ -21,7 +27,7 @@ from flujo.domain.models import PipelineResult
 from ..domain.scoring import ratio_score
 
 if TYPE_CHECKING:  # pragma: no cover - used for typing only
-    from ..infra.agents import AsyncAgentProtocol
+    from ..agents import AsyncAgentProtocol
 
 # Type adapter for command validation
 _command_adapter: TypeAdapter[AgentCommand] = TypeAdapter(AgentCommand)
@@ -218,6 +224,11 @@ def make_agentic_loop_pipeline(
                     if isinstance(context, PipelineContext):
                         context.scratchpad["paused_step_input"] = cmd
                     # Do NOT create or append a log entry here; only log on resume
+                    from flujo.infra import telemetry
+
+                    telemetry.logfire.info(
+                        f"_CommandExecutor raising PausedException for question: {cmd.question}"
+                    )
                     raise PausedException(message=cmd.question)
                 elif cmd.type == "finish":
                     exec_result = cmd.final_answer
@@ -248,7 +259,8 @@ def make_agentic_loop_pipeline(
     # Create the loop body pipeline
     planner_step_s: Step[Any, Any] = Step.from_callable(planner_step, max_retries=max_retries)
     executor_step_s: Step[Any, Any] = Step.from_callable(
-        command_executor_step, max_retries=max_retries
+        command_executor_step,
+        max_retries=0,  # No retries for command execution to allow HITL pausing
     )
     loop_body: Pipeline[Any, Any] = planner_step_s >> executor_step_s
 
@@ -329,6 +341,26 @@ def make_agentic_loop_pipeline(
             goal = ctx.initial_prompt if ctx is not None else ""
             return {"last_command_result": None, "goal": goal}
 
+        # If this is an AskHuman command, mark paused and store pending input so resume can log it
+        try:
+            from flujo.domain.commands import AskHumanCommand as _AskHuman
+            from flujo.exceptions import PausedException as _Paused
+
+            if isinstance(log, _AskHuman) and ctx is not None:
+                if hasattr(ctx, "scratchpad") and isinstance(ctx.scratchpad, dict):
+                    ctx.scratchpad["status"] = "paused"
+                    ctx.scratchpad["pause_message"] = getattr(log, "question", "Paused")
+                    # Save the pending command so resume can convert/log it
+                    ctx.scratchpad["paused_step_input"] = log
+                raise _Paused(getattr(log, "question", "Paused"))
+        except Exception:
+            pass
+
+        # If paused, do not log to preserve clean pause state
+        if ctx is not None and isinstance(getattr(ctx, "scratchpad", None), dict):
+            if ctx.scratchpad.get("status") == "paused":
+                goal = ctx.initial_prompt if ctx is not None else ""
+                return {"last_command_result": None, "goal": goal}
         _log_if_new(log, ctx)
         goal = ctx.initial_prompt if ctx is not None else ""
         return {"last_command_result": log.execution_result, "goal": goal}
@@ -440,7 +472,7 @@ async def _invoke(
 ) -> Any:
     """Helper function to invoke an agent with proper error handling."""
     from flujo.application.runner import _accepts_param
-    from flujo.infra.agents import AsyncAgentWrapper
+    from flujo.agents import AsyncAgentWrapper
 
     try:
         # If this is a pydantic-ai agent wrapper, never pass context (it will error)

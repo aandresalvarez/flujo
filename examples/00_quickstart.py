@@ -7,7 +7,7 @@ make_agentic_loop_pipeline factory function.
 import asyncio
 
 from flujo.recipes.factories import make_agentic_loop_pipeline, run_agentic_loop_pipeline
-from flujo.infra.agents import make_agent_async
+from flujo.agents import make_agent_async
 from flujo.infra import init_telemetry
 from flujo.domain.commands import (
     AgentCommand,

@@ -19,7 +19,7 @@ To use the `DeterministicRepairProcessor`, you can add it to the `output_process
 
 ```python
 from flujo import Step, AgentProcessors
-from flujo.processors.repair import DeterministicRepairProcessor
+from flujo.agents.repair import DeterministicRepairProcessor
 from flujo.testing.utils import StubAgent
 
 # This agent returns a malformed JSON string

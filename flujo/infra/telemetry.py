@@ -1,6 +1,7 @@
 import logging
 import sys
-from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, List
+import os
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, List, cast
 from typing import Any as _TypeAny  # local alias to avoid name clash
 
 if TYPE_CHECKING:
@@ -10,18 +11,24 @@ if TYPE_CHECKING:
 _initialized = False
 
 _fallback_logger = logging.getLogger("flujo")
-_fallback_logger.setLevel(logging.INFO)
+# Reduce log verbosity in CI/tests to improve performance determinism
+_in_ci_or_tests = bool(
+    os.getenv("CI") == "true" or os.getenv("FLUJO_TEST_MODE") or os.getenv("PYTEST_CURRENT_TEST")
+)
+_fallback_logger.setLevel(logging.WARNING if _in_ci_or_tests else logging.INFO)
 
 if not _fallback_logger.handlers:
-    info_handler = logging.StreamHandler(sys.stdout)
-    info_handler.setLevel(logging.INFO)
-    info_handler.addFilter(lambda record: record.levelno <= logging.WARNING)
-    info_formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-    info_handler.setFormatter(info_formatter)
-    _fallback_logger.addHandler(info_handler)
+    # Only attach INFO handler when not in CI/tests to avoid noisy output & jitter
+    if not _in_ci_or_tests:
+        info_handler = logging.StreamHandler(sys.stdout)
+        info_handler.setLevel(logging.INFO)
+        info_handler.addFilter(lambda record: record.levelno <= logging.WARNING)
+        info_formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+        info_handler.setFormatter(info_formatter)
+        _fallback_logger.addHandler(info_handler)
 
     error_handler = logging.StreamHandler(sys.stderr)
-    error_handler.setLevel(logging.ERROR)
+    error_handler.setLevel(logging.ERROR if _in_ci_or_tests else logging.ERROR)
     error_formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
     error_handler.setFormatter(error_formatter)
     _fallback_logger.addHandler(error_handler)
@@ -93,7 +100,11 @@ class _SafeLogfireWrapper:
         except (ValueError, OSError, RuntimeError) as e:
             if any(
                 phrase in str(e).lower()
-                for phrase in ["i/o operation on closed file", "closed", "bad file descriptor"]
+                for phrase in [
+                    "i/o operation on closed file",
+                    "closed",
+                    "bad file descriptor",
+                ]
             ):
                 pass  # Silently ignore during cleanup
             else:
@@ -129,15 +140,7 @@ class _SafeLogfireWrapper:
     def instrument(self, name: str, *args: Any, **kwargs: Any) -> Callable[[Any], Any]:
         try:
             result = self._real_logfire.instrument(name, *args, **kwargs)
-            # Ensure the result is a callable
-            if callable(result):
-                return result  # type: ignore
-            else:
-                # Fallback to no-op decorator if result is not callable
-                def decorator(func: Callable[[Any], Any]) -> Callable[[Any], Any]:
-                    return func
-
-                return decorator
+            return cast(Callable[[Any], Any], result)
         except (ValueError, OSError, RuntimeError) as e:
             if _is_cleanup_io_error(e):
                 # Return a no-op decorator during cleanup
@@ -205,8 +208,8 @@ class _MockLogfire:
             "Logfire.configure called, but Logfire is mocked. Using standard Python logging.",
         )
 
-    def instrument(self, name: str, *args: Any, **kwargs: Any) -> Callable[[Any], Any]:
-        def decorator(func: Callable[[Any], Any]) -> Callable[[Any], Any]:
+    def instrument(self, name: str, *args: Any, **kwargs: Any) -> Any:
+        def decorator(func: Callable[[Any], Any]) -> Any:
             return func
 
         return decorator
@@ -278,7 +281,9 @@ def init_telemetry(settings_obj: Optional["TelemetrySettings"] = None) -> None:
                 ),
             )
             _safe_log(
-                _fallback_logger, logging.INFO, "Logfire initialized successfully (actual Logfire)."
+                _fallback_logger,
+                logging.INFO,
+                "Logfire initialized successfully (actual Logfire).",
             )
             _initialized = True
             return
