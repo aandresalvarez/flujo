@@ -1,5 +1,6 @@
 import logging
 import sys
+import os
 from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, List, cast
 from typing import Any as _TypeAny  # local alias to avoid name clash
 
@@ -10,18 +11,24 @@ if TYPE_CHECKING:
 _initialized = False
 
 _fallback_logger = logging.getLogger("flujo")
-_fallback_logger.setLevel(logging.INFO)
+# Reduce log verbosity in CI/tests to improve performance determinism
+_in_ci_or_tests = bool(
+    os.getenv("CI") == "true" or os.getenv("FLUJO_TEST_MODE") or os.getenv("PYTEST_CURRENT_TEST")
+)
+_fallback_logger.setLevel(logging.WARNING if _in_ci_or_tests else logging.INFO)
 
 if not _fallback_logger.handlers:
-    info_handler = logging.StreamHandler(sys.stdout)
-    info_handler.setLevel(logging.INFO)
-    info_handler.addFilter(lambda record: record.levelno <= logging.WARNING)
-    info_formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-    info_handler.setFormatter(info_formatter)
-    _fallback_logger.addHandler(info_handler)
+    # Only attach INFO handler when not in CI/tests to avoid noisy output & jitter
+    if not _in_ci_or_tests:
+        info_handler = logging.StreamHandler(sys.stdout)
+        info_handler.setLevel(logging.INFO)
+        info_handler.addFilter(lambda record: record.levelno <= logging.WARNING)
+        info_formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+        info_handler.setFormatter(info_formatter)
+        _fallback_logger.addHandler(info_handler)
 
     error_handler = logging.StreamHandler(sys.stderr)
-    error_handler.setLevel(logging.ERROR)
+    error_handler.setLevel(logging.ERROR if _in_ci_or_tests else logging.ERROR)
     error_formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
     error_handler.setFormatter(error_formatter)
     _fallback_logger.addHandler(error_handler)

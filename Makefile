@@ -56,6 +56,8 @@ lint: .uv ## Lint the code for issues
 .PHONY: typecheck
 typecheck: .uv ## Run static type checking with mypy
 	@echo "🧐 Running static type checking..."
+	@# Ensure dev extras (including types-psutil) are installed before typechecking
+	@uv sync --all-extras
 	@uv run mypy flujo/
 
 

@@ -78,6 +78,16 @@ class StateSerializer(Generic[ContextT]):
     def _create_cache_key(self, run_id: str, context_hash: str) -> str:
         return f"{run_id}|{context_hash}"
 
+    def _cache_get_by_hash(self, run_id: str, context_hash: str) -> Optional[Dict[str, Any]]:
+        return self._serialization_cache.get(self._create_cache_key(run_id, context_hash))
+
+    def _cache_put_by_hash(
+        self, run_id: str, context_hash: str, serialized: Dict[str, Any]
+    ) -> None:
+        if len(self._serialization_cache) >= 100:
+            self._serialization_cache.pop(next(iter(self._serialization_cache)))
+        self._serialization_cache[self._create_cache_key(run_id, context_hash)] = serialized
+
     def get_cached_serialization(
         self, context: Optional[ContextT], run_id: str
     ) -> Optional[Dict[str, Any]]:
@@ -150,17 +160,24 @@ class StateSerializer(Generic[ContextT]):
     ) -> Optional[Dict[str, Any]]:
         if context is None:
             return None
-        # First principles: Only serialize if context has changed; else reuse cached/minimal
-        if self.should_serialize_context(context, run_id):
-            cached = self.get_cached_serialization(context, run_id)
+        # Optimize: compute hash once and avoid double hashing on cached path
+        current_hash = self.compute_context_hash(context)
+        cached_hash = self._context_hash_cache.get(run_id)
+        if cached_hash != current_hash:
+            # Context changed: update hash and serialize full
+            self._context_hash_cache[run_id] = current_hash
+            # If already present for this hash, reuse
+            cached = self._cache_get_by_hash(run_id, current_hash)
             if cached is not None:
                 return cached
             serialized = self.serialize_context_full(context)
-            self.cache_serialization(context, run_id, serialized)
+            self._cache_put_by_hash(run_id, current_hash, serialized)
             return serialized
-        cached = self.get_cached_serialization(context, run_id)
+        # Unchanged: try direct cache lookup by hash
+        cached = self._cache_get_by_hash(run_id, current_hash)
         if cached is not None:
             return cached
+        # No cached value available: return minimal representation
         return self.serialize_context_minimal(context)
 
     def serialize_step_history_full(
