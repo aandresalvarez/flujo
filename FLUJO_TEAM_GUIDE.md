@@ -118,6 +118,89 @@ async def execute(self, core: ExecutorCore, step: Step, data: Any, context: Opti
 ```
 **This converts a control flow exception into a data-level failure, breaking the entire workflow orchestration system.**
 
+---
+
+## **6. Outcome Handling and Result Semantics**
+
+Flujo uses a typed outcome model for clarity and safety.
+
+- Always return a typed outcome or a `StepResult`. The executor normalizes legacy `StepResult` returns to a success outcome.
+- Re-raise control-flow exceptions (pause, abort, redirects) and never convert them to data failures.
+- For expected non-control failures, return a failure outcome with `feedback` and, when possible, a partial `StepResult` for traceability.
+- For streaming, emit chunks during execution and a single terminal outcome at the end.
+
+Common mistakes to avoid:
+- Converting control-flow exceptions to failures.
+- Returning ad-hoc dicts instead of structured results/outcomes.
+
+### **6.1 Migration Notes: Typed Outcomes (UPDATED)**
+
+The framework standardizes on typed outcomes. When touching older code or writing new features:
+
+**Required patterns (always apply):**
+- Return typed outcomes (or `StepResult`, which is normalized to a success outcome).
+- Re-raise control-flow exceptions (pause/abort/redirect); never convert to failures.
+
+**Test and review checklist:**
+- Update any tests that previously asserted on `breach_event` to assert it is not used.
+- Ensure partial `PipelineResult.step_history` is preserved on usage errors.
+- Reviewer grep: reject changes that add imports or references matching `breach_event`.
+
+---
+
+## **7. Budgeting & Quotas (Pure Quota Mode)**
+
+Resource limits are enforced proactively via quotas passed through execution.
+
+- Estimate before execution; reserve conservatively from the active quota. On denial, raise a usage limit error.
+- Execute, then reconcile: refund under-use and account for overage if budget remains.
+- Do not rely on reactive checks to stop overruns.
+
+Parallel execution:
+- Split the active quota deterministically across branches.
+- Aggregate per-branch totals; if a limit is exceeded, cancel remaining branches and raise a usage limit error.
+- Preserve input branch order when populating `executed_branches` metadata.
+
+Configuration and API guardrails:
+- There is no legacy governor or `breach_event`. Do not introduce them in new code.
+- Use `flujo.utils.formatting.format_cost` for all user-facing cost messages.
+
+Developer checklist (quotas):
+- Reserve → Execute → Reconcile in every policy that consumes resources.
+- Never share a single context instance or quota across concurrent branches/iterations without isolation/splitting.
+- Keep error messages precise: `Cost limit of $<formatted> exceeded` or `Token limit of <int> exceeded`.
+
+Testing guidance:
+- For parallel budgeting, test with `Quota.split(n)` and reservation/reconciliation flows.
+- For pipeline enforcement, assert that partial step history is preserved on limit errors and that messages are precisely formatted.
+
+### **7.1 Migration Notes: Pure Quota System (UPDATED)**
+
+The framework standardizes on proactive quota budgeting. When touching older code or writing new features:
+
+**Removed/Disallowed (do not reintroduce):**
+- Reactive budget enforcement patterns that allow steps to overrun before a check.
+- Any "governor" pattern or equivalents for parallel usage aggregation.
+- Propagating or inspecting a `breach_event` parameter in agents, policies, or backends.
+
+**Required patterns (always apply):**
+- Reserve → Execute → Reconcile in every policy that consumes resources.
+- Use the active quota from `ExecutorCore.CURRENT_QUOTA`; split deterministically for parallel branches.
+- On limit breach, cancel remaining parallel branches and raise with a precise message:
+  - Cost: `Cost limit of $<formatted> exceeded`
+  - Tokens: `Token limit of <int> exceeded`
+- Use `flujo.utils.formatting.format_cost` for all cost values in messages.
+- Preserve input branch order when setting `executed_branches` metadata.
+
+**Test and review checklist:**
+- Parallel budgeting tests: use `Quota.split(n)` and `UsageEstimate`; do not simulate a governor.
+- Update any tests that previously asserted on `breach_event` to assert it is not used.
+- Ensure partial `PipelineResult.step_history` is preserved on usage errors and that messages match exactly.
+- Reviewer grep: reject changes that add imports or references matching `breach_event`, `ParallelUsageGovernor`, or reactive post-step limit checks.
+
+**Backporting guidance:**
+- When touching legacy modules, migrate to the required patterns above and remove disallowed code paths rather than maintaining dual modes.
+
 ### **2.6 Development Practices: Legacy Compatibility Guardrails**
 
 - FLUJO_WARN_LEGACY (environment flag): When set (e.g., `export FLUJO_WARN_LEGACY=1`), the system emits `DeprecationWarning` for legacy entry points to prevent regressions.
