@@ -48,7 +48,7 @@ class BaseValidator(Validator):
     ) -> ValidationResult: ...
 
 
-def validator(func: Callable[[Any], Tuple[bool, Optional[str]]]) -> Validator:
+def validator(func: Callable[..., Tuple[bool, Optional[str]] | bool]) -> Validator:
     """Decorator to create a stateless Validator from a function.
 
     This decorator allows you to easily convert a simple function into a
@@ -79,6 +79,7 @@ def validator(func: Callable[[Any], Tuple[bool, Optional[str]]]) -> Validator:
         ) -> ValidationResult:
             try:
                 import inspect
+
                 sig = inspect.signature(func)
                 params = sig.parameters
                 has_context = "context" in params

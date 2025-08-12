@@ -7,7 +7,6 @@ from datetime import datetime
 from flujo.application.core import (
     ExecutionManager,
     StateManager,
-    UsageGovernor,
     StepCoordinator,
     TypeValidator,
 )
@@ -20,7 +19,7 @@ from flujo.domain.models import (
     PipelineContext,
 )
 
-from flujo.exceptions import UsageLimitExceededError, TypeMismatchError
+from flujo.exceptions import TypeMismatchError
 
 
 class TestStateManager:
@@ -145,7 +144,9 @@ class TestUsageGovernor:
 
     @pytest.fixture
     def usage_governor(self):
-        return UsageGovernor()
+        # This fixture is no longer applicable in pure quota mode
+        # The UsageGovernor has been removed in favor of proactive quota reservations
+        pytest.skip("UsageGovernor removed in pure quota mode - see quota tests instead")
 
     @pytest.fixture
     def usage_limits(self):
@@ -166,36 +167,27 @@ class TestUsageGovernor:
 
     def test_check_usage_limits_no_limits(self, usage_governor, pipeline_result):
         """Test usage limit checking when no limits are configured."""
-        # Should not raise any exceptions
-        usage_governor.check_usage_limits(pipeline_result, None)
+        # This test is no longer applicable in pure quota mode
+        # The UsageGovernor has been removed in favor of proactive quota reservations
+        pytest.skip("UsageGovernor removed in pure quota mode - see quota tests instead")
 
     def test_check_usage_limits_cost_exceeded(self, usage_limits, pipeline_result):
         """Test usage limit checking when cost limit is exceeded."""
-        usage_governor = UsageGovernor(usage_limits)
-        pipeline_result.total_cost_usd = 15.0
-
-        with pytest.raises(UsageLimitExceededError, match="Cost limit of \\$10 exceeded"):
-            usage_governor.check_usage_limits(pipeline_result, None)
+        # This test is no longer applicable in pure quota mode
+        # The UsageGovernor has been removed in favor of proactive quota reservations
+        pytest.skip("UsageGovernor removed in pure quota mode - see quota tests instead")
 
     def test_check_usage_limits_tokens_exceeded(self, usage_limits, pipeline_result):
         """Test usage limit checking when token limit is exceeded."""
-        usage_governor = UsageGovernor(usage_limits)
-        pipeline_result.step_history[0].token_counts = 600
-        pipeline_result.step_history[1].token_counts = 500
-
-        with pytest.raises(UsageLimitExceededError, match="Token limit of 1000 exceeded"):
-            usage_governor.check_usage_limits(pipeline_result, None)
+        # This test is no longer applicable in pure quota mode
+        # The UsageGovernor has been removed in favor of proactive quota reservations
+        pytest.skip("UsageGovernor removed in pure quota mode - see quota tests instead")
 
     def test_update_telemetry_span(self, usage_limits, pipeline_result):
         """Test updating telemetry span with usage metrics."""
-        usage_governor = UsageGovernor(usage_limits)
-        mock_span = Mock()
-
-        usage_governor.update_telemetry_span(mock_span, pipeline_result)
-
-        mock_span.set_attribute.assert_any_call("flujo.total_cost_usd", 8.0)
-        mock_span.set_attribute.assert_any_call("flujo.step_count", 2)
-        mock_span.set_attribute.assert_any_call("flujo.total_tokens", 800)
+        # This test is no longer applicable in pure quota mode
+        # The UsageGovernor has been removed in favor of proactive quota reservations
+        pytest.skip("UsageGovernor removed in pure quota mode - see quota tests instead")
 
 
 class TestTypeValidator:

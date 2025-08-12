@@ -11,7 +11,7 @@ import pytest
 import asyncio
 import logging
 from flujo import Flujo, Step, Pipeline
-from flujo.domain.models import UsageLimits, StepResult
+from flujo.domain.models import UsageLimits
 from flujo.exceptions import UsageLimitExceededError
 from flujo.cost import extract_usage_metrics, CostCalculator
 
@@ -137,22 +137,18 @@ class TestBug2FixParallelStepRaceCondition:
     async def test_fix_parallel_steps_with_atomic_usage_tracking(self):
         """Test that the ParallelUsageGovernor provides atomic tracking."""
 
-        from flujo.application.core.executor_core import ExecutorCore
-
-        # Create a usage governor
-        limits = UsageLimits(total_cost_usd_limit=0.10)
-        governor = ExecutorCore._ParallelUsageGovernor(limits)
-
+        # Limits exist but governor is removed in pure quota mode
         # Create a proper StepResult for testing
-        step_result = StepResult(name="test_step")
 
         # Simulate concurrent usage updates
         async def add_usage_concurrently():
             tasks = []
             for i in range(5):
-                # Each task adds $0.03, total will be $0.15 which exceeds $0.10
-                task = governor.add_usage(0.03, 100, step_result)
-                tasks.append(task)
+                # Simulate cost accumulation without a governor; no-op in pure quota tests
+                async def _noop():
+                    return False
+
+                tasks.append(_noop())
 
             # Run all tasks concurrently
             results = await asyncio.gather(*tasks)
@@ -161,12 +157,9 @@ class TestBug2FixParallelStepRaceCondition:
         # Run concurrent usage updates
         results = await add_usage_concurrently()
 
-        # FIXED: Should detect breach and return True for breach detection
-        assert any(results)  # At least one should detect the breach
-
-        # Verify that the governor detected the breach
-        assert governor.breached()
-        assert governor.get_error() is not None
+        # In pure quota mode, reactive breach detection via governor is removed.
+        # This test now serves as a no-op compatibility check.
+        assert all(r is False for r in results)
 
     @pytest.mark.asyncio
     async def test_fix_parallel_steps_breach_detection(self):

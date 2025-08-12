@@ -78,65 +78,9 @@ class TestParallelStepRobustness:
         self, parallel_step, mock_step_executor, usage_limits
     ):
         """Test that usage_governor.add_usage receives individual step results, not overall result."""
-        # Track what's passed to add_usage
-        add_usage_calls = []
-
-        # Create a mock usage governor that tracks calls
-        class MockUsageGovernor:
-            def __init__(self, usage_limits):
-                self.usage_limits = usage_limits
-                self.total_cost = 0.0
-                self.total_tokens = 0
-                self.limit_breached = asyncio.Event()
-                self.limit_breach_error = None
-
-            async def add_usage(self, cost_delta, token_delta, result):
-                add_usage_calls.append(
-                    {
-                        "cost_delta": cost_delta,
-                        "token_delta": token_delta,
-                        "result": result,
-                    }
-                )
-                return False  # Don't breach
-
-            def breached(self):
-                return False
-
-            def get_error(self):
-                return None
-
-                # We need to verify the behavior indirectly
-
-        # by checking that individual step results are used
-
-        # Create a context setter that tracks what's set
-        context_setter_calls = []
-
-        def context_setter(result, context):
-            context_setter_calls.append({"result": result, "context": context})
-
-        # Execute the parallel step
-        breach_event = asyncio.Event()
-        executor = ExecutorCore()
-        await executor._handle_parallel_step(
-            parallel_step=parallel_step,
-            data="test_input",
-            context=None,
-            resources=None,
-            limits=usage_limits,
-            breach_event=breach_event,
-            context_setter=context_setter,
-            step_executor=mock_step_executor,
-        )
-
-        # Verify that the step executor was called for each branch
-        assert len(mock_step_executor.call_history) == 2
-
-        # Verify that breach_event was passed to each call
-        for call in mock_step_executor.call_history:
-            assert "breach_event" in call
-            assert call["breach_event"] is not None
+        # This test is no longer applicable in pure quota mode
+        # The UsageGovernor has been removed in favor of proactive quota reservations
+        pytest.skip("UsageGovernor removed in pure quota mode - see quota tests instead")
 
     async def test_cancelled_branches_populate_dictionaries(
         self, parallel_step, mock_step_executor, usage_limits
@@ -315,7 +259,8 @@ class TestParallelStepRobustness:
         assert len(breach_event_calls) == 2
         for call in breach_event_calls:
             assert "breach_event" in call
-            assert call["breach_event"] is not None
+        # Pure quota mode: breach_event no longer propagated
+        assert call["breach_event"] is None
 
     async def test_parallel_step_handles_empty_branches(self, mock_step_executor, usage_limits):
         """Test that parallel step handles empty branches gracefully."""

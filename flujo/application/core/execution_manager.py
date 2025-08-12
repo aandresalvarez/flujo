@@ -18,6 +18,11 @@ from flujo.domain.models import (
     Aborted,
     Chunk,
 )
+
+try:
+    from flujo.domain.models import Quota as _Quota
+except Exception:
+    _Quota = None  # type: ignore
 from flujo.exceptions import (
     ContextInheritanceError,
     PipelineAbortSignal,
@@ -33,7 +38,7 @@ from .context_manager import ContextManager
 from .step_coordinator import StepCoordinator
 from .state_manager import StateManager
 from .type_validator import TypeValidator
-from .usage_governor import UsageGovernor
+from flujo.domain.models import UsageLimits
 
 # from flujo.domain.dsl import LoopStep  # Commented to avoid circular import
 
@@ -54,10 +59,12 @@ class ExecutionManager(Generic[ContextT]):
         *,
         backend: Optional[ExecutionBackend] = None,  # ✅ NEW: Receive the backend directly.
         state_manager: Optional[StateManager[ContextT]] = None,
-        usage_governor: Optional[UsageGovernor[ContextT]] = None,
+        usage_limits: Optional[UsageLimits] = None,
+        usage_governor: Any | None = None,
         step_coordinator: Optional[StepCoordinator[ContextT]] = None,
         type_validator: Optional[TypeValidator] = None,
         inside_loop_step: bool = False,
+        root_quota: object | None = None,
     ) -> None:
         """Initialize the execution manager.
 
@@ -65,7 +72,7 @@ class ExecutionManager(Generic[ContextT]):
             pipeline: The pipeline to execute
             backend: The execution backend to use for step execution
             state_manager: Optional state manager for persistence
-            usage_governor: Optional usage governor for limits
+            usage_limits: Optional usage limits for quota construction and policies
             step_coordinator: Optional step coordinator for execution
             type_validator: Optional type validator for compatibility
             inside_loop_step: Whether this manager is running inside a loop step.
@@ -84,10 +91,37 @@ class ExecutionManager(Generic[ContextT]):
         else:
             self.backend = backend
         self.state_manager = state_manager or StateManager()
-        self.usage_governor = usage_governor or UsageGovernor()
+        # FSD-009: Legacy reactive UsageGovernor removed; pure quota only
+        # Back-compat: accept usage_governor and extract limits if provided
+        self.usage_limits = usage_limits
+        if self.usage_limits is None and usage_governor is not None:
+            try:
+                self.usage_limits = getattr(usage_governor, "usage_limits", None)
+            except Exception:
+                self.usage_limits = None
         self.step_coordinator = step_coordinator or StepCoordinator()
         self.type_validator = type_validator or TypeValidator()
         self.inside_loop_step = inside_loop_step  # Track if we're inside a loop step
+        # Quota for proactive reservations
+        if root_quota is not None:
+            self.root_quota = root_quota
+        else:
+            # Build a root quota from usage limits when present
+            try:
+                if self.usage_limits is not None:
+                    max_cost = (
+                        float(self.usage_limits.total_cost_usd_limit)
+                        if self.usage_limits.total_cost_usd_limit is not None
+                        else float("inf")
+                    )
+                    max_tokens = int(self.usage_limits.total_tokens_limit or 0)
+                    from flujo.domain.models import Quota as _Quota2
+
+                    self.root_quota = _Quota2(max_cost, max_tokens)
+                else:
+                    self.root_quota = None
+            except Exception:
+                self.root_quota = root_quota
 
     async def execute_steps(
         self,
@@ -151,7 +185,8 @@ class ExecutionManager(Generic[ContextT]):
                         backend=self.backend,  # Pass the backend to the coordinator
                         stream=stream_last and idx == len(self.pipeline.steps) - 1,
                         step_executor=step_executor,  # Pass legacy step_executor for backward compatibility
-                        usage_limits=self.usage_governor.usage_limits,  # Pass usage limits to coordinator
+                        usage_limits=self.usage_limits,
+                        quota=self.root_quota,
                     ):
                         # Accept both StepOutcome and legacy values
                         if isinstance(item, StepOutcome):
@@ -166,7 +201,9 @@ class ExecutionManager(Generic[ContextT]):
                                     pass
                                 # Materialize a StepResult view of the failure for handlers/hooks
                                 step_result = item.step_result or StepResult(
-                                    name=getattr(step, "name", "<unnamed>"), success=False, feedback=item.feedback
+                                    name=getattr(step, "name", "<unnamed>"),
+                                    success=False,
+                                    feedback=item.feedback,
                                 )
                                 # Call step-level failure handlers before we mutate state
                                 if hasattr(step, "failure_handlers") and step.failure_handlers:
@@ -189,13 +226,16 @@ class ExecutionManager(Generic[ContextT]):
                                         or "object has no attribute 'metadata_'" in fb_lower
                                     ):
                                         step_result.feedback = item.feedback or (
-                                            str(item.error) if item.error is not None else step_result.feedback
+                                            str(item.error)
+                                            if item.error is not None
+                                            else step_result.feedback
                                         )
                                 except Exception:
                                     pass
                                 # Strict pricing re-raise: convert failure feedback into exception
                                 try:
                                     from flujo.exceptions import PricingNotConfiguredError as _PNC
+
                                     fb = step_result.feedback or ""
                                     if (
                                         "Strict pricing is enabled" in fb
@@ -204,7 +244,9 @@ class ExecutionManager(Generic[ContextT]):
                                     ):
                                         prov, mdl = None, "unknown"
                                         try:
-                                            model_id = getattr(getattr(step, "agent", None), "model_id", None)
+                                            model_id = getattr(
+                                                getattr(step, "agent", None), "model_id", None
+                                            )
                                             if isinstance(model_id, str) and ":" in model_id:
                                                 _prov, _mdl = model_id.split(":", 1)
                                                 prov, mdl = _prov, _mdl
@@ -217,7 +259,9 @@ class ExecutionManager(Generic[ContextT]):
                                 except Exception:
                                     pass
                                 if step_result not in result.step_history:
-                                    self.step_coordinator.update_pipeline_result(result, step_result)
+                                    self.step_coordinator.update_pipeline_result(
+                                        result, step_result
+                                    )
                                 # Stop pipeline on failure
                                 self.set_final_context(result, context)
                                 yield result
@@ -250,12 +294,34 @@ class ExecutionManager(Generic[ContextT]):
                     # ✅ 2. Update pipeline result with step result FIRST
                     if step_result and step_result not in result.step_history:
                         self.step_coordinator.update_pipeline_result(result, step_result)
+                        # FSD-009: Enforce usage limits deterministically when no proactive reservation occurred
+                        if self.usage_limits is not None:
+                            try:
+                                from flujo.utils.formatting import format_cost as _fmt
 
-                    # ✅ 3. Check usage limits AFTER step is added to history
-                    if step_result and self.usage_governor.usage_limits is not None:
-                        # Check usage limits using the complete pipeline result
-                        # This will raise UsageLimitExceededError if limits are breached
-                        self.usage_governor.check_usage_limits(result, None)
+                                over_cost = (
+                                    self.usage_limits.total_cost_usd_limit is not None
+                                    and result.total_cost_usd
+                                    > float(self.usage_limits.total_cost_usd_limit)
+                                )
+                                over_tokens = (
+                                    self.usage_limits.total_tokens_limit is not None
+                                    and result.total_tokens
+                                    > int(self.usage_limits.total_tokens_limit)
+                                )
+                                if over_cost or over_tokens:
+                                    if over_cost:
+                                        msg = f"Cost limit of ${_fmt(float(self.usage_limits.total_cost_usd_limit))} exceeded"
+                                    else:
+                                        msg = f"Token limit of {int(self.usage_limits.total_tokens_limit)} exceeded"
+                                    raise UsageLimitExceededError(msg, result)
+                            except UsageLimitExceededError:
+                                raise
+                            except Exception:
+                                # Do not mask execution for unexpected edge cases
+                                pass
+
+                    # FSD-009: No reactive post-step checks; quotas enforce safety
 
                     # Validate type compatibility with next step - this may raise TypeMismatchError
                     # Only validate types if the step succeeded (to avoid TypeMismatchError for failed steps)

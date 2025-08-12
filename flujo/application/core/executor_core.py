@@ -27,6 +27,7 @@ from ...domain.models import (
     Success,
     Failure,
     Paused,
+    Quota,
 )
 from ...exceptions import (
     InfiniteFallbackError,
@@ -67,6 +68,12 @@ from .step_policies import (
     ValidatorInvoker,
 )
 from .types import TContext_w_Scratch, ExecutionFrame
+from .estimation import (
+    UsageEstimator,
+    HeuristicUsageEstimator,
+    UsageEstimatorFactory,
+    build_default_estimator_factory,
+)
 from .default_components import (
     DefaultAgentRunner,
     DefaultProcessorPipeline,
@@ -92,13 +99,7 @@ from .executor_protocols import (
 # to avoid unused-import lint warnings, as ExecutorCore uses structural typing
 # and accepts concrete implementations via dependency injection.
 
-# Expose usage governor for tests that introspect it
-try:
-    from . import step_policies as _sp
-
-    _ParallelUsageGovernor = getattr(_sp, "_ParallelUsageGovernor", None)
-except Exception:  # pragma: no cover - only for rare import edge cases
-    _ParallelUsageGovernor = None
+_ParallelUsageGovernor = None  # FSD-009: legacy governor removed; pure quota only
 
 
 # Backward-compatible error types used by other modules
@@ -161,6 +162,10 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
     _fallback_chain: contextvars.ContextVar[list[Step[Any, Any]]] = contextvars.ContextVar(
         "fallback_chain", default=[]
     )
+    # Context variable to propagate current quota across async calls
+    CURRENT_QUOTA: contextvars.ContextVar[Optional[Quota]] = contextvars.ContextVar(
+        "CURRENT_QUOTA", default=None
+    )
 
     # Cache for fallback relationship loop detection (True if loop detected, False otherwise)
     _fallback_graph_cache: contextvars.ContextVar[Dict[str, bool]] = contextvars.ContextVar(
@@ -206,6 +211,8 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         dynamic_router_step_executor: Optional[DynamicRouterStepExecutor] = None,
         hitl_step_executor: Optional[HitlStepExecutor] = None,
         cache_step_executor: Optional[CacheStepExecutor] = None,
+        usage_estimator: Optional[UsageEstimator] = None,
+        estimator_factory: Optional[UsageEstimatorFactory] = None,
     ) -> None:
         # Validate parameters for compatibility
         if cache_size <= 0:
@@ -225,6 +232,11 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         )
         self._telemetry = telemetry or DefaultTelemetry()
         self._enable_cache = enable_cache
+        # Estimation selection: factory first, then direct estimator, then default
+        self._estimator_factory: UsageEstimatorFactory = (
+            estimator_factory or build_default_estimator_factory()
+        )
+        self._usage_estimator: UsageEstimator = usage_estimator or HeuristicUsageEstimator()
         self._step_history_so_far: list[StepResult] = []
         self._concurrency_limit = concurrency_limit
 
@@ -442,15 +454,20 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
     # ------------------------
     # Outcome normalization
     # ------------------------
-    def _unwrap_outcome_to_step_result(self, outcome: StepOutcome[StepResult] | StepResult, step_name: str) -> StepResult:
+    def _unwrap_outcome_to_step_result(
+        self, outcome: StepOutcome[StepResult] | StepResult, step_name: str
+    ) -> StepResult:
         from ...exceptions import PausedException
+
         # Already a StepResult
         if isinstance(outcome, StepResult):
             # Adapter: ensure fallback successes carry minimal diagnostic feedback when missing
             try:
                 if outcome.success and (outcome.feedback is None):
                     md = getattr(outcome, "metadata_", None)
-                    if isinstance(md, dict) and (md.get("fallback_triggered") is True or "original_error" in md):
+                    if isinstance(md, dict) and (
+                        md.get("fallback_triggered") is True or "original_error" in md
+                    ):
                         original_error = md.get("original_error")
                         base_msg = (
                             f"Primary agent failed: {original_error}"
@@ -470,7 +487,8 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 name=step_name,
                 output=None,
                 success=False,
-                feedback=outcome.feedback or (str(outcome.error) if outcome.error is not None else None),
+                feedback=outcome.feedback
+                or (str(outcome.error) if outcome.error is not None else None),
             )
         if isinstance(outcome, Paused):
             raise PausedException(outcome.message)
@@ -557,6 +575,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 context=kwargs.get("context"),
                 resources=kwargs.get("resources"),
                 limits=kwargs.get("limits"),
+                quota=kwargs.get("quota", self.CURRENT_QUOTA.get()),
                 stream=kwargs.get("stream", False),
                 on_chunk=kwargs.get("on_chunk"),
                 breach_event=kwargs.get("breach_event"),
@@ -567,6 +586,12 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 result=kwargs.get("result"),
                 _fallback_depth=kwargs.get("_fallback_depth", 0),
             )
+
+        # Set CURRENT_QUOTA for this execution context
+        try:
+            self.CURRENT_QUOTA.set(getattr(frame, "quota", None))
+        except Exception:
+            pass
 
         step = frame.step
         data = frame.data
@@ -586,8 +611,8 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             f"Executing step: {step_name} type={step_type} stream={stream} depth={_fallback_depth}"
         )
 
-        if limits is not None:
-            await self._usage_meter.guard(limits, self._step_history_so_far)
+        # FSD-009: Remove reactive post-step usage checks from non-parallel codepaths.
+        # Preemptive quota reservations are enforced in policies; keep parallel governor only.
 
         cache_key = None
         if self._enable_cache and not isinstance(step, LoopStep):
@@ -627,7 +652,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             if called_with_frame:
                 return outcome
             # Dev-only deprecation notice for legacy entry path
-            import os as _os, warnings as _warnings
+            import os as _os
+            import warnings as _warnings
+
             if _os.getenv("FLUJO_WARN_LEGACY"):
                 try:
                     _warnings.warn(
@@ -661,16 +688,22 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             if isinstance(res_any, StepOutcome):
                 outcome = res_any
             else:
-                outcome = Success(step_result=res_any) if res_any.success else Failure(
-                    error=Exception(res_any.feedback or "step failed"),
-                    feedback=res_any.feedback,
-                    step_result=res_any,
+                outcome = (
+                    Success(step_result=res_any)
+                    if res_any.success
+                    else Failure(
+                        error=Exception(res_any.feedback or "step failed"),
+                        feedback=res_any.feedback,
+                        step_result=res_any,
+                    )
                 )
             if called_with_frame:
                 return outcome
             if isinstance(outcome, Success):
                 # Normalize via unwrap to inject minimal diagnostics when needed
-                return self._unwrap_outcome_to_step_result(outcome.step_result, self._safe_step_name(step))
+                return self._unwrap_outcome_to_step_result(
+                    outcome.step_result, self._safe_step_name(step)
+                )
             if isinstance(outcome, Failure):
                 return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
             if isinstance(outcome, Paused):
@@ -694,16 +727,22 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             if isinstance(res_any, StepOutcome):
                 outcome = res_any
             else:
-                outcome = Success(step_result=res_any) if res_any.success else Failure(
-                    error=Exception(res_any.feedback or "step failed"),
-                    feedback=res_any.feedback,
-                    step_result=res_any,
+                outcome = (
+                    Success(step_result=res_any)
+                    if res_any.success
+                    else Failure(
+                        error=Exception(res_any.feedback or "step failed"),
+                        feedback=res_any.feedback,
+                        step_result=res_any,
+                    )
                 )
             if called_with_frame:
                 return outcome
             if isinstance(outcome, Success):
                 # Normalize via unwrap to inject minimal diagnostics when needed
-                return self._unwrap_outcome_to_step_result(outcome.step_result, self._safe_step_name(step))
+                return self._unwrap_outcome_to_step_result(
+                    outcome.step_result, self._safe_step_name(step)
+                )
             if isinstance(outcome, Failure):
                 return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
             if isinstance(outcome, Paused):
@@ -718,16 +757,22 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             if isinstance(res_any, StepOutcome):
                 outcome = res_any
             else:
-                outcome = Success(step_result=res_any) if res_any.success else Failure(
-                    error=Exception(res_any.feedback or "step failed"),
-                    feedback=res_any.feedback,
-                    step_result=res_any,
+                outcome = (
+                    Success(step_result=res_any)
+                    if res_any.success
+                    else Failure(
+                        error=Exception(res_any.feedback or "step failed"),
+                        feedback=res_any.feedback,
+                        step_result=res_any,
+                    )
                 )
             if called_with_frame:
                 return outcome
             if isinstance(outcome, Success):
                 # Normalize via unwrap to inject minimal diagnostics when needed
-                return self._unwrap_outcome_to_step_result(outcome.step_result, self._safe_step_name(step))
+                return self._unwrap_outcome_to_step_result(
+                    outcome.step_result, self._safe_step_name(step)
+                )
             if isinstance(outcome, Failure):
                 return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
             if isinstance(outcome, Paused):
@@ -741,16 +786,22 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             if isinstance(res_any, StepOutcome):
                 outcome = res_any
             else:
-                outcome = Success(step_result=res_any) if res_any.success else Failure(
-                    error=Exception(res_any.feedback or "step failed"),
-                    feedback=res_any.feedback,
-                    step_result=res_any,
+                outcome = (
+                    Success(step_result=res_any)
+                    if res_any.success
+                    else Failure(
+                        error=Exception(res_any.feedback or "step failed"),
+                        feedback=res_any.feedback,
+                        step_result=res_any,
+                    )
                 )
             if called_with_frame:
                 return outcome
             if isinstance(outcome, Success):
                 # Normalize via unwrap to inject minimal diagnostics when needed
-                return self._unwrap_outcome_to_step_result(outcome.step_result, self._safe_step_name(step))
+                return self._unwrap_outcome_to_step_result(
+                    outcome.step_result, self._safe_step_name(step)
+                )
             if isinstance(outcome, Failure):
                 return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
             if isinstance(outcome, Paused):
@@ -765,10 +816,14 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             if isinstance(res_any, StepOutcome):
                 outcome = res_any
             else:
-                outcome = Success(step_result=res_any) if res_any.success else Failure(
-                    error=Exception(res_any.feedback or "step failed"),
-                    feedback=res_any.feedback,
-                    step_result=res_any,
+                outcome = (
+                    Success(step_result=res_any)
+                    if res_any.success
+                    else Failure(
+                        error=Exception(res_any.feedback or "step failed"),
+                        feedback=res_any.feedback,
+                        step_result=res_any,
+                    )
                 )
             if called_with_frame:
                 return outcome
@@ -777,7 +832,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 raise PausedException(outcome.message)
             if isinstance(outcome, Success):
                 # Normalize via unwrap to inject minimal diagnostics when needed
-                return self._unwrap_outcome_to_step_result(outcome.step_result, self._safe_step_name(step))
+                return self._unwrap_outcome_to_step_result(
+                    outcome.step_result, self._safe_step_name(step)
+                )
             if isinstance(outcome, Failure):
                 return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
             return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
@@ -870,7 +927,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 )
                 if called_with_frame:
                     try:
-                        from .step_policies import DefaultSimpleStepExecutorOutcomes as _SimpleOutcomes
+                        from .step_policies import (
+                            DefaultSimpleStepExecutorOutcomes as _SimpleOutcomes,
+                        )
                     except Exception:
                         _SimpleOutcomes = None  # type: ignore
                     if _SimpleOutcomes is not None:
@@ -935,7 +994,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     fb_depth_norm,
                 )
             # Normalize policies that return StepOutcome into StepResult for downstream logic
-            from typing import cast as _cast
+
             if isinstance(result, StepOutcome):
                 if isinstance(result, Success):
                     result = result.step_result
@@ -952,9 +1011,15 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             latency_s=0.0,
                             token_counts=0,
                             cost_usd=0.0,
-                            feedback=result.feedback if result.feedback is not None else str(result.error),
+                            feedback=result.feedback
+                            if result.feedback is not None
+                            else str(result.error),
                             branch_context=None,
-                            metadata_={"error_type": type(result.error).__name__ if result.error is not None else "Error"},
+                            metadata_={
+                                "error_type": type(result.error).__name__
+                                if result.error is not None
+                                else "Error"
+                            },
                             step_history=[],
                         )
                 elif isinstance(result, Paused):
@@ -1010,7 +1075,13 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             if called_with_frame:
                 return Paused(message=str(e))
             raise
-        except (UsageLimitExceededError, MissingAgentError, PricingNotConfiguredError, MockDetectionError, InfiniteRedirectError):
+        except (
+            UsageLimitExceededError,
+            MissingAgentError,
+            PricingNotConfiguredError,
+            MockDetectionError,
+            InfiniteRedirectError,
+        ):
             # Re-raise well-known control/config exceptions to satisfy legacy tests and semantics
             raise
         except Exception as e:
@@ -1069,7 +1140,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         return self._unwrap_outcome_to_step_result(result, step_name)
 
     # Backward compatibility method for old execute signature
-    async def execute_old_signature(self, step: Any, data: Any, **kwargs: Any) -> StepOutcome[StepResult]:
+    async def execute_old_signature(
+        self, step: Any, data: Any, **kwargs: Any
+    ) -> StepOutcome[StepResult]:
         return await self.execute(step, data, **kwargs)
 
     async def execute_step(
@@ -1214,6 +1287,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     context=current_context,
                     resources=resources,
                     limits=limits,
+                    quota=self.CURRENT_QUOTA.get(),
                     stream=False,
                     on_chunk=None,
                     breach_event=breach_event,
@@ -1222,7 +1296,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 )
                 outcome = await self.execute(frame)
                 # Normalize StepOutcome to StepResult for aggregation/history
-                from typing import cast as _cast
+
                 if isinstance(outcome, Success):
                     step_result = outcome.step_result
                 elif isinstance(outcome, Failure):
@@ -1379,7 +1453,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             return outcome.step_result
         if isinstance(outcome, Failure):
             return self._unwrap_outcome_to_step_result(outcome, getattr(step, "name", "<hitl>"))
-        return StepResult(name=getattr(step, "name", "<hitl>"), success=False, feedback="Unsupported HITL outcome")
+        return StepResult(
+            name=getattr(step, "name", "<hitl>"), success=False, feedback="Unsupported HITL outcome"
+        )
 
     # Legacy compatibility wrappers expected by tests
     async def _execute_loop(

@@ -20,6 +20,8 @@ from typing import (
     Literal,
 )
 
+# No direct Awaitable usage needed; avoid unused import
+
 from pydantic import ValidationError
 
 from ..exceptions import (
@@ -40,6 +42,7 @@ from ..domain.models import (
     PipelineResult,
     StepResult,
     UsageLimits,
+    Quota,
     PipelineContext,
     HumanInteraction,
     ExecutedCommandLog,
@@ -67,11 +70,11 @@ from .core.context_manager import (
 from .core.hook_dispatcher import _dispatch_hook as _dispatch_hook_impl
 from .core.execution_manager import ExecutionManager
 from .core.state_manager import StateManager
-from .core.usage_governor import UsageGovernor
 from .core.step_coordinator import StepCoordinator
 
 import uuid
 import warnings
+from ..utils.config import get_settings
 
 _signature_cache_weak: weakref.WeakKeyDictionary[Callable[..., Any], inspect.Signature] = (
     weakref.WeakKeyDictionary()
@@ -220,7 +223,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             pipeline_name = f"unnamed_{timestamp}"
 
             # Only warn in production environments, not in tests
-            if not os.getenv("FLUJO_TEST_MODE") and not any(
+            if not get_settings().test_mode and not any(
                 path in os.getcwd() for path in ["/tests/", "\\tests\\", "test_"]
             ):
                 warnings.warn(
@@ -234,7 +237,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             pipeline_id = str(uuid.uuid4())
 
             # Only warn in production environments, not in tests
-            if not os.getenv("FLUJO_TEST_MODE") and not any(
+            if not get_settings().test_mode and not any(
                 path in os.getcwd() for path in ["/tests/", "\\tests\\", "test_"]
             ):
                 warnings.warn(
@@ -281,7 +284,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         self.state_backend: StateBackend | None
         if state_backend is None:
             # Default to SQLite for durability; only use in-memory in explicit test mode
-            if os.getenv("FLUJO_TEST_MODE"):
+            if get_settings().test_mode:
                 from ..state.backends.memory import InMemoryBackend
 
                 self.state_backend = InMemoryBackend()
@@ -396,17 +399,28 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
 
         # Create execution manager with all components
         state_manager: StateManager[ContextT] = StateManager[ContextT](state_backend)
-        usage_governor: UsageGovernor[ContextT] = UsageGovernor[ContextT](self.usage_limits)
         step_coordinator: StepCoordinator[ContextT] = StepCoordinator[ContextT](
             self.hooks, self.resources
         )
+
+        # Build root quota if usage limits are defined
+        root_quota = None
+        if self.usage_limits is not None:
+            total_cost_limit = (
+                float(self.usage_limits.total_cost_usd_limit)
+                if self.usage_limits.total_cost_usd_limit is not None
+                else float("inf")
+            )
+            total_tokens_limit = int(self.usage_limits.total_tokens_limit or 0)
+            root_quota = Quota(total_cost_limit, total_tokens_limit)
 
         execution_manager = ExecutionManager(
             self.pipeline,
             backend=self.backend,  # ✅ Pass the backend to the execution manager.
             state_manager=state_manager,
-            usage_governor=usage_governor,
+            usage_limits=self.usage_limits,
             step_coordinator=step_coordinator,
+            root_quota=root_quota,
         )
 
         # Execute steps using the manager
@@ -445,7 +459,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         """
         # Dev-only deprecation: warn when legacy runner is used and flag is enabled
         try:
-            if os.getenv("FLUJO_WARN_LEGACY"):
+            if get_settings().warn_legacy:
                 warnings.warn(
                     "Legacy runner path (run_async yielding PipelineResult) in use; prefer run_outcomes_async.",
                     DeprecationWarning,
@@ -832,54 +846,6 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         else:
             # Synthesize a minimal final result when no steps ran
             yield Success(step_result=StepResult(name="<no-steps>", success=True))
-
-    async def run(
-        self,
-        initial_input: RunnerInT,
-        *,
-        on_failure: Optional[Callable[[StepResult], Awaitable[None]]] = None,
-        run_id: str | None = None,
-        initial_context_data: Optional[Dict[str, Any]] = None,
-    ) -> PipelineResult[ContextT]:
-        """Synchronous-style runner that additionally dispatches on_failure for visibility.
-
-        This preserves legacy return type while ensuring failure handlers are called when a step fails.
-        """
-        last_step_result: Optional[StepResult] = None
-        pipeline_result: Optional[PipelineResult[ContextT]] = None
-        try:
-            async for item in self.run_async(initial_input, run_id=run_id, initial_context_data=initial_context_data):
-                if isinstance(item, StepOutcome):
-                    if isinstance(item, Success):
-                        last_step_result = item.step_result
-                    elif isinstance(item, Failure):
-                        last_step_result = item.step_result or StepResult(name="<failed>", success=False, feedback=item.feedback)
-                        if on_failure is not None:
-                            try:
-                                await on_failure(last_step_result)
-                            except Exception as hook_err:
-                                # Propagate as tests expect
-                                raise RuntimeError(str(hook_err))
-                elif isinstance(item, StepResult):
-                    last_step_result = item
-                elif isinstance(item, PipelineResult):
-                    pipeline_result = item
-        except PipelineAbortSignal:
-            # HITL pause: return partial pipeline result
-            if pipeline_result is None:
-                pipeline_result = PipelineResult(step_history=[last_step_result] if last_step_result else [], total_cost_usd=0.0, total_tokens=0, final_pipeline_context=None)
-            return pipeline_result
-
-        if pipeline_result is None:
-            pipeline_result = PipelineResult(step_history=[last_step_result] if last_step_result else [], total_cost_usd=0.0, total_tokens=0, final_pipeline_context=None)
-
-        # If final result represents failure and a handler exists, dispatch
-        try:
-            if on_failure is not None and pipeline_result.step_history and not pipeline_result.step_history[-1].success:
-                await on_failure(pipeline_result.step_history[-1])
-        except Exception as hook_err:
-            raise RuntimeError(str(hook_err))
-        return pipeline_result
 
     async def stream_async(
         self,

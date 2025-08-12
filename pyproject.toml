@@ -116,6 +116,7 @@ strict         = true
 exclude = [
     "examples/.*",
     "flujo/telemetry/prometheus.py",
+    ".*/site-packages/",
 ]
 
 # Allow third-party libraries that do not ship type information.
@@ -148,6 +149,13 @@ module = [
     "prometheus_client.registry",
 ]
 ignore_missing_imports = true
+
+# Exclude external libraries with known mypy issues
+[[tool.mypy.overrides]]
+module = [
+    "pydantic_ai.*",
+]
+ignore_errors = true
 
 # Known mypy limitation with async wrapper patterns in step_logic
 [[tool.mypy.overrides]]
@@ -213,9 +221,7 @@ disable_error_code = [
   "union-attr",
   "assignment",
   "redundant-cast",
-  "import-not-found",
   "attr-defined",
-  "import-untyped",
 ]
 
 [[tool.mypy.overrides]]
@@ -238,6 +244,13 @@ disable_error_code = [
 
 [tool.ruff]
 line-length = 100
+
+[tool.ruff.lint]
+# Allow pytest.importorskip() pattern in benchmark tests
+per-file-ignores = [
+    "tests/benchmarks/*.py" = ["E402"],
+    "tests/unit/test_extract.py" = ["E402"],
+]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
