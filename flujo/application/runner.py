@@ -761,7 +761,14 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     yield item
                 elif isinstance(item, StepResult):
                     last_step_result = item
-                    yield Success(step_result=item)
+                    if item.success:
+                        yield Success(step_result=item)
+                    else:
+                        yield Failure(
+                            error=Exception(item.feedback or "step failed"),
+                            feedback=item.feedback,
+                            step_result=item,
+                        )
                 elif isinstance(item, PipelineResult):
                     pipeline_result_obj = item
                 else:
@@ -779,15 +786,77 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             yield Paused(message=msg or "Paused for HITL")
             return
 
-        # Emit final Success outcome when we have a last step result
+        # Emit final Success/Failure outcome based on the last step result
         if pipeline_result_obj.step_history:
             last = pipeline_result_obj.step_history[-1]
-            yield Success(step_result=last)
+            if last.success:
+                yield Success(step_result=last)
+            else:
+                yield Failure(
+                    error=Exception(last.feedback or "step failed"),
+                    feedback=last.feedback,
+                    step_result=last,
+                )
         elif last_step_result is not None:
-            yield Success(step_result=last_step_result)
+            if last_step_result.success:
+                yield Success(step_result=last_step_result)
+            else:
+                yield Failure(
+                    error=Exception(last_step_result.feedback or "step failed"),
+                    feedback=last_step_result.feedback,
+                    step_result=last_step_result,
+                )
         else:
             # Synthesize a minimal final result when no steps ran
             yield Success(step_result=StepResult(name="<no-steps>", success=True))
+
+    async def run(
+        self,
+        initial_input: RunnerInT,
+        *,
+        on_failure: Optional[Callable[[StepResult], Awaitable[None]]] = None,
+        run_id: str | None = None,
+        initial_context_data: Optional[Dict[str, Any]] = None,
+    ) -> PipelineResult[ContextT]:
+        """Synchronous-style runner that additionally dispatches on_failure for visibility.
+
+        This preserves legacy return type while ensuring failure handlers are called when a step fails.
+        """
+        last_step_result: Optional[StepResult] = None
+        pipeline_result: Optional[PipelineResult[ContextT]] = None
+        try:
+            async for item in self.run_async(initial_input, run_id=run_id, initial_context_data=initial_context_data):
+                if isinstance(item, StepOutcome):
+                    if isinstance(item, Success):
+                        last_step_result = item.step_result
+                    elif isinstance(item, Failure):
+                        last_step_result = item.step_result or StepResult(name="<failed>", success=False, feedback=item.feedback)
+                        if on_failure is not None:
+                            try:
+                                await on_failure(last_step_result)
+                            except Exception as hook_err:
+                                # Propagate as tests expect
+                                raise RuntimeError(str(hook_err))
+                elif isinstance(item, StepResult):
+                    last_step_result = item
+                elif isinstance(item, PipelineResult):
+                    pipeline_result = item
+        except PipelineAbortSignal:
+            # HITL pause: return partial pipeline result
+            if pipeline_result is None:
+                pipeline_result = PipelineResult(step_history=[last_step_result] if last_step_result else [], total_cost_usd=0.0, total_tokens=0, final_pipeline_context=None)
+            return pipeline_result
+
+        if pipeline_result is None:
+            pipeline_result = PipelineResult(step_history=[last_step_result] if last_step_result else [], total_cost_usd=0.0, total_tokens=0, final_pipeline_context=None)
+
+        # If final result represents failure and a handler exists, dispatch
+        try:
+            if on_failure is not None and pipeline_result.step_history and not pipeline_result.step_history[-1].success:
+                await on_failure(pipeline_result.step_history[-1])
+        except Exception as hook_err:
+            raise RuntimeError(str(hook_err))
+        return pipeline_result
 
     async def stream_async(
         self,

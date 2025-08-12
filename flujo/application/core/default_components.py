@@ -322,7 +322,13 @@ class DefaultValidatorRunner:
         validation_results: List[ValidationResult] = []
         for validator in validators:
             try:
-                result = await validator.validate(data, context=context)
+                # Support both validator objects with .validate and bare callables
+                validate_fn = getattr(validator, "validate", None) or validator
+                # Prefer passing context when accepted; fall back to data-only
+                try:
+                    result = await validate_fn(data, context=context)
+                except TypeError:
+                    result = await validate_fn(data)
                 if isinstance(result, ValidationResult):
                     validation_results.append(result)
                 elif hasattr(result, "is_valid"):

@@ -1,1 +1,1 @@
-IndentationError("expected an indented block after 'try' statement on line 883", ('/Users/alvaro/Documents/Code/flujo/flujo/application/core/step_policies.py', 884, 25, '                        _outcome = await core.execute(\n', 884, 33))
+IndentationError('unexpected indent', ('/Users/alvaro/Documents/Code/flujo/flujo/application/core/step_policies.py', 927, 28, '                            return result\n', 927, -1))

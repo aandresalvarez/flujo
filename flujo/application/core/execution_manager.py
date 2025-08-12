@@ -164,20 +164,23 @@ class ExecutionManager(Generic[ContextT]):
                                     )
                                 except Exception:
                                     pass
-                                # Append partial result and terminate
+                                # Materialize a StepResult view of the failure for handlers/hooks
                                 step_result = item.step_result or StepResult(
                                     name=getattr(step, "name", "<unnamed>"), success=False, feedback=item.feedback
                                 )
-                                # Finalize tracing for failure before terminating
-                                try:
+                                # Call step-level failure handlers before we mutate state
+                                if hasattr(step, "failure_handlers") and step.failure_handlers:
+                                    for handler in step.failure_handlers:
+                                        # Let exceptions bubble to the runner/tests
+                                        handler() if hasattr(handler, "__call__") else None
+                                # Dispatch failure hook if available and allow PipelineAbortSignal to bubble
+                                if hasattr(self.step_coordinator, "_dispatch_hook"):
                                     await self.step_coordinator._dispatch_hook(
                                         "on_step_failure",
                                         step_result=step_result,
                                         context=context,
                                         resources=self.step_coordinator.resources,
                                     )
-                                except Exception:
-                                    pass
                                 # Sanitize feedback if the partial result captured an internal attribute error
                                 try:
                                     fb_lower = (step_result.feedback or "").lower()
@@ -188,6 +191,29 @@ class ExecutionManager(Generic[ContextT]):
                                         step_result.feedback = item.feedback or (
                                             str(item.error) if item.error is not None else step_result.feedback
                                         )
+                                except Exception:
+                                    pass
+                                # Strict pricing re-raise: convert failure feedback into exception
+                                try:
+                                    from flujo.exceptions import PricingNotConfiguredError as _PNC
+                                    fb = step_result.feedback or ""
+                                    if (
+                                        "Strict pricing is enabled" in fb
+                                        or "Pricing not configured" in fb
+                                        or "no configuration was found for provider" in fb
+                                    ):
+                                        prov, mdl = None, "unknown"
+                                        try:
+                                            model_id = getattr(getattr(step, "agent", None), "model_id", None)
+                                            if isinstance(model_id, str) and ":" in model_id:
+                                                _prov, _mdl = model_id.split(":", 1)
+                                                prov, mdl = _prov, _mdl
+                                        except Exception:
+                                            pass
+                                        raise _PNC(prov, mdl)
+                                except _PNC:
+                                    # Let runner handle persistence and re-raise
+                                    raise
                                 except Exception:
                                     pass
                                 if step_result not in result.step_history:
