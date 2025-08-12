@@ -6,6 +6,17 @@ repos:
       - id: ruff
         args: ["--fix"]
       - id: ruff-format
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.10.0
+    hooks:
+      - id: mypy
+        name: mypy (core subset)
+        files: |
+          (?x)^(            flujo/domain/dsl/step\.py|            flujo/application/core/type_validator\.py|            flujo/infra/backends\.py|            flujo/application/core/default_components\.py|            flujo/state/backends/sqlite\.py|            flujo/application/core/usage_messages\.py|            flujo/domain/validation\.py          )$
+        additional_dependencies:
+          - pydantic>=2.11.7
+          - pydantic-settings>=2.0.0
+          - types-psutil
   - repo: local
     hooks:
       - id: forbidden-patterns
