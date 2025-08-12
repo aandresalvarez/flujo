@@ -84,6 +84,7 @@ async def gather_result(runner: Any, data: Any, **kwargs: Any) -> Any:
             results.append(result)
         return results[-1] if results else None
     else:
+        # Fallback path: try run_async even if attribute check failed above
         results = []
         async for item in runner.run_async(data, **kwargs):
             results.append(item)

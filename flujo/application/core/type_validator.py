@@ -44,7 +44,7 @@ class TypeValidator:
             if origin is Union:
                 if type(None) in get_args(expected):
                     return
-            elif hasattr(types, "UnionType") and isinstance(expected, types.UnionType):
+            elif hasattr(types, "UnionType") and isinstance(expected, types.UnionType):  # type: ignore[attr-defined]
                 if type(None) in expected.__args__:
                     return
             if expected is Any:

@@ -39,7 +39,8 @@ try:
         """Use orjson for faster JSON serialization with robust serialization."""
         # Use safe_serialize to handle Pydantic models and other complex objects
         serialized_obj = safe_serialize(obj)
-        return orjson.dumps(serialized_obj, option=orjson.OPT_SORT_KEYS).decode("utf-8")
+        blob: bytes = orjson.dumps(serialized_obj, option=orjson.OPT_SORT_KEYS)
+        return blob.decode("utf-8")
 
 except ImportError:
     from flujo.utils.serialization import safe_serialize
@@ -48,7 +49,8 @@ except ImportError:
         """Fallback to standard json for JSON serialization with robust serialization."""
         # Use safe_serialize to handle Pydantic models and other complex objects
         serialized_obj = safe_serialize(obj)
-        return json.dumps(serialized_obj, sort_keys=True, separators=(",", ":"))
+        s: str = json.dumps(serialized_obj, sort_keys=True, separators=(",", ":"))
+        return s
 
 
 if TYPE_CHECKING:

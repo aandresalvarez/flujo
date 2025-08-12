@@ -153,8 +153,9 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         description="Arbitrary metadata about this step.",
     )
 
-    __step_input_type__: type[Any] = Any
-    __step_output_type__: type[Any] = Any
+    # Default to the top-level "object" type to satisfy static typing
+    __step_input_type__: type[Any] = object
+    __step_output_type__: type[Any] = object
 
     @property
     def is_complex(self) -> bool:

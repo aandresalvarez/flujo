@@ -104,7 +104,9 @@ class DefaultCacheKeyGenerator:
         step_name = getattr(step, "name", str(type(step).__name__))
         data_str = str(data) if data is not None else ""
         key_bytes = f"{step_name}:{data_str}".encode("utf-8")
-        return self._hasher.digest(key_bytes)
+        digest = self._hasher.digest(key_bytes)
+        # Ensure return type is exactly str for static typing
+        return str(digest)
 
 
 # -----------------------------
