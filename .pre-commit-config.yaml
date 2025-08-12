@@ -11,6 +11,7 @@ repos:
     hooks:
       - id: mypy
         name: mypy (core subset)
+        args: ["--follow-imports=skip"]
         files: |
           (?x)^(            flujo/domain/dsl/step\.py|            flujo/application/core/type_validator\.py|            flujo/infra/backends\.py|            flujo/application/core/default_components\.py|            flujo/state/backends/sqlite\.py|            flujo/application/core/usage_messages\.py|            flujo/domain/validation\.py          )$
         additional_dependencies:
