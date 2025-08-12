@@ -253,9 +253,9 @@ class TestExtractIntegration:
     def test_excluded_file_patterns_structure(self):
         """Test that EXCLUDED_FILE_PATTERNS contains appropriate patterns."""
         # Test that docker env files are not incorrectly excluded
-        assert "*.env.docker" not in EXCLUDED_FILE_PATTERNS, (
-            "Docker env files should not be excluded"
-        )
+        assert (
+            "*.env.docker" not in EXCLUDED_FILE_PATTERNS
+        ), "Docker env files should not be excluded"
 
         # Test that important patterns are present
         important_patterns = ["*.pyc", "*.log", "*.sqlite", "*.ipynb"]

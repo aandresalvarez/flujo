@@ -25,7 +25,7 @@ from manual_testing.examples.cohort_pipeline import (
     COHORT_CLARIFICATION_PIPELINE,
     ClarificationAgent,
     assess_clarity_step,
-    CLARIFICATION_AGENT_SYSTEM_PROMPT
+    CLARIFICATION_AGENT_SYSTEM_PROMPT,
 )
 
 
@@ -38,7 +38,7 @@ class TestStep1CoreAgentic:
 
         # Verify the agent was created with correct parameters
         assert ClarificationAgent is not None
-        assert hasattr(ClarificationAgent, 'run')
+        assert hasattr(ClarificationAgent, "run")
         assert callable(ClarificationAgent.run)
 
         # Verify the agent uses the correct model
@@ -58,7 +58,7 @@ class TestStep1CoreAgentic:
         assert assess_clarity_step is not None
         assert assess_clarity_step.name == "AssessAndRefine"
         # The step is created from a callable function, so it has a different agent type
-        assert hasattr(assess_clarity_step, 'agent')
+        assert hasattr(assess_clarity_step, "agent")
         print("✅ Step created with correct name and agent")
 
     def test_pipeline_creation(self):
@@ -93,9 +93,7 @@ class TestStep1CoreAgentic:
 
         # Create the runner
         runner = Flujo(
-            mock_pipeline,
-            pipeline_name="test_cohort_clarification",
-            context_model=PipelineContext
+            mock_pipeline, pipeline_name="test_cohort_clarification", context_model=PipelineContext
         )
 
         # Test case 1: Unclear definition
@@ -103,8 +101,7 @@ class TestStep1CoreAgentic:
         result: Optional[PipelineResult] = None
 
         async for item in runner.run_async(
-            test_input,
-            initial_context_data={"initial_prompt": test_input}
+            test_input, initial_context_data={"initial_prompt": test_input}
         ):
             result = item
 
@@ -124,8 +121,7 @@ class TestStep1CoreAgentic:
         result = None
 
         async for item in runner.run_async(
-            test_input,
-            initial_context_data={"initial_prompt": test_input}
+            test_input, initial_context_data={"initial_prompt": test_input}
         ):
             result = item
 
@@ -153,16 +149,13 @@ class TestStep1CoreAgentic:
         stateless_pipeline = Pipeline.from_step(stateless_step)
 
         runner = Flujo(
-            stateless_pipeline,
-            pipeline_name="test_stateless",
-            context_model=PipelineContext
+            stateless_pipeline, pipeline_name="test_stateless", context_model=PipelineContext
         )
 
         # This should work without errors (FSD-11 fix)
         result = None
         async for item in runner.run_async(
-            "test input",
-            initial_context_data={"initial_prompt": "test"}
+            "test input", initial_context_data={"initial_prompt": "test"}
         ):
             result = item
 
@@ -184,16 +177,13 @@ class TestStep1CoreAgentic:
         tracing_pipeline = Pipeline.from_step(tracing_step)
 
         runner = Flujo(
-            tracing_pipeline,
-            pipeline_name="test_tracing",
-            context_model=PipelineContext
+            tracing_pipeline, pipeline_name="test_tracing", context_model=PipelineContext
         )
 
         # Run the pipeline
         result = None
         async for item in runner.run_async(
-            "tracing test",
-            initial_context_data={"initial_prompt": "tracing test"}
+            "tracing test", initial_context_data={"initial_prompt": "tracing test"}
         ):
             result = item
 
@@ -228,17 +218,12 @@ class TestStep1CoreAgentic:
         error_step = Step(name="ErrorTest", agent=ErrorTestAgent())
         error_pipeline = Pipeline.from_step(error_step)
 
-        runner = Flujo(
-            error_pipeline,
-            pipeline_name="test_error",
-            context_model=PipelineContext
-        )
+        runner = Flujo(error_pipeline, pipeline_name="test_error", context_model=PipelineContext)
 
         # This should handle the error gracefully
         result = None
         async for item in runner.run_async(
-            "error test",
-            initial_context_data={"initial_prompt": "error test"}
+            "error test", initial_context_data={"initial_prompt": "error test"}
         ):
             result = item
 
@@ -261,11 +246,13 @@ class TestStep1CoreAgentic:
         with patch.dict(os.environ, {}, clear=True):
             with pytest.raises(ValueError, match="OPENAI_API_KEY"):
                 from manual_testing.examples.main import ensure_api_key
+
                 ensure_api_key()
 
         # Test with valid API key
         with patch.dict(os.environ, {"OPENAI_API_KEY": "test_key_1234"}):
             from manual_testing.examples.main import ensure_api_key
+
             # Should not raise an exception
             ensure_api_key()
 
@@ -287,7 +274,7 @@ class TestStep1CoreAgentic:
         runner = Flujo(
             COHORT_CLARIFICATION_PIPELINE,
             pipeline_name="integration_test",
-            context_model=CohortContext
+            context_model=CohortContext,
         )
 
         # Test with a simple input
@@ -300,8 +287,8 @@ class TestStep1CoreAgentic:
                 "initial_prompt": test_input,
                 "current_definition": test_input,
                 "is_clear": False,
-                "clarification_count": 0
-            }
+                "clarification_count": 0,
+            },
         ):
             result = item
 
@@ -328,7 +315,7 @@ class TestStep1CoreAgentic:
 
         # Verify pipeline has correct structure
         assert COHORT_CLARIFICATION_PIPELINE is not None
-        assert hasattr(COHORT_CLARIFICATION_PIPELINE, 'steps')
+        assert hasattr(COHORT_CLARIFICATION_PIPELINE, "steps")
         assert isinstance(COHORT_CLARIFICATION_PIPELINE.steps, list)
         assert len(COHORT_CLARIFICATION_PIPELINE.steps) == 1
 
@@ -336,8 +323,8 @@ class TestStep1CoreAgentic:
         step = COHORT_CLARIFICATION_PIPELINE.steps[0]
         assert step.name == "StatefulClarificationLoop"
         # The step is now a LoopStep, not a simple Step
-        assert hasattr(step, 'name')
-        assert hasattr(step, 'loop_body_pipeline')
+        assert hasattr(step, "name")
+        assert hasattr(step, "loop_body_pipeline")
 
         print("✅ Pipeline structure is correct")
 
@@ -354,12 +341,13 @@ class TestStep1CoreAgentic:
             "clinical research assistant",
             "cohort definition",
             "[CLARITY_CONFIRMED]",
-            "clarify"
+            "clarify",
         ]
 
         for element in required_elements:
-            assert element.lower() in CLARIFICATION_AGENT_SYSTEM_PROMPT.lower(), \
-                f"System prompt missing required element: {element}"
+            assert (
+                element.lower() in CLARIFICATION_AGENT_SYSTEM_PROMPT.lower()
+            ), f"System prompt missing required element: {element}"
 
         print("✅ Agent system prompt is properly formatted")
 
@@ -404,6 +392,7 @@ async def run_comprehensive_test():
         except Exception as e:
             print(f"❌ {test_method.__name__} FAILED: {e}")
             import traceback
+
             traceback.print_exc()
 
     print("\n" + "=" * 80)

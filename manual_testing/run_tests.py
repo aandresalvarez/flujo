@@ -13,6 +13,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
+
 def show_menu():
     """Show the available test options."""
     print("=" * 80)
@@ -36,32 +37,42 @@ def show_menu():
     print("\n  0. Exit")
     print("\n" + "=" * 80)
 
+
 def run_automated_test(test_name):
     """Run an automated test."""
     print(f"\n🔧 Running automated test: {test_name}")
 
     if test_name == "comprehensive":
         import sys
+
         sys.path.append("tests/automated")
         from run_step1_test import main
+
         return main()
     elif test_name == "bug_demo":
         import sys
+
         sys.path.append("tests/automated")
         from test_bug_demonstration import main
+
         return main()
     elif test_name == "config":
         import sys
+
         sys.path.append("tests/automated")
         from test_config import test_configuration
         import asyncio
+
         asyncio.run(test_configuration())
         return 0
     elif test_name == "comprehensive_agent":
         import sys
+
         sys.path.append("tests/automated")
         from comprehensive_test import main
+
         return main()
+
 
 def run_manual_test(test_name):
     """Run a manual test."""
@@ -69,25 +80,32 @@ def run_manual_test(test_name):
 
     if test_name == "basic":
         import sys
+
         sys.path.append("tests/manual")
         from manual_test_step1 import main
         import asyncio
+
         asyncio.run(main())
         return 0
     elif test_name == "challenging":
         import sys
+
         sys.path.append("tests/manual")
         from manual_test_step1_challenging import main
         import asyncio
+
         asyncio.run(main())
         return 0
     elif test_name == "interactive":
         import sys
+
         sys.path.append("tests/manual")
         from interactive_test_step1 import main
         import asyncio
+
         asyncio.run(main())
         return 0
+
 
 def show_documentation(doc_name):
     """Show documentation."""
@@ -96,7 +114,7 @@ def show_documentation(doc_name):
     if doc_name == "manual_summary":
         doc_path = Path("docs/MANUAL_TESTING_SUMMARY.md")
         if doc_path.exists():
-            with open(doc_path, 'r') as f:
+            with open(doc_path, "r") as f:
                 print(f.read())
         else:
             print("❌ Documentation file not found")
@@ -104,11 +122,12 @@ def show_documentation(doc_name):
     elif doc_name == "step1_summary":
         doc_path = Path("docs/TEST_STEP1_SUMMARY.md")
         if doc_path.exists():
-            with open(doc_path, 'r') as f:
+            with open(doc_path, "r") as f:
                 print(f.read())
         else:
             print("❌ Documentation file not found")
         return 0
+
 
 def run_example(example_name):
     """Run an example."""
@@ -116,11 +135,14 @@ def run_example(example_name):
 
     if example_name == "basic_pipeline":
         import sys
+
         sys.path.append("examples")
         from main import main
         import asyncio
+
         asyncio.run(main())
         return 0
+
 
 def main():
     """Main test runner."""
@@ -162,7 +184,9 @@ def main():
         except Exception as e:
             print(f"\n❌ Error: {e}")
             import traceback
+
             traceback.print_exc()
+
 
 if __name__ == "__main__":
     main()

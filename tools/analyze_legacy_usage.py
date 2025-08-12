@@ -23,28 +23,27 @@ class LegacyFunctionAnalyzer:
         self.import_dependencies: Dict[str, List[str]] = defaultdict(list)
         self.legacy_functions = {
             # Migrated functions (should be removed)
-            '_execute_loop_step_logic',
-            '_execute_conditional_step_logic',
-            '_execute_parallel_step_logic',
-            '_execute_dynamic_router_step_logic',
-
+            "_execute_loop_step_logic",
+            "_execute_conditional_step_logic",
+            "_execute_parallel_step_logic",
+            "_execute_dynamic_router_step_logic",
             # Deprecated functions (should emit warnings)
-            '_handle_cache_step',
-            '_handle_hitl_step',
-            '_run_step_logic',
+            "_handle_cache_step",
+            "_handle_hitl_step",
+            "_run_step_logic",
         }
 
         self.migrated_functions = {
-            '_execute_loop_step_logic',
-            '_execute_conditional_step_logic',
-            '_execute_parallel_step_logic',
-            '_execute_dynamic_router_step_logic',
+            "_execute_loop_step_logic",
+            "_execute_conditional_step_logic",
+            "_execute_parallel_step_logic",
+            "_execute_dynamic_router_step_logic",
         }
 
         self.deprecated_functions = {
-            '_handle_cache_step',
-            '_handle_hitl_step',
-            '_run_step_logic',
+            "_handle_cache_step",
+            "_handle_hitl_step",
+            "_run_step_logic",
         }
 
     def analyze_function_usage(self) -> Dict[str, Set[str]]:
@@ -53,7 +52,7 @@ class LegacyFunctionAnalyzer:
 
         for file_path in self._find_python_files():
             try:
-                with open(file_path, 'r', encoding='utf-8') as f:
+                with open(file_path, "r", encoding="utf-8") as f:
                     content = f.read()
 
                 tree = ast.parse(content)
@@ -76,7 +75,7 @@ class LegacyFunctionAnalyzer:
 
         for file_path in self._find_python_files():
             try:
-                with open(file_path, 'r', encoding='utf-8') as f:
+                with open(file_path, "r", encoding="utf-8") as f:
                     content = f.read()
 
                 tree = ast.parse(content)
@@ -190,10 +189,15 @@ class LegacyFunctionAnalyzer:
 
         for root, dirs, files in os.walk(self.codebase_path):
             # Skip common directories that shouldn't be analyzed
-            dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ['__pycache__', 'node_modules', 'venv', '.venv']]
+            dirs[:] = [
+                d
+                for d in dirs
+                if not d.startswith(".")
+                and d not in ["__pycache__", "node_modules", "venv", ".venv"]
+            ]
 
             for file in files:
-                if file.endswith('.py'):
+                if file.endswith(".py"):
                     python_files.append(Path(root) / file)
 
         return python_files
@@ -256,7 +260,7 @@ def main():
 
     # Output the report
     if args.output:
-        with open(args.output, 'w', encoding='utf-8') as f:
+        with open(args.output, "w", encoding="utf-8") as f:
             f.write(report)
         print(f"📄 Report written to: {args.output}")
     else:

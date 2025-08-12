@@ -13,6 +13,7 @@ from flujo import Flujo
 from flujo.domain.models import PipelineResult, PipelineContext
 from manual_testing.examples.cohort_pipeline import COHORT_CLARIFICATION_PIPELINE
 
+
 def ensure_api_key():
     """Ensure the API key is loaded from environment variables."""
     api_key = os.getenv("OPENAI_API_KEY")
@@ -23,10 +24,11 @@ def ensure_api_key():
         )
     # Mask the API key for security - show only last 4 characters
     if len(api_key) < 4:
-        masked_key = '*' * len(api_key)
+        masked_key = "*" * len(api_key)
     else:
         masked_key = f"{'*' * (len(api_key) - 4)}{api_key[-4:]}"
     print(f"✅ Using API key: {masked_key}")
+
 
 async def test_cohort_definition(definition: str, test_name: str):
     """Test a single cohort definition with the real pipeline."""
@@ -40,14 +42,13 @@ async def test_cohort_definition(definition: str, test_name: str):
     runner = Flujo(
         COHORT_CLARIFICATION_PIPELINE,
         pipeline_name=f"challenging_test_{test_name.lower().replace(' ', '_')}",
-        context_model=PipelineContext
+        context_model=PipelineContext,
     )
 
     # Run the pipeline
     result: Optional[PipelineResult] = None
     async for item in runner.run_async(
-        definition,
-        initial_context_data={"initial_prompt": definition}
+        definition, initial_context_data={"initial_prompt": definition}
     ):
         result = item
 
@@ -87,6 +88,7 @@ async def test_cohort_definition(definition: str, test_name: str):
 
     print(f"{'='*60}")
 
+
 async def main():
     """Run challenging manual tests with real API calls."""
     print("=" * 80)
@@ -99,31 +101,19 @@ async def main():
 
     # Test Case 1: Very vague definition
     vague_definition = "sick people"
-    await test_cohort_definition(
-        vague_definition,
-        "Very Vague Definition"
-    )
+    await test_cohort_definition(vague_definition, "Very Vague Definition")
 
     # Test Case 2: Missing critical details
     incomplete_definition = "cancer patients"
-    await test_cohort_definition(
-        incomplete_definition,
-        "Incomplete Definition"
-    )
+    await test_cohort_definition(incomplete_definition, "Incomplete Definition")
 
     # Test Case 3: Ambiguous definition
     ambiguous_definition = "patients with heart problems"
-    await test_cohort_definition(
-        ambiguous_definition,
-        "Ambiguous Definition"
-    )
+    await test_cohort_definition(ambiguous_definition, "Ambiguous Definition")
 
     # Test Case 4: Complete definition for comparison
     complete_definition = "adult patients aged 18-65 with confirmed Type 2 diabetes diagnosed between 2020-2024, currently prescribed metformin at a dose of 500-2000mg daily, with HbA1c levels between 7.0-10.0%"
-    await test_cohort_definition(
-        complete_definition,
-        "Complete Definition"
-    )
+    await test_cohort_definition(complete_definition, "Complete Definition")
 
     print("\n" + "=" * 80)
     print("CHALLENGING MANUAL TEST COMPLETE")
@@ -134,6 +124,7 @@ async def main():
     print("   - Complete definition should confirm with [CLARITY_CONFIRMED]")
     print("🔍 Use the tracing commands to inspect detailed execution")
     print("=" * 80)
+
 
 if __name__ == "__main__":
     asyncio.run(main())

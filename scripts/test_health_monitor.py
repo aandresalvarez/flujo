@@ -28,10 +28,20 @@ class TestHealthMonitor:
             with open(self.health_file) as f:
                 self.health_data = json.load(f)
         else:
-            self.health_data = {"runs": [], "metadata": {"created": datetime.datetime.now().isoformat()}}
+            self.health_data = {
+                "runs": [],
+                "metadata": {"created": datetime.datetime.now().isoformat()},
+            }
 
-    def record_run(self, passed: int, failed: int, skipped: int, duration: float,
-                   memory_usage: Optional[float] = None, cpu_usage: Optional[float] = None) -> None:
+    def record_run(
+        self,
+        passed: int,
+        failed: int,
+        skipped: int,
+        duration: float,
+        memory_usage: Optional[float] = None,
+        cpu_usage: Optional[float] = None,
+    ) -> None:
         """Record test run results."""
         run_data = {
             "timestamp": datetime.datetime.now().isoformat(),
@@ -42,7 +52,7 @@ class TestHealthMonitor:
             "total": passed + failed + skipped,
             "success_rate": passed / (passed + failed) if (passed + failed) > 0 else 0,
             "memory_usage_mb": memory_usage,
-            "cpu_usage_percent": cpu_usage
+            "cpu_usage_percent": cpu_usage,
         }
 
         self.health_data["runs"].append(run_data)
@@ -85,7 +95,13 @@ class TestHealthMonitor:
         if len(recent_runs) >= 2:
             recent_avg = sum(r["success_rate"] for r in recent_runs[-5:]) / 5
             older_avg = sum(r["success_rate"] for r in recent_runs[:-5]) / 5
-            trend = "improving" if recent_avg > older_avg else "declining" if recent_avg < older_avg else "stable"
+            trend = (
+                "improving"
+                if recent_avg > older_avg
+                else "declining"
+                if recent_avg < older_avg
+                else "stable"
+            )
         else:
             trend = "insufficient_data"
 
@@ -96,7 +112,7 @@ class TestHealthMonitor:
             "total_runs": total_runs,
             "recent_runs": len(recent_runs),
             "trend": trend,
-            "last_run": recent_runs[-1]["timestamp"] if recent_runs else None
+            "last_run": recent_runs[-1]["timestamp"] if recent_runs else None,
         }
 
     def run_test_suite(self, test_command: str = "make test-fast") -> Dict[str, Any]:
@@ -116,26 +132,26 @@ class TestHealthMonitor:
                 test_command.split(),
                 capture_output=True,
                 text=True,
-                timeout=300  # 5 minute timeout
+                timeout=300,  # 5 minute timeout
             )
 
             duration = time.perf_counter() - start_time
 
             # Parse results from output
-            output_lines = result.stdout.split('\n')
+            output_lines = result.stdout.split("\n")
             passed = failed = skipped = 0
 
             for line in output_lines:
-                if 'passed' in line and 'failed' in line and 'skipped' in line:
+                if "passed" in line and "failed" in line and "skipped" in line:
                     # Extract numbers from line like "2251 passed, 6 skipped, 135 warnings"
-                    parts = line.split(',')
+                    parts = line.split(",")
                     for part in parts:
                         part = part.strip()
-                        if 'passed' in part:
+                        if "passed" in part:
                             passed = int(part.split()[0])
-                        elif 'failed' in part:
+                        elif "failed" in part:
                             failed = int(part.split()[0])
-                        elif 'skipped' in part:
+                        elif "skipped" in part:
                             skipped = int(part.split()[0])
                     break
 
@@ -150,7 +166,7 @@ class TestHealthMonitor:
                 skipped=skipped,
                 duration=duration,
                 memory_usage=memory_increase,
-                cpu_usage=initial_cpu
+                cpu_usage=initial_cpu,
             )
 
             return {
@@ -161,25 +177,17 @@ class TestHealthMonitor:
                 "duration": duration,
                 "memory_increase_mb": memory_increase,
                 "output": result.stdout,
-                "error": result.stderr
+                "error": result.stderr,
             }
 
         except subprocess.TimeoutExpired:
             duration = time.perf_counter() - start_time
             print(f"⏰ Test suite timed out after {duration:.1f} seconds")
-            return {
-                "success": False,
-                "error": "Test suite timed out",
-                "duration": duration
-            }
+            return {"success": False, "error": "Test suite timed out", "duration": duration}
         except Exception as e:
             duration = time.perf_counter() - start_time
             print(f"❌ Error running test suite: {e}")
-            return {
-                "success": False,
-                "error": str(e),
-                "duration": duration
-            }
+            return {"success": False, "error": str(e), "duration": duration}
 
 
 def main():
@@ -202,7 +210,7 @@ def main():
     # Ask user if they want to run tests
     response = input("Run test suite now? (y/n): ").lower().strip()
 
-    if response in ['y', 'yes']:
+    if response in ["y", "yes"]:
         print("\n🚀 Running test suite...")
         result = monitor.run_test_suite()
 
@@ -213,7 +221,7 @@ def main():
         print(f"⏱️  Duration: {result.get('duration', 0):.1f}s")
         print(f"🧠 Memory Increase: {result.get('memory_increase_mb', 0):.1f}MB")
 
-        if result['success']:
+        if result["success"]:
             print("✅ Test suite completed successfully!")
         else:
             print(f"❌ Test suite failed: {result.get('error', 'Unknown error')}")

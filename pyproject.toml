@@ -176,6 +176,7 @@ module = [
   "flujo.application.core.step_policies",
   "flujo.application.core.execution_manager",
   "flujo.application.core.step_executor",
+  "flujo.domain.dsl.step",
 ]
 disable_error_code = [
   "no-any-return",

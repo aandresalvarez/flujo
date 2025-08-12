@@ -3,6 +3,7 @@ A practical example of processing a batch of prompts concurrently.
 This pattern is highly efficient and leverages Python's `asyncio.gather`
 to run multiple `flujo` workflows at the same time.
 """
+
 import asyncio
 from flujo import make_agent_async, init_telemetry, Task
 from flujo.recipes.factories import make_default_pipeline, run_default_pipeline
@@ -50,8 +51,7 @@ async def main():
 
     # Process all tasks concurrently
     results = await asyncio.gather(
-        *[run_default_pipeline(pipeline, task) for task in tasks],
-        return_exceptions=True
+        *[run_default_pipeline(pipeline, task) for task in tasks], return_exceptions=True
     )
 
     # Display results

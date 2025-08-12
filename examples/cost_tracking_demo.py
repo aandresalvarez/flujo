@@ -18,14 +18,10 @@ async def basic_cost_tracking():
 
     # Create agents
     solution_agent = make_agent_async(
-        "openai:gpt-4o",
-        "You are a helpful assistant. Provide concise responses.",
-        str
+        "openai:gpt-4o", "You are a helpful assistant. Provide concise responses.", str
     )
     validator_agent = make_agent_async(
-        "openai:gpt-4o",
-        "You are a validator. Rate the quality of the response from 1-10.",
-        str
+        "openai:gpt-4o", "You are a validator. Rate the quality of the response from 1-10.", str
     )
 
     # Create pipeline
@@ -66,13 +62,13 @@ async def usage_limits_demo():
     verbose_agent = make_agent_async(
         "openai:gpt-4o",
         "You are a verbose assistant. Provide very detailed, comprehensive responses with lots of examples and explanations.",
-        str
+        str,
     )
 
     # Set strict limits
     limits = UsageLimits(
         total_cost_usd_limit=0.10,  # Maximum $0.10
-        total_tokens_limit=500       # Maximum 500 tokens
+        total_tokens_limit=500,  # Maximum 500 tokens
     )
 
     pipeline = Step.solution(verbose_agent)
@@ -87,7 +83,9 @@ async def usage_limits_demo():
 
         # Show partial results
         for step_result in e.partial_result.step_history:
-            print(f"  {step_result.name}: ${step_result.cost_usd:.4f} ({step_result.token_counts} tokens)")
+            print(
+                f"  {step_result.name}: ${step_result.cost_usd:.4f} ({step_result.token_counts} tokens)"
+            )
 
 
 async def step_level_limits():
@@ -96,29 +94,24 @@ async def step_level_limits():
 
     # Create agents
     solution_agent = make_agent_async(
-        "openai:gpt-4o",
-        "You are a solution agent. Provide detailed solutions.",
-        str
+        "openai:gpt-4o", "You are a solution agent. Provide detailed solutions.", str
     )
     validator_agent = make_agent_async(
-        "openai:gpt-4o",
-        "You are a validator. Provide brief validation feedback.",
-        str
+        "openai:gpt-4o", "You are a validator. Provide brief validation feedback.", str
     )
 
     # Set different limits for different steps
     solution_limits = UsageLimits(
         total_cost_usd_limit=0.15,  # More budget for solution
-        total_tokens_limit=800
+        total_tokens_limit=800,
     )
     validation_limits = UsageLimits(
         total_cost_usd_limit=0.05,  # Less budget for validation
-        total_tokens_limit=200
+        total_tokens_limit=200,
     )
 
-    pipeline = (
-        Step.solution(solution_agent, usage_limits=solution_limits)
-        >> Step.validate(validator_agent, usage_limits=validation_limits)
+    pipeline = Step.solution(solution_agent, usage_limits=solution_limits) >> Step.validate(
+        validator_agent, usage_limits=validation_limits
     )
 
     runner = Flujo(pipeline)
@@ -128,7 +121,9 @@ async def step_level_limits():
         print("Pipeline completed successfully!")
 
         for step_result in result.step_history:
-            print(f"{step_result.name}: ${step_result.cost_usd:.4f} ({step_result.token_counts} tokens)")
+            print(
+                f"{step_result.name}: ${step_result.cost_usd:.4f} ({step_result.token_counts} tokens)"
+            )
 
     except UsageLimitExceededError as e:
         print(f"Pipeline stopped due to step limits: {e}")
@@ -140,23 +135,18 @@ async def cost_efficient_pipeline():
 
     # Use cheaper model for simple tasks
     simple_agent = make_agent_async(
-        "openai:gpt-3.5-turbo",
-        "You are a simple assistant. Provide brief responses.",
-        str
+        "openai:gpt-3.5-turbo", "You are a simple assistant. Provide brief responses.", str
     )
 
     # Use expensive model only for complex tasks
     complex_agent = make_agent_async(
-        "openai:gpt-4o",
-        "You are a complex assistant. Provide detailed analysis.",
-        str
+        "openai:gpt-4o", "You are a complex assistant. Provide detailed analysis.", str
     )
 
     # Design pipeline with cost considerations
-    pipeline = (
-        Step.solution(simple_agent, usage_limits=UsageLimits(total_cost_usd_limit=0.02))
-        >> Step.validate(complex_agent, usage_limits=UsageLimits(total_cost_usd_limit=0.08))
-    )
+    pipeline = Step.solution(
+        simple_agent, usage_limits=UsageLimits(total_cost_usd_limit=0.02)
+    ) >> Step.validate(complex_agent, usage_limits=UsageLimits(total_cost_usd_limit=0.08))
 
     # Set overall pipeline limits
     runner = Flujo(pipeline, usage_limits=UsageLimits(total_cost_usd_limit=0.12))

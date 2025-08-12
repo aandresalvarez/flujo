@@ -22,6 +22,7 @@ from flujo.domain.dsl.step import Step
 # Define custom types that users might create
 class UserProfile(BaseModel):
     """User profile model."""
+
     name: str
     email: str
     age: int
@@ -30,6 +31,7 @@ class UserProfile(BaseModel):
 
 class UserSettings(BaseModel):
     """User settings model."""
+
     theme: str = "dark"
     notifications: bool = True
     language: str = "en"
@@ -37,6 +39,7 @@ class UserSettings(BaseModel):
 
 class UserPreferences(BaseModel):
     """User preferences model."""
+
     favorite_colors: List[str] = []
     privacy_level: str = "medium"
     auto_save: bool = True
@@ -44,6 +47,7 @@ class UserPreferences(BaseModel):
 
 class ComplexUserData(BaseModel):
     """Complex user data with nested models."""
+
     profile: UserProfile
     settings: Optional[UserSettings] = None
     preferences: UserPreferences
@@ -64,6 +68,7 @@ def register_custom_types():
 # Define a context model that uses the custom types
 class UserContext(FlujoBaseModel):
     """Context model that uses custom types."""
+
     current_user: UserProfile
     user_settings: Optional[UserSettings] = None
     user_preferences: UserPreferences
@@ -82,7 +87,7 @@ async def process_user_data(data: Dict[str, Any], context: UserContext) -> Dict[
         "processed": True,
         "user_name": data.get("name"),
         "settings_theme": context.user_settings.theme if context.user_settings else "default",
-        "preferences_count": len(context.user_preferences.favorite_colors)
+        "preferences_count": len(context.user_preferences.favorite_colors),
     }
 
 
@@ -95,7 +100,7 @@ async def update_user_settings(data: Dict[str, Any], context: UserContext) -> Us
     new_settings = UserSettings(
         theme=data.get("theme", "light"),
         notifications=data.get("notifications", True),
-        language=data.get("language", "en")
+        language=data.get("language", "en"),
     )
 
     # The type resolution system will handle UserSettings automatically
@@ -111,50 +116,27 @@ async def main():
     register_custom_types()
 
     # Create a pipeline that uses custom types
-    pipeline = Pipeline.from_steps([
-        Step.from_callable(
-            process_user_data,
-            name="process_user_data",
-            updates_context=True
-        ),
-        Step.from_callable(
-            update_user_settings,
-            name="update_user_settings",
-            updates_context=True
-        )
-    ])
+    pipeline = Pipeline.from_steps(
+        [
+            Step.from_callable(process_user_data, name="process_user_data", updates_context=True),
+            Step.from_callable(
+                update_user_settings, name="update_user_settings", updates_context=True
+            ),
+        ]
+    )
 
     # Create initial context with custom types
     initial_context = UserContext(
-        current_user=UserProfile(
-            name="John Doe",
-            email="john@example.com",
-            age=30
-        ),
-        user_preferences=UserPreferences(
-            favorite_colors=["blue", "green"],
-            privacy_level="high"
-        ),
+        current_user=UserProfile(name="John Doe", email="john@example.com", age=30),
+        user_preferences=UserPreferences(favorite_colors=["blue", "green"], privacy_level="high"),
         complex_data=ComplexUserData(
-            profile=UserProfile(
-                name="John Doe",
-                email="john@example.com",
-                age=30
-            ),
-            preferences=UserPreferences(
-                favorite_colors=["blue", "green"],
-                privacy_level="high"
-            )
-        )
+            profile=UserProfile(name="John Doe", email="john@example.com", age=30),
+            preferences=UserPreferences(favorite_colors=["blue", "green"], privacy_level="high"),
+        ),
     )
 
     # Test data
-    test_data = {
-        "name": "John Doe",
-        "theme": "dark",
-        "notifications": False,
-        "language": "es"
-    }
+    test_data = {"name": "John Doe", "theme": "dark", "notifications": False, "language": "es"}
 
     print("\n📋 Initial Context:")
     print(f"  User: {initial_context.current_user.name}")
@@ -164,8 +146,7 @@ async def main():
     # Run the pipeline
     print("\n🔄 Running pipeline...")
     async for result in pipeline.run_async(
-        test_data,
-        initial_context_data=initial_context.model_dump()
+        test_data, initial_context_data=initial_context.model_dump()
     ):
         print(f"  Step: {result.step_name}")
         print(f"  Status: {result.status}")

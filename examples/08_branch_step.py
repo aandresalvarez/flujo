@@ -6,7 +6,6 @@ routes it to a specialized agent based on whether the query is about code
 or a general question. For more details, see docs/pipeline_branching.md.
 """
 
-
 import asyncio
 from typing import Any, Literal
 from pydantic import BaseModel
@@ -45,8 +44,12 @@ class GeneralQAAgent(AsyncAgentProtocol[str, str]):
 
 
 # 1. Define the different pipelines for each branch. These are our routes.
-code_pipeline = Pipeline.from_step(Step.model_validate({"name": "GenerateCode", "agent": CodeGenerationAgent()}))
-qa_pipeline = Pipeline.from_step(Step.model_validate({"name": "AnswerQuestion", "agent": GeneralQAAgent()}))
+code_pipeline = Pipeline.from_step(
+    Step.model_validate({"name": "GenerateCode", "agent": CodeGenerationAgent()})
+)
+qa_pipeline = Pipeline.from_step(
+    Step.model_validate({"name": "AnswerQuestion", "agent": GeneralQAAgent()})
+)
 
 
 # 2. Define the `ConditionalStep`. This is our router.
@@ -66,7 +69,9 @@ branch_step = Step.branch_on(
 )
 
 # 3. Assemble the full pipeline: first classify, then route.
-full_pipeline = Step.model_validate({"name": "ClassifyQuery", "agent": ClassifyQueryAgent()}) >> branch_step
+full_pipeline = (
+    Step.model_validate({"name": "ClassifyQuery", "agent": ClassifyQueryAgent()}) >> branch_step
+)
 
 runner = Flujo(full_pipeline)
 

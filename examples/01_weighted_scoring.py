@@ -2,6 +2,7 @@
 Demonstrates using weighted scoring to prioritize certain quality criteria.
 For more details on scoring, see docs/scoring.md.
 """
+
 import asyncio
 from flujo import make_agent_async, init_telemetry, Task
 from flujo.recipes.factories import make_default_pipeline, run_default_pipeline
@@ -9,6 +10,7 @@ from flujo.domain.models import Checklist
 from flujo.domain.scoring import weighted_score
 
 init_telemetry()
+
 
 async def main():
     # Create agents for the pipeline
@@ -38,7 +40,9 @@ async def main():
     )
 
     # Run the pipeline
-    task = Task(prompt="Write a Python function that adds two numbers using type hints and a clear docstring.")
+    task = Task(
+        prompt="Write a Python function that adds two numbers using type hints and a clear docstring."
+    )
     result = await run_default_pipeline(pipeline, task)
 
     if result:
@@ -63,6 +67,7 @@ async def main():
                 print(f"  - {item.description:<60} {status}")
     else:
         print("\n❌ The workflow did not produce a valid solution.")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

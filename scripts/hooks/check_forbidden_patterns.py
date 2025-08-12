@@ -8,6 +8,7 @@ Currently forbids:
 Scans all *.py files including test files for security.
 Excludes intentional test cases that demonstrate security patterns.
 """
+
 from __future__ import annotations
 
 import pathlib
@@ -26,11 +27,7 @@ EXCLUDE_DIRS: Final[set[str]] = {".venv", "site-packages", "scripts"}
 
 
 def iter_python_files() -> list[pathlib.Path]:
-    return [
-        p
-        for p in REPO_ROOT.rglob("*.py")
-        if not any(part in EXCLUDE_DIRS for part in p.parts)
-    ]
+    return [p for p in REPO_ROOT.rglob("*.py") if not any(part in EXCLUDE_DIRS for part in p.parts)]
 
 
 def main() -> int:

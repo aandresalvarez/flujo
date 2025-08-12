@@ -7,6 +7,7 @@ This example departs from the default pipeline factory to show a more advanced p
 3. Use the `RewardScorer` to get a final quality score from an LLM judge.
    This is useful for tasks where quality is subjective (e.g., summarization).
 """
+
 import asyncio
 from typing import Any, cast
 
@@ -27,7 +28,9 @@ async def main():
 
     # 2. Define a minimal custom pipeline using the DSL.
     #    For more on the DSL, see docs/pipeline_dsl.md
-    pipeline = Pipeline.from_step(Step.model_validate({"name": "GenerateExplanation", "agent": cast(Any, solution_agent)}))
+    pipeline = Pipeline.from_step(
+        Step.model_validate({"name": "GenerateExplanation", "agent": cast(Any, solution_agent)})
+    )
 
     # 3. Initialize the Flujo engine with our custom pipeline.
     runner = Flujo(pipeline)
@@ -35,7 +38,9 @@ async def main():
     # 4. Run the pipeline to get a solution.
     print("🧠 Running a simple pipeline to generate a solution...")
     result = None
-    async for item in runner.run_async("Explain 'technical debt' in one sentence for a non-technical manager."):
+    async for item in runner.run_async(
+        "Explain 'technical debt' in one sentence for a non-technical manager."
+    ):
         result = item
 
     if not result.step_history or not result.step_history[-1].success:

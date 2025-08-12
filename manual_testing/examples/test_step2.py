@@ -13,6 +13,7 @@ from flujo import Flujo
 from flujo.domain.models import PipelineResult, PipelineContext
 from manual_testing.examples.cohort_pipeline import COHORT_CLARIFICATION_PIPELINE
 
+
 def ensure_api_key():
     """Ensure the API key is loaded from environment variables."""
     api_key = os.getenv("OPENAI_API_KEY")
@@ -23,11 +24,12 @@ def ensure_api_key():
         )
     print("\u2705 API key configured")
 
+
 async def test_step2_loop():
     """Test the Step 2 clarification loop with a predefined test case."""
 
     print("🧪 Testing Step 2: Clarification Loop")
-    print("="*50)
+    print("=" * 50)
 
     # Ensure API key is set
     ensure_api_key()
@@ -36,7 +38,7 @@ async def test_step2_loop():
     runner = Flujo(
         COHORT_CLARIFICATION_PIPELINE,
         pipeline_name="test_cohort_clarification_v2",
-        context_model=PipelineContext
+        context_model=PipelineContext,
     )
 
     # Test case: Start with an ambiguous definition
@@ -57,8 +59,7 @@ async def test_step2_loop():
         # Run the pipeline
         result: Optional[PipelineResult] = None
         async for item in runner.run_async(
-            current_definition,
-            initial_context_data={"initial_prompt": current_definition}
+            current_definition, initial_context_data={"initial_prompt": current_definition}
         ):
             result = item
 
@@ -104,6 +105,7 @@ async def test_step2_loop():
         run_id = result.final_pipeline_context.run_id
         print(f"\n📊 Trace saved with ID: {run_id}")
         print(f"To inspect: flujo lens trace {run_id}")
+
 
 if __name__ == "__main__":
     asyncio.run(test_step2_loop())

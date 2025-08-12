@@ -47,8 +47,7 @@ async def main():
 
     # Create the pipeline using the factory
     pipeline = make_agentic_loop_pipeline(
-        planner_agent=planner,
-        agent_registry={"search_agent": search_agent}
+        planner_agent=planner, agent_registry={"search_agent": search_agent}
     )
 
     def format_command_log(log_entry):

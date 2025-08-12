@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from typing import Any, Dict, TYPE_CHECKING
+from typing import Any, Dict, TYPE_CHECKING, Generic, TypeVar
 
 
-from ..domain.backends import ExecutionBackend, StepExecutionRequest
+from ..domain.backends import StepExecutionRequest
 from ..domain.agent_protocol import AsyncAgentProtocol
 from ..domain.models import StepResult, StepOutcome
 from ..application.core.types import ExecutionFrame
@@ -14,7 +14,10 @@ if TYPE_CHECKING:
     pass
 
 
-class LocalBackend(ExecutionBackend):
+TContext = TypeVar("TContext")
+
+
+class LocalBackend(Generic[TContext]):
     """Backend that executes steps in the current process."""
 
     def __init__(

@@ -14,6 +14,7 @@ from flujo import Flujo
 from flujo.domain.models import PipelineResult
 from manual_testing.examples.cohort_pipeline import COHORT_CLARIFICATION_PIPELINE, CohortContext
 
+
 def ensure_api_key():
     """Ensure the API key is loaded from environment variables."""
     api_key = os.getenv("OPENAI_API_KEY")
@@ -24,11 +25,12 @@ def ensure_api_key():
         )
     print("\u2705 API key configured")
 
+
 async def test_step3_stateful():
     """Test the Step 3 stateful pipeline with predefined test cases."""
 
     print("🧪 Testing Step 3: Stateful Pipeline with PipelineContext")
-    print("="*60)
+    print("=" * 60)
 
     # Ensure API key is set
     ensure_api_key()
@@ -37,7 +39,7 @@ async def test_step3_stateful():
     runner = Flujo(
         COHORT_CLARIFICATION_PIPELINE,
         pipeline_name="test_cohort_clarification_v3",
-        context_model=CohortContext
+        context_model=CohortContext,
     )
 
     # Test cases with different levels of ambiguity
@@ -45,18 +47,14 @@ async def test_step3_stateful():
         {
             "name": "Clear Definition",
             "definition": "Patients diagnosed with Stage I breast cancer in the last 12 months",
-            "expected_clarifications": 0
+            "expected_clarifications": 0,
         },
         {
             "name": "Moderately Ambiguous",
             "definition": "Patients with asthma, on medication, seen in clinic",
-            "expected_clarifications": 2
+            "expected_clarifications": 2,
         },
-        {
-            "name": "Highly Ambiguous",
-            "definition": "cancer patients",
-            "expected_clarifications": 3
-        }
+        {"name": "Highly Ambiguous", "definition": "cancer patients", "expected_clarifications": 3},
     ]
 
     for i, test_case in enumerate(test_cases, 1):
@@ -66,17 +64,16 @@ async def test_step3_stateful():
 
         # Initialize context with test data
         initial_context_data = {
-            "initial_prompt": test_case['definition'],  # Required field from PipelineContext
-            "current_definition": test_case['definition'],
+            "initial_prompt": test_case["definition"],  # Required field from PipelineContext
+            "current_definition": test_case["definition"],
             "is_clear": False,
-            "clarification_count": 0
+            "clarification_count": 0,
         }
 
         # Run the pipeline
         result: Optional[PipelineResult] = None
         async for item in runner.run_async(
-            test_case['definition'],
-            initial_context_data=initial_context_data
+            test_case["definition"], initial_context_data=initial_context_data
         ):
             result = item
 
@@ -94,7 +91,7 @@ async def test_step3_stateful():
             else:
                 print("  ⚠️ WARNING: Definition was not clarified (may have hit max_loops)")
 
-            if final_context.clarification_count >= test_case['expected_clarifications']:
+            if final_context.clarification_count >= test_case["expected_clarifications"]:
                 print("  ✅ SUCCESS: Expected number of clarifications or more")
             else:
                 print("  ⚠️ NOTE: Fewer clarifications than expected")
@@ -108,12 +105,13 @@ async def test_step3_stateful():
         print(f"\n📊 Trace saved with ID: {run_id}")
         print(f"To inspect: flujo lens trace {run_id}")
 
+
 async def test_step3_improvements():
     """Demonstrate the key improvements of Step 3 over Step 2."""
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("🔍 Step 3 Improvements Over Step 2")
-    print("="*60)
+    print("=" * 60)
 
     print("""
 Key Improvements:
@@ -138,6 +136,7 @@ Key Improvements:
    - Previous: Simple input/output between steps
    - Now: Explicit mappers control data flow in loops
 """)
+
 
 if __name__ == "__main__":
     asyncio.run(test_step3_stateful())

@@ -127,7 +127,7 @@ def update_optimization_components_for_conservative_mode():
         "max_pool_size": 50,
         "max_pools": 10,
         "cleanup_threshold": 0.9,
-        "stats_enabled": False
+        "stats_enabled": False,
     }
 
     # Update OptimizedContextManager defaults
@@ -136,7 +136,7 @@ def update_optimization_components_for_conservative_mode():
         "merge_cache_size": 32,
         "ttl_seconds": 7200,
         "enable_cow": False,
-        "enable_stats": False
+        "enable_stats": False,
     }
 
     # Update OptimizedTelemetry defaults
@@ -146,21 +146,21 @@ def update_optimization_components_for_conservative_mode():
         "sampling_rate": 0.01,
         "batch_size": 10,
         "flush_interval": 30.0,
-        "enable_stats": False
+        "enable_stats": False,
     }
 
     # Update AdaptiveResourceManager defaults
     resource_manager_updates = {
         "monitoring_interval": 5.0,
         "adaptation_interval": 30.0,
-        "enable_telemetry": False
+        "enable_telemetry": False,
     }
 
     return {
         "object_pool": object_pool_updates,
         "context_manager": context_manager_updates,
         "telemetry": telemetry_updates,
-        "resource_manager": resource_manager_updates
+        "resource_manager": resource_manager_updates,
     }
 
 
@@ -171,7 +171,7 @@ def apply_conservative_parameter_updates():
     ultra_executor_path = "flujo/application/core/ultra_executor.py"
 
     try:
-        with open(ultra_executor_path, 'r') as f:
+        with open(ultra_executor_path, "r") as f:
             content = f.read()
 
         # Update OptimizationConfig defaults
@@ -213,12 +213,13 @@ class OptimizationConfig:
 
         # Find and replace the OptimizationConfig class
         import re
-        pattern = r'@dataclass\nclass OptimizationConfig:.*?cache_max_size: int = \d+'
+
+        pattern = r"@dataclass\nclass OptimizationConfig:.*?cache_max_size: int = \d+"
 
         if re.search(pattern, content, re.DOTALL):
             updated_content = re.sub(pattern, conservative_config_section, content, flags=re.DOTALL)
 
-            with open(ultra_executor_path, 'w') as f:
+            with open(ultra_executor_path, "w") as f:
                 f.write(updated_content)
 
             print(f"✅ Updated {ultra_executor_path} with conservative parameters")
@@ -256,18 +257,20 @@ async def validate_conservative_configuration():
             max_concurrent_executions=multiprocessing.cpu_count(),
             maintain_backward_compatibility=True,
             allow_runtime_changes=False,
-            config_validation_enabled=False
+            config_validation_enabled=False,
         )
 
         # Create executor
         executor = OptimizedExecutorCore(optimization_config=config)
 
         # Create test step
-        step = Step.model_validate({
-            "name": "conservative_test",
-            "agent": StubAgent(["test_output"]),
-            "config": StepConfig(max_retries=1),
-        })
+        step = Step.model_validate(
+            {
+                "name": "conservative_test",
+                "agent": StubAgent(["test_output"]),
+                "config": StepConfig(max_retries=1),
+            }
+        )
 
         # Run performance test
         times = []
@@ -317,7 +320,7 @@ async def main():
     print("\nStep 2: Generating conservative configuration file...")
     config_code = create_conservative_optimized_config()
 
-    with open("conservative_executor_config.py", 'w') as f:
+    with open("conservative_executor_config.py", "w") as f:
         f.write(config_code)
 
     print("✅ Conservative configuration saved to conservative_executor_config.py")
@@ -368,14 +371,14 @@ async def main():
             "optimized_error_handling",
             "circuit_breaker",
             "cache_optimization",
-            "automatic_optimization"
+            "automatic_optimization",
         ],
         "rationale": "Optimizations were causing significant performance regressions",
         "approach": "Disable all optimizations and use baseline ExecutorCore performance",
-        "validation_successful": validation_success
+        "validation_successful": validation_success,
     }
 
-    with open("conservative_tuning_results.json", 'w') as f:
+    with open("conservative_tuning_results.json", "w") as f:
         json.dump(results, f, indent=2)
 
     print("✅ Conservative tuning results saved to conservative_tuning_results.json")

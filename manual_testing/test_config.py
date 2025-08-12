@@ -7,6 +7,7 @@ import asyncio
 from flujo.infra.config_manager import get_config_manager, get_state_uri
 from flujo.infra.config_manager import load_settings
 
+
 async def test_configuration():
     """Test that the configuration file is being loaded correctly."""
     print("Testing Flujo Configuration")
@@ -33,6 +34,7 @@ async def test_configuration():
     print(f"Solve command defaults: {solve_defaults}")
 
     print("\nConfiguration test completed!")
+
 
 if __name__ == "__main__":
     asyncio.run(test_configuration())

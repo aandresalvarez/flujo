@@ -33,6 +33,7 @@ pipeline = Pipeline(
     ],
 )
 
+
 async def main():
     """Run the demo pipeline and show trace results."""
     # Create Flujo runner with tracing enabled

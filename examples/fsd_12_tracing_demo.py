@@ -25,6 +25,7 @@ from flujo.state.backends.sqlite import SQLiteBackend
 
 class DemoContext(PipelineContext):
     """Demo context for tracing demonstration."""
+
     pass
 
 
@@ -63,21 +64,15 @@ def create_demo_pipeline() -> Pipeline:
                 loop_body_pipeline=Pipeline(
                     steps=[Step.from_callable(loop_step, name="loop_step")]
                 ),
-                exit_condition_callable=lambda output, ctx: len(output) >= 2
-                if output
-                else False,
+                exit_condition_callable=lambda output, ctx: len(output) >= 2 if output else False,
                 max_loops=2,
             ),
             ConditionalStep(
                 name="demo_conditional",
                 condition_callable=lambda data, ctx: "high" if len(str(data)) > 10 else "low",
                 branches={
-                    "high": Pipeline(
-                        steps=[Step.from_callable(simple_step, name="high_branch")]
-                    ),
-                    "low": Pipeline(
-                        steps=[Step.from_callable(simple_step, name="low_branch")]
-                    ),
+                    "high": Pipeline(steps=[Step.from_callable(simple_step, name="high_branch")]),
+                    "low": Pipeline(steps=[Step.from_callable(simple_step, name="low_branch")]),
                 },
             ),
             Step.from_callable(simple_step, name="final_step"),
@@ -124,7 +119,9 @@ async def demo_tracing_functionality():
         print(f"   📊 Trace generated: {final_result.trace_tree is not None}")
         print(f"   🏷️  Root span name: {final_result.trace_tree.name}")
         print(f"   📈 Status: {final_result.trace_tree.status}")
-        print(f"   ⏱️  Duration: {final_result.trace_tree.end_time - final_result.trace_tree.start_time:.3f}s")
+        print(
+            f"   ⏱️  Duration: {final_result.trace_tree.end_time - final_result.trace_tree.start_time:.3f}s"
+        )
         print(f"   📝 Total steps: {len(final_result.step_history)}")
         print(f"   🌿 Child spans: {len(final_result.trace_tree.children)}")
 
@@ -210,14 +207,18 @@ async def demo_error_handling():
         if failed_step:
             print(f"   ❌ Failed step: {failed_step.name}")
             print(f"   📈 Failed step status: {failed_step.status}")
-            print(f"   ⏱️  Failed step duration: {failed_step.end_time - failed_step.start_time:.3f}s")
+            print(
+                f"   ⏱️  Failed step duration: {failed_step.end_time - failed_step.start_time:.3f}s"
+            )
 
         # Show step history
         print("\n📋 Step History (including failed step):")
         for i, step_result in enumerate(final_result.step_history):
             status_icon = "❌" if not step_result.success else "✅"
             status = "failed" if not step_result.success else "success"
-            print(f"   {i+1}. {status_icon} {step_result.name}: {status} ({step_result.latency_s:.3f}s)")
+            print(
+                f"   {i+1}. {status_icon} {step_result.name}: {status} ({step_result.latency_s:.3f}s)"
+            )
 
         run_id = final_result.final_pipeline_context.run_id
         print(f"\n💾 Error trace persisted to database with run_id: {run_id}")

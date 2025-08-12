@@ -25,8 +25,8 @@ def sanitize_command(cmd: List[str]) -> List[str]:
     sanitized = []
     for part in cmd:
         # Replace potential API keys, tokens, or passwords
-        if any(sensitive in part.lower() for sensitive in ['key', 'token', 'password', 'secret']):
-            sanitized.append('***')
+        if any(sensitive in part.lower() for sensitive in ["key", "token", "password", "secret"]):
+            sanitized.append("***")
         else:
             sanitized.append(part)
     return sanitized
@@ -137,7 +137,9 @@ def verify_installation() -> None:
     if missing_optional:
         print(f"\n⚠️  Optional dependencies missing: {', '.join(missing_optional)}")
         print("These are not required for basic functionality.")
-        print("Note: sqlvalidator is used for SQL validation features but is not critical for core functionality.")
+        print(
+            "Note: sqlvalidator is used for SQL validation features but is not critical for core functionality."
+        )
 
     print("\n✅ Installation verification complete!")
 
@@ -149,10 +151,12 @@ def run_tests() -> None:
     try:
         # Test basic import
         import flujo  # noqa: F401
+
         print("✅ Basic import works")
 
         # Test core imports
         from flujo import step  # noqa: F401
+
         print("✅ Core imports work")
 
         # Test that we can create a simple step

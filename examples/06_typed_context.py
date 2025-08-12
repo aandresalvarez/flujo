@@ -25,6 +25,7 @@ class ResearchContext(FlujoBaseModel):
 
 # 2. Define agents that interact with the context using the ContextAware protocol.
 
+
 class PlanResearchAgent(ContextAwareAgentProtocol[str, str, ResearchContext]):
     async def run(
         self,
@@ -49,7 +50,7 @@ class GatherSourcesAgent(ContextAwareAgentProtocol[str, list[str], ResearchConte
         context: ResearchContext,
         **kwargs: Any,
     ) -> list[str]:
-        """"Find" sources and update a counter in the context."""
+        """ "Find" sources and update a counter in the context."""
         print("📚 Gathering Sources Agent: Finding relevant articles.")
         sources = ["python.org", "Wikipedia", "A History of Computing book"]
         context.sources_found = len(sources)
@@ -76,7 +77,6 @@ class SummarizeAgent(ContextAwareAgentProtocol[list[str], str, ResearchContext])
         context.summary = summary
         print(f"   -> Wrote summary for '{topic}' and saved to context.")
         return summary
-
 
 
 # 3. Define the pipeline using our context-aware agents

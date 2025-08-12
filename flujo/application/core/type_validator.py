@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Type, TypeVar, get_args, get_origin, Union
+from typing import Any, Type, TypeVar, get_args, get_origin, Union, cast
 
 from flujo.domain.dsl.step import Step
 from ...exceptions import TypeMismatchError
@@ -33,7 +33,7 @@ class TypeValidator:
         if next_step is None:
             return
 
-        expected = getattr(next_step, "__step_input_type__", Any)
+        expected = cast(Type[Any], getattr(next_step, "__step_input_type__", Any))
         actual_type = type(step_result)
 
         # Only allow None if the expected type is compatible with None
@@ -44,7 +44,7 @@ class TypeValidator:
             if origin is Union:
                 if type(None) in get_args(expected):
                     return
-            elif hasattr(types, "UnionType") and isinstance(expected, types.UnionType):  # type: ignore[attr-defined]
+            elif hasattr(types, "UnionType") and isinstance(expected, types.UnionType):
                 if type(None) in expected.__args__:
                     return
             if expected is Any:
@@ -64,9 +64,9 @@ class TypeValidator:
     @staticmethod
     def get_step_input_type(step: "Step[Any, Any]") -> Type[Any]:
         """Get the expected input type for a step."""
-        return getattr(step, "__step_input_type__", Any)
+        return cast(Type[Any], getattr(step, "__step_input_type__", Any))
 
     @staticmethod
     def get_step_output_type(step: "Step[Any, Any]") -> Type[Any]:
         """Get the output type for a step."""
-        return getattr(step, "__step_output_type__", Any)
+        return cast(Type[Any], getattr(step, "__step_output_type__", Any))

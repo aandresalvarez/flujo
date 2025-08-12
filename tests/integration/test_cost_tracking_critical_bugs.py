@@ -266,9 +266,9 @@ class TestBug3BrittleProviderInference:
 
             # CRITICAL: For ambiguous models, should return None to avoid incorrect pricing
             # The user should use explicit provider:model format
-            assert provider is None, (
-                f"Provider inference should be None for ambiguous model: {model_name}"
-            )
+            assert (
+                provider is None
+            ), f"Provider inference should be None for ambiguous model: {model_name}"
 
         # Test that llama-2 is correctly inferred as meta (this is unambiguous)
         provider = calculator._infer_provider_from_model("llama-2")

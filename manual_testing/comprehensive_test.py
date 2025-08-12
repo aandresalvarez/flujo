@@ -8,9 +8,11 @@ import asyncio
 from flujo import Flujo, Step, Pipeline
 from flujo.domain.models import PipelineContext
 
+
 # Test Agent 1: Stateless agent (doesn't accept context)
 class StatelessAgent:
     """A simple agent that doesn't accept context parameter"""
+
     def __init__(self, name="StatelessAgent"):
         self.name = name
 
@@ -18,9 +20,11 @@ class StatelessAgent:
         """This method does NOT accept a context parameter"""
         return f"Stateless response to: {data}"
 
+
 # Test Agent 2: Context-aware agent (accepts context)
 class ContextAwareAgent:
     """A context-aware agent that accepts context parameter"""
+
     def __init__(self, name="ContextAwareAgent"):
         self.name = name
 
@@ -29,9 +33,11 @@ class ContextAwareAgent:
         context_info = f" (context: {type(context).__name__})" if context else ""
         return f"Context-aware response to: {data}{context_info}"
 
+
 # Test Agent 3: Flexible agent (accepts **kwargs)
 class FlexibleAgent:
     """A flexible agent that accepts **kwargs"""
+
     def __init__(self, name="FlexibleAgent"):
         self.name = name
 
@@ -39,6 +45,7 @@ class FlexibleAgent:
         """This method accepts **kwargs, so it can receive context"""
         context_info = f" (kwargs: {list(kwargs.keys())})" if kwargs else ""
         return f"Flexible response to: {data}{context_info}"
+
 
 async def test_agent(agent, agent_name, context_model=None):
     """Test a single agent with the Flujo runner"""
@@ -57,7 +64,7 @@ async def test_agent(agent, agent_name, context_model=None):
         pipeline,
         context_model=context_model,
         pipeline_name=f"test_{agent_name.lower()}",
-        initial_context_data={"initial_prompt": "Test prompt"} if context_model else None
+        initial_context_data={"initial_prompt": "Test prompt"} if context_model else None,
     )
 
     # Test input
@@ -82,22 +89,20 @@ async def test_agent(agent, agent_name, context_model=None):
         print(f"❌ EXCEPTION: {e}")
         return False
 
+
 async def main():
     print("FSD-11 COMPREHENSIVE TEST")
     print("Testing signature-aware context injection")
-    print("="*60)
+    print("=" * 60)
 
     # Test cases
     test_cases = [
         # Test 1: Stateless agent without context
         (StatelessAgent(), "StatelessAgent", None),
-
         # Test 2: Stateless agent with context (this should work now!)
         (StatelessAgent(), "StatelessAgentWithContext", PipelineContext),
-
         # Test 3: Context-aware agent with context
         (ContextAwareAgent(), "ContextAwareAgent", PipelineContext),
-
         # Test 4: Flexible agent with context
         (FlexibleAgent(), "FlexibleAgent", PipelineContext),
     ]
@@ -130,6 +135,7 @@ async def main():
         print("   - Flexible agents work with context")
     else:
         print("\n⚠️  Some tests failed - FSD-11 fix may not be complete")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

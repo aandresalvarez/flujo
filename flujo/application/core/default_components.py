@@ -5,7 +5,7 @@ import hashlib
 import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Dict, List, Optional, TYPE_CHECKING
+from typing import Any, Awaitable, Callable, Dict, List, Optional, TYPE_CHECKING, Protocol, cast
 
 from ...domain.models import PipelineResult, StepResult, UsageLimits
 from ...domain.validation import ValidationResult
@@ -60,7 +60,8 @@ class OrjsonSerializer:
 
         serialized_obj = safe_serialize(obj, mode="default")
         if self._use_orjson:
-            return self._orjson.dumps(serialized_obj, option=self._orjson.OPT_SORT_KEYS)
+            blob: bytes = self._orjson.dumps(serialized_obj, option=self._orjson.OPT_SORT_KEYS)
+            return blob
         else:
             s = self._json.dumps(serialized_obj, sort_keys=True, separators=(",", ":"))
             return s.encode("utf-8")
@@ -89,24 +90,27 @@ class Blake3Hasher:
 
     def digest(self, data: bytes) -> str:
         if self._use_blake3:
-            return self._blake3.blake3(data).hexdigest()
+            return cast(str, self._blake3.blake3(data).hexdigest())
         else:
             return hashlib.blake2b(data, digest_size=32).hexdigest()
+
+
+class _HasherProtocol(Protocol):
+    def digest(self, data: bytes) -> str: ...
 
 
 class DefaultCacheKeyGenerator:
     """Default cache key generator implementation."""
 
-    def __init__(self, hasher: Any = None):
-        self._hasher = hasher or Blake3Hasher()
+    def __init__(self, hasher: _HasherProtocol | None = None):
+        # Ensure the hasher provides a digest(bytes) -> str
+        self._hasher: _HasherProtocol = hasher or Blake3Hasher()
 
     def generate_key(self, step: Any, data: Any, context: Any, resources: Any) -> str:
         step_name = getattr(step, "name", str(type(step).__name__))
         data_str = str(data) if data is not None else ""
         key_bytes = f"{step_name}:{data_str}".encode("utf-8")
-        digest = self._hasher.digest(key_bytes)
-        # Ensure return type is exactly str for static typing
-        return str(digest)
+        return self._hasher.digest(key_bytes)
 
 
 # -----------------------------

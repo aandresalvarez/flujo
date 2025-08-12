@@ -17,7 +17,11 @@ from typing import Dict, List, Any
 from unittest.mock import Mock
 
 # Import the optimized components
-from flujo.application.core.ultra_executor import ExecutorCore, OptimizedExecutorCore, OptimizationConfig
+from flujo.application.core.ultra_executor import (
+    ExecutorCore,
+    OptimizedExecutorCore,
+    OptimizationConfig,
+)
 from flujo.domain.dsl.step import Step, StepConfig
 from flujo.testing.utils import StubAgent
 
@@ -25,6 +29,7 @@ from flujo.testing.utils import StubAgent
 @dataclass
 class PerformanceMetrics:
     """Performance metrics data structure."""
+
     test_name: str
     mean_time: float
     median_time: float
@@ -46,6 +51,7 @@ class PerformanceMetrics:
 @dataclass
 class ValidationResults:
     """Complete validation results."""
+
     baseline_metrics: Dict[str, PerformanceMetrics]
     optimized_metrics: Dict[str, PerformanceMetrics]
     improvements: Dict[str, float]
@@ -56,12 +62,12 @@ class ValidationResults:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
-            'baseline_metrics': {k: v.to_dict() for k, v in self.baseline_metrics.items()},
-            'optimized_metrics': {k: v.to_dict() for k, v in self.optimized_metrics.items()},
-            'improvements': self.improvements,
-            'bottlenecks': self.bottlenecks,
-            'recommendations': self.recommendations,
-            'overall_score': self.overall_score
+            "baseline_metrics": {k: v.to_dict() for k, v in self.baseline_metrics.items()},
+            "optimized_metrics": {k: v.to_dict() for k, v in self.optimized_metrics.items()},
+            "improvements": self.improvements,
+            "bottlenecks": self.bottlenecks,
+            "recommendations": self.recommendations,
+            "overall_score": self.overall_score,
         }
 
 
@@ -77,7 +83,7 @@ class PerformanceValidator:
             improvements={},
             bottlenecks=[],
             recommendations=[],
-            overall_score=0.0
+            overall_score=0.0,
         )
 
     def _create_optimized_executor(self) -> OptimizedExecutorCore:
@@ -91,7 +97,7 @@ class PerformanceValidator:
             enable_optimized_error_handling=True,
             enable_circuit_breaker=True,
             enable_automatic_optimization=True,
-            max_concurrent_executions=50
+            max_concurrent_executions=50,
         )
         return OptimizedExecutorCore(optimization_config=config)
 
@@ -105,12 +111,7 @@ class PerformanceValidator:
         self._current_memory_usage = final_memory - initial_memory
 
     async def benchmark_function(
-        self,
-        func,
-        iterations: int = 100,
-        warmup: int = 10,
-        *args,
-        **kwargs
+        self, func, iterations: int = 100, warmup: int = 10, *args, **kwargs
     ) -> PerformanceMetrics:
         """Benchmark a function with comprehensive metrics."""
         # Warmup
@@ -154,18 +155,20 @@ class PerformanceValidator:
             min_time=min(times),
             max_time=max(times),
             iterations=len(times),
-            memory_usage_mb=getattr(self, '_current_memory_usage', 0.0),
+            memory_usage_mb=getattr(self, "_current_memory_usage", 0.0),
             success_rate=successful_runs / iterations,
-            throughput_ops_per_sec=1.0 / mean_time if mean_time > 0 else 0.0
+            throughput_ops_per_sec=1.0 / mean_time if mean_time > 0 else 0.0,
         )
 
     def create_test_step(self, name: str = "test_step", outputs: int = 200) -> Step:
         """Create a test step for benchmarking."""
-        return Step.model_validate({
-            "name": name,
-            "agent": StubAgent([f"output_{i}" for i in range(outputs)]),
-            "config": StepConfig(max_retries=1),
-        })
+        return Step.model_validate(
+            {
+                "name": name,
+                "agent": StubAgent([f"output_{i}" for i in range(outputs)]),
+                "config": StepConfig(max_retries=1),
+            }
+        )
 
     async def test_execution_performance(self) -> None:
         """Test basic execution performance."""
@@ -174,26 +177,24 @@ class PerformanceValidator:
 
         # Baseline
         baseline_metrics = await self.benchmark_function(
-            self.baseline_executor.execute,
-            iterations=100,
-            step=step,
-            data=data
+            self.baseline_executor.execute, iterations=100, step=step, data=data
         )
         baseline_metrics.test_name = "execution_performance_baseline"
         self.results.baseline_metrics["execution_performance"] = baseline_metrics
 
         # Optimized
         optimized_metrics = await self.benchmark_function(
-            self.optimized_executor.execute,
-            iterations=100,
-            step=step,
-            data=data
+            self.optimized_executor.execute, iterations=100, step=step, data=data
         )
         optimized_metrics.test_name = "execution_performance_optimized"
         self.results.optimized_metrics["execution_performance"] = optimized_metrics
 
         # Calculate improvement
-        improvement = (baseline_metrics.mean_time - optimized_metrics.mean_time) / baseline_metrics.mean_time * 100
+        improvement = (
+            (baseline_metrics.mean_time - optimized_metrics.mean_time)
+            / baseline_metrics.mean_time
+            * 100
+        )
         self.results.improvements["execution_performance"] = improvement
 
         print("Execution Performance:")
@@ -218,24 +219,24 @@ class PerformanceValidator:
 
         # Baseline
         baseline_metrics = await self.benchmark_function(
-            memory_test_baseline,
-            iterations=10,
-            warmup=2
+            memory_test_baseline, iterations=10, warmup=2
         )
         baseline_metrics.test_name = "memory_efficiency_baseline"
         self.results.baseline_metrics["memory_efficiency"] = baseline_metrics
 
         # Optimized
         optimized_metrics = await self.benchmark_function(
-            memory_test_optimized,
-            iterations=10,
-            warmup=2
+            memory_test_optimized, iterations=10, warmup=2
         )
         optimized_metrics.test_name = "memory_efficiency_optimized"
         self.results.optimized_metrics["memory_efficiency"] = optimized_metrics
 
         # Calculate improvement
-        memory_improvement = (baseline_metrics.memory_usage_mb - optimized_metrics.memory_usage_mb) / baseline_metrics.memory_usage_mb * 100
+        memory_improvement = (
+            (baseline_metrics.memory_usage_mb - optimized_metrics.memory_usage_mb)
+            / baseline_metrics.memory_usage_mb
+            * 100
+        )
         self.results.improvements["memory_efficiency"] = memory_improvement
 
         print("Memory Efficiency:")
@@ -249,41 +250,35 @@ class PerformanceValidator:
         data = {"test": "concurrent"}
 
         async def concurrent_test_baseline():
-            tasks = [
-                self.baseline_executor.execute(step, data)
-                for _ in range(20)
-            ]
+            tasks = [self.baseline_executor.execute(step, data) for _ in range(20)]
             results = await asyncio.gather(*tasks, return_exceptions=True)
             return results
 
         async def concurrent_test_optimized():
-            tasks = [
-                self.optimized_executor.execute(step, data)
-                for _ in range(20)
-            ]
+            tasks = [self.optimized_executor.execute(step, data) for _ in range(20)]
             results = await asyncio.gather(*tasks, return_exceptions=True)
             return results
 
         # Baseline
         baseline_metrics = await self.benchmark_function(
-            concurrent_test_baseline,
-            iterations=20,
-            warmup=3
+            concurrent_test_baseline, iterations=20, warmup=3
         )
         baseline_metrics.test_name = "concurrent_performance_baseline"
         self.results.baseline_metrics["concurrent_performance"] = baseline_metrics
 
         # Optimized
         optimized_metrics = await self.benchmark_function(
-            concurrent_test_optimized,
-            iterations=20,
-            warmup=3
+            concurrent_test_optimized, iterations=20, warmup=3
         )
         optimized_metrics.test_name = "concurrent_performance_optimized"
         self.results.optimized_metrics["concurrent_performance"] = optimized_metrics
 
         # Calculate improvement
-        improvement = (baseline_metrics.mean_time - optimized_metrics.mean_time) / baseline_metrics.mean_time * 100
+        improvement = (
+            (baseline_metrics.mean_time - optimized_metrics.mean_time)
+            / baseline_metrics.mean_time
+            * 100
+        )
         self.results.improvements["concurrent_performance"] = improvement
 
         print("Concurrent Performance:")
@@ -312,24 +307,24 @@ class PerformanceValidator:
 
         # Baseline
         baseline_metrics = await self.benchmark_function(
-            cache_test_baseline,
-            iterations=50,
-            warmup=5
+            cache_test_baseline, iterations=50, warmup=5
         )
         baseline_metrics.test_name = "cache_performance_baseline"
         self.results.baseline_metrics["cache_performance"] = baseline_metrics
 
         # Optimized
         optimized_metrics = await self.benchmark_function(
-            cache_test_optimized,
-            iterations=50,
-            warmup=5
+            cache_test_optimized, iterations=50, warmup=5
         )
         optimized_metrics.test_name = "cache_performance_optimized"
         self.results.optimized_metrics["cache_performance"] = optimized_metrics
 
         # Calculate improvement
-        improvement = (baseline_metrics.mean_time - optimized_metrics.mean_time) / baseline_metrics.mean_time * 100
+        improvement = (
+            (baseline_metrics.mean_time - optimized_metrics.mean_time)
+            / baseline_metrics.mean_time
+            * 100
+        )
         self.results.improvements["cache_performance"] = improvement
 
         print("Cache Performance:")
@@ -352,7 +347,7 @@ class PerformanceValidator:
             iterations=50,
             step=step,
             data=data,
-            context=mock_context
+            context=mock_context,
         )
         baseline_metrics.test_name = "context_handling_baseline"
         self.results.baseline_metrics["context_handling"] = baseline_metrics
@@ -363,13 +358,17 @@ class PerformanceValidator:
             iterations=50,
             step=step,
             data=data,
-            context=mock_context
+            context=mock_context,
         )
         optimized_metrics.test_name = "context_handling_optimized"
         self.results.optimized_metrics["context_handling"] = optimized_metrics
 
         # Calculate improvement
-        improvement = (baseline_metrics.mean_time - optimized_metrics.mean_time) / baseline_metrics.mean_time * 100
+        improvement = (
+            (baseline_metrics.mean_time - optimized_metrics.mean_time)
+            / baseline_metrics.mean_time
+            * 100
+        )
         self.results.improvements["context_handling"] = improvement
 
         print("Context Handling Performance:")
@@ -385,29 +384,39 @@ class PerformanceValidator:
         # Check for performance regressions
         for test_name, improvement in self.results.improvements.items():
             if improvement < 0:
-                bottlenecks.append(f"{test_name}: Performance regression of {abs(improvement):.1f}%")
-                recommendations.append(f"Investigate {test_name} optimization - may need parameter tuning")
+                bottlenecks.append(
+                    f"{test_name}: Performance regression of {abs(improvement):.1f}%"
+                )
+                recommendations.append(
+                    f"Investigate {test_name} optimization - may need parameter tuning"
+                )
 
         # Check if improvements meet targets
         targets = {
             "execution_performance": 20.0,  # 20% improvement target
-            "memory_efficiency": 30.0,      # 30% memory reduction target
+            "memory_efficiency": 30.0,  # 30% memory reduction target
             "concurrent_performance": 50.0,  # 50% concurrent improvement target
-            "cache_performance": 25.0,       # 25% cache improvement target
-            "context_handling": 40.0         # 40% context handling improvement target
+            "cache_performance": 25.0,  # 25% cache improvement target
+            "context_handling": 40.0,  # 40% context handling improvement target
         }
 
         for test_name, target in targets.items():
             if test_name in self.results.improvements:
                 actual = self.results.improvements[test_name]
                 if actual < target:
-                    bottlenecks.append(f"{test_name}: Only {actual:.1f}% improvement vs {target:.1f}% target")
-                    recommendations.append(f"Tune {test_name} optimization parameters to reach {target:.1f}% target")
+                    bottlenecks.append(
+                        f"{test_name}: Only {actual:.1f}% improvement vs {target:.1f}% target"
+                    )
+                    recommendations.append(
+                        f"Tune {test_name} optimization parameters to reach {target:.1f}% target"
+                    )
 
         # Check for high memory usage
         for test_name, metrics in self.results.optimized_metrics.items():
             if metrics.memory_usage_mb > 100:  # More than 100MB
-                bottlenecks.append(f"{test_name}: High memory usage ({metrics.memory_usage_mb:.1f} MB)")
+                bottlenecks.append(
+                    f"{test_name}: High memory usage ({metrics.memory_usage_mb:.1f} MB)"
+                )
                 recommendations.append(f"Optimize memory usage in {test_name}")
 
         # Check for high latency
@@ -427,7 +436,7 @@ class PerformanceValidator:
             "memory_efficiency": 0.2,
             "concurrent_performance": 0.2,
             "cache_performance": 0.15,
-            "context_handling": 0.15
+            "context_handling": 0.15,
         }
 
         weighted_score = 0.0
@@ -478,7 +487,7 @@ class PerformanceValidator:
 
     def save_results(self, filename: str = "performance_validation_results.json") -> None:
         """Save validation results to JSON file."""
-        with open(filename, 'w') as f:
+        with open(filename, "w") as f:
             json.dump(self.results.to_dict(), f, indent=2)
         print(f"\nResults saved to {filename}")
 
@@ -500,5 +509,6 @@ async def main():
 
 if __name__ == "__main__":
     import sys
+
     exit_code = asyncio.run(main())
     sys.exit(exit_code)

@@ -11,10 +11,12 @@ from flujo import Flujo, PipelineRegistry, Step, step
 from flujo.state import SQLiteBackend
 from flujo.testing import StubAgent
 
+
 @step
 async def draft(text: str) -> str:
     print("Generating draft...")
     return "A short draft"
+
 
 pipeline = (
     Step.solution(StubAgent(["ignored"]))
@@ -26,6 +28,7 @@ pipeline = (
 registry = PipelineRegistry()
 registry.register(pipeline, "durable_demo", "1.0.0")
 backend = SQLiteBackend(Path("workflow_state.db"))
+
 
 async def main() -> None:
     run_id = "example-run"
@@ -53,6 +56,7 @@ async def main() -> None:
         print("Final output:", resumed.step_history[-1].output)
     else:
         print("Run completed without pause.")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -6,6 +6,7 @@ from flujo import Flujo
 from flujo.domain.models import PipelineResult, PipelineContext
 from manual_testing.cohort_pipeline import COHORT_CLARIFICATION_PIPELINE
 
+
 # Ensure the API key is loaded from environment
 def ensure_api_key():
     """Ensure the API key is loaded from environment variables."""
@@ -17,16 +18,17 @@ def ensure_api_key():
         )
     # Mask the API key for security - show only last 4 characters
     if len(api_key) < 4:
-        masked_key = '*' * len(api_key)
+        masked_key = "*" * len(api_key)
     else:
         masked_key = f"{'*' * (len(api_key) - 4)}{api_key[-4:]}"
     print(f"\u2705 Using API key: {masked_key}")
+
 
 async def main():
     # Ensure the correct API key is set
     ensure_api_key()
 
-    print("Step 1: Running a single AI assessment step.\n" + "="*50)
+    print("Step 1: Running a single AI assessment step.\n" + "=" * 50)
 
     # The Flujo runner executes our pipeline.
     # We provide a pipeline_name and context_model to demonstrate that even
@@ -34,7 +36,7 @@ async def main():
     runner = Flujo(
         COHORT_CLARIFICATION_PIPELINE,
         pipeline_name="cohort_clarification_v1",
-        context_model=PipelineContext
+        context_model=PipelineContext,
     )
 
     initial_definition = input("Enter the clinical cohort definition: ")
@@ -43,8 +45,7 @@ async def main():
     # It returns an async iterator; the last item is the final result.
     result: Optional[PipelineResult] = None
     async for item in runner.run_async(
-        initial_definition,
-        initial_context_data={"initial_prompt": initial_definition}
+        initial_definition, initial_context_data={"initial_prompt": initial_definition}
     ):
         result = item
 
@@ -56,10 +57,10 @@ async def main():
         print("Pipeline execution failed.")
         if result and result.step_history:
             print(f"Feedback: {result.step_history[-1].feedback}")
-        return # Exit if the run failed
+        return  # Exit if the run failed
 
     # --- FSD-12: TRACING DEMONSTRATION ---
-    print("\n" + "="*50)
+    print("\n" + "=" * 50)
     print("✨ OBSERVABILITY (FSD-12) ✨")
     if result.final_pipeline_context and result.final_pipeline_context.run_id:
         run_id = result.final_pipeline_context.run_id
