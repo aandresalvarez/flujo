@@ -446,6 +446,20 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         from ...exceptions import PausedException
         # Already a StepResult
         if isinstance(outcome, StepResult):
+            # Adapter: ensure fallback successes carry minimal diagnostic feedback when missing
+            try:
+                if outcome.success and (outcome.feedback is None):
+                    md = getattr(outcome, "metadata_", None)
+                    if isinstance(md, dict) and (md.get("fallback_triggered") is True or "original_error" in md):
+                        original_error = md.get("original_error")
+                        base_msg = (
+                            f"Primary agent failed: {original_error}"
+                            if original_error
+                            else "Primary agent failed"
+                        )
+                        outcome.feedback = base_msg
+            except Exception:
+                pass
             return outcome
         if isinstance(outcome, Success):
             return outcome.step_result
@@ -596,7 +610,8 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         cached_success = Success(step_result=cached_result)
                         if called_with_frame:
                             return cached_success
-                        return cached_result
+                        # Normalize via unwrap to inject minimal diagnostics when needed
+                        return self._unwrap_outcome_to_step_result(cached_result, self._safe_step_name(step))
             except Exception as e:
                 telemetry.logfire.warning(
                     f"Cache error for step {getattr(step, 'name', '<unnamed>')}: {e}"
@@ -651,7 +666,8 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             if called_with_frame:
                 return outcome
             if isinstance(outcome, Success):
-                return outcome.step_result
+                # Normalize via unwrap to inject minimal diagnostics when needed
+                return self._unwrap_outcome_to_step_result(outcome.step_result, self._safe_step_name(step))
             if isinstance(outcome, Failure):
                 return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
             if isinstance(outcome, Paused):
@@ -683,7 +699,8 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             if called_with_frame:
                 return outcome
             if isinstance(outcome, Success):
-                return outcome.step_result
+                # Normalize via unwrap to inject minimal diagnostics when needed
+                return self._unwrap_outcome_to_step_result(outcome.step_result, self._safe_step_name(step))
             if isinstance(outcome, Failure):
                 return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
             if isinstance(outcome, Paused):
@@ -705,7 +722,8 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             if called_with_frame:
                 return outcome
             if isinstance(outcome, Success):
-                return outcome.step_result
+                # Normalize via unwrap to inject minimal diagnostics when needed
+                return self._unwrap_outcome_to_step_result(outcome.step_result, self._safe_step_name(step))
             if isinstance(outcome, Failure):
                 return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
             if isinstance(outcome, Paused):
@@ -727,7 +745,8 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             if called_with_frame:
                 return outcome
             if isinstance(outcome, Success):
-                return outcome.step_result
+                # Normalize via unwrap to inject minimal diagnostics when needed
+                return self._unwrap_outcome_to_step_result(outcome.step_result, self._safe_step_name(step))
             if isinstance(outcome, Failure):
                 return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
             if isinstance(outcome, Paused):
@@ -753,7 +772,8 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             if isinstance(outcome, Paused):
                 raise PausedException(outcome.message)
             if isinstance(outcome, Success):
-                return outcome.step_result
+                # Normalize via unwrap to inject minimal diagnostics when needed
+                return self._unwrap_outcome_to_step_result(outcome.step_result, self._safe_step_name(step))
             if isinstance(outcome, Failure):
                 return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
             return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
@@ -831,19 +851,55 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 telemetry.logfire.debug(
                     f"Routing to AgentStep policy: {getattr(step, 'name', '<unnamed>')}"
                 )
-                result = await self.agent_step_executor.execute(
-                    self,
-                    step,
-                    data,
-                    context,
-                    resources,
-                    limits,
-                    stream,
-                    on_chunk,
-                    cache_key,
-                    breach_event,
-                    fb_depth_norm,
-                )
+                # SAFE ADAPTER: if called with frame (backend/runner path), prefer outcomes adapter
+                if called_with_frame:
+                    try:
+                        from .step_policies import DefaultAgentStepExecutorOutcomes as _AgentOutcomes
+                    except Exception:
+                        _AgentOutcomes = None  # type: ignore
+                    if _AgentOutcomes is not None:
+                        outcomes_adapter = _AgentOutcomes(self.agent_step_executor)
+                        result = await outcomes_adapter.execute(
+                            self,
+                            step,
+                            data,
+                            context,
+                            resources,
+                            limits,
+                            stream,
+                            on_chunk,
+                            cache_key,
+                            breach_event,
+                            fb_depth_norm,
+                        )
+                    else:
+                        result = await self.agent_step_executor.execute(
+                            self,
+                            step,
+                            data,
+                            context,
+                            resources,
+                            limits,
+                            stream,
+                            on_chunk,
+                            cache_key,
+                            breach_event,
+                            fb_depth_norm,
+                        )
+                else:
+                    result = await self.agent_step_executor.execute(
+                        self,
+                        step,
+                        data,
+                        context,
+                        resources,
+                        limits,
+                        stream,
+                        on_chunk,
+                        cache_key,
+                        breach_event,
+                        fb_depth_norm,
+                    )
             # Normalize policies that return StepOutcome into StepResult for downstream logic
             from typing import cast as _cast
             if isinstance(result, StepOutcome):
@@ -975,8 +1031,8 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         )
         if called_with_frame:
             return final_outcome
-        # Legacy callers expect StepResult
-        return result
+        # Legacy callers expect StepResult; normalize to inject minimal diagnostics when needed
+        return self._unwrap_outcome_to_step_result(result, step_name)
 
     # Backward compatibility method for old execute signature
     async def execute_old_signature(self, step: Any, data: Any, **kwargs: Any) -> StepOutcome[StepResult]:

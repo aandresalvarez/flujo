@@ -1,187 +1,128 @@
-## **Functional Specification Document: Typed Step Outcomes (FSD-008)**
+# FSD-008: Typed Outcomes Migration - Incremental Implementation Plan
 
-**Author:** Alvaro
-**Date:** 2023-10-27
-**Status:** Partially Implemented (60%) – In Progress
-**JIRA/Ticket:** FLUJO-123 (Example Ticket ID)
+## Overview
+Migrate all step execution policies to return typed `StepOutcome[StepResult]` natively while maintaining backward compatibility and test stability.
 
-### Implementation Status
+## Core Principles
+- **Incremental**: Each step is small, focused, and testable
+- **Safe**: No breaking changes; maintain green tests throughout
+- **Testable**: Each step includes validation before proceeding
+- **Reversible**: Easy rollback at any point
 
-- **Last Updated:** 2025-08-11
-- **Completed Tasks:** 3.1 (Models), 3.4 (Exception Choke Point), 3.5 (ExecutionManager Consumption), 3.6 (Unified Streaming API)
-- **Remaining Tasks:** 3.2 (Policy Contracts), 3.3 (Policy Implementations)
-- **Current State:** Core outcome types and orchestration paths are complete and in use. The policy layer still returns a mix of `StepResult` and `StepOutcome`; contracts need to be updated and implementations migrated to consistently return typed outcomes (`Success`, `Failure`, `Paused`, `Aborted`).
+## Implementation Steps
 
-### Implementation Progress Summary (2025-08-11)
+### Step 0: Outcome conversion utility (test-first)
+- **Goal**: Provide a single, reusable helper to wrap `StepResult -> StepOutcome[StepResult]` and vice-versa for tests.
+- **Implementation**:
+  - Add small helpers (e.g., `to_outcome(sr)`, `unwrap(outcome)`) in a shared module.
+  - Preserve all metadata (attempts, latency_ms, feedback, usage, cached flags).
+- **Testing**:
+  - Add property-based tests asserting `unwrap(to_outcome(sr)) == sr` for a wide variety of generated `StepResult`s.
+  - Ensure diagnostics/feedback mapping is preserved.
+- **Validation**: This reduces duplication across adapters and guarantees semantics equivalence.
 
-- Work completed
-  - Defined `StepOutcome` models (`Success`, `Failure`, `Paused`, `Aborted`, `Chunk`) and added unit tests.
-  - Implemented exception choke point in `ExecutorCore` that converts unexpected exceptions into typed `Failure` outcomes; re-raises control/config errors (`UsageLimitExceededError`, `PricingNotConfiguredError`, `MissingAgentError`, `MockDetectionError`, `InfiniteRedirectError`).
-  - Updated `ExecutionManager` to consume `StepOutcome` and handle `Success`/`Failure`/`Paused`/`Aborted`/`Chunk` correctly.
-  - Unified streaming API: added `Flujo.run_outcomes_async` returning `AsyncIterator[StepOutcome[StepResult]]` and normalized legacy chunks to `Chunk`.
-  - HITL: `DefaultHitlStepExecutor` now returns typed `Paused` (no longer raises for control flow), and the protocol returns `StepOutcome[StepResult]`.
-  - Normalization: Dynamic Router and Cache policies unwrap `StepOutcome` to `StepResult` where legacy expectations apply; `DummyRemoteBackend` now unwraps to `StepResult` to satisfy tests.
-  - Strict pricing propagation: added guards to re-raise `PricingNotConfiguredError` from agent execution and simple-step usage-metrics extraction.
+### Step 1: Add Agent Policy Outcomes Adapter ✅ COMPLETED
+- **Goal**: Create `DefaultAgentStepExecutorOutcomes` that wraps `DefaultAgentStepExecutor`.
+- **Implementation**:
+  - Adapter added in `step_policies.py`; `ExecutorCore` uses it on backend/runner path.
+  - Returns `Success(step_result=result)` for successful results; `Failure(error=Exception(...), step_result=result)` for failed results.
+- **Testing**: `make test-fast` is green (validated).
+- **Validation**: Backend path now emits typed `StepOutcome` for Agent steps without breaking legacy tests.
 
-- Current status (delta)
-  - Overall migration at ~60%. Orchestration is typed; policy layer is partially migrated and still returns a mix of `StepResult` and `StepOutcome` in some paths.
-  - Remaining gaps observed in tests: strict pricing still converted to failures in some simple-step fallback paths; fallback semantics (attempt aggregation, usage metering, feedback content) need alignment; runner should dispatch an on-step-failure hook for failure visibility.
+### Step 2: Add Parallel Policy Outcomes Adapter
+- **Goal**: Create `DefaultParallelStepExecutorOutcomes` that wraps `DefaultParallelStepExecutor`
+- **Implementation**:
+  - Add adapter class in `step_policies.py`
+  - Handle both success and failure cases from parallel execution
+  - Preserve all result metadata (attempts, latency, feedback, usage)
+- **Testing**: Run `make test-fast` - should remain green
+- **Validation**: Verify parallel step outcomes are properly wrapped
 
-- Proposed next steps
-  1. Complete Task 3.2/3.3 across policy layer
-     - Update remaining executor protocols and implementations to return `StepOutcome[StepResult]` consistently.
-     - Remove residual `PausedException` usage in policies in favor of `Paused` outcomes (keep legacy raise at boundaries only where required).
-  2. Strict pricing and control-flow propagation
-     - Ensure `PricingNotConfiguredError` and `UsageLimitExceededError` re-raise through simple-step fallback/validation branches (no conversion to failed results).
-  3. Fallback semantics alignment
-     - Aggregate attempts: primary attempts + fallback attempts in final result.
-     - Usage metering: guarantee primary usage `add(...)` call before fallback where tests expect it.
-     - Feedback: include primary error substring verbatim and preserve detailed text for very-long feedback tests.
-  4. Hooks and runner integration
-     - In `Flujo.run_async`, dispatch `on_step_failure` when a step fails (before final result) with a typed payload.
-  5. Outcome normalization boundaries
-     - Keep normalization at backend/runner edges only; policies return typed outcomes; coordinator/legacy helpers unwrap only where required by legacy tests.
-  6. Validation
-     - Run test-fast and full suite; then run type-checking (mypy) and update docs where signatures changed.
+### Step 3: Add Conditional Policy Outcomes Adapter
+- **Goal**: Create `DefaultConditionalStepExecutorOutcomes` that wraps `DefaultConditionalStepExecutor`
+- **Implementation**:
+  - Add adapter class in `step_policies.py`
+  - Handle conditional branching outcomes
+  - Preserve conditional logic and result metadata
+- **Testing**: Run `make test-fast` - should remain green
+- **Validation**: Verify conditional step outcomes are properly wrapped
 
+### Step 4: Wire Simple Policy Adapter in ExecutorCore
+- **Goal**: Update `ExecutorCore.execute()` to use `DefaultSimpleStepExecutorOutcomes` when called with `ExecutionFrame`
+- **Implementation**:
+  - Modify the simple step routing logic in `ExecutorCore.execute()`
+  - Use outcomes adapter only for backend/runner path (when `called_with_frame=True`)
+  - Keep direct policy calls returning `StepResult` for tests
+- **Testing**: Run `make test-fast` - should remain green
+- **Validation**: Verify simple steps now return `StepOutcome` in backend context
 
-### **1. Overview**
+### Step 5: Wire Parallel Policy Adapter in ExecutorCore
+- **Goal**: Update `ExecutorCore.execute()` to use `DefaultParallelStepExecutorOutcomes` when called with `ExecutionFrame`
+- **Implementation**:
+  - Modify the parallel step routing logic in `ExecutorCore.execute()`
+  - Use outcomes adapter only for backend/runner path
+  - Keep direct policy calls returning `StepResult` for tests
+- **Testing**: Run `make test-fast` - should remain green
+- **Validation**: Verify parallel steps now return `StepOutcome` in backend context
 
-This document outlines the design and implementation plan to refactor Flujo's core execution engine from an exception-based control flow model to a typed, value-based `StepOutcome` model. This change is foundational for improving the framework's robustness, testability, and readiness for distributed backends.
+### Step 6: Wire Conditional Policy Adapter in ExecutorCore
+- **Goal**: Update `ExecutorCore.execute()` to use `DefaultConditionalStepExecutorOutcomes` when called with `ExecutionFrame`
+- **Implementation**:
+  - Modify the conditional step routing logic in `ExecutorCore.execute()`
+  - Use outcomes adapter only for backend/runner path
+  - Keep direct policy calls returning `StepResult` for tests
+- **Testing**: Run `make test-fast` - should remain green
+- **Validation**: Verify conditional steps now return `StepOutcome` in backend context
 
-Currently, control flow for events like pausing for human input (`PausedException`) or graceful termination (`PipelineAbortSignal`) is handled by raising and catching specific exceptions. This couples the execution logic to Python's exception system, making it brittle and difficult to adapt for non-local execution backends.
+### Step 7: Integration Testing
+- **Goal**: Verify all step types now return `StepOutcome` in backend context
+- **Implementation**:
+  - Create integration test that exercises all step types through backend path
+  - Verify `StepOutcome` types are properly propagated
+  - Check that legacy consumers still receive unwrapped `StepResult`
+- **Testing**: Run `make test-fast` and integration tests - should remain green
+- **Validation**: Confirm typed outcomes are working end-to-end
 
-This FSD proposes replacing this pattern with an explicit, serializable `StepOutcome` system, where policies return a typed result (`Success`, `Failure`, `Paused`, `Aborted`) instead of raising exceptions for control flow.
+### Step 8: Protocol Interface Updates (Optional)
+- **Goal**: Update protocol definitions to reflect `StepOutcome` return types
+- **Implementation**:
+  - Update `SimpleStepExecutor`, `ParallelStepExecutor`, `ConditionalStepExecutor` protocols
+  - Change return type from `StepResult` to `StepOutcome[StepResult]`
+  - Note: This is cosmetic - actual behavior unchanged due to adapters
+- **Testing**: Run `make test-fast` - should remain green
+- **Validation**: Verify type hints are consistent
 
-### **2. Rationale & Goals**
+### Step 9: Performance Validation
+- **Goal**: Ensure outcomes adapters don't introduce performance regressions
+- **Implementation**:
+  - Run performance benchmarks comparing before/after
+  - Profile memory usage and execution time
+  - Verify no significant overhead from outcome wrapping
+- **Testing**: Run performance tests and benchmarks
+- **Validation**: Confirm performance impact is minimal (<5%)
 
-#### **2.1. Problems with the Current Approach**
+### Step 10: Documentation and Cleanup
+- **Goal**: Document the new typed outcomes system
+- **Implementation**:
+  - Update API documentation
+  - Add migration guide for consumers
+  - Document the adapter pattern used
+- **Testing**: Verify documentation is accurate and helpful
+- **Validation**: Confirm developers can understand and use the new system
 
-*   **Architectural Coupling:** Tightly couples the orchestration logic to Python's exception handling, hindering the future implementation of distributed backends (e.g., Ray, Temporal) which rely on message passing.
-*   **Ambiguous Contracts:** The return type of an execution policy is not fully descriptive of all possible outcomes. A caller must inspect both the return value (`StepResult`) and handle multiple potential exceptions.
-*   **Brittle Control Flow:** Using exceptions for non-exceptional events like pausing makes the code harder to reason about and maintain.
-*   **Confusing Streaming API:** The current streaming API yields both data chunks and a final `PipelineResult`, creating an inconsistent and difficult-to-use contract.
+## Success Criteria
+- All step types return `StepOutcome[StepResult]` in backend context
+- All tests remain green throughout migration
+- No breaking changes for existing consumers
+- Performance impact is minimal
+- Clear documentation for the new system
 
-#### **2.2. Goals of this Refactor**
+## Rollback Plan
+At any step, if tests fail:
+1. Revert the specific change
+2. Investigate the issue
+3. Fix the underlying problem
+4. Retry the step
 
-*   **Decouple Control Flow:** Make the execution engine's control flow explicit through typed return values, independent of the underlying execution runtime.
-*   **Improve Architectural Clarity:** Establish a clear, single contract for what a step execution policy can return.
-*   **Enhance Safety and Testability:** Make it easier to test for specific outcomes without relying on `pytest.raises`.
-*   **Unify the Streaming Contract:** Provide a single, consistent `AsyncIterator[StepOutcome]` return type for all step executions.
-*   **Lay the Foundation for Distributed Execution:** The new `StepOutcome` objects will be serializable, enabling them to be passed between processes or machines.
-
-### **3. Functional Requirements & Design**
-
-The core of this change is the introduction of a `StepOutcome` algebraic data type and the refactoring of the execution stack to produce and consume it.
-
-#### **Task 3.1: Define `StepOutcome` Data Models**
-
-The `StepOutcome` will be a set of Pydantic models representing all possible terminal states of a single step's execution.
-
-*   **Location:** `flujo/domain/models.py`
-*   **Implementation Details:**
-    *   Create a generic `StepOutcome(BaseModel, Generic[T])` base class.
-    *   Define the following subclasses:
-        *   `Success(StepOutcome[T])`: Contains a single field `step_result: StepResult`.
-        *   `Failure(StepOutcome[T])`: Contains `error: Exception`, `feedback: str`, and `step_result: StepResult` (the partial result at the time of failure).
-        *   `Paused(StepOutcome[T])`: Contains `message: str` and an optional `state_token: Any` for resumption context.
-        *   `Aborted(StepOutcome[T])`: Contains a `reason: str` for why execution was halted (e.g., by a circuit breaker).
-*   **Acceptance Criteria & Testing:**
-    *   **Unit Tests:** Create `tests/domain/test_models.py`.
-        *   Verify that each `StepOutcome` subclass can be instantiated correctly.
-        *   Verify that each model is serializable (using `model_dump_json`).
-
-#### **Task 3.2: Update Core Policy Contracts**
-
-All step execution policies must be updated to adhere to the new `StepOutcome` contract.
-
-*   **Location:** `flujo/application/core/executor_protocols.py` and `flujo/application/core/step_policies.py`.
-*   **Implementation Details:**
-    *   Change the return type signature of all `execute` methods in the policy protocols and their default implementations from `Awaitable[StepResult]` to `Awaitable[StepOutcome[StepResult]]`.
-*   **Acceptance Criteria & Testing:**
-    *   **Static Analysis:** The type checker (mypy) should pass, confirming all signatures have been updated. No specific runtime tests are needed for this signature-only change.
-
-#### **Task 3.3: Refactor Policy Implementations to Return Outcomes**
-
-This is the core implementation task. Each policy's logic must be modified.
-
-*   **Location:** `flujo/application/core/step_policies.py`.
-*   **Implementation Details:**
-    *   **Success Path:** Replace all instances of `return StepResult(...)` with `return Success(step_result=StepResult(...))`.
-    *   **Failure Path:**
-        *   Catch specific, expected exceptions (e.g., from agent calls, validators).
-        *   Create a partial `StepResult` with `success=False` and relevant feedback.
-        *   Return a `Failure(error=e, feedback=..., step_result=...)` object.
-    *   **Pause Path (`DefaultHitlStepExecutor`):** Replace `raise PausedException(...)` with `return Paused(message=...)`.
-    *   **Unhandled Exceptions:** True programming errors or unexpected system failures should *still raise exceptions*. They will be handled by the choke point in the next task.
-*   **Acceptance Criteria & Testing:**
-    *   **Unit Tests:** For each policy in `tests/application/core/test_step_policies.py`:
-        *   Test the success path, asserting the returned value is an instance of `Success` and contains the correct `StepResult`.
-        *   Test failure paths (e.g., a failing validator), asserting the returned value is `Failure` with the correct error and feedback.
-        *   Specifically for `DefaultHitlStepExecutor`, test that it returns a `Paused` outcome.
-
-#### **Task 3.4: Implement the Exception Choke Point in `ExecutorCore`**
-
-The central dispatcher will be the single point where unexpected exceptions are converted into `Failure` outcomes.
-
-*   **Location:** `flujo/application/core/executor_core.py`.
-*   **Implementation Details:**
-    *   In the `execute` method, wrap the call to the policy (`policy.execute(frame)`) in a `try...except Exception as e:` block.
-    *   The `except` block should catch all exceptions *except* for specific ones that the `ExecutionManager` needs to handle directly (like `UsageLimitExceededError`).
-    *   Inside the `except` block, create a `StepResult` and return a `Failure` outcome.
-*   **Acceptance Criteria & Testing:**
-    *   **Integration Test:** Create `tests/application/core/test_executor_core.py`.
-        *   Create a mock policy that raises an unexpected `ValueError`.
-        *   Call `ExecutorCore.execute` with this policy.
-        *   Assert that the returned value is an instance of `Failure` and that its `error` attribute is the original `ValueError`.
-
-#### **Task 3.5: Refactor `ExecutionManager` to Consume `StepOutcome`**
-
-The main execution loop must be updated to handle the new return types.
-
-*   **Location:** `flujo/application/core/execution_manager.py`.
-*   **Implementation Details:**
-    *   Modify the `execute_steps` method's main loop.
-    *   The loop now receives `StepOutcome` objects from `step_coordinator.execute_step`.
-    *   Use a `match/case` statement or `if/isinstance` chain to handle each outcome:
-        *   `Success`: Extract the `StepResult` and proceed as normal.
-        *   `Failure`: Append the partial `StepResult` to the history and terminate the loop.
-        *   `Paused`: Update the context's `scratchpad` with the paused status and message, then `raise PipelineAbortSignal` to stop execution and signal the `Flujo` runner.
-        *   `Aborted`: Terminate the loop immediately.
-*   **Acceptance Criteria & Testing:**
-    *   **Integration Tests:** In `tests/application/core/test_execution_manager.py`:
-        *   Test a simple successful pipeline, ensuring it completes correctly.
-        *   Test a pipeline where a step returns a `Failure` outcome, asserting that the pipeline stops at that step and the final `PipelineResult` is marked as failed.
-        *   Test a pipeline where a step returns a `Paused` outcome, asserting that `PipelineAbortSignal` is raised and the final context reflects the paused state.
-
-#### **Task 3.6: Unify the Streaming API**
-
-The streaming contract will be simplified by the `StepOutcome` model.
-
-*   **Location:** `flujo/application/runner.py`.
-*   **Implementation Details:**
-    *   Define a new `StepOutcome` subclass, `Chunk(StepOutcome[T])`, in `flujo/domain/models.py`.
-    *   The `on_chunk` callback in `ExecutionFrame` will now wrap incoming data chunks in a `Chunk` outcome and yield them.
-    *   The `run_async` method in the `Flujo` runner will now have a clear return type: `AsyncIterator[StepOutcome[StepResult]]`.
-    *   Non-streaming steps will yield a single `Success` or `Failure` outcome.
-    *   Streaming steps will yield zero or more `Chunk` outcomes, followed by a final `Success` or `Failure` outcome containing the complete `StepResult`.
-*   **Acceptance Criteria & Testing:**
-    *   **Regression Tests:** All existing tests for `run` and `run_async` should be updated and pass.
-    *   **Integration Tests:** In `tests/application/test_runner.py`:
-        *   Test a streaming pipeline. The test should iterate through the async generator, assert that it receives `Chunk` instances, and finally a `Success` instance containing the final `PipelineResult`.
-        *   Test a non-streaming pipeline, asserting that the async generator yields exactly one `Success` instance.
-
-### **4. Rollout and Regression Plan**
-
-1.  **Branching:** This work will be done on a dedicated feature branch (e.g., `feature/FSD-008-typed-outcomes`).
-2.  **Implementation Order:** Tasks should be completed in the order listed above (3.1 through 3.6).
-3.  **Testing Strategy:** Each task must be accompanied by its specified unit and integration tests. After all tasks are complete, a full regression test suite (`pytest`) must be run to catch any unintended side effects.
-4.  **Code Review:** Due to the high architectural impact, this change requires at least two senior reviewers.
-5.  **Merge:** Once all tests pass and the code is approved, the feature branch will be merged into the main development branch.
-
-### **5. Risks and Mitigation**
-
-*   **Risk:** High blast radius could introduce subtle regressions in complex control flows (e.g., nested loops with fallbacks).
-    *   **Mitigation:** The task-by-task testing strategy is designed to mitigate this. A full regression run is mandatory. Particular attention should be paid to tests involving `LoopStep`, `ParallelStep`, and `fallback_step`.
-*   **Risk:** The refactor could be time-consuming due to the number of files affected.
-    *   **Mitigation:** The changes are highly mechanical. Once the pattern is established in one policy, applying it to others should be straightforward. This FSD provides a clear guide to minimize discovery time.
+## Next Steps
+Begin with Step 2 (Parallel Policy Outcomes Adapter) since Step 1 is already completed.
