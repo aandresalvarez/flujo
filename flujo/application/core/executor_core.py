@@ -44,6 +44,7 @@ from ...utils.context import safe_merge_context_updates
 from .step_policies import (
     AgentResultUnpacker,
     AgentStepExecutor,
+    PolicyRegistry,
     CacheStepExecutor,
     ConditionalStepExecutor,
     DefaultAgentResultUnpacker,
@@ -269,6 +270,17 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         )
         self.hitl_step_executor = hitl_step_executor or DefaultHitlStepExecutor()
         self.cache_step_executor = cache_step_executor or DefaultCacheStepExecutor()
+
+        # FSD-010: Initialize and populate the policy registry used for dispatch
+        self.policy_registry = PolicyRegistry()
+        # Register callables that accept an ExecutionFrame and return StepOutcome
+        self.policy_registry.register(Step, self._policy_default_step)
+        self.policy_registry.register(ParallelStep, self._policy_parallel_step)
+        self.policy_registry.register(LoopStep, self._policy_loop_step)
+        self.policy_registry.register(ConditionalStep, self._policy_conditional_step)
+        self.policy_registry.register(DynamicParallelRouterStep, self._policy_dynamic_router_step)
+        self.policy_registry.register(HumanInTheLoopStep, self._policy_hitl_step)
+        self.policy_registry.register(CacheStep, self._policy_cache_step)
 
     @property
     def cache(self) -> _LRUCache:
@@ -601,7 +613,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         stream = getattr(frame, "stream", False)
         on_chunk = getattr(frame, "on_chunk", None)
         breach_event = getattr(frame, "breach_event", None)
-        context_setter = getattr(frame, "context_setter", None)
+        # context_setter is consumed by policy callables; keep available on frame
         result = getattr(frame, "result", None)
         _fallback_depth = getattr(frame, "_fallback_depth", 0)
 
@@ -636,210 +648,28 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     f"Cache error for step {getattr(step, 'name', '<unnamed>')}: {e}"
                 )
 
-        if isinstance(step, CacheStep):
-            # Native-outcome cache policy
-            outcome = await self.cache_step_executor.execute(
-                self,
-                step,
-                data,
-                context,
-                resources,
-                limits,
-                breach_event,
-                context_setter,
-                None,
-            )
-            if called_with_frame:
-                return outcome
-            # Dev-only deprecation notice for legacy entry path
-            import os as _os
-            import warnings as _warnings
-
-            if _os.getenv("FLUJO_WARN_LEGACY"):
-                try:
-                    _warnings.warn(
-                        "Legacy ExecutorCore.execute(step, ...) path used; prefer ExecutionFrame/outcome-first.",
-                        DeprecationWarning,
-                    )
-                except Exception:
-                    pass
-            if isinstance(outcome, Success):
-                return outcome.step_result
-            if isinstance(outcome, Failure):
-                return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
-            if isinstance(outcome, Paused):
-                raise PausedException(outcome.message)
-            return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
-
-        if isinstance(step, ParallelStep):
-            # Policy is native-outcome now
-            res_any = await self.parallel_step_executor.execute(
-                self,
-                step,
-                data,
-                context,
-                resources,
-                limits,
-                breach_event,
-                context_setter,
-                step,
-                None,
-            )
-            if isinstance(res_any, StepOutcome):
-                outcome = res_any
-            else:
-                outcome = (
-                    Success(step_result=res_any)
-                    if res_any.success
-                    else Failure(
-                        error=Exception(res_any.feedback or "step failed"),
-                        feedback=res_any.feedback,
-                        step_result=res_any,
-                    )
-                )
-            if called_with_frame:
-                return outcome
-            if isinstance(outcome, Success):
-                # Normalize via unwrap to inject minimal diagnostics when needed
-                return self._unwrap_outcome_to_step_result(
-                    outcome.step_result, self._safe_step_name(step)
-                )
-            if isinstance(outcome, Failure):
-                return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
-            if isinstance(outcome, Paused):
-                raise PausedException(outcome.message)
-            return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
-
-        if isinstance(step, LoopStep):
-            res_any = await self.loop_step_executor.execute(
-                self,
-                step,
-                data,
-                context,
-                resources,
-                limits,
-                stream,
-                on_chunk,
-                cache_key,
-                breach_event,
-                _fallback_depth,
-            )
-            if isinstance(res_any, StepOutcome):
-                outcome = res_any
-            else:
-                outcome = (
-                    Success(step_result=res_any)
-                    if res_any.success
-                    else Failure(
-                        error=Exception(res_any.feedback or "step failed"),
-                        feedback=res_any.feedback,
-                        step_result=res_any,
-                    )
-                )
-            if called_with_frame:
-                return outcome
-            if isinstance(outcome, Success):
-                # Normalize via unwrap to inject minimal diagnostics when needed
-                return self._unwrap_outcome_to_step_result(
-                    outcome.step_result, self._safe_step_name(step)
-                )
-            if isinstance(outcome, Failure):
-                return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
-            if isinstance(outcome, Paused):
-                raise PausedException(outcome.message)
-            return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
-
-        if isinstance(step, ConditionalStep):
-            # Policy is native-outcome; no flag needed
-            res_any = await self.conditional_step_executor.execute(
-                self, step, data, context, resources, limits, context_setter, _fallback_depth
-            )
-            if isinstance(res_any, StepOutcome):
-                outcome = res_any
-            else:
-                outcome = (
-                    Success(step_result=res_any)
-                    if res_any.success
-                    else Failure(
-                        error=Exception(res_any.feedback or "step failed"),
-                        feedback=res_any.feedback,
-                        step_result=res_any,
-                    )
-                )
-            if called_with_frame:
-                return outcome
-            if isinstance(outcome, Success):
-                # Normalize via unwrap to inject minimal diagnostics when needed
-                return self._unwrap_outcome_to_step_result(
-                    outcome.step_result, self._safe_step_name(step)
-                )
-            if isinstance(outcome, Failure):
-                return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
-            if isinstance(outcome, Paused):
-                raise PausedException(outcome.message)
-            return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
-
-        if isinstance(step, DynamicParallelRouterStep):
-            res_any = await self.dynamic_router_step_executor.execute(
-                self, step, data, context, resources, limits, context_setter
-            )
-            if isinstance(res_any, StepOutcome):
-                outcome = res_any
-            else:
-                outcome = (
-                    Success(step_result=res_any)
-                    if res_any.success
-                    else Failure(
-                        error=Exception(res_any.feedback or "step failed"),
-                        feedback=res_any.feedback,
-                        step_result=res_any,
-                    )
-                )
-            if called_with_frame:
-                return outcome
-            if isinstance(outcome, Success):
-                # Normalize via unwrap to inject minimal diagnostics when needed
-                return self._unwrap_outcome_to_step_result(
-                    outcome.step_result, self._safe_step_name(step)
-                )
-            if isinstance(outcome, Failure):
-                return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
-            if isinstance(outcome, Paused):
-                raise PausedException(outcome.message)
-            return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
-
-        if isinstance(step, HumanInTheLoopStep):
-            res_any = await self.hitl_step_executor.execute(
-                self, step, data, context, resources, limits, context_setter
-            )
-            hitl_outcome: StepOutcome[StepResult]
-            if isinstance(res_any, StepOutcome):
-                hitl_outcome = res_any
-            else:
-                hitl_outcome = (
-                    Success(step_result=res_any)
-                    if res_any.success
-                    else Failure(
-                        error=Exception(res_any.feedback or "step failed"),
-                        feedback=res_any.feedback,
-                        step_result=res_any,
-                    )
-                )
-            if called_with_frame:
-                return hitl_outcome
-            # Legacy behavior: raise on pause, unwrap others
-            if isinstance(hitl_outcome, Paused):
-                raise PausedException(hitl_outcome.message)
-            if isinstance(hitl_outcome, Success):
-                # Normalize via unwrap to inject minimal diagnostics when needed
-                return self._unwrap_outcome_to_step_result(
-                    hitl_outcome.step_result, self._safe_step_name(step)
-                )
-            if isinstance(hitl_outcome, Failure):
-                return self._unwrap_outcome_to_step_result(hitl_outcome, self._safe_step_name(step))
-            return self._unwrap_outcome_to_step_result(hitl_outcome, self._safe_step_name(step))
-
         try:
+            # FSD-010: Registry-based dispatch (inside choke-point try/except)
+            policy = self.policy_registry.get(type(step))
+            if policy is None:
+                policy = self.policy_registry.get(Step)
+            if policy is None:
+                raise NotImplementedError(
+                    f"No policy registered for step type: {type(step).__name__}"
+                )
+
+            outcome = await policy(frame)
+            if called_with_frame:
+                return outcome
+            if isinstance(outcome, Success):
+                return self._unwrap_outcome_to_step_result(
+                    outcome.step_result, self._safe_step_name(step)
+                )
+            if isinstance(outcome, Failure):
+                return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
+            if isinstance(outcome, Paused):
+                raise PausedException(outcome.message)
+            return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
             # Normalize fallback depth defensively
             try:
                 fb_depth_norm = int(_fallback_depth)
@@ -1568,6 +1398,232 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         if feedback is None:
             return default_message
         return feedback
+
+    # ------------------------
+    # FSD-010: Policy callables for registry
+    # ------------------------
+    async def _policy_cache_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
+        step = frame.step
+        data = frame.data
+        context = frame.context
+        resources = frame.resources
+        limits = frame.limits
+        breach_event = frame.breach_event
+        context_setter = frame.context_setter
+        outcome = await self.cache_step_executor.execute(
+            self,
+            step,
+            data,
+            context,
+            resources,
+            limits,
+            breach_event,
+            context_setter,
+            None,
+        )
+        return outcome
+
+    async def _policy_parallel_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
+        step = frame.step
+        data = frame.data
+        context = frame.context
+        resources = frame.resources
+        limits = frame.limits
+        breach_event = frame.breach_event
+        context_setter = frame.context_setter
+        res_any = await self.parallel_step_executor.execute(
+            self, step, data, context, resources, limits, breach_event, context_setter, step, None
+        )
+        if isinstance(res_any, StepOutcome):
+            return res_any
+        return (
+            Success(step_result=res_any)
+            if res_any.success
+            else Failure(
+                error=Exception(res_any.feedback or "step failed"),
+                feedback=res_any.feedback,
+                step_result=res_any,
+            )
+        )
+
+    async def _policy_loop_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
+        step = frame.step
+        data = frame.data
+        context = frame.context
+        resources = frame.resources
+        limits = frame.limits
+        stream = frame.stream
+        on_chunk = frame.on_chunk
+        cache_key = self._cache_key(frame) if self._enable_cache else None
+        breach_event = frame.breach_event
+        _fallback_depth = frame._fallback_depth
+        res_any = await self.loop_step_executor.execute(
+            self,
+            step,
+            data,
+            context,
+            resources,
+            limits,
+            stream,
+            on_chunk,
+            cache_key,
+            breach_event,
+            _fallback_depth,
+        )
+        if isinstance(res_any, StepOutcome):
+            return res_any
+        return (
+            Success(step_result=res_any)
+            if res_any.success
+            else Failure(
+                error=Exception(res_any.feedback or "step failed"),
+                feedback=res_any.feedback,
+                step_result=res_any,
+            )
+        )
+
+    async def _policy_conditional_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
+        step = frame.step
+        data = frame.data
+        context = frame.context
+        resources = frame.resources
+        limits = frame.limits
+        context_setter = frame.context_setter
+        _fallback_depth = frame._fallback_depth
+        res_any = await self.conditional_step_executor.execute(
+            self, step, data, context, resources, limits, context_setter, _fallback_depth
+        )
+        if isinstance(res_any, StepOutcome):
+            return res_any
+        return (
+            Success(step_result=res_any)
+            if res_any.success
+            else Failure(
+                error=Exception(res_any.feedback or "step failed"),
+                feedback=res_any.feedback,
+                step_result=res_any,
+            )
+        )
+
+    async def _policy_dynamic_router_step(
+        self, frame: ExecutionFrame[Any]
+    ) -> StepOutcome[StepResult]:
+        step = frame.step
+        data = frame.data
+        context = frame.context
+        resources = frame.resources
+        limits = frame.limits
+        context_setter = frame.context_setter
+        res_any = await self.dynamic_router_step_executor.execute(
+            self, step, data, context, resources, limits, context_setter
+        )
+        if isinstance(res_any, StepOutcome):
+            return res_any
+        return (
+            Success(step_result=res_any)
+            if res_any.success
+            else Failure(
+                error=Exception(res_any.feedback or "step failed"),
+                feedback=res_any.feedback,
+                step_result=res_any,
+            )
+        )
+
+    async def _policy_hitl_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
+        step = frame.step
+        data = frame.data
+        context = frame.context
+        resources = frame.resources
+        limits = frame.limits
+        context_setter = frame.context_setter
+        res_any = await self.hitl_step_executor.execute(
+            self, step, data, context, resources, limits, context_setter
+        )
+        if isinstance(res_any, StepOutcome):
+            return res_any
+        return (
+            Success(step_result=res_any)
+            if res_any.success
+            else Failure(
+                error=Exception(res_any.feedback or "step failed"),
+                feedback=res_any.feedback,
+                step_result=res_any,
+            )
+        )
+
+    async def _policy_default_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
+        step = frame.step
+        data = frame.data
+        context = frame.context
+        resources = frame.resources
+        limits = frame.limits
+        stream = frame.stream
+        on_chunk = frame.on_chunk
+        cache_key = self._cache_key(frame) if self._enable_cache else None
+        breach_event = frame.breach_event
+        _fallback_depth = frame._fallback_depth
+        # Preserve legacy routing semantics for validation/streaming/fallback cases
+        try:
+            fb_depth_norm = int(_fallback_depth)
+        except Exception:
+            fb_depth_norm = 0
+
+        is_validation_step = (
+            hasattr(step, "meta")
+            and isinstance(step.meta, dict)
+            and step.meta.get("is_validation_step", False)
+        )
+
+        if (
+            is_validation_step
+            or stream
+            or (
+                hasattr(step, "fallback_step")
+                and step.fallback_step is not None
+                and not hasattr(step.fallback_step, "_mock_name")
+            )
+        ):
+            result = await self.simple_step_executor.execute(
+                self,
+                step,
+                data,
+                context,
+                resources,
+                limits,
+                stream,
+                on_chunk,
+                cache_key,
+                breach_event,
+                fb_depth_norm,
+            )
+            # simple step already returns a StepOutcome
+            return result
+
+        # Default path: Agent policy (native-outcome)
+        outcome = await self.agent_step_executor.execute(
+            self,
+            step,
+            data,
+            context,
+            resources,
+            limits,
+            stream,
+            on_chunk,
+            cache_key,
+            breach_event,
+            _fallback_depth,
+        )
+        if isinstance(outcome, StepOutcome):
+            return outcome
+        return (
+            Success(step_result=outcome)
+            if outcome.success
+            else Failure(
+                error=Exception(outcome.feedback or "step failed"),
+                feedback=outcome.feedback,
+                step_result=outcome,
+            )
+        )
 
     # Class-level exposure for tests expecting governor on type
     try:
