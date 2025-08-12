@@ -596,112 +596,68 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 if cache_key:
                     cached_result = await self._cache_backend.get(cache_key)
                     if cached_result is not None:
-                        telemetry.logfire.debug(
-                            f"Cache hit for step: {getattr(step, 'name', '<unnamed>')}"
-                        )
-                        try:
-                            # Ensure cache hit metadata is visible to callers
-                            if cached_result.metadata_ is None:
-                                cached_result.metadata_ = {}
-                            cached_result.metadata_["cache_hit"] = True
-                        except Exception:
-                            pass
-                        # For backend/frame calls return StepOutcome; for legacy calls return StepResult
-                        cached_success = Success(step_result=cached_result)
+                        # Ensure cache hit metadata is visible to callers with minimal overhead
+                        md = getattr(cached_result, "metadata_", None)
+                        if md is None:
+                            cached_result.metadata_ = {"cache_hit": True}
+                        else:
+                            md["cache_hit"] = True
+                        # For backend/frame calls return typed outcome; for legacy calls return the StepResult directly
                         if called_with_frame:
-                            return cached_success
-                        # Normalize via unwrap to inject minimal diagnostics when needed
-                        return self._unwrap_outcome_to_step_result(cached_result, self._safe_step_name(step))
+                            return Success(step_result=cached_result)
+                        return cached_result
             except Exception as e:
                 telemetry.logfire.warning(
                     f"Cache error for step {getattr(step, 'name', '<unnamed>')}: {e}"
                 )
 
         if isinstance(step, CacheStep):
-            try:
-                res_any = await self.cache_step_executor.execute(
-                    self,
-                    step,
-                    data,
-                    context,
-                    resources,
-                    limits,
-                    breach_event,
-                    context_setter,
-                    None,
-                    return_outcome=called_with_frame,
-                )
-            except TypeError:
-                res_any = await self.cache_step_executor.execute(
-                    self, step, data, context, resources, limits, breach_event, context_setter, None
-                )
-            # Normalize to StepOutcome for consistent handling
-            if isinstance(res_any, StepOutcome):
-                outcome = res_any
-            else:
-                outcome = Success(step_result=res_any) if res_any.success else Failure(
-                    error=Exception(res_any.feedback or "step failed"),
-                    feedback=res_any.feedback,
-                    step_result=res_any,
-                )
+            # Native-outcome cache policy
+            outcome = await self.cache_step_executor.execute(
+                self,
+                step,
+                data,
+                context,
+                resources,
+                limits,
+                breach_event,
+                context_setter,
+                None,
+            )
             if called_with_frame:
                 return outcome
-            # Legacy path: unwrap to StepResult or raise on pause
+            # Dev-only deprecation notice for legacy entry path
+            import os as _os, warnings as _warnings
+            if _os.getenv("FLUJO_WARN_LEGACY"):
+                try:
+                    _warnings.warn(
+                        "Legacy ExecutorCore.execute(step, ...) path used; prefer ExecutionFrame/outcome-first.",
+                        DeprecationWarning,
+                    )
+                except Exception:
+                    pass
             if isinstance(outcome, Success):
                 return outcome.step_result
             if isinstance(outcome, Failure):
                 return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
             if isinstance(outcome, Paused):
                 raise PausedException(outcome.message)
-            # Fallback: synthesize minimal failure
             return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
 
         if isinstance(step, ParallelStep):
-            if called_with_frame:
-                try:
-                    res_any = await self.parallel_step_executor.execute(
-                        self,
-                        step,
-                        data,
-                        context,
-                        resources,
-                        limits,
-                        breach_event,
-                        context_setter,
-                        step,
-                        None,
-                        # outcome-first by default
-                        return_outcome=True,
-                    )
-                except TypeError:
-                    res_legacy = await self.parallel_step_executor.execute(
-                        self,
-                        step,
-                        data,
-                        context,
-                        resources,
-                        limits,
-                        breach_event,
-                        context_setter,
-                        step,
-                        None,
-                    )
-                    from ...domain.outcomes import to_outcome as _to_outcome
-                    res_any = _to_outcome(res_legacy)
-            else:
-                res_any = await self.parallel_step_executor.execute(
-                    self,
-                    step,
-                    data,
-                    context,
-                    resources,
-                    limits,
-                    breach_event,
-                    context_setter,
-                    step,
-                    None,
-                    return_outcome=False,
-                )
+            # Policy is native-outcome now
+            res_any = await self.parallel_step_executor.execute(
+                self,
+                step,
+                data,
+                context,
+                resources,
+                limits,
+                breach_event,
+                context_setter,
+                step,
+                None,
+            )
             if isinstance(res_any, StepOutcome):
                 outcome = res_any
             else:
@@ -722,53 +678,19 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
 
         if isinstance(step, LoopStep):
-            if called_with_frame:
-                try:
-                    res_any = await self.loop_step_executor.execute(
-                        self,
-                        step,
-                        data,
-                        context,
-                        resources,
-                        limits,
-                        stream,
-                        on_chunk,
-                        cache_key,
-                        breach_event,
-                        _fallback_depth,
-                        return_outcome=True,
-                    )
-                except TypeError:
-                    res_legacy = await self.loop_step_executor.execute(
-                        self,
-                        step,
-                        data,
-                        context,
-                        resources,
-                        limits,
-                        stream,
-                        on_chunk,
-                        cache_key,
-                        breach_event,
-                        _fallback_depth,
-                    )
-                    from ...domain.outcomes import to_outcome as _to_outcome
-                    res_any = _to_outcome(res_legacy)
-            else:
-                res_any = await self.loop_step_executor.execute(
-                    self,
-                    step,
-                    data,
-                    context,
-                    resources,
-                    limits,
-                    stream,
-                    on_chunk,
-                    cache_key,
-                    breach_event,
-                    _fallback_depth,
-                    return_outcome=False,
-                )
+            res_any = await self.loop_step_executor.execute(
+                self,
+                step,
+                data,
+                context,
+                resources,
+                limits,
+                stream,
+                on_chunk,
+                cache_key,
+                breach_event,
+                _fallback_depth,
+            )
             if isinstance(res_any, StepOutcome):
                 outcome = res_any
             else:
@@ -789,29 +711,10 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
 
         if isinstance(step, ConditionalStep):
-            if called_with_frame:
-                try:
-                    res_any = await self.conditional_step_executor.execute(
-                        self,
-                        step,
-                        data,
-                        context,
-                        resources,
-                        limits,
-                        context_setter,
-                        _fallback_depth,
-                        return_outcome=True,
-                    )
-                except TypeError:
-                    res_legacy = await self.conditional_step_executor.execute(
-                        self, step, data, context, resources, limits, context_setter, _fallback_depth
-                    )
-                    from ...domain.outcomes import to_outcome as _to_outcome
-                    res_any = _to_outcome(res_legacy)
-            else:
-                res_any = await self.conditional_step_executor.execute(
-                    self, step, data, context, resources, limits, context_setter, _fallback_depth
-                )
+            # Policy is native-outcome; no flag needed
+            res_any = await self.conditional_step_executor.execute(
+                self, step, data, context, resources, limits, context_setter, _fallback_depth
+            )
             if isinstance(res_any, StepOutcome):
                 outcome = res_any
             else:
@@ -908,7 +811,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         cache_key,
                         breach_event,
                         fb_depth_norm,
-                        # outcome-first by default
                     )
                 else:
                     result = await self.simple_step_executor.execute(
@@ -923,7 +825,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         cache_key,
                         breach_event,
                         fb_depth_norm,
-                        # legacy unwrap handled later
                     )
             elif stream:
                 telemetry.logfire.debug(
@@ -943,7 +844,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         cache_key,
                         breach_event,
                         fb_depth_norm,
-                        # outcome-first by default
                     )
                 else:
                     result = await self.simple_step_executor.execute(
@@ -958,7 +858,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         cache_key,
                         breach_event,
                         fb_depth_norm,
-                        # legacy unwrap handled later
                     )
             elif (
                 hasattr(step, "fallback_step")
@@ -1021,52 +920,20 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 telemetry.logfire.debug(
                     f"Routing to AgentStep policy: {getattr(step, 'name', '<unnamed>')}"
                 )
-                # SAFE ADAPTER: if called with frame (backend/runner path), prefer outcomes adapter
-                if called_with_frame:
-                    try:
-                        result = await self.agent_step_executor.execute(
-                            self,
-                            step,
-                            data,
-                            context,
-                            resources,
-                            limits,
-                            stream,
-                            on_chunk,
-                            cache_key,
-                            breach_event,
-                            fb_depth_norm,
-                            # outcome-first by default
-                        )
-                    except TypeError:
-                        # Backward-compat: executors without return_outcome
-                        result = await self.agent_step_executor.execute(
-                            self,
-                            step,
-                            data,
-                            context,
-                            resources,
-                            limits,
-                            stream,
-                            on_chunk,
-                            cache_key,
-                            breach_event,
-                            fb_depth_norm,
-                        )
-                else:
-                    result = await self.agent_step_executor.execute(
-                        self,
-                        step,
-                        data,
-                        context,
-                        resources,
-                        limits,
-                        stream,
-                        on_chunk,
-                        cache_key,
-                        breach_event,
-                        fb_depth_norm,
-                    )
+                # Agent policy is native-outcome; single call path
+                result = await self.agent_step_executor.execute(
+                    self,
+                    step,
+                    data,
+                    context,
+                    resources,
+                    limits,
+                    stream,
+                    on_chunk,
+                    cache_key,
+                    breach_event,
+                    fb_depth_norm,
+                )
             # Normalize policies that return StepOutcome into StepResult for downstream logic
             from typing import cast as _cast
             if isinstance(result, StepOutcome):
@@ -1444,7 +1311,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         original_context_setter = getattr(self, "_context_setter", None)
         try:
             self._context_setter = context_setter
-            return await self.loop_step_executor.execute(
+            outcome = await self.loop_step_executor.execute(
                 self,
                 loop_step,
                 data,
@@ -1457,6 +1324,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 None,
                 _fallback_depth,
             )
+            return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(loop_step))
         finally:
             self._context_setter = original_context_setter
 
@@ -1524,7 +1392,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
         _fallback_depth: int = 0,
     ) -> StepResult:
-        return await self.loop_step_executor.execute(
+        outcome = await self.loop_step_executor.execute(
             self,
             loop_step,
             data,
@@ -1537,6 +1405,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             None,
             _fallback_depth,
         )
+        return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(loop_step))
 
     async def _handle_cache_step(
         self,
@@ -1551,7 +1420,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         step_executor: Optional[Callable[..., Awaitable[StepResult]]] = None,
         **kwargs: Any,
     ) -> StepResult:
-        return await self.cache_step_executor.execute(
+        outcome = await self.cache_step_executor.execute(
             self,
             step,
             data,
@@ -1562,6 +1431,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             context_setter,
             step_executor,
         )
+        return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
 
     async def _handle_conditional_step(
         self,

@@ -1,43 +1,67 @@
-## Typed Step Outcomes: Hybrid Migration Guide (FSD-008)
+## Typed Step Outcomes: Outcome-First Architecture (FSD-008)
 
-This document describes the current hybrid outcomes architecture and how to migrate policies and callers safely.
+This document describes the outcome-first architecture and the remaining compatibility behavior at the core boundary.
 
 ### Current State (Stabilized)
 
 - Backend/frame path is outcome-first: components exchange `StepOutcome[StepResult]` (`Success`, `Failure`, `Paused`, `Chunk`).
-- Legacy path remains `StepResult`-based for backward compatibility.
-- Policies support a hybrid return via `return_outcome` flag:
-  - `return_outcome=True` → return `StepOutcome`.
-  - `return_outcome=False` (default) → return `StepResult`.
-- `ExecutorCore` explicitly passes `return_outcome` per path and unwraps for legacy callers.
+- Legacy path remains `StepResult`-based for backward compatibility; the core unwraps outcomes for legacy callers.
+- Policies are native outcomes: Agent, Simple, Loop, Parallel, Conditional, Cache.
+- No outcomes adapters are used; `ExecutorCore` routes directly to policies.
 
-### Why Hybrid Now
+### Legacy Compatibility Boundary
 
-Moving directly to outcome-only broke existing tests and external integrations expecting `StepResult`. Hybrid mode preserves behavior while enabling outcome-first backends.
+Legacy callers that invoke `execute(step, data, ...)` (non-frame) receive `StepResult`. The core unwraps `StepOutcome` to `StepResult` uniformly. Backend/frame calls receive `StepOutcome` directly.
 
-### Writing Policies in Hybrid Mode
+### Writing Policies (Outcome-Only)
 
-- Accept `*, return_outcome: bool = False` in `execute` signatures.
-- Build a `StepResult` internally, then:
-  - Return `to_outcome(result)` when `return_outcome` is `True`.
-  - Return `result` otherwise.
+- Implement `execute(...) -> Awaitable[StepOutcome[StepResult]]`.
+- Build `StepResult` internally, then return `Success(step_result=...)` or `Failure(..., step_result=...)`.
 - Do not raise `PausedException`; return `Paused(message=...)` instead.
 
 ### Calling Policies
 
-- Backend path (frame) should pass `return_outcome=True`.
-- Legacy path should pass `return_outcome=False` or omit the flag for older executors.
+- Backend path (frame) receives `StepOutcome` directly.
+- Legacy path is supported via core unwrapping; policy signatures are outcome-only.
 
 ### Runner and Streaming
 
 - `run_outcomes_async` yields strictly `StepOutcome` values.
 - `run_async` remains legacy-compatible.
 
-### Migration Plan to Outcome-Only
+#### run_outcomes_async usage
 
-1. Keep hybrid mode until downstreams are updated.
-2. Add deprecation notes in release notes when ready.
-3. Remove `return_outcome` and `StepResult` return types in a major release.
+```python
+from flujo.application.runner import Flujo
+from flujo.domain.dsl.step import Step
+from flujo.domain.dsl.pipeline import Pipeline
+from flujo.domain.models import Success, Failure, Paused, Chunk
+
+step = Step(name="echo", agent=MyAgent())
+pipe = Pipeline.from_step(step)
+runner = Flujo(pipe)
+
+async for event in runner.run_outcomes_async("hi"):
+    if isinstance(event, Chunk):
+        handle_stream_chunk(event.data)
+    elif isinstance(event, Success):
+        print("final:", event.step_result.output)
+    elif isinstance(event, Failure):
+        log_error(event.feedback)
+    elif isinstance(event, Paused):
+        persist_for_hitl(event.message)
+```
+
+Policy contract
+
+- All policy `execute(...)` methods must return `StepOutcome[StepResult]`.
+- Use `to_outcome(sr)` when normalizing a constructed `StepResult`.
+- Prefer returning `Paused(message=...)` over raising inside policies; raising is reserved at core/runner legacy boundaries.
+
+### Migration Notes
+
+- The system has completed migration to native-outcome policies. Any remaining hybrid handling exists only at the core boundary for legacy callers.
+- Deprecation warnings for legacy-only entry points can be enabled behind a flag in future releases.
 
 ### Testing Expectations
 
@@ -54,16 +78,15 @@ Flujo steps now support typed outcomes in the backend/runner path. Instead of re
 
 Key points:
 - Backward compatibility: Legacy callers continue to receive `StepResult`; the executor unwraps outcomes when not called with an `ExecutionFrame`.
-- Adapters: `Default*StepExecutorOutcomes` wrap existing policies without altering logic.
-- Utilities: `flujo/domain/outcomes.py` provides `to_outcome(sr)` and `unwrap(outcome, step_name=...)`.
+- Utilities: `flujo/domain/outcomes.py` provides `to_outcome(sr)` for normalizing legacy results inside policies when needed.
 
 Which paths return typed outcomes?
 - Backend/runner calls use `ExecutorCore.execute(frame: ExecutionFrame)` → returns `StepOutcome[StepResult]`.
-- Legacy `execute(step, data, ...)` → returns `StepResult` (for tests and backward compatibility).
+- Legacy `execute(step, data, ...)` → returns `StepResult` (for tests and backward compatibility); the core unwraps.
 
 Extending to new policies:
-1. Implement the policy returning `StepResult` as usual.
-2. Create an outcomes adapter taking the policy and returning `StepOutcome[StepResult]`.
-3. Wire the adapter for the backend/frame path in `ExecutorCore.execute()`.
+1. Implement the policy to return `StepOutcome[StepResult]`.
+2. Build internal `StepResult` instances and wrap with `Success` or `Failure`.
+3. Do not introduce adapters; route directly through `ExecutorCore`.
 
 

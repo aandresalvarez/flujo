@@ -64,3 +64,19 @@ async def test_execution_manager_raises_abort_on_paused_outcome():
         async for _ in em.execute_steps(0, data=None, context=None, result=result):
             pass
 
+
+@pytest.mark.asyncio
+async def test_execution_manager_passes_through_chunk_and_aborted():
+    step = Step(name="s1", agent=object())
+    pipeline = _FakePipeline([step])
+    from flujo.domain.models import Aborted
+
+    seq = [Chunk(data={"x": 1}), Aborted(reason="stop"), StepResult(name="s1", success=True)]
+    em = ExecutionManager(pipeline, step_coordinator=_FakeStepCoordinator(seq))
+    result = PipelineResult()
+    items = []
+    async for it in em.execute_steps(0, data=None, context=None, result=result):
+        items.append(it)
+    assert isinstance(items[0], Chunk)
+    assert isinstance(items[-1], PipelineResult)
+

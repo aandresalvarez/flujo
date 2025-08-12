@@ -273,9 +273,7 @@ class SimpleStepExecutor(Protocol):
         cache_key: Optional[str],
         breach_event: Optional[Any],
         _fallback_depth: int = 0,
-        *,
-        return_outcome: bool = False,
-    ) -> StepOutcome[StepResult] | StepResult: ...
+    ) -> StepOutcome[StepResult]: ...
 
 
 class DefaultSimpleStepExecutor:
@@ -292,27 +290,28 @@ class DefaultSimpleStepExecutor:
         cache_key: Optional[str],
         breach_event: Optional[Any],
         _fallback_depth: int = 0,
-        *,
-        return_outcome: bool = False,
-    ) -> StepOutcome[StepResult] | StepResult:
+    ) -> StepOutcome[StepResult]:
         telemetry.logfire.debug(
             f"[Policy] SimpleStep(self-contained): {getattr(step, 'name', '<unnamed>')} depth={_fallback_depth}"
         )
         # Use self-contained policy implementation instead of delegating to core
-        sr = await _execute_simple_step_policy_impl(
-            core,
-            step,
-            data,
-            context,
-            resources,
-            limits,
-            stream,
-            on_chunk,
-            cache_key,
-            breach_event,
-            _fallback_depth,
-        )
-        return to_outcome(sr) if return_outcome else sr
+        try:
+            sr = await _execute_simple_step_policy_impl(
+                core,
+                step,
+                data,
+                context,
+                resources,
+                limits,
+                stream,
+                on_chunk,
+                cache_key,
+                breach_event,
+                _fallback_depth,
+            )
+        except PausedException as e:
+            return Paused(message=str(e))
+        return to_outcome(sr)
 
 
 async def _execute_simple_step_policy_impl(
@@ -587,14 +586,14 @@ async def _execute_simple_step_policy_impl(
                         if result.metadata_ is None:
                             result.metadata_ = {}
                         result.metadata_["validation_passed"] = False
-                        return result
+                        return to_outcome(result)
                     result.success = True
                     result.feedback = None
                     result.output = checked_output
                     if result.metadata_ is None:
                         result.metadata_ = {}
                     result.metadata_["validation_passed"] = False
-                    return result
+                    return to_outcome(result)
                 result.success = True
                 result.output = checked_output
                 result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
@@ -614,7 +613,7 @@ async def _execute_simple_step_policy_impl(
                             getattr(attempt_context, hname).extend(results)
                 except Exception:
                     pass
-                return result
+                return to_outcome(result)
 
             # plugins
             if hasattr(step, "plugins") and step.plugins:
@@ -742,7 +741,7 @@ async def _execute_simple_step_policy_impl(
                                     fallback_result.feedback = (
                                         fallback_result.feedback or "Primary agent failed"
                                     )
-                                return fallback_result
+                                return to_outcome(fallback_result)
                             _orig = _normalize_plugin_feedback(str(e))
                             _orig_for_format = (
                                 None if _orig in ("", "Plugin failed without feedback") else _orig
@@ -751,7 +750,7 @@ async def _execute_simple_step_policy_impl(
                                 f"Original error: {core._format_feedback(_orig_for_format, 'Agent execution failed')}; "
                                 f"Fallback error: {core._format_feedback(fallback_result.feedback, 'Agent execution failed')}"
                             )
-                            return fallback_result
+                            return to_outcome(fallback_result)
                         except InfiniteFallbackError:
                             raise
                         except Exception as fb_err:
@@ -761,8 +760,8 @@ async def _execute_simple_step_policy_impl(
                             result.feedback = (
                                 f"Original error: {result.feedback}; Fallback error: {fb_err}"
                             )
-                            return result
-                    return result
+                            return to_outcome(result)
+                    return to_outcome(result)
                 # Normalize dict-based outputs from plugins
                 if isinstance(processed_output, dict) and "output" in processed_output:
                     processed_output = processed_output["output"]
@@ -821,7 +820,7 @@ async def _execute_simple_step_policy_impl(
                         telemetry.logfire.error(
                             f"Step '{step.name}' validation failed after exception: {validation_error}"
                         )
-                        return result
+                        return to_outcome(result)
                     # Only continue when there is another attempt available
                     if attempt < total_attempts:
                         telemetry.logfire.warning(
@@ -917,12 +916,12 @@ async def _execute_simple_step_policy_impl(
                                         )
                                 except Exception:
                                     pass
-                                return fallback_result
+                                return to_outcome(fallback_result)
                             fallback_result.feedback = (
                                 f"Original error: {core._format_feedback(result.feedback, 'Agent execution failed')}; "
                                 f"Fallback error: {core._format_feedback(fallback_result.feedback, 'Agent execution failed')}"
                             )
-                            return fallback_result
+                            return to_outcome(fallback_result)
                         except InfiniteFallbackError:
                             raise
                         except Exception as fb_err:
@@ -932,8 +931,8 @@ async def _execute_simple_step_policy_impl(
                             result.feedback = (
                                 f"Original error: {result.feedback}; Fallback error: {fb_err}"
                             )
-                            return result
-                    return result
+                            return to_outcome(result)
+                    return to_outcome(result)
 
             # success
             # Unpack final output for parity with legacy expectations
@@ -988,7 +987,7 @@ async def _execute_simple_step_policy_impl(
             if cache_key and getattr(core, "_enable_cache", False):
                 await core._cache_backend.put(cache_key, result, ttl_s=3600)
                 telemetry.logfire.debug(f"Cached result for step: {step.name}")
-            return result
+            return to_outcome(result)
 
         except MockDetectionError:
             raise
@@ -1140,7 +1139,7 @@ async def _execute_simple_step_policy_impl(
                                 )
                             except Exception:
                                 pass
-                            return fallback_result
+                            return to_outcome(fallback_result)
                         _orig = _normalize_plugin_feedback(str(agent_error))
                         _orig_for_format = (
                             None if _orig in ("", "Plugin failed without feedback") else _orig
@@ -1149,7 +1148,7 @@ async def _execute_simple_step_policy_impl(
                             f"Original error: {core._format_feedback(_orig_for_format, 'Agent execution failed')}; "
                             f"Fallback error: {core._format_feedback(fallback_result.feedback, 'Agent execution failed')}"
                         )
-                        return fallback_result
+                        return to_outcome(fallback_result)
                     except InfiniteFallbackError:
                         raise
                     except Exception as fb_err:
@@ -1159,9 +1158,9 @@ async def _execute_simple_step_policy_impl(
                         result.feedback = (
                             f"Original error: {result.feedback}; Fallback error: {fb_err}"
                         )
-                        return result
+                        return to_outcome(result)
                 # No fallback configured
-                return result
+                return to_outcome(result)
             # Generic agent exception handling (non-plugin)
             if attempt < total_attempts:
                 telemetry.logfire.warning(
@@ -1224,7 +1223,7 @@ async def _execute_simple_step_policy_impl(
                             )
                         except Exception:
                             pass
-                        return fallback_result
+                        return to_outcome(fallback_result)
                     # Include primary plugin failure feedback if available to satisfy tests
                     _orig_fb = result.feedback
                     try:
@@ -1240,7 +1239,7 @@ async def _execute_simple_step_policy_impl(
                         f"Original error: {core._format_feedback(_orig_fb, 'Agent execution failed')}; "
                         f"Fallback error: {core._format_feedback(fallback_result.feedback, 'Agent execution failed')}"
                     )
-                    return fallback_result
+                    return to_outcome(fallback_result)
                 except InfiniteFallbackError:
                     raise
                 except Exception as fb_err:
@@ -1250,7 +1249,7 @@ async def _execute_simple_step_policy_impl(
                     result.feedback = (
                         f"Original error: {result.feedback}; Fallback error: {fb_err}"
                     )
-                    return result
+                    return to_outcome(result)
             # No fallback configured: return the failure result
             # FSD-003: For failed steps, return the attempt context from the last attempt
             # This prevents context accumulation across retry attempts while preserving
@@ -1273,7 +1272,7 @@ async def _execute_simple_step_policy_impl(
                     telemetry.logfire.info(
                         f"[SimpleStep] FAILED: Using original context.branch_count = {context.branch_count}"
                     )
-            return result
+            return to_outcome(result)
             if attempt < total_attempts:
                 telemetry.logfire.warning(
                     f"Step '{step.name}' agent execution attempt {attempt} failed: {agent_error}"
@@ -1357,14 +1356,14 @@ async def _execute_simple_step_policy_impl(
                                 )
                         except Exception:
                             pass
-                        return fallback_result
+                        return to_outcome(fallback_result)
                     # Restore legacy behavior: prefer the current result.feedback string
                     _orig_fb = result.feedback
                     fallback_result.feedback = (
                         f"Original error: {core._format_feedback(_orig_fb, 'Agent execution failed')}; "
                         f"Fallback error: {core._format_feedback(fallback_result.feedback, 'Agent execution failed')}"
                     )
-                    return fallback_result
+                    return to_outcome(fallback_result)
                 except InfiniteFallbackError:
                     raise
                 except Exception as fb_err:
@@ -1374,7 +1373,7 @@ async def _execute_simple_step_policy_impl(
                     result.feedback = (
                         f"Original error: {result.feedback}; Fallback error: {fb_err}"
                     )
-                    return result
+                    return to_outcome(result)
             # No fallback configured: return the failure result
             # FSD-003: For failed steps, return the attempt context from the last attempt
             # This prevents context accumulation across retry attempts while preserving
@@ -1397,13 +1396,13 @@ async def _execute_simple_step_policy_impl(
                     telemetry.logfire.info(
                         f"[SimpleStep] FAILED: Using original context.branch_count = {context.branch_count}"
                     )
-            return result
+            return to_outcome(result)
 
     # not reached normally
     result.success = False
     result.feedback = "Unexpected execution path"
     result.latency_s = 0.0
-    return result
+    return to_outcome(result)
 
 
 # --- Agent Step Executor policy ---
@@ -1597,7 +1596,7 @@ class DefaultAgentStepExecutor:
                         result.output = processed_output
                         result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
                         telemetry.logfire.error(f"Step '{step.name}' processor failed: {e}")
-                        return result
+                        return to_outcome(result)
 
                 validation_passed = True
                 try:
@@ -1663,7 +1662,7 @@ class DefaultAgentStepExecutor:
                                         fb_res.feedback = (
                                             fb_msg if preserve_diagnostics else (fb_res.feedback or "Primary agent failed")
                                         )
-                                        return fb_res
+                                        return to_outcome(fb_res)
                                     else:
                                         # Compose failure feedback
                                         result.success = False
@@ -1675,7 +1674,7 @@ class DefaultAgentStepExecutor:
                                         telemetry.logfire.error(
                                             f"Step '{step.name}' validation failed and fallback failed"
                                         )
-                                        return result
+                                        return to_outcome(result)
                                 except Exception as fb_e:
                                     result.success = False
                                     result.feedback = f"Original error: {fb_msg}; Fallback execution failed: {fb_e}"
@@ -1686,7 +1685,7 @@ class DefaultAgentStepExecutor:
                                     telemetry.logfire.error(
                                         f"Step '{step.name}' validation failed and fallback raised: {fb_e}"
                                     )
-                                    return result
+                                    return to_outcome(result)
                             else:
                                 # No fallback configured
                                 result.success = False
@@ -1698,7 +1697,7 @@ class DefaultAgentStepExecutor:
                                 telemetry.logfire.error(
                                     f"Step '{step.name}' validation failed after {result.attempts} attempts"
                                 )
-                                return result
+                                return to_outcome(result)
                 except Exception as e:
                     validation_passed = False
                     # ✅ CRITICAL FIX: Never retry agent execution on validation failure
@@ -1737,7 +1736,7 @@ class DefaultAgentStepExecutor:
                                     and step.config.preserve_fallback_diagnostics is True
                                 )
                                 fb_res.feedback = fb_msg if preserve_diagnostics else None
-                                return fb_res
+                                return to_outcome(fb_res)
                             else:
                                 result.success = False
                                 result.feedback = (
@@ -1750,7 +1749,7 @@ class DefaultAgentStepExecutor:
                                 telemetry.logfire.error(
                                     f"Step '{step.name}' validation failed and fallback failed"
                                 )
-                                return result
+                                return to_outcome(result)
                         except Exception as fb_e:
                             result.success = False
                             result.feedback = (
@@ -1761,7 +1760,7 @@ class DefaultAgentStepExecutor:
                             telemetry.logfire.error(
                                 f"Step '{step.name}' validation failed and fallback raised: {fb_e}"
                             )
-                            return result
+                            return to_outcome(result)
                     else:
                         # No fallback configured, preserve output and fail
                         result.success = False
@@ -1771,7 +1770,7 @@ class DefaultAgentStepExecutor:
                         telemetry.logfire.error(
                             f"Step '{step.name}' validation failed after {result.attempts} attempts"
                         )
-                        return result
+                        return to_outcome(result)
 
                 if validation_passed:
                     try:
@@ -1804,7 +1803,7 @@ class DefaultAgentStepExecutor:
                         result.output = processed_output
                         result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
                         telemetry.logfire.error(f"Step '{step.name}' plugin failed: {e}")
-                        return result
+                        return to_outcome(result)
 
                     result.output = _unpack_agent_result(processed_output)
                     _detect_mock_objects(result.output)
@@ -1854,7 +1853,7 @@ class DefaultAgentStepExecutor:
                             await core._cache_backend.put(cache_key, result, ttl_s=3600)
                         except Exception:
                             pass
-                    return result
+                    return to_outcome(result)
             except Exception as e:
                 if isinstance(
                     e,
@@ -1941,7 +1940,7 @@ class DefaultAgentStepExecutor:
                                 if preserve_diagnostics
                                 else (fb_res.feedback or "Primary agent failed")
                             )
-                            return fb_res
+                            return to_outcome(fb_res)
                         else:
                             result.success = False
                             result.feedback = (
@@ -1949,7 +1948,7 @@ class DefaultAgentStepExecutor:
                             )
                             result.output = None
                             result.latency_s = time.monotonic() - overall_start_time
-                            return result
+                            return to_outcome(result)
                     except Exception as fb_e:
                         result.success = False
                         result.feedback = (
@@ -1960,7 +1959,7 @@ class DefaultAgentStepExecutor:
                         telemetry.logfire.error(
                             f"Step '{step.name}' fallback execution raised: {fb_e}"
                         )
-                        return result
+                        return to_outcome(result)
                 # No fallback configured
                 result.success = False
                 result.feedback = primary_fb
@@ -1969,11 +1968,11 @@ class DefaultAgentStepExecutor:
                 telemetry.logfire.error(
                     f"Step '{step.name}' agent failed after {result.attempts} attempts"
                 )
-                return result
+                return to_outcome(result)
         result.success = False
         result.feedback = "Unexpected execution path"
         result.latency_s = 0.0
-        return result
+        return to_outcome(result)
 
 
 # --- Agent Step Executor outcomes adapter (safe, non-breaking) ---
@@ -2033,9 +2032,7 @@ class LoopStepExecutor(Protocol):
         cache_key: Optional[str],
         breach_event: Optional[Any],
         _fallback_depth: int = 0,
-        *,
-        return_outcome: bool = False,
-    ) -> StepOutcome[StepResult] | StepResult: ...
+    ) -> StepOutcome[StepResult]: ...
 
 
 class DefaultLoopStepExecutor:
@@ -2091,9 +2088,7 @@ class DefaultLoopStepExecutor:
         cache_key: Optional[str],
         breach_event: Optional[Any],
         _fallback_depth: int = 0,
-        *,
-        return_outcome: bool = False,
-    ) -> StepOutcome[StepResult] | StepResult:
+    ) -> StepOutcome[StepResult]:
         # Use proper variable name to match parameter
         loop_step = step
 
@@ -2162,7 +2157,7 @@ class DefaultLoopStepExecutor:
                     metadata_={"iterations": 0, "exit_reason": "initial_input_mapper_error"},
                     step_history=[],
                 )
-                return to_outcome(sr) if return_outcome else sr
+                return to_outcome(sr)
         # Validate body pipeline
         body_pipeline = (
             loop_step.get_loop_body_pipeline()
@@ -2192,7 +2187,7 @@ class DefaultLoopStepExecutor:
                 metadata_={"iterations": 0, "exit_reason": "empty_pipeline"},
                 step_history=[],
             )
-            return to_outcome(sr) if return_outcome else sr
+            return to_outcome(sr)
         # Determine max_loops after initial mapper (MapStep sets it dynamically)
         max_loops = (
             loop_step.get_max_loops()
@@ -2470,21 +2465,23 @@ class DefaultLoopStepExecutor:
                                 current_data, current_context, iteration_count
                             )
                         except Exception:
-                            return StepResult(
-                                name=loop_step.name,
-                                success=False,
-                                output=None,
-                                attempts=iteration_count,
-                                latency_s=time.monotonic() - start_time,
-                                token_counts=cumulative_tokens,
-                                cost_usd=cumulative_cost,
-                                feedback=(failed.feedback or "Loop body failed"),
-                                branch_context=current_context,
-                                metadata_={
-                                    "iterations": iteration_count,
-                                    "exit_reason": "iteration_input_mapper_error",
-                                },
-                                step_history=iteration_results,
+                            return to_outcome(
+                                StepResult(
+                                    name=loop_step.name,
+                                    success=False,
+                                    output=None,
+                                    attempts=iteration_count,
+                                    latency_s=time.monotonic() - start_time,
+                                    token_counts=cumulative_tokens,
+                                    cost_usd=cumulative_cost,
+                                    feedback=(failed.feedback or "Loop body failed"),
+                                    branch_context=current_context,
+                                    metadata_={
+                                        "iterations": iteration_count,
+                                        "exit_reason": "iteration_input_mapper_error",
+                                    },
+                                    step_history=iteration_results,
+                                )
                             )
                         # Continue to next iteration without failing the whole loop
                         continue
@@ -2555,18 +2552,20 @@ class DefaultLoopStepExecutor:
                             fb = f"Plugin validation failed after max retries: {raw}"
                 except Exception:
                     pass
-                return StepResult(
-                    name=loop_step.name,
-                    success=False,
-                    output=None,
-                    attempts=iteration_count,
-                    latency_s=time.monotonic() - start_time,
-                    token_counts=cumulative_tokens,
-                    cost_usd=cumulative_cost,
-                    feedback=(f"Loop body failed: {fb}" if fb else "Loop body failed"),
-                    branch_context=current_context,
-                    metadata_={"iterations": iteration_count, "exit_reason": "body_step_error"},
-                    step_history=iteration_results,
+                return to_outcome(
+                    StepResult(
+                        name=loop_step.name,
+                        success=False,
+                        output=None,
+                        attempts=iteration_count,
+                        latency_s=time.monotonic() - start_time,
+                        token_counts=cumulative_tokens,
+                        cost_usd=cumulative_cost,
+                        feedback=(f"Loop body failed: {fb}" if fb else "Loop body failed"),
+                        branch_context=current_context,
+                        metadata_={"iterations": iteration_count, "exit_reason": "body_step_error"},
+                        step_history=iteration_results,
+                    )
                 )
             iteration_results.extend(pipeline_result.step_history)
             if pipeline_result.step_history:
@@ -2641,21 +2640,23 @@ class DefaultLoopStepExecutor:
                         exit_reason = "condition"
                         break
                 except Exception as e:
-                    return StepResult(
-                        name=loop_step.name,
-                        success=False,
-                        output=None,
-                        attempts=iteration_count,
-                        latency_s=time.monotonic() - start_time,
-                        token_counts=cumulative_tokens,
-                        cost_usd=cumulative_cost,
-                        feedback=f"Exception in exit condition for LoopStep '{loop_step.name}': {e}",
-                        branch_context=current_context,
-                        metadata_={
-                            "iterations": iteration_count,
-                            "exit_reason": "exit_condition_error",
-                        },
-                        step_history=iteration_results,
+                    return to_outcome(
+                        StepResult(
+                            name=loop_step.name,
+                            success=False,
+                            output=None,
+                            attempts=iteration_count,
+                            latency_s=time.monotonic() - start_time,
+                            token_counts=cumulative_tokens,
+                            cost_usd=cumulative_cost,
+                            feedback=f"Exception in exit condition for LoopStep '{loop_step.name}': {e}",
+                            branch_context=current_context,
+                            metadata_={
+                                "iterations": iteration_count,
+                                "exit_reason": "exit_condition_error",
+                            },
+                            step_history=iteration_results,
+                        )
                     )
             iter_mapper = (
                 loop_step.get_iteration_input_mapper()
@@ -2669,21 +2670,23 @@ class DefaultLoopStepExecutor:
                     telemetry.logfire.error(
                         f"Error in iteration_input_mapper for LoopStep '{loop_step.name}' at iteration {iteration_count}: {e}"
                     )
-                    return StepResult(
-                        name=loop_step.name,
-                        success=False,
-                        output=None,
-                        attempts=iteration_count,
-                        latency_s=time.monotonic() - start_time,
-                        token_counts=cumulative_tokens,
-                        cost_usd=cumulative_cost,
-                        feedback=f"Error in iteration_input_mapper for LoopStep '{loop_step.name}': {e}",
-                        branch_context=current_context,
-                        metadata_={
-                            "iterations": iteration_count,
-                            "exit_reason": "iteration_input_mapper_error",
-                        },
-                        step_history=iteration_results,
+                    return to_outcome(
+                        StepResult(
+                            name=loop_step.name,
+                            success=False,
+                            output=None,
+                            attempts=iteration_count,
+                            latency_s=time.monotonic() - start_time,
+                            token_counts=cumulative_tokens,
+                            cost_usd=cumulative_cost,
+                            feedback=f"Error in iteration_input_mapper for LoopStep '{loop_step.name}': {e}",
+                            branch_context=current_context,
+                            metadata_={
+                                "iterations": iteration_count,
+                                "exit_reason": "iteration_input_mapper_error",
+                            },
+                            step_history=iteration_results,
+                        )
                     )
         final_output = current_data
         is_map_step = hasattr(loop_step, "iterable_input")
@@ -2750,7 +2753,7 @@ class DefaultLoopStepExecutor:
                     },
                     step_history=iteration_results,
                 )
-                return to_outcome(sr) if return_outcome else sr
+                return to_outcome(sr)
         # If any iteration failed, mark as mixed failure for messaging consistency in refine-style loops
         any_failure = any(not sr.success for sr in iteration_results)
         # Expose loop iteration count to any immediate post-loop adapter step (e.g., refine output mapper)
@@ -2802,7 +2805,7 @@ class DefaultLoopStepExecutor:
             metadata_={"iterations": iteration_count, "exit_reason": exit_reason or "max_loops"},
             step_history=iteration_results,
         )
-        return to_outcome(result) if return_outcome else result
+        return to_outcome(result)
 
 
 # --- Parallel Step Executor policy ---
@@ -2819,9 +2822,7 @@ class ParallelStepExecutor(Protocol):
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
         parallel_step: Optional[ParallelStep[Any]] = None,
         step_executor: Optional[Callable[..., Awaitable[StepResult]]] = None,
-        *,
-        return_outcome: bool = False,
-    ) -> StepOutcome[StepResult] | StepResult: ...
+    ) -> StepOutcome[StepResult]: ...
 
 
 class DefaultParallelStepExecutor:
@@ -2837,9 +2838,7 @@ class DefaultParallelStepExecutor:
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
         parallel_step: Optional[ParallelStep[Any]] = None,
         step_executor: Optional[Callable[..., Awaitable[StepResult]]] = None,
-        *,
-        return_outcome: bool = False,
-    ) -> StepOutcome[StepResult] | StepResult:
+    ) -> StepOutcome[StepResult]:
         # Actual parallel-step execution logic extracted from legacy `_handle_parallel_step`
         if parallel_step is not None:
             step = parallel_step
@@ -2857,7 +2856,7 @@ class DefaultParallelStepExecutor:
             result.feedback = "Parallel step has no branches to execute"
             result.output = {}
             result.latency_s = time.monotonic() - start_time
-            return to_outcome(result) if return_outcome else result
+            return to_outcome(result)
         # Set up usage governor
         usage_governor = _ParallelUsageGovernor(limits) if limits else None
         if breach_event is None and limits is not None:
@@ -3221,7 +3220,7 @@ class DefaultParallelStepExecutor:
                     summary += f" ({successful_branches_count} succeeded)"
                 detailed_feedback = "; ".join(failure_messages)
                 result.feedback = f"{summary}. Failures: {detailed_feedback}"
-        return to_outcome(result) if return_outcome else result
+        return to_outcome(result)
 
 
 class ParallelStepExecutorOutcomes(Protocol):
@@ -3253,9 +3252,7 @@ class ConditionalStepExecutor(Protocol):
         limits: Optional[UsageLimits],
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
         _fallback_depth: int = 0,
-        *,
-        return_outcome: bool = False,
-    ) -> StepOutcome[StepResult] | StepResult: ...
+    ) -> StepOutcome[StepResult]: ...
 
 
 class DefaultConditionalStepExecutor:
@@ -3269,9 +3266,7 @@ class DefaultConditionalStepExecutor:
         limits: Optional[UsageLimits],
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
         _fallback_depth: int = 0,
-        *,
-        return_outcome: bool = False,
-    ) -> StepOutcome[StepResult] | StepResult:
+    ) -> StepOutcome[StepResult]:
         """Handle ConditionalStep execution with proper context isolation and merging."""
         import time
         from flujo.application.core.context_manager import ContextManager
@@ -3320,7 +3315,7 @@ class DefaultConditionalStepExecutor:
                         f"No branch found for key '{branch_key}' and no default branch provided"
                     )
                     result.latency_s = time.monotonic() - start_time
-                    return to_outcome(result) if return_outcome else result
+                    return to_outcome(result)
                 # Record executed branch key (always the evaluated key, even when default is used)
                 result.metadata_["executed_branch_key"] = branch_key
                 telemetry.logfire.info(f"Executing branch for key '{branch_key}'")
@@ -3368,7 +3363,7 @@ class DefaultConditionalStepExecutor:
                             result.latency_s = total_latency
                             result.token_counts = total_tokens
                             result.cost_usd = total_cost
-                            return to_outcome(result) if return_outcome else result
+                            return to_outcome(result)
                         step_history.append(step_result)
                     # Apply optional branch_output_mapper
                     final_output = branch_data
@@ -3383,7 +3378,7 @@ class DefaultConditionalStepExecutor:
                             result.latency_s = total_latency
                             result.token_counts = total_tokens
                             result.cost_usd = total_cost
-                            return to_outcome(result) if return_outcome else result
+                            return to_outcome(result)
                     result.success = True
                     result.output = final_output
                     result.latency_s = total_latency
@@ -3409,7 +3404,7 @@ class DefaultConditionalStepExecutor:
                             context_setter(pipeline_result, context)
                         except Exception:
                             pass
-                    return to_outcome(result) if return_outcome else result
+                    return to_outcome(result)
             except Exception as e:
                 # Log error for visibility in tests
                 try:
@@ -3419,7 +3414,7 @@ class DefaultConditionalStepExecutor:
                 result.feedback = f"Error executing conditional logic or branch: {e}"
                 result.success = False
         result.latency_s = time.monotonic() - start_time
-        return to_outcome(result) if return_outcome else result
+        return to_outcome(result)
 
 
 ## Legacy adapter protocol removed: ConditionalStepExecutorOutcomes
@@ -3443,7 +3438,7 @@ class DynamicRouterStepExecutor(Protocol):
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
         # Backward-compat: expose 'step' in signature for legacy inspection
         step: Optional[Any] = None,
-    ) -> StepResult: ...
+    ) -> StepOutcome[StepResult]: ...
 
 
 class DefaultDynamicRouterStepExecutor:
@@ -3457,7 +3452,7 @@ class DefaultDynamicRouterStepExecutor:
         limits: Optional[UsageLimits],
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
         step: Optional[Any] = None,
-    ) -> StepResult:
+    ) -> StepOutcome[StepResult]:
         """Handle DynamicParallelRouterStep execution with proper branch selection and parallel delegation."""
 
         telemetry.logfire.debug("=== HANDLE DYNAMIC ROUTER STEP ===")
@@ -3490,9 +3485,7 @@ class DefaultDynamicRouterStepExecutor:
                     name=core._safe_step_name(router_step), success=False, feedback=router_result.feedback
                 )
             elif isinstance(router_result, Paused):
-                from flujo.exceptions import PausedException as _Paused
-
-                raise _Paused(router_result.message)
+                return router_result
             else:
                 router_result = StepResult(
                     name=core._safe_step_name(router_step), success=False, feedback="Unsupported outcome"
@@ -3507,17 +3500,19 @@ class DefaultDynamicRouterStepExecutor:
             )
             result.cost_usd = router_result.cost_usd
             result.token_counts = router_result.token_counts
-            return result
+            return to_outcome(result)
 
         # Process router output to get branch names
         selected_branch_names = router_result.output
         if isinstance(selected_branch_names, str):
             selected_branch_names = [selected_branch_names]
         if not isinstance(selected_branch_names, list):
-            return StepResult(
-                name=core._safe_step_name(router_step),
-                success=False,
-                feedback=f"Router agent must return a list of branch names, got {type(selected_branch_names).__name__}",
+            return to_outcome(
+                StepResult(
+                    name=core._safe_step_name(router_step),
+                    success=False,
+                    feedback=f"Router agent must return a list of branch names, got {type(selected_branch_names).__name__}",
+                )
             )
 
         # Filter branches based on router's decision
@@ -3528,12 +3523,14 @@ class DefaultDynamicRouterStepExecutor:
         }
         # Handle no selected branches
         if not selected_branches:
-            return StepResult(
-                name=core._safe_step_name(router_step),
-                success=True,
-                output={},
-                cost_usd=router_result.cost_usd,
-                token_counts=router_result.token_counts,
+            return to_outcome(
+                StepResult(
+                    name=core._safe_step_name(router_step),
+                    success=True,
+                    output={},
+                    cost_usd=router_result.cost_usd,
+                    token_counts=router_result.token_counts,
+                )
             )
 
         # Phase 2: Execute selected branches in parallel via policy
@@ -3547,7 +3544,7 @@ class DefaultDynamicRouterStepExecutor:
         )
         # Use the DefaultParallelStepExecutor policy directly instead of legacy core method
         parallel_executor = DefaultParallelStepExecutor()
-        parallel_result = await parallel_executor.execute(
+        pr_any = await parallel_executor.execute(
             core=core,
             step=temp_parallel_step,
             data=data,
@@ -3556,8 +3553,24 @@ class DefaultDynamicRouterStepExecutor:
             limits=limits,
             breach_event=None,
             context_setter=context_setter,
-            return_outcome=False,
         )
+
+        # Normalize StepOutcome from parallel policy to StepResult for router aggregation
+        if isinstance(pr_any, StepOutcome):
+            if isinstance(pr_any, Success):
+                parallel_result = pr_any.step_result
+            elif isinstance(pr_any, Failure):
+                parallel_result = pr_any.step_result or StepResult(
+                    name=core._safe_step_name(router_step), success=False, feedback=pr_any.feedback
+                )
+            elif isinstance(pr_any, Paused):
+                return pr_any
+            else:
+                parallel_result = StepResult(
+                    name=core._safe_step_name(router_step), success=False, feedback="Unsupported outcome"
+                )
+        else:
+            parallel_result = pr_any
 
         # Add router usage metrics
         parallel_result.cost_usd += router_result.cost_usd
@@ -3583,7 +3596,7 @@ class DefaultDynamicRouterStepExecutor:
 
         # Record executed branches
         parallel_result.metadata_["executed_branches"] = selected_branch_names
-        return parallel_result
+        return to_outcome(parallel_result)
 
 
 # --- End Dynamic Router Step Executor policy ---
@@ -3679,9 +3692,7 @@ class CacheStepExecutor(Protocol):
         breach_event: Optional[Any],
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
         step_executor: Optional[Callable[..., Awaitable[StepResult]]],
-        *,
-        return_outcome: bool = False,
-    ) -> StepOutcome[StepResult] | StepResult: ...
+    ) -> StepOutcome[StepResult]: ...
 
 
 class DefaultCacheStepExecutor:
@@ -3698,9 +3709,7 @@ class DefaultCacheStepExecutor:
         step_executor: Optional[Callable[..., Awaitable[StepResult]]] = None,
         # Backward-compat: expose 'step' in signature for legacy inspection
         step: Optional[Any] = None,
-        *,
-        return_outcome: bool = False,
-    ) -> StepOutcome[StepResult] | StepResult:
+    ) -> StepOutcome[StepResult]:
         """Handle CacheStep execution with concurrency control and resilience."""
         try:
             cache_key = _generate_cache_key(cache_step.wrapped_step, data, context, resources)
@@ -3718,8 +3727,9 @@ class DefaultCacheStepExecutor:
                     cached_result = await cache_step.cache_backend.get(cache_key)
                     if cached_result is not None:
                         if cached_result.metadata_ is None:
-                            cached_result.metadata_ = {}
-                        cached_result.metadata_["cache_hit"] = True
+                            cached_result.metadata_ = {"cache_hit": True}
+                        else:
+                            cached_result.metadata_["cache_hit"] = True
                         if cached_result.branch_context is not None and context is not None:
                             update_data = _build_context_update(cached_result.output)
                             if update_data:
@@ -3731,7 +3741,7 @@ class DefaultCacheStepExecutor:
                                     cached_result.feedback = (
                                         f"Context validation failed: {validation_error}"
                                     )
-                        return to_outcome(cached_result) if return_outcome else cached_result
+                        return to_outcome(cached_result)
                 except Exception as e:
                     telemetry.logfire.error(
                         f"Cache backend GET failed for step '{cache_step.name}': {e}"
@@ -3760,9 +3770,7 @@ class DefaultCacheStepExecutor:
                             name=core._safe_step_name(cache_step.wrapped_step), success=False, feedback=result.feedback
                         )
                     elif isinstance(result, Paused):
-                        from flujo.exceptions import PausedException as _Paused
-
-                        raise _Paused(result.message)
+                        return result
                     else:
                         result = StepResult(
                             name=core._safe_step_name(cache_step.wrapped_step), success=False, feedback="Unsupported outcome"
@@ -3774,7 +3782,7 @@ class DefaultCacheStepExecutor:
                         telemetry.logfire.error(
                             f"Cache backend SET failed for step '{cache_step.name}': {e}"
                         )
-                return to_outcome(result) if return_outcome else result
+                return to_outcome(result)
         frame = ExecutionFrame(
             step=cache_step.wrapped_step,
             data=data,
@@ -3792,13 +3800,8 @@ class DefaultCacheStepExecutor:
         # Ensure we return according to requested mode
         result = await core.execute(frame)
         if isinstance(result, StepOutcome):
-            # Already outcome; return or unwrap per flag
-            return result if return_outcome else (
-                result.step_result if isinstance(result, Success) else (
-                    result.step_result or StepResult(name=core._safe_step_name(cache_step.wrapped_step), success=False, feedback=getattr(result, 'feedback', None))
-                )
-            )
-        return to_outcome(result) if return_outcome else result
+            return result
+        return to_outcome(result)
 
 
 # --- End Cache Step Executor policy ---

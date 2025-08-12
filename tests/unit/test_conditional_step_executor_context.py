@@ -67,6 +67,7 @@ async def test_conditional_executor_isolates_and_merges(monkeypatch: pytest.Monk
         context_setter=None,
     )
 
-    assert res.success is True
+    sr = res.step_result if hasattr(res, "step_result") else res
+    assert sr.success is True
     assert calls["isolate"] == 1
     assert calls["merge"] == 1

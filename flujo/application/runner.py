@@ -443,6 +443,16 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         It yields any streaming output from the final step and then the final
         ``PipelineResult`` object.
         """
+        # Dev-only deprecation: warn when legacy runner is used and flag is enabled
+        try:
+            if os.getenv("FLUJO_WARN_LEGACY"):
+                warnings.warn(
+                    "Legacy runner path (run_async yielding PipelineResult) in use; prefer run_outcomes_async.",
+                    DeprecationWarning,
+                )
+        except Exception:
+            pass
+
         # Debug: log provided initial_context_data for visibility in map-over tests
         try:
             from flujo.infra import telemetry
@@ -785,6 +795,19 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 msg = None
             yield Paused(message=msg or "Paused for HITL")
             return
+
+        # If manager swallowed the abort into a PipelineResult with paused context, emit Paused
+        try:
+            if isinstance(pipeline_result_obj, PipelineResult):
+                ctx = pipeline_result_obj.final_pipeline_context
+                if isinstance(ctx, PipelineContext):
+                    status = ctx.scratchpad.get("status") if hasattr(ctx, "scratchpad") else None
+                    if status == "paused":
+                        msg = ctx.scratchpad.get("pause_message")
+                        yield Paused(message=msg or "Paused for HITL")
+                        return
+        except Exception:
+            pass
 
         # Emit final Success/Failure outcome based on the last step result
         if pipeline_result_obj.step_history:

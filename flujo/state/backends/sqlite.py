@@ -744,8 +744,10 @@ class SQLiteBackend(StateBackend):
     async def close(self) -> None:
         """Close database connections and cleanup resources."""
         if self._connection_pool:
-            await self._connection_pool.close()
-            self._connection_pool = None
+            try:
+                await self._connection_pool.close()
+            finally:
+                self._connection_pool = None
         self._initialized = False
 
         # No global locks to clean up
@@ -1275,27 +1277,27 @@ class SQLiteBackend(StateBackend):
                     updated_at = run_data.get("updated_at") or created_at
 
                     await db.execute(
-                        """
-                        INSERT OR REPLACE INTO runs (
-                            run_id, pipeline_id, pipeline_name, pipeline_version, status,
-                            created_at, updated_at, execution_time_ms, memory_usage_mb,
-                            total_steps, error_message
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
-                        (
-                            run_data["run_id"],
-                            run_data.get("pipeline_id", "unknown"),
-                            run_data.get("pipeline_name", "unknown"),
-                            run_data.get("pipeline_version", "latest"),
-                            run_data.get("status", "running"),
-                            created_at,
-                            updated_at,
-                            run_data.get("execution_time_ms"),
-                            run_data.get("memory_usage_mb"),
-                            run_data.get("total_steps", 0),
-                            run_data.get("error_message"),
-                        ),
-                    )
+                    """
+                    INSERT OR REPLACE INTO runs (
+                        run_id, pipeline_id, pipeline_name, pipeline_version, status,
+                        created_at, updated_at, execution_time_ms, memory_usage_mb,
+                        total_steps, error_message
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        run_data["run_id"],
+                        run_data.get("pipeline_id", "unknown"),
+                        run_data.get("pipeline_name", "unknown"),
+                        run_data.get("pipeline_version", "latest"),
+                        run_data.get("status", "running"),
+                        created_at,
+                        updated_at,
+                        run_data.get("execution_time_ms"),
+                        run_data.get("memory_usage_mb"),
+                        run_data.get("total_steps", 0),
+                        run_data.get("error_message"),
+                    ),
+                )
                     await db.commit()
 
             await self._with_retries(_save)
@@ -1308,23 +1310,23 @@ class SQLiteBackend(StateBackend):
                 async with aiosqlite.connect(self.db_path) as db:
                     # OPTIMIZATION: Use simplified schema for better performance
                     await db.execute(
-                        """
-                        INSERT OR REPLACE INTO steps (
-                            run_id, step_name, step_index, status, output, cost_usd,
-                            token_counts, execution_time_ms, created_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
-                        (
-                            step_data["run_id"],
-                            step_data["step_name"],
-                            step_data["step_index"],
-                            step_data.get("status", "completed"),
-                            _fast_json_dumps(step_data.get("output")),
-                            step_data.get("cost_usd"),
-                            step_data.get("token_counts"),
-                            step_data.get("execution_time_ms"),
-                            step_data.get("created_at", datetime.utcnow().isoformat()),
-                        ),
+                    """
+                    INSERT OR REPLACE INTO steps (
+                        run_id, step_name, step_index, status, output, cost_usd,
+                        token_counts, execution_time_ms, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        step_data["run_id"],
+                        step_data["step_name"],
+                        step_data["step_index"],
+                        step_data.get("status", "completed"),
+                        _fast_json_dumps(step_data.get("output")),
+                        step_data.get("cost_usd"),
+                        step_data.get("token_counts"),
+                        step_data.get("execution_time_ms"),
+                        step_data.get("created_at", datetime.utcnow().isoformat()),
+                    ),
                     )
                     await db.commit()
 

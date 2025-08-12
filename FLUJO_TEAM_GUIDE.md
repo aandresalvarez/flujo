@@ -118,6 +118,16 @@ async def execute(self, core: ExecutorCore, step: Step, data: Any, context: Opti
 ```
 **This converts a control flow exception into a data-level failure, breaking the entire workflow orchestration system.**
 
+### **2.6 Development Practices: Legacy Compatibility Guardrails**
+
+- FLUJO_WARN_LEGACY (environment flag): When set (e.g., `export FLUJO_WARN_LEGACY=1`), the system emits `DeprecationWarning` for legacy entry points to prevent regressions.
+  - Executor boundary: warns when `ExecutorCore.execute(step, data, ...)` (non-frame path) is used. Preferred path is `ExecutorCore.execute(frame: ExecutionFrame)` which returns `StepOutcome`.
+  - Runner boundary: warns when `Flujo.run_async` (PipelineResult-yielding legacy stream) is used. Preferred API is `Flujo.run_outcomes_async`.
+- Intended usage:
+  - Enable in CI to detect newly introduced legacy usage in contributions.
+  - Optionally enable locally during refactors or onboarding.
+- Behavior: OFF by default; no user-facing impact. Only warnings are emitted when enabled.
+
 ---
 
 ## **3. Policy Implementation Patterns**

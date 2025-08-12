@@ -67,7 +67,8 @@ async def test_parallel_executor_isolates_context_per_branch(
         step_executor=fake_step_executor,
     )
 
-    assert isinstance(res, StepResult)
+    res_sr = res.step_result if hasattr(res, "step_result") else res
+    assert isinstance(res_sr, StepResult)
     # Called once per branch
     assert called["isolate"] == 3
 
