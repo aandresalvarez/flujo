@@ -1,6 +1,7 @@
 from abc import abstractmethod
 from typing import Protocol, Any, runtime_checkable, Optional, Dict, Callable, Tuple
-from pydantic import BaseModel, Field
+from flujo.domain.base_model import BaseModel
+from pydantic import Field
 
 
 class ValidationResult(BaseModel):

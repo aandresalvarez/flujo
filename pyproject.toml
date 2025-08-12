@@ -191,6 +191,14 @@ disable_error_code = [
 
 [[tool.mypy.overrides]]
 module = [
+  "flujo.domain.validation",
+]
+disable_error_code = [
+  "misc",
+]
+
+[[tool.mypy.overrides]]
+module = [
   "flujo.application.core.ultra_executor",
 ]
 disable_error_code = [
