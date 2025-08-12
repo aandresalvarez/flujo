@@ -13,6 +13,8 @@ from flujo.infra.backends import LocalBackend
 from flujo.domain.resources import AppResources
 from flujo.domain.models import StepResult, UsageLimits, BaseModel as FlujoBaseModel
 from flujo.utils.serialization import safe_serialize
+from flujo.domain.models import StepOutcome, Success, Failure, Paused
+from flujo.exceptions import PausedException
 
 
 def assert_pipeline_result(result: Any, expected_output: Optional[Any] = None) -> None:
@@ -118,7 +120,7 @@ class DummyRemoteBackend(ExecutionBackend):
         executor: ExecutorCore[Any] = ExecutorCore()
         self.local = LocalBackend(executor=executor, agent_registry=self.agent_registry)
 
-    async def execute_step(self, request: StepExecutionRequest) -> StepResult:
+    async def execute_step(self, request: StepExecutionRequest) -> StepOutcome[StepResult]:
         self.call_counter += 1
         self.recorded_requests.append(request)
 
@@ -310,8 +312,6 @@ class DummyRemoteBackend(ExecutionBackend):
         # Delegate to local backend which may return typed outcomes
         outcome = await self.local.execute_step(reconstructed_request)
         try:
-            from flujo.domain.models import StepOutcome, Success, Failure, Paused, StepResult
-            from flujo.exceptions import PausedException
             if isinstance(outcome, StepOutcome):
                 if isinstance(outcome, Success):
                     return outcome.step_result
@@ -375,14 +375,14 @@ def override_agent_direct(original_agent: Any, replacement_agent: Any) -> Iterat
 # It should be moved to a separate utility module or made private
 
 
-class SimpleDummyRemoteBackend:
+class SimpleDummyRemoteBackend(ExecutionBackend):
     """A simple dummy remote backend for testing purposes."""
 
     def __init__(self) -> None:
         self.storage: Dict[str, Any] = {}
         self.call_count = 0
 
-    async def execute_step(self, request: StepExecutionRequest) -> StepResult:
+    async def execute_step(self, request: StepExecutionRequest) -> StepOutcome[StepResult]:
         """Execute a step by storing and retrieving the result."""
         self.call_count += 1
 
@@ -418,9 +418,11 @@ class SimpleDummyRemoteBackend:
             # Fallback to stored data if no run method
             result_data = self.retrieve(key)
 
-        return StepResult(
-            name=request.step.name,
-            output=result_data,
+        return Success(
+            step_result=StepResult(
+                name=request.step.name,
+                output=result_data,
+            )
         )
 
     def store(self, key: str, value: Any) -> None:
