@@ -110,6 +110,7 @@ Changelog = "https://github.com/aandresalvarez/flujo/blob/main/CHANGELOG.md"
 [tool.mypy]
 python_version = "3.11"
 strict         = true
+plugins = ["pydantic.mypy"]
 
 # Focus type checking on the core library first. Examples are excluded as they are
 # meant to be educational and may not follow strict typing.
@@ -136,6 +137,12 @@ module = [
     "xxhash",
     "opentelemetry.sdk.trace",
     "opentelemetry.sdk.trace.export"
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "aiosqlite",
 ]
 ignore_missing_imports = true
 
