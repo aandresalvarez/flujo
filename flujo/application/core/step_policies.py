@@ -255,7 +255,7 @@ class DefaultSimpleStepExecutor:
         )
         # Use self-contained policy implementation instead of delegating to core
         try:
-            sr = await _execute_simple_step_policy_impl(
+            outcome = await _execute_simple_step_policy_impl(
                 core,
                 step,
                 data,
@@ -270,7 +270,7 @@ class DefaultSimpleStepExecutor:
             )
         except PausedException as e:
             return Paused(message=str(e))
-        return to_outcome(sr)
+        return outcome
 
 
 async def _execute_simple_step_policy_impl(
@@ -285,7 +285,7 @@ async def _execute_simple_step_policy_impl(
     cache_key: Optional[str],
     breach_event: Optional[Any],
     _fallback_depth: int,
-) -> StepResult:
+) -> StepOutcome[StepResult]:
     """Full SimpleStep execution logic migrated from core into policy."""
     from unittest.mock import Mock, MagicMock, AsyncMock
     from .hybrid_check import run_hybrid_check
@@ -1442,7 +1442,7 @@ class DefaultAgentStepExecutor:
         # --- Quota reservation (estimate + reserve) ---
         # Prefer explicitly injected estimator; then factory; then local heuristic
         try:
-            estimate = None  # type: ignore[assignment]
+            estimate = None
             strategy_name = "heuristic"
             # 1) Direct estimator override
             estimator = getattr(core, "_usage_estimator", None)
@@ -1511,7 +1511,7 @@ class DefaultAgentStepExecutor:
                     from .usage_messages import format_reservation_denial
                 except Exception:
                     # Fallback import path if relative import fails in some contexts
-                    from flujo.application.core.usage_messages import format_reservation_denial  # type: ignore
+                    from flujo.application.core.usage_messages import format_reservation_denial
 
                 denial = format_reservation_denial(estimate, limits)
                 failure_msg = denial.human
@@ -2382,7 +2382,9 @@ class DefaultLoopStepExecutor:
                     telemetry.logfire.info(
                         f"[POLICY] About to call _execute_pipeline_via_policies for iteration {iteration_count}"
                     )
-                    pipeline_result = await core._execute_pipeline_via_policies(
+                    pipeline_result: PipelineResult[
+                        Any
+                    ] = await core._execute_pipeline_via_policies(
                         body_pipeline,
                         current_data,
                         iteration_context,
@@ -3301,7 +3303,7 @@ class DefaultParallelStepExecutor:
                             # Cancel remaining tasks
                             for p in pending:
                                 p.cancel()
-                            pipeline_result = PipelineResult(
+                            pipeline_result: PipelineResult[Any] = PipelineResult(
                                 step_history=list(branch_results.values()),
                                 total_cost_usd=total_cost,
                                 total_tokens=total_tokens,
@@ -3698,7 +3700,7 @@ class DefaultConditionalStepExecutor:
                         try:
                             from flujo.domain.models import PipelineResult
 
-                            pipeline_result = PipelineResult(
+                            pipeline_result: PipelineResult[Any] = PipelineResult(
                                 step_history=step_history,
                                 total_cost_usd=total_cost,
                                 total_tokens=total_tokens,
@@ -3906,7 +3908,7 @@ class DefaultDynamicRouterStepExecutor:
             parallel_result.branch_context = merged_ctx
             if context_setter is not None:
                 try:
-                    pipeline_result = PipelineResult(
+                    pipeline_result: PipelineResult[Any] = PipelineResult(
                         step_history=[parallel_result],
                         total_cost_usd=parallel_result.cost_usd,
                         total_tokens=parallel_result.token_counts,

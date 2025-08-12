@@ -158,11 +158,8 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
     __step_input_type__: type[Any] = object
     __step_output_type__: type[Any] = object
 
-    # Provide concrete BaseModel subclass to satisfy mypy when subclassing
-    class Config(BaseModel):  # type: ignore[misc]
-        """Pydantic model base for Step config to ease plugin typing."""
-
-        pass
+    # Note: Avoid defining an inner `Config` class alongside `model_config`.
+    # Pydantic v2 raises if both are present. Use only `model_config` here.
 
     @property
     def is_complex(self) -> bool:
@@ -778,7 +775,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
 
         return cast(
             "Step[Any, Dict[str, Any]]",
-            cls.from_callable(_gather, name=name, is_adapter=True, **config_kwargs),  # type: ignore[arg-type]
+            cls.from_callable(_gather, name=name, is_adapter=True, **config_kwargs),
         )
 
     @classmethod

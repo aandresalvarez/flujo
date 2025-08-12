@@ -140,7 +140,7 @@ def build_default_estimator_factory() -> UsageEstimatorFactory:
     registry = EstimatorRegistry()
 
     class _MinimalEstimator:
-        def estimate(self, step: Any, data: Any, context: Optional[Any]) -> UsageEstimate:  # type: ignore[override]
+        def estimate(self, step: Any, data: Any, context: Optional[Any]) -> UsageEstimate:
             return UsageEstimate(cost_usd=0.0, tokens=0)
 
     # Rule: adapter/output mapper or validation step → minimal
@@ -177,7 +177,7 @@ def build_default_estimator_factory() -> UsageEstimatorFactory:
         def __init__(self, fallback: Optional[UsageEstimator] = None) -> None:
             self._fallback = fallback or HeuristicUsageEstimator()
 
-        def estimate(self, step: Any, data: Any, context: Optional[Any]) -> UsageEstimate:  # type: ignore[override]
+        def estimate(self, step: Any, data: Any, context: Optional[Any]) -> UsageEstimate:
             try:
                 cfg = get_config_manager().load_config()
                 cost_cfg = getattr(cfg, "cost", None)

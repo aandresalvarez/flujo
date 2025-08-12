@@ -562,7 +562,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
 
         called_with_frame = isinstance(frame_or_step, ExecutionFrame)
         if called_with_frame:
-            frame: ExecutionFrame[Any] = frame_or_step
+            frame = cast(ExecutionFrame[Any], frame_or_step)
         else:
             # Accept duck-typed steps for backward compatibility
             step_obj = frame_or_step if frame_or_step is not None else kwargs.get("step")
@@ -812,11 +812,11 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             res_any = await self.hitl_step_executor.execute(
                 self, step, data, context, resources, limits, context_setter
             )
-            outcome: StepOutcome[StepResult]
+            hitl_outcome: StepOutcome[StepResult]
             if isinstance(res_any, StepOutcome):
-                outcome = res_any
+                hitl_outcome = res_any
             else:
-                outcome = (
+                hitl_outcome = (
                     Success(step_result=res_any)
                     if res_any.success
                     else Failure(
@@ -826,18 +826,18 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     )
                 )
             if called_with_frame:
-                return outcome
+                return hitl_outcome
             # Legacy behavior: raise on pause, unwrap others
-            if isinstance(outcome, Paused):
-                raise PausedException(outcome.message)
-            if isinstance(outcome, Success):
+            if isinstance(hitl_outcome, Paused):
+                raise PausedException(hitl_outcome.message)
+            if isinstance(hitl_outcome, Success):
                 # Normalize via unwrap to inject minimal diagnostics when needed
                 return self._unwrap_outcome_to_step_result(
-                    outcome.step_result, self._safe_step_name(step)
+                    hitl_outcome.step_result, self._safe_step_name(step)
                 )
-            if isinstance(outcome, Failure):
-                return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
-            return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
+            if isinstance(hitl_outcome, Failure):
+                return self._unwrap_outcome_to_step_result(hitl_outcome, self._safe_step_name(step))
+            return self._unwrap_outcome_to_step_result(hitl_outcome, self._safe_step_name(step))
 
         try:
             # Normalize fallback depth defensively
@@ -926,41 +926,19 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     f"{getattr(step, 'name', '<unnamed>')}"
                 )
                 if called_with_frame:
-                    try:
-                        from .step_policies import (
-                            DefaultSimpleStepExecutorOutcomes as _SimpleOutcomes,
-                        )
-                    except Exception:
-                        _SimpleOutcomes = None  # type: ignore
-                    if _SimpleOutcomes is not None:
-                        outcomes_adapter = _SimpleOutcomes(self.simple_step_executor)
-                        result = await outcomes_adapter.execute(
-                            self,
-                            step,
-                            data,
-                            context,
-                            resources,
-                            limits,
-                            stream,
-                            on_chunk,
-                            cache_key,
-                            breach_event,
-                            fb_depth_norm,
-                        )
-                    else:
-                        result = await self.simple_step_executor.execute(
-                            self,
-                            step,
-                            data,
-                            context,
-                            resources,
-                            limits,
-                            stream,
-                            on_chunk,
-                            cache_key,
-                            breach_event,
-                            fb_depth_norm,
-                        )
+                    result = await self.simple_step_executor.execute(
+                        self,
+                        step,
+                        data,
+                        context,
+                        resources,
+                        limits,
+                        stream,
+                        on_chunk,
+                        cache_key,
+                        breach_event,
+                        fb_depth_norm,
+                    )
                 else:
                     result = await self.simple_step_executor.execute(
                         self,
@@ -1143,7 +1121,18 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
     async def execute_old_signature(
         self, step: Any, data: Any, **kwargs: Any
     ) -> StepOutcome[StepResult]:
-        return await self.execute(step, data, **kwargs)
+        res = await self.execute(step, data, **kwargs)
+        if isinstance(res, StepOutcome):
+            return res
+        return (
+            Success(step_result=res)
+            if res.success
+            else Failure(
+                error=Exception(res.feedback or "step failed"),
+                feedback=res.feedback,
+                step_result=res,
+            )
+        )
 
     async def execute_step(
         self,
@@ -1415,8 +1404,17 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         step_executor: Optional[Callable[..., Awaitable[StepResult]]] = None,
     ) -> StepResult:
         rs = router_step if router_step is not None else step
-        return await self.dynamic_router_step_executor.execute(
+        outcome = await self.dynamic_router_step_executor.execute(
             self, rs, data, context, resources, limits, context_setter
+        )
+        if isinstance(outcome, Paused):
+            raise PausedException(outcome.message)
+        if isinstance(outcome, Success):
+            return outcome.step_result
+        if isinstance(outcome, Failure):
+            return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(rs))
+        return StepResult(
+            name=self._safe_step_name(rs), success=False, feedback="Unsupported router outcome"
         )
 
     async def _handle_hitl_step(
@@ -1667,7 +1665,7 @@ class OptimizedExecutorCore(ExecutorCore[Any]):
         frame_or_step: Any | None = None,
         data: Any | None = None,
         **kwargs: Any,
-    ) -> StepResult:
+    ) -> StepOutcome[StepResult] | StepResult:
         """Execute with optimized error handling when enabled.
 
         Returns a failed StepResult instead of raising for certain configuration

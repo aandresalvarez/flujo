@@ -13,7 +13,7 @@ from flujo.infra.backends import LocalBackend
 from flujo.domain.resources import AppResources
 from flujo.domain.models import StepResult, UsageLimits, BaseModel as FlujoBaseModel
 from flujo.utils.serialization import safe_serialize
-from flujo.domain.models import StepOutcome, Success, Failure, Paused
+from flujo.domain.models import StepOutcome, Success, Failure, Paused, PipelineResult
 from flujo.exceptions import PausedException
 
 
@@ -77,18 +77,20 @@ class DummyPlugin(ValidationPlugin):
 
 async def gather_result(runner: Any, data: Any, **kwargs: Any) -> Any:
     """Gather all results from a runner into a single result."""
-    # Always use run_async for pipeline runners
-    if hasattr(runner, "run_async"):
-        results = []
-        async for result in runner.run_async(data, **kwargs):
-            results.append(result)
-        return results[-1] if results else None
-    else:
-        # Fallback path: try run_async even if attribute check failed above
-        results = []
-        async for item in runner.run_async(data, **kwargs):
-            results.append(item)
-        return results[-1] if results else None
+    # Always use run_async for pipeline runners and return the last StepOutcome
+    results: List[Any] = []
+    async for result in runner.run_async(data, **kwargs):
+        results.append(result)
+    if not results:
+        return Success(step_result=StepResult(name="<no-steps>"))
+    last = results[-1]
+    if isinstance(last, StepOutcome):
+        return last
+    # Pipeline runs often yield a final PipelineResult; return it directly
+    if isinstance(last, PipelineResult):
+        return last
+    # Legacy StepResult: wrap into Success
+    return Success(step_result=last)
 
 
 class FailingStreamAgent:
@@ -105,7 +107,7 @@ class FailingStreamAgent:
         raise self.exc
 
 
-class DummyRemoteBackend(ExecutionBackend):
+class DummyRemoteBackend:
     """Mock backend that simulates remote execution."""
 
     def __init__(
@@ -119,9 +121,11 @@ class DummyRemoteBackend(ExecutionBackend):
         from ..application.core.executor_core import ExecutorCore
 
         executor: ExecutorCore[Any] = ExecutorCore()
-        self.local = LocalBackend(executor=executor, agent_registry=self.agent_registry)
+        self.local: LocalBackend[Any] = LocalBackend(
+            executor=executor, agent_registry=self.agent_registry
+        )
 
-    async def execute_step(self, request: StepExecutionRequest) -> StepOutcome[StepResult]:
+    async def execute_step(self, request: StepExecutionRequest) -> StepResult:
         self.call_counter += 1
         self.recorded_requests.append(request)
 
@@ -312,21 +316,21 @@ class DummyRemoteBackend(ExecutionBackend):
 
         # Delegate to local backend which may return typed outcomes
         outcome = await self.local.execute_step(reconstructed_request)
-        try:
-            if isinstance(outcome, StepOutcome):
-                if isinstance(outcome, Success):
-                    return outcome.step_result
-                if isinstance(outcome, Failure):
-                    return outcome.step_result or StepResult(
-                        name=getattr(reconstructed_request.step, "name", "<unnamed>"),
-                        success=False,
-                        feedback=outcome.feedback,
-                    )
-                if isinstance(outcome, Paused):
-                    raise PausedException(outcome.message)
-        except Exception:
-            pass
-        return outcome
+        if isinstance(outcome, StepOutcome):
+            if isinstance(outcome, Paused):
+                raise PausedException(outcome.message)
+            if isinstance(outcome, Success):
+                return outcome.step_result
+            if isinstance(outcome, Failure):
+                return outcome.step_result or StepResult(
+                    name=getattr(reconstructed_request.step, "name", "<unnamed>"),
+                    success=False,
+                    feedback=outcome.feedback,
+                )
+        # Legacy path already returns StepResult
+        from typing import cast as _cast
+
+        return _cast(StepResult, outcome)
 
 
 @contextmanager

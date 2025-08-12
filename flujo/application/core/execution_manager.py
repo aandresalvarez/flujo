@@ -22,7 +22,7 @@ from flujo.domain.models import (
 try:
     from flujo.domain.models import Quota as _Quota
 except Exception:
-    _Quota = None  # type: ignore
+    _Quota = None
 from flujo.exceptions import (
     ContextInheritanceError,
     PipelineAbortSignal,

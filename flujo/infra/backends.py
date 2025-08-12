@@ -55,5 +55,6 @@ class LocalBackend(Generic[TContext]):
         )
 
         outcome = await self._executor.execute(frame)
-        # Return typed outcome directly; let callers decide aggregation/control-flow
+        # Always return a typed outcome
+        assert not isinstance(outcome, StepResult)
         return outcome

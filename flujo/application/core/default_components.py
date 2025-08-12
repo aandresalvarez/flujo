@@ -5,7 +5,7 @@ import hashlib
 import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Dict, List, Optional, TYPE_CHECKING, Protocol, cast
+from typing import Any, Awaitable, Callable, Dict, List, Optional, TYPE_CHECKING, Protocol
 
 from ...domain.models import PipelineResult, StepResult, UsageLimits
 from ...domain.validation import ValidationResult
@@ -90,7 +90,8 @@ class Blake3Hasher:
 
     def digest(self, data: bytes) -> str:
         if self._use_blake3:
-            return cast(str, self._blake3.blake3(data).hexdigest())
+            # hexdigest() returns str, but typing of _blake3 is dynamic; coerce explicitly
+            return str(self._blake3.blake3(data).hexdigest())
         else:
             return hashlib.blake2b(data, digest_size=32).hexdigest()
 
