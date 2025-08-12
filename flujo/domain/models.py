@@ -1,6 +1,7 @@
 """Domain models for flujo."""
 
-from typing import Any, List, Optional, Literal, Dict, Generic
+from typing import Any, List, Optional, Literal, Dict, Generic, TypeVar, Tuple
+from threading import RLock
 from pydantic import Field, ConfigDict, field_validator
 from typing import ClassVar
 from datetime import datetime, timezone
@@ -10,6 +11,56 @@ from enum import Enum
 from .types import ContextT
 from .base_model import BaseModel
 
+# ---------------------------------------------------------------------------
+# StepOutcome algebraic data type (FSD-008)
+# ---------------------------------------------------------------------------
+
+T = TypeVar("T")
+
+
+class StepOutcome(BaseModel, Generic[T]):
+    """Typed, serializable outcome for a single step execution.
+
+    Subclasses represent explicit terminal conditions a step can reach.
+    This replaces exception-driven control flow for non-error states.
+    """
+
+
+class Success(StepOutcome[T]):
+    """Successful completion with a concrete StepResult payload."""
+
+    step_result: "StepResult"
+
+
+class Failure(StepOutcome[T]):
+    """Recoverable failure with partial result and feedback for callers/tests."""
+
+    error: Any
+    feedback: str | None = None
+    step_result: Optional["StepResult"] = None
+
+
+class Paused(StepOutcome[T]):
+    """Human-in-the-loop pause. Contains message and optional token for resumption."""
+
+    message: str
+    state_token: Any | None = None
+
+
+class Aborted(StepOutcome[T]):
+    """Execution was intentionally aborted (e.g., circuit breaker, governance)."""
+
+    reason: str
+
+
+class Chunk(StepOutcome[T]):
+    """Streaming data chunk emitted during step execution."""
+
+    data: Any
+    # Optionally link to the step name for traceability during streaming
+    step_name: str | None = None
+
+
 __all__ = [
     "Task",
     "Candidate",
@@ -18,6 +69,8 @@ __all__ = [
     "PipelineResult",
     "StepResult",
     "UsageLimits",
+    "UsageEstimate",
+    "Quota",
     "ExecutedCommandLog",
     "PipelineContext",
     "HumanInteraction",
@@ -135,6 +188,134 @@ class UsageLimits(BaseModel):
 
     total_cost_usd_limit: Optional[float] = Field(None, ge=0)
     total_tokens_limit: Optional[int] = Field(None, ge=0)
+
+
+# ---------------------------------------------------------------------------
+# Quota system (FSD-009)
+# ---------------------------------------------------------------------------
+
+
+class UsageEstimate(BaseModel):
+    """Estimated resources a step intends to consume before execution."""
+
+    cost_usd: float = 0.0
+    tokens: int = 0
+
+
+class Quota:
+    """Thread-safe, mutable quota that enforces pre-execution reservations.
+
+    This object is intentionally not a pydantic model to stay lightweight and
+    avoid accidental serialization. It is passed by reference through frames.
+    """
+
+    __slots__ = ("_remaining_cost_usd", "_remaining_tokens", "_lock")
+
+    def __init__(self, remaining_cost_usd: float, remaining_tokens: int) -> None:
+        # Use non-negative values; infinity allowed for cost
+        self._remaining_cost_usd = float(remaining_cost_usd)
+        self._remaining_tokens = int(remaining_tokens)
+        self._lock: RLock = RLock()
+
+    def get_remaining(self) -> Tuple[float, int]:
+        with self._lock:
+            return self._remaining_cost_usd, self._remaining_tokens
+
+    def has_sufficient_quota(self, estimate: UsageEstimate) -> bool:
+        with self._lock:
+            cost_ok = self._remaining_cost_usd == float("inf") or self._remaining_cost_usd >= max(
+                0.0, float(estimate.cost_usd)
+            )
+            tokens_ok = self._remaining_tokens >= max(0, int(estimate.tokens))
+            return cost_ok and tokens_ok
+
+    def reserve(self, estimate: UsageEstimate) -> bool:
+        """Atomically attempt to reserve the estimate.
+
+        Returns True on success, False if insufficient.
+        """
+        cost_req = max(0.0, float(estimate.cost_usd))
+        tokens_req = max(0, int(estimate.tokens))
+        with self._lock:
+            cost_ok = (
+                self._remaining_cost_usd == float("inf") or self._remaining_cost_usd >= cost_req
+            )
+            tokens_ok = self._remaining_tokens >= tokens_req
+            if not (cost_ok and tokens_ok):
+                return False
+            if self._remaining_cost_usd != float("inf"):
+                self._remaining_cost_usd -= cost_req
+            self._remaining_tokens -= tokens_req
+            return True
+
+    def reclaim(self, estimate: UsageEstimate, actual: UsageEstimate) -> None:
+        """Atomically adjust after execution to reconcile estimate vs actual.
+
+        - If actual < estimate, refund the difference.
+        - If actual > estimate, attempt to deduct the overage if available. If
+          not available, no exception is raised here; the safety guarantee comes
+          from reserving conservatively up-front. Future improvements may surface
+          this discrepancy for telemetry.
+        """
+        est_cost = max(0.0, float(estimate.cost_usd))
+        act_cost = max(0.0, float(actual.cost_usd))
+        est_tok = max(0, int(estimate.tokens))
+        act_tok = max(0, int(actual.tokens))
+        with self._lock:
+            # Refund cost difference
+            if self._remaining_cost_usd != float("inf"):
+                delta_cost = est_cost - act_cost
+                if delta_cost > 0:
+                    self._remaining_cost_usd += delta_cost
+                elif delta_cost < 0:
+                    extra_needed = -delta_cost
+                    if self._remaining_cost_usd >= extra_needed:
+                        self._remaining_cost_usd -= extra_needed
+                    else:
+                        # Exhaust remaining; overage not fully covered
+                        self._remaining_cost_usd = 0.0
+            # Adjust tokens
+            delta_tok = est_tok - act_tok
+            if delta_tok > 0:
+                self._remaining_tokens += delta_tok
+            elif delta_tok < 0:
+                extra_tok = -delta_tok
+                if self._remaining_tokens >= extra_tok:
+                    self._remaining_tokens -= extra_tok
+                else:
+                    self._remaining_tokens = 0
+
+    def split(self, n: int) -> List["Quota"]:
+        """Deterministically split this quota into n sub-quotas and zero this one.
+
+        The split uses even division with remainder distributed to lower-indexed
+        quotas for tokens and proportionally for cost to ensure the sum matches
+        the original within floating point tolerance.
+        """
+        if n <= 0:
+            raise ValueError("split requires n > 0")
+        with self._lock:
+            total_cost = self._remaining_cost_usd
+            total_tokens = self._remaining_tokens
+            # Prepare even splits
+            base_tokens = total_tokens // n
+            token_remainder = total_tokens % n
+            # For cost, allow infinity to propagate: if inf, each child gets inf
+            if total_cost == float("inf"):
+                cost_shares = [float("inf")] * n
+            else:
+                base_cost = total_cost / float(n)
+                cost_shares = [base_cost for _ in range(n)]
+            # Build sub-quotas
+            sub_quotas: List[Quota] = []
+            for i in range(n):
+                share_tokens = base_tokens + (1 if i < token_remainder else 0)
+                share_cost = cost_shares[i]
+                sub_quotas.append(Quota(share_cost, share_tokens))
+            # Zero out parent
+            self._remaining_cost_usd = 0.0 if total_cost != float("inf") else 0.0
+            self._remaining_tokens = 0
+            return sub_quotas
 
 
 class SuggestionType(str, Enum):

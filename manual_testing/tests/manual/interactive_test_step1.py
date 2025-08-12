@@ -13,6 +13,7 @@ from flujo import Flujo
 from flujo.domain.models import PipelineResult, PipelineContext
 from manual_testing.examples.cohort_pipeline import COHORT_CLARIFICATION_PIPELINE
 
+
 def ensure_api_key():
     """Ensure the API key is loaded from environment variables."""
     api_key = os.getenv("OPENAI_API_KEY")
@@ -23,10 +24,11 @@ def ensure_api_key():
         )
     # Mask the API key for security - show only last 4 characters
     if len(api_key) < 4:
-        masked_key = '*' * len(api_key)
+        masked_key = "*" * len(api_key)
     else:
         masked_key = f"{'*' * (len(api_key) - 4)}{api_key[-4:]}"
     print(f"✅ Using API key: {masked_key}")
+
 
 async def test_cohort_definition(definition: str):
     """Test a single cohort definition with the real pipeline."""
@@ -38,14 +40,13 @@ async def test_cohort_definition(definition: str):
     runner = Flujo(
         COHORT_CLARIFICATION_PIPELINE,
         pipeline_name="interactive_test",
-        context_model=PipelineContext
+        context_model=PipelineContext,
     )
 
     # Run the pipeline
     result: Optional[PipelineResult] = None
     async for item in runner.run_async(
-        definition,
-        initial_context_data={"initial_prompt": definition}
+        definition, initial_context_data={"initial_prompt": definition}
     ):
         result = item
 
@@ -85,6 +86,7 @@ async def test_cohort_definition(definition: str):
 
     print(f"{'='*60}")
 
+
 async def main():
     """Run interactive manual tests with real API calls."""
     print("=" * 80)
@@ -99,8 +101,10 @@ async def main():
     print("   - 'sick people' (very vague)")
     print("   - 'cancer patients' (incomplete)")
     print("   - 'patients with heart problems' (ambiguous)")
-    print("   - 'adult patients aged 18-65 with confirmed Type 2 diabetes diagnosed between 2020-2024, currently prescribed metformin at a dose of 500-2000mg daily, with HbA1c levels between 7.0-10.0%' (complete)")
-    print("\n" + "="*80)
+    print(
+        "   - 'adult patients aged 18-65 with confirmed Type 2 diabetes diagnosed between 2020-2024, currently prescribed metformin at a dose of 500-2000mg daily, with HbA1c levels between 7.0-10.0%' (complete)"
+    )
+    print("\n" + "=" * 80)
 
     while True:
         print(f"\n{'='*60}")
@@ -109,7 +113,7 @@ async def main():
 
         definition = input("📝 Cohort Definition: ").strip()
 
-        if definition.lower() in ['quit', 'exit', 'q']:
+        if definition.lower() in ["quit", "exit", "q"]:
             print("\n👋 Goodbye!")
             break
 
@@ -123,9 +127,10 @@ async def main():
         # Ask if user wants to continue
         print(f"\n{'='*60}")
         continue_test = input("Test another definition? (y/n): ").strip().lower()
-        if continue_test not in ['y', 'yes', '']:
+        if continue_test not in ["y", "yes", ""]:
             print("\n👋 Goodbye!")
             break
+
 
 if __name__ == "__main__":
     asyncio.run(main())

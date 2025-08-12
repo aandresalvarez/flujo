@@ -6,7 +6,6 @@ cycle until the text meets a quality standard or the max number of
 loops is reached. For more details, see docs/pipeline_looping.md.
 """
 
-
 import asyncio
 
 from pydantic import BaseModel

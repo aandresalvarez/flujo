@@ -147,9 +147,9 @@ class TestCLIParameterIntegration:
             if param_name in sig.parameters:
                 param = sig.parameters[param_name]
                 if param.default is not inspect.Parameter.empty:
-                    assert param.default == expected_default, (
-                        f"Default for {param_name} should be {expected_default}, got {param.default}"
-                    )
+                    assert (
+                        param.default == expected_default
+                    ), f"Default for {param_name} should be {expected_default}, got {param.default}"
 
     def test_parameter_validation(self):
         """Test that parameters are validated correctly."""
@@ -300,13 +300,13 @@ class TestCLIParameterRegressionPrevention:
                     if isinstance(annotation, str):
                         # For string annotations, we can't easily compare types
                         # So we'll just verify the parameter exists and has an annotation
-                        assert annotation == "int", (
-                            f"Parameter {param_name} should have 'int' annotation"
-                        )
+                        assert (
+                            annotation == "int"
+                        ), f"Parameter {param_name} should have 'int' annotation"
                     else:
-                        assert annotation == expected_type, (
-                            f"Parameter {param_name} should be {expected_type}"
-                        )
+                        assert (
+                            annotation == expected_type
+                        ), f"Parameter {param_name} should be {expected_type}"
 
     def test_optional_parameter_handling(self):
         """Test that optional parameters are handled correctly."""

@@ -18,7 +18,7 @@ FSD-09 has been successfully implemented with all functional and non-functional 
 - ✅ **Durable persistence** in SQLite backend
 - ✅ **Comprehensive test coverage** (100% of new code)
 - ✅ **Production-ready** with error handling and graceful degradation
-- ⚠️ **Known Limitation**: Trace storage uses JSON blob format rather than normalized schema, limiting server-side querying capabilities. See [Trace Storage Architecture](./TRACE_STORAGE_ARCHITECTURE.md) for details and future enhancement plans.
+- ⚠️ **Known Limitation**: Trace storage uses JSON blob format rather than normalized schema, limiting server-side querying capabilities. See [Trace Storage Architecture](../advanced/TRACE_STORAGE_ARCHITECTURE.md) for details and future enhancement plans.
 
 ---
 
@@ -75,7 +75,7 @@ CREATE TABLE IF NOT EXISTS traces (
 );
 ```
 
-**Note:** This simplified schema stores the entire trace tree as a JSON blob per run, rather than individual spans. While this approach is simpler and faster for basic trace visualization, it limits server-side querying capabilities. See [Trace Storage Architecture](./TRACE_STORAGE_ARCHITECTURE.md) for detailed analysis and future enhancement plans.
+**Note:** This simplified schema stores the entire trace tree as a JSON blob per run, rather than individual spans. While this approach is simpler and faster for basic trace visualization, it limits server-side querying capabilities. See [Trace Storage Architecture](../advanced/TRACE_STORAGE_ARCHITECTURE.md) for detailed analysis and future enhancement plans.
 
 ### Backend Methods
 

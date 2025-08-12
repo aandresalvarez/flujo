@@ -76,7 +76,7 @@ Pipelines can run automated evaluations, detect weak points, and produce an **Im
 ```bash
 pip install flujo openai pydantic
 export OPENAI_API_KEY="sk-..."
-```
+````
 
 **Example: A simple translation pipeline**
 
@@ -115,6 +115,7 @@ if __name__ == "__main__":
 ```
 
 Run it:
+
 ```bash
 python main.py
 ```
@@ -146,6 +147,7 @@ pip install flujo
 ```
 
 For extras:
+
 ```bash
 pip install flujo[openai,anthropic,prometheus]
 ```
@@ -155,4 +157,5 @@ pip install flujo[openai,anthropic,prometheus]
 ## License
 
 Flexible **AGPL-3.0 / Commercial**. See the [`LICENSE`](LICENSE) file for details.
+
  

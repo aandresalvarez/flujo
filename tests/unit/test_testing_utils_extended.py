@@ -65,9 +65,11 @@ async def test_simple_dummy_remote_backend_execute_step():
         stream=False,
     )
 
-    result = await backend.execute_step(request)
+    outcome = await backend.execute_step(request)
+    from flujo.domain.models import Success
 
-    assert isinstance(result, StepResult)
+    assert isinstance(outcome, Success)
+    result = outcome.step_result
     assert result.name == "test_step"
     assert result.output == "test_output"
     assert backend.call_count == 2  # Adjusted to match actual behavior
@@ -92,9 +94,11 @@ async def test_simple_dummy_remote_backend_execute_step_with_context():
         stream=False,
     )
 
-    result = await backend.execute_step(request)
+    outcome = await backend.execute_step(request)
+    from flujo.domain.models import Success
 
-    assert isinstance(result, StepResult)
+    assert isinstance(outcome, Success)
+    result = outcome.step_result
     assert result.name == "test_step"
     assert result.output == "test_output"
 
@@ -117,9 +121,11 @@ async def test_simple_dummy_remote_backend_execute_step_with_resources():
         stream=False,
     )
 
-    result = await backend.execute_step(request)
+    outcome = await backend.execute_step(request)
+    from flujo.domain.models import Success
 
-    assert isinstance(result, StepResult)
+    assert isinstance(outcome, Success)
+    result = outcome.step_result
     assert result.name == "test_step"
     assert result.output == "test_output"
 
@@ -141,9 +147,11 @@ async def test_simple_dummy_remote_backend_execute_step_agent_without_run():
         stream=False,
     )
 
-    result = await backend.execute_step(request)
+    outcome = await backend.execute_step(request)
+    from flujo.domain.models import Success
 
-    assert isinstance(result, StepResult)
+    assert isinstance(outcome, Success)
+    result = outcome.step_result
     assert result.name == "test_step"
     # Should fall back to stored data
     assert result.output == "test_input"

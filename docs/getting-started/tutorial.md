@@ -328,7 +328,7 @@ print(result.step_history[-1].feedback)
 
 `Flujo` can share a Pydantic model instance across steps. This lets you
 accumulate data or pass configuration during a run. See
-[Typed Pipeline Context](pipeline_context.md) for more details.
+[Typed Pipeline Context](../user-guide/pipeline_context.md) for more details.
 
 ```python
 from flujo.models import PipelineContext

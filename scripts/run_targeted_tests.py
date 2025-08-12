@@ -73,6 +73,7 @@ def run_one(nodeid: str, timeout: int, show_tb: bool) -> TestResult:
         out = proc.stdout + proc.stderr
     except sp.TimeoutExpired as e:
         status = "TIMEOUT"
+
         def _to_text(buf: bytes | str | None) -> str:
             if buf is None:
                 return ""
@@ -82,6 +83,7 @@ def run_one(nodeid: str, timeout: int, show_tb: bool) -> TestResult:
                 except Exception:
                     return buf.decode(errors="replace")
             return buf
+
         out = _to_text(e.stdout) + _to_text(e.stderr)
     except Exception as exc:  # noqa: BLE001
         status = "ERROR"

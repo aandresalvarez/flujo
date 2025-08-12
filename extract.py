@@ -52,34 +52,55 @@ import sys
 # Hardcoded folders to always exclude (exact matches only)
 DEFAULT_EXCLUDE_FOLDERS = {
     # Python build artifacts
-    "__pycache__", "dist", "build", ".eggs", ".installed.cfg",
-
+    "__pycache__",
+    "dist",
+    "build",
+    ".eggs",
+    ".installed.cfg",
     # Testing and coverage
-    ".pytest_cache", ".coverage", "coverage", "htmlcov", ".tox", ".nox", ".hypothesis",
-
+    ".pytest_cache",
+    ".coverage",
+    "coverage",
+    "htmlcov",
+    ".tox",
+    ".nox",
+    ".hypothesis",
     # Environment and virtual environments
-    ".venv", "env", "venv", "ENV", "env.bak", "venv.bak", ".python-version", ".python-version.bak",
-
+    ".venv",
+    "env",
+    "venv",
+    "ENV",
+    "env.bak",
+    "venv.bak",
+    ".python-version",
+    ".python-version.bak",
     # IDE and editor files
-    ".idea", ".vscode", ".cursor",
-
+    ".idea",
+    ".vscode",
+    ".cursor",
     # Project specific
-    "site", ".ruff_cache", ".mypy_cache", ".benchmarks", ".dmypy.json", "dmypy.json",
-
+    "site",
+    ".ruff_cache",
+    ".mypy_cache",
+    ".benchmarks",
+    ".dmypy.json",
+    "dmypy.json",
     # Distribution / packaging
     ".Python",
-
     # Jupyter Notebook
     ".ipynb_checkpoints",
-
     # Documentation
     "docs/_build",
-
     # Docker
     ".docker",
-
     # Additional exclusions from original script
-    ".streamlit", "site-packages", "bin", ".git", "logs", "alembic", "output"
+    ".streamlit",
+    "site-packages",
+    "bin",
+    ".git",
+    "logs",
+    "alembic",
+    "output",
 }
 
 # Folder patterns to exclude (glob patterns for folder matching)
@@ -94,42 +115,60 @@ GIT_SPECIFIC_FILES = {".gitignore", ".gitattributes", ".gitmodules"}
 # File patterns to exclude (matching .gitignore patterns)
 EXCLUDED_FILE_PATTERNS = {
     # Python build artifacts
-    "*.pyc", "*.pyo", "*.pyd", "*.so", "*.egg", "*.egg-info", "*.manifest", "*.spec",
-    "pip-log.txt", "pip-delete-this-directory.txt",
-
+    "*.pyc",
+    "*.pyo",
+    "*.pyd",
+    "*.so",
+    "*.egg",
+    "*.egg-info",
+    "*.manifest",
+    "*.spec",
+    "pip-log.txt",
+    "pip-delete-this-directory.txt",
     # Testing and coverage
     "coverage.xml",
-
     # Environment files
-    ".env", ".env.local", ".env.development.local", ".env.test.local", ".env.production.local",
-
+    ".env",
+    ".env.local",
+    ".env.development.local",
+    ".env.test.local",
+    ".env.production.local",
     # IDE and editor files
-    "*.swp", "*.swo", "*~", ".DS_Store",
-
+    "*.swp",
+    "*.swo",
+    "*~",
+    ".DS_Store",
     # Project specific
-    "settings.json", "test_performance_report.json", ".secrets.baseline", "sbom.json",
-
+    "settings.json",
+    "test_performance_report.json",
+    ".secrets.baseline",
+    "sbom.json",
     # Jupyter Notebook
     "*.ipynb",
-
     # Logs and databases
-    "*.log", "*.sqlite", "*.db", "*.corrupt.*",
-
+    "*.log",
+    "*.sqlite",
+    "*.db",
+    "*.corrupt.*",
     # Docker (excluding .env.docker files that should be included)
     "docker-compose.override.yml",
-
     # uv dependency lock file
     "uv.lock",
-
     # Profiling and debugging files
-    "profile_*.py", "warnings.log",
-
+    "profile_*.py",
+    "warnings.log",
     # Additional exclusions
-    "output.md"
+    "output.md",
 }
 
 
-def should_exclude_path(path_parts, exclude_folders, exclude_folder_patterns, exclude_specific_paths=None, base_folder=None):
+def should_exclude_path(
+    path_parts,
+    exclude_folders,
+    exclude_folder_patterns,
+    exclude_specific_paths=None,
+    base_folder=None,
+):
     """Check if a path should be excluded based on folder names, patterns, or specific paths."""
     # Handle None parameters
     if exclude_folders is None:
@@ -160,8 +199,9 @@ def should_exclude_path(path_parts, exclude_folders, exclude_folder_patterns, ex
 
                 # Use more precise path matching to avoid over-exclusion
                 # Only exclude if it's an exact match or a direct subdirectory
-                if (rel_path_norm == exclude_path_norm or
-                    rel_path_norm.startswith(exclude_path_norm + os.sep)):
+                if rel_path_norm == exclude_path_norm or rel_path_norm.startswith(
+                    exclude_path_norm + os.sep
+                ):
                     return True
         except ValueError:
             # If the path is not relative to base_folder, skip this check
@@ -182,11 +222,25 @@ def should_exclude_file(filename, excluded_patterns):
     return False
 
 
-def build_tree_structure(base_folder, exclude_folders, exclude_folder_patterns, allowed_extensions, docker_files, excluded_file_patterns, exclude_specific_paths=None):
+def build_tree_structure(
+    base_folder,
+    exclude_folders,
+    exclude_folder_patterns,
+    allowed_extensions,
+    docker_files,
+    excluded_file_patterns,
+    exclude_specific_paths=None,
+):
     tree = defaultdict(list)
     for root, dirs, files in os.walk(base_folder):
         path_parts = root.split(os.sep)
-        if should_exclude_path(path_parts, exclude_folders, exclude_folder_patterns, exclude_specific_paths, base_folder):
+        if should_exclude_path(
+            path_parts,
+            exclude_folders,
+            exclude_folder_patterns,
+            exclude_specific_paths,
+            base_folder,
+        ):
             dirs[:] = []
             continue
 
@@ -242,12 +296,31 @@ def write_markdown_file(output_path, md_lines):
         sys.exit(1)
 
 
-def process_target_folder(target_folder, folder_name, exclude_folders, exclude_folder_patterns, allowed_extensions, docker_files, venv_indicators, script_path, output_path, md_lines, excluded_file_patterns, exclude_specific_paths=None):
+def process_target_folder(
+    target_folder,
+    folder_name,
+    exclude_folders,
+    exclude_folder_patterns,
+    allowed_extensions,
+    docker_files,
+    venv_indicators,
+    script_path,
+    output_path,
+    md_lines,
+    excluded_file_patterns,
+    exclude_specific_paths=None,
+):
     """Process a single target folder and append its content to md_lines."""
     for root, dirs, files in os.walk(target_folder):
         found_venv = any(dir_name in venv_indicators for dir_name in dirs)
         path_parts = root.split(os.sep)
-        if should_exclude_path(path_parts, exclude_folders, exclude_folder_patterns, exclude_specific_paths, target_folder):
+        if should_exclude_path(
+            path_parts,
+            exclude_folders,
+            exclude_folder_patterns,
+            exclude_specific_paths,
+            target_folder,
+        ):
             dirs[:] = []
             continue
         dirs[:] = [d for d in dirs if d not in exclude_folders]
@@ -261,14 +334,21 @@ def process_target_folder(target_folder, folder_name, exclude_folders, exclude_f
         for filename in sorted(files):
             file_path = os.path.join(root, filename)
             abs_file_path = os.path.abspath(file_path)
-            if abs_file_path in {script_path, output_path} or filename in GIT_SPECIFIC_FILES or filename == "output.md":
+            if (
+                abs_file_path in {script_path, output_path}
+                or filename in GIT_SPECIFIC_FILES
+                or filename == "output.md"
+            ):
                 print(f"[SKIP] {file_path} (script/output/git-specific)")
                 continue
             # Skip files that match excluded patterns
             if should_exclude_file(filename, excluded_file_patterns):
                 print(f"[SKIP] {file_path} (matches excluded pattern)")
                 continue
-            if not (any(filename.lower().endswith(ext) for ext in allowed_extensions) or filename in docker_files):
+            if not (
+                any(filename.lower().endswith(ext) for ext in allowed_extensions)
+                or filename in docker_files
+            ):
                 print(f"[SKIP] {file_path} (extension not allowed)")
                 continue
             rel_file_path = os.path.join(folder_name, os.path.relpath(file_path, target_folder))
@@ -306,8 +386,24 @@ def process_target_folder(target_folder, folder_name, exclude_folders, exclude_f
 
 def main():
     """Main entry point for the script."""
-    allowed_extensions = [".py", ".toml", ".md", ".txt", ".sh", ".dockerfile", ".yml", ".yaml", ".sql"]
-    docker_files = ["Dockerfile", "docker-compose.yml", "docker-compose.yaml", "entrypoint.sh", ".env.docker"]
+    allowed_extensions = [
+        ".py",
+        ".toml",
+        ".md",
+        ".txt",
+        ".sh",
+        ".dockerfile",
+        ".yml",
+        ".yaml",
+        ".sql",
+    ]
+    docker_files = [
+        "Dockerfile",
+        "docker-compose.yml",
+        "docker-compose.yaml",
+        "entrypoint.sh",
+        ".env.docker",
+    ]
     default_output_filename = "files_content.md"
     venv_indicators = {"venv", ".venv"}
     output_dir = "output"  # Hardcoded output directory
@@ -357,7 +453,15 @@ def main():
 
     combined_tree = defaultdict(list)
     for target_folder in target_folders:
-        tree = build_tree_structure(target_folder, exclude_folders, exclude_folder_patterns, allowed_extensions, docker_files, EXCLUDED_FILE_PATTERNS, exclude_specific_paths)
+        tree = build_tree_structure(
+            target_folder,
+            exclude_folders,
+            exclude_folder_patterns,
+            allowed_extensions,
+            docker_files,
+            EXCLUDED_FILE_PATTERNS,
+            exclude_specific_paths,
+        )
         folder_name = os.path.basename(target_folder)
         for folder, files in tree.items():
             if folder == ".":

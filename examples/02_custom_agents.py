@@ -2,12 +2,14 @@
 Demonstrates creating custom agents with specific personalities and
 instructions, then using them with the high-level pipeline factory.
 """
+
 import asyncio
 from flujo import make_agent_async, init_telemetry, Task
 from flujo.recipes.factories import make_default_pipeline, run_default_pipeline
 from flujo.domain.models import Checklist
 
 init_telemetry()
+
 
 async def main():
     print("🎨 Creating a team of custom, specialized agents for a creative task...")
@@ -57,6 +59,7 @@ async def main():
                 print(f"  - {item.description:<60} {status}")
     else:
         print("\n❌ The workflow did not produce a valid solution.")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

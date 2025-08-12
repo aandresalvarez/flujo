@@ -7,15 +7,18 @@ It simulates the old behavior where context was always injected.
 import asyncio
 import inspect
 
+
 # Simulate the old buggy behavior
 class BuggyAgent:
     """A simple agent that doesn't accept context parameter - this would fail with old code"""
+
     def __init__(self, name="BuggyAgent"):
         self.name = name
 
     async def run(self, data: str) -> str:
         """This method does NOT accept a context parameter"""
         return f"Response to: {data}"
+
 
 # Simulate the old context injection logic (the bug)
 async def old_buggy_context_injection(agent, data, context):
@@ -34,6 +37,7 @@ async def old_buggy_context_injection(agent, data, context):
         print(f"   ❌ FAILED with TypeError: {e}")
         print("   This is the bug that FSD-11 fixes!")
         return None
+
 
 # Simulate the new fixed behavior
 async def new_fixed_context_injection(agent, data, context):
@@ -64,6 +68,7 @@ async def new_fixed_context_injection(agent, data, context):
         print(f"   ❌ FAILED: {e}")
         return None
 
+
 async def main():
     print("=" * 60)
     print("FSD-11 BUG DEMONSTRATION")
@@ -93,6 +98,7 @@ async def main():
     print(f"Old behavior: {'❌ FAILED' if result1 is None else '✅ WORKED (unexpected)'}")
     print(f"New behavior: {'✅ WORKED' if result2 is not None else '❌ FAILED'}")
     print("=" * 60)
+
 
 if __name__ == "__main__":
     asyncio.run(main())

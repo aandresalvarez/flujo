@@ -103,8 +103,7 @@ async def _execute_agent_step(
 
     for attempt in range(1, max_retries + 2):
         result.attempts = attempt
-        if limits is not None:
-            await self._usage_meter.guard(limits, result.step_history)
+        # FSD-009: reactive guard removed for non-parallel paths; quota/policies enforce preemption
 
         # FSD-003: Per-attempt context isolation
         # Each attempt (including the first) operates on a pristine copy when retries are possible

@@ -11,7 +11,7 @@ The state management system has been optimized for production use cases with the
 - **Admin Queries**: Built-in observability and monitoring capabilities
 - **Automatic Migration**: Seamless upgrades for existing deployments
 
-For detailed information about the optimized SQLite backend, see [State Backend Optimization](state_backend_optimization.md) and the comprehensive [SQLite Backend Guide](guides/sqlite_backend_guide.md).
+For detailed information about the optimized SQLite backend, see [State Backend Optimization](state_backend_optimization.md) and the comprehensive [SQLite Backend Guide](../guides/sqlite_backend_guide.md).
 
 ## API Reference
 

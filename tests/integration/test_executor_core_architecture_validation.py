@@ -147,9 +147,9 @@ class TestComponentIntegration:
         # First Principles: Verify successful execution and optimized component usage
         assert result.success
         # Enhanced: Optimized system may use efficient paths that bypass serializer when not needed
-        assert serializer.serialize_calls >= 0, (
-            "Serializer may be optimized away in enhanced system"
-        )
+        assert (
+            serializer.serialize_calls >= 0
+        ), "Serializer may be optimized away in enhanced system"
         assert hasher.digest_calls >= 0, "Hasher may be optimized in enhanced system"
         assert cache_backend.get_calls >= 0, "Cache backend usage optimized for performance"
         assert cache_backend.put_calls >= 0, "Cache backend usage optimized for performance"
@@ -308,17 +308,17 @@ class TestScalabilityValidation:
             execution_time = time.perf_counter() - start_time
 
             # All should succeed
-            assert all(r.success for r in results), (
-                f"Some tasks failed at level {level}: {[r.feedback for r in results if not r.success]}"
-            )
+            assert all(
+                r.success for r in results
+            ), f"Some tasks failed at level {level}: {[r.feedback for r in results if not r.success]}"
 
             print(f"Concurrent Execution (level={level}): {execution_time:.6f}s")
 
             # Should complete within reasonable time
             max_time = 2.0  # 2 seconds max
-            assert execution_time < max_time, (
-                f"Concurrent execution level {level} too slow: {execution_time:.6f}s"
-            )
+            assert (
+                execution_time < max_time
+            ), f"Concurrent execution level {level} too slow: {execution_time:.6f}s"
 
     @pytest.mark.asyncio
     async def test_resource_management_optimization(self):
@@ -342,9 +342,9 @@ class TestScalabilityValidation:
         total_time = time.perf_counter() - start_time
 
         # All should succeed despite resource limits
-        assert all(r.success for r in results), (
-            f"Some tasks failed: {[r.feedback for r in results if not r.success]}"
-        )
+        assert all(
+            r.success for r in results
+        ), f"Some tasks failed: {[r.feedback for r in results if not r.success]}"
         assert len(results) == num_tasks
 
         print("Resource Management Test:")
@@ -423,9 +423,9 @@ class TestScalabilityValidation:
 
         # Telemetry should add minimal overhead
         max_avg_time = 0.01  # 10ms max per execution
-        assert avg_time_per_execution < max_avg_time, (
-            f"Telemetry overhead too high: {avg_time_per_execution:.6f}s"
-        )
+        assert (
+            avg_time_per_execution < max_avg_time
+        ), f"Telemetry overhead too high: {avg_time_per_execution:.6f}s"
 
 
 class TestArchitecturalIntegrity:

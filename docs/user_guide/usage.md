@@ -127,7 +127,7 @@ Flujo provides integrated cost and token usage tracking to help you monitor and 
 
 ### Basic Cost Tracking
 
-Once you've configured pricing in your `flujo.toml` file, cost tracking is automatically enabled:
+Once you've configured pricing in your `flujo.toml` file, cost tracking is automatically enabled (see [Configuration Guide](../advanced/configuration.md#cost-tracking-configuration)):
 
 ```python
 from flujo import Step, Flujo
@@ -315,7 +315,7 @@ If cost tracking isn't working as expected:
        print(f"Completion tokens: {usage.completion_tokens}")
    ```
 
-For more detailed configuration information, see the [Configuration Guide](configuration.md#cost-tracking-configuration).
+For more detailed configuration information, see the [Configuration Guide](../advanced/configuration.md#cost-tracking-configuration).
 
 ## OTLP Exporter (Tracing/Telemetry)
 
@@ -413,7 +413,7 @@ flujo run my_pipeline.py --input "hello" --context-model MyContext --context-fil
 - Pass context and input flexibly.
 - Integrates with the full DSL and context system.
 
-See also: [Pipeline DSL Guide](pipeline_dsl.md), [Typed Pipeline Context](pipeline_context.md)
+See also: [Pipeline DSL Guide](../user-guide/pipeline_dsl.md), [Typed Pipeline Context](../user-guide/pipeline_context.md)
 
 ### Full CLI Demo Example
 

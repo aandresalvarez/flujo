@@ -13,6 +13,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
+
 def setup_environment():
     """Set up the testing environment."""
     print("🔧 Setting up test environment...")
@@ -26,7 +27,9 @@ def setup_environment():
     # Check for API key
     api_key = os.getenv("OPENAI_API_KEY")
     if api_key:
-        masked_key = f"{'*' * (len(api_key) - 4)}{api_key[-4:]}" if len(api_key) >= 4 else '*' * len(api_key)
+        masked_key = (
+            f"{'*' * (len(api_key) - 4)}{api_key[-4:]}" if len(api_key) >= 4 else "*" * len(api_key)
+        )
         print(f"✅ API key found: {masked_key}")
     else:
         print("⚠️  No OPENAI_API_KEY found - some tests will be skipped")
@@ -39,6 +42,7 @@ def setup_environment():
         print("⚠️  No local flujo.toml found - using global config")
 
     print()
+
 
 def main():
     """Run the Step 1 comprehensive test."""
@@ -53,6 +57,7 @@ def main():
     try:
         # Import and run the test
         from test_step1_core_agentic import run_comprehensive_test
+
         asyncio.run(run_comprehensive_test())
 
     except ImportError as e:
@@ -62,11 +67,13 @@ def main():
     except Exception as e:
         print(f"❌ Test execution failed: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
 
     print("\n🎉 Test runner completed successfully!")
     return 0
+
 
 if __name__ == "__main__":
     exit_code = main()

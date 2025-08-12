@@ -16,6 +16,7 @@ from flujo.infra.settings import settings as flujo_settings
 # This fixes the limitation from Step 2 where the agent kept asking about
 # the original prompt instead of the updated one.
 
+
 # Define a custom context to store the evolving state of our cohort definition
 class CohortContext(PipelineContext):
     """
@@ -24,10 +25,12 @@ class CohortContext(PipelineContext):
     This is the key concept: instead of passing data between steps as function
     parameters, we store it in a shared context that all steps can access and modify.
     """
+
     current_definition: str  # The evolving definition
-    is_clear: bool = False   # Flag indicating if the definition is clear
+    is_clear: bool = False  # Flag indicating if the definition is clear
     clarification_count: int = 0  # Track how many clarifications we've requested
     # Note: initial_prompt is inherited from PipelineContext and is required
+
 
 # Define the AI agent that will assess the cohort definition
 CLARIFICATION_AGENT_SYSTEM_PROMPT = """
@@ -43,6 +46,7 @@ ClarificationAgent = make_agent_async(
     system_prompt=CLARIFICATION_AGENT_SYSTEM_PROMPT,
     output_type=str,
 )
+
 
 # --- NEW: A step that updates the context ---
 @step(name="AssessAndRefine", updates_context=True)
@@ -70,10 +74,7 @@ async def assess_and_refine(definition_to_assess: str, *, context: CohortContext
     if "[CLARITY_CONFIRMED]" in agent_output:
         # If clear, update the definition and set the 'is_clear' flag to True
         final_definition = agent_output.replace("[CLARITY_CONFIRMED]", "").strip()
-        updates = {
-            "current_definition": final_definition,
-            "is_clear": True
-        }
+        updates = {"current_definition": final_definition, "is_clear": True}
         return updates
     else:
         # If not clear, simulate human clarification based on the agent's question
@@ -81,16 +82,20 @@ async def assess_and_refine(definition_to_assess: str, *, context: CohortContext
         clarification = _simulate_human_clarification(agent_output, context.clarification_count)
 
         # Combine the old definition with the clarification for the next round
-        new_definition = f"Definition so far: '{context.current_definition}'. Clarification: '{clarification}'"
+        new_definition = (
+            f"Definition so far: '{context.current_definition}'. Clarification: '{clarification}'"
+        )
         updates = {
             "current_definition": new_definition,
             "is_clear": False,
-            "clarification_count": context.clarification_count + 1
+            "clarification_count": context.clarification_count + 1,
         }
         return updates
 
+
 # Alias for backward compatibility with tests
 assess_clarity_step = assess_and_refine
+
 
 def _simulate_human_clarification(agent_question: str, clarification_count: int) -> str:
     """
@@ -117,9 +122,11 @@ def _simulate_human_clarification(agent_question: str, clarification_count: int)
         # Default clarification for any other question
         return "all patients meeting the basic criteria"
 
+
 # --- UPDATED: Loop now uses the context ---
 # The body of our loop is now the context-updating step
 loop_body_pipeline = Pipeline.from_step(assess_and_refine)
+
 
 def exit_loop_when_clear(output: dict, context: CohortContext) -> bool:
     """
@@ -130,6 +137,7 @@ def exit_loop_when_clear(output: dict, context: CohortContext) -> bool:
     print(f"  [Loop Check] Context 'is_clear' flag is: {context.is_clear}")
     return context.is_clear
 
+
 def map_context_to_input(initial_input: str, context: CohortContext) -> str:
     """
     The first loop iteration should use the definition from the context.
@@ -137,6 +145,7 @@ def map_context_to_input(initial_input: str, context: CohortContext) -> str:
     This mapper controls what data flows into the loop body on the first iteration.
     """
     return context.current_definition
+
 
 def map_output_to_next_input(last_output: dict, context: CohortContext, i: int) -> str:
     """
@@ -149,6 +158,7 @@ def map_output_to_next_input(last_output: dict, context: CohortContext, i: int) 
         return last_output["current_definition"]
     return context.current_definition
 
+
 # Create the LoopStep with context-aware mappers
 clarification_loop = Step.loop_until(
     name="StatefulClarificationLoop",
@@ -157,7 +167,7 @@ clarification_loop = Step.loop_until(
     max_loops=5,
     # NEW: Mappers control the data flow
     initial_input_to_loop_body_mapper=map_context_to_input,
-    iteration_input_mapper=map_output_to_next_input
+    iteration_input_mapper=map_output_to_next_input,
 )
 
 # The pipeline is now just the loop, but with proper state management

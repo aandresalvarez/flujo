@@ -110,12 +110,14 @@ Changelog = "https://github.com/aandresalvarez/flujo/blob/main/CHANGELOG.md"
 [tool.mypy]
 python_version = "3.11"
 strict         = true
+plugins = ["pydantic.mypy"]
 
 # Focus type checking on the core library first. Examples are excluded as they are
 # meant to be educational and may not follow strict typing.
 exclude = [
     "examples/.*",
     "flujo/telemetry/prometheus.py",
+    ".*/site-packages/",
 ]
 
 # Allow third-party libraries that do not ship type information.
@@ -140,6 +142,12 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = [
+    "aiosqlite",
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
     "opentelemetry",
     "opentelemetry.sdk",
     "opentelemetry.exporter.otlp.proto.http.trace_exporter",
@@ -148,6 +156,13 @@ module = [
     "prometheus_client.registry",
 ]
 ignore_missing_imports = true
+
+# Exclude external libraries with known mypy issues
+[[tool.mypy.overrides]]
+module = [
+    "pydantic_ai.*",
+]
+ignore_errors = true
 
 # Known mypy limitation with async wrapper patterns in step_logic
 [[tool.mypy.overrides]]
@@ -161,6 +176,7 @@ module = [
   "flujo.application.core.step_policies",
   "flujo.application.core.execution_manager",
   "flujo.application.core.step_executor",
+  "flujo.domain.dsl.step",
 ]
 disable_error_code = [
   "no-any-return",
@@ -171,6 +187,14 @@ disable_error_code = [
   "type-arg",
   "misc",
   "assignment",
+]
+
+[[tool.mypy.overrides]]
+module = [
+  "flujo.domain.validation",
+]
+disable_error_code = [
+  "misc",
 ]
 
 [[tool.mypy.overrides]]
@@ -213,9 +237,7 @@ disable_error_code = [
   "union-attr",
   "assignment",
   "redundant-cast",
-  "import-not-found",
   "attr-defined",
-  "import-untyped",
 ]
 
 [[tool.mypy.overrides]]
@@ -236,8 +258,11 @@ disable_error_code = [
   "arg-type",
 ]
 
+
 [tool.ruff]
 line-length = 100
+per-file-ignores = { "tests/benchmarks/*.py" = ["E402"], "tests/unit/test_extract.py" = ["E402"] }
+
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

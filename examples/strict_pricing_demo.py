@@ -34,6 +34,7 @@ class MockAgent:
 
     async def run(self, data: str):
         """Simulate an LLM response with usage information."""
+
         class AgentResponse:
             def __init__(self, output, prompt_tokens, completion_tokens):
                 self.output = output
@@ -45,6 +46,7 @@ class MockAgent:
                     def __init__(self, prompt_tokens, completion_tokens):
                         self.request_tokens = prompt_tokens
                         self.response_tokens = completion_tokens
+
                 return UsageInfo(self._prompt_tokens, self._completion_tokens)
 
         return AgentResponse(f"Response to: {data}", self.prompt_tokens, self.completion_tokens)
@@ -53,7 +55,7 @@ class MockAgent:
 def create_flujo_toml(content: str, temp_dir: Path) -> Path:
     """Create a temporary flujo.toml file with the given content."""
     toml_path = temp_dir / "flujo.toml"
-    with open(toml_path, 'w') as f:
+    with open(toml_path, "w") as f:
         f.write(content)
     return toml_path
 
@@ -128,7 +130,9 @@ completion_tokens_per_1k = 0.002
 
         try:
             # Create a pipeline with an unconfigured model
-            agent = MockAgent("openai:unknown-model")  # Not configured in toml and no hardcoded defaults
+            agent = MockAgent(
+                "openai:unknown-model"
+            )  # Not configured in toml and no hardcoded defaults
             step = Step(name="test_step", agent=agent)
             pipeline = Pipeline.from_step(step)
             runner = Flujo(pipeline)
@@ -193,7 +197,9 @@ async def demo_default_behavior():
 async def demo_strict_mode_prevents_hardcoded_fallbacks():
     """Demonstrate that strict mode prevents fallbacks to hardcoded defaults."""
     print("\n=== Demo 4: Strict Mode Prevents Hardcoded Fallbacks ===")
-    print("This demonstrates that strict mode prevents fallbacks even for models with hardcoded defaults.")
+    print(
+        "This demonstrates that strict mode prevents fallbacks even for models with hardcoded defaults."
+    )
 
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
@@ -214,14 +220,18 @@ strict = true
         try:
             # Force reload configuration to ensure we get the correct config
             from flujo.infra.config_manager import get_config_manager
+
             config_manager = get_config_manager(force_reload=True)
             config_manager.config_path = toml_path
             config_manager._config = None  # Clear cache
 
             # Debug: Check what configuration is being loaded
             from flujo.infra.config import get_cost_config
+
             cost_config = get_cost_config()
-            print(f"   Debug: strict={cost_config.strict}, providers={list(cost_config.providers.keys())}")
+            print(
+                f"   Debug: strict={cost_config.strict}, providers={list(cost_config.providers.keys())}"
+            )
 
             # Create a pipeline with gpt-4o (has hardcoded defaults but not configured)
             agent = MockAgent("openai:gpt-4o")
@@ -238,7 +248,9 @@ strict = true
         except PricingNotConfiguredError as e:
             print("✅ SUCCESS: Strict mode correctly prevented hardcoded fallback!")
             print(f"   Error: {e}")
-            print("   Note: Even though gpt-4o has hardcoded defaults, strict mode prevents their use")
+            print(
+                "   Note: Even though gpt-4o has hardcoded defaults, strict mode prevents their use"
+            )
         except Exception as e:
             print(f"❌ UNEXPECTED ERROR: {e}")
         finally:

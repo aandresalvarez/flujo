@@ -51,8 +51,7 @@ async def test_parallel_executor_isolates_context_per_branch(
 
     # Minimal core stub
     class _Core:
-        def _ParallelUsageGovernor(self, _limits):  # type: ignore
-            return None
+        pass
 
     execu = DefaultParallelStepExecutor()
     res = await execu.execute(
@@ -67,7 +66,8 @@ async def test_parallel_executor_isolates_context_per_branch(
         step_executor=fake_step_executor,
     )
 
-    assert isinstance(res, StepResult)
+    res_sr = res.step_result if hasattr(res, "step_result") else res
+    assert isinstance(res_sr, StepResult)
     # Called once per branch
     assert called["isolate"] == 3
 
@@ -119,8 +119,7 @@ async def test_parallel_executor_merges_successful_branch_contexts(
         return StepResult(name=nm, output=data, success=True, branch_context=branch_ctx)
 
     class _Core:
-        def _ParallelUsageGovernor(self, _limits):  # type: ignore
-            return None
+        pass
 
     execu = DefaultParallelStepExecutor()
     await execu.execute(

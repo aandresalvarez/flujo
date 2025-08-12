@@ -23,6 +23,7 @@ from flujo import Flujo, Step, step
 # Custom Complex Step Types (No Core Changes Required!)
 # =============================================================================
 
+
 class CircuitBreakerStep(Step):
     """A custom complex step that implements circuit breaker pattern.
 
@@ -40,7 +41,9 @@ class CircuitBreakerStep(Step):
     last_failure_time: float = 0
     state: str = "CLOSED"  # CLOSED, OPEN, HALF_OPEN
 
-    def __init__(self, name: str, failure_threshold: int = 3, recovery_timeout: float = 60.0, **kwargs):
+    def __init__(
+        self, name: str, failure_threshold: int = 3, recovery_timeout: float = 60.0, **kwargs
+    ):
         super().__init__(name=name, agent=self, **kwargs)  # Use self as agent
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
@@ -165,7 +168,8 @@ class CachingStep(Step):
         """Remove expired cache entries."""
         current_time = time.time()
         expired_keys = [
-            key for key, (_, timestamp) in self.cache.items()
+            key
+            for key, (_, timestamp) in self.cache.items()
             if current_time - timestamp > self.cache_ttl
         ]
         for key in expired_keys:
@@ -174,7 +178,7 @@ class CachingStep(Step):
         # If still over limit, remove oldest entries
         if len(self.cache) > self.max_cache_size:
             sorted_items = sorted(self.cache.items(), key=lambda x: x[1][1])
-            for key, _ in sorted_items[:len(self.cache) - self.max_cache_size]:
+            for key, _ in sorted_items[: len(self.cache) - self.max_cache_size]:
                 del self.cache[key]
 
     async def run(self, data: str, **kwargs) -> str:
@@ -229,8 +233,10 @@ class AdaptiveProcessingStep(Step):
     @property
     def is_complex(self) -> bool:
         """Dynamic complexity based on input characteristics."""
-        return (self._current_input_size > self.complexity_threshold or
-                self._current_input_complexity > 0.7)
+        return (
+            self._current_input_size > self.complexity_threshold
+            or self._current_input_complexity > 0.7
+        )
 
     def _calculate_complexity(self, data: str) -> float:
         """Calculate complexity score for the input data."""
@@ -242,12 +248,16 @@ class AdaptiveProcessingStep(Step):
         self._current_input_complexity = self._calculate_complexity(data)
 
         if self.is_complex:
-            print(f"🔧 Using COMPLEX processing for {self._current_input_size} chars (complexity: {self._current_input_complexity:.2f})")
+            print(
+                f"🔧 Using COMPLEX processing for {self._current_input_size} chars (complexity: {self._current_input_complexity:.2f})"
+            )
             # Simulate complex processing
             await asyncio.sleep(0.2)
             return f"complex_processed_{data}"
         else:
-            print(f"⚡ Using SIMPLE processing for {self._current_input_size} chars (complexity: {self._current_input_complexity:.2f})")
+            print(
+                f"⚡ Using SIMPLE processing for {self._current_input_size} chars (complexity: {self._current_input_complexity:.2f})"
+            )
             # Simulate simple processing
             return f"simple_processed_{data}"
 
@@ -255,6 +265,7 @@ class AdaptiveProcessingStep(Step):
 # =============================================================================
 # Simple Agent Steps (No Complexity Declaration Needed)
 # =============================================================================
+
 
 @step(name="DataGenerator")
 async def generate_data_agent(count: int) -> str:
@@ -284,6 +295,7 @@ async def transform_data_agent(data: str) -> str:
 # Open-Closed Principle Demonstrations
 # =============================================================================
 
+
 async def demonstrate_open_closed_principle():
     """Demonstrate the Open-Closed Principle in action."""
 
@@ -303,12 +315,12 @@ async def demonstrate_open_closed_principle():
 
     # Create a pipeline that uses all our custom steps
     pipeline = (
-        generate_data_agent >>
-        validate_data_agent >>
-        circuit_breaker >>
-        rate_limiter >>
-        cache_step >>
-        adaptive_processor
+        generate_data_agent
+        >> validate_data_agent
+        >> circuit_breaker
+        >> rate_limiter
+        >> cache_step
+        >> adaptive_processor
     )
 
     runner = Flujo(pipeline)
@@ -334,8 +346,14 @@ async def demonstrate_open_closed_principle():
     # Demonstrate that all steps were handled correctly
     print("\n📊 Step Complexity Analysis:")
     for step_result in result.step_history:
-        step_name = step_result.name if hasattr(step_result, 'name') else f"Step_{step_result.step_id}"
-        is_complex = getattr(step_result.step, 'is_complex', False) if hasattr(step_result, 'step') else False
+        step_name = (
+            step_result.name if hasattr(step_result, "name") else f"Step_{step_result.step_id}"
+        )
+        is_complex = (
+            getattr(step_result.step, "is_complex", False)
+            if hasattr(step_result, "step")
+            else False
+        )
         complexity_type = "Complex" if is_complex else "Simple"
         print(f"   - {step_name}: {complexity_type}")
 

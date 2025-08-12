@@ -302,11 +302,14 @@ class StateManager(Generic[ContextT]):
         if self.state_backend is None or run_id is None:
             return
 
-        # OPTIMIZATION: Use lightweight serialization for performance
+        # OPTIMIZATION: Serialize full context when changed; minimal when unchanged
         pipeline_context = None
         if context is not None:
             try:
-                pipeline_context = self._serializer.serialize_context_minimal(context)
+                if self._serializer.should_serialize_context(context, run_id):
+                    pipeline_context = self._serializer.serialize_context_full(context)
+                else:
+                    pipeline_context = self._serializer.serialize_context_minimal(context)
             except Exception as e:
                 logger.warning(f"Failed to serialize context for run {run_id}: {e}")
                 pipeline_context = {

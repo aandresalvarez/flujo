@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from typing import Any, Dict, TYPE_CHECKING
+from typing import Any, Dict, TYPE_CHECKING, Generic, TypeVar
 
 
-from ..domain.backends import ExecutionBackend, StepExecutionRequest
+from ..domain.backends import StepExecutionRequest
 from ..domain.agent_protocol import AsyncAgentProtocol
-from ..domain.models import StepResult
+from ..domain.models import StepResult, StepOutcome
 from ..application.core.types import ExecutionFrame
 
 if TYPE_CHECKING:
@@ -14,7 +14,10 @@ if TYPE_CHECKING:
     pass
 
 
-class LocalBackend(ExecutionBackend):
+TContext = TypeVar("TContext")
+
+
+class LocalBackend(Generic[TContext]):
     """Backend that executes steps in the current process."""
 
     def __init__(
@@ -26,7 +29,7 @@ class LocalBackend(ExecutionBackend):
         # ✅ INJECT the executor dependency instead of hard-coding it
         self._executor = executor
 
-    async def execute_step(self, request: StepExecutionRequest) -> StepResult:
+    async def execute_step(self, request: StepExecutionRequest) -> StepOutcome[StepResult]:
         step = request.step
 
         # ✅ DELEGATE to the injected executor
@@ -44,10 +47,14 @@ class LocalBackend(ExecutionBackend):
             context=request.context,
             resources=request.resources,
             limits=request.usage_limits,
+            quota=request.quota,
             stream=request.stream,
             on_chunk=request.on_chunk,
             breach_event=request.breach_event,
             context_setter=lambda result, ctx: None,  # Default context setter for backend calls
         )
 
-        return await self._executor.execute(frame)
+        outcome = await self._executor.execute(frame)
+        # Always return a typed outcome
+        assert not isinstance(outcome, StepResult)
+        return outcome

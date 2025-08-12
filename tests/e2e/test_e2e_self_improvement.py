@@ -1,6 +1,5 @@
 import functools
 import pytest
-import httpx
 from flujo.application.eval_adapter import run_pipeline_async
 from flujo.application.self_improvement import (
     evaluate_and_improve,
@@ -47,12 +46,8 @@ IMPROVEMENT_JSON = {
 
 class EchoAgent:
     async def run(self, prompt: str) -> dict:
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                "https://httpbin.org/anything",
-                json={"prompt": prompt, "response": IMPROVEMENT_JSON},
-            )
-        return resp.json()["json"]["response"]
+        # Deterministic stub: avoid external calls and return the expected JSON payload directly
+        return IMPROVEMENT_JSON
 
 
 @pytest.mark.e2e

@@ -9,9 +9,11 @@ from flujo import step
 from flujo.domain.models import PipelineContext
 from pydantic import Field
 
+
 class DemoContext(PipelineContext):
     counter: int = Field(default=0)
     log: list[str] = Field(default_factory=list)
+
 
 @step
 async def greet(data: str, *, context: DemoContext | None = None) -> str:
@@ -21,6 +23,7 @@ async def greet(data: str, *, context: DemoContext | None = None) -> str:
         context.log.append(msg)
     return msg
 
+
 @step
 async def emphasize(data: str, *, context: DemoContext | None = None) -> str:
     msg = data.upper() + "!!!"
@@ -29,6 +32,7 @@ async def emphasize(data: str, *, context: DemoContext | None = None) -> str:
         context.log.append(msg)
     return msg
 
+
 @step
 async def summarize(data: str, *, context: DemoContext | None = None) -> str:
     summary = f"Summary: {data} (steps: {context.counter if context else 0})"
@@ -36,5 +40,6 @@ async def summarize(data: str, *, context: DemoContext | None = None) -> str:
         context.counter += 1
         context.log.append(summary)
     return summary
+
 
 pipeline = greet >> emphasize >> summarize

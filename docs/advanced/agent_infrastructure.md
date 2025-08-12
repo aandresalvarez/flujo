@@ -328,11 +328,11 @@ content_review_agent = make_review_agent(
 ### Getting Help
 
 - Check the [Troubleshooting Guide](troubleshooting.md)
-- Review the [API Reference](api/index.md)
+- Review the [API Reference](../api/index.md)
 - Search [existing issues](https://github.com/aandresalvarez/flujo/issues)
 
 ## Next Steps
 
-- Read the [Usage Guide](usage.md) for examples
+- Read the [Usage Guide](../user_guide/usage.md) for examples
 - Explore [Advanced Topics](extending.md)
-- Check out [Use Cases](use_cases.md)
+- Check out [Use Cases](../user_guide/use_cases.md)

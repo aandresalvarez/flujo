@@ -409,9 +409,9 @@ class TestReconstructionIntegration:
         result = await gather_result(runner, {"test": "data"})
 
         # Verify the test passed (no exceptions raised)
-        assert result.step_history[0].output is not None, (
-            "Step output is None (step may have failed)"
-        )
+        assert (
+            result.step_history[0].output is not None
+        ), "Step output is None (step may have failed)"
         assert result.step_history[0].output["test_passed"] is True
 
         # Verify final context is still correct

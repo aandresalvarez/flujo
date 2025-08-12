@@ -1,0 +1,99 @@
+import pytest
+
+from flujo.application.core.executor_core import ExecutorCore
+from flujo.application.core.types import ExecutionFrame
+from flujo.domain.dsl.parallel import ParallelStep
+from flujo.domain.dsl.conditional import ConditionalStep
+from flujo.domain.models import StepResult, StepOutcome, Success
+
+
+class _FakeParallelExecutor:
+    async def execute(
+        self,
+        core,
+        step,
+        data,
+        context,
+        resources,
+        limits,
+        breach_event,
+        context_setter,
+        parallel_step=None,
+        step_executor=None,
+    ) -> StepResult:
+        return StepResult(name=getattr(step, "name", "parallel"), success=True, output={"ok": True})
+
+
+class _FakeConditionalExecutor:
+    async def execute(
+        self,
+        core,
+        conditional_step,
+        data,
+        context,
+        resources,
+        limits,
+        context_setter,
+        _fallback_depth=0,
+    ) -> StepResult:
+        return StepResult(
+            name=getattr(conditional_step, "name", "conditional"), success=True, output=42
+        )
+
+
+@pytest.mark.asyncio
+async def test_parallel_adapter_returns_outcome_in_backend_path():
+    core = ExecutorCore()
+    core.parallel_step_executor = _FakeParallelExecutor()
+    step = ParallelStep(name="p_test", branches={})
+    frame = ExecutionFrame(
+        step=step,
+        data=None,
+        context=None,
+        resources=None,
+        limits=None,
+        stream=False,
+        on_chunk=None,
+        breach_event=None,
+        context_setter=lambda _r, _c: None,
+    )
+
+    outcome = await core.execute(frame)
+
+    assert isinstance(outcome, StepOutcome)
+    assert isinstance(outcome, Success)
+    assert outcome.step_result.success is True
+    assert outcome.step_result.output == {"ok": True}
+
+
+@pytest.mark.asyncio
+async def test_conditional_adapter_returns_outcome_in_backend_path():
+    core = ExecutorCore()
+    core.conditional_step_executor = _FakeConditionalExecutor()
+
+    def _always_a(_data, _ctx):
+        return "a"
+
+    from flujo.domain.dsl.pipeline import Pipeline
+
+    step = ConditionalStep(
+        name="c_test", condition_callable=_always_a, branches={"a": Pipeline(steps=[])}
+    )
+    frame = ExecutionFrame(
+        step=step,
+        data=None,
+        context=None,
+        resources=None,
+        limits=None,
+        stream=False,
+        on_chunk=None,
+        breach_event=None,
+        context_setter=lambda _r, _c: None,
+    )
+
+    outcome = await core.execute(frame)
+
+    assert isinstance(outcome, StepOutcome)
+    assert isinstance(outcome, Success)
+    assert outcome.step_result.success is True
+    assert outcome.step_result.output == 42

@@ -6,6 +6,7 @@ from flujo.domain.scoring import weighted_score, ratio_score
 
 init_telemetry()
 
+
 async def main():
     # 1. Solution agent
     solution_agent = make_agent_async(
@@ -99,6 +100,7 @@ async def main():
     context = PipelineContext(run_id="demo_run", initial_prompt=task.prompt)
     result = await pipeline(task, context)
     print("\n--- Final Solution ---\n", result.solution)
+
 
 if __name__ == "__main__":
     asyncio.run(main())

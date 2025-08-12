@@ -294,57 +294,9 @@ async def test_execution_manager_no_usage_limits():
 @pytest.mark.asyncio
 async def test_usage_governor_check_usage_limits_efficient():
     """Test the new efficient usage limit checking method."""
-    usage_limits = UsageLimits(total_cost_usd_limit=1.0, total_tokens_limit=100)
-    governor = UsageGovernor(usage_limits)
-
-    # Test cost limit breach
-    assert (
-        governor.check_usage_limits_efficient(
-            current_total_cost=0.8,
-            current_total_tokens=50,
-            step_cost=0.3,  # This will exceed the 1.0 limit
-            step_tokens=10,
-            span=None,
-        )
-        is True
-    )
-
-    # Test token limit breach
-    assert (
-        governor.check_usage_limits_efficient(
-            current_total_cost=0.5,
-            current_total_tokens=90,
-            step_cost=0.1,
-            step_tokens=15,  # This will exceed the 100 limit
-            span=None,
-        )
-        is True
-    )
-
-    # Test no breach
-    assert (
-        governor.check_usage_limits_efficient(
-            current_total_cost=0.5,
-            current_total_tokens=50,
-            step_cost=0.3,
-            step_tokens=30,
-            span=None,
-        )
-        is False
-    )
-
-    # Test with no limits configured
-    governor_no_limits = UsageGovernor()
-    assert (
-        governor_no_limits.check_usage_limits_efficient(
-            current_total_cost=999.0,
-            current_total_tokens=999,
-            step_cost=999.0,
-            step_tokens=999,
-            span=None,
-        )
-        is False
-    )
+    # This test is no longer applicable in pure quota mode
+    # The UsageGovernor has been removed in favor of proactive quota reservations
+    pytest.skip("UsageGovernor removed in pure quota mode - see quota tests instead")
 
 
 @pytest.mark.asyncio

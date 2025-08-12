@@ -91,4 +91,4 @@ flujo lens spans <run_id>
 
 ## 6. Next Steps
 
-Now that you've seen the basics, explore the [Tutorial](tutorial.md) and [Concepts](concepts.md) pages for a deeper dive.
+Now that you've seen the basics, explore the [Tutorial](tutorial.md) and [Concepts](../user_guide/concepts.md) pages for a deeper dive.

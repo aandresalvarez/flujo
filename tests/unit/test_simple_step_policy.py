@@ -6,7 +6,7 @@ from flujo.application.core.step_policies import DefaultSimpleStepExecutor
 from flujo.domain.dsl.step import Step
 from flujo.testing.utils import StubAgent, DummyPlugin
 from flujo.domain.plugins import PluginOutcome
-from flujo.domain.models import StepResult, UsageLimits
+from flujo.domain.models import StepResult, UsageLimits, Success, Failure
 
 
 @pytest.mark.asyncio
@@ -30,8 +30,9 @@ async def test_simple_policy_owned_execution():
         _fallback_depth=0,
     )
 
-    assert res.success is True
-    assert res.output is not None
+    assert isinstance(res, Success)
+    assert res.step_result.success is True
+    assert res.step_result.output is not None
 
 
 @pytest.mark.asyncio
@@ -162,8 +163,9 @@ async def test_retry_attempt_counts(monkeypatch):
         cache_key=None,
         breach_event=None,
     )
-    assert res.success is True
-    assert res.attempts == 2
+    assert isinstance(res, Success)
+    assert res.step_result.success is True
+    assert res.step_result.attempts == 2
 
 
 @pytest.mark.asyncio
@@ -198,10 +200,11 @@ async def test_fallback_success_path(monkeypatch):
         cache_key=None,
         breach_event=None,
     )
-    assert res.success is True
-    assert res.output == "fb_ok"
-    assert res.metadata_.get("fallback_triggered") is True
-    assert res.metadata_.get("original_error")
+    assert isinstance(res, Success)
+    assert res.step_result.success is True
+    assert res.step_result.output == "fb_ok"
+    assert res.step_result.metadata_.get("fallback_triggered") is True
+    assert res.step_result.metadata_.get("original_error")
 
 
 @pytest.mark.asyncio
@@ -239,9 +242,11 @@ async def test_fallback_failure_path(monkeypatch):
         cache_key=None,
         breach_event=None,
     )
-    assert res.success is False
-    assert "Original error" in (res.feedback or "")
-    assert "Fallback error" in (res.feedback or "")
+    assert isinstance(res, Failure)
+    assert res.step_result is not None
+    assert res.step_result.success is False
+    assert "Original error" in (res.step_result.feedback or "")
+    assert "Fallback error" in (res.step_result.feedback or "")
 
 
 @pytest.mark.asyncio
@@ -272,7 +277,8 @@ async def test_streaming_invokes_on_chunk(monkeypatch):
         breach_event=None,
     )
     on_chunk.assert_called_once()
-    assert res.success is True
+    sr = res.step_result if hasattr(res, "step_result") else res
+    assert sr.success is True
 
 
 @pytest.mark.asyncio
@@ -301,7 +307,8 @@ async def test_usage_guard_called(monkeypatch):
     # This provides enhanced robustness by validating usage limits at both stages
     guard.assert_called()
     assert guard.call_count >= 1  # At least one call required
-    assert res.success is True
+    sr = res.step_result if hasattr(res, "step_result") else res
+    assert sr.success is True
 
 
 @pytest.mark.asyncio
@@ -326,5 +333,6 @@ async def test_cache_put_called_on_success(monkeypatch):
         cache_key="key",
         breach_event=None,
     )
-    assert res.success is True
+    sr = res.step_result if hasattr(res, "step_result") else res
+    assert sr.success is True
     cache_put.assert_called_once()

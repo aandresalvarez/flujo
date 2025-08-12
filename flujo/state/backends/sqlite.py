@@ -39,7 +39,8 @@ try:
         """Use orjson for faster JSON serialization with robust serialization."""
         # Use safe_serialize to handle Pydantic models and other complex objects
         serialized_obj = safe_serialize(obj)
-        return orjson.dumps(serialized_obj, option=orjson.OPT_SORT_KEYS).decode("utf-8")
+        blob: bytes = orjson.dumps(serialized_obj, option=orjson.OPT_SORT_KEYS)
+        return blob.decode("utf-8")
 
 except ImportError:
     from flujo.utils.serialization import safe_serialize
@@ -48,7 +49,8 @@ except ImportError:
         """Fallback to standard json for JSON serialization with robust serialization."""
         # Use safe_serialize to handle Pydantic models and other complex objects
         serialized_obj = safe_serialize(obj)
-        return json.dumps(serialized_obj, sort_keys=True, separators=(",", ":"))
+        s: str = json.dumps(serialized_obj, sort_keys=True, separators=(",", ":"))
+        return s
 
 
 if TYPE_CHECKING:
@@ -744,8 +746,10 @@ class SQLiteBackend(StateBackend):
     async def close(self) -> None:
         """Close database connections and cleanup resources."""
         if self._connection_pool:
-            await self._connection_pool.close()
-            self._connection_pool = None
+            try:
+                await self._connection_pool.close()
+            finally:
+                self._connection_pool = None
         self._initialized = False
 
         # No global locks to clean up
@@ -1276,12 +1280,12 @@ class SQLiteBackend(StateBackend):
 
                     await db.execute(
                         """
-                        INSERT OR REPLACE INTO runs (
-                            run_id, pipeline_id, pipeline_name, pipeline_version, status,
-                            created_at, updated_at, execution_time_ms, memory_usage_mb,
-                            total_steps, error_message
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
+                    INSERT OR REPLACE INTO runs (
+                        run_id, pipeline_id, pipeline_name, pipeline_version, status,
+                        created_at, updated_at, execution_time_ms, memory_usage_mb,
+                        total_steps, error_message
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
                         (
                             run_data["run_id"],
                             run_data.get("pipeline_id", "unknown"),
@@ -1309,11 +1313,11 @@ class SQLiteBackend(StateBackend):
                     # OPTIMIZATION: Use simplified schema for better performance
                     await db.execute(
                         """
-                        INSERT OR REPLACE INTO steps (
-                            run_id, step_name, step_index, status, output, cost_usd,
-                            token_counts, execution_time_ms, created_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
+                    INSERT OR REPLACE INTO steps (
+                        run_id, step_name, step_index, status, output, cost_usd,
+                        token_counts, execution_time_ms, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
                         (
                             step_data["run_id"],
                             step_data["step_name"],

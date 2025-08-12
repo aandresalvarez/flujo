@@ -516,9 +516,9 @@ tool = Tool(
 
 ## Next Steps
 
-- Read the [Usage Guide](usage.md) for examples
+- Read the [Usage Guide](../user_guide/usage.md) for examples
 - Explore [Advanced Topics](extending.md)
-- Check out [Use Cases](use_cases.md)
+- Check out [Use Cases](../user_guide/use_cases.md)
 
 ## Robust Path Handling for SQLite State Backends
 

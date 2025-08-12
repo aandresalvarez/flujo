@@ -7,6 +7,7 @@ from pydantic import Field
 
 class ExamplePipelineContext(PipelineContext):
     """Example context for the test pipeline."""
+
     __test__ = False  # Tell pytest this is not a test class
 
     counter: int = Field(default=0, description="Counter for tracking steps")

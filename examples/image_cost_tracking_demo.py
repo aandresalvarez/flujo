@@ -26,7 +26,9 @@ class MockDALLE3Agent:
         # Create a response object that mimics pydantic-ai's AgentRunResult
         class AgentResponse:
             def __init__(self, image_count, quality, size):
-                self.output = f"Generated {image_count} image(s) with quality {quality} and size {size}"
+                self.output = (
+                    f"Generated {image_count} image(s) with quality {quality} and size {size}"
+                )
                 self._image_count = image_count
                 self._quality = quality
                 self._size = size
@@ -84,11 +86,7 @@ async def image_cost_tracking_with_different_qualities():
     large_agent = MockDALLE3Agent(image_count=1, quality="standard", size="1792x1024")
 
     # Create pipeline with multiple steps
-    pipeline = (
-        Step.solution(standard_agent) >>
-        Step.validate(hd_agent) >>
-        Step.reflect(large_agent)
-    )
+    pipeline = Step.solution(standard_agent) >> Step.validate(hd_agent) >> Step.reflect(large_agent)
     runner = Flujo(pipeline)
 
     # Run pipeline
@@ -177,7 +175,9 @@ async def image_cost_tracking_regression_test():
         print(f"  Tokens: {tokens}")
         print(f"  Success: {step_result.success}")
 
-    print("\nThis demonstrates that chat models still work normally with token-based cost calculation.")
+    print(
+        "\nThis demonstrates that chat models still work normally with token-based cost calculation."
+    )
 
 
 async def main():

@@ -4,7 +4,7 @@
 
 A context instance is created for every call to `run()` and is available to steps, agents, and plugins that declare a `context` parameter.
 
-For complete details on implementing context aware components see the [Stateful Pipelines](typing_guide.md#stateful-pipelines-the-contextaware-protocols) section of the Typing Guide.
+For complete details on implementing context aware components see the [Stateful Pipelines](../advanced/typing_guide.md#stateful-pipelines-the-contextaware-protocols) section of the Typing Guide.
 
 ## Best Practices for Custom Context Models
 

@@ -146,7 +146,7 @@ print("✅ Installation successful!")
 ### Getting Help
 
 If you encounter any issues:
-1. Check the [troubleshooting guide](troubleshooting.md)
+1. Check the [troubleshooting guide](../advanced/troubleshooting.md)
 2. Search [existing issues](https://github.com/aandresalvarez/flujo/issues)
 3. Create a new issue if needed
 
@@ -154,4 +154,4 @@ If you encounter any issues:
 
 - Read the [Quickstart Guide](quickstart.md) to get started
 - Explore the [Tutorial](tutorial.md) for a guided tour
-- Check out [Use Cases](use_cases.md) for inspiration
+- Check out [Use Cases](../user_guide/use_cases.md) for inspiration

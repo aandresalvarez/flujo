@@ -83,9 +83,9 @@ class TestStateManagerCacheKeyParsing:
 
         for cache_key, expected in edge_cases:
             result = state_manager._parse_cache_key(cache_key)
-            assert result == expected, (
-                f"Failed for '{cache_key}': expected {expected}, got {result}"
-            )
+            assert (
+                result == expected
+            ), f"Failed for '{cache_key}': expected {expected}, got {result}"
 
     def test_legacy_cache_key_handling(self, state_manager):
         """Test that legacy cache keys (old format) are handled gracefully."""

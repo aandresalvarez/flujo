@@ -5,14 +5,14 @@ This directory contains comprehensive documentation for the Flujo framework.
 ## Documentation Structure
 
 ### **For Framework Architecture Understanding**
-- **[`../flujo.md`](../flujo.md)**: Complete architectural overview of Flujo's design
+- **[flujo.md](https://github.com/aandresalvarez/flujo/blob/main/flujo.md)**: Complete architectural overview of Flujo's design
   - Policy-driven execution core
   - Declarative DSL
   - Architectural patterns for common problems
   - System components and their interactions
 
 ### **For End Users (Building with Flujo)**
-- **[`../DEVELOPER_GUIDE.md`](../DEVELOPER_GUIDE.md)**: Practical guide for building applications
+- **[DEVELOPER_GUIDE.md](https://github.com/aandresalvarez/flujo/blob/main/DEVELOPER_GUIDE.md)**: Practical guide for building applications
   - Best practices and anti-patterns
   - Context management
   - Error handling patterns
@@ -20,7 +20,7 @@ This directory contains comprehensive documentation for the Flujo framework.
   - Quick reference patterns
 
 ### **For Core Team (Building Flujo Itself)**
-- **[`../FLUJO_TEAM_GUIDE.md`](../FLUJO_TEAM_GUIDE.md)**: Guide for framework contributors
+- **[FLUJO_TEAM_GUIDE.md](https://github.com/aandresalvarez/flujo/blob/main/FLUJO_TEAM_GUIDE.md)**: Guide for framework contributors
   - Policy-driven architecture compliance
   - Critical exception handling patterns (PausedException, etc.)
   - Adding new step types and policies
@@ -32,11 +32,11 @@ This directory contains comprehensive documentation for the Flujo framework.
 
 | I want to... | Read this |
 |--------------|-----------|
-| Understand Flujo's architecture | [`flujo.md`](../flujo.md) |
-| Build an application with Flujo | [`DEVELOPER_GUIDE.md`](../DEVELOPER_GUIDE.md) |
-| Contribute to Flujo framework | [`FLUJO_TEAM_GUIDE.md`](../FLUJO_TEAM_GUIDE.md) |
-| Debug a control flow issue | [`FLUJO_TEAM_GUIDE.md#2-exception-handling-the-architectural-way`](../FLUJO_TEAM_GUIDE.md#2-exception-handling-the-architectural-way) |
-| Add a new step type | [`FLUJO_TEAM_GUIDE.md#4-adding-new-step-types-the-complete-pattern`](../FLUJO_TEAM_GUIDE.md#4-adding-new-step-types-the-complete-pattern) |
+| Understand Flujo's architecture | [flujo.md](https://github.com/aandresalvarez/flujo/blob/main/flujo.md) |
+| Build an application with Flujo | [DEVELOPER_GUIDE.md](https://github.com/aandresalvarez/flujo/blob/main/DEVELOPER_GUIDE.md) |
+| Contribute to Flujo framework | [FLUJO_TEAM_GUIDE.md](https://github.com/aandresalvarez/flujo/blob/main/FLUJO_TEAM_GUIDE.md) |
+| Debug a control flow issue | [FLUJO_TEAM_GUIDE.md#2-exception-handling-the-architectural-way](https://github.com/aandresalvarez/flujo/blob/main/FLUJO_TEAM_GUIDE.md#2-exception-handling-the-architectural-way) |
+| Add a new step type | [FLUJO_TEAM_GUIDE.md#4-adding-new-step-types-the-complete-pattern](https://github.com/aandresalvarez/flujo/blob/main/FLUJO_TEAM_GUIDE.md#4-adding-new-step-types-the-complete-pattern) |
 
 ## Key Patterns
 

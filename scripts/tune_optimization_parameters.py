@@ -20,7 +20,7 @@ sys.path.insert(0, str(project_root))
 
 from flujo.application.core.optimization_parameter_tuner import (  # noqa: E402
     OptimizationParameterTuner,
-    TuningStrategy
+    TuningStrategy,
 )
 from flujo.application.core.ultra_executor import OptimizationConfig, OptimizedExecutorCore  # noqa: E402
 from flujo.domain.dsl.step import Step, StepConfig  # noqa: E402
@@ -46,55 +46,50 @@ class ParameterTuningManager:
             enable_memory_optimization=True,
             object_pool_max_size=params.get("object_pool_max_size", 500),
             object_pool_cleanup_threshold=params.get("object_pool_cleanup_threshold", 0.75),
-
             # Execution optimizations
             enable_step_optimization=True,
             enable_algorithm_optimization=True,
             enable_concurrency_optimization=True,
             max_concurrent_executions=params.get("max_concurrent_executions", cpu_count * 2),
-
             # Telemetry optimizations
             enable_optimized_telemetry=True,
             enable_performance_monitoring=True,
             telemetry_batch_size=params.get("telemetry_batch_size", 200),
             telemetry_flush_interval_seconds=params.get("telemetry_flush_interval", 2.0),
-
             # Error handling optimizations
             enable_optimized_error_handling=True,
             enable_circuit_breaker=True,
             error_cache_size=250,
             circuit_breaker_failure_threshold=3,
             circuit_breaker_recovery_timeout_seconds=15,
-
             # Cache optimizations
             enable_cache_optimization=True,
             cache_compression=False,
             cache_ttl_seconds=params.get("cache_ttl_seconds", 1800),
             cache_max_size=params.get("cache_max_size", 2000),
-
             # Performance thresholds
             slow_execution_threshold_ms=500.0,  # More sensitive
             memory_pressure_threshold_mb=250.0,  # Lower threshold
-            cpu_usage_threshold_percent=70.0,   # More conservative
-
+            cpu_usage_threshold_percent=70.0,  # More conservative
             # Automatic optimization
             enable_automatic_optimization=True,
             optimization_analysis_interval_seconds=30.0,  # More frequent
             performance_degradation_threshold=0.15,  # More sensitive
-
             # Backward compatibility
             maintain_backward_compatibility=True,
             allow_runtime_changes=True,
-            config_validation_enabled=True
+            config_validation_enabled=True,
         )
 
     def create_test_step(self, name: str = "tuning_test", outputs: int = 50) -> Step:
         """Create a lightweight test step for parameter tuning."""
-        return Step.model_validate({
-            "name": name,
-            "agent": StubAgent([f"output_{i}" for i in range(outputs)]),
-            "config": StepConfig(max_retries=1),
-        })
+        return Step.model_validate(
+            {
+                "name": name,
+                "agent": StubAgent([f"output_{i}" for i in range(outputs)]),
+                "config": StepConfig(max_retries=1),
+            }
+        )
 
     async def benchmark_executor_performance(self, config: OptimizationConfig) -> dict:
         """Benchmark executor performance with given configuration."""
@@ -124,7 +119,7 @@ class ParameterTuningManager:
                 continue
 
         if not times:
-            return {"performance": float('inf'), "memory": float('inf'), "stability": 0.0}
+            return {"performance": float("inf"), "memory": float("inf"), "stability": 0.0}
 
         avg_time = sum(times) / len(times)
         stability = successful_runs / 20
@@ -132,7 +127,7 @@ class ParameterTuningManager:
         return {
             "performance": avg_time,
             "memory": 0.0,  # Simplified for tuning
-            "stability": stability
+            "stability": stability,
         }
 
     async def apply_system_optimized_defaults(self) -> dict:
@@ -169,8 +164,10 @@ class ParameterTuningManager:
             if results:
                 print(f"  {category}: {len(results)} improvements")
                 for result in results:
-                    print(f"    {result.parameter_name}: {result.old_value} -> {result.new_value} "
-                          f"({result.performance_improvement:.1%} improvement)")
+                    print(
+                        f"    {result.parameter_name}: {result.old_value} -> {result.new_value} "
+                        f"({result.performance_improvement:.1%} improvement)"
+                    )
             else:
                 print(f"  {category}: No improvements found")
 
@@ -283,7 +280,7 @@ OPTIMIZED_RESOURCE_MANAGER_CONFIG = {{
         """Save the optimized configuration to a Python file."""
         code = self.generate_optimized_configuration_code()
 
-        with open(filename, 'w') as f:
+        with open(filename, "w") as f:
             f.write(code)
 
         print(f"\nOptimized configuration saved to {filename}")
@@ -313,9 +310,9 @@ OPTIMIZED_RESOURCE_MANAGER_CONFIG = {{
         print(f"Categories tuned: {summary['categories_tuned']}")
         print(f"Overall improvement: {summary['overall_improvement']:.1%}")
 
-        if summary.get('category_improvements'):
+        if summary.get("category_improvements"):
             print("\nCategory improvements:")
-            for category, improvement in summary['category_improvements'].items():
+            for category, improvement in summary["category_improvements"].items():
                 print(f"  {category}: {improvement:.1%}")
 
         # Step 5: Save results
@@ -326,7 +323,7 @@ OPTIMIZED_RESOURCE_MANAGER_CONFIG = {{
             "system_params": system_params,
             "tuning_results": tuning_results,
             "validation_results": validation_results,
-            "summary": summary
+            "summary": summary,
         }
 
 
@@ -339,12 +336,10 @@ async def main():
         "--strategy",
         choices=["conservative", "balanced", "aggressive", "adaptive"],
         default="balanced",
-        help="Tuning strategy to use"
+        help="Tuning strategy to use",
     )
     parser.add_argument(
-        "--quick",
-        action="store_true",
-        help="Run quick tuning (system defaults only)"
+        "--quick", action="store_true", help="Run quick tuning (system defaults only)"
     )
 
     args = parser.parse_args()
@@ -354,7 +349,7 @@ async def main():
         "conservative": TuningStrategy.CONSERVATIVE,
         "balanced": TuningStrategy.BALANCED,
         "aggressive": TuningStrategy.AGGRESSIVE,
-        "adaptive": TuningStrategy.ADAPTIVE
+        "adaptive": TuningStrategy.ADAPTIVE,
     }
 
     strategy = strategy_map[args.strategy]
@@ -378,7 +373,7 @@ async def main():
             results = await manager.run_complete_tuning()
 
             # Check if tuning was successful
-            if results['summary']['overall_improvement'] > 0:
+            if results["summary"]["overall_improvement"] > 0:
                 print("\n✅ Parameter tuning completed successfully!")
                 print(f"Overall improvement: {results['summary']['overall_improvement']:.1%}")
                 return 0
@@ -390,6 +385,7 @@ async def main():
     except Exception as e:
         print(f"\n❌ Parameter tuning failed: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
 

@@ -23,7 +23,7 @@ async def create_sample_workflows(backend: SQLiteBackend, count: int = 50) -> No
         "ML Training Pipeline",
         "ETL Pipeline",
         "Report Generation",
-        "Data Validation"
+        "Data Validation",
     ]
 
     statuses = ["running", "completed", "failed", "paused", "cancelled"]
@@ -33,18 +33,16 @@ async def create_sample_workflows(backend: SQLiteBackend, count: int = 50) -> No
         "Memory limit exceeded",
         "API rate limit exceeded",
         "Database connection failed",
-        None  # Some workflows succeed
+        None,  # Some workflows succeed
     ]
 
     for i in range(count):
         # Create realistic timestamps
         created_at = datetime.utcnow() - timedelta(
             hours=random.randint(0, 168),  # Up to 1 week ago
-            minutes=random.randint(0, 60)
+            minutes=random.randint(0, 60),
         )
-        updated_at = created_at + timedelta(
-            minutes=random.randint(1, 120)
-        )
+        updated_at = created_at + timedelta(minutes=random.randint(1, 120))
 
         status = random.choice(statuses)
         pipeline_name = random.choice(pipeline_names)
@@ -58,19 +56,25 @@ async def create_sample_workflows(backend: SQLiteBackend, count: int = 50) -> No
             "pipeline_context": {
                 "input_file": f"data_{i}.csv",
                 "batch_size": random.randint(100, 10000),
-                "user_id": f"user_{random.randint(1, 100)}"
+                "user_id": f"user_{random.randint(1, 100)}",
             },
             "last_step_output": {
                 "processed_rows": random.randint(0, 50000),
-                "errors": random.randint(0, 10)
-            } if status in ["completed", "running"] else None,
+                "errors": random.randint(0, 10),
+            }
+            if status in ["completed", "running"]
+            else None,
             "status": status,
             "created_at": created_at,
             "updated_at": updated_at,
             "total_steps": random.randint(3, 15),
             "error_message": random.choice(error_messages) if status == "failed" else None,
-            "execution_time_ms": random.randint(1000, 300000) if status in ["completed", "failed"] else None,
-            "memory_usage_mb": random.uniform(10.0, 500.0) if status in ["completed", "failed"] else None
+            "execution_time_ms": random.randint(1000, 300000)
+            if status in ["completed", "failed"]
+            else None,
+            "memory_usage_mb": random.uniform(10.0, 500.0)
+            if status in ["completed", "failed"]
+            else None,
         }
 
         await backend.save_state(f"demo_run_{i:03d}", state)
@@ -80,9 +84,9 @@ async def create_sample_workflows(backend: SQLiteBackend, count: int = 50) -> No
 
 async def demonstrate_listing_workflows(backend: SQLiteBackend) -> None:
     """Demonstrate workflow listing with various filters."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("WORKFLOW LISTING DEMONSTRATIONS")
-    print("="*60)
+    print("=" * 60)
 
     # List all workflows (limited to 5 for demo)
     print("\n1. Recent workflows (limit 5):")
@@ -111,9 +115,9 @@ async def demonstrate_listing_workflows(backend: SQLiteBackend) -> None:
 
 async def demonstrate_statistics(backend: SQLiteBackend) -> None:
     """Demonstrate workflow statistics."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("WORKFLOW STATISTICS")
-    print("="*60)
+    print("=" * 60)
 
     stats = await backend.get_workflow_stats()
 
@@ -123,13 +127,13 @@ async def demonstrate_statistics(backend: SQLiteBackend) -> None:
     print(f"  Average execution time: {stats['average_execution_time_ms']:.1f}ms")
 
     print("\n📈 Status Breakdown:")
-    for status, count in stats['status_counts'].items():
-        percentage = (count / stats['total_workflows']) * 100
+    for status, count in stats["status_counts"].items():
+        percentage = (count / stats["total_workflows"]) * 100
         print(f"  {status.capitalize()}: {count} ({percentage:.1f}%)")
 
     # Calculate success rate
-    completed = stats['status_counts'].get('completed', 0)
-    failed = stats['status_counts'].get('failed', 0)
+    completed = stats["status_counts"].get("completed", 0)
+    failed = stats["status_counts"].get("failed", 0)
     total_finished = completed + failed
     if total_finished > 0:
         success_rate = (completed / total_finished) * 100
@@ -138,9 +142,9 @@ async def demonstrate_statistics(backend: SQLiteBackend) -> None:
 
 async def demonstrate_failed_workflow_analysis(backend: SQLiteBackend) -> None:
     """Demonstrate failed workflow analysis."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("FAILED WORKFLOW ANALYSIS")
-    print("="*60)
+    print("=" * 60)
 
     # Get failed workflows from last 24 hours
     failed_workflows = await backend.get_failed_workflows(hours_back=24)
@@ -154,7 +158,7 @@ async def demonstrate_failed_workflow_analysis(backend: SQLiteBackend) -> None:
     # Group by error message
     error_groups = {}
     for wf in failed_workflows:
-        error = wf['error_message'] or "Unknown error"
+        error = wf["error_message"] or "Unknown error"
         if error not in error_groups:
             error_groups[error] = []
         error_groups[error].append(wf)
@@ -171,9 +175,9 @@ async def demonstrate_failed_workflow_analysis(backend: SQLiteBackend) -> None:
 
 async def demonstrate_cleanup_operations(backend: SQLiteBackend) -> None:
     """Demonstrate cleanup operations."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("CLEANUP OPERATIONS")
-    print("="*60)
+    print("=" * 60)
 
     # Show current count
     stats_before = await backend.get_workflow_stats()
@@ -182,7 +186,7 @@ async def demonstrate_cleanup_operations(backend: SQLiteBackend) -> None:
     # Simulate cleanup (in real usage, you'd use a longer period)
     # For demo, we'll use a very short period to show the concept
     print("\n🧹 Cleaning up workflows older than 1 hour...")
-    deleted_count = await backend.cleanup_old_workflows(days_old=1/24)  # 1 hour
+    deleted_count = await backend.cleanup_old_workflows(days_old=1 / 24)  # 1 hour
 
     if deleted_count > 0:
         print(f"✅ Deleted {deleted_count} old workflows")
@@ -195,9 +199,9 @@ async def demonstrate_cleanup_operations(backend: SQLiteBackend) -> None:
 
 async def demonstrate_direct_sql_queries(backend: SQLiteBackend) -> None:
     """Demonstrate direct SQL queries for advanced analysis."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("DIRECT SQL QUERIES")
-    print("="*60)
+    print("=" * 60)
 
     import aiosqlite
 
@@ -243,21 +247,21 @@ async def demonstrate_direct_sql_queries(backend: SQLiteBackend) -> None:
 
 async def demonstrate_monitoring_setup(backend: SQLiteBackend) -> None:
     """Demonstrate a monitoring setup for production use."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("PRODUCTION MONITORING SETUP")
-    print("="*60)
+    print("=" * 60)
 
     # Health check
     print("\n🏥 Health Check:")
     stats = await backend.get_workflow_stats()
 
-    total = stats['total_workflows']
-    failed = stats['status_counts'].get('failed', 0)
-    running = stats['status_counts'].get('running', 0)
+    total = stats["total_workflows"]
+    failed = stats["status_counts"].get("failed", 0)
+    running = stats["status_counts"].get("running", 0)
 
     # Calculate metrics
     failure_rate = (failed / total) * 100 if total > 0 else 0
-    recent_activity = stats['recent_workflows_24h']
+    recent_activity = stats["recent_workflows_24h"]
 
     # Check thresholds
     alerts = []
@@ -279,7 +283,7 @@ async def demonstrate_monitoring_setup(backend: SQLiteBackend) -> None:
         print("  ✅ All systems operational")
 
     # Performance summary
-    avg_exec_time = stats['average_execution_time_ms']
+    avg_exec_time = stats["average_execution_time_ms"]
     if avg_exec_time:
         if avg_exec_time > 60000:  # 1 minute
             print(f"  ⚠️  Slow average execution: {avg_exec_time/1000:.1f}s")
@@ -308,7 +312,7 @@ async def main():
         await demonstrate_direct_sql_queries(backend)
         await demonstrate_monitoring_setup(backend)
 
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("✅ Demo completed successfully!")
         print(f"📁 Database file: {db_path.absolute()}")
         print("\n💡 You can now explore the database directly with SQLite tools:")

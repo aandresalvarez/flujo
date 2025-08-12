@@ -431,18 +431,18 @@ print(details)
 ### 2. Support Resources
 
 1. **Documentation**
-   - [Installation Guide](installation.md)
-   - [Usage Guide](usage.md)
-   - [API Reference](api/index.md)
-   - [SQLite Backend Guide](guides/sqlite_backend_guide.md) - For persistence and observability issues
+   - [Installation Guide](../getting-started/installation.md)
+   - [Usage Guide](../user_guide/usage.md)
+   - [API Reference](../api/index.md)
+   - [SQLite Backend Guide](../guides/sqlite_backend_guide.md) - For persistence and observability issues
 
 2. **Community**
    - [GitHub Issues](https://github.com/aandresalvarez/flujo/issues)
    - [Discussions](https://github.com/aandresalvarez/flujo/discussions)
 
 3. **Development**
-   - [Contributing Guide](dev.md)
-   - [Development Guide](dev.md)
+   - [Contributing Guide](../development/dev.md)
+   - [Development Guide](../development/dev.md)
 
 ### 3. Reporting Issues
 
@@ -467,7 +467,7 @@ When reporting an issue, include:
 
 ## Next Steps
 
-- Read the [Usage Guide](usage.md)
+- Read the [Usage Guide](../user_guide/usage.md)
 - Check [Advanced Topics](extending.md)
-- Explore [Use Cases](use_cases.md)
-- Review the [Adapter Step recipe](cookbook/adapter_step.md) for data-shaping tips
+- Explore [Use Cases](../user_guide/use_cases.md)
+- Review the [Adapter Step recipe](../cookbook/adapter_step.md) for data-shaping tips

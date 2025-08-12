@@ -28,15 +28,18 @@ from flujo.application.core.executor_core import (
 )
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
+
 
 @dataclass
 class TestData:
     """Test data for demonstration."""
+
     id: int
     content: str
     metadata: Dict[str, Any]
+
 
 class OptimizationDemo:
     """Comprehensive demonstration of ExecutorCore optimizations."""
@@ -100,7 +103,7 @@ class OptimizationDemo:
                 "id": data.id,
                 "processed_content": data.content.upper(),
                 "metadata": data.metadata,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
             }
 
         # Test baseline performance
@@ -127,7 +130,7 @@ class OptimizationDemo:
         self.baseline_metrics = {
             "total_time_ms": baseline_time,
             "operations": len(results),
-            "avg_time_per_operation_ms": baseline_time / len(results)
+            "avg_time_per_operation_ms": baseline_time / len(results),
         }
 
         logger.info("Baseline test completed\n")
@@ -143,11 +146,9 @@ class OptimizationDemo:
             enable_object_pool=True,
             enable_context_optimization=True,
             enable_memory_optimization=True,
-
             # Configure object pooling
             object_pool_max_size=50,
             object_pool_cleanup_threshold=0.8,
-
             # Disable other optimizations for this demo
             enable_step_optimization=False,
             enable_algorithm_optimization=False,
@@ -174,7 +175,7 @@ class OptimizationDemo:
             context_copy = context.copy()
             context_copy[f"processed_{data.id}"] = {
                 "content": data.content,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
             }
             return context_copy
 
@@ -190,27 +191,27 @@ class OptimizationDemo:
         # Test context optimization
         context = {"session_id": "demo_session", "user_id": "demo_user"}
         for data in self.test_data:
-            await memory_executor.execute(
-                context_intensive_step,
-                data,
-                context=context
-            )
+            await memory_executor.execute(context_intensive_step, data, context=context)
 
         end_time = time.perf_counter()
         memory_time = (end_time - start_time) * 1000
 
         # Get memory statistics
         stats = memory_executor.get_optimization_stats()
-        memory_stats = stats.get('memory', {})
+        memory_stats = stats.get("memory", {})
 
         logger.info(f"Memory optimization execution time: {memory_time:.2f}ms")
-        logger.info(f"Object pool utilization: {memory_stats.get('object_pool_utilization', 'N/A')}%")
+        logger.info(
+            f"Object pool utilization: {memory_stats.get('object_pool_utilization', 'N/A')}%"
+        )
         logger.info(f"Memory usage: {memory_stats.get('usage_mb', 'N/A')}MB")
 
         # Calculate improvement
         if self.baseline_metrics:
-            improvement = ((self.baseline_metrics['avg_time_per_operation_ms'] -
-                          (memory_time / 13)) / self.baseline_metrics['avg_time_per_operation_ms']) * 100
+            improvement = (
+                (self.baseline_metrics["avg_time_per_operation_ms"] - (memory_time / 13))
+                / self.baseline_metrics["avg_time_per_operation_ms"]
+            ) * 100
             logger.info(f"Memory optimization improvement: {improvement:.1f}%")
 
         logger.info("Memory optimization demo completed\n")
@@ -226,10 +227,8 @@ class OptimizationDemo:
             enable_step_optimization=True,
             enable_algorithm_optimization=True,
             enable_concurrency_optimization=True,
-
             # Configure concurrency
             max_concurrent_executions=4,
-
             # Disable other optimizations for this demo
             enable_object_pool=False,
             enable_context_optimization=False,
@@ -256,9 +255,11 @@ class OptimizationDemo:
             # Simulate parallel processing
             tasks = []
             for i in range(5):
+
                 async def worker(worker_id: int) -> str:
                     await asyncio.sleep(0.05)
                     return f"Worker {worker_id} processed {data.content}"
+
                 tasks.append(worker(i))
 
             results = await asyncio.gather(*tasks)
@@ -288,8 +289,8 @@ class OptimizationDemo:
 
         # Get performance statistics
         stats = performance_executor.get_optimization_stats()
-        execution_stats = stats.get('execution', {})
-        concurrency_stats = stats.get('concurrency', {})
+        execution_stats = stats.get("execution", {})
+        concurrency_stats = stats.get("concurrency", {})
 
         logger.info(f"Performance optimization execution time: {performance_time:.2f}ms")
         logger.info(f"Average execution time: {execution_stats.get('avg_time_ms', 'N/A')}ms")
@@ -297,8 +298,10 @@ class OptimizationDemo:
 
         # Calculate improvement
         if self.baseline_metrics:
-            improvement = ((self.baseline_metrics['avg_time_per_operation_ms'] -
-                          (performance_time / 6)) / self.baseline_metrics['avg_time_per_operation_ms']) * 100
+            improvement = (
+                (self.baseline_metrics["avg_time_per_operation_ms"] - (performance_time / 6))
+                / self.baseline_metrics["avg_time_per_operation_ms"]
+            ) * 100
             logger.info(f"Performance optimization improvement: {improvement:.1f}%")
 
         logger.info("Performance optimization demo completed\n")
@@ -313,12 +316,10 @@ class OptimizationDemo:
             # Enable error handling optimizations
             enable_optimized_error_handling=True,
             enable_circuit_breaker=True,
-
             # Configure error handling
             error_cache_size=50,
             circuit_breaker_failure_threshold=3,
             circuit_breaker_recovery_timeout_seconds=30,
-
             # Disable other optimizations for this demo
             enable_object_pool=False,
             enable_context_optimization=False,
@@ -356,7 +357,9 @@ class OptimizationDemo:
 
         for i in range(10):
             try:
-                result = await error_executor.execute(unreliable_step, self.test_data[i % len(self.test_data)])
+                result = await error_executor.execute(
+                    unreliable_step, self.test_data[i % len(self.test_data)]
+                )
                 results.append(result)
             except Exception as e:
                 errors.append(str(e))
@@ -366,9 +369,7 @@ class OptimizationDemo:
         try:
             for i in range(5):
                 result = await error_executor.execute_with_circuit_breaker(
-                    slow_step,
-                    self.test_data[0],
-                    circuit_breaker_name="slow_operations"
+                    slow_step, self.test_data[0], circuit_breaker_name="slow_operations"
                 )
                 results.append(result)
         except Exception as e:
@@ -376,7 +377,7 @@ class OptimizationDemo:
 
         # Get error statistics
         stats = error_executor.get_optimization_stats()
-        error_stats = stats.get('error_handling', {})
+        error_stats = stats.get("error_handling", {})
 
         logger.info(f"Successful operations: {len(results)}")
         logger.info(f"Failed operations: {len(errors)}")
@@ -396,15 +397,12 @@ class OptimizationDemo:
             # Enable monitoring
             enable_optimized_telemetry=True,
             enable_performance_monitoring=True,
-
             # Configure telemetry
             telemetry_batch_size=5,
             telemetry_flush_interval_seconds=10.0,
-
             # Enable some optimizations for monitoring
             enable_object_pool=True,
             enable_step_optimization=True,
-
             # Disable others for this demo
             enable_context_optimization=False,
             enable_memory_optimization=False,
@@ -425,7 +423,7 @@ class OptimizationDemo:
                 "processed": True,
                 "data_id": data.id,
                 "content_length": len(data.content),
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
             }
 
         # Test monitoring
@@ -434,8 +432,7 @@ class OptimizationDemo:
         # Execute with monitoring
         for i, data in enumerate(self.test_data):
             result, metrics = await monitoring_executor.execute_with_monitoring(
-                monitored_step,
-                data
+                monitored_step, data
             )
 
             logger.info(f"Step {i+1} metrics:")
@@ -484,9 +481,7 @@ class OptimizationDemo:
 
         # Test partial configuration updates
         await config_manager.update_config_partial(
-            object_pool_max_size=100,
-            telemetry_batch_size=20,
-            cache_max_size=1000
+            object_pool_max_size=100, telemetry_batch_size=20, cache_max_size=1000
         )
         logger.info("Partial configuration updated")
 
@@ -519,48 +514,54 @@ class OptimizationDemo:
         # Test different configurations
         configurations = {
             "Baseline": ExecutorCore(),
-            "Memory Optimized": OptimizedExecutorCore(OptimizationConfig(
-                enable_object_pool=True,
-                enable_context_optimization=True,
-                enable_memory_optimization=True,
-                enable_step_optimization=False,
-                enable_algorithm_optimization=False,
-                enable_concurrency_optimization=False,
-                enable_optimized_telemetry=False,
-                enable_performance_monitoring=False,
-                enable_optimized_error_handling=False,
-                enable_circuit_breaker=False,
-                enable_cache_optimization=False,
-                enable_automatic_optimization=False,
-            )),
-            "Performance Optimized": OptimizedExecutorCore(OptimizationConfig(
-                enable_object_pool=False,
-                enable_context_optimization=False,
-                enable_memory_optimization=False,
-                enable_step_optimization=True,
-                enable_algorithm_optimization=True,
-                enable_concurrency_optimization=True,
-                enable_optimized_telemetry=False,
-                enable_performance_monitoring=False,
-                enable_optimized_error_handling=False,
-                enable_circuit_breaker=False,
-                enable_cache_optimization=False,
-                enable_automatic_optimization=False,
-            )),
-            "Fully Optimized": OptimizedExecutorCore(OptimizationConfig(
-                enable_object_pool=True,
-                enable_context_optimization=True,
-                enable_memory_optimization=True,
-                enable_step_optimization=True,
-                enable_algorithm_optimization=True,
-                enable_concurrency_optimization=True,
-                enable_optimized_telemetry=True,
-                enable_performance_monitoring=True,
-                enable_optimized_error_handling=True,
-                enable_circuit_breaker=True,
-                enable_cache_optimization=True,
-                enable_automatic_optimization=True,
-            ))
+            "Memory Optimized": OptimizedExecutorCore(
+                OptimizationConfig(
+                    enable_object_pool=True,
+                    enable_context_optimization=True,
+                    enable_memory_optimization=True,
+                    enable_step_optimization=False,
+                    enable_algorithm_optimization=False,
+                    enable_concurrency_optimization=False,
+                    enable_optimized_telemetry=False,
+                    enable_performance_monitoring=False,
+                    enable_optimized_error_handling=False,
+                    enable_circuit_breaker=False,
+                    enable_cache_optimization=False,
+                    enable_automatic_optimization=False,
+                )
+            ),
+            "Performance Optimized": OptimizedExecutorCore(
+                OptimizationConfig(
+                    enable_object_pool=False,
+                    enable_context_optimization=False,
+                    enable_memory_optimization=False,
+                    enable_step_optimization=True,
+                    enable_algorithm_optimization=True,
+                    enable_concurrency_optimization=True,
+                    enable_optimized_telemetry=False,
+                    enable_performance_monitoring=False,
+                    enable_optimized_error_handling=False,
+                    enable_circuit_breaker=False,
+                    enable_cache_optimization=False,
+                    enable_automatic_optimization=False,
+                )
+            ),
+            "Fully Optimized": OptimizedExecutorCore(
+                OptimizationConfig(
+                    enable_object_pool=True,
+                    enable_context_optimization=True,
+                    enable_memory_optimization=True,
+                    enable_step_optimization=True,
+                    enable_algorithm_optimization=True,
+                    enable_concurrency_optimization=True,
+                    enable_optimized_telemetry=True,
+                    enable_performance_monitoring=True,
+                    enable_optimized_error_handling=True,
+                    enable_circuit_breaker=True,
+                    enable_cache_optimization=True,
+                    enable_automatic_optimization=True,
+                )
+            ),
         }
 
         results = {}
@@ -584,11 +585,11 @@ class OptimizationDemo:
             results[config_name] = {
                 "execution_time_ms": execution_time,
                 "operations": len(tasks),
-                "avg_time_per_operation_ms": execution_time / len(tasks)
+                "avg_time_per_operation_ms": execution_time / len(tasks),
             }
 
             # Get optimization stats if available
-            if hasattr(executor, 'get_optimization_stats'):
+            if hasattr(executor, "get_optimization_stats"):
                 stats = executor.get_optimization_stats()
                 results[config_name]["stats"] = stats
 
@@ -599,7 +600,9 @@ class OptimizationDemo:
         baseline_time = results["Baseline"]["avg_time_per_operation_ms"]
 
         for config_name, result in results.items():
-            improvement = ((baseline_time - result["avg_time_per_operation_ms"]) / baseline_time) * 100
+            improvement = (
+                (baseline_time - result["avg_time_per_operation_ms"]) / baseline_time
+            ) * 100
             logger.info(f"{config_name}:")
             logger.info(f"  Avg time per operation: {result['avg_time_per_operation_ms']:.2f}ms")
             logger.info(f"  Total time: {result['execution_time_ms']:.2f}ms")
@@ -635,6 +638,7 @@ class OptimizationDemo:
         logger.info("- Apply optimizations based on workload characteristics")
         logger.info("- Use automatic optimization for dynamic environments")
 
+
 async def main():
     """Main demo function."""
     demo = OptimizationDemo()
@@ -647,6 +651,7 @@ async def main():
     except Exception as e:
         logger.error(f"Demo failed with error: {e}")
         raise
+
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -6,6 +6,7 @@ from flujo import Flujo
 from flujo.domain.models import PipelineResult
 from manual_testing.examples.cohort_pipeline import COHORT_CLARIFICATION_PIPELINE, CohortContext
 
+
 # Ensure the API key is loaded from environment
 def ensure_api_key():
     """Ensure the API key is loaded from environment variables."""
@@ -17,16 +18,17 @@ def ensure_api_key():
         )
     # Mask the API key for security - show only last 4 characters
     if len(api_key) < 4:
-        masked_key = '*' * len(api_key)
+        masked_key = "*" * len(api_key)
     else:
         masked_key = f"{'*' * (len(api_key) - 4)}{api_key[-4:]}"
     print(f"\u2705 Using API key: {masked_key}")
+
 
 async def main():
     # Ensure the correct API key is set
     ensure_api_key()
 
-    print("Step 3: Running a stateful loop with PipelineContext.\n" + "="*50)
+    print("Step 3: Running a stateful loop with PipelineContext.\n" + "=" * 50)
 
     # --- STEP 3: STATE MANAGEMENT ---
     #
@@ -43,7 +45,7 @@ async def main():
     runner = Flujo(
         COHORT_CLARIFICATION_PIPELINE,
         pipeline_name="cohort_clarification_v3",
-        context_model=CohortContext  # NEW: Specify our custom context
+        context_model=CohortContext,  # NEW: Specify our custom context
     )
 
     # Provide a test definition that will need clarification
@@ -55,7 +57,7 @@ async def main():
         "initial_prompt": initial_definition,  # Required field from PipelineContext
         "current_definition": initial_definition,
         "is_clear": False,
-        "clarification_count": 0
+        "clarification_count": 0,
     }
 
     print(f"Initial Definition: {initial_definition}")
@@ -64,8 +66,7 @@ async def main():
     # Run the pipeline - it will handle the iteration internally
     result: Optional[PipelineResult] = None
     async for item in runner.run_async(
-        initial_definition,
-        initial_context_data=initial_context_data
+        initial_definition, initial_context_data=initial_context_data
     ):
         result = item
 
@@ -79,7 +80,7 @@ async def main():
         print("Pipeline execution failed.")
 
     # --- FSD-12: TRACING DEMONSTRATION ---
-    print("\n" + "="*50)
+    print("\n" + "=" * 50)
     print("✨ OBSERVABILITY (FSD-12) ✨")
     if result and result.final_pipeline_context and result.final_pipeline_context.run_id:
         run_id = result.final_pipeline_context.run_id

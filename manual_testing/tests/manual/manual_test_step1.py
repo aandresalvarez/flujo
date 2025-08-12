@@ -15,6 +15,7 @@ from flujo import Flujo
 from flujo.domain.models import PipelineResult, PipelineContext
 from manual_testing.examples.cohort_pipeline import COHORT_CLARIFICATION_PIPELINE
 
+
 def ensure_api_key():
     """Ensure the API key is loaded from environment variables."""
     api_key = os.getenv("OPENAI_API_KEY")
@@ -25,10 +26,11 @@ def ensure_api_key():
         )
     # Mask the API key for security - show only last 4 characters
     if len(api_key) < 4:
-        masked_key = '*' * len(api_key)
+        masked_key = "*" * len(api_key)
     else:
         masked_key = f"{'*' * (len(api_key) - 4)}{api_key[-4:]}"
     print(f"✅ Using API key: {masked_key}")
+
 
 async def test_cohort_definition(definition: str, test_name: str):
     """Test a single cohort definition with the real pipeline."""
@@ -42,14 +44,13 @@ async def test_cohort_definition(definition: str, test_name: str):
     runner = Flujo(
         COHORT_CLARIFICATION_PIPELINE,
         pipeline_name=f"manual_test_{test_name.lower().replace(' ', '_')}",
-        context_model=PipelineContext
+        context_model=PipelineContext,
     )
 
     # Run the pipeline
     result: Optional[PipelineResult] = None
     async for item in runner.run_async(
-        definition,
-        initial_context_data={"initial_prompt": definition}
+        definition, initial_context_data={"initial_prompt": definition}
     ):
         result = item
 
@@ -89,6 +90,7 @@ async def test_cohort_definition(definition: str, test_name: str):
 
     print(f"{'='*60}")
 
+
 async def main():
     """Run manual tests with real API calls."""
     print("=" * 80)
@@ -101,17 +103,11 @@ async def main():
 
     # Test Case 1: Incomplete cohort definition
     incomplete_definition = "patients with diabetes"
-    await test_cohort_definition(
-        incomplete_definition,
-        "Incomplete Definition"
-    )
+    await test_cohort_definition(incomplete_definition, "Incomplete Definition")
 
     # Test Case 2: Complete cohort definition
     complete_definition = "adult patients with Type 2 diabetes diagnosed in the last 5 years, currently on metformin therapy"
-    await test_cohort_definition(
-        complete_definition,
-        "Complete Definition"
-    )
+    await test_cohort_definition(complete_definition, "Complete Definition")
 
     print("\n" + "=" * 80)
     print("MANUAL TEST COMPLETE")
@@ -122,6 +118,7 @@ async def main():
     print("   - Complete definitions (confirms with [CLARITY_CONFIRMED])")
     print("🔍 Use the tracing commands to inspect detailed execution")
     print("=" * 80)
+
 
 if __name__ == "__main__":
     asyncio.run(main())

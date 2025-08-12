@@ -3,6 +3,7 @@ Demonstrates using the pipeline factory with SQL validation plugin.
 This example shows how to add custom validation logic to your workflows.
 For more details, see docs/extending.md.
 """
+
 import asyncio
 from flujo import make_agent_async, init_telemetry, Task
 from flujo.recipes.factories import make_default_pipeline, run_default_pipeline
@@ -10,6 +11,7 @@ from flujo.domain.models import Checklist
 from flujo.plugins.sql_validator import SQLSyntaxValidator
 
 init_telemetry()
+
 
 async def main():
     print("🧠 Running a SQL generation and validation pipeline...")
@@ -60,6 +62,7 @@ async def main():
                 print(f"  - {item.description:<60} {status}")
     else:
         print("\n❌ Failed to generate a valid SQL query.")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

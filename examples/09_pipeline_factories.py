@@ -32,25 +32,35 @@ async def demonstrate_default_pipeline_factory():
     print("=== Default Pipeline Factory Example ===\n")
 
     # Create agents for the pipeline
-    review_agent = StubAgent([
-        Checklist(items=[
-            ChecklistItem(description="Check if the solution is correct"),
-            ChecklistItem(description="Verify the approach is efficient"),
-            ChecklistItem(description="Ensure the code is readable"),
-        ])
-    ])
+    review_agent = StubAgent(
+        [
+            Checklist(
+                items=[
+                    ChecklistItem(description="Check if the solution is correct"),
+                    ChecklistItem(description="Verify the approach is efficient"),
+                    ChecklistItem(description="Ensure the code is readable"),
+                ]
+            )
+        ]
+    )
 
-    solution_agent = StubAgent([
-        "def fibonacci(n):\n    if n <= 1:\n        return n\n    return fibonacci(n-1) + fibonacci(n-2)"
-    ])
+    solution_agent = StubAgent(
+        [
+            "def fibonacci(n):\n    if n <= 1:\n        return n\n    return fibonacci(n-1) + fibonacci(n-2)"
+        ]
+    )
 
-    validator_agent = StubAgent([
-        Checklist(items=[
-            ChecklistItem(description="Check if the solution is correct", completed=True),
-            ChecklistItem(description="Verify the approach is efficient", completed=False),
-            ChecklistItem(description="Ensure the code is readable", completed=True),
-        ])
-    ])
+    validator_agent = StubAgent(
+        [
+            Checklist(
+                items=[
+                    ChecklistItem(description="Check if the solution is correct", completed=True),
+                    ChecklistItem(description="Verify the approach is efficient", completed=False),
+                    ChecklistItem(description="Ensure the code is readable", completed=True),
+                ]
+            )
+        ]
+    )
 
     # Create the pipeline using the factory
     pipeline = make_default_pipeline(
@@ -82,7 +92,9 @@ async def demonstrate_pipeline_composability():
     print("=== Pipeline Composability Example ===\n")
 
     # Create a simple preprocessing pipeline
-    preprocess_agent = StubAgent(["Preprocessed: Write a function to calculate the nth Fibonacci number"])
+    preprocess_agent = StubAgent(
+        ["Preprocessed: Write a function to calculate the nth Fibonacci number"]
+    )
 
     async def preprocess_step(data: str) -> str:
         return await preprocess_agent.run(data)
@@ -93,7 +105,9 @@ async def demonstrate_pipeline_composability():
     # Create the main pipeline using the factory
     review_agent = StubAgent([Checklist(items=[ChecklistItem(description="Check correctness")])])
     solution_agent = StubAgent(["def fib(n): return n if n <= 1 else fib(n-1) + fib(n-2)"])
-    validator_agent = StubAgent([Checklist(items=[ChecklistItem(description="Check correctness", completed=True)])])
+    validator_agent = StubAgent(
+        [Checklist(items=[ChecklistItem(description="Check correctness", completed=True)])]
+    )
 
     main_pipeline = make_default_pipeline(
         review_agent=review_agent,
@@ -123,9 +137,7 @@ async def demonstrate_agentic_loop_factory():
     print("=== Agentic Loop Pipeline Factory Example ===\n")
 
     # Create a planner that immediately finishes
-    planner_agent = StubAgent([
-        FinishCommand(final_answer="Task completed successfully!")
-    ])
+    planner_agent = StubAgent([FinishCommand(final_answer="Task completed successfully!")])
 
     # Create an empty agent registry (no sub-agents needed for this simple example)
     agent_registry = {}
@@ -159,7 +171,9 @@ async def demonstrate_pipeline_inspection():
     # Create a pipeline
     review_agent = StubAgent([Checklist(items=[ChecklistItem(description="Check")])])
     solution_agent = StubAgent(["solution"])
-    validator_agent = StubAgent([Checklist(items=[ChecklistItem(description="Check", completed=True)])])
+    validator_agent = StubAgent(
+        [Checklist(items=[ChecklistItem(description="Check", completed=True)])]
+    )
 
     pipeline = make_default_pipeline(
         review_agent=review_agent,
@@ -170,7 +184,9 @@ async def demonstrate_pipeline_inspection():
     print("Pipeline inspection capabilities:")
     print(f"Pipeline is inspectable: {hasattr(pipeline, 'steps')}")
     print(f"Steps can be accessed: {len(pipeline.steps)}")
-    print(f"Step configurations are visible: {[step.config.max_retries for step in pipeline.steps]}")
+    print(
+        f"Step configurations are visible: {[step.config.max_retries for step in pipeline.steps]}"
+    )
     print()
 
     # Show how the pipeline structure is transparent

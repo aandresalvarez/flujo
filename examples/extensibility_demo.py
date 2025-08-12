@@ -16,6 +16,7 @@ from flujo.models import PipelineResult
 # Custom Complex Step Types (No Core Changes Required!)
 # =============================================================================
 
+
 class BatchProcessingStep(Step):
     """A custom complex step that processes data in batches.
 
@@ -37,7 +38,7 @@ class BatchProcessingStep(Step):
 
         results = []
         for i in range(0, len(data), self.batch_size):
-            batch = data[i:i + self.batch_size]
+            batch = data[i : i + self.batch_size]
             print(f"   Processing batch {i//self.batch_size + 1}: {len(batch)} items")
 
             # Simulate batch processing
@@ -114,7 +115,7 @@ class RetryStep(Step):
             except Exception as e:
                 self.retry_count += 1
                 if attempt < self.max_retries:
-                    delay = self.base_delay * (2 ** attempt)  # Exponential backoff
+                    delay = self.base_delay * (2**attempt)  # Exponential backoff
                     print(f"❌ Failed on attempt {attempt + 1}: {e}")
                     print(f"   Retrying in {delay:.2f}s...")
                     await asyncio.sleep(delay)
@@ -126,6 +127,7 @@ class RetryStep(Step):
 # =============================================================================
 # Simple Agent Steps (No Complexity Declaration Needed)
 # =============================================================================
+
 
 @step(name="DataGenerator")
 async def generate_data_agent(count: int) -> List[str]:
@@ -152,6 +154,7 @@ async def transform_data_agent(data: List[str]) -> List[str]:
 # Pipeline Demonstrations
 # =============================================================================
 
+
 async def demonstrate_extensibility():
     """Demonstrate the extensibility benefits of the new architecture."""
 
@@ -165,11 +168,11 @@ async def demonstrate_extensibility():
 
     # Create a pipeline that uses all our custom steps
     pipeline = (
-        generate_data_agent >>
-        validate_data_agent >>
-        batch_processor >>
-        adaptive_processor >>
-        retry_processor
+        generate_data_agent
+        >> validate_data_agent
+        >> batch_processor
+        >> adaptive_processor
+        >> retry_processor
     )
 
     runner = Flujo(pipeline)
@@ -192,7 +195,9 @@ async def demonstrate_extensibility():
     for step_result in result.step_history:
         step_name = step_result.step.name
         step_type = type(step_result.step).__name__
-        print(f"   - {step_name} ({step_type}): {'Complex' if getattr(step_result.step, 'is_complex', False) else 'Simple'}")
+        print(
+            f"   - {step_name} ({step_type}): {'Complex' if getattr(step_result.step, 'is_complex', False) else 'Simple'}"
+        )
 
 
 async def demonstrate_dynamic_complexity():

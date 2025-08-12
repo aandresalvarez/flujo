@@ -27,7 +27,8 @@ import contextvars
 import inspect
 from enum import Enum
 
-from flujo.domain.models import BaseModel, RefinementCheck, UsageLimits  # noqa: F401
+from flujo.domain.base_model import BaseModel
+from flujo.domain.models import RefinementCheck, UsageLimits  # noqa: F401
 from flujo.domain.resources import AppResources
 from pydantic import Field, ConfigDict
 from ..agent_protocol import AsyncAgentProtocol
@@ -153,8 +154,12 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         description="Arbitrary metadata about this step.",
     )
 
-    __step_input_type__: type[Any] = Any
-    __step_output_type__: type[Any] = Any
+    # Default to the top-level "object" type to satisfy static typing
+    __step_input_type__: type[Any] = object
+    __step_output_type__: type[Any] = object
+
+    # Note: Avoid defining an inner `Config` class alongside `model_config`.
+    # Pydantic v2 raises if both are present. Use only `model_config` here.
 
     @property
     def is_complex(self) -> bool:
@@ -305,17 +310,20 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         **config: Any,
     ) -> "Step[Any, Any]":
         """Construct a review step using the provided agent."""
-        return cls.model_validate(
-            {
-                "name": "review",
-                "agent": agent,
-                "plugins": plugins or [],
-                "validators": validators or [],
-                "processors": processors or AgentProcessors(),
-                "persist_feedback_to_context": persist_feedback_to_context,
-                "persist_validation_results_to": persist_validation_results_to,
-                "config": StepConfig(**config),
-            }
+        return cast(
+            "Step[Any, Any]",
+            cls.model_validate(
+                {
+                    "name": "review",
+                    "agent": agent,
+                    "plugins": plugins or [],
+                    "validators": validators or [],
+                    "processors": processors or AgentProcessors(),
+                    "persist_feedback_to_context": persist_feedback_to_context,
+                    "persist_validation_results_to": persist_validation_results_to,
+                    "config": StepConfig(**config),
+                }
+            ),
         )
 
     @classmethod
@@ -331,17 +339,20 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         **config: Any,
     ) -> "Step[Any, Any]":
         """Construct a solution step using the provided agent."""
-        return cls.model_validate(
-            {
-                "name": "solution",
-                "agent": agent,
-                "plugins": plugins or [],
-                "validators": validators or [],
-                "processors": processors or AgentProcessors(),
-                "persist_feedback_to_context": persist_feedback_to_context,
-                "persist_validation_results_to": persist_validation_results_to,
-                "config": StepConfig(**config),
-            }
+        return cast(
+            "Step[Any, Any]",
+            cls.model_validate(
+                {
+                    "name": "solution",
+                    "agent": agent,
+                    "plugins": plugins or [],
+                    "validators": validators or [],
+                    "processors": processors or AgentProcessors(),
+                    "persist_feedback_to_context": persist_feedback_to_context,
+                    "persist_validation_results_to": persist_validation_results_to,
+                    "config": StepConfig(**config),
+                }
+            ),
         )
 
     @classmethod
@@ -358,21 +369,24 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         **config: Any,
     ) -> "Step[Any, Any]":
         """Construct a validation step using the provided agent."""
-        return cls.model_validate(
-            {
-                "name": "validate",
-                "agent": agent,
-                "plugins": plugins or [],
-                "validators": validators or [],
-                "processors": processors or AgentProcessors(),
-                "persist_feedback_to_context": persist_feedback_to_context,
-                "persist_validation_results_to": persist_validation_results_to,
-                "config": StepConfig(**config),
-                "meta": {
-                    "is_validation_step": True,
-                    "strict_validation": strict,
-                },
-            }
+        return cast(
+            "Step[Any, Any]",
+            cls.model_validate(
+                {
+                    "name": "validate",
+                    "agent": agent,
+                    "plugins": plugins or [],
+                    "validators": validators or [],
+                    "processors": processors or AgentProcessors(),
+                    "persist_feedback_to_context": persist_feedback_to_context,
+                    "persist_validation_results_to": persist_validation_results_to,
+                    "config": StepConfig(**config),
+                    "meta": {
+                        "is_validation_step": True,
+                        "strict_validation": strict,
+                    },
+                }
+            ),
         )
 
     # ------------------------------------------------------------------
@@ -613,8 +627,9 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                 return last_artifact_var.get()
             return out
 
-        mapper_step = cls.from_callable(
-            _post_output_mapper, name=f"{name}_output_mapper", is_adapter=True
+        mapper_step = cast(
+            "Step[Any, Any]",
+            cls.from_callable(_post_output_mapper, name=f"{name}_output_mapper", is_adapter=True),
         )
         # Compose pipeline: loop then post mapping step
         return core_loop >> mapper_step
@@ -760,7 +775,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
 
         return cast(
             "Step[Any, Dict[str, Any]]",
-            cls.from_callable(_gather, name=name, is_adapter=True, **config_kwargs),  # type: ignore[arg-type]
+            cls.from_callable(_gather, name=name, is_adapter=True, **config_kwargs),
         )
 
     @classmethod

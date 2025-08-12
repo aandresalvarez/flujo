@@ -49,7 +49,7 @@ The output is a Mermaid code block. You can:
 
 ---
 
-For more, see the [API Reference](../api/index.md#pipeline-visualization).
+For more, see the [API Reference](../api/index.md).
 
 ## Basic Usage
 

@@ -292,4 +292,4 @@ Integrate Flujo's telemetry with your existing observability stack:
 
 - Read the [Configuration Guide](configuration.md)
 - Explore [Advanced Topics](extending.md)
-- Check out [Use Cases](use_cases.md)
+- Check out [Use Cases](../user_guide/use_cases.md)
