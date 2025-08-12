@@ -28,8 +28,8 @@ This documentation provides comprehensive guidance for using and configuring Exe
 
 ### Examples and Demos
 
-4. **[Comprehensive Optimization Demo](examples/optimization_comprehensive_demo.py)**
-   - Complete demonstration of all optimization features
+4. Comprehensive Optimization Demo (coming soon)
+   - End-to-end demonstration of optimization features
    - Performance comparison across configurations
    - Real-world usage examples
 
@@ -297,7 +297,8 @@ test_results = await executor.execute_with_monitoring(test_step, test_data)
 ### Run the Comprehensive Demo
 
 ```bash
-python examples/optimization_comprehensive_demo.py
+# See the Optimization Guide for end-to-end examples
+# docs/optimization/executor_core_optimization_guide.md
 ```
 
 This demo showcases:
@@ -325,12 +326,12 @@ print(f"Memory usage: {metrics['memory_usage_mb']}MB")
 - `optimization_monitoring_guide.md` - Monitoring and metrics guide
 
 ### Example Files
-- `examples/optimization_comprehensive_demo.py` - Comprehensive demonstration
+- End-to-end demo: see the Optimization Guide
 
 ### Related Documentation
-- [Flujo Main Documentation](../index.md)
-- [ExecutorCore Documentation](../core_execution_refactor.md)
-- [Performance Optimization Guide](../performance_optimizations.md)
+- [Introduction](../getting-started/index.md)
+- [ExecutorCore Details](../advanced/core_execution_refactor.md)
+- [Performance Optimizations](performance_optimizations.md)
 
 ## 🤝 Contributing
 

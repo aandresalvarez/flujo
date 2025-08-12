@@ -1,0 +1,15 @@
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.5
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+      - id: ruff-format
+  - repo: local
+    hooks:
+      - id: forbidden-patterns
+        name: forbidden patterns
+        entry: python3 scripts/hooks/check_forbidden_patterns.py
+        language: system
+        types: [python]

@@ -274,13 +274,13 @@ validate_step = Step.validate_step(
     validators=[WordCountValidator()]
 )
 
-See [Hybrid Validation Cookbook](cookbook/hybrid_validation.md) for a complete example.
+See [Hybrid Validation Cookbook](../cookbook/hybrid_validation.md) for a complete example.
 ```
 
 All step factories also accept a `processors: Optional[AgentProcessors]` parameter
-to run pre-processing and post-processing hooks. See [Using Processors](cookbook/using_processors.md)
+to run pre-processing and post-processing hooks. See [Using Processors](../cookbook/using_processors.md)
 for details.
-For complex data shaping before calling another step, consider using an [Adapter Step](cookbook/adapter_step.md).
+For complex data shaping before calling another step, consider using an [Adapter Step](../cookbook/adapter_step.md).
 
 ## Advanced Features
 
@@ -520,15 +520,15 @@ result = runner.run("Write a blog post about AI")
 
 ### Getting Help
 
-- Check the [Troubleshooting Guide](troubleshooting.md)
+- Check the [Troubleshooting Guide](../advanced/troubleshooting.md)
 - Search [existing issues](https://github.com/aandresalvarez/flujo/issues)
 - Create a new issue if needed
 
 ## Next Steps
 
-- Read the [Usage Guide](usage.md)
-- Explore [Advanced Topics](extending.md)
-- Check out [Use Cases](use_cases.md)
+- Read the [Usage Guide](../user_guide/usage.md)
+- Explore [Advanced Topics](../advanced/extending.md)
+- Check out [Use Cases](../user_guide/use_cases.md)
 - Future work: a `pipeline.visualize()` helper will output a Mermaid graph so you
   can instantly diagram your pipeline.
 
@@ -859,7 +859,7 @@ step = Step("metadata", agent, meta={"version": "1.0", "author": "team"})
 
 > [!TIP]
 > **Rapid Iteration:**
-> You can now run any custom pipeline directly from the command line using `flujo run my_pipeline.py --input "your prompt"`. This is the fastest way to test and debug your pipelines—no need for a custom script. See [usage.md](usage.md#running-custom-pipelines-from-the-cli-flujo-run) for details.
+> You can now run any custom pipeline directly from the command line using `flujo run my_pipeline.py --input "your prompt"`. This is the fastest way to test and debug your pipelines—no need for a custom script. See [usage.md](../user_guide/usage.md#running-custom-pipelines-from-the-cli-flujo-run) for details.
 
 > [!TIP]
 > **Pipeline Composition:**

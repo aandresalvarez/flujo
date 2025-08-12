@@ -31,6 +31,9 @@ async def test_runner_run_outcomes_failure_yields_failure_and_stops():
     assert first.step_result is not None
     assert first.step_result.success is False
     # Ensure we did not receive a Success after failure
-    assert all(not hasattr(o, "step_result") or not getattr(o, "step_result", None) or getattr(o, "step_result").success is False for o in outcomes)
-
-
+    assert all(
+        not hasattr(o, "step_result")
+        or not getattr(o, "step_result", None)
+        or getattr(o, "step_result").success is False
+        for o in outcomes
+    )

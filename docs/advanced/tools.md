@@ -406,6 +406,6 @@ write_tool = Tool(write_file)
 
 ## Next Steps
 
-- Read the [Usage Guide](usage.md)
+- Read the [Usage Guide](../user_guide/usage.md)
 - Explore [Advanced Topics](extending.md)
-- Check out [Use Cases](use_cases.md)
+- Check out [Use Cases](../user_guide/use_cases.md)

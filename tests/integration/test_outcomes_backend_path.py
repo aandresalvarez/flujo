@@ -36,7 +36,9 @@ class _FakeConditionalExecutor:
         context_setter,
         _fallback_depth=0,
     ) -> StepResult:
-        return StepResult(name=getattr(conditional_step, "name", "conditional"), success=True, output=42)
+        return StepResult(
+            name=getattr(conditional_step, "name", "conditional"), success=True, output=42
+        )
 
 
 @pytest.mark.asyncio
@@ -74,7 +76,9 @@ async def test_conditional_adapter_returns_outcome_in_backend_path():
 
     from flujo.domain.dsl.pipeline import Pipeline
 
-    step = ConditionalStep(name="c_test", condition_callable=_always_a, branches={"a": Pipeline(steps=[])})
+    step = ConditionalStep(
+        name="c_test", condition_callable=_always_a, branches={"a": Pipeline(steps=[])}
+    )
     frame = ExecutionFrame(
         step=step,
         data=None,
@@ -93,5 +97,3 @@ async def test_conditional_adapter_returns_outcome_in_backend_path():
     assert isinstance(outcome, Success)
     assert outcome.step_result.success is True
     assert outcome.step_result.output == 42
-
-

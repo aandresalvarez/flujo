@@ -1,3 +1,3 @@
 # Pipeline Registry API
 
-::: flujo.registry.PipelineRegistry
+::: flujo.infra.registry.PipelineRegistry

@@ -227,6 +227,7 @@ def safe_merge_context_updates(
                 except Exception:
                     pass
                 return v
+
             logger.debug("source_fields: %s", _truncate(source_fields))
 
         # Update only changed fields using setattr to trigger validation

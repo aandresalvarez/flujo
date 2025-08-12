@@ -1,5 +1,3 @@
-import pytest
-
 from flujo.application.core.step_policies import DefaultHitlStepExecutor
 from flujo.domain.models import Paused
 from flujo.domain.dsl.step import HumanInTheLoopStep
@@ -24,4 +22,3 @@ async def test_hitl_executor_returns_paused_outcome():
     )
     assert isinstance(outcome, Paused)
     assert "Please confirm" in outcome.message
-

@@ -1,16 +1,21 @@
 import pytest
 
 from flujo.application.core.executor_core import ExecutorCore
-from flujo.application.core.step_policies import DefaultLoopStepExecutor
+from flujo.application.core.step_policies import (
+    DefaultLoopStepExecutor,
+    DefaultParallelStepExecutor,
+)
 from flujo.domain.dsl.step import Step
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.dsl.loop import LoopStep
-from flujo.domain.models import Success, Failure, Paused, StepResult
+from flujo.domain.dsl.parallel import ParallelStep
+from flujo.domain.models import Success, Failure
 
 
 @pytest.mark.asyncio
 async def test_loop_policy_returns_failure_outcome_on_iteration_mapper_error():
     core = ExecutorCore()
+
     class _EchoAgent:
         async def run(self, payload, context=None, resources=None, **kwargs):
             return payload
@@ -52,6 +57,7 @@ async def test_loop_policy_returns_failure_outcome_on_iteration_mapper_error():
 @pytest.mark.asyncio
 async def test_loop_policy_success_simple_exit():
     core = ExecutorCore()
+
     # Body returns immediately and exit condition true
     class _EchoAgent:
         async def run(self, payload, context=None, resources=None, **kwargs):
@@ -78,6 +84,71 @@ async def test_loop_policy_success_simple_exit():
         _fallback_depth=0,
     )
     assert isinstance(outcome, Success)
+
+
+@pytest.mark.asyncio
+async def test_loop_within_parallel_and_parallel_within_loop_quota_composition():
+    core = ExecutorCore()
+
+    class _EchoAgent:
+        async def run(self, payload, context=None, resources=None, **kwargs):
+            return payload
+
+    # Inner parallel inside loop
+    inner_branches = {
+        "x": Pipeline.from_step(Step(name="X", agent=_EchoAgent())),
+        "y": Pipeline.from_step(Step(name="Y", agent=_EchoAgent())),
+    }
+    inner_parallel = ParallelStep(name="inner", branches=inner_branches)
+    loop_body = Pipeline.from_step(Step(name="Pass", agent=_EchoAgent())) >> inner_parallel
+
+    loop = LoopStep(
+        name="outer_loop",
+        loop_body_pipeline=loop_body,
+        exit_condition_callable=lambda _o, _c: True,
+        max_loops=1,
+    )
+
+    outcome1 = await DefaultLoopStepExecutor().execute(
+        core,
+        loop,
+        data={"v": 1},
+        context=None,
+        resources=None,
+        limits=None,
+        stream=False,
+        on_chunk=None,
+        cache_key=None,
+        breach_event=None,
+        _fallback_depth=0,
+    )
+    assert isinstance(outcome1, Success)
+
+    # Parallel containing loop in one branch
+    loop2 = LoopStep(
+        name="inner_loop",
+        loop_body_pipeline=Pipeline.from_step(Step(name="LPass", agent=_EchoAgent())),
+        exit_condition_callable=lambda _o, _c: True,
+        max_loops=1,
+    )
+    branches2 = {
+        "l": Pipeline.from_step(Step(name="LP", agent=_EchoAgent())) >> loop2,
+        "z": Pipeline.from_step(Step(name="Z", agent=_EchoAgent())),
+    }
+    p2 = ParallelStep(name="outer_p", branches=branches2)
+
+    outcome2 = await DefaultParallelStepExecutor().execute(
+        core,
+        p2,
+        data=None,
+        context=None,
+        resources=None,
+        limits=None,
+        breach_event=None,
+        context_setter=None,
+        step_executor=None,
+    )
+    assert isinstance(outcome2, Success)
 
 
 @pytest.mark.asyncio

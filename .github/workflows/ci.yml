@@ -54,6 +54,7 @@ jobs:
       fail-fast: true
       matrix:
         python-version: ["3.11", "3.12"]
+        mode: ["compat", "pure"]
     env:
       CI: "true"
       FLUJO_CLI_PERF_THRESHOLD: "0.2"
@@ -79,7 +80,11 @@ jobs:
       - name: Set dummy OpenAI API key for tests
         run: echo "OPENAI_API_KEY=dummy-key" >> $GITHUB_ENV
 
-      - name: Run fast tests with coverage
+      - name: Set mode env
+        run: |
+          if [ "${{ matrix.mode }}" = "pure" ]; then echo "FLUJO_PURE_QUOTA=1" >> $GITHUB_ENV; fi
+
+      - name: Run fast tests with coverage (${{ matrix.mode }})
         run: |
           # Run fast tests in parallel with coverage
           uv run coverage run --source=flujo --parallel-mode -m pytest tests/ -m "not slow and not serial and not benchmark" -n auto
@@ -87,7 +92,7 @@ jobs:
       - name: Store fast tests coverage file
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-fast-${{ matrix.python-version }}
+          name: coverage-fast-${{ matrix.python-version }}-${{ matrix.mode }}
           path: .coverage.*
 
   # ----------------------------------------------------------------------------

@@ -210,5 +210,18 @@ flujo lens trace <run_id>
 flujo validate my_pipeline.py
 ```
 
+## Usage Limits and Pure Quota Mode
+
+- Set `UsageLimits` on the runner to enforce cost and token ceilings.
+- Flujo enforces budgets via first-class Quota reservations (reserve/split/reclaim).
+- For compatibility with existing pipelines, a reactive check may also run after each step.
+
+To disable reactive checks and rely solely on quotas, enable Pure Quota Mode via env var:
+
+- macOS/Linux: `export FLUJO_PURE_QUOTA=1`
+- Windows (PowerShell): `$env:FLUJO_PURE_QUOTA=1`
+
+In pure quota mode, sequential post-step checks and parallel step’s reactive cancellation are disabled; quotas remain the sole enforcement mechanism.
+
  
  

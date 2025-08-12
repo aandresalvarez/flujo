@@ -13,7 +13,12 @@ ContextT = TypeVar("ContextT", bound=BaseModel)
 
 
 class UsageGovernor(Generic[ContextT]):
-    """Manages usage limits and cost tracking during pipeline execution."""
+    """
+    Legacy-compatible usage limit checker retained for existing pipelines and tests.
+
+    New implementations should prefer first-class Quota reservations for
+    proactive enforcement. This class does not emit deprecation warnings.
+    """
 
     def __init__(self, usage_limits: Optional[UsageLimits] = None) -> None:
         self.usage_limits = usage_limits
@@ -69,10 +74,7 @@ class UsageGovernor(Generic[ContextT]):
         pipeline_result: PipelineResult[ContextT],
         span: Any | None,
     ) -> None:
-        """
-        ✅ REFACTORED: This method now raises the exception but relies on the caller
-        to provide the complete PipelineResult.
-        """
+        """Check limits against the provided PipelineResult and raise on breach."""
         if self.usage_limits is None:
             return
 
@@ -94,6 +96,7 @@ class UsageGovernor(Generic[ContextT]):
                 except AttributeError:
                     # Mock spans may not have record_exception
                     pass
+            # For legacy callers, continue raising to preserve behavior.
             raise error
 
         # Check token limits - calculate from step history if total_tokens is not set
@@ -118,6 +121,7 @@ class UsageGovernor(Generic[ContextT]):
                 except AttributeError:
                     # Mock spans may not have record_exception
                     pass
+            # For legacy callers, continue raising to preserve behavior.
             raise error
 
     def update_telemetry_span(

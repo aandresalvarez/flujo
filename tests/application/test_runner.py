@@ -51,6 +51,7 @@ async def test_runner_run_outcomes_streaming_yields_chunks_then_success():
 class _HitlAgent:
     async def run(self, payload, context=None, resources=None, **kwargs):
         from flujo.exceptions import PausedException
+
         raise PausedException("wait")
 
 
@@ -64,4 +65,3 @@ async def test_runner_run_outcomes_paused_yields_paused():
         outs.append(item)
         break
     assert outs and isinstance(outs[0], Paused)
-

@@ -15,9 +15,9 @@ from flujo.domain.models import (
     StepOutcome,
     Success,
     Failure,
-    Paused,
     Chunk,
 )
+from flujo.domain.models import Quota
 from flujo.domain.resources import AppResources
 from flujo.exceptions import (
     ContextInheritanceError,
@@ -57,6 +57,7 @@ class StepCoordinator(Generic[ContextT]):
         stream: bool = False,
         step_executor: Optional[Any] = None,  # Legacy parameter for backward compatibility
         usage_limits: Optional[UsageLimits] = None,  # ✅ NEW: Usage limits for step execution
+        quota: Optional[Quota] = None,
     ) -> AsyncIterator[Any]:
         """Execute a single step with telemetry and hook management.
 
@@ -140,6 +141,8 @@ class StepCoordinator(Generic[ContextT]):
                             stream=effective_stream,
                             on_chunk=on_chunk,
                             usage_limits=usage_limits,
+                            # Ensure quota propagates consistently during streaming
+                            quota=quota,
                         )
 
                         # Call the backend directly (typed StepOutcome)
@@ -203,6 +206,7 @@ class StepCoordinator(Generic[ContextT]):
                             resources=self.resources,
                             stream=False,
                             usage_limits=usage_limits,
+                            quota=quota,
                         )
 
                         # Call the backend directly (typed StepOutcome)

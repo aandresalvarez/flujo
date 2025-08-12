@@ -5,7 +5,7 @@ from typing import Any, Dict, TYPE_CHECKING
 
 from ..domain.backends import ExecutionBackend, StepExecutionRequest
 from ..domain.agent_protocol import AsyncAgentProtocol
-from ..domain.models import StepResult, StepOutcome, Success, Failure, Paused
+from ..domain.models import StepResult, StepOutcome
 from ..application.core.types import ExecutionFrame
 
 if TYPE_CHECKING:
@@ -44,6 +44,7 @@ class LocalBackend(ExecutionBackend):
             context=request.context,
             resources=request.resources,
             limits=request.usage_limits,
+            quota=request.quota,
             stream=request.stream,
             on_chunk=request.on_chunk,
             breach_event=request.breach_event,

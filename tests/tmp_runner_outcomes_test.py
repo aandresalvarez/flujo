@@ -3,7 +3,7 @@ import pytest
 from flujo.application.runner import Flujo
 from flujo.domain.dsl.step import Step
 from flujo.domain.dsl.pipeline import Pipeline
-from flujo.domain.models import Success, Chunk
+from flujo.domain.models import Success
 
 
 class _EchoAgent:

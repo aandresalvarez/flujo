@@ -1,8 +1,6 @@
-import pytest
-
 from flujo.application.core.executor_core import ExecutorCore
 from flujo.domain.dsl.step import Step
-from flujo.domain.models import Success, Failure, StepResult
+from flujo.domain.models import Failure, StepResult
 
 
 class _RaisingAgentStepExecutor:
@@ -36,4 +34,3 @@ async def test_executor_core_choke_point_converts_unexpected_exception_to_failur
     assert "boom" in (outcome.feedback or "")
     assert isinstance(outcome.step_result, StepResult)
     assert outcome.step_result.success is False
-

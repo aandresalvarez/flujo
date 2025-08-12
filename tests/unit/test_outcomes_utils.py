@@ -1,6 +1,4 @@
-import pytest
-
-from flujo.domain.models import StepResult, Success, Failure, StepOutcome
+from flujo.domain.models import StepResult, Failure, StepOutcome
 from flujo.domain.outcomes import to_outcome, unwrap
 
 
@@ -18,5 +16,3 @@ def test_to_outcome_and_unwrap_roundtrip_failure_with_feedback():
     assert isinstance(oc, Failure)
     un = unwrap(oc, step_name="s")
     assert un == sr
-
-

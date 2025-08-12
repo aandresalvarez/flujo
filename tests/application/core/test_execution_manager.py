@@ -1,4 +1,3 @@
-import asyncio
 import pytest
 
 from flujo.application.core.execution_manager import ExecutionManager
@@ -30,7 +29,9 @@ async def test_execution_manager_consumes_success_outcome():
     step = Step(name="s1", agent=object())
     pipeline = _FakePipeline([step])
     sr = StepResult(name="s1", success=True, output="ok")
-    em = ExecutionManager(pipeline, step_coordinator=_FakeStepCoordinator([Success(step_result=sr)]))
+    em = ExecutionManager(
+        pipeline, step_coordinator=_FakeStepCoordinator([Success(step_result=sr)])
+    )
     result = PipelineResult()
     # drain generator
     async for _ in em.execute_steps(0, data=None, context=None, result=result):
@@ -44,7 +45,10 @@ async def test_execution_manager_stops_on_failure_outcome():
     step = Step(name="s1", agent=object())
     pipeline = _FakePipeline([step])
     sr = StepResult(name="s1", success=False, output=None, feedback="bad")
-    em = ExecutionManager(pipeline, step_coordinator=_FakeStepCoordinator([Failure(error="x", feedback="bad", step_result=sr)]))
+    em = ExecutionManager(
+        pipeline,
+        step_coordinator=_FakeStepCoordinator([Failure(error="x", feedback="bad", step_result=sr)]),
+    )
     result = PipelineResult()
     outs = []
     async for item in em.execute_steps(0, data=None, context=None, result=result):
@@ -79,4 +83,3 @@ async def test_execution_manager_passes_through_chunk_and_aborted():
         items.append(it)
     assert isinstance(items[0], Chunk)
     assert isinstance(items[-1], PipelineResult)
-

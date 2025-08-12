@@ -38,11 +38,9 @@ async def test_outcomes_adapter_overhead_smoke():
         context_setter=lambda _r, _c: None,
     )
     t2 = time.perf_counter()
-    r2 = await core.execute(frame)
+    await core.execute(frame)
     t3 = time.perf_counter() - t2
 
     # Basic sanity: the adapter path shouldn't be orders of magnitude slower
     # This is a smoke check; precise thresholds belong in dedicated perf runs
     assert t3 < (t1 * 10 + 0.050)
-
-

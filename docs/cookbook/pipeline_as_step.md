@@ -324,7 +324,7 @@ assert result is not None
 
 ## Related Guides
 
-- [Pipeline DSL Guide](../pipeline_dsl.md) - Learn about the core pipeline composition patterns
+- [Pipeline DSL Guide](../user-guide/pipeline_dsl.md) - Learn about the core pipeline composition patterns
 - [Durable Workflows](../guides/durable_workflows.md) - Understand state persistence and crash recovery
-- [Pipeline Context](../pipeline_context.md) - Learn about context management and state propagation
-- [The Flujo Way](../The_flujo_way.md) - Discover the core principles and patterns of Flujo
+- [Pipeline Context](../user-guide/pipeline_context.md) - Learn about context management and state propagation
+- [The Flujo Way](../user_guide/The_flujo_way.md) - Discover the core principles and patterns of Flujo

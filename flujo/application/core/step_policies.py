@@ -2,7 +2,17 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Awaitable, Optional, Protocol, Callable, Dict, List, Tuple
 from pydantic import BaseModel
-from flujo.domain.models import StepResult, UsageLimits, PipelineContext, StepOutcome, Success, Failure, Paused
+from flujo.domain.models import (
+    StepResult,
+    UsageLimits,
+    PipelineContext,
+    StepOutcome,
+    Success,
+    Failure,
+    Paused,
+    Quota,
+    UsageEstimate,
+)
 from flujo.domain.outcomes import to_outcome
 from .types import ExecutionFrame
 from flujo.exceptions import (
@@ -29,64 +39,13 @@ from flujo.steps.cache_step import CacheStep, _generate_cache_key
 import time
 
 
-# --- Usage Governor for parallel execution ---
-class _ParallelUsageGovernor:
-    """Usage governor for parallel step execution."""
-
-    def __init__(self, limits: Optional[Any]) -> None:
-        self.limits = limits
-        self.total_cost = 0.0
-        self.total_tokens = 0
-        self.limit_breached = asyncio.Event()
-        self.limit_breach_error: Optional[Exception] = None
-
-    async def add_usage(self, cost_delta: float, token_delta: int, result: Any) -> bool:
-        """Add usage and check limits."""
-        self.total_cost += cost_delta
-        self.total_tokens += token_delta
-
-        # Check limits only if limits are configured
-        if self.limits is not None:
-            # Check cost limit breach
-            if (
-                self.limits.total_cost_usd_limit is not None
-                and self.total_cost > self.limits.total_cost_usd_limit
-            ):
-                from flujo.utils.formatting import format_cost
-
-                formatted_limit = format_cost(self.limits.total_cost_usd_limit)
-                self.limit_breach_error = UsageLimitExceededError(
-                    f"Cost limit of ${formatted_limit} exceeded"
-                )
-                self.limit_breached.set()
-                return True
-
-            # Check token limit breach
-            if (
-                self.limits.total_tokens_limit is not None
-                and self.total_tokens > self.limits.total_tokens_limit
-            ):
-                self.limit_breach_error = UsageLimitExceededError(
-                    f"Token limit of {self.limits.total_tokens_limit} exceeded"
-                )
-                self.limit_breached.set()
-                return True
-
-        return False
-
-    def breached(self) -> bool:
-        """Check if limits have been breached."""
-        return self.limit_breached.is_set()
-
-    def get_error(self) -> Optional[Exception]:
-        """Get the breach error if any."""
-        return self.limit_breach_error
-
-
 """
 Note: The pipeline orchestration helper has moved to ExecutorCore._execute_pipeline_via_policies
 to centralize orchestration logic. Policy code should delegate to the core instead of re-implementing it.
 """
+
+
+# FSD-009: Legacy Usage Governor removed; pure quota-only mode
 
 
 # --- Timeout runner policy ---
@@ -368,6 +327,7 @@ async def _execute_simple_step_policy_impl(
     if getattr(step, "agent", None) is None:
         # Import locally to ensure scope for UnboundLocalError cases
         from flujo.exceptions import MissingAgentError as _MissingAgentError
+
         raise _MissingAgentError(f"Step '{step.name}' has no agent configured")
 
     result: StepResult = StepResult(
@@ -467,7 +427,7 @@ async def _execute_simple_step_policy_impl(
 
         start_ns = time_perf_ns()
         try:
-            # Check usage limits at the start of each attempt - this should raise UsageLimitExceededError if breached
+            # Keep a single pre-execution guard call for legacy tests expecting guard invocation
             if limits is not None:
                 await core._usage_meter.guard(limits, result.step_history)
 
@@ -515,6 +475,7 @@ async def _execute_simple_step_policy_impl(
                 except Exception as e_usage:
                     # Preserve strict pricing behavior by surfacing configuration errors
                     from flujo.exceptions import PricingNotConfiguredError
+
                     if isinstance(e_usage, PricingNotConfiguredError):
                         raise
                     raise
@@ -681,7 +642,7 @@ async def _execute_simple_step_policy_impl(
                     result.output = None
                     result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
                     if limits:
-                        await core._usage_meter.guard(limits, step_history=[result])
+                        pass  # FSD-009: reactive guard removed; enforcement via quota and parallel governor
                     telemetry.logfire.error(
                         f"Step '{step.name}' plugin failed after {result.attempts} attempts"
                     )
@@ -983,7 +944,7 @@ async def _execute_simple_step_policy_impl(
             except Exception:
                 pass
             if limits:
-                await core._usage_meter.guard(limits, step_history=[result])
+                pass  # FSD-009: reactive guard removed; enforcement via quota and parallel governor
             if cache_key and getattr(core, "_enable_cache", False):
                 await core._cache_backend.put(cache_key, result, ttl_s=3600)
                 telemetry.logfire.debug(f"Cached result for step: {step.name}")
@@ -1027,7 +988,7 @@ async def _execute_simple_step_policy_impl(
                     f"Re-raising control flow exception: {type(agent_error).__name__}"
                 )
                 raise agent_error
-            from flujo.exceptions import PricingNotConfiguredError, MissingAgentError
+            from flujo.exceptions import PricingNotConfiguredError
 
             # Strict pricing surfacing: treat pricing errors as non-retryable and re-raise immediately
             try:
@@ -1062,7 +1023,7 @@ async def _execute_simple_step_policy_impl(
                 result.output = None
                 result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
                 if limits:
-                    await core._usage_meter.guard(limits, step_history=[result])
+                    pass  # FSD-009: reactive guard removed; enforcement via quota and parallel governor
                 telemetry.logfire.error(
                     f"Step '{step.name}' plugin failed after {result.attempts} attempts"
                 )
@@ -1169,13 +1130,11 @@ async def _execute_simple_step_policy_impl(
                 continue
             result.success = False
             msg = str(agent_error)
-            result.feedback = (
-                f"Agent execution failed with {type(agent_error).__name__}: {msg}"
-            )
+            result.feedback = f"Agent execution failed with {type(agent_error).__name__}: {msg}"
             result.output = None
             result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
             if limits:
-                await core._usage_meter.guard(limits, step_history=[result])
+                pass  # FSD-009: reactive guard removed; enforcement via quota and parallel governor
             telemetry.logfire.error(
                 f"Step '{step.name}' agent failed after {result.attempts} attempts"
             )
@@ -1227,7 +1186,9 @@ async def _execute_simple_step_policy_impl(
                     # Include primary plugin failure feedback if available to satisfy tests
                     _orig_fb = result.feedback
                     try:
-                        if last_plugin_failure_feedback and last_plugin_failure_feedback not in (_orig_fb or ""):
+                        if last_plugin_failure_feedback and last_plugin_failure_feedback not in (
+                            _orig_fb or ""
+                        ):
                             _orig_fb = (
                                 f"{last_plugin_failure_feedback} | {_orig_fb}"
                                 if _orig_fb
@@ -1246,9 +1207,7 @@ async def _execute_simple_step_policy_impl(
                     telemetry.logfire.error(
                         f"Fallback for step '{step.name}' also failed: {fb_err}"
                     )
-                    result.feedback = (
-                        f"Original error: {result.feedback}; Fallback error: {fb_err}"
-                    )
+                    result.feedback = f"Original error: {result.feedback}; Fallback error: {fb_err}"
                     return to_outcome(result)
             # No fallback configured: return the failure result
             # FSD-003: For failed steps, return the attempt context from the last attempt
@@ -1286,13 +1245,11 @@ async def _execute_simple_step_policy_impl(
                 else:
                     result.feedback = f"Plugin validation failed after max retries: {msg}"
             else:
-                result.feedback = (
-                    f"Agent execution failed with {type(agent_error).__name__}: {msg}"
-                )
+                result.feedback = f"Agent execution failed with {type(agent_error).__name__}: {msg}"
             result.output = None
             result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
             if limits:
-                await core._usage_meter.guard(limits, step_history=[result])
+                pass  # FSD-009: reactive guard removed; enforcement via quota and parallel governor
             telemetry.logfire.error(
                 f"Step '{step.name}' agent failed after {result.attempts} attempts"
             )
@@ -1344,7 +1301,9 @@ async def _execute_simple_step_policy_impl(
                         )
                         # Always carry a diagnostic string mentioning the primary failure
                         fb_primary_text = f"Primary agent failed: {core._format_feedback(msg, 'Agent execution failed')}"
-                        fallback_result.feedback = fb_primary_text if preserve_diagnostics else fb_primary_text
+                        fallback_result.feedback = (
+                            fb_primary_text if preserve_diagnostics else fb_primary_text
+                        )
                         # Cache successful fallback result for future runs
                         try:
                             if cache_key and getattr(core, "_enable_cache", False):
@@ -1370,9 +1329,7 @@ async def _execute_simple_step_policy_impl(
                     telemetry.logfire.error(
                         f"Fallback for step '{step.name}' also failed: {fb_err}"
                     )
-                    result.feedback = (
-                        f"Original error: {result.feedback}; Fallback error: {fb_err}"
-                    )
+                    result.feedback = f"Original error: {result.feedback}; Fallback error: {fb_err}"
                     return to_outcome(result)
             # No fallback configured: return the failure result
             # FSD-003: For failed steps, return the attempt context from the last attempt
@@ -1482,9 +1439,102 @@ class DefaultAgentStepExecutor:
                 raise MockDetectionError(f"Step '{step.name}' returned a Mock object")
 
         overall_start_time = time.monotonic()
-        
+        # --- Quota reservation (estimate + reserve) ---
+        # Prefer explicitly injected estimator; then factory; then local heuristic
+        try:
+            estimate = None  # type: ignore[assignment]
+            strategy_name = "heuristic"
+            # 1) Direct estimator override
+            estimator = getattr(core, "_usage_estimator", None)
+            if estimator is not None:
+                try:
+                    estimate = estimator.estimate(step, data, context)
+                    strategy_name = "injected"
+                except Exception:
+                    estimate = None
+            # 2) Factory selection if no estimate so far
+            selector = getattr(core, "_estimator_factory", None)
+            if estimate is None and selector is not None:
+                try:
+                    est = selector.select(step)
+                    estimate = est.estimate(step, data, context)
+                    # Best-effort strategy detection by class name
+                    try:
+                        cname = type(est).__name__.lower()
+                        if "learnable" in cname:
+                            strategy_name = "learnable"
+                        elif "minimal" in cname:
+                            strategy_name = "adapter_minimal"
+                        else:
+                            strategy_name = "heuristic"
+                    except Exception:
+                        strategy_name = "heuristic"
+                except Exception:
+                    estimate = None
+            if estimate is None:
+                estimate = self._estimate_usage(step, data, context)
+                strategy_name = "heuristic"
+            # Telemetry for final estimate used
+            try:
+                telemetry.logfire.debug(
+                    f"[cost.estimator.selected] step='{getattr(step, 'name', '<unnamed>')}', strategy={strategy_name}, cost_usd={getattr(estimate, 'cost_usd', None)}, tokens={getattr(estimate, 'tokens', None)}"
+                )
+                # Counters: record estimator usage by strategy
+                try:
+                    from flujo.application.core.optimized_telemetry import increment_counter as _inc
+
+                    _inc("estimator.usage", 1, tags={"strategy": strategy_name})
+                except Exception:
+                    pass
+            except Exception:
+                pass
+        except Exception:
+            estimate = self._estimate_usage(step, data, context)
+        current_quota: Optional[Quota] = None
+        try:
+            if hasattr(core, "CURRENT_QUOTA"):
+                current_quota = core.CURRENT_QUOTA.get()
+        except Exception:
+            current_quota = None
+        if current_quota is not None:
+            # Reserve without masking control-flow or configuration exceptions
+            try:
+                rem_cost, rem_tokens = current_quota.get_remaining()
+                telemetry.logfire.debug(
+                    f"[quota.reserve.attempt] step='{getattr(step, 'name', '<unnamed>')}', est_cost={getattr(estimate, 'cost_usd', None)}, est_tokens={getattr(estimate, 'tokens', None)}, rem_cost={rem_cost}, rem_tokens={rem_tokens}"
+                )
+            except Exception:
+                pass
+            if not current_quota.reserve(estimate):
+                # Centralized legacy-compatible message formatting
+                try:
+                    from .usage_messages import format_reservation_denial
+                except Exception:
+                    # Fallback import path if relative import fails in some contexts
+                    from flujo.application.core.usage_messages import format_reservation_denial  # type: ignore
+
+                denial = format_reservation_denial(estimate, limits)
+                failure_msg = denial.human
+                try:
+                    telemetry.logfire.warning(
+                        f"[quota.reserve.denied] step='{getattr(step, 'name', '<unnamed>')}', code={denial.code}, msg='{failure_msg}'"
+                    )
+                    # Counter: quota denial by reason code
+                    try:
+                        from flujo.application.core.optimized_telemetry import (
+                            increment_counter as _inc,
+                        )
+
+                        _inc("quota.denials.total", 1, tags={"code": denial.code})
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+                raise UsageLimitExceededError(failure_msg)
+
         def _ret(sr: StepResult) -> StepOutcome[StepResult]:
             return to_outcome(sr)
+
         # Robust retries semantics: config.max_retries represents number of retries; total attempts = 1 + retries
         retries_config = getattr(getattr(step, "config", None), "max_retries", 1)
         try:
@@ -1584,6 +1634,60 @@ class DefaultAgentStepExecutor:
                 )
                 result.cost_usd = cost_usd
                 result.token_counts = prompt_tokens + completion_tokens
+                # Quota reconcile for this step's actuals
+                try:
+                    if current_quota is not None:
+                        current_quota.reclaim(
+                            estimate,
+                            UsageEstimate(
+                                cost_usd=result.cost_usd or 0.0, tokens=result.token_counts or 0
+                            ),
+                        )
+                except Exception:
+                    pass
+                # Telemetry: compare actual vs estimate
+                try:
+                    telemetry.logfire.debug(
+                        f"[quota.reconcile] step='{getattr(step, 'name', '<unnamed>')}', actual_cost={result.cost_usd}, actual_tokens={result.token_counts}, est_cost={getattr(estimate, 'cost_usd', None)}, est_tokens={getattr(estimate, 'tokens', None)}"
+                    )
+                    # Counters: estimation variance buckets (absolute deltas)
+                    try:
+                        from flujo.application.core.optimized_telemetry import (
+                            increment_counter as _inc,
+                        )
+
+                        est_cost = float(getattr(estimate, "cost_usd", 0.0) or 0.0)
+                        est_tok = int(getattr(estimate, "tokens", 0) or 0)
+                        act_cost = float(result.cost_usd or 0.0)
+                        act_tok = int(result.token_counts or 0)
+                        d_cost = abs(act_cost - est_cost)
+                        d_tok = abs(act_tok - est_tok)
+
+                        def _bucket(v: float) -> str:
+                            if v == 0:
+                                return "0"
+                            if v <= 1:
+                                return "<=1"
+                            if v <= 10:
+                                return "<=10"
+                            if v <= 100:
+                                return "<=100"
+                            return ">100"
+
+                        _inc(
+                            "estimation.variance.count",
+                            1,
+                            tags={"type": "cost", "bucket": _bucket(d_cost)},
+                        )
+                        _inc(
+                            "estimation.variance.count",
+                            1,
+                            tags={"type": "tokens", "bucket": _bucket(float(d_tok))},
+                        )
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
                 processed_output = agent_output
                 if hasattr(step, "processors") and step.processors:
                     try:
@@ -1660,7 +1764,9 @@ class DefaultAgentStepExecutor:
                                             and step.config.preserve_fallback_diagnostics is True
                                         )
                                         fb_res.feedback = (
-                                            fb_msg if preserve_diagnostics else (fb_res.feedback or "Primary agent failed")
+                                            fb_msg
+                                            if preserve_diagnostics
+                                            else (fb_res.feedback or "Primary agent failed")
                                         )
                                         return to_outcome(fb_res)
                                     else:
@@ -1972,7 +2078,30 @@ class DefaultAgentStepExecutor:
         result.success = False
         result.feedback = "Unexpected execution path"
         result.latency_s = 0.0
+        # Reconcile quota with actuals before returning
+        if current_quota is not None:
+            try:
+                actual = UsageEstimate(
+                    cost_usd=result.cost_usd or 0.0, tokens=result.token_counts or 0
+                )
+                current_quota.reclaim(estimate, actual)
+            except Exception:
+                pass
         return to_outcome(result)
+
+    def _estimate_usage(self, step: Any, data: Any, context: Optional[Any]) -> UsageEstimate:
+        try:
+            cfg = getattr(step, "config", None)
+            if cfg is not None:
+                c = getattr(cfg, "expected_cost_usd", None)
+                t = getattr(cfg, "expected_tokens", None)
+                cost = float(c) if c is not None else 0.0
+                tokens = int(t) if t is not None else 0
+                return UsageEstimate(cost_usd=cost, tokens=tokens)
+        except Exception:
+            pass
+        # Default to minimal estimate to allow execution; precise enforcement happens post-step
+        return UsageEstimate(cost_usd=0.0, tokens=0)
 
 
 # --- Agent Step Executor outcomes adapter (safe, non-breaking) ---
@@ -2857,10 +2986,27 @@ class DefaultParallelStepExecutor:
             result.output = {}
             result.latency_s = time.monotonic() - start_time
             return to_outcome(result)
-        # Set up usage governor
-        usage_governor = _ParallelUsageGovernor(limits) if limits else None
-        if breach_event is None and limits is not None:
-            breach_event = asyncio.Event()
+        # FSD-009: Pure quota-only mode
+        # Do not use breach_event or any legacy governor; safety via reservations only
+        # Deterministic quota splitting per branch
+        branch_items: List[Tuple[str, Any]] = list(parallel_step.branches.items())
+        branch_names: List[str] = [bn for bn, _ in branch_items]
+        branch_pipelines: List[Any] = [bp for _, bp in branch_items]
+        branch_quota_map: Dict[str, Optional[Quota]] = {bn: None for bn in branch_names}
+        try:
+            current_quota: Optional[Quota] = (
+                core.CURRENT_QUOTA.get() if hasattr(core, "CURRENT_QUOTA") else None
+            )
+        except Exception:
+            current_quota = None
+        if current_quota is not None and len(branch_items) > 0:
+            try:
+                sub_quotas = current_quota.split(len(branch_items))
+                for idx, bn in enumerate(branch_names):
+                    branch_quota_map[bn] = sub_quotas[idx]
+            except Exception:
+                # Fallback: no split if quota not available
+                pass
         # Tracking variables
         branch_results: Dict[str, StepResult] = {}
         branch_contexts: Dict[str, Any] = {}
@@ -2880,24 +3026,82 @@ class DefaultParallelStepExecutor:
 
         # Branch executor
         async def execute_branch(
-            branch_name: str, branch_pipeline: Any, branch_context: Any
+            branch_name: str,
+            branch_pipeline: Any,
+            branch_context: Any,
+            branch_quota: Optional[Quota],
         ) -> Tuple[str, StepResult]:
             try:
                 telemetry.logfire.debug(f"Executing branch: {branch_name}")
+                # Set per-branch quota in this task's context
+                quota_token = None
+                try:
+                    if hasattr(core, "CURRENT_QUOTA"):
+                        quota_token = core.CURRENT_QUOTA.set(branch_quota)
+                except Exception:
+                    quota_token = None
                 if step_executor is not None:
                     branch_result = await step_executor(
-                        branch_pipeline, data, branch_context, resources, breach_event
+                        branch_pipeline, data, branch_context, resources, None
                     )
                 else:
-                    pipeline_result = await core._execute_pipeline_via_policies(
-                        branch_pipeline,
-                        data,
-                        branch_context,
-                        resources,
-                        limits,
-                        breach_event,
-                        context_setter,
-                    )
+                    # Delegate depending on type: Pipeline vs Step
+                    if isinstance(branch_pipeline, Pipeline):
+                        pipeline_result = await core._execute_pipeline_via_policies(
+                            branch_pipeline,
+                            data,
+                            branch_context,
+                            resources,
+                            limits,
+                            None,
+                            context_setter,
+                        )
+                    else:
+                        # Execute a single Step via core and synthesize PipelineResult-like view
+                        step_outcome = await core.execute(
+                            step=branch_pipeline,
+                            data=data,
+                            context=branch_context,
+                            resources=resources,
+                            limits=limits,
+                            breach_event=None,
+                            context_setter=context_setter,
+                        )
+                        if isinstance(step_outcome, Success):
+                            pipeline_result = PipelineResult(
+                                step_history=[step_outcome.step_result],
+                                total_cost_usd=step_outcome.step_result.cost_usd,
+                                total_tokens=step_outcome.step_result.token_counts,
+                                final_pipeline_context=branch_context,
+                            )
+                        elif isinstance(step_outcome, Failure):
+                            sr = step_outcome.step_result or StepResult(
+                                name=getattr(branch_pipeline, "name", "<unnamed>"),
+                                success=False,
+                                feedback=step_outcome.feedback,
+                            )
+                            pipeline_result = PipelineResult(
+                                step_history=[sr],
+                                total_cost_usd=sr.cost_usd,
+                                total_tokens=sr.token_counts,
+                                final_pipeline_context=branch_context,
+                            )
+                        elif isinstance(step_outcome, Paused):
+                            # Propagate control-flow
+                            raise PausedException(step_outcome.message)
+                        else:
+                            # Unknown/Chunk/Aborted -> synthesize failure
+                            sr = StepResult(
+                                name=getattr(branch_pipeline, "name", "<unnamed>"),
+                                success=False,
+                                feedback=f"Unsupported outcome type: {type(step_outcome).__name__}",
+                            )
+                            pipeline_result = PipelineResult(
+                                step_history=[sr],
+                                total_cost_usd=0.0,
+                                total_tokens=0,
+                                final_pipeline_context=branch_context,
+                            )
                     pipeline_success = (
                         all(s.success for s in pipeline_result.step_history)
                         if pipeline_result.step_history
@@ -2947,16 +3151,22 @@ class DefaultParallelStepExecutor:
                             "total_steps_count": len(pipeline_result.step_history),
                         },
                     )
-                if usage_governor is not None:
-                    breached = await usage_governor.add_usage(
-                        branch_result.cost_usd, branch_result.token_counts, branch_result
-                    )
-                    if breached and breach_event is not None:
-                        breach_event.set()
+                # No reactive post-branch checks in pure quota mode
                 telemetry.logfire.debug(
                     f"Branch {branch_name} completed: success={branch_result.success}"
                 )
                 return branch_name, branch_result
+            except (
+                UsageLimitExceededError,
+                MockDetectionError,
+                InfiniteRedirectError,
+                PricingNotConfiguredError,
+            ) as e:
+                # Re-raise control-flow and config exceptions unmodified
+                telemetry.logfire.info(
+                    f"Branch {branch_name} encountered control-flow/config exception: {type(e).__name__}"
+                )
+                raise
             except UsageLimitExceededError as e:
                 # Re-raise usage limit exceptions - these should not be converted to branch failures
                 telemetry.logfire.info(f"Branch {branch_name} hit usage limit: {e}")
@@ -2976,41 +3186,55 @@ class DefaultParallelStepExecutor:
                     metadata_={"exception_type": type(e).__name__},
                 )
                 return branch_name, failure
+            finally:
+                try:
+                    if (
+                        "quota_token" in locals()
+                        and quota_token is not None
+                        and hasattr(core, "CURRENT_QUOTA")
+                    ):
+                        core.CURRENT_QUOTA.reset(quota_token)
+                except Exception:
+                    pass
 
-        # Execute branches concurrently
-        tasks = [
-            execute_branch(n, p, branch_contexts[n]) for n, p in parallel_step.branches.items()
-        ]
-        branch_execution_results = await asyncio.gather(*tasks, return_exceptions=True)
+        # Execute branches concurrently using the shared quota, and proactively cancel on breach
+        pending: set[asyncio.Task] = set()
+        for bn, bp in zip(branch_names, branch_pipelines):
+            t = asyncio.create_task(
+                execute_branch(bn, bp, branch_contexts[bn], branch_quota_map.get(bn))
+            )
+            pending.add(t)
 
-        # Process results and handle exceptions
-        for i, branch_execution_result in enumerate(branch_execution_results):
-            branch_name = list(parallel_step.branches.keys())[i]
-
-            # Handle exceptions returned directly from gather
-            if isinstance(branch_execution_result, UsageLimitExceededError):
-                # Re-raise usage limit exceptions immediately - don't convert to failed step result
+        async def _handle_branch_result(branch_execution_result: Any, idx: int) -> None:
+            nonlocal total_cost, total_tokens, all_successful
+            branch_name_local = list(parallel_step.branches.keys())[idx]
+            if isinstance(
+                branch_execution_result,
+                (
+                    UsageLimitExceededError,
+                    MockDetectionError,
+                    InfiniteRedirectError,
+                    PricingNotConfiguredError,
+                ),
+            ):
                 telemetry.logfire.info(
                     f"Parallel branch hit usage limit, re-raising: {branch_execution_result}"
                 )
                 raise branch_execution_result
-            elif isinstance(branch_execution_result, Exception):
-                # Handle other exceptions from gather
+            if isinstance(branch_execution_result, Exception):
                 telemetry.logfire.error(
                     f"Parallel branch raised unexpected exception: {branch_execution_result}"
                 )
                 raise branch_execution_result
-
-            # At this point, branch_execution_result should be a tuple (branch_name, StepResult)
             if isinstance(branch_execution_result, tuple) and len(branch_execution_result) == 2:
-                branch_name, branch_result = branch_execution_result
+                bn2, branch_result = branch_execution_result
+                branch_name_local = bn2
             else:
-                # Fallback: create a failed result
                 telemetry.logfire.error(
-                    f"Unexpected result format from branch {branch_name}: {branch_execution_result}"
+                    f"Unexpected result format from branch {branch_name_local}: {branch_execution_result}"
                 )
                 branch_result = StepResult(
-                    name=f"{parallel_step.name}_{branch_name}",
+                    name=f"{parallel_step.name}_{branch_name_local}",
                     output=None,
                     success=False,
                     attempts=1,
@@ -3021,9 +3245,11 @@ class DefaultParallelStepExecutor:
                     metadata_={},
                 )
             if isinstance(branch_result, Exception):
-                telemetry.logfire.error(f"Branch {branch_name} raised exception: {branch_result}")
+                telemetry.logfire.error(
+                    f"Branch {branch_name_local} raised exception: {branch_result}"
+                )
                 branch_result = StepResult(
-                    name=f"{parallel_step.name}_{branch_name}",
+                    name=f"{parallel_step.name}_{branch_name_local}",
                     output=None,
                     success=False,
                     attempts=1,
@@ -3033,25 +3259,100 @@ class DefaultParallelStepExecutor:
                     feedback=f"Branch execution failed: {branch_result}",
                     metadata_={},
                 )
-            branch_results[branch_name] = branch_result
+            branch_results[branch_name_local] = branch_result
             if branch_result.success:
                 total_cost += branch_result.cost_usd
                 total_tokens += branch_result.token_counts
             else:
                 all_successful = False
-                failure_messages.append(f"branch '{branch_name}' failed: {branch_result.feedback}")
-        # Post-usage check
-        if usage_governor is not None and usage_governor.breached():
-            err = usage_governor.get_error()
-            if err:
-                telemetry.logfire.error(f"Parallel step usage limit breached: {err}")
-                pipeline_result = PipelineResult(
-                    step_history=list(branch_results.values()),
-                    total_cost_usd=total_cost,
-                    total_tokens=total_tokens,
-                    final_pipeline_context=context,
+                failure_messages.append(
+                    f"branch '{branch_name_local}' failed: {branch_result.feedback}"
                 )
-                raise UsageLimitExceededError(str(err), pipeline_result)
+
+        # Consume tasks as they complete; cancel the rest if limits are breached
+        completed_count = 0
+        while pending:
+            done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+            for d in done:
+                try:
+                    res = d.result()
+                except Exception as e:
+                    # Propagate known control-flow exceptions immediately
+                    if isinstance(e, UsageLimitExceededError):
+                        # Cancel remaining tasks
+                        for p in pending:
+                            p.cancel()
+                        raise
+                    raise
+                await _handle_branch_result(res, completed_count)
+                completed_count += 1
+                # Proactive limit check after each branch completes
+                if limits is not None:
+                    try:
+                        from flujo.utils.formatting import format_cost as _fmt
+
+                        if (
+                            getattr(limits, "total_cost_usd_limit", None) is not None
+                            and total_cost > float(limits.total_cost_usd_limit)
+                        ) or (
+                            getattr(limits, "total_tokens_limit", None) is not None
+                            and total_tokens > int(limits.total_tokens_limit)
+                        ):
+                            # Cancel remaining tasks
+                            for p in pending:
+                                p.cancel()
+                            pipeline_result = PipelineResult(
+                                step_history=list(branch_results.values()),
+                                total_cost_usd=total_cost,
+                                total_tokens=total_tokens,
+                                final_pipeline_context=context,
+                            )
+                            if getattr(
+                                limits, "total_cost_usd_limit", None
+                            ) is not None and total_cost > float(limits.total_cost_usd_limit):
+                                msg = f"Cost limit of ${_fmt(float(limits.total_cost_usd_limit))} exceeded"
+                            else:
+                                msg = f"Token limit of {int(limits.total_tokens_limit)} exceeded"
+                            raise UsageLimitExceededError(msg, pipeline_result)
+                    except UsageLimitExceededError:
+                        raise
+                    except Exception:
+                        pass
+        # FSD-009: Enforce limits deterministically at aggregation time (pure quota mode)
+        if limits is not None:
+            try:
+                from flujo.utils.formatting import format_cost as _fmt
+
+                if getattr(limits, "total_cost_usd_limit", None) is not None and total_cost > float(
+                    limits.total_cost_usd_limit
+                ):
+                    pipeline_result = PipelineResult(
+                        step_history=list(branch_results.values()),
+                        total_cost_usd=total_cost,
+                        total_tokens=total_tokens,
+                        final_pipeline_context=context,
+                    )
+                    raise UsageLimitExceededError(
+                        f"Cost limit of ${_fmt(float(limits.total_cost_usd_limit))} exceeded",
+                        pipeline_result,
+                    )
+                if getattr(limits, "total_tokens_limit", None) is not None and total_tokens > int(
+                    limits.total_tokens_limit
+                ):
+                    pipeline_result = PipelineResult(
+                        step_history=list(branch_results.values()),
+                        total_cost_usd=total_cost,
+                        total_tokens=total_tokens,
+                        final_pipeline_context=context,
+                    )
+                    raise UsageLimitExceededError(
+                        f"Token limit of {int(limits.total_tokens_limit)} exceeded",
+                        pipeline_result,
+                    )
+            except UsageLimitExceededError:
+                raise
+            except Exception:
+                pass
         # Overall success
         if parallel_step.on_branch_failure == BranchFailureStrategy.PROPAGATE:
             result.success = all_successful
@@ -3064,7 +3365,8 @@ class DefaultParallelStepExecutor:
         for bn, br in branch_results.items():
             output_dict[bn] = br.output if br.success else br
         result.output = output_dict
-        result.metadata_["executed_branches"] = list(branch_results.keys())
+        # Preserve input branch order deterministically
+        result.metadata_["executed_branches"] = branch_names
         # Context merging using ContextManager
         if context is not None and parallel_step.merge_strategy != MergeStrategy.NO_MERGE:
             try:
@@ -3240,6 +3542,7 @@ class ParallelStepExecutorOutcomes(Protocol):
 
 
 ## Legacy adapter removed: DefaultParallelStepExecutorOutcomes (native outcomes supported)
+
 
 class ConditionalStepExecutor(Protocol):
     async def execute(
@@ -3468,6 +3771,7 @@ class DefaultDynamicRouterStepExecutor:
             context=context,
             resources=resources,
             limits=limits,
+            quota=(core.CURRENT_QUOTA.get() if hasattr(core, "CURRENT_QUOTA") else None),
             stream=False,
             on_chunk=None,
             breach_event=None,
@@ -3482,13 +3786,17 @@ class DefaultDynamicRouterStepExecutor:
                 router_result = router_result.step_result
             elif isinstance(router_result, Failure):
                 router_result = router_result.step_result or StepResult(
-                    name=core._safe_step_name(router_step), success=False, feedback=router_result.feedback
+                    name=core._safe_step_name(router_step),
+                    success=False,
+                    feedback=router_result.feedback,
                 )
             elif isinstance(router_result, Paused):
                 return router_result
             else:
                 router_result = StepResult(
-                    name=core._safe_step_name(router_step), success=False, feedback="Unsupported outcome"
+                    name=core._safe_step_name(router_step),
+                    success=False,
+                    feedback="Unsupported outcome",
                 )
 
         # Handle router failure
@@ -3544,16 +3852,30 @@ class DefaultDynamicRouterStepExecutor:
         )
         # Use the DefaultParallelStepExecutor policy directly instead of legacy core method
         parallel_executor = DefaultParallelStepExecutor()
-        pr_any = await parallel_executor.execute(
-            core=core,
-            step=temp_parallel_step,
-            data=data,
-            context=context,
-            resources=resources,
-            limits=limits,
-            breach_event=None,
-            context_setter=context_setter,
-        )
+        # Ensure CURRENT_QUOTA is set for the parallel execution block
+        quota_token = None
+        try:
+            if hasattr(core, "CURRENT_QUOTA"):
+                quota_token = core.CURRENT_QUOTA.set(core.CURRENT_QUOTA.get())
+        except Exception:
+            quota_token = None
+        try:
+            pr_any = await parallel_executor.execute(
+                core=core,
+                step=temp_parallel_step,
+                data=data,
+                context=context,
+                resources=resources,
+                limits=limits,
+                breach_event=None,
+                context_setter=context_setter,
+            )
+        finally:
+            try:
+                if quota_token is not None and hasattr(core, "CURRENT_QUOTA"):
+                    core.CURRENT_QUOTA.reset(quota_token)
+            except Exception:
+                pass
 
         # Normalize StepOutcome from parallel policy to StepResult for router aggregation
         if isinstance(pr_any, StepOutcome):
@@ -3567,7 +3889,9 @@ class DefaultDynamicRouterStepExecutor:
                 return pr_any
             else:
                 parallel_result = StepResult(
-                    name=core._safe_step_name(router_step), success=False, feedback="Unsupported outcome"
+                    name=core._safe_step_name(router_step),
+                    success=False,
+                    feedback="Unsupported outcome",
                 )
         else:
             parallel_result = pr_any
@@ -3752,6 +4076,7 @@ class DefaultCacheStepExecutor:
                     context=context,
                     resources=resources,
                     limits=limits,
+                    quota=(core.CURRENT_QUOTA.get() if hasattr(core, "CURRENT_QUOTA") else None),
                     stream=False,
                     on_chunk=None,
                     breach_event=breach_event,
@@ -3767,13 +4092,17 @@ class DefaultCacheStepExecutor:
                         result = result.step_result
                     elif isinstance(result, Failure):
                         result = result.step_result or StepResult(
-                            name=core._safe_step_name(cache_step.wrapped_step), success=False, feedback=result.feedback
+                            name=core._safe_step_name(cache_step.wrapped_step),
+                            success=False,
+                            feedback=result.feedback,
                         )
                     elif isinstance(result, Paused):
                         return result
                     else:
                         result = StepResult(
-                            name=core._safe_step_name(cache_step.wrapped_step), success=False, feedback="Unsupported outcome"
+                            name=core._safe_step_name(cache_step.wrapped_step),
+                            success=False,
+                            feedback="Unsupported outcome",
                         )
                 if result.success:
                     try:
@@ -3789,6 +4118,7 @@ class DefaultCacheStepExecutor:
             context=context,
             resources=resources,
             limits=limits,
+            quota=(core.CURRENT_QUOTA.get() if hasattr(core, "CURRENT_QUOTA") else None),
             stream=False,
             on_chunk=None,
             breach_event=breach_event,

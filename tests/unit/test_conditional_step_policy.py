@@ -5,7 +5,8 @@ from flujo.application.core.step_policies import DefaultConditionalStepExecutor
 from flujo.domain.dsl.step import Step
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.dsl.conditional import ConditionalStep
-from flujo.domain.models import Success, Failure, Paused, StepResult
+from flujo.domain.models import Success, Failure
+from flujo.domain.dsl.parallel import ParallelStep
 
 
 @pytest.mark.asyncio
@@ -92,3 +93,43 @@ async def test_conditional_policy_returns_failure_on_paused_branch():
     )
     # Conditional policy translates Paused into Failure at this layer
     assert isinstance(out, Failure)
+
+
+@pytest.mark.asyncio
+async def test_conditional_branch_executes_parallel_with_quota_split():
+    core = ExecutorCore()
+
+    class _EchoAgent:
+        async def run(self, payload, context=None, resources=None, **kwargs):
+            return payload
+
+    # Build a parallel step used inside a conditional branch
+    branches = {
+        "a": Pipeline.from_step(Step(name="A", agent=_EchoAgent())),
+        "b": Pipeline.from_step(Step(name="B", agent=_EchoAgent())),
+    }
+    parallel = ParallelStep(name="p_in_cond", branches=branches)
+
+    def pick_branch(data, ctx):
+        return data.get("branch", "p")
+
+    cond = ConditionalStep(
+        name="cond",
+        condition_callable=pick_branch,
+        branches={
+            "p": parallel,
+        },
+        default_branch_pipeline=Pipeline.from_step(Step(name="DEF", agent=_EchoAgent())),
+    )
+
+    out = await DefaultConditionalStepExecutor().execute(
+        core,
+        cond,
+        data={"branch": "p"},
+        context=None,
+        resources=None,
+        limits=None,
+        context_setter=None,
+        _fallback_depth=0,
+    )
+    assert isinstance(out, Success)

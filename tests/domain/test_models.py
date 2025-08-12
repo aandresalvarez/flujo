@@ -1,7 +1,6 @@
 import json
 from typing import Any
 
-import pytest
 
 from flujo.domain.models import (
     StepResult,
@@ -72,4 +71,3 @@ def test_chunk_outcome_instantiation_and_serialization() -> None:
     payload = json.loads(dumped)
     assert payload["data"] == "partial"
     assert payload["step_name"] == "step-1"
-

@@ -37,5 +37,3 @@ async def test_simple_executor_path_returns_outcome_in_backend_path():
     assert isinstance(outcome, Success)
     assert outcome.step_result.success is True
     assert outcome.step_result.output == {"ok": True}
-
-

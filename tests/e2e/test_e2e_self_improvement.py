@@ -1,6 +1,5 @@
 import functools
 import pytest
-import httpx
 from flujo.application.eval_adapter import run_pipeline_async
 from flujo.application.self_improvement import (
     evaluate_and_improve,

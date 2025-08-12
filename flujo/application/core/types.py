@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 from flujo.domain.dsl.step import Step
 from ...domain.resources import AppResources
-from ...domain.models import UsageLimits, PipelineResult
+from ...domain.models import UsageLimits, PipelineResult, Quota
 import asyncio
 
 
@@ -42,6 +42,9 @@ class ExecutionFrame(Generic[TContext_w_Scratch]):
 
     # Context management
     context_setter: Callable[[PipelineResult[Any], Optional[Any]], None]
+
+    # Optional quota for proactive reservations
+    quota: Optional[Quota] = None
 
     # Optional parameters for backward compatibility and advanced features
     result: Optional[Any] = None  # For backward compatibility

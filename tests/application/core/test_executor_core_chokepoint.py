@@ -39,5 +39,3 @@ async def test_execute_frame_converts_unexpected_exception_into_failure_outcome(
     # Feedback should include the original error message
     fb = (outcome.feedback or "") + " " + (outcome.step_result.feedback or "")
     assert "kaboom" in fb
-
-

@@ -242,15 +242,11 @@ disable_error_code = [
   "arg-type",
 ]
 
-[tool.ruff]
-line-length = 100
 
-[tool.ruff.lint]
-# Allow pytest.importorskip() pattern in benchmark tests
-per-file-ignores = [
-    "tests/benchmarks/*.py" = ["E402"],
-    "tests/unit/test_extract.py" = ["E402"],
-]
+[tool.ruff]
+
+line-length = 100
+per-file-ignores = { "tests/benchmarks/*.py" = ["E402"], "tests/unit/test_extract.py" = ["E402"] }
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

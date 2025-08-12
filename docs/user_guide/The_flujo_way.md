@@ -230,7 +230,7 @@ runner = Flujo(pipeline, usage_limits=UsageLimits(total_cost_usd_limit=0.50))
 ```
 
 > [!TIP]
-> **Advanced Cost Control:** For complex scenarios involving loops, parallel execution, and nested workflows, see the [Budget-Aware Workflows](cookbook/budget_aware_workflows.md) guide, which demonstrates how the Usage Governor works with `LoopStep` and `ParallelStep` constructs.
+> **Advanced Cost Control:** For complex scenarios involving loops, parallel execution, and nested workflows, see the [Budget-Aware Workflows](../cookbook/budget_aware_workflows.md) guide, which demonstrates how the Usage Governor works with `LoopStep` and `ParallelStep` constructs.
 
 ### 🪄 Real-time Logs
 

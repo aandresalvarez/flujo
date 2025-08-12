@@ -67,6 +67,7 @@ async def test_simple_dummy_remote_backend_execute_step():
 
     outcome = await backend.execute_step(request)
     from flujo.domain.models import Success
+
     assert isinstance(outcome, Success)
     result = outcome.step_result
     assert result.name == "test_step"
@@ -95,6 +96,7 @@ async def test_simple_dummy_remote_backend_execute_step_with_context():
 
     outcome = await backend.execute_step(request)
     from flujo.domain.models import Success
+
     assert isinstance(outcome, Success)
     result = outcome.step_result
     assert result.name == "test_step"
@@ -121,6 +123,7 @@ async def test_simple_dummy_remote_backend_execute_step_with_resources():
 
     outcome = await backend.execute_step(request)
     from flujo.domain.models import Success
+
     assert isinstance(outcome, Success)
     result = outcome.step_result
     assert result.name == "test_step"
@@ -146,6 +149,7 @@ async def test_simple_dummy_remote_backend_execute_step_agent_without_run():
 
     outcome = await backend.execute_step(request)
     from flujo.domain.models import Success
+
     assert isinstance(outcome, Success)
     result = outcome.step_result
     assert result.name == "test_step"
