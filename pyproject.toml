@@ -245,6 +245,9 @@ disable_error_code = [
 
 [tool.ruff]
 
+[tool.ruff.lint]
+per-file-ignores = { "tests/benchmarks/*.py" = ["E402"], "tests/unit/test_extract.py" = ["E402"] }
+
 line-length = 100
 
 [tool.pytest.ini_options]
