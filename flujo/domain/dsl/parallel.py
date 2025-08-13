@@ -43,7 +43,7 @@ class ParallelStep(Step[Any, Any], Generic[TContext]):
     )
     merge_strategy: Union[MergeStrategy, Callable[[TContext_w_Scratch, Dict[str, Any]], None]] = (
         Field(
-            default=MergeStrategy.NO_MERGE,
+            default=MergeStrategy.CONTEXT_UPDATE,
             description="Strategy for merging successful branch contexts back into the main context.",
         )
     )

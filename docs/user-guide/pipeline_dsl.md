@@ -689,7 +689,8 @@ parallel = Step.parallel(
 
 Available `MergeStrategy` values:
 
-- `NO_MERGE` (default) – discard branch context modifications.
+- `CONTEXT_UPDATE` (default) – apply validated updates; conflicts on the same field now raise a configuration error unless resolved via `field_mapping`.
+- `ERROR_ON_CONFLICT` – explicitly fail on any conflicting field updates.
 - `OVERWRITE` – context from the last declared successful branch overwrites matching fields.
 - `MERGE_SCRATCHPAD` – merge `scratchpad` dictionaries from all successful branches. Branch scratchpads are merged in alphabetical order and key collisions raise a `ValueError`.
 

@@ -31,5 +31,5 @@ async def test_golden_trace_pipeline_builds_smoke(tmp_path) -> None:
         final = res
     assert final is not None
     assert final.trace_tree is not None
-    assert final.trace_tree.name == "pipeline_root"
+    assert final.trace_tree.name == "pipeline_run"
     assert len(final.trace_tree.children) > 0

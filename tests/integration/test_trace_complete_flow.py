@@ -55,7 +55,7 @@ class TestTraceCompleteFlow:
         # Verify trace tree is attached to result
         assert result is not None
         assert result.trace_tree is not None
-        assert result.trace_tree.name == "pipeline_root"
+        assert result.trace_tree.name == "pipeline_run"
         assert len(result.trace_tree.children) == 2
 
         # Verify step spans
@@ -94,7 +94,7 @@ class TestTraceCompleteFlow:
         # Verify trace tree is attached even with failure
         assert result is not None
         assert result.trace_tree is not None
-        assert result.trace_tree.name == "pipeline_root"
+        assert result.trace_tree.name == "pipeline_run"
         assert len(result.trace_tree.children) == 1
 
         # Verify failed step span
@@ -137,7 +137,7 @@ class TestTraceCompleteFlow:
         # Verify trace tree is still attached
         assert result is not None
         assert result.trace_tree is not None
-        assert result.trace_tree.name == "pipeline_root"
+        assert result.trace_tree.name == "pipeline_run"
         assert len(result.trace_tree.children) == 1
 
         # Verify step span

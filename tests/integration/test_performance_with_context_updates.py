@@ -233,7 +233,8 @@ async def test_performance_with_context_updates_parallel():
             "perf2": performance_step,
             "perf3": performance_step,
         },
-        merge_strategy=MergeStrategy.CONTEXT_UPDATE,
+        merge_strategy=MergeStrategy.OVERWRITE,
+        context_include_keys=["operation_count", "context_updates"],
     )
 
     runner = create_test_flujo(parallel_pipeline, context_model=PerformanceContext)

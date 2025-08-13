@@ -46,7 +46,7 @@ async def test_parallel_step_result_structure() -> None:
         "x": Step.model_validate({"name": "x", "agent": AddAgent(3)}),
         "y": Step.model_validate({"name": "y", "agent": AddAgent(4)}),
     }
-    parallel = Step.parallel("par_out", branches)
+    parallel = Step.parallel("par_out", branches, merge_strategy=MergeStrategy.OVERWRITE)
     runner = create_test_flujo(parallel, context_model=Ctx)
     result = await gather_result(runner, 1)
     step_result = result.step_history[-1]

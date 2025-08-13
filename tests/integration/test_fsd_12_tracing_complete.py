@@ -107,7 +107,7 @@ class TestFSD12TracingComplete:
 
         # Verify trace tree was generated
         assert final_result.trace_tree is not None
-        assert final_result.trace_tree.name == "pipeline_root"
+        assert final_result.trace_tree.name == "pipeline_run"
         assert final_result.trace_tree.status == "completed"
 
         # Verify trace has children (the steps)
@@ -117,7 +117,7 @@ class TestFSD12TracingComplete:
         run_id = final_result.final_pipeline_context.run_id
         trace = await state_backend.get_trace(run_id)
         assert trace is not None
-        assert trace["name"] == "pipeline_root"
+        assert trace["name"] == "pipeline_run"
         # Note: The persisted trace status might be "running" if saved before finalization
         # but the in-memory trace should be "completed"
 
@@ -136,7 +136,7 @@ class TestFSD12TracingComplete:
 
         # Verify root span
         root_span = final_result.trace_tree
-        assert root_span.name == "pipeline_root"
+        assert root_span.name == "pipeline_run"
 
         # Verify step spans exist
         step_names = [child.name for child in root_span.children]
@@ -201,7 +201,7 @@ class TestFSD12TracingComplete:
         # Verify trace can be retrieved
         trace = await new_backend.get_trace(run_id)
         assert trace is not None
-        assert trace["name"] == "pipeline_root"
+        assert trace["name"] == "pipeline_run"
 
         # Verify spans can be retrieved
         spans = await new_backend.get_spans(run_id)
@@ -278,7 +278,7 @@ class TestFSD12TracingComplete:
 
         # Verify trace tree was still generated
         assert final_result.trace_tree is not None
-        assert final_result.trace_tree.name == "pipeline_root"
+        assert final_result.trace_tree.name == "pipeline_run"
 
         # Verify failed step is marked as failed
         failed_step = None

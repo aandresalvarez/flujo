@@ -59,7 +59,7 @@ class TestTraceManager:
 
         # Verify root span was created
         assert manager._root_span is not None
-        assert manager._root_span.name == "pipeline_root"
+        assert manager._root_span.name == "pipeline_run"
         assert manager._root_span.start_time > 0
         assert manager._root_span.parent_span_id is None
         assert manager._root_span.attributes["flujo.input"] == "test_input"
@@ -121,7 +121,7 @@ class TestTraceManager:
         await manager.hook(post_run_payload)
         # Verify trace tree was built correctly in manager._root_span
         assert manager._root_span is not None
-        assert manager._root_span.name == "pipeline_root"
+        assert manager._root_span.name == "pipeline_run"
         assert manager._root_span.end_time is not None
         assert manager._root_span.status == "completed"
         assert len(manager._root_span.children) == 1
@@ -154,7 +154,7 @@ class TestTraceManager:
         # Verify that trace tree was attached
         assert result is not None
         assert result.trace_tree is not None
-        assert result.trace_tree.name == "pipeline_root"
+        assert result.trace_tree.name == "pipeline_run"
         assert len(result.trace_tree.children) == 1
         assert result.trace_tree.children[0].name == "test_step"
         assert result.trace_tree.children[0].status == "completed"

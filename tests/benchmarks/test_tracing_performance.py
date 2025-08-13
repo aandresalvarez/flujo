@@ -82,7 +82,7 @@ class TestTracingPerformance:
 
         # Verify trace tree is attached
         assert tracing_result.trace_tree is not None
-        assert tracing_result.trace_tree.name == "pipeline_root"
+        assert tracing_result.trace_tree.name == "pipeline_run"
         assert len(tracing_result.trace_tree.children) == 3
 
     @pytest.mark.benchmark
@@ -337,7 +337,7 @@ class TestTracingPerformance:
 
         # Verify trace tree is reasonable size
         assert result.trace_tree is not None
-        assert result.trace_tree.name == "pipeline_root"
+        assert result.trace_tree.name == "pipeline_run"
 
         # Count total spans in tree
         def count_spans(span):

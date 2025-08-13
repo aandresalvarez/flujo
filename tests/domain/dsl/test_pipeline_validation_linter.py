@@ -1,0 +1,181 @@
+from __future__ import annotations
+
+from typing import Any
+
+from flujo.domain.dsl import Step, Pipeline
+from flujo.domain.dsl.step import MergeStrategy
+from flujo.domain.dsl.parallel import ParallelStep
+
+
+async def _id(x: Any) -> Any:
+    return x
+
+
+def test_validate_graph_detects_merge_conflict_with_field_mapping() -> None:
+    p = ParallelStep(
+        name="P",
+        branches={
+            "a": Pipeline.from_step(Step.from_callable(_id, name="a")),
+            "b": Pipeline.from_step(Step.from_callable(_id, name="b")),
+        },
+        merge_strategy=MergeStrategy.CONTEXT_UPDATE,
+        field_mapping={"a": ["value"], "b": ["value"]},
+    )
+    report = Pipeline.model_validate({"steps": [p]}).validate_graph()
+    assert any(f.rule_id == "V-P1" for f in report.errors)
+
+
+def test_validate_graph_warns_unbound_output_without_updates_context() -> None:
+    s1 = Step.from_callable(_id, name="producer")
+
+    async def _noop(_: Any) -> Any:
+        return None
+
+    s2 = Step.from_callable(_noop, name="consumer")
+    # simulate a consumer that does not take prior output (object input)
+    s2.__step_input_type__ = object
+    report = (Pipeline.from_step(s1) >> s2).validate_graph()
+    assert any(f.rule_id == "V-A5" for f in report.warnings)
+
+
+def test_validate_graph_incompatible_fallback_signature() -> None:
+    async def takes_str(x: str) -> str:
+        return x
+
+    async def takes_int(x: int) -> int:
+        return x
+
+    primary = Step.from_callable(takes_str, name="primary")
+    fb = Step.from_callable(takes_int, name="fallback")
+    primary.fallback_step = fb
+
+    report = Pipeline.from_step(primary).validate_graph()
+    assert any(f.rule_id == "V-F1" for f in report.errors)
+
+
+def test_parallel_conflict_ignored_when_ignore_branch_names_true() -> None:
+    p = ParallelStep(
+        name="P",
+        branches={
+            "a": Pipeline.from_step(Step.from_callable(_id, name="a")),
+            "b": Pipeline.from_step(Step.from_callable(_id, name="b")),
+        },
+        merge_strategy=MergeStrategy.CONTEXT_UPDATE,
+        field_mapping={"a": ["value"], "b": ["value"]},
+        ignore_branch_names=True,
+    )
+    report = Pipeline.model_validate({"steps": [p]}).validate_graph()
+    assert not any(f.rule_id == "V-P1" for f in report.errors)
+
+
+def test_parallel_no_conflict_check_when_not_context_update() -> None:
+    p = ParallelStep(
+        name="P",
+        branches={"a": Pipeline.from_step(Step.from_callable(_id, name="a"))},
+        merge_strategy=MergeStrategy.OVERWRITE,
+        field_mapping={"a": ["value"]},
+    )
+    report = Pipeline.model_validate({"steps": [p]}).validate_graph()
+    assert not any(f.rule_id.startswith("V-P1") for f in (report.errors + report.warnings))
+
+
+def test_parallel_conflict_with_include_keys_no_field_mapping() -> None:
+    p = ParallelStep(
+        name="P",
+        branches={
+            "a": Pipeline.from_step(Step.from_callable(_id, name="a")),
+            "b": Pipeline.from_step(Step.from_callable(_id, name="b")),
+        },
+        merge_strategy=MergeStrategy.CONTEXT_UPDATE,
+        context_include_keys=["value"],
+        field_mapping=None,
+    )
+    report = Pipeline.model_validate({"steps": [p]}).validate_graph()
+    assert any(f.rule_id == "V-P1" for f in report.errors)
+
+
+def test_unbound_output_not_warned_when_updates_context_true() -> None:
+    async def a(x: int) -> int:  # type: ignore[override]
+        return x
+
+    async def b(_: object) -> None:  # type: ignore[override]
+        return None
+
+    s1 = Step.from_callable(a, name="a", updates_context=True)
+    s2 = Step.from_callable(b, name="b")
+    s2.__step_input_type__ = object
+    report = (Pipeline.from_step(s1) >> s2).validate_graph()
+    assert not any(f.rule_id == "V-A5" for f in report.warnings)
+
+
+def test_fallback_signature_compatible_ok() -> None:
+    async def f(x: int) -> int:  # type: ignore[override]
+        return x
+
+    primary = Step.from_callable(f, name="p")
+    fb = Step.from_callable(f, name="fb")
+    primary.fallback_step = fb
+    report = Pipeline.from_step(primary).validate_graph()
+    assert not any(f.rule_id == "V-F1" for f in report.errors)
+
+
+def test_type_mismatch_between_steps_reports_V_A2() -> None:
+    async def a(x: int) -> int:  # type: ignore[override]
+        return x
+
+    async def b(x: str) -> str:  # type: ignore[override]
+        return x
+
+    p = Pipeline.from_step(Step.from_callable(a, name="a")) >> Step.from_callable(b, name="b")
+    report = p.validate_graph()
+    assert any(f.rule_id == "V-A2" for f in report.errors)
+
+
+def test_missing_agent_simple_step_reports_V_A1() -> None:
+    naked = Step(name="naked")  # agent=None by default
+    report = Pipeline.from_step(naked).validate_graph()
+    assert any(f.rule_id == "V-A1" for f in report.errors)
+
+
+def test_no_missing_agent_error_for_hitl_step() -> None:
+    from flujo.domain.dsl.step import HumanInTheLoopStep
+
+    hitl = HumanInTheLoopStep(name="hitl")
+    report = Pipeline.from_step(hitl).validate_graph()
+    assert not any(f.rule_id == "V-A1" for f in report.errors)
+
+
+def test_reused_step_instance_warns_V_A3() -> None:
+    s = Step.from_callable(_id, name="dup")
+    p = Pipeline.model_construct(steps=[s, s])
+    report = p.validate_graph()
+    assert any(f.rule_id == "V-A3" for f in report.warnings)
+
+
+def test_signature_analysis_failure_warns(monkeypatch) -> None:  # type: ignore[no-redef]
+    # Create step before monkeypatch so type inference succeeds
+    s = Step.from_callable(_id, name="s")
+
+    import flujo.signature_tools as st
+
+    def _boom(*_args: Any, **_kw: Any) -> Any:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(st, "analyze_signature", _boom)
+    report = Pipeline.from_step(s).validate_graph()
+    assert any(f.rule_id == "V-A4-ERR" for f in report.warnings)
+
+
+def test_suggestions_present_for_rules() -> None:
+    async def a(x: int) -> int:  # type: ignore[override]
+        return x
+
+    async def b(_: object) -> None:  # type: ignore[override]
+        return None
+
+    s1 = Step.from_callable(a, name="a")
+    s2 = Step.from_callable(b, name="b")
+    s2.__step_input_type__ = object
+    rep = (Pipeline.from_step(s1) >> s2).validate_graph()
+    sug = next(f.suggestion for f in rep.warnings if f.rule_id == "V-A5")
+    assert sug is not None and "updates_context" in sug

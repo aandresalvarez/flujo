@@ -24,6 +24,7 @@ from flujo.exceptions import (
     PausedException,
     InfiniteRedirectError,
     PricingNotConfiguredError,
+    ConfigurationError,
 )
 from flujo.cost import extract_usage_metrics
 from flujo.utils.performance import time_perf_ns, time_perf_ns_to_seconds
@@ -494,6 +495,12 @@ async def _execute_simple_step_policy_impl(
                     options["top_k"] = cfg.top_k
                 if getattr(cfg, "top_p", None) is not None:
                     options["top_p"] = cfg.top_p
+            # Inject step execution identifiers for ReplayAgent (FSD-013)
+            try:
+                options["step_name"] = getattr(step, "name", "unknown")
+                options["attempt_number"] = int(attempt)
+            except Exception:
+                pass
 
             try:
                 agent_output = await core._agent_runner.run(
@@ -532,6 +539,24 @@ async def _execute_simple_step_policy_impl(
                     # Re-raise strict pricing errors immediately
                     raise
                 raise
+            # Attach raw LLM response into step metadata for replay (FSD-013)
+            try:
+                if getattr(step, "agent", None) is not None:
+                    raw_resp = None
+                    # Support AsyncAgentWrapper and compatible agents exposing last raw response
+                    if hasattr(step.agent, "_last_raw_response"):
+                        raw_resp = getattr(step.agent, "_last_raw_response")
+                    # Fallback: if the agent_output wraps an output with usage, also persist it
+                    if raw_resp is None and hasattr(agent_output, "usage"):
+                        raw_resp = agent_output
+                    if raw_resp is not None:
+                        if result.metadata_ is None:
+                            result.metadata_ = {}
+                        result.metadata_["raw_llm_response"] = raw_resp
+            except Exception:
+                # Never fail a step due to metadata capture
+                pass
+
             result.cost_usd = cost_usd
             result.token_counts = prompt_tokens + completion_tokens
             await core._usage_meter.add(cost_usd, prompt_tokens, completion_tokens)
@@ -3427,13 +3452,54 @@ class DefaultParallelStepExecutor:
                 }
 
                 if parallel_step.merge_strategy == MergeStrategy.CONTEXT_UPDATE:
+                    # Helper: detect conflicts in simple fields between two contexts
+                    def _detect_conflicts(target_ctx: Any, source_ctx: Any) -> None:
+                        try:
+                            # Prefer model_dump when available
+                            if hasattr(source_ctx, "model_dump"):
+                                src_fields = source_ctx.model_dump(exclude_none=True)
+                            elif hasattr(source_ctx, "dict"):
+                                src_fields = source_ctx.dict(exclude_none=True)
+                            else:
+                                src_fields = {
+                                    k: v
+                                    for k, v in getattr(source_ctx, "__dict__", {}).items()
+                                    if not str(k).startswith("_")
+                                }
+                        except Exception:
+                            src_fields = {}
+                        for _fname, _sval in src_fields.items():
+                            if str(_fname).startswith("_"):
+                                continue
+                            if hasattr(target_ctx, _fname):
+                                _tval = getattr(target_ctx, _fname)
+                                # Only consider non-container simple conflicts
+                                if not isinstance(_tval, (dict, list)) and not isinstance(
+                                    _sval, (dict, list)
+                                ):
+                                    if _tval is not None and _sval is not None:
+                                        try:
+                                            differs = _tval != _sval
+                                        except Exception:
+                                            differs = True
+                                        if differs:
+                                            from flujo.exceptions import (
+                                                ConfigurationError as _CfgErr,
+                                            )
+
+                                            raise _CfgErr(
+                                                f"Merge conflict for key '{_fname}'. Set an explicit merge strategy or field_mapping in your ParallelStep."
+                                            )
+
                     for n, bc in branch_ctxs.items():
                         if parallel_step.field_mapping and n in parallel_step.field_mapping:
                             for f in parallel_step.field_mapping[n]:
                                 if hasattr(bc, f):
                                     setattr(context, f, getattr(bc, f))
                         else:
-                            # Use ContextManager for safe merging
+                            # Enforce conflict detection before merging, with simple accumulator heuristic
+                            _detect_conflicts(context, bc)
+                            # Then perform safe merge via ContextManager to satisfy observability in tests
                             context = ContextManager.merge(context, bc)
                 elif parallel_step.merge_strategy == MergeStrategy.MERGE_SCRATCHPAD:
                     if not hasattr(context, "scratchpad"):
@@ -3462,6 +3528,12 @@ class DefaultParallelStepExecutor:
                                 if hasattr(bc, "scratchpad"):
                                     for key, val in bc.scratchpad.items():
                                         context.scratchpad[key] = val
+                elif parallel_step.merge_strategy == MergeStrategy.ERROR_ON_CONFLICT:
+                    # Merge each branch strictly erroring on conflicts
+                    from flujo.utils.context import safe_merge_context_updates as _merge
+
+                    for n, bc in branch_ctxs.items():
+                        _merge(context, bc, merge_strategy=MergeStrategy.ERROR_ON_CONFLICT)
                 elif callable(parallel_step.merge_strategy):
                     parallel_step.merge_strategy(context, branch_ctxs)
 
@@ -3541,6 +3613,11 @@ class DefaultParallelStepExecutor:
                             context.branch_results = merged_branch_results
 
                 result.branch_context = context
+            except ConfigurationError as e:
+                # Fail the entire parallel step with a clear error message
+                result.success = False
+                result.feedback = str(e)
+                result.branch_context = context
             except Exception as e:
                 telemetry.logfire.error(f"Context merging failed: {e}")
         # Finalize result
@@ -3556,20 +3633,22 @@ class DefaultParallelStepExecutor:
             )
         else:
             # Enhanced detailed failure feedback aggregation
-            total_branches = len(parallel_step.branches)
-            successful_branches_count = total_branches - len(failure_messages)
+            # If feedback already set (e.g., ConfigurationError message), preserve it
+            if not result.feedback:
+                total_branches = len(parallel_step.branches)
+                successful_branches_count = total_branches - len(failure_messages)
 
-            # Format detailed failure information following Flujo best practices
-            if len(failure_messages) == 1:
-                # Single failure - use direct message format for compatibility
-                result.feedback = failure_messages[0]
-            else:
-                # Multiple failures - structured list with summary
-                summary = f"Parallel step failed: {len(failure_messages)} of {total_branches} branches failed"
-                if successful_branches_count > 0:
-                    summary += f" ({successful_branches_count} succeeded)"
-                detailed_feedback = "; ".join(failure_messages)
-                result.feedback = f"{summary}. Failures: {detailed_feedback}"
+                # Format detailed failure information following Flujo best practices
+                if len(failure_messages) == 1:
+                    # Single failure - use direct message format for compatibility
+                    result.feedback = failure_messages[0]
+                else:
+                    # Multiple failures - structured list with summary
+                    summary = f"Parallel step failed: {len(failure_messages)} of {total_branches} branches failed"
+                    if successful_branches_count > 0:
+                        summary += f" ({successful_branches_count} succeeded)"
+                    detailed_feedback = "; ".join(failure_messages)
+                    result.feedback = f"{summary}. Failures: {detailed_feedback}"
         return to_outcome(result)
 
 

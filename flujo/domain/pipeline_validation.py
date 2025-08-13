@@ -12,6 +12,7 @@ class ValidationFinding(BaseModel):
     severity: Literal["error", "warning"]
     message: str
     step_name: Optional[str] = None
+    suggestion: Optional[str] = None
 
 
 class ValidationReport(BaseModel):

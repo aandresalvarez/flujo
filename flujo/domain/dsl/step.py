@@ -70,8 +70,10 @@ class MergeStrategy(Enum):
     NO_MERGE = "no_merge"
     OVERWRITE = "overwrite"
     MERGE_SCRATCHPAD = "merge_scratchpad"
-    CONTEXT_UPDATE = "context_update"  # New strategy for proper context updates with validation
+    CONTEXT_UPDATE = "context_update"  # Proper context updates with validation
+    ERROR_ON_CONFLICT = "error_on_conflict"  # Explicitly error on any conflicting field
     KEEP_FIRST = "keep_first"  # Keep first occurrence of each key when merging
+    # Note: CONTEXT_UPDATE performs conflict detection at policy level and raises on conflicts
 
 
 class BranchFailureStrategy(Enum):
@@ -667,7 +669,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         context_include_keys: Optional[List[str]] = None,
         merge_strategy: Union[
             MergeStrategy, Callable[[ContextModelT, ContextModelT], None]
-        ] = MergeStrategy.NO_MERGE,
+        ] = MergeStrategy.CONTEXT_UPDATE,
         on_branch_failure: BranchFailureStrategy = BranchFailureStrategy.PROPAGATE,
         field_mapping: Optional[Dict[str, List[str]]] = None,
         ignore_branch_names: bool = False,
@@ -697,7 +699,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         context_include_keys: Optional[List[str]] = None,
         merge_strategy: Union[
             MergeStrategy, Callable[[ContextModelT, ContextModelT], None]
-        ] = MergeStrategy.NO_MERGE,
+        ] = MergeStrategy.CONTEXT_UPDATE,
         on_branch_failure: BranchFailureStrategy = BranchFailureStrategy.PROPAGATE,
         field_mapping: Optional[Dict[str, List[str]]] = None,
         **config_kwargs: Any,
