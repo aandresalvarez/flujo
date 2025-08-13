@@ -10,6 +10,8 @@ import logging
 import os
 
 from pydantic import BaseModel, ValidationError
+from flujo.domain.dsl.step import MergeStrategy
+from flujo.exceptions import ConfigurationError
 
 logger = logging.getLogger(__name__)
 _VERBOSE_DEBUG: bool = bool(os.getenv("FLUJO_VERBOSE_CONTEXT_DEBUG"))
@@ -120,6 +122,7 @@ def safe_merge_context_updates(
     source_context: T,
     context_type: Optional[Type[T]] = None,
     excluded_fields: Optional[set[str]] = None,
+    merge_strategy: Optional[MergeStrategy] = None,
 ) -> bool:
     """
     Safely merge context updates from source to target, respecting Pydantic validation.
@@ -261,6 +264,30 @@ def safe_merge_context_updates(
                     logger.debug(f"current_value: {current_value}")
                     logger.debug(f"actual_source_value: {actual_source_value}")
 
+                # Conflict detection for differing simple values when strategy requires it
+                # Note: Only applies when both contexts have the field and values differ
+                if merge_strategy in (
+                    MergeStrategy.ERROR_ON_CONFLICT,
+                    MergeStrategy.CONTEXT_UPDATE,
+                ):
+                    # Only treat as conflict for non-container fields
+                    is_container = isinstance(current_value, (dict, list)) or isinstance(
+                        actual_source_value, (dict, list)
+                    )
+                    if (
+                        not is_container
+                        and current_value is not None
+                        and actual_source_value is not None
+                    ):
+                        try:
+                            values_differ = current_value != actual_source_value
+                        except Exception:
+                            values_differ = True
+                        if values_differ:
+                            raise ConfigurationError(
+                                f"Merge conflict for key '{field_name}'. Set an explicit merge strategy or field_mapping in your ParallelStep."
+                            )
+
                 # Perform deep merge for dictionaries and lists
                 if isinstance(current_value, dict) and isinstance(actual_source_value, dict):
                     if _VERBOSE_DEBUG:
@@ -335,6 +362,9 @@ def safe_merge_context_updates(
         else:
             return True
 
+    except ConfigurationError:
+        # Bubble up to policy enforcement to fail parallel step with clear message
+        raise
     except Exception as e:
         logger.error(f"Failed to merge context updates: {e}")
         return False

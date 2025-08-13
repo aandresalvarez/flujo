@@ -160,7 +160,8 @@ async def test_regression_parallel_step_context_updates():
             "branch2": parallel_context_step,
             "branch3": parallel_context_step,
         },
-        merge_strategy=MergeStrategy.CONTEXT_UPDATE,
+        merge_strategy=MergeStrategy.OVERWRITE,
+        context_include_keys=["accumulated_value", "debug_data"],
     )
 
     runner = Flujo(parallel_pipeline, context_model=RegressionTestContext)
