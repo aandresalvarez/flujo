@@ -15,7 +15,7 @@ from flujo.exceptions import (
     PricingNotConfiguredError,
 )
 
-pytest.skip("Skipping fallback edge case tests; will address next", allow_module_level=True)
+# Unskip: fallback edge case tests provide valuable coverage of error paths
 
 
 class TestExecutorCoreFallback:

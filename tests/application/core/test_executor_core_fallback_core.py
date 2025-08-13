@@ -19,7 +19,7 @@ from flujo.exceptions import (
     PricingNotConfiguredError,
 )
 
-pytest.skip("Skipping core fallback core tests; will address next", allow_module_level=True)
+# Unskip: core fallback tests add value for error-handling guarantees
 
 
 class TestExecutorCoreFallback:
