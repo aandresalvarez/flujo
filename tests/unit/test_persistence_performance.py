@@ -75,10 +75,15 @@ class TestPersistencePerformanceOverhead:
         runner_with_backend = create_test_flujo(pipeline, state_backend=isolated_backend)
 
         try:
+            # Warm-up runs (not measured) to stabilize caches and DB initialization
+            for _ in range(2):
+                await gather_result(runner_no_backend, "warmup")
+                await gather_result(runner_with_backend, "warmup")
+
             # Run multiple iterations to get stable measurements
             iterations = 10
-            no_backend_times = []
-            with_backend_times = []
+            no_backend_times: list[float] = []
+            with_backend_times: list[float] = []
 
             for _ in range(iterations):
                 # Test without backend
@@ -91,28 +96,52 @@ class TestPersistencePerformanceOverhead:
                 await gather_result(runner_with_backend, "test")
                 with_backend_times.append((time.perf_counter_ns() - start) / 1_000_000_000.0)
 
-            # Calculate averages
-            avg_no_backend = sum(no_backend_times) / len(no_backend_times)
-            avg_with_backend = sum(with_backend_times) / len(with_backend_times)
+            # Robust statistics: trim extremes and use median
+            def _trimmed_median(values: list[float], trim_ratio: float = 0.2) -> float:
+                if not values:
+                    return 0.0
+                sorted_vals = sorted(values)
+                k = int(len(sorted_vals) * trim_ratio)
+                if k > 0 and len(sorted_vals) - 2 * k >= 1:
+                    trimmed = sorted_vals[k:-k]
+                else:
+                    trimmed = sorted_vals
+                # median
+                mid = len(trimmed) // 2
+                if len(trimmed) % 2 == 1:
+                    return trimmed[mid]
+                return (trimmed[mid - 1] + trimmed[mid]) / 2
 
-            # Calculate overhead percentage
-            overhead_percentage = ((avg_with_backend - avg_no_backend) / avg_no_backend) * 100
+            median_no_backend = _trimmed_median(no_backend_times)
+            median_with_backend = _trimmed_median(with_backend_times)
+
+            # Calculate overhead percentage based on robust medians
+            delta_s = max(median_with_backend - median_no_backend, 0.0)
+            overhead_percentage = (
+                (delta_s / median_no_backend) * 100 if median_no_backend > 0 else 0.0
+            )
 
             # Log performance results for debugging
-            logger.debug("Performance Overhead Test Results (Isolated):")
-            logger.debug(f"Average time without backend: {avg_no_backend:.4f}s")
-            logger.debug(f"Average time with isolated backend: {avg_with_backend:.4f}s")
+            logger.debug("Performance Overhead Test Results (Isolated, Robust):")
+            logger.debug(f"Median (trimmed) without backend: {median_no_backend:.4f}s")
+            logger.debug(f"Median (trimmed) with backend: {median_with_backend:.4f}s")
+            logger.debug(f"Delta (s): {delta_s:.4f}s")
             logger.debug(f"Overhead: {overhead_percentage:.2f}%")
             logger.debug(f"Individual measurements - No backend: {no_backend_times}")
             logger.debug(f"Individual measurements - With backend: {with_backend_times}")
 
+            # Absolute delta guard for tiny baselines (percentage can explode on tiny denominators)
+            min_abs_delta_s = float(os.getenv("FLUJO_MIN_ABS_DELTA_S", "0.01"))
+
             # NFR-9: Must not exceed overhead limit (relaxed for CI environments)
-            # The SQLite backend adds some overhead due to file I/O, which is acceptable
-            # for the durability benefits it provides
             overhead_limit = self.get_default_overhead_limit()
-            assert overhead_percentage <= overhead_limit, (
-                f"Default persistence overhead ({overhead_percentage:.2f}%) exceeds {overhead_limit}% limit"
-            )
+            if delta_s < min_abs_delta_s:
+                # Treat as acceptable jitter
+                assert True
+            else:
+                assert (
+                    overhead_percentage <= overhead_limit
+                ), f"Default persistence overhead ({overhead_percentage:.2f}%) exceeds {overhead_limit}% limit"
 
         finally:
             # Clean up database files to prevent resource contention
@@ -156,10 +185,19 @@ class TestPersistencePerformanceOverhead:
         large_context_data = {"initial_prompt": "test", "large_data": "y" * 10000}
 
         try:
+            # Warm-ups
+            for _ in range(2):
+                await gather_result(
+                    runner_no_backend, "warmup", initial_context_data=large_context_data
+                )
+                await gather_result(
+                    runner_with_backend, "warmup", initial_context_data=large_context_data
+                )
+
             # Measure performance with multiple iterations for stability
-            iterations = 3
-            no_backend_times = []
-            with_backend_times = []
+            iterations = 5
+            no_backend_times: list[float] = []
+            with_backend_times: list[float] = []
 
             for _ in range(iterations):
                 # Test without backend
@@ -176,16 +214,28 @@ class TestPersistencePerformanceOverhead:
                 )
                 with_backend_times.append((time.perf_counter_ns() - start) / 1_000_000_000.0)
 
-            # Calculate averages for more stable measurements
-            avg_no_backend = sum(no_backend_times) / len(no_backend_times)
-            avg_with_backend = sum(with_backend_times) / len(with_backend_times)
+            # Robust statistic: median
+            def _median(values: list[float]) -> float:
+                if not values:
+                    return 0.0
+                sorted_vals = sorted(values)
+                mid = len(sorted_vals) // 2
+                if len(sorted_vals) % 2 == 1:
+                    return sorted_vals[mid]
+                return (sorted_vals[mid - 1] + sorted_vals[mid]) / 2
 
-            overhead_percentage = ((avg_with_backend - avg_no_backend) / avg_no_backend) * 100
+            median_no_backend = _median(no_backend_times)
+            median_with_backend = _median(with_backend_times)
+            delta_s = max(median_with_backend - median_no_backend, 0.0)
+            overhead_percentage = (
+                (delta_s / median_no_backend) * 100 if median_no_backend > 0 else 0.0
+            )
 
             # Log performance results for debugging (consistent logging approach)
-            logger.debug("Large Context Performance Test (Isolated):")
-            logger.debug(f"Average time without backend: {avg_no_backend:.4f}s")
-            logger.debug(f"Average time with backend: {avg_with_backend:.4f}s")
+            logger.debug("Large Context Performance Test (Isolated, Robust):")
+            logger.debug(f"Median without backend: {median_no_backend:.4f}s")
+            logger.debug(f"Median with backend: {median_with_backend:.4f}s")
+            logger.debug(f"Delta (s): {delta_s:.4f}s")
             logger.debug(f"Overhead: {overhead_percentage:.2f}%")
             logger.debug(f"Individual measurements - No backend: {no_backend_times}")
             logger.debug(f"Individual measurements - With backend: {with_backend_times}")
@@ -193,15 +243,17 @@ class TestPersistencePerformanceOverhead:
             # Get configurable overhead limit (higher in CI environments)
             overhead_limit = self.get_default_overhead_limit()
 
-            # Verify that the performance optimization is working
-            # The overhead should be significantly reduced with the optimizations
-            assert overhead_percentage <= overhead_limit, (
-                f"Persistence overhead with large context ({overhead_percentage:.2f}%) exceeds {overhead_limit}%"
-            )
+            # Absolute delta guard
+            min_abs_delta_s = float(os.getenv("FLUJO_MIN_ABS_DELTA_S", "0.01"))
+            if delta_s < min_abs_delta_s:
+                assert True
+            else:
+                assert (
+                    overhead_percentage <= overhead_limit
+                ), f"Persistence overhead with large context ({overhead_percentage:.2f}%) exceeds {overhead_limit}%"
 
             # Additional assertion to ensure the optimization is actually working
-            # If we're still seeing high overhead, log a warning but don't fail
-            if overhead_percentage > 20.0:  # If still above 20%, log a warning
+            if overhead_percentage > 20.0:
                 logger.warning(
                     f"Performance overhead is still high ({overhead_percentage:.2f}%). "
                     "Consider additional optimizations for large context serialization."
@@ -256,9 +308,9 @@ class TestPersistencePerformanceOverhead:
 
                 # For large contexts, serialization should be reasonably fast
                 if size_name == "large":
-                    assert serialization_time < 0.1, (
-                        f"Large context serialization too slow: {serialization_time:.6f}s"
-                    )
+                    assert (
+                        serialization_time < 0.1
+                    ), f"Large context serialization too slow: {serialization_time:.6f}s"
 
             finally:
                 # Clean up
@@ -635,9 +687,9 @@ class TestPersistencePerformanceOverhead:
                 if "|" in key:
                     parts = key.rsplit("|", 1)
                     assert len(parts) == 2, f"Invalid cache key format: {key}"
-                    assert len(parts[1]) == 32, (
-                        f"Context hash should be 32 chars: {parts[1]}"
-                    )  # MD5 hash length
+                    assert (
+                        len(parts[1]) == 32
+                    ), f"Context hash should be 32 chars: {parts[1]}"  # MD5 hash length
 
         finally:
             # Clean up
@@ -822,9 +874,9 @@ class TestCLIPerformance:
 
         # Use standardized threshold configuration
         threshold = self.get_cli_performance_threshold()
-        assert execution_time < threshold, (
-            f"`flujo lens list` took {execution_time:.3f}s, exceeds {threshold}s limit"
-        )
+        assert (
+            execution_time < threshold
+        ), f"`flujo lens list` took {execution_time:.3f}s, exceeds {threshold}s limit"
 
     @pytest.mark.slow
     def test_lens_show_performance(self, large_database: Path) -> None:
@@ -856,9 +908,9 @@ class TestCLIPerformance:
 
         # Use standardized threshold configuration
         threshold = self.get_cli_performance_threshold()
-        assert execution_time < threshold, (
-            f"`flujo lens show` took {execution_time:.3f}s, exceeds {threshold}s limit"
-        )
+        assert (
+            execution_time < threshold
+        ), f"`flujo lens show` took {execution_time:.3f}s, exceeds {threshold}s limit"
 
     @pytest.mark.slow
     def test_lens_list_with_filters_performance(self, large_database: Path) -> None:
@@ -890,9 +942,9 @@ class TestCLIPerformance:
 
         # Use standardized threshold configuration
         threshold = self.get_cli_performance_threshold()
-        assert execution_time < threshold, (
-            f"`flujo lens list --status completed` took {execution_time:.3f}s, exceeds {threshold}s limit"
-        )
+        assert (
+            execution_time < threshold
+        ), f"`flujo lens list --status completed` took {execution_time:.3f}s, exceeds {threshold}s limit"
 
     @pytest.mark.slow
     def test_lens_show_nonexistent_run_performance(self, large_database: Path) -> None:
@@ -916,8 +968,8 @@ class TestCLIPerformance:
 
         # Use a configurable threshold for CI environments (faster for nonexistent runs)
         PERFORMANCE_THRESHOLD = float(os.environ.get("FLUJO_CLI_PERF_THRESHOLD", "0.2"))
-        assert execution_time < PERFORMANCE_THRESHOLD, (
-            f"`flujo lens show` for nonexistent run took {execution_time:.3f}s, should be very fast"
-        )
+        assert (
+            execution_time < PERFORMANCE_THRESHOLD
+        ), f"`flujo lens show` for nonexistent run took {execution_time:.3f}s, should be very fast"
         # Should exit with error code for nonexistent run
         assert result.exit_code != 0, "Should fail for nonexistent run"

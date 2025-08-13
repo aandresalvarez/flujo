@@ -74,7 +74,13 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
     # ------------------------------------------------------------------
 
     def validate_graph(self, *, raise_on_error: bool = False) -> ValidationReport:  # noqa: D401
-        """Validate that all steps have agents and compatible types."""
+        """Validate that all steps have agents, compatible types, and static lints.
+
+        Adds advanced static checks:
+        - V-P1: Parallel context merge conflict detection for default CONTEXT_UPDATE without field_mapping
+        - V-A5: Unbound output warning when a step's output is unused and it does not update context
+        - V-F1: Incompatible fallback signature between step and fallback_step
+        """
         from typing import Any, get_origin, get_args, Union as TypingUnion
 
         def _compatible(a: Any, b: Any) -> bool:  # noqa: D401
@@ -116,7 +122,8 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
             else:
                 seen_steps.add(id(step))
 
-            if step.agent is None:
+            # Only simple steps (non-complex) require an agent
+            if (not getattr(step, "is_complex", False)) and step.agent is None:
                 report.errors.append(
                     ValidationFinding(
                         rule_id="V-A1",
@@ -163,8 +170,148 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                             step_name=step.name,
                         )
                     )
+
+            # Advanced Check 3.2.2: Unbound Output Warning (V-A5)
+            # If previous step produced a meaningful output and the next step does not declare
+            # a specific input type (i.e., uses object/None), and previous step does not update context,
+            # warn that the output may be unused.
+            if prev_step is not None:
+                prev_updates_context = bool(getattr(prev_step, "updates_context", False))
+                curr_accepts_input = getattr(step, "__step_input_type__", Any)
+                prev_produces_output = getattr(prev_step, "__step_output_type__", Any)
+
+                def _is_none_or_object(t: Any) -> bool:
+                    return t is None or t is type(None) or t is object  # noqa: E721
+
+                if (
+                    (not prev_updates_context)
+                    and (not _is_none_or_object(prev_produces_output))
+                    and _is_none_or_object(curr_accepts_input)
+                ):
+                    report.warnings.append(
+                        ValidationFinding(
+                            rule_id="V-A5",
+                            severity="warning",
+                            message=(
+                                f"The output of step '{prev_step.name}' is not used by the next step '{step.name}'."
+                            ),
+                            step_name=prev_step.name,
+                            suggestion=(
+                                "Set updates_context=True on the producing step or insert an adapter step to consume its output."
+                            ),
+                        )
+                    )
+
+            # Advanced Check 3.2.3: Incompatible fallback signature (V-F1)
+            fb = getattr(step, "fallback_step", None)
+            if fb is not None:
+                step_in = getattr(step, "__step_input_type__", Any)
+                fb_in = getattr(fb, "__step_input_type__", Any)
+                if not _compatible(step_in, fb_in):
+                    report.errors.append(
+                        ValidationFinding(
+                            rule_id="V-F1",
+                            severity="error",
+                            message=(
+                                f"Fallback step '{getattr(fb, 'name', 'unknown')}' expects input `{fb_in}`, "
+                                f"which is not compatible with original step '{step.name}' input `{step_in}`."
+                            ),
+                            step_name=step.name,
+                            suggestion=(
+                                "Ensure the fallback step accepts the same input type as the original step or add an adapter."
+                            ),
+                        )
+                    )
             prev_step = step
             prev_out_type = getattr(step, "__step_output_type__", Any)
+
+        # Advanced Check 3.2.1: Context Merge Conflict Detection for ParallelStep (V-P1)
+        # Use runtime imports with fallbacks while keeping mypy satisfied by typing as Any
+        from typing import Any as _Any
+
+        ParallelStep: _Any
+        MergeStrategy: _Any
+        try:
+            from .parallel import ParallelStep as _ParallelStep  # local import to avoid circular
+            from .step import MergeStrategy as _MergeStrategy  # enum
+
+            ParallelStep = _ParallelStep
+            MergeStrategy = _MergeStrategy
+        except Exception:  # pragma: no cover - defensive import failure
+            ParallelStep = None
+            MergeStrategy = None
+
+        if ParallelStep is not None and MergeStrategy is not None:
+            for st in self.steps:
+                if isinstance(st, ParallelStep):
+                    # Only analyze when using default CONTEXT_UPDATE
+                    if st.merge_strategy == MergeStrategy.CONTEXT_UPDATE:
+                        # Gather per-branch candidate context fields that could be updated
+                        # Heuristic: collect union of declared context include keys if present
+                        candidate_fields: set[str] = set()
+                        if st.context_include_keys is not None:
+                            candidate_fields.update(st.context_include_keys)
+
+                        # If no hints from include keys, we cannot know exact fields statically.
+                        # Still add a warning only when multiple branches exist and no field_mapping provided for any branch.
+                        if not candidate_fields and st.field_mapping is None:
+                            if len(st.branches) > 1:
+                                report.warnings.append(
+                                    ValidationFinding(
+                                        rule_id="V-P1-W",
+                                        severity="warning",
+                                        message=(
+                                            f"ParallelStep '{st.name}' uses CONTEXT_UPDATE without field_mapping; potential merge conflicts may occur."
+                                        ),
+                                        step_name=st.name,
+                                        suggestion=(
+                                            "Provide a field_mapping per-branch or pick an explicit merge strategy like OVERWRITE or ERROR_ON_CONFLICT."
+                                        ),
+                                    )
+                                )
+                            continue
+
+                        # If field_mapping exists, check for keys updated by 2+ branches without explicit mapping
+                        if st.field_mapping is not None:
+                            # Build reverse map: field -> branches declaring it
+                            field_to_branches: dict[str, list[str]] = {}
+                            for bname, fields in st.field_mapping.items():
+                                for f in fields:
+                                    field_to_branches.setdefault(f, []).append(bname)
+
+                            for f, bnames in field_to_branches.items():
+                                if len(bnames) > 1 and not st.ignore_branch_names:
+                                    report.errors.append(
+                                        ValidationFinding(
+                                            rule_id="V-P1",
+                                            severity="error",
+                                            message=(
+                                                f"Context merge conflict risk for key '{f}' in ParallelStep '{st.name}': "
+                                                f"declared by branches {bnames}."
+                                            ),
+                                            step_name=st.name,
+                                            suggestion=(
+                                                "Set an explicit MergeStrategy (e.g., OVERWRITE) or ensure only one branch writes each field via field_mapping."
+                                            ),
+                                        )
+                                    )
+                        else:
+                            # No explicit field_mapping but candidate fields exist; assume conflict if >1 branch exists
+                            if len(st.branches) > 1 and candidate_fields:
+                                report.errors.append(
+                                    ValidationFinding(
+                                        rule_id="V-P1",
+                                        severity="error",
+                                        message=(
+                                            f"ParallelStep '{st.name}' may merge conflicting context fields {sorted(candidate_fields)} "
+                                            "using CONTEXT_UPDATE without field_mapping."
+                                        ),
+                                        step_name=st.name,
+                                        suggestion=(
+                                            "Provide field_mapping for conflicting keys or choose OVERWRITE/ERROR_ON_CONFLICT explicitly."
+                                        ),
+                                    )
+                                )
 
         if raise_on_error and report.errors:
             raise ConfigurationError(

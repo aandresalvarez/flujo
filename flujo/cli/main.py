@@ -400,14 +400,26 @@ def validate(
         report = validate_pipeline_file(path)
         if report.errors:
             typer.echo("[red]Validation errors detected:")
+            typer.echo(
+                "[red]See docs: https://aandresalvarez.github.io/flujo/reference/validation_rules/"
+            )
             for f in report.errors:
                 loc = f"{f.step_name}: " if f.step_name else ""
-                typer.echo(f"- [{f.rule_id}] {loc}{f.message}")
+                if f.suggestion:
+                    typer.echo(f"- [{f.rule_id}] {loc}{f.message} -> Suggestion: {f.suggestion}")
+                else:
+                    typer.echo(f"- [{f.rule_id}] {loc}{f.message}")
         if report.warnings:
             typer.echo("[yellow]Warnings:")
+            typer.echo(
+                "[yellow]See docs: https://aandresalvarez.github.io/flujo/reference/validation_rules/"
+            )
             for f in report.warnings:
                 loc = f"{f.step_name}: " if f.step_name else ""
-                typer.echo(f"- [{f.rule_id}] {loc}{f.message}")
+                if f.suggestion:
+                    typer.echo(f"- [{f.rule_id}] {loc}{f.message} -> Suggestion: {f.suggestion}")
+                else:
+                    typer.echo(f"- [{f.rule_id}] {loc}{f.message}")
         if report.is_valid:
             typer.echo("[green]Pipeline is valid")
         if strict and not report.is_valid:
@@ -487,6 +499,25 @@ def run(
             )
         )
 
+        # Pre-run validation enforcement
+        from flujo.domain.pipeline_validation import ValidationReport
+
+        try:
+            validation_report: ValidationReport = pipeline_obj.validate_graph()
+        except Exception as ve:  # pragma: no cover - defensive
+            typer.echo(f"[red]Validation crashed: {ve}", err=True)
+            raise typer.Exit(1)
+
+        if not validation_report.is_valid:
+            typer.echo("[red]Pipeline validation failed before run:")
+            for f in validation_report.errors:
+                loc = f"{f.step_name}: " if f.step_name else ""
+                if f.suggestion:
+                    typer.echo(f"- [{f.rule_id}] {loc}{f.message} -> Suggestion: {f.suggestion}")
+                else:
+                    typer.echo(f"- [{f.rule_id}] {loc}{f.message}")
+            raise typer.Exit(1)
+
         # Create Flujo runner using helper function
         runner = create_flujo_runner(
             pipeline=pipeline_obj,
@@ -513,8 +544,8 @@ def run(
             import os
 
             os.makedirs("output", exist_ok=True)
-            with open("output/last_run_error.txt", "w") as f:
-                f.write(repr(e))
+            with open("output/last_run_error.txt", "w") as fh:
+                fh.write(repr(e))
         except Exception:
             pass
         typer.echo(f"[red]Error running pipeline: {e}", err=True)
