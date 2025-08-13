@@ -1,5 +1,5 @@
 {
-  "name": "pipeline_root",
+  "name": "pipeline_run",
   "attributes": [
     "flujo.input",
     "flujo.pipeline.name",
@@ -9,25 +9,13 @@
   "events": [],
   "children": [
     {
-      "name": "analyze",
+      "name": "par",
       "attributes": [
+        "feedback",
         "flujo.budget.actual_cost_usd",
         "flujo.budget.actual_tokens",
         "flujo.cache.hit",
-        "flujo.step.type",
-        "latency_s",
-        "step_input",
-        "success"
-      ],
-      "events": [],
-      "children": []
-    },
-    {
-      "name": "primary",
-      "attributes": [
-        "flujo.budget.actual_cost_usd",
-        "flujo.budget.actual_tokens",
-        "flujo.cache.hit",
+        "flujo.step.policy",
         "flujo.step.type",
         "latency_s",
         "step_input",
