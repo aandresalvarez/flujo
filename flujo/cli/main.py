@@ -30,6 +30,7 @@ from .helpers import (
     load_mermaid_code,
     get_pipeline_step_names,
     validate_pipeline_file,
+    parse_context_data,
 )
 import click.testing
 
@@ -432,7 +433,7 @@ def validate(
 @app.command()
 def run(
     pipeline_file: str = typer.Argument(
-        ..., help="Path to the Python file containing the pipeline to run"
+        ..., help="Path to the pipeline to run (.py or .yaml/.yml)"
     ),
     input_data: Optional[str] = typer.Option(
         None, "--input", "--input-data", "-i", help="Initial input data for the pipeline"
@@ -486,18 +487,31 @@ def run(
         if not json_output and any(flag in ctx.args for flag in ("--json", "--json-output")):
             json_output = True
 
-        # Set up command environment using helper function
-        pipeline_obj, pipeline_name, input_data, initial_context_data, context_model_class = (
-            setup_run_command_environment(
-                pipeline_file=pipeline_file,
-                pipeline_name=pipeline_name,
-                json_output=json_output,
-                input_data=input_data,
-                context_model=context_model,
-                context_data=context_data,
-                context_file=context_file,
+        # If YAML blueprint provided, load via blueprint loader; else use existing Python loader.
+        if pipeline_file.endswith((".yaml", ".yml")):
+            from .helpers import load_pipeline_from_yaml_file
+            # For YAML, we still require input_data as before
+            if input_data is None:
+                import sys
+                if not sys.stdin.isatty():
+                    input_data = sys.stdin.read().strip()
+                else:
+                    raise typer.Exit(1)
+            pipeline_obj = load_pipeline_from_yaml_file(pipeline_file)
+            context_model_class = None
+            initial_context_data = parse_context_data(context_data, context_file)  # type: ignore[name-defined]
+        else:
+            pipeline_obj, pipeline_name, input_data, initial_context_data, context_model_class = (
+                setup_run_command_environment(
+                    pipeline_file=pipeline_file,
+                    pipeline_name=pipeline_name,
+                    json_output=json_output,
+                    input_data=input_data,
+                    context_model=context_model,
+                    context_data=context_data,
+                    context_file=context_file,
+                )
             )
-        )
 
         # Pre-run validation enforcement
         from flujo.domain.pipeline_validation import ValidationReport
@@ -549,6 +563,37 @@ def run(
         except Exception:
             pass
         typer.echo(f"[red]Error running pipeline: {e}", err=True)
+        raise typer.Exit(1)
+
+
+@app.command()
+def compile(
+    src: str = typer.Argument(..., help="Input spec: .yaml/.yml or .py"),
+    out: Optional[str] = typer.Option(None, "--out", "-o", help="Output file path (.yaml)"),
+) -> None:
+    """Compile a pipeline spec between YAML and DSL.
+
+    - If src is YAML, parses and pretty-prints validated YAML (normalized).
+    - If src is Python, imports the pipeline and dumps YAML.
+    """
+    try:
+        if src.endswith((".yaml", ".yml")):
+            # Load and re-dump normalized YAML
+            from flujo.domain.dsl import Pipeline
+
+            pipe = Pipeline.from_yaml_file(src)
+            yaml_text = pipe.to_yaml()
+        else:
+            pipeline_obj, _ = load_pipeline_from_file(src)  # type: ignore[name-defined]
+            yaml_text = pipeline_obj.to_yaml()
+        if out:
+            with open(out, "w") as f:
+                f.write(yaml_text)
+            typer.echo(f"[green]Wrote: {out}")
+        else:
+            typer.echo(yaml_text)
+    except Exception as e:
+        typer.echo(f"[red]Failed to compile: {e}", err=True)
         raise typer.Exit(1)
 
 

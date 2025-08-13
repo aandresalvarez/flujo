@@ -99,3 +99,28 @@ def test_cli_run_prints_suggestions_on_failure(tmp_path: Path) -> None:
     )
     assert result.returncode != 0
     assert "Suggestion:" in (result.stdout + result.stderr)
+
+
+def test_cli_compile_yaml_roundtrip(tmp_path: Path) -> None:
+    yaml_text = """
+    version: "0.1"
+    steps:
+      - kind: step
+        name: s1
+      - kind: parallel
+        name: p
+        branches:
+          a:
+            - kind: step
+              name: a1
+          b:
+            - kind: step
+              name: b1
+    """
+    src = tmp_path / "pipe.yaml"
+    src.write_text(yaml_text)
+    result = subprocess.run(
+        [sys.executable, "-m", "flujo.cli.main", "compile", str(src)], capture_output=True, text=True
+    )
+    assert result.returncode == 0
+    assert "version:" in result.stdout
