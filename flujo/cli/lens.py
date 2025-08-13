@@ -1,6 +1,8 @@
 import typer
 import asyncio
-from typing import Optional, Union
+from typing import Optional, Union, Any
+import os as _os
+import runpy
 from rich.table import Table
 from rich.console import Console
 from .config import load_backend_from_config
@@ -79,18 +81,21 @@ def replay_command(
     object_name: str = typer.Option(
         "pipeline", "--object", "-o", help="Name of the pipeline variable in the file"
     ),
+    state_uri: Optional[str] = typer.Option(
+        None,
+        "--state-uri",
+        help="Override FLUJO_STATE_URI for this replay (e.g., sqlite:////abs/path/ops.db)",
+    ),
     json_output: bool = typer.Option(
         False, "--json", "--json-output", help="Output raw JSON instead of formatted result"
     ),
-):
+) -> None:
     """Replay a prior run deterministically using recorded trace and responses."""
+    # Allow inline override of state URI for one-off replays
+    if state_uri:
+        _os.environ["FLUJO_STATE_URI"] = state_uri
+
     backend = load_backend_from_config()
-    if not file:
-        typer.echo(
-            "[red]Error: --file is required to load the target pipeline for replay[/red]",
-            err=True,
-        )
-        raise typer.Exit(1)
 
     try:
         from .helpers import (
@@ -100,19 +105,80 @@ def replay_command(
         )
         from flujo.application.runner import Flujo
 
-        pipeline_obj, _ = load_pipeline_from_file(file, object_name)
-        runner: Flujo = create_flujo_runner(
-            pipeline=pipeline_obj,
-            context_model_class=None,
-            initial_context_data=None,
-        )
+        runner: Flujo[Any, Any, Any]
+
+        # Case 1: Load explicitly from file/object
+        if file:
+            try:
+                pipeline_obj, _ = load_pipeline_from_file(file, object_name)
+            except SystemExit:
+                # Enhance error message with guidance
+                typer.echo(
+                    f"[red]Could not load pipeline object '{object_name}' from file '{file}'.\n"
+                    "Ensure the file exists and exports the pipeline variable (or pass --object).[/red]",
+                    err=True,
+                )
+                raise
+            runner = create_flujo_runner(
+                pipeline=pipeline_obj,
+                context_model_class=None,
+                initial_context_data=None,
+            )
+        else:
+            # Case 2: Attempt to infer from run metadata and a local registry
+            details = asyncio.run(backend.get_run_details(run_id))
+            if not details:
+                typer.echo(
+                    f"[red]Run not found: {run_id}. Cannot infer pipeline without --file.[/red]",
+                    err=True,
+                )
+                raise typer.Exit(1)
+
+            pipeline_name = details.get("pipeline_name")
+            pipeline_version = details.get("pipeline_version") or "latest"
+            if not pipeline_name:
+                typer.echo(
+                    "[red]Pipeline name unavailable in run metadata. Provide --file to load the pipeline.[/red]",
+                    err=True,
+                )
+                raise typer.Exit(1)
+
+            # Discover a local registry in common locations (registry.py) and use it if present
+            registry = None
+            try:
+                import os as __os
+
+                if __os.path.exists("registry.py"):
+                    ns = runpy.run_path("registry.py")
+                    registry = ns.get("registry")
+            except Exception:
+                registry = None
+
+            if registry is None:
+                typer.echo(
+                    (
+                        "[red]No --file provided and no local registry found (expected 'registry.py' with a 'registry' object).\n"
+                        f"Run metadata indicates pipeline '{pipeline_name}' (version '{pipeline_version}').\n"
+                        "Please provide --file pointing to the pipeline definition or add a registry for inference.[/red]"
+                    ),
+                    err=True,
+                )
+                raise typer.Exit(1)
+
+            # Build a runner that will resolve the pipeline from the registry
+            runner = Flujo(
+                pipeline=None,
+                registry=registry,
+                pipeline_name=pipeline_name,
+                pipeline_version=pipeline_version,
+            )
         # Attach operations backend so replay can load trace and steps from the configured store
         try:
-            runner.state_backend = backend  # type: ignore[attr-defined]
+            runner.state_backend = backend
         except Exception:
             pass
 
-        async def _run() -> any:
+        async def _run() -> Any:
             return await runner.replay_from_trace(run_id)
 
         result = asyncio.run(_run())
