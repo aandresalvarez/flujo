@@ -32,6 +32,7 @@ def _make_complex_pipeline() -> Step[Any, Any]:
     # Loop to exercise loop tracing
     loop_body = Step.model_validate({"name": "body", "agent": StubAgent(["x", "y"])})
     from flujo.domain.dsl.pipeline import Pipeline
+
     loop_pipeline = Pipeline.from_step(loop_body)
     # Minimal loop with exit condition that stops after first iteration
     loop = LoopStep(

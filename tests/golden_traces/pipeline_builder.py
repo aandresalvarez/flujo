@@ -23,10 +23,12 @@ def make_golden_pipeline() -> Step[Any, Any]:
 
     # Simple steps
     analyze = Step.model_validate({"name": "analyze", "agent": StubAgent(["ok"])})
-    primary = Step.model_validate({
-        "name": "primary",
-        "agent": StubAgent([Exception("boom"), "ok"]),
-    })
+    primary = Step.model_validate(
+        {
+            "name": "primary",
+            "agent": StubAgent([Exception("boom"), "ok"]),
+        }
+    )
     fb = Step.model_validate({"name": "fallback", "agent": StubAgent(["fb_ok"])})
     primary.fallback(fb)
 
@@ -50,5 +52,3 @@ def make_golden_pipeline() -> Step[Any, Any]:
 
     # Compose final pipeline
     return parallel >> loop >> primary >> hitl
-
-

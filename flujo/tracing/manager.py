@@ -106,6 +106,7 @@ class TraceManager:
         }
         # Attach policy name based on step type mapping (registry parity)
         try:
+
             def _policy_name_for_step(step_obj: Any) -> str:
                 try:
                     # Local imports to avoid import-time circulars
