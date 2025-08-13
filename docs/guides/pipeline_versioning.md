@@ -9,7 +9,8 @@ Register each pipeline with a unique name and semantic version. When a durable r
 ## How It Works
 
 ```python
-from flujo import Step, PipelineRegistry, Flujo, step
+from flujo import Step, Flujo, step
+from flujo.infra.registry import PipelineRegistry
 
 @step
 async def v1(text: str) -> str:

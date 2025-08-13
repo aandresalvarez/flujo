@@ -29,7 +29,7 @@ We'll begin with the `make_agentic_loop_pipeline` pattern. A planner agent decid
 ```python
 # 📂 step_1_agentic_loop.py
 from flujo.recipes.factories import make_agentic_loop_pipeline, run_agentic_loop_pipeline
-from flujo.infra.agents import make_agent_async
+from flujo.agents import make_agent_async
 from flujo.infra import init_telemetry
 from flujo.domain.commands import AgentCommand, FinishCommand, RunAgentCommand
 
@@ -76,7 +76,8 @@ async def shout(text: str) -> str:
 ## 3. Composing Your First Custom Pipeline
 
 ```python
-from flujo import Flujo, step, PipelineResult, PipelineRegistry
+from flujo import Flujo, step, PipelineResult
+from flujo.infra.registry import PipelineRegistry
 
 @step
 async def to_upper(text: str) -> str:
@@ -109,10 +110,10 @@ Professional AI workflows often involve a mix of models to balance cost, speed, 
 ```python
 # 📂 step_3_mixing_models.py
 from flujo.recipes.factories import make_default_pipeline, run_default_pipeline
-from flujo.infra.agents import make_agent_async
+from flujo.agents import make_agent_async
 from flujo.infra import init_telemetry
 from flujo.models import Task
-from flujo.infra.agents import make_review_agent, make_validator_agent
+from flujo.agents import make_review_agent, make_validator_agent
 init_telemetry()
 print("🚀 Building a workflow with a custom Solution Agent for the default pipeline...")
 FAST_SOLUTION_PROMPT = "You are a creative but junior marketing copywriter. Write a catchy and concise slogan. Be quick and creative."
@@ -141,7 +142,7 @@ Let's build a workflow that extracts information from a block of text into a str
 # 📂 step_4_structured_output.py
 from pydantic import BaseModel, Field
 from flujo import Step, Flujo
-from flujo.infra.agents import make_agent_async
+from flujo.agents import make_agent_async
 from flujo.infra import init_telemetry
 from flujo.models import Checklist
 

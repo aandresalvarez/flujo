@@ -88,7 +88,7 @@ research_step = Step("PlanResearch", PlanResearchAgent())
 
 ```python
 from flujo import Step, Pipeline
-from flujo.models import BaseModel
+from pydantic import BaseModel
 
 def route(ctx: TriageContext, _):
     if ctx.author_reputation < 0.2: return "high_risk"
@@ -288,7 +288,7 @@ DEFAULT_REVIEW_MODEL=openai:gpt-4
 ### B. Per-agent model + settings
 
 ```python
-from flujo.infra.agents import make_agent_async
+from flujo.agents import make_agent_async
 
 agent = make_agent_async(
     model="openai:gpt-4",
@@ -395,7 +395,8 @@ from flujo import (
 from flujo.domain.agent_protocol import AsyncAgentProtocol, ContextAwareAgentProtocol
 
 # Models and types
-from flujo.models import BaseModel, UsageLimits, PipelineResult
+from flujo.models import UsageLimits, PipelineResult
+from pydantic import BaseModel
 
 # Resources
 from flujo.domain.resources import AppResources

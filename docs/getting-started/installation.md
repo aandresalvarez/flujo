@@ -39,8 +39,11 @@ pip install "flujo[logfire]"
 # For the SQL syntax validator plugin
 pip install "flujo[sql]"
 
+# For Prometheus metrics support
+pip install "flujo[prometheus]"
+
 # Install all extras
-pip install "flujo[dev,docs,opentelemetry,logfire,sql,bench]"
+pip install "flujo[dev,docs,opentelemetry,logfire,sql,bench,prometheus]"
 ```
 
 ## Development Installation

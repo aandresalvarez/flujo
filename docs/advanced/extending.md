@@ -15,7 +15,7 @@ incorporate strategic feedback, build a custom pipeline using `Step`:
 
 ```python
 from flujo import Step, Flujo, get_reflection_agent
-from flujo.infra.agents import make_review_agent, make_solution_agent, make_validator_agent
+from flujo.agents import make_review_agent, make_solution_agent, make_validator_agent
 
 reflection_agent = get_reflection_agent(model="anthropic:claude-3-haiku")
 

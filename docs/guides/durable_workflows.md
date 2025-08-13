@@ -57,7 +57,8 @@ Here is a minimal example using the `SQLiteBackend`:
 
 ```python
 from pathlib import Path
-from flujo import Flujo, Step, PipelineRegistry, step
+from flujo import Flujo, Step, step
+from flujo.infra.registry import PipelineRegistry
 from flujo.state import SQLiteBackend
 
 @step

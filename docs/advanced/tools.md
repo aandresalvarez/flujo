@@ -57,7 +57,7 @@ pipeline = (
         make_solution_agent(),
         tools=[weather_tool]
     )
-    >> Step.validate(make_validator_agent())
+    >> Step.validate_step(make_validator_agent())
 )
 
 # Run it

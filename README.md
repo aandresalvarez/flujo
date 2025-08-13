@@ -74,16 +74,16 @@ Pipelines can run automated evaluations, detect weak points, and produce an **Im
 ## Quick Start
 
 ```bash
-pip install flujo openai pydantic
+pip install flujo
 export OPENAI_API_KEY="sk-..."
-````
+```
 
 **Example: A simple translation pipeline**
 
 ```python
 import asyncio
 from pydantic import BaseModel
-from flujo import Step, make_agent_async
+from flujo import Step, Flujo, make_agent_async
 
 class Translation(BaseModel):
     original_text: str
@@ -96,19 +96,17 @@ translator_agent = make_agent_async(
     output_type=Translation,
 )
 
-translation_pipeline = Step.solution(
-    name="TranslateToFrench",
-    agent=translator_agent
-)
+translation_step = Step("TranslateToFrench", translator_agent)
+runner = Flujo(translation_step)
 
 async def main():
-    result = await translation_pipeline.run("Hello, world!")
-    if result.success:
-        translation = result.output
-        print(f"Original: {translation.original_text}")
-        print(f"Language: {translation.language}")
-        print(f"Translated: {translation.translated_text}")
-        print(f"Cost: ${result.cost_usd:.6f}")
+    result = await runner.arun("Hello, world!")
+    last = result.step_history[-1]
+    translation = last.output
+    print(f"Original: {translation.original_text}")
+    print(f"Language: {translation.language}")
+    print(f"Translated: {translation.translated_text}")
+    print(f"Cost: ${result.total_cost_usd:.6f}")
 
 if __name__ == "__main__":
     asyncio.run(main())
@@ -149,7 +147,7 @@ pip install flujo
 For extras:
 
 ```bash
-pip install flujo[openai,anthropic,prometheus]
+pip install "flujo[docs,opentelemetry,logfire,sql,bench,prometheus]"
 ```
 
 ---

@@ -49,7 +49,7 @@ Use the `make_default_pipeline` factory function for full transparency, composab
 
 ```python
 from flujo.recipes.factories import make_default_pipeline, run_default_pipeline
-from flujo.infra.agents import make_review_agent, make_solution_agent, make_validator_agent
+from flujo.agents import make_review_agent, make_solution_agent, make_validator_agent
 from flujo import (
     Flujo,
     Task,
@@ -94,7 +94,7 @@ from flujo.plugins.sql_validator import SQLSyntaxValidator
 from flujo.testing.utils import StubAgent
 
 solution_step = Step.solution(StubAgent(["SELECT FROM"]))
-validate_step = Step.validate(StubAgent([None]), plugins=[SQLSyntaxValidator()])
+validate_step = Step.validate_step(StubAgent([None]), plugins=[SQLSyntaxValidator()])
 pipeline = solution_step >> validate_step
 
 # Run with tracing enabled
@@ -131,7 +131,7 @@ Once you've configured pricing in your `flujo.toml` file, cost tracking is autom
 
 ```python
 from flujo import Step, Flujo
-from flujo.infra.agents import make_agent_async
+from flujo.agents import make_agent_async
 
 # Create agents
 solution_agent = make_agent_async("openai:gpt-4o", "You are a helpful assistant.", str)
@@ -209,7 +209,7 @@ validation_limits = UsageLimits(
 
 pipeline = (
     Step.solution(solution_agent, usage_limits=solution_limits)
-    >> Step.validate(validator_agent, usage_limits=validation_limits)
+    >> Step.validate_step(validator_agent, usage_limits=validation_limits)
 )
 ```
 
@@ -260,7 +260,7 @@ def log_costs(result):
         logger.info(f"  {step.name}: ${step.cost_usd:.4f} ({step.token_counts} tokens)")
 
 # Run pipeline with cost logging
-pipeline = Step.solution(my_agent) >> Step.validate(validator_agent)
+pipeline = Step.solution(my_agent) >> Step.validate_step(validator_agent)
 runner = Flujo(pipeline)
 
 result = runner.run("Your prompt")
@@ -281,7 +281,7 @@ complex_agent = make_agent_async("openai:gpt-4o", "Complex task agent.", str)
 # Design pipeline with cost considerations
 pipeline = (
     Step.solution(simple_agent, usage_limits=UsageLimits(total_cost_usd_limit=0.05))
-    >> Step.validate(complex_agent, usage_limits=UsageLimits(total_cost_usd_limit=0.15))
+    >> Step.validate_step(complex_agent, usage_limits=UsageLimits(total_cost_usd_limit=0.15))
 )
 
 # Set overall pipeline limits

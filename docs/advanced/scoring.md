@@ -50,7 +50,7 @@ score = weighted_score(checklist, weights)
 Use an AI model to evaluate quality:
 
 ```python
-from flujo.infra.agents import make_agent_async
+from flujo.agents import make_agent_async
 from flujo.domain.scoring import model_score
 
 # Create a scoring agent
@@ -116,7 +116,7 @@ review_step = Step.review(
 )
 
 # Validation step with model scoring
-validate_step = Step.validate(
+validate_step = Step.validate_step(
     make_validator_agent(),
     scorer=lambda c: model_score(c, scorer_agent)
 )
@@ -131,7 +131,7 @@ Configure scoring for the entire pipeline:
 pipeline = (
     Step.review(make_review_agent())
     >> Step.solution(make_solution_agent())
-    >> Step.validate(make_validator_agent())
+    >> Step.validate_step(make_validator_agent())
 )
 
 # Configure the runner with custom scoring

@@ -24,7 +24,7 @@ Go beyond static prompts. Flujo provides the structure, state, and observability
 
 - [Advanced Serialization](../cookbook/advanced_serialization.md) - Handle custom types and complex serialization scenarios
 - [SQLite Backend](../guides/sqlite_backend_guide.md) - Production-ready persistence with observability
-- [Migration Guide](../migration/v0.7.0.md) - Upgrade to the latest serialization features
+- [Migration Guide](../migration/v0.8.0.md) - Upgrade to the latest features
 - **[Rich Tracing & Debugging](../implementation-results/FSD-12_IMPLEMENTATION_RESULTS.md)** - Debug and analyze pipeline execution with hierarchical traces
 - **[Cost Tracking Guide](../advanced/cost_tracking_guide.md)** - Monitor and control spending on LLM operations
 

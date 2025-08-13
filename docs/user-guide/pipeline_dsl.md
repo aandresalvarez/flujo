@@ -254,7 +254,7 @@ validate_step = Step.validate_step(
 )
 
 # With plugins
-from flujo.plugins import SQLSyntaxValidator
+from flujo.plugins.sql_validator import SQLSyntaxValidator
 
 validate_step = Step.validate_step(
     validator_agent,

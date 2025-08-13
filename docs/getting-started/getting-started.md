@@ -1,18 +1,16 @@
 # Getting Started
 
-This short tutorial builds a small pipeline that prints **Hello, World**.
+This short tutorial builds a small pipeline that prints Hello, World.
 
 ```python
-from flujo import Pipeline, Step
+from flujo import Flujo, step
 
-# Define a simple step
-class PrintStep(Step[str, None]):
-    def run(self, input: str) -> None:
-        print(input)
+@step
+async def print_step(input_text: str) -> None:
+    print(input_text)
 
-# Assemble and run the pipeline
-pipeline = Pipeline(steps=[PrintStep()])
-pipeline.run_sync("Hello, World")
+pipeline = print_step
+Flujo(pipeline).run("Hello, World")
 ```
 
 Run the script and you should see the greeting printed to the console.

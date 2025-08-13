@@ -127,7 +127,7 @@ from flujo.agents import make_review_agent, make_solution_agent, make_validator_
 pipeline = (
     Step.review(make_review_agent())
     >> Step.solution(make_solution_agent())
-    >> Step.validate(make_validator_agent())
+    >> Step.validate_step(make_validator_agent())
 )
 
 # Run the pipeline
@@ -186,7 +186,7 @@ validator_agent = make_validator_agent(
 pipeline = (
     Step.review(review_agent)
     >> Step.solution(solution_agent)
-    >> Step.validate(validator_agent)
+    >> Step.validate_step(validator_agent)
 )
 ```
 

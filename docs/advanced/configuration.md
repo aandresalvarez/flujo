@@ -121,7 +121,7 @@ print(f"Current solution model: {settings.default_solution_model}")
 ### Model Selection
 
 ```python
-from flujo.infra.agents import make_agent_async
+from flujo.agents import make_agent_async
 
 # Use different models for different agents
 review_agent = make_agent_async(
@@ -233,7 +233,7 @@ Cost and token information is available in pipeline results:
 from flujo import Step, Flujo
 
 # Create a pipeline with cost tracking
-pipeline = Step.solution(my_agent) >> Step.validate(validator_agent)
+pipeline = Step.solution(my_agent) >> Step.validate_step(validator_agent)
 runner = Flujo(pipeline)
 
 # Run the pipeline

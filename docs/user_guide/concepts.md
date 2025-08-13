@@ -11,7 +11,7 @@ the `PipelineContext`.
 
 ```python
 from flujo.recipes.factories import make_agentic_loop_pipeline
-from flujo.infra.agents import make_agent_async
+from flujo.agents import make_agent_async
 from flujo.domain.commands import AgentCommand
 planner = make_agent_async(
     "openai:gpt-4o",
@@ -81,7 +81,7 @@ The library provides four default agents:
 ### Creating Custom Agents
 
 ```python
-from flujo.infra.agents import make_agent_async
+from flujo.agents import make_agent_async
 
 custom_agent = make_agent_async(
     "openai:gpt-4",  # Model
@@ -115,7 +115,7 @@ A **Candidate** is a potential solution produced by the orchestrator. It include
 - A quality checklist evaluation
 
 ```python
-result = orch.run_sync(task)
+result = await run_default_pipeline(pipeline, task)
 if result:  # result is a Candidate
     print(f"Solution: {result.solution}")
     print(f"Quality Score: {result.score}")
@@ -144,13 +144,13 @@ The built-in [**default pipeline factory**](#the-default-pipeline-factory-simpli
 
 ```python
 from flujo import Step, Flujo
-from flujo.infra.agents import make_review_agent, make_solution_agent, make_validator_agent
+from flujo.agents import make_review_agent, make_solution_agent, make_validator_agent
 
 # Define a pipeline
 pipeline = (
     Step.review(make_review_agent())
     >> Step.solution(make_solution_agent())
-    >> Step.validate(make_validator_agent())
+    >> Step.validate_step(make_validator_agent())
 )
 
 # Run it
@@ -291,7 +291,7 @@ Plugins extend pipeline functionality, particularly for validation:
 
 ```python
 from flujo.domain import ValidationPlugin, PluginOutcome
-from flujo.plugins import SQLSyntaxValidator
+from flujo.plugins.sql_validator import SQLSyntaxValidator
 
 # Use built-in SQL validator
 sql_validator = SQLSyntaxValidator()
@@ -304,7 +304,7 @@ class CustomValidator(ValidationPlugin):
         return PluginOutcome(passed=False, feedback="Validation failed")
 
 # Use in pipeline
-pipeline = Step.validate(make_validator_agent(), plugins=[sql_validator, CustomValidator()])
+pipeline = Step.validate_step(make_validator_agent(), plugins=[sql_validator, CustomValidator()])
 ```
 
 ## Self-Improvement & Evaluation
@@ -313,7 +313,7 @@ The library includes intelligent evaluation capabilities:
 
 ```python
 from flujo.application import evaluate_and_improve, SelfImprovementAgent
-from flujo.infra.agents import make_self_improvement_agent
+from flujo.agents import make_self_improvement_agent
 
 # Create improvement agent
 improvement_agent = SelfImprovementAgent(make_self_improvement_agent())
@@ -342,7 +342,7 @@ The orchestrator includes built-in telemetry for:
 - Distributed tracing
 
 ```python
-from flujo import init_telemetry
+from flujo.infra import init_telemetry
 
 # Initialize telemetry
 init_telemetry()
@@ -358,7 +358,7 @@ init_telemetry()
 Settings can be controlled via environment variables or the settings object:
 
 ```python
-from flujo import settings
+from flujo.infra import settings
 
 # Access current settings
 print(f"Default solution model: {settings.default_solution_model}")
