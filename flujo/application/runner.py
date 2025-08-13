@@ -1019,6 +1019,16 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         from ..domain.dsl.step import HumanInTheLoopStep as _HITL
 
         if isinstance(paused_step, _HITL):
+            # Emit a resumed event in the active trace for auditability (FSD-013)
+            try:
+                if self._trace_manager is not None:
+                    # Only store a stringified/summary to avoid sensitive leakage
+                    summary = str(human_input)
+                    if isinstance(summary, str) and len(summary) > 500:
+                        summary = summary[:500] + "..."
+                    self._trace_manager.add_event("flujo.resumed", {"human_input": summary})
+            except Exception:
+                pass
             paused_result.step_history.append(paused_step_result)
             data = human_input
             resume_start_idx = start_idx + 1
@@ -1113,6 +1123,119 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
 
         execution_manager.set_final_context(paused_result, cast(Optional[ContextT], ctx))
         return paused_result
+
+    async def replay_from_trace(self, run_id: str) -> PipelineResult[ContextT]:
+        """Replay a prior run deterministically using recorded trace and responses (FSD-013)."""
+        # 1) Load trace and step history
+        if self.state_backend is None:
+            raise OrchestratorError("Replay requires a state_backend with trace support")
+        stored = await self.state_backend.get_run_details(run_id)
+        steps = await self.state_backend.list_run_steps(run_id)
+        trace = await self.state_backend.get_trace(run_id)
+
+        if stored is None:
+            raise OrchestratorError(f"No stored run metadata for run_id={run_id}")
+        if steps is None:
+            steps = []
+
+        # 2) Prepare initial input/context
+        initial_input: Any = None
+        initial_context_data: Dict[str, Any] = {}
+        try:
+            # Prefer trace root attributes for input when available
+            if isinstance(trace, dict):
+                attrs = trace.get("attributes", {}) if trace else {}
+                initial_input = attrs.get("flujo.input", None)
+        except Exception:
+            initial_input = None
+        # Fallback to stored state snapshot
+        try:
+            loaded_state = await self.state_backend.load_state(run_id)
+            if loaded_state is not None:
+                initial_context_data = loaded_state.get("pipeline_context") or {}
+        except Exception:
+            initial_context_data = {}
+
+        # 3) Build map of recorded raw responses keyed by step name and attempt
+        response_map: Dict[str, Any] = {}
+        for s in steps:
+            step_name = s.get("step_name", "")
+            key = f"{step_name}:attempt_1"
+            raw_resp = s.get("raw_response")
+            if raw_resp is None:
+                # As a fallback, use the output (best-effort) if raw not present
+                raw_resp = s.get("output")
+            response_map[key] = raw_resp
+
+        # 4) Extract ordered human inputs from trace events
+        human_inputs: list[Any] = []
+
+        def _collect_events(span: Dict[str, Any]) -> None:
+            try:
+                for ev in span.get("events", []) or []:
+                    if ev.get("name") == "flujo.resumed":
+                        human_inputs.append(ev.get("attributes", {}).get("human_input"))
+                for ch in span.get("children", []) or []:
+                    _collect_events(ch)
+            except Exception:
+                pass
+
+        if isinstance(trace, dict):
+            _collect_events(trace)
+
+        # 5) Create ReplayAgent
+        from ..testing.replay import ReplayAgent
+
+        replay_agent = ReplayAgent(response_map)
+
+        # 6) Override all step agents with the ReplayAgent in-memory
+        self._ensure_pipeline()
+        assert self.pipeline is not None
+        for st in self.pipeline.steps:
+            try:
+                setattr(st, "agent", replay_agent)
+            except Exception:
+                pass
+
+        # 7) Patch resume_async to feed human inputs without external IO
+        original_resume = self.resume_async
+
+        async def _resume_patched(
+            paused_result: PipelineResult[ContextT], human_input: Any
+        ) -> PipelineResult[ContextT]:
+            # Pull next recorded input
+            if not human_inputs:
+                raise OrchestratorError("ReplayError: no recorded human input available for resume")
+            next_input = human_inputs.pop(0)
+            return await original_resume(paused_result, next_input)
+
+        self.resume_async = _resume_patched
+
+        # 8) Execute run with restored input/context
+        final_result: PipelineResult[ContextT] | None = None
+        async for item in self.run_async(initial_input, initial_context_data=initial_context_data):
+            final_result = item
+        assert final_result is not None
+
+        # If the pipeline paused, automatically resume using recorded inputs until completion
+        try:
+            from ..domain.models import PipelineContext as _PipelineContext
+        except Exception:
+            _PipelineContext = None  # type: ignore[assignment]
+
+        while True:
+            try:
+                ctx = getattr(final_result, "final_pipeline_context", None)
+                is_paused = False
+                if _PipelineContext is not None and isinstance(ctx, _PipelineContext):
+                    is_paused = ctx.scratchpad.get("status") == "paused"
+                if not is_paused:
+                    break
+                # Resume with the patched method (ignores provided human_input and pops from queue)
+                final_result = await self.resume_async(final_result, None)  # type: ignore[arg-type]
+            except Exception:
+                break
+        return final_result
 
     def as_step(
         self, name: str, *, inherit_context: bool = True, **kwargs: Any

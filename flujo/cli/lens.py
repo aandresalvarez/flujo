@@ -70,6 +70,73 @@ def trace_command_cli(run_id: str) -> None:
     trace_command(run_id)
 
 
+@lens_app.command("replay")
+def replay_command(
+    run_id: str,
+    file: Optional[str] = typer.Option(
+        None, "--file", "-f", help="Path to the Python file that defines the pipeline"
+    ),
+    object_name: str = typer.Option(
+        "pipeline", "--object", "-o", help="Name of the pipeline variable in the file"
+    ),
+    json_output: bool = typer.Option(
+        False, "--json", "--json-output", help="Output raw JSON instead of formatted result"
+    ),
+):
+    """Replay a prior run deterministically using recorded trace and responses."""
+    backend = load_backend_from_config()
+    if not file:
+        typer.echo(
+            "[red]Error: --file is required to load the target pipeline for replay[/red]",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    try:
+        from .helpers import (
+            load_pipeline_from_file,
+            create_flujo_runner,
+            display_pipeline_results,
+        )
+        from flujo.application.runner import Flujo
+
+        pipeline_obj, _ = load_pipeline_from_file(file, object_name)
+        runner: Flujo = create_flujo_runner(
+            pipeline=pipeline_obj,
+            context_model_class=None,
+            initial_context_data=None,
+        )
+        # Attach operations backend so replay can load trace and steps from the configured store
+        try:
+            runner.state_backend = backend  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
+        async def _run() -> any:
+            return await runner.replay_from_trace(run_id)
+
+        result = asyncio.run(_run())
+
+        if json_output:
+            from flujo.utils.serialization import serialize_to_json_robust
+
+            typer.echo(serialize_to_json_robust(result, indent=2))
+        else:
+            display_pipeline_results(result, run_id, json_output)
+
+    except Exception as e:
+        try:
+            import os
+
+            os.makedirs("output", exist_ok=True)
+            with open("output/last_run_error.txt", "w") as f:
+                f.write(repr(e))
+        except Exception:
+            pass
+        typer.echo(f"[red]Replay failed: {e}", err=True)
+        raise typer.Exit(1)
+
+
 @lens_app.command("spans")
 def list_spans(
     run_id: str,

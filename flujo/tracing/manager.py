@@ -144,6 +144,17 @@ class TraceManager:
         except Exception:
             pass
 
+    def add_event(self, name: str, attributes: Dict[str, Any]) -> None:
+        """Attach an event to the current active span (best-effort)."""
+        try:
+            if not self._span_stack:
+                return
+            current_span = self._span_stack[-1]
+            current_span.events.append({"name": name, "attributes": attributes})
+        except Exception:
+            # Never fail production due to tracing utilities
+            pass
+
     async def _handle_post_step(self, payload: PostStepPayload) -> None:
         """Handle post-step event - finalize current span."""
         if not self._span_stack:

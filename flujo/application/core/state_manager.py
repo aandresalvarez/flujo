@@ -418,6 +418,12 @@ class StateManager(Generic[ContextT]):
                     "input": None,
                     "output": step_result.output,
                     "error": step_result.feedback if not step_result.success else None,
+                    # Persist raw response if present in metadata (FSD-013)
+                    "raw_response": (
+                        step_result.metadata_.get("raw_llm_response")
+                        if isinstance(getattr(step_result, "metadata_", None), dict)
+                        else None
+                    ),
                 }
             )
         except NotImplementedError:

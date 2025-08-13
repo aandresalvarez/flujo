@@ -262,7 +262,7 @@ def _validate_column_definition(column_def: str) -> bool:
     return True
 
 
-class SQLiteBackend(StateBackend):
+class SQLiteBackend(StateBackend):  # type: ignore[misc]
     """SQLite-backed persistent storage for workflow state with optimized schema."""
 
     _global_file_locks: "weakref.WeakKeyDictionary[AbstractEventLoop, Dict[str, asyncio.Lock]]" = (
@@ -423,6 +423,7 @@ class SQLiteBackend(StateBackend):
                         step_index INTEGER NOT NULL,
                         status TEXT NOT NULL,
                         output TEXT,
+                        raw_response TEXT,
                         cost_usd REAL,
                         token_counts INTEGER,
                         execution_time_ms INTEGER,
@@ -646,6 +647,22 @@ class SQLiteBackend(StateBackend):
         await db.execute(
             "UPDATE workflow_state SET current_step_index = 0 WHERE current_step_index IS NULL"
         )
+        # Ensure steps table has raw_response column (FSD-013)
+        try:
+            cursor = await db.execute("PRAGMA table_info(steps)")
+            steps_columns = {row[1] for row in await cursor.fetchall()}
+            await cursor.close()
+        except sqlite3.OperationalError:
+            steps_columns = set()
+
+        if steps_columns:
+            if "raw_response" not in steps_columns:
+                try:
+                    await db.execute("ALTER TABLE steps ADD COLUMN raw_response TEXT")
+                except sqlite3.OperationalError:
+                    # Ignore if cannot alter; will rely on write-path retry/migration
+                    pass
+
         await db.execute(
             "UPDATE workflow_state SET pipeline_context = '{}' WHERE pipeline_context IS NULL"
         )
@@ -1314,9 +1331,9 @@ class SQLiteBackend(StateBackend):
                     await db.execute(
                         """
                     INSERT OR REPLACE INTO steps (
-                        run_id, step_name, step_index, status, output, cost_usd,
+                        run_id, step_name, step_index, status, output, raw_response, cost_usd,
                         token_counts, execution_time_ms, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                         (
                             step_data["run_id"],
@@ -1324,6 +1341,9 @@ class SQLiteBackend(StateBackend):
                             step_data["step_index"],
                             step_data.get("status", "completed"),
                             _fast_json_dumps(step_data.get("output")),
+                            _fast_json_dumps(step_data.get("raw_response"))
+                            if step_data.get("raw_response") is not None
+                            else None,
                             step_data.get("cost_usd"),
                             step_data.get("token_counts"),
                             step_data.get("execution_time_ms"),
@@ -1396,7 +1416,7 @@ class SQLiteBackend(StateBackend):
             async with aiosqlite.connect(self.db_path) as db:
                 cursor = await db.execute(
                     """
-                    SELECT step_name, step_index, status, output, cost_usd, token_counts,
+                    SELECT step_name, step_index, status, output, raw_response, cost_usd, token_counts,
                            execution_time_ms, created_at
                     FROM steps WHERE run_id = ? ORDER BY step_index
                     """,
@@ -1412,10 +1432,11 @@ class SQLiteBackend(StateBackend):
                             "step_index": r[1],
                             "status": r[2],
                             "output": safe_deserialize(json.loads(r[3])) if r[3] else None,
-                            "cost_usd": r[4],
-                            "token_counts": r[5],
-                            "execution_time_ms": r[6],
-                            "created_at": r[7],
+                            "raw_response": safe_deserialize(json.loads(r[4])) if r[4] else None,
+                            "cost_usd": r[5],
+                            "token_counts": r[6],
+                            "execution_time_ms": r[7],
+                            "created_at": r[8],
                         }
                     )
                 return results

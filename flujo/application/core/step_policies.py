@@ -495,6 +495,12 @@ async def _execute_simple_step_policy_impl(
                     options["top_k"] = cfg.top_k
                 if getattr(cfg, "top_p", None) is not None:
                     options["top_p"] = cfg.top_p
+            # Inject step execution identifiers for ReplayAgent (FSD-013)
+            try:
+                options["step_name"] = getattr(step, "name", "unknown")
+                options["attempt_number"] = int(attempt)
+            except Exception:
+                pass
 
             try:
                 agent_output = await core._agent_runner.run(
@@ -533,6 +539,24 @@ async def _execute_simple_step_policy_impl(
                     # Re-raise strict pricing errors immediately
                     raise
                 raise
+            # Attach raw LLM response into step metadata for replay (FSD-013)
+            try:
+                if getattr(step, "agent", None) is not None:
+                    raw_resp = None
+                    # Support AsyncAgentWrapper and compatible agents exposing last raw response
+                    if hasattr(step.agent, "_last_raw_response"):
+                        raw_resp = getattr(step.agent, "_last_raw_response")
+                    # Fallback: if the agent_output wraps an output with usage, also persist it
+                    if raw_resp is None and hasattr(agent_output, "usage"):
+                        raw_resp = agent_output
+                    if raw_resp is not None:
+                        if result.metadata_ is None:
+                            result.metadata_ = {}
+                        result.metadata_["raw_llm_response"] = raw_resp
+            except Exception:
+                # Never fail a step due to metadata capture
+                pass
+
             result.cost_usd = cost_usd
             result.token_counts = prompt_tokens + completion_tokens
             await core._usage_meter.add(cost_usd, prompt_tokens, completion_tokens)

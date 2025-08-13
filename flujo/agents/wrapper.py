@@ -160,6 +160,14 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                         ),
                         timeout=self._timeout_seconds,
                     )
+                    # Preserve the exact raw response object for downstream tracing/persistence
+                    # This is intentionally stored on the wrapper instance to avoid changing
+                    # the value type returned to policies and processors.
+                    try:
+                        self._last_raw_response = raw_agent_response
+                    except Exception:
+                        # Never let tracing state break execution
+                        pass
                     logfire.info(f"Agent '{self._model_name}' raw response: {raw_agent_response}")
 
                     if isinstance(raw_agent_response, str) and raw_agent_response.startswith(
