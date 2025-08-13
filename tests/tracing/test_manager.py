@@ -37,7 +37,7 @@ async def test_prerun_sets_canonical_root_attributes() -> None:
     await mgr.hook(pre)
 
     assert mgr._root_span is not None
-    assert mgr._root_span.name == "pipeline_root"
+    assert mgr._root_span.name == "pipeline_run"
     attrs = mgr._root_span.attributes
     assert attrs["flujo.input"].startswith("{")  # stringified input
     assert attrs["flujo.run_id"] == "run-123"

@@ -262,7 +262,7 @@ def _validate_column_definition(column_def: str) -> bool:
     return True
 
 
-class SQLiteBackend(StateBackend):  # type: ignore[misc]
+class SQLiteBackend(StateBackend):
     """SQLite-backed persistent storage for workflow state with optimized schema."""
 
     _global_file_locks: "weakref.WeakKeyDictionary[AbstractEventLoop, Dict[str, asyncio.Lock]]" = (

@@ -76,7 +76,7 @@ class TraceManager:
 
         self._root_span = Span(
             span_id=str(uuid.uuid4()),
-            name="pipeline_root",
+            name="pipeline_run",
             start_time=time.monotonic(),  # Use monotonic time for accurate timing
             attributes=root_attrs,
         )
@@ -104,6 +104,42 @@ class TraceManager:
             "flujo.step.type": type(payload.step).__name__,
             "step_input": str(payload.step_input),
         }
+        # Attach policy name based on step type mapping (registry parity)
+        try:
+            def _policy_name_for_step(step_obj: Any) -> str:
+                try:
+                    # Local imports to avoid import-time circulars
+                    from flujo.domain.dsl.loop import LoopStep as _Loop
+                    from flujo.domain.dsl.parallel import ParallelStep as _Par
+                    from flujo.domain.dsl.conditional import ConditionalStep as _Cond
+                    from flujo.domain.dsl.dynamic_router import (
+                        DynamicParallelRouterStep as _Router,
+                    )
+                    from flujo.domain.dsl.step import HumanInTheLoopStep as _Hitl
+                    from flujo.steps.cache_step import CacheStep as _Cache
+                except Exception:
+                    _Loop = _Par = _Cond = _Router = _Hitl = _Cache = None  # type: ignore
+                try:
+                    if _Loop is not None and isinstance(step_obj, _Loop):
+                        return "DefaultLoopStepExecutor"
+                    if _Par is not None and isinstance(step_obj, _Par):
+                        return "DefaultParallelStepExecutor"
+                    if _Cond is not None and isinstance(step_obj, _Cond):
+                        return "DefaultConditionalStepExecutor"
+                    if _Router is not None and isinstance(step_obj, _Router):
+                        return "DefaultDynamicRouterStepExecutor"
+                    if _Hitl is not None and isinstance(step_obj, _Hitl):
+                        return "DefaultHitlStepExecutor"
+                    if _Cache is not None and isinstance(step_obj, _Cache):
+                        return "DefaultCacheStepExecutor"
+                except Exception:
+                    pass
+                return "DefaultAgentStepExecutor"
+
+            step_attrs["flujo.step.policy"] = _policy_name_for_step(payload.step)
+        except Exception:
+            # Best-effort: omit policy if detection fails
+            pass
         # Optional enriched fields
         step_id = getattr(payload.step, "id", None)
         if step_id is not None:

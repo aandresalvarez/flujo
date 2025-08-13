@@ -1218,10 +1218,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         assert final_result is not None
 
         # If the pipeline paused, automatically resume using recorded inputs until completion
-        try:
-            from ..domain.models import PipelineContext as _PipelineContext
-        except Exception:
-            _PipelineContext = None  # type: ignore[assignment]
+        from ..domain.models import PipelineContext as _PipelineContext
 
         while True:
             try:
@@ -1232,7 +1229,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 if not is_paused:
                     break
                 # Resume with the patched method (ignores provided human_input and pops from queue)
-                final_result = await self.resume_async(final_result, None)  # type: ignore[arg-type]
+                final_result = await self.resume_async(final_result, cast(Any, None))
             except Exception:
                 break
         return final_result

@@ -139,9 +139,9 @@ class TestHighConcurrencyStress:
         executions_per_second = total_executions / duration
 
         assert success_rate >= 0.85, f"Sustained success rate too low: {success_rate:.2%}"
-        assert (
-            executions_per_second >= 10
-        ), f"Throughput too low: {executions_per_second:.1f} exec/s"
+        assert executions_per_second >= 10, (
+            f"Throughput too low: {executions_per_second:.1f} exec/s"
+        )
 
         print(
             f"Sustained test: {total_successes}/{total_executions} succeeded, {executions_per_second:.1f} exec/s"
@@ -265,9 +265,9 @@ class TestMemoryPressureStress:
         assert success_rate >= 0.8, f"Success rate under memory pressure: {success_rate:.2%}"
 
         # Memory increase should be reasonable (less than 500MB)
-        assert (
-            memory_increase < 500 * 1024 * 1024
-        ), f"Excessive memory usage: {memory_increase / 1024 / 1024:.2f}MB"
+        assert memory_increase < 500 * 1024 * 1024, (
+            f"Excessive memory usage: {memory_increase / 1024 / 1024:.2f}MB"
+        )
 
         print(
             f"Memory test: {len(successful_results)}/{len(results)} succeeded, "
@@ -690,9 +690,9 @@ class TestSustainedLoadStress:
         executions_per_second = total_executions / duration
 
         assert success_rate >= 0.95, f"Sustained success rate: {success_rate:.2%}"
-        assert (
-            executions_per_second >= 5
-        ), f"Sustained throughput: {executions_per_second:.1f} exec/s"
+        assert executions_per_second >= 5, (
+            f"Sustained throughput: {executions_per_second:.1f} exec/s"
+        )
 
         # Check system stability
         stats = sustained_executor.get_optimization_stats()

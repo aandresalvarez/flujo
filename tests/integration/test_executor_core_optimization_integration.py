@@ -270,9 +270,9 @@ class TestOptimizationComponentIntegration:
 
         # Memory increase should be controlled by optimizations
         max_memory_increase = 100.0  # 100MB max
-        assert (
-            memory_increase < max_memory_increase
-        ), f"Excessive memory usage: {memory_increase:.2f}MB"
+        assert memory_increase < max_memory_increase, (
+            f"Excessive memory usage: {memory_increase:.2f}MB"
+        )
 
         # Get memory optimization stats
         stats = full_optimization_executor.get_optimization_stats()
@@ -540,9 +540,9 @@ class TestErrorHandlingIntegration:
         print(f"Late average: {late_avg:.6f}s")
 
         # Circuit breaker should make later executions faster
-        assert (
-            late_avg <= early_avg * 2
-        ), f"Circuit breaker not working: {late_avg:.6f}s vs {early_avg:.6f}s"
+        assert late_avg <= early_avg * 2, (
+            f"Circuit breaker not working: {late_avg:.6f}s vs {early_avg:.6f}s"
+        )
 
     @pytest.mark.skip(
         reason="Fallback loop issue - needs fundamental redesign of fallback mechanism"
@@ -706,9 +706,9 @@ class TestTelemetryIntegration:
         # In production, this would be much lower, but in testing with mocks it can be higher
         # Increased threshold to account for test environment variability and mock overhead
         max_overhead_ratio = 100.0  # Increased from 40.0 to allow for test environment overhead
-        assert (
-            overhead_ratio < max_overhead_ratio
-        ), f"Telemetry overhead too high: {overhead_ratio:.2f}x"
+        assert overhead_ratio < max_overhead_ratio, (
+            f"Telemetry overhead too high: {overhead_ratio:.2f}x"
+        )
 
         # Log the overhead for monitoring
         print(f"Note: Telemetry overhead in test environment: {overhead_ratio:.2f}x")
