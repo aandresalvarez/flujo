@@ -80,9 +80,11 @@ class StepCoordinator(Generic[ContextT]):
             remaining = None
             from flujo.application.core.executor_core import ExecutorCore as _Exec
 
-            remaining = (
-                _Exec.CURRENT_QUOTA.get().get_remaining() if _Exec.CURRENT_QUOTA.get() else None
-            )
+            quota_obj = _Exec.CURRENT_QUOTA.get()
+            if isinstance(quota_obj, Quota):
+                remaining = quota_obj.get_remaining()
+            else:
+                remaining = None
             if remaining is not None:
                 quota_before_usd, quota_before_tokens = remaining
         except Exception:
