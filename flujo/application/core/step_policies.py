@@ -1,6 +1,6 @@
 from __future__ import annotations
 import asyncio
-from typing import Any, Awaitable, Optional, Protocol, Callable, Dict, List, Tuple
+from typing import Any, Awaitable, Optional, Protocol, Callable, Dict, List, Tuple, Type
 from pydantic import BaseModel
 from flujo.domain.models import (
     StepResult,
@@ -43,6 +43,52 @@ import time
 Note: The pipeline orchestration helper has moved to ExecutorCore._execute_pipeline_via_policies
 to centralize orchestration logic. Policy code should delegate to the core instead of re-implementing it.
 """
+
+
+# --- Policy Registry (FSD-010) ---
+
+
+class PolicyRegistry:
+    """Registry that maps `Step` subclasses to their execution policy instances.
+
+    This enables Open/Closed dispatch in the executor by performing a
+    dictionary lookup rather than a sequential isinstance chain.
+    """
+
+    def __init__(self) -> None:
+        # Type-safe mapping: Step subclass → policy instance (opaque type)
+        self._registry: Dict[Type[Step], Any] = {}
+
+    def register(self, step_type: Type[Step], policy: Any) -> None:
+        """Register a policy for a given `Step` subclass.
+
+        Raises:
+            TypeError: if `step_type` is not a subclass of `Step`.
+        """
+        # Local import to avoid circulars during module import time
+        from flujo.domain.dsl.step import Step as _BaseStep
+
+        if not isinstance(step_type, type) or not issubclass(step_type, _BaseStep):
+            raise TypeError("step_type must be a subclass of Step")
+        self._registry[step_type] = policy
+
+    def get(self, step_type: Type[Step]) -> Optional[Any]:
+        """Return the policy for `step_type` or its nearest registered ancestor.
+
+        Walks the MRO so subclasses of registered step types resolve to the
+        ancestor's policy (e.g., a custom loop subclass resolves to LoopStep).
+        """
+        # Exact match fast-path
+        policy = self._registry.get(step_type)
+        if policy is not None:
+            return policy
+        try:
+            for base in step_type.__mro__[1:]:  # skip the class itself
+                if base in self._registry:
+                    return self._registry[base]
+        except Exception:
+            pass
+        return None
 
 
 # FSD-009: Legacy Usage Governor removed; pure quota-only mode

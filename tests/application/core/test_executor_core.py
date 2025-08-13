@@ -1,4 +1,9 @@
 from flujo.application.core.executor_core import ExecutorCore
+from flujo.domain.dsl.loop import LoopStep
+from flujo.domain.dsl.parallel import ParallelStep
+from flujo.domain.dsl.conditional import ConditionalStep
+from flujo.domain.dsl.dynamic_router import DynamicParallelRouterStep
+from flujo.domain.dsl.step import HumanInTheLoopStep
 from flujo.domain.dsl.step import Step
 from flujo.domain.models import Failure, StepResult
 
@@ -34,3 +39,21 @@ async def test_executor_core_choke_point_converts_unexpected_exception_to_failur
     assert "boom" in (outcome.feedback or "")
     assert isinstance(outcome.step_result, StepResult)
     assert outcome.step_result.success is False
+
+
+def test_executor_core_policy_registry_populated():
+    core = ExecutorCore()
+
+    def _same_callable(a, b):
+        return getattr(a, "__func__", a) is getattr(b, "__func__", b)
+
+    # Base mapping
+    assert _same_callable(core.policy_registry.get(Step), core._policy_default_step)
+    # Complex steps
+    assert _same_callable(core.policy_registry.get(LoopStep), core._policy_loop_step)
+    assert _same_callable(core.policy_registry.get(ParallelStep), core._policy_parallel_step)
+    assert _same_callable(core.policy_registry.get(ConditionalStep), core._policy_conditional_step)
+    assert _same_callable(
+        core.policy_registry.get(DynamicParallelRouterStep), core._policy_dynamic_router_step
+    )
+    assert _same_callable(core.policy_registry.get(HumanInTheLoopStep), core._policy_hitl_step)

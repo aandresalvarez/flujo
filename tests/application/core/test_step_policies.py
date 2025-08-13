@@ -1,6 +1,8 @@
-from flujo.application.core.step_policies import DefaultHitlStepExecutor
+from typing import Any
+
+from flujo.application.core.step_policies import DefaultHitlStepExecutor, PolicyRegistry
 from flujo.domain.models import Paused
-from flujo.domain.dsl.step import HumanInTheLoopStep
+from flujo.domain.dsl.step import HumanInTheLoopStep, Step
 
 
 class _DummyCore:
@@ -22,3 +24,40 @@ async def test_hitl_executor_returns_paused_outcome():
     )
     assert isinstance(outcome, Paused)
     assert "Please confirm" in outcome.message
+
+
+class DummyStep(Step[Any, Any]):
+    pass
+
+
+def test_policy_registry_register_and_get():
+    registry = PolicyRegistry()
+
+    class DummyPolicy:
+        pass
+
+    policy = DummyPolicy()
+    registry.register(DummyStep, policy)
+    assert registry.get(DummyStep) is policy
+
+
+def test_policy_registry_get_unregistered_returns_none():
+    registry = PolicyRegistry()
+
+    class AnotherStep(DummyStep):
+        pass
+
+    assert registry.get(AnotherStep) is None
+
+
+def test_policy_registry_rejects_non_step_types():
+    registry = PolicyRegistry()
+
+    class NotAStep:
+        pass
+
+    try:
+        registry.register(NotAStep, object())  # type: ignore[arg-type]
+        assert False, "Expected TypeError for non-Step registration"
+    except TypeError:
+        pass

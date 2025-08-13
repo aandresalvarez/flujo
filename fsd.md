@@ -1,211 +1,109 @@
-## FSD-009: First-Class Quotas – Implementation Journal and Plan
+  
 
-This document tracks the ongoing work to introduce First-Class Quotas to Flujo (depends on FSD-008 Typed Step Outcomes), summarizing what’s done, current challenges, and the detailed task list to reach a production-ready rollout in line with the guidance in `FLUJO_TEAM_GUIDE.md`.
+## **Functional Specification Document: Policy Registry for Step Dispatch (FSD-010)**
 
-### 1) Scope and Intent (short)
-- Replace reactive post-step usage checks with proactive, deterministic budget reservations that flow as a first-class object (`Quota`) through execution.
-- Guarantee safety and determinism across complex control flow (Parallel, Loop, Conditional, Dynamic Router) without violating our policy-driven architecture and control-flow exception patterns.
+**Author:** Alvaro
+**Date:** 2023-10-27
+**Status:** Proposed
+**JIRA/Ticket:** FLUJO-125 (Example Ticket ID)
+**Depends On:** FSD-008 (Typed Step Outcomes)
 
-### 2) Work completed so far
-- Models and state wiring
-  - Implemented `UsageEstimate` and `Quota` (thread-safe, with `reserve`, `reclaim`, `split`, `get_remaining`) in `flujo/domain/models.py`.
-  - Added `quota: Optional[Quota]` to `ExecutionFrame` in `flujo/application/core/types.py`.
-  - Introduced root `Quota` creation in the Runner (`flujo/application/runner.py`) from `UsageLimits` and injected it via `ExecutionManager`.
-  - Propagated `quota` through the backend request path:
-    - `flujo/domain/backends.py` (`StepExecutionRequest.quota`)
-    - `flujo/infra/backends.py` (frame creation includes `quota`).
-  - Added `CURRENT_QUOTA` (ContextVar) to `ExecutorCore` to reliably propagate quota across nested/recursive execution.
+### **1. Overview**
 
-- Policy integrations
-  - `DefaultAgentStepExecutor` now performs pre-execution reservation:
-    - Simple `_estimate_usage` heuristic (uses `step.config.expected_tokens/expected_cost_usd` when present; otherwise minimal defaults to avoid false preemption) and calls `quota.reserve`.
-    - On insufficient quota, raises `UsageLimitExceededError` with legacy-friendly messages (e.g., “Cost limit of $X exceeded” / “Token limit of N exceeded”), preserving test expectations.
-    - After execution, reconciles differences via `quota.reclaim` using actual usage from `extract_usage_metrics`.
-  - `DefaultParallelStepExecutor` uses the shared quota object for branches while keeping the existing `_ParallelUsageGovernor` for aggregate post-usage checks (split quotas implementation planned; see Tasks).
-  - `DefaultLoopStepExecutor` relies on the same `Quota` instance across iterations; body steps reserve/reclaim normally.
+This document specifies the refactoring of the step execution dispatch mechanism within `ExecutorCore`. The current implementation uses a long, sequential `if/elif isinstance(...)` chain to route a `Step` object to the appropriate execution policy (e.g., `DefaultLoopStepExecutor`, `DefaultParallelStepExecutor`).
 
-- Executor and orchestration
-  - `ExecutorCore` sets and forwards `quota` on any frame it constructs (via `CURRENT_QUOTA`).
-  - No monolithic logic added to `ExecutorCore`; all behavior stays inside policies per `FLUJO_TEAM_GUIDE.md`.
+This pattern is brittle, inefficient, and violates the Open/Closed Principle. Adding a new `Step` type requires modifying the central `ExecutorCore`, increasing the risk of regressions.
 
-- Estimation layer
-  - Introduced pluggable `UsageEstimator` with registry + factory selection in `ExecutorCore` (adapter/validation minimal rule, heuristic default).
-  - Added TOML-driven overrides under `[cost.estimators.<provider>.<model>]` for `expected_cost_usd` and `expected_tokens`.
-  - Telemetry added for estimator selection, estimate used, and actual vs estimate variance to guide tuning.
+This FSD proposes replacing the `isinstance` chain with a **Policy Registry**. This registry will maintain a mapping from `Step` subclasses to their corresponding execution policy instances. The `ExecutorCore`'s dispatch logic will be simplified to a single dictionary lookup, making the system more modular, extensible, and easier to maintain.
 
-- Test run snapshot (fast tests)
-  - Current status (post-integration iteration): majority of tests pass; remaining failures cluster around control-flow exception propagation (Paused/HITL), message parity for legacy expectations, and fallback/conditional edge cases that now intersect with quota logic.
+### **2. Rationale & Goals**
 
-### 3) Key challenges observed
-- Control-flow exceptions vs. quota errors (architectural)
-  - PausedException and other control-flow exceptions must bypass all reservation handlers and be re-raised exactly as before. Some handlers still wrap exceptions incorrectly causing unexpected outcomes.
+#### **2.1. Problems with the Current Approach**
 
-- Legacy error message parity
-  - Several tests assert precise wording from the legacy `UsageGovernor`. Our new reservation path must emit identical messages (cost/token limits) where appropriate without distorting error categorization.
+*   **Brittleness:** The `ExecutorCore.execute` method must be modified every time a new complex step type is added. This centralizes logic that should be decentralized.
+*   **Inefficiency:** The sequential `isinstance` checks introduce a small but measurable overhead for each step execution, especially for steps checked later in the chain.
+*   **Poor Extensibility:** Adding custom, user-defined `Step` types with unique execution logic is not possible without modifying the core framework code.
+*   **Code Clutter:** The dispatch logic in `ExecutorCore` is long and hard to read, obscuring its primary responsibility of orchestrating the execution frame.
 
-- Fallback/conditional/redirect edge-cases
-  - Some branches now encounter quota errors earlier than before. We must ensure fallback and conditional handlers preserve original error semantics and do not mask control-flow exceptions.
+#### **2.2. Goals of this Refactor**
 
-- Parallel determinism and fairness
-  - Shared-quota approach prevents overruns but does not yet provide deterministic sub-quota allocation. We’ll implement `Quota.split(n)` usage with precise, deterministic distribution and parent zeroing semantics (already implemented in the model, pending policy wiring and tests).
+*   **Decouple Dispatcher from Policies:** The `ExecutorCore` should not need to know about concrete `Step` types. Its only job should be to look up the correct policy and invoke it.
+*   **Improve Modularity and Extensibility:** Adding a new `Step` type should only require creating a new policy class and registering it, with no changes to `ExecutorCore`.
+*   **Simplify Core Logic:** Radically simplify the `ExecutorCore.execute` method, making it shorter, more readable, and focused on its core responsibilities.
+*   **Unify Naming:** As part of this cleanup, ensure all executor-related classes are consistently named (e.g., `ExecutionCore` is not a goal of this FSD, but we should standardize on `ExecutorCore` internally).
 
-- Strict pricing mode interplay
-  - Reservation and post-usage reconciliation must not swallow strict pricing errors. Those must surface identically to legacy flows.
+### **3. Functional Requirements & Design**
 
-### 4) Detailed task list to reach production-ready
+#### **Task 3.1: Create the `PolicyRegistry` Class**
 
-#### A. Policy correctness and control-flow safety
-- [x] Ensure `DefaultAgentStepExecutor` reservation block re-raises control-flow exceptions unmodified (PausedException, InfiniteRedirectError, MockDetectionError) before any quota logic.
-- [x] Audit try/except blocks across policies (Agent/Loop/Parallel/Conditional/Router/Cache) so control-flow exceptions always bypass transformation, per “Control Flow Exception Pattern”.
-- [x] Normalize error imports/usage to avoid scope issues (e.g., UnboundLocalError for `UsageLimitExceededError`).
+A new class will be created to manage the mapping of step types to policy instances.
 
-#### B. Parallel quota splitting (deterministic)
-- [x] Replace shared-quota branch execution with deterministic `quota.split(n)`; pass each sub-quota to branch frames.
-- [x] Guarantee parent quota is consumed (set to zero) once split; ensure no double-spend.
-- [x] Add tests for nested parallel-within-loop and loop-within-parallel to prove composition safety and determinism.
+*   **Location:** `flujo/application/core/step_policies.py`
+*   **Implementation Details:**
+    *   Create a `PolicyRegistry` class.
+    *   It will contain a private dictionary: `_registry: Dict[Type[Step], Any] = {}`.
+    *   Implement a `register(self, step_type: Type[Step], policy: Any)` method. This method will add an entry to the `_registry`. It should raise a `TypeError` if `step_type` is not a subclass of `Step`.
+    *   Implement a `get(self, step_type: Type[Step]) -> Optional[Any]` method. This method will perform a lookup in the `_registry`.
+*   **Acceptance Criteria & Testing (`make test-fast`)**
+    *   **Unit Tests:** Create `tests/application/core/test_step_policies.py` (or add to it).
+        *   Test that `register` successfully adds a policy for a valid `Step` subclass.
+        *   Test that `register` raises a `TypeError` if a non-`Step` class is provided.
+        *   Test that `get` returns the correct policy for a registered type.
+        *   Test that `get` returns `None` for an unregistered type.
 
-#### C. Estimation strategy (phase 1 – heuristic, phase 2 – learnable)
-- [x] Phase 1: Keep safe defaults and step-config hints. Add conservative upper-bounds for known agents where feasible.
-- [x] Introduce pluggable estimator interface (registry + factory) with default heuristic and adapter/validation minimal rule.
-- [x] Add TOML-driven overrides for provider/model under `[cost.estimators.<provider>.<model>]` with `expected_cost_usd` and `expected_tokens`.
-- [x] Telemetry: record selected estimator, estimate values, and actual vs estimate deltas post-step.
-- [x] Phase 2: Add learnable/historical estimator variant wiring into the factory; gate via config (`cost.estimation_strategy = "learnable"` or `[cost.learnable] enabled=true`).
+#### **Task 3.2: Instantiate and Populate the Registry**
 
-#### D. Message compatibility and UX
-- [x] Centralize translation of reservation failures into legacy-style messages (cost/token exceeded) for tests that rely on string equality.
-- [x] Ensure post-usage governor remains authoritative for detailed breach summaries until full migration.
+The `ExecutorCore` will now own an instance of the `PolicyRegistry` and populate it with the default policies.
 
-#### E. Strict pricing and metrics extraction
-- [x] Maintain strict pricing errors as first-class, non-masked exceptions (no new wrapping introduced by quota code).
-- [x] Add regression tests where reservation succeeds but strict pricing later fails; verify surfaced failure semantics and feedback.
+*   **Location:** `flujo/application/core/executor_core.py`
+*   **Implementation Details:**
+    *   In the `ExecutorCore.__init__` method, create an instance of `PolicyRegistry`.
+    *   Register all the default policies. This involves importing the `Step` types (`LoopStep`, `ParallelStep`, etc.) and the policy classes (`DefaultLoopStepExecutor`, etc.) and calling `self.policy_registry.register(...)` for each one.
+    *   The `DefaultAgentStepExecutor` should be registered as the policy for the base `Step` class, making it the default for any step that doesn't have a more specific policy.
+*   **Acceptance Criteria & Testing (`make test-fast`)**
+    *   **Unit Tests:** In `tests/application/core/test_executor_core.py`:
+        *   Test that after `ExecutorCore` is initialized, its `policy_registry` attribute contains mappings for all standard complex step types (`LoopStep`, `ParallelStep`, `ConditionalStep`, `CacheStep`, `HumanInTheLoopStep`, etc.).
+        *   Assert that the policy registered for the base `Step` type is `DefaultAgentStepExecutor`.
 
-#### F. Conditional, Fallback, Router paths
-- [x] Conditional: propagate quota to branch execution; ensure reservation failure in selected branch yields correct failure semantics without masking original feedback.
-- [x] Fallback: ensure primary error + fallback error composition remains intact when quota preemption is involved; preserve metadata.
-- [x] Dynamic Router: router agent executes with quota and post-selection branches get appropriate sub-quotas or shared quota per design.
+#### **Task 3.3: Refactor `ExecutorCore.execute` to Use the Registry**
 
-#### G. Deprecation and migration of `UsageGovernor`
-- [ ] Mark legacy governor as deprecated in docs; remove all reactive checks from non-parallel codepaths.
-- [x] Keep `_ParallelUsageGovernor` during transition; retire once deterministic split + reservations exist and tests are updated to assert preemptive safety only.
+This is the central part of the refactor, where the `isinstance` chain is removed.
 
-#### H. Telemetry, diagnostics, and performance
-- [x] Add telemetry breadcrumbs for reservation decisions (estimate, reserved, actual, reclaimed) at low overhead.
-- [x] Estimation telemetry: record selector choice, estimate used, and actual vs estimate variance.
-- [x] Micro-benchmark reservation/reclaim under high contention; validate lock contention is negligible.
-- [x] Expose minimal counters for quota denials and estimation variance to support future estimator improvements.
+*   **Location:** `flujo/application/core/executor_core.py`
+*   **Implementation Details:**
+    *   Delete the entire `if isinstance(step, ParallelStep): ... elif isinstance(step, LoopStep): ...` chain.
+    *   The new dispatch logic will be:
+        1.  `policy = self.policy_registry.get(type(frame.step))`
+        2.  If `policy` is `None` (for a custom step type without a registered policy), fall back to the policy for the base `Step` class: `policy = self.policy_registry.get(Step)`.
+        3.  If no policy is found (which should be impossible if Task 3.2 is done correctly), raise a `NotImplementedError`.
+        4.  `return await policy.execute(self, frame)`.
+*   **Acceptance Criteria & Testing (`make all`)**
+    *   **Integration Tests:**
+        *   Create `tests/application/core/test_dispatch_logic.py`.
+        *   Create a simple pipeline with one of each `Step` type (`Step`, `LoopStep`, `ParallelStep`, etc.).
+        *   Run the pipeline and mock the `execute` method of each corresponding policy (`DefaultLoopStepExecutor`, etc.).
+        *   Assert that each mock was called exactly once. This proves the registry dispatch is working correctly for all step types.
+    *   **Regression Tests:**
+        *   Run the *entire existing test suite* (`make all`). All tests for loops, parallel execution, conditionals, etc., must pass without modification. This is the most critical acceptance criterion, as it proves the refactor did not change any existing behavior.
 
-#### I. Documentation and examples
-- [x] Update advanced guides (budget aware workflows) with Quota-based flow and examples.
-- [x] Add cookbook entries: deterministic parallel budget splitting; safe loop budgeting.
-- [x] Migration note: how to opt in, configure estimates, and validate.
-- [x] Added advanced guide: Usage Estimation configuration and tuning (TOML overrides, factory, telemetry).
+### **4. Rollout and Regression Plan**
 
-#### 4.a Implementation specs for remaining tasks (aligned with Team Guide)
+1.  **Branching:** This work will be done on a dedicated feature branch (e.g., `feature/FSD-010-policy-registry`).
+2.  **Implementation Order:**
+    *   Complete Task 3.1 and its unit tests.
+    *   Complete Task 3.2 and its unit tests. This ensures the registry is correctly populated before it's used.
+    *   Complete Task 3.3. This is the main change.
+3.  **Testing Strategy:**
+    *   `make test-fast`: This command will be used to run the unit tests for Task 3.1 and 3.2 as they are developed.
+    *   `make all`: This command will be run after Task 3.3 is complete. The full regression suite is the ultimate gate for this refactor. The new integration tests will provide targeted validation of the dispatch logic itself.
+4.  **Code Review:** Required. The review should focus on the simplicity of the new `ExecutorCore.execute` method and the correctness of the registry population.
+5.  **Merge:** Merge to the main branch after all unit, integration, and regression tests pass.
 
-##### D.1 Reservation failure message formatter (spec)
-- **Intent**: Centralize translation from `Quota.reserve` denials into legacy-compatible messages without leaking policy logic into `ExecutorCore`.
-- **Module**: `flujo/application/core/usage_messages.py`
-- **API**:
-```python
-from typing import Optional, Tuple
-from flujo.domain.models import UsageEstimate, UsageLimits
+### **5. Risks and Mitigation**
 
-class ReservationFailureMessage:
-    def __init__(self, human: str, code: str) -> None:
-        self.human: str = human           # e.g., "Cost limit of $1.00 exceeded"
-        self.code: str = code             # e.g., "COST_LIMIT_EXCEEDED" | "TOKEN_LIMIT_EXCEEDED"
-
-def format_reservation_denial(
-    estimate: UsageEstimate,
-    limits: UsageLimits,
-) -> ReservationFailureMessage:
-    """Return legacy-compatible message (string-equality stable for tests)."""
-    ...
-```
-- **Rules** (string parity):
-  - **Cost-first**: If `estimate.expected_cost_usd` exceeds `limits.max_cost_usd`, return exactly: `"Cost limit of $<limits.max_cost_usd:.2f> exceeded"`.
-  - **Token second**: Else if `estimate.expected_tokens` exceeds `limits.max_tokens`, return exactly: `"Token limit of <limits.max_tokens> exceeded"`.
-  - **Fallback**: Default to cost-style when both exceed; prefer most constrained resource (minimum remaining ratio).
-  - **No wrapping**: The caller (policy) raises `UsageLimitExceededError` using the returned `.human` message unchanged.
-- **Policy integration**: Only policies call this utility; `ExecutorCore` remains a dispatcher per `FLUJO_TEAM_GUIDE.md`.
-- **Tests**: Unit tests assert exact strings and error codes; regression tests cover adapter/validation steps and control-flow exception bypass.
-
-##### H.1 Telemetry events and metrics (spec)
-- **Intent**: Low-overhead breadcrumbs for estimator selection, reservations, and reconciliation.
-- **Event names**:
-  - `cost.estimator.selected` — fields: `provider`, `model`, `strategy`, `expected_tokens`, `expected_cost_usd`.
-  - `quota.reserve.attempt` — fields: `estimate_tokens`, `estimate_cost_usd`, `remaining_tokens`, `remaining_cost_usd`.
-  - `quota.reserve.denied` — fields: `reason_code` (matches message code), `limit_tokens`, `limit_cost_usd`.
-  - `quota.reconcile` — fields: `actual_tokens`, `actual_cost_usd`, `delta_tokens`, `delta_cost_usd`.
-- **Counters**:
-  - `quota.denials.total` (label: `reason_code`), `estimation.variance.count` (buckets by |delta|), `estimator.usage` (by `strategy`).
-- **Overhead guard**: No synchronous I/O; rely on existing metrics/telemetry adapters. Single function calls per event on the hot path.
-
-##### H.2 Performance micro-benchmark plan
-- Add micro-benchmarks for `Quota.reserve/reclaim/split` under contention (N=1,4,16 threads); assert < 2% overhead vs. no-reservation baseline in hot path benchmarks.
-- Validate RLock contention via synthetic parallel workloads; document results in `docs/optimization/state_backend_optimization.md` appendix.
-
-##### I.1 Docs and examples update plan
-- Update `docs/advanced/usage_estimation.md` with TOML overrides, factory selection, and telemetry fields listed above.
-- Add cookbook entries:
-  - `docs/cookbook/deterministic_parallel_quota.md`
-  - `docs/cookbook/safe_loop_budgeting.md`
-- Extend examples:
-  - `examples/robust_flujo_pipeline.py`: enable `[cost]` config and demonstrate denial surfacing.
-  - `examples/strict_pricing_demo.py`: cover reservation succeed + strict pricing fail scenario.
-
-##### G.1 UsageGovernor deprecation plan
-- Phase-out steps:
-  1) Mark `UsageGovernor` as deprecated in docs; link to Quota docs.
-  2) Remove reactive checks from non-parallel code paths; keep `_ParallelUsageGovernor` until parallel split is fully wired and tested.
-  3) After deterministic split rollout, retire `_ParallelUsageGovernor`; update tests to focus on preemptive denial semantics.
-- Acceptance: No behavior regressions in existing parallel tests; new tests prove deterministic fairness with `Quota.split`.
-
-##### Configuration flags (rollout toggles)
-- `cost.estimation_strategy`: `"heuristic" | "learnable"` (default: `"heuristic"`).
-- `[cost.learnable] enabled`: `bool` — gates learnable estimator instantiation.
-- `cost.enable_parallel_split`: `bool` — gate `Quota.split(n)` wiring in parallel policies (default: true once stabilized).
-- `[cost.estimators.<provider>.<model>] expected_cost_usd, expected_tokens`: precise overrides.
-
-##### Acceptance criteria (cross-cutting)
-- String equality for denial messages in tests using the centralized formatter.
-- Control-flow exceptions never wrapped or transformed by quota code.
-- Deterministic branch budgeting with `Quota.split(n)` in parallel; parent zeroed, no double-spend.
-- Telemetry present with negligible overhead and stable schemas.
-- Comprehensive unit + integration coverage as outlined in Section 5.
-
-### 5) Test plan (aligned with Team Guide)
-- Unit tests
-  - `Quota` behavior (reserve/reclaim/split/thread-safety), estimation functions, message formatting utility.
-  - Policy-level tests: Agent, Loop, Parallel, Conditional, Router – focus on reservation order, control-flow exceptions, message parity.
-- Integration tests
-  - End-to-end pipelines with varying `UsageLimits`, strict pricing on/off, nested control-flow.
-  - Deterministic parallel with `split(n)`; ensure no budget overrun and expected branches run/abort deterministically.
-- Regression tests
-  - Fallback semantics, conditional mapping, router selection; ensure previous guarantees remain.
-- Performance
-  - Measure overhead of reservations in hot paths; keep within acceptable thresholds defined by current benchmarks.
-
-### 6) Rollout strategy
-- Feature branch: `feature/FSD-009-first-class-quotas`.
-- Phased rollout:
-  1) Baseline reservation in Agent, shared-quota parallel (current state).
-  2) Deterministic quota splitting for parallel, refine exception boundaries.
-  3) Strict pricing/regression hardening, telemetry, documentation.
-  4) Deprecate legacy governor paths and finalize migration notes.
-
-### 7) Open questions (to be closed before GA)
-- Should estimation enforce different policies per step type (e.g., higher conservative tokens for LLM streaming)?
-- How to expose estimator pluggability without coupling policies to a concrete implementation?
-- Do we gate `Quota.split` behind a configuration flag initially for safer rollout?
-
-### 8) Decision log (high-level)
-- Quota is a mutable, thread-safe object (RLock) passed by reference through frames – chosen for low overhead and composability with loops/parallel.
-- Initial parallel uses shared quota to prevent regressions; move to deterministic `split(n)` next to eliminate race conditions fully and improve fairness.
-- Reservation failure maps to legacy governor messages for compatibility while migrating tests incrementally.
-
-### 9) Alignment with `FLUJO_TEAM_GUIDE.md`
-- Policy-driven architecture: all logic lives in policies; `ExecutorCore` remains a dispatcher.
-- Control-flow exception pattern: ensure Paused/Redirect/Mock exceptions bypass transformations.
-- Idempotency and isolation: loop and parallel policies keep proper context isolation; quota is orthogonal to context state.
-- Type safety and tests first: add unit/integration/regression tests for every policy path touched; maintain strict typing.
+*   **Risk:** A `Step` type is missed during registration, causing a `NotImplementedError` at runtime.
+    *   **Mitigation:** The unit tests for Task 3.2 are designed to prevent this. They will explicitly check that every known `Step` subclass is present in the registry after initialization.
+*   **Risk:** Performance degradation due to dictionary lookups.
+    *   **Mitigation:** This risk is extremely low. A dictionary lookup is significantly faster (O(1) on average) than a sequential `isinstance` chain (O(N)). This change is expected to be a net performance *improvement*. No specific performance tests are required unless a noticeable slowdown is observed during regression testing.
+*   **Risk:** Breaking backward compatibility for users who might have been monkey-patching the old `ExecutorCore.execute` method.
+    *   **Mitigation:** This is an internal refactor. The public API of `Flujo.run()` remains unchanged. We will accept this as a low-risk breaking change for advanced users who were modifying internal framework machinery.
