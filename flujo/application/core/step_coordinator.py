@@ -72,12 +72,33 @@ class StepCoordinator(Generic[ContextT]):
             Step results or streaming chunks
         """
         # Dispatch pre-step hook
+        # Capture quota snapshot if available on context scratchpad
+        quota_before_usd = None
+        quota_before_tokens = None
+        try:
+            # Best effort: some contexts may not have quota info
+            remaining = None
+            from flujo.application.core.executor_core import ExecutorCore as _Exec
+
+            remaining = (
+                _Exec.CURRENT_QUOTA.get().get_remaining() if _Exec.CURRENT_QUOTA.get() else None
+            )
+            if remaining is not None:
+                quota_before_usd, quota_before_tokens = remaining
+        except Exception:
+            quota_before_usd = None
+            quota_before_tokens = None
+
         await self._dispatch_hook(
             "pre_step",
             step=step,
             step_input=data,
             context=context,
             resources=self.resources,
+            attempt_number=getattr(step, "_current_attempt", None),
+            quota_before_usd=quota_before_usd,
+            quota_before_tokens=quota_before_tokens,
+            cache_hit=False,
         )
 
         # Execute step with telemetry
@@ -235,6 +256,20 @@ class StepCoordinator(Generic[ContextT]):
                     scratch = context.scratchpad
                     if "paused_step_input" not in scratch:
                         scratch["paused_step_input"] = data
+                # Emit pause event for tracing
+                try:
+                    await self._dispatch_hook(
+                        "on_step_failure",  # reuse channel to ensure TraceManager closes child span if any
+                        step_result=StepResult(
+                            name=getattr(step, "name", "<paused>"),
+                            success=False,
+                            feedback=str(e),
+                        ),
+                        context=context,
+                        resources=self.resources,
+                    )
+                except Exception:
+                    pass
                 # Do not append a synthetic result; just stop so runner can resume later
                 # Indicate to the ExecutionManager/Runner that execution should stop by raising a sentinel
                 raise PipelineAbortSignal("Paused for HITL")

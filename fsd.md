@@ -1,109 +1,135 @@
-  
+  Here is the Functional Specification Document for the next high-priority item on our roadmap: **"Formalize and Test the Trace Contract (FSD-011)"**.
 
-## **Functional Specification Document: Policy Registry for Step Dispatch (FSD-010)**
+This FSD directly addresses **Gap #8** from the architectural review, moving Flujo's observability from an implementation detail to a formal, guaranteed contract. This is essential for building reliable debugging, monitoring, and auditing tools on top of the framework.
+
+---
+
+## **Functional Specification Document: Formal Trace Contract (FSD-011)**
 
 **Author:** Alvaro
 **Date:** 2023-10-27
 **Status:** Proposed
-**JIRA/Ticket:** FLUJO-125 (Example Ticket ID)
-**Depends On:** FSD-008 (Typed Step Outcomes)
+**JIRA/Ticket:** FLUJO-126 (Example Ticket ID)
+**Depends On:** FSD-008 (Typed Step Outcomes), FSD-009 (First-Class Quotas)
 
 ### **1. Overview**
 
-This document specifies the refactoring of the step execution dispatch mechanism within `ExecutorCore`. The current implementation uses a long, sequential `if/elif isinstance(...)` chain to route a `Step` object to the appropriate execution policy (e.g., `DefaultLoopStepExecutor`, `DefaultParallelStepExecutor`).
+This document specifies the design for a canonical trace model for Flujo executions. Currently, telemetry spans are emitted by various components (`TraceManager`, `OTelHook`), but the structure, attributes, and events within these spans are an implicit, undocumented contract. This makes it difficult to build reliable debugging tools, dashboards, and automated analyses, as the telemetry data may change without notice.
 
-This pattern is brittle, inefficient, and violates the Open/Closed Principle. Adding a new `Step` type requires modifying the central `ExecutorCore`, increasing the risk of regressions.
+This FSD proposes defining a formal **Trace Contract** that specifies the required structure and metadata for spans and events generated during a pipeline run. This contract will be enforced through a new suite of "golden trace" tests, which will validate that the telemetry output of key pipeline patterns matches a known-good, versioned schema.
 
-This FSD proposes replacing the `isinstance` chain with a **Policy Registry**. This registry will maintain a mapping from `Step` subclasses to their corresponding execution policy instances. The `ExecutorCore`'s dispatch logic will be simplified to a single dictionary lookup, making the system more modular, extensible, and easier to maintain.
+This change promotes the **Axiom #4 (Auditability)** by making the observability data a reliable, first-class output of the system.
 
 ### **2. Rationale & Goals**
 
 #### **2.1. Problems with the Current Approach**
 
-*   **Brittleness:** The `ExecutorCore.execute` method must be modified every time a new complex step type is added. This centralizes logic that should be decentralized.
-*   **Inefficiency:** The sequential `isinstance` checks introduce a small but measurable overhead for each step execution, especially for steps checked later in the chain.
-*   **Poor Extensibility:** Adding custom, user-defined `Step` types with unique execution logic is not possible without modifying the core framework code.
-*   **Code Clutter:** The dispatch logic in `ExecutorCore` is long and hard to read, obscuring its primary responsibility of orchestrating the execution frame.
+*   **Implicit Contract:** The structure of telemetry spans is an implementation detail. It can change unintentionally, breaking any downstream tooling that depends on it.
+*   **Poor Debuggability:** Key decision-making context (e.g., why a fallback was triggered, what the quota was before a step) is not consistently captured in traces, making it difficult to debug complex failures.
+*   **Aspirational Auditability:** Without a guaranteed trace structure, the claim of being "auditable" is weak. It's impossible to build automated audit tools if the data format is unstable.
+*   **Inconsistent Tooling:** Building tools like `flujo lens trace` is difficult because the code has to make assumptions about the shape of the trace data stored in the backend.
 
 #### **2.2. Goals of this Refactor**
 
-*   **Decouple Dispatcher from Policies:** The `ExecutorCore` should not need to know about concrete `Step` types. Its only job should be to look up the correct policy and invoke it.
-*   **Improve Modularity and Extensibility:** Adding a new `Step` type should only require creating a new policy class and registering it, with no changes to `ExecutorCore`.
-*   **Simplify Core Logic:** Radically simplify the `ExecutorCore.execute` method, making it shorter, more readable, and focused on its core responsibilities.
-*   **Unify Naming:** As part of this cleanup, ensure all executor-related classes are consistently named (e.g., `ExecutionCore` is not a goal of this FSD, but we should standardize on `ExecutorCore` internally).
+*   **Establish a Canonical Trace Schema:** Define a stable, versioned contract for the structure of spans and events.
+*   **Enrich Trace Data:** Ensure that all critical execution decisions (retries, fallbacks, quota reservations, policy choices) are recorded as structured attributes or events in the trace.
+*   **Guarantee Auditability:** Make the trace a reliable, append-only ledger of execution that can be used for automated analysis and replay.
+*   **Enable Robust Tooling:** Provide a stable foundation for building and maintaining debugging tools like `flujo lens` and external monitoring dashboards.
+*   **Enforce the Contract with Tests:** Create a new category of "golden trace" tests that prevent regressions in telemetry output.
 
 ### **3. Functional Requirements & Design**
 
-#### **Task 3.1: Create the `PolicyRegistry` Class**
+#### **Task 3.1: Define the Trace Contract Schema**
 
-A new class will be created to manage the mapping of step types to policy instances.
+A formal schema will be documented, defining the required spans, attributes, and events.
 
-*   **Location:** `flujo/application/core/step_policies.py`
+*   **Location:** This will be a new documentation file: `docs/reference/trace_contract.md`.
+*   **Implementation Details:** The document will specify the following:
+    *   **Root Span (`pipeline_run`):**
+        *   **Attributes:** `flujo.run_id`, `flujo.pipeline.name`, `flujo.pipeline.version`, `flujo.input`, `flujo.budget.initial_cost_usd`, `flujo.budget.initial_tokens`.
+    *   **Step Span (one per step execution):**
+        *   **Span Name:** Must be the `step.name`.
+        *   **Attributes:**
+            *   `flujo.step.id`: A unique ID for this specific execution of the step.
+            *   `flujo.step.type`: The class name of the step (e.g., `ParallelStep`, `LoopStep`).
+            *   `flujo.step.policy`: The name of the execution policy used (e.g., `DefaultParallelStepExecutor`).
+            *   `flujo.attempt_number`: The current retry/attempt number for this step.
+            *   `flujo.cache.hit`: `true` or `false`.
+            *   `flujo.budget.quota_before_usd`, `flujo.budget.quota_before_tokens`: Quota *before* reservation.
+            *   `flujo.budget.estimate_cost_usd`, `flujo.budget.estimate_tokens`: The estimated usage.
+            *   `flujo.budget.actual_cost_usd`, `flujo.budget.actual_tokens`: The final actual usage.
+    *   **Standard Events (within a Step Span):**
+        *   `flujo.retry`: Triggered on a retry attempt. Attributes: `reason`, `delay_seconds`.
+        *   `flujo.fallback.triggered`: Triggered when a fallback step is executed. Attributes: `original_error`.
+        *   `flujo.paused`: Triggered when a step pauses for HITL. Attributes: `message`.
+        *   `flujo.resumed`: Triggered on resumption. Attributes: `human_input`.
+        *   `flujo.budget.violation`: Triggered on a `UsageLimitExceededError`. Attributes: `limit_type` (`cost` or `tokens`), `limit_value`, `actual_value`.
+*   **Acceptance Criteria & Testing:**
+    *   This task is documentation-only. Completion is marked by the creation and approval of the `trace_contract.md` file.
+
+#### **Task 3.2: Update Telemetry Emitters to Conform to the Contract**
+
+The `TraceManager` and `OTelHook` must be updated to emit spans and events that match the new contract.
+
+*   **Location:** `flujo/tracing/manager.py` and `flujo/telemetry/otel_hook.py`.
 *   **Implementation Details:**
-    *   Create a `PolicyRegistry` class.
-    *   It will contain a private dictionary: `_registry: Dict[Type[Step], Any] = {}`.
-    *   Implement a `register(self, step_type: Type[Step], policy: Any)` method. This method will add an entry to the `_registry`. It should raise a `TypeError` if `step_type` is not a subclass of `Step`.
-    *   Implement a `get(self, step_type: Type[Step]) -> Optional[Any]` method. This method will perform a lookup in the `_registry`.
+    *   Modify the `_handle_*` methods in both classes.
+    *   These methods will now need to access more detailed information from the `ExecutionFrame` or the `StepResult`. This information (like quota, attempt number) must be added to the hook payloads in `flujo/domain/events.py`.
+    *   For example, the `PreStepPayload` should be augmented with `attempt_number` and `quota_before`. The `PostStepPayload` should be augmented with `actual_cost` and `actual_tokens`.
 *   **Acceptance Criteria & Testing (`make test-fast`)**
-    *   **Unit Tests:** Create `tests/application/core/test_step_policies.py` (or add to it).
-        *   Test that `register` successfully adds a policy for a valid `Step` subclass.
-        *   Test that `register` raises a `TypeError` if a non-`Step` class is provided.
-        *   Test that `get` returns the correct policy for a registered type.
-        *   Test that `get` returns `None` for an unregistered type.
+    *   **Unit Tests:** In `tests/tracing/test_manager.py`:
+        *   Create mock `HookPayload` objects containing the new, richer data.
+        *   Call the `TraceManager.hook` method.
+        *   Inspect the generated `Span` objects to assert that all required attributes from the Trace Contract have been correctly set.
 
-#### **Task 3.2: Instantiate and Populate the Registry**
+#### **Task 3.3: Create a "Golden Trace" Testing Framework**
 
-The `ExecutorCore` will now own an instance of the `PolicyRegistry` and populate it with the default policies.
+A new testing harness will be created to validate the end-to-end trace output against a known-good "golden" file.
 
-*   **Location:** `flujo/application/core/executor_core.py`
+*   **Location:** A new test directory: `tests/golden_traces/`.
 *   **Implementation Details:**
-    *   In the `ExecutorCore.__init__` method, create an instance of `PolicyRegistry`.
-    *   Register all the default policies. This involves importing the `Step` types (`LoopStep`, `ParallelStep`, etc.) and the policy classes (`DefaultLoopStepExecutor`, etc.) and calling `self.policy_registry.register(...)` for each one.
-    *   The `DefaultAgentStepExecutor` should be registered as the policy for the base `Step` class, making it the default for any step that doesn't have a more specific policy.
+    1.  **Create a Test Pipeline:** Define a complex pipeline in `tests/golden_traces/test_pipeline.py` that uses a `LoopStep`, a `ParallelStep`, a `ConditionalStep`, a step that fails and triggers a `fallback`, and a step that gets retried.
+    2.  **Create a Trace Capturing Hook:** In `tests/golden_traces/utils.py`, create a simple hook that appends a serializable dictionary representation of every emitted span to a list.
+    3.  **Generate the Golden File:**
+        *   Run the test pipeline once with the capturing hook.
+        *   Serialize the captured list of spans to a JSON file: `tests/golden_traces/golden_trace_v1.json`.
+        *   Manually review this file to ensure it is correct and complete according to the contract. This file is now the "golden" standard.
 *   **Acceptance Criteria & Testing (`make test-fast`)**
-    *   **Unit Tests:** In `tests/application/core/test_executor_core.py`:
-        *   Test that after `ExecutorCore` is initialized, its `policy_registry` attribute contains mappings for all standard complex step types (`LoopStep`, `ParallelStep`, `ConditionalStep`, `CacheStep`, `HumanInTheLoopStep`, etc.).
-        *   Assert that the policy registered for the base `Step` type is `DefaultAgentStepExecutor`.
+    *   **Unit Tests:** The utilities for capturing and serializing traces should have their own unit tests.
 
-#### **Task 3.3: Refactor `ExecutorCore.execute` to Use the Registry**
+#### **Task 3.4: Implement and Run Golden Trace Tests**
 
-This is the central part of the refactor, where the `isinstance` chain is removed.
+The final step is to create a test that enforces the contract.
 
-*   **Location:** `flujo/application/core/executor_core.py`
+*   **Location:** `tests/golden_traces/test_golden_traces.py`.
 *   **Implementation Details:**
-    *   Delete the entire `if isinstance(step, ParallelStep): ... elif isinstance(step, LoopStep): ...` chain.
-    *   The new dispatch logic will be:
-        1.  `policy = self.policy_registry.get(type(frame.step))`
-        2.  If `policy` is `None` (for a custom step type without a registered policy), fall back to the policy for the base `Step` class: `policy = self.policy_registry.get(Step)`.
-        3.  If no policy is found (which should be impossible if Task 3.2 is done correctly), raise a `NotImplementedError`.
-        4.  `return await policy.execute(self, frame)`.
+    *   Create a test function `test_pipeline_trace_matches_golden_file`.
+    *   This test will run the same test pipeline from Task 3.3 with the trace capturing hook.
+    *   It will load the `golden_trace_v1.json` file.
+    *   It will then perform a deep comparison between the newly generated trace and the golden trace.
+        *   **Important:** The comparison logic must ignore dynamic values like `span_id`, `run_id`, and timestamps. It should only compare the structure, span names, parent-child relationships, and key attributes.
 *   **Acceptance Criteria & Testing (`make all`)**
-    *   **Integration Tests:**
-        *   Create `tests/application/core/test_dispatch_logic.py`.
-        *   Create a simple pipeline with one of each `Step` type (`Step`, `LoopStep`, `ParallelStep`, etc.).
-        *   Run the pipeline and mock the `execute` method of each corresponding policy (`DefaultLoopStepExecutor`, etc.).
-        *   Assert that each mock was called exactly once. This proves the registry dispatch is working correctly for all step types.
-    *   **Regression Tests:**
-        *   Run the *entire existing test suite* (`make all`). All tests for loops, parallel execution, conditionals, etc., must pass without modification. This is the most critical acceptance criterion, as it proves the refactor did not change any existing behavior.
+    *   **E2E Test:** The `test_pipeline_trace_matches_golden_file` test must pass.
+    *   **Regression:** If a developer makes a change that unintentionally alters the telemetry output, this test will fail, forcing them to either fix their change or consciously update the golden file and the Trace Contract version.
 
 ### **4. Rollout and Regression Plan**
 
-1.  **Branching:** This work will be done on a dedicated feature branch (e.g., `feature/FSD-010-policy-registry`).
+1.  **Branching:** Work will be done on a dedicated feature branch (e.g., `feature/FSD-011-trace-contract`).
 2.  **Implementation Order:**
-    *   Complete Task 3.1 and its unit tests.
-    *   Complete Task 3.2 and its unit tests. This ensures the registry is correctly populated before it's used.
-    *   Complete Task 3.3. This is the main change.
+    *   Task 3.1 (Documentation) should be done first to establish the target.
+    *   Task 3.2 (Emitter Refactoring) and its unit tests.
+    *   Task 3.3 and 3.4 (Golden Trace Framework and Tests) should be done last, as they validate the entire implementation.
 3.  **Testing Strategy:**
-    *   `make test-fast`: This command will be used to run the unit tests for Task 3.1 and 3.2 as they are developed.
-    *   `make all`: This command will be run after Task 3.3 is complete. The full regression suite is the ultimate gate for this refactor. The new integration tests will provide targeted validation of the dispatch logic itself.
-4.  **Code Review:** Required. The review should focus on the simplicity of the new `ExecutorCore.execute` method and the correctness of the registry population.
-5.  **Merge:** Merge to the main branch after all unit, integration, and regression tests pass.
+    *   `make test-fast`: Will run the unit tests for the updated emitters and the golden trace utilities.
+    *   `make all`: Will run the final end-to-end golden trace test, providing the ultimate validation for this FSD. The full existing regression suite must also pass.
+4.  **Code Review:** Required. Reviewers should check the implementation against the `trace_contract.md` file to ensure full compliance.
+5.  **Merge:** Merge to the main branch after all tests pass.
 
 ### **5. Risks and Mitigation**
 
-*   **Risk:** A `Step` type is missed during registration, causing a `NotImplementedError` at runtime.
-    *   **Mitigation:** The unit tests for Task 3.2 are designed to prevent this. They will explicitly check that every known `Step` subclass is present in the registry after initialization.
-*   **Risk:** Performance degradation due to dictionary lookups.
-    *   **Mitigation:** This risk is extremely low. A dictionary lookup is significantly faster (O(1) on average) than a sequential `isinstance` chain (O(N)). This change is expected to be a net performance *improvement*. No specific performance tests are required unless a noticeable slowdown is observed during regression testing.
-*   **Risk:** Breaking backward compatibility for users who might have been monkey-patching the old `ExecutorCore.execute` method.
-    *   **Mitigation:** This is an internal refactor. The public API of `Flujo.run()` remains unchanged. We will accept this as a low-risk breaking change for advanced users who were modifying internal framework machinery.
+*   **Risk:** The Trace Contract is too rigid and creates friction for future development.
+    *   **Mitigation:** The contract should versioned. Breaking changes to the trace output will require incrementing the version and generating a new golden file, making the change explicit and intentional.
+*   **Risk:** The "golden trace" tests could be flaky due to non-deterministic ordering in parallel execution.
+    *   **Mitigation:** The comparison logic in the golden trace test must be robust. It should not rely on the order of sibling spans (e.g., in a `ParallelStep`). It can convert the list of spans into a dictionary keyed by `span_id` and validate parent-child links and attributes without enforcing a specific sibling order.
+*   **Risk:** Adding all the required attributes to the hook payloads could make them bloated.
+    *   **Mitigation:** This is an acceptable trade-off. The purpose of telemetry is to provide rich context, and the payloads are internal to the framework. The benefits of complete auditability outweigh the cost of slightly larger in-memory objects during hook dispatch.

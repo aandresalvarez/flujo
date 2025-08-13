@@ -22,6 +22,12 @@ class PreRunPayload(BaseModel):
     initial_input: Any
     context: Optional[BaseModel] = None
     resources: Optional[AppResources] = None
+    # Trace Contract enrichment (optional for backward compatibility)
+    run_id: Optional[str] = None
+    pipeline_name: Optional[str] = None
+    pipeline_version: Optional[str] = None
+    initial_budget_cost_usd: Optional[float] = None
+    initial_budget_tokens: Optional[int] = None
 
 
 class PostRunPayload(BaseModel):
@@ -49,6 +55,11 @@ class PreStepPayload(BaseModel):
     step_input: Any
     context: Optional[BaseModel] = None
     resources: Optional[AppResources] = None
+    # Trace Contract enrichment (optional for backward compatibility)
+    attempt_number: Optional[int] = None
+    quota_before_usd: Optional[float] = None
+    quota_before_tokens: Optional[int] = None
+    cache_hit: Optional[bool] = None
 
     # Runtime validation to ensure step is a Step instance
     @classmethod

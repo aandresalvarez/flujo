@@ -31,6 +31,7 @@ class Span:
     parent_span_id: Optional[str] = None
     attributes: Dict[str, Any] = field(default_factory=dict)
     children: List["Span"] = field(default_factory=list)
+    events: List[Dict[str, Any]] = field(default_factory=list)
     status: str = "running"
 
 
@@ -57,11 +58,27 @@ class TraceManager:
 
     async def _handle_pre_run(self, payload: PreRunPayload) -> None:
         """Handle pre-run event - create root span."""
+        # Root span: pipeline_run per Trace Contract
+        root_attrs: Dict[str, Any] = {
+            "flujo.input": str(payload.initial_input),
+        }
+        # Optional enriched fields
+        if getattr(payload, "run_id", None) is not None:
+            root_attrs["flujo.run_id"] = payload.run_id
+        if getattr(payload, "pipeline_name", None) is not None:
+            root_attrs["flujo.pipeline.name"] = payload.pipeline_name
+        if getattr(payload, "pipeline_version", None) is not None:
+            root_attrs["flujo.pipeline.version"] = payload.pipeline_version
+        if getattr(payload, "initial_budget_cost_usd", None) is not None:
+            root_attrs["flujo.budget.initial_cost_usd"] = payload.initial_budget_cost_usd
+        if getattr(payload, "initial_budget_tokens", None) is not None:
+            root_attrs["flujo.budget.initial_tokens"] = payload.initial_budget_tokens
+
         self._root_span = Span(
             span_id=str(uuid.uuid4()),
             name="pipeline_root",
             start_time=time.monotonic(),  # Use monotonic time for accurate timing
-            attributes={"initial_input": str(payload.initial_input)},
+            attributes=root_attrs,
         )
         self._span_stack = [self._root_span]
 
@@ -82,19 +99,50 @@ class TraceManager:
             return
 
         parent_span = self._span_stack[-1]
+        # Step span per Trace Contract
+        step_attrs: Dict[str, Any] = {
+            "flujo.step.type": type(payload.step).__name__,
+            "step_input": str(payload.step_input),
+        }
+        # Optional enriched fields
+        step_id = getattr(payload.step, "id", None)
+        if step_id is not None:
+            step_attrs["flujo.step.id"] = str(step_id)
+        attempt = getattr(payload, "attempt_number", None)
+        if attempt is not None:
+            step_attrs["flujo.attempt_number"] = attempt
+        if getattr(payload, "quota_before_usd", None) is not None:
+            step_attrs["flujo.budget.quota_before_usd"] = payload.quota_before_usd
+        if getattr(payload, "quota_before_tokens", None) is not None:
+            step_attrs["flujo.budget.quota_before_tokens"] = payload.quota_before_tokens
+        if getattr(payload, "cache_hit", None) is not None:
+            step_attrs["flujo.cache.hit"] = bool(payload.cache_hit)
+
         child_span = Span(
             span_id=str(uuid.uuid4()),
             name=payload.step.name,
             start_time=time.monotonic(),  # Use monotonic time for accurate timing
             parent_span_id=parent_span.span_id,
-            attributes={
-                "step_type": type(payload.step).__name__,
-                "step_input": str(payload.step_input),
-            },
+            attributes=step_attrs,
         )
 
         parent_span.children.append(child_span)
         self._span_stack.append(child_span)
+
+        # Emit retry event on subsequent attempts
+        try:
+            if (
+                isinstance(step_attrs.get("flujo.attempt_number"), int)
+                and step_attrs["flujo.attempt_number"] > 1
+            ):
+                child_span.events.append(
+                    {
+                        "name": "flujo.retry",
+                        "attributes": {"reason": "retry", "delay_seconds": 0.0},
+                    }
+                )
+        except Exception:
+            pass
 
     async def _handle_post_step(self, payload: PostStepPayload) -> None:
         """Handle post-step event - finalize current span."""
@@ -110,12 +158,25 @@ class TraceManager:
             current_span.attributes.update(
                 {
                     "success": payload.step_result.success,
-                    "attempts": payload.step_result.attempts,
                     "latency_s": payload.step_result.latency_s,
-                    "cost_usd": getattr(payload.step_result, "cost_usd", 0.0),
-                    "token_counts": getattr(payload.step_result, "token_counts", 0),
+                    # Canonical budget attributes
+                    "flujo.budget.actual_cost_usd": getattr(payload.step_result, "cost_usd", 0.0),
+                    "flujo.budget.actual_tokens": getattr(payload.step_result, "token_counts", 0),
                 }
             )
+
+            # Emit fallback event when detected via metadata
+            try:
+                md = getattr(payload.step_result, "metadata_", {}) or {}
+                if md.get("fallback_triggered"):
+                    current_span.events.append(
+                        {
+                            "name": "flujo.fallback.triggered",
+                            "attributes": {"original_error": str(md.get("original_error", ""))},
+                        }
+                    )
+            except Exception:
+                pass
 
     async def _handle_step_failure(self, payload: OnStepFailurePayload) -> None:
         """Handle step failure event - mark current span as failed."""
@@ -128,10 +189,21 @@ class TraceManager:
         current_span.attributes.update(
             {
                 "success": False,
-                "attempts": payload.step_result.attempts,
                 "latency_s": payload.step_result.latency_s,
-                "cost_usd": getattr(payload.step_result, "cost_usd", 0.0),
-                "token_counts": getattr(payload.step_result, "token_counts", 0),
+                "flujo.budget.actual_cost_usd": getattr(payload.step_result, "cost_usd", 0.0),
+                "flujo.budget.actual_tokens": getattr(payload.step_result, "token_counts", 0),
                 "feedback": payload.step_result.feedback,
             }
         )
+        # If this failure is actually a pause (HITL), add a paused event
+        try:
+            fb = (payload.step_result.feedback or "").lower()
+            if "paused for hitl" in fb or "paused" in fb:
+                current_span.events.append(
+                    {
+                        "name": "flujo.paused",
+                        "attributes": {"message": payload.step_result.feedback or "paused"},
+                    }
+                )
+        except Exception:
+            pass

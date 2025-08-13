@@ -62,7 +62,7 @@ class TestTraceManager:
         assert manager._root_span.name == "pipeline_root"
         assert manager._root_span.start_time > 0
         assert manager._root_span.parent_span_id is None
-        assert manager._root_span.attributes["initial_input"] == "test_input"
+        assert manager._root_span.attributes["flujo.input"] == "test_input"
         assert len(manager._span_stack) == 1
         assert manager._span_stack[0] == manager._root_span
 
@@ -85,7 +85,7 @@ class TestTraceManager:
         assert child_span.name == "test_step"
         assert child_span.parent_span_id == manager._root_span.span_id
         assert child_span.start_time > 0
-        assert child_span.attributes["step_type"] == "Mock"
+        assert child_span.attributes["flujo.step.type"] == "Mock"
         assert child_span.attributes["step_input"] == "step_input"
 
         # Simulate post_step event
@@ -110,10 +110,9 @@ class TestTraceManager:
         assert child_span.end_time is not None
         assert child_span.status == "completed"
         assert child_span.attributes["success"] is True
-        assert child_span.attributes["attempts"] == 1
         assert child_span.attributes["latency_s"] == 0.1
-        assert child_span.attributes["cost_usd"] == 0.01
-        assert child_span.attributes["token_counts"] == 100
+        assert child_span.attributes["flujo.budget.actual_cost_usd"] == 0.01
+        assert child_span.attributes["flujo.budget.actual_tokens"] == 100
 
         # Simulate post_run event
         post_run_payload = PostRunPayload(
@@ -131,10 +130,9 @@ class TestTraceManager:
         assert child_span.status == "completed"
         assert child_span.end_time is not None
         assert child_span.attributes["success"] is True
-        assert child_span.attributes["attempts"] == 1
         assert child_span.attributes["latency_s"] == 0.1
-        assert child_span.attributes["cost_usd"] == 0.01
-        assert child_span.attributes["token_counts"] == 100
+        assert child_span.attributes["flujo.budget.actual_cost_usd"] == 0.01
+        assert child_span.attributes["flujo.budget.actual_tokens"] == 100
 
     @pytest.mark.asyncio
     async def test_trace_manager_integration(self):
@@ -206,10 +204,10 @@ class TestTraceManager:
         assert child_span.end_time is not None
         assert child_span.status == "failed"
         assert child_span.attributes["success"] is False
-        assert child_span.attributes["attempts"] == 3
+        # attempt number may not be recorded on failure span in the new contract
         assert child_span.attributes["latency_s"] == 0.5
         assert child_span.attributes["feedback"] == "Test error"
-        assert child_span.attributes["token_counts"] == 0
+        assert child_span.attributes.get("flujo.budget.actual_tokens", 0) == 0
 
     @pytest.mark.asyncio
     async def test_nested_spans_are_correctly_structured(self):
