@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Awaitable, Callable, Dict, Literal, Optional, cast
+import time
 
 from ..domain.events import (
     HookPayload,
@@ -53,6 +54,8 @@ class OpenTelemetryHook:
         self.tracer = trace.get_tracer("flujo")
 
         self._active_spans: Dict[str, Span] = {}
+        # Monotonic start times for step spans (fallback latency computation)
+        self._mono_start: Dict[str, float] = {}
 
     async def hook(self, payload: HookPayload) -> None:
         handler_map: Dict[str, Callable[[HookPayload], Awaitable[None]]] = {
@@ -143,6 +146,11 @@ class OpenTelemetryHook:
         step_id = getattr(payload.step, "id", None)
         key = self._get_step_span_key(payload.step.name, step_id)
         self._active_spans[key] = span
+        # Record monotonic start for robust duration computation if needed
+        try:
+            self._mono_start[key] = time.monotonic()
+        except Exception:
+            pass
 
     async def _handle_post_step(self, payload: PostStepPayload) -> None:
         # Try to find the span using the step result name first
@@ -159,7 +167,18 @@ class OpenTelemetryHook:
         if span is not None:
             span.set_status(StatusCode.OK)
             span.set_attribute("success", payload.step_result.success)
-            span.set_attribute("latency_s", payload.step_result.latency_s)
+            # Prefer provided latency; fallback to monotonic delta when missing
+            latency = payload.step_result.latency_s
+            if not latency:
+                try:
+                    # Use the same key as pre_step if available
+                    pre_key = self._get_step_span_key(payload.step_result.name)
+                    start = self._mono_start.pop(pre_key, None)
+                    if start is not None:
+                        latency = max(0.0, time.monotonic() - start)
+                except Exception:
+                    pass
+            span.set_attribute("latency_s", latency)
             span.set_attribute(
                 "flujo.budget.actual_cost_usd", getattr(payload.step_result, "cost_usd", 0.0)
             )
@@ -178,6 +197,11 @@ class OpenTelemetryHook:
                         )
                     except Exception:
                         pass
+            except Exception:
+                pass
+            # Cleanup monotonic start entry if any
+            try:
+                self._mono_start.pop(self._get_step_span_key(payload.step_result.name), None)
             except Exception:
                 pass
             span.end()
@@ -199,6 +223,17 @@ class OpenTelemetryHook:
             span.set_attribute("success", False)
             feedback = payload.step_result.feedback or ""
             span.set_attribute("feedback", feedback)
+            # Prefer provided latency; fallback to monotonic delta when missing
+            latency = payload.step_result.latency_s
+            if not latency:
+                try:
+                    pre_key = self._get_step_span_key(payload.step_result.name)
+                    start = self._mono_start.pop(pre_key, None)
+                    if start is not None:
+                        latency = max(0.0, time.monotonic() - start)
+                except Exception:
+                    pass
+            span.set_attribute("latency_s", latency)
             span.set_attribute(
                 "flujo.budget.actual_cost_usd", getattr(payload.step_result, "cost_usd", 0.0)
             )
@@ -216,4 +251,9 @@ class OpenTelemetryHook:
             except Exception:
                 pass
             # No explicit retry event added here
+            # Cleanup monotonic start entry if any
+            try:
+                self._mono_start.pop(self._get_step_span_key(payload.step_result.name), None)
+            except Exception:
+                pass
             span.end()
