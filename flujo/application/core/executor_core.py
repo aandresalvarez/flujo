@@ -12,7 +12,7 @@ import asyncio
 import contextvars
 import copy
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Dict, Generic, Optional
+from typing import Any, Awaitable, Callable, Dict, Generic, Optional, cast
 
 from ...domain.dsl.conditional import ConditionalStep
 from ...domain.dsl.dynamic_router import DynamicParallelRouterStep
@@ -607,12 +607,14 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
 
         step = frame.step
         data = frame.data
-        context = getattr(frame, "context", None)
-        resources = getattr(frame, "resources", None)
-        limits = getattr(frame, "limits", None)
+        # Accessors kept for completeness; policies pull from frame directly
+        _ = getattr(frame, "context", None)
+        _ = getattr(frame, "resources", None)
+        _ = getattr(frame, "limits", None)
         stream = getattr(frame, "stream", False)
-        on_chunk = getattr(frame, "on_chunk", None)
-        breach_event = getattr(frame, "breach_event", None)
+        # Accessors kept for completeness; policies pull from frame directly
+        _ = getattr(frame, "on_chunk", None)
+        _ = getattr(frame, "breach_event", None)
         # context_setter is consumed by policy callables; keep available on frame
         result = getattr(frame, "result", None)
         _fallback_depth = getattr(frame, "_fallback_depth", 0)
@@ -660,7 +662,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
 
             outcome = await policy(frame)
             if called_with_frame:
-                return outcome
+                return cast(StepOutcome[StepResult], outcome)
             if isinstance(outcome, Success):
                 return self._unwrap_outcome_to_step_result(
                     outcome.step_result, self._safe_step_name(step)
@@ -670,186 +672,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             if isinstance(outcome, Paused):
                 raise PausedException(outcome.message)
             return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
-            # Normalize fallback depth defensively
-            try:
-                fb_depth_norm = int(_fallback_depth)
-            except Exception:
-                fb_depth_norm = 0
-            # Validation-only steps should be handled via simple step executor
-            if (
-                hasattr(step, "meta")
-                and isinstance(step.meta, dict)
-                and step.meta.get("is_validation_step", False)
-            ):
-                telemetry.logfire.debug(
-                    "Routing validation step to SimpleStep policy: "
-                    f"{getattr(step, 'name', '<unnamed>')}"
-                )
-                if called_with_frame:
-                    result = await self.simple_step_executor.execute(
-                        self,
-                        step,
-                        data,
-                        context,
-                        resources,
-                        limits,
-                        stream,
-                        on_chunk,
-                        cache_key,
-                        breach_event,
-                        fb_depth_norm,
-                    )
-                else:
-                    result = await self.simple_step_executor.execute(
-                        self,
-                        step,
-                        data,
-                        context,
-                        resources,
-                        limits,
-                        stream,
-                        on_chunk,
-                        cache_key,
-                        breach_event,
-                        fb_depth_norm,
-                    )
-            elif stream:
-                telemetry.logfire.debug(
-                    f"Routing streaming step to SimpleStep policy: "
-                    f"{getattr(step, 'name', '<unnamed>')}"
-                )
-                if called_with_frame:
-                    result = await self.simple_step_executor.execute(
-                        self,
-                        step,
-                        data,
-                        context,
-                        resources,
-                        limits,
-                        stream,
-                        on_chunk,
-                        cache_key,
-                        breach_event,
-                        fb_depth_norm,
-                    )
-                else:
-                    result = await self.simple_step_executor.execute(
-                        self,
-                        step,
-                        data,
-                        context,
-                        resources,
-                        limits,
-                        stream,
-                        on_chunk,
-                        cache_key,
-                        breach_event,
-                        fb_depth_norm,
-                    )
-            elif (
-                hasattr(step, "fallback_step")
-                and step.fallback_step is not None
-                and not hasattr(step.fallback_step, "_mock_name")
-            ):
-                telemetry.logfire.debug(
-                    f"Routing to SimpleStep policy with fallback: "
-                    f"{getattr(step, 'name', '<unnamed>')}"
-                )
-                if called_with_frame:
-                    result = await self.simple_step_executor.execute(
-                        self,
-                        step,
-                        data,
-                        context,
-                        resources,
-                        limits,
-                        stream,
-                        on_chunk,
-                        cache_key,
-                        breach_event,
-                        fb_depth_norm,
-                    )
-                else:
-                    result = await self.simple_step_executor.execute(
-                        self,
-                        step,
-                        data,
-                        context,
-                        resources,
-                        limits,
-                        stream,
-                        on_chunk,
-                        cache_key,
-                        breach_event,
-                        fb_depth_norm,
-                    )
-            else:
-                telemetry.logfire.debug(
-                    f"Routing to AgentStep policy: {getattr(step, 'name', '<unnamed>')}"
-                )
-                # Agent policy is native-outcome; single call path
-                result = await self.agent_step_executor.execute(
-                    self,
-                    step,
-                    data,
-                    context,
-                    resources,
-                    limits,
-                    stream,
-                    on_chunk,
-                    cache_key,
-                    breach_event,
-                    fb_depth_norm,
-                )
-            # Normalize policies that return StepOutcome into StepResult for downstream logic
-
-            if isinstance(result, StepOutcome):
-                if isinstance(result, Success):
-                    result = result.step_result
-                elif isinstance(result, Failure):
-                    # Prefer attached partial result; synthesize minimal result if missing
-                    if result.step_result is not None:
-                        result = result.step_result
-                    else:
-                        result = StepResult(
-                            name=self._safe_step_name(step),
-                            output=None,
-                            success=False,
-                            attempts=1,
-                            latency_s=0.0,
-                            token_counts=0,
-                            cost_usd=0.0,
-                            feedback=result.feedback
-                            if result.feedback is not None
-                            else str(result.error),
-                            branch_context=None,
-                            metadata_={
-                                "error_type": type(result.error).__name__
-                                if result.error is not None
-                                else "Error"
-                            },
-                            step_history=[],
-                        )
-                elif isinstance(result, Paused):
-                    if called_with_frame:
-                        return result
-                    raise PausedException(result.message)
-                else:
-                    # Aborted/Chunk or unknown → map to failed StepResult to maintain contract
-                    reason = getattr(result, "reason", None) or "Unsupported outcome type"
-                    result = StepResult(
-                        name=self._safe_step_name(step),
-                        output=None,
-                        success=False,
-                        attempts=1,
-                        latency_s=0.0,
-                        token_counts=0,
-                        cost_usd=0.0,
-                        feedback=str(reason),
-                        branch_context=None,
-                        metadata_={"outcome_type": type(result).__name__},
-                        step_history=[],
-                    )
         except InfiniteFallbackError as e:
             error_msg = str(e)
             step_name = str(getattr(step, "name", type(step).__name__))
@@ -1412,7 +1234,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         context_setter = frame.context_setter
         outcome = await self.cache_step_executor.execute(
             self,
-            step,
+            cast(CacheStep[Any, Any], step),
             data,
             context,
             resources,
@@ -1432,7 +1254,16 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         breach_event = frame.breach_event
         context_setter = frame.context_setter
         res_any = await self.parallel_step_executor.execute(
-            self, step, data, context, resources, limits, breach_event, context_setter, step, None
+            self,
+            step,
+            data,
+            context,
+            resources,
+            limits,
+            breach_event,
+            context_setter,
+            cast(ParallelStep[Any], step),
+            None,
         )
         if isinstance(res_any, StepOutcome):
             return res_any
@@ -1537,7 +1368,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         limits = frame.limits
         context_setter = frame.context_setter
         res_any = await self.hitl_step_executor.execute(
-            self, step, data, context, resources, limits, context_setter
+            self, cast(HumanInTheLoopStep, step), data, context, resources, limits, context_setter
         )
         if isinstance(res_any, StepOutcome):
             return res_any
