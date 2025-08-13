@@ -1,0 +1,40 @@
+{
+  "name": "pipeline_root",
+  "attributes": [
+    "flujo.input",
+    "flujo.pipeline.name",
+    "flujo.pipeline.version",
+    "flujo.run_id"
+  ],
+  "events": [],
+  "children": [
+    {
+      "name": "analyze",
+      "attributes": [
+        "flujo.budget.actual_cost_usd",
+        "flujo.budget.actual_tokens",
+        "flujo.cache.hit",
+        "flujo.step.type",
+        "latency_s",
+        "step_input",
+        "success"
+      ],
+      "events": [],
+      "children": []
+    },
+    {
+      "name": "primary",
+      "attributes": [
+        "flujo.budget.actual_cost_usd",
+        "flujo.budget.actual_tokens",
+        "flujo.cache.hit",
+        "flujo.step.type",
+        "latency_s",
+        "step_input",
+        "success"
+      ],
+      "events": [],
+      "children": []
+    }
+  ]
+}

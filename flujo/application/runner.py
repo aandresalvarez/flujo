@@ -628,6 +628,19 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 initial_input=initial_input,
                 context=current_context_instance,
                 resources=self.resources,
+                run_id=run_id_for_state,
+                pipeline_name=self.pipeline_name,
+                pipeline_version=self.pipeline_version,
+                initial_budget_cost_usd=(
+                    float(self.usage_limits.total_cost_usd_limit)
+                    if self.usage_limits and self.usage_limits.total_cost_usd_limit is not None
+                    else None
+                ),
+                initial_budget_tokens=(
+                    int(self.usage_limits.total_tokens_limit)
+                    if self.usage_limits and self.usage_limits.total_tokens_limit is not None
+                    else None
+                ),
             )
             async for chunk in self._execute_steps(
                 start_idx,
@@ -682,6 +695,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 and getattr(self._trace_manager, "_root_span", None) is not None
             ):
                 pipeline_result_obj.trace_tree = self._trace_manager._root_span
+            # If we resumed from a paused state with human input, emit a resumed event on the last step span if possible
             if current_context_instance is not None:
                 assert self.pipeline is not None
                 # Persist final state using ExecutionManager with the state_manager from this run
