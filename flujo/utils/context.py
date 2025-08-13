@@ -362,8 +362,9 @@ def safe_merge_context_updates(
         else:
             return True
 
-    except ConfigurationError:
+    except ConfigurationError as e:
         # Bubble up to policy enforcement to fail parallel step with clear message
+        logger.error(f"ConfigurationError encountered during context merge: {e}")
         raise
     except Exception as e:
         logger.error(f"Failed to merge context updates: {e}")

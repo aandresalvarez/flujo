@@ -20,6 +20,40 @@ from ..domain.events import (
 )
 
 
+def policy_name_for_step(step_obj: Any) -> str:
+    """Return the policy class name for a given step object, used for tracing metadata.
+
+    Local imports avoid import-time circulars.
+    """
+    try:
+        from flujo.domain.dsl.loop import LoopStep as _Loop
+        from flujo.domain.dsl.parallel import ParallelStep as _Par
+        from flujo.domain.dsl.conditional import ConditionalStep as _Cond
+        from flujo.domain.dsl.dynamic_router import (
+            DynamicParallelRouterStep as _Router,
+        )
+        from flujo.domain.dsl.step import HumanInTheLoopStep as _Hitl
+        from flujo.steps.cache_step import CacheStep as _Cache
+    except Exception:
+        _Loop = _Par = _Cond = _Router = _Hitl = _Cache = None  # type: ignore
+    try:
+        if _Loop is not None and isinstance(step_obj, _Loop):
+            return "DefaultLoopStepExecutor"
+        if _Par is not None and isinstance(step_obj, _Par):
+            return "DefaultParallelStepExecutor"
+        if _Cond is not None and isinstance(step_obj, _Cond):
+            return "DefaultConditionalStepExecutor"
+        if _Router is not None and isinstance(step_obj, _Router):
+            return "DefaultDynamicRouterStepExecutor"
+        if _Hitl is not None and isinstance(step_obj, _Hitl):
+            return "DefaultHitlStepExecutor"
+        if _Cache is not None and isinstance(step_obj, _Cache):
+            return "DefaultCacheStepExecutor"
+    except Exception:
+        pass
+    return "DefaultAgentStepExecutor"
+
+
 @dataclass
 class Span:
     """Represents a single execution span in the trace tree."""
@@ -106,38 +140,7 @@ class TraceManager:
         }
         # Attach policy name based on step type mapping (registry parity)
         try:
-
-            def _policy_name_for_step(step_obj: Any) -> str:
-                try:
-                    # Local imports to avoid import-time circulars
-                    from flujo.domain.dsl.loop import LoopStep as _Loop
-                    from flujo.domain.dsl.parallel import ParallelStep as _Par
-                    from flujo.domain.dsl.conditional import ConditionalStep as _Cond
-                    from flujo.domain.dsl.dynamic_router import (
-                        DynamicParallelRouterStep as _Router,
-                    )
-                    from flujo.domain.dsl.step import HumanInTheLoopStep as _Hitl
-                    from flujo.steps.cache_step import CacheStep as _Cache
-                except Exception:
-                    _Loop = _Par = _Cond = _Router = _Hitl = _Cache = None  # type: ignore
-                try:
-                    if _Loop is not None and isinstance(step_obj, _Loop):
-                        return "DefaultLoopStepExecutor"
-                    if _Par is not None and isinstance(step_obj, _Par):
-                        return "DefaultParallelStepExecutor"
-                    if _Cond is not None and isinstance(step_obj, _Cond):
-                        return "DefaultConditionalStepExecutor"
-                    if _Router is not None and isinstance(step_obj, _Router):
-                        return "DefaultDynamicRouterStepExecutor"
-                    if _Hitl is not None and isinstance(step_obj, _Hitl):
-                        return "DefaultHitlStepExecutor"
-                    if _Cache is not None and isinstance(step_obj, _Cache):
-                        return "DefaultCacheStepExecutor"
-                except Exception:
-                    pass
-                return "DefaultAgentStepExecutor"
-
-            step_attrs["flujo.step.policy"] = _policy_name_for_step(payload.step)
+            step_attrs["flujo.step.policy"] = policy_name_for_step(payload.step)
         except Exception:
             # Best-effort: omit policy if detection fails
             pass

@@ -366,7 +366,10 @@ class TestMemoryPressureStress:
         # Use a more lenient threshold for test environments
         # In production, optimizations should provide clear benefits
         # Guard against tiny baselines (e.g., 0.00MB) that produce extreme ratios
-        epsilon = 1 * 1024 * 1024  # 1MB floor to stabilize ratios on small deltas
+        # Configurable via env var for CI tuning
+        import os as _os
+
+        epsilon = int(_os.getenv("FLUJO_MEMORY_EPSILON_BYTES", str(1 * 1024 * 1024)))
         memory_ratio = (optimized_memory + epsilon) / (unoptimized_memory + epsilon)
 
         # Allow up to 50x memory usage in test environment (increased from 5x)
