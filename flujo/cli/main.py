@@ -513,7 +513,15 @@ def run(
         if pipeline_file.endswith((".yaml", ".yml")):
             pipeline_obj = load_pipeline_from_yaml_file(pipeline_file)
             context_model_class = None
-            initial_context_data = parse_context_data(context_data, context_file)  # type: ignore[name-defined]
+            initial_context_data = parse_context_data(context_data, context_file)
+            # Ensure input_data is provided or read from stdin for YAML runs
+            if input_data is None:
+                import sys as _sys
+
+                if not _sys.stdin.isatty():
+                    input_data = _sys.stdin.read().strip()
+                else:
+                    raise typer.Exit(1)
         else:
             pipeline_obj, pipeline_name, input_data, initial_context_data, context_model_class = (
                 setup_run_command_environment(
@@ -561,9 +569,13 @@ def run(
         )
 
         # Execute pipeline using helper function
+        # mypy: ensure input_data is a concrete string at this point
+        from typing import cast as _cast
+
+        input_data_str = _cast(str, input_data)
         result = execute_pipeline_with_output_handling(
             runner=runner,
-            input_data=input_data,
+            input_data=input_data_str,
             run_id=run_id,
             json_output=json_output,
         )
@@ -608,7 +620,7 @@ def compile(
             pipe = Pipeline.from_yaml_file(src)
             yaml_text = pipe.to_yaml() if normalize else open(src, "r").read()
         else:
-            pipeline_obj, _ = load_pipeline_from_file(src)  # type: ignore[name-defined]
+            pipeline_obj, _ = load_pipeline_from_file(src)
             yaml_text = pipeline_obj.to_yaml()
         if out:
             with open(out, "w") as f:

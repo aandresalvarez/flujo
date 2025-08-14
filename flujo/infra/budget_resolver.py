@@ -42,24 +42,26 @@ def combine_limits(
     if toml_limits is None:
         return code_limits
 
+    # Compute token limit minimum with explicit optional handling to satisfy type checker
+    min_token_limit: Optional[float] = _min_or_none(
+        float(code_limits.total_tokens_limit)
+        if code_limits.total_tokens_limit is not None
+        else None,
+        float(toml_limits.total_tokens_limit)
+        if toml_limits.total_tokens_limit is not None
+        else None,
+    )
+    resolved_token_limit: Optional[int]
+    if min_token_limit is None:
+        resolved_token_limit = None
+    else:
+        resolved_token_limit = int(min_token_limit)
+
     return UsageLimits(
         total_cost_usd_limit=_min_or_none(
             code_limits.total_cost_usd_limit, toml_limits.total_cost_usd_limit
         ),
-        total_tokens_limit=int(
-            _min_or_none(
-                float(code_limits.total_tokens_limit)
-                if code_limits.total_tokens_limit is not None
-                else None,
-                float(toml_limits.total_tokens_limit)
-                if toml_limits.total_tokens_limit is not None
-                else None,
-            )
-        )
-        if (
-            code_limits.total_tokens_limit is not None or toml_limits.total_tokens_limit is not None
-        )
-        else None,
+        total_tokens_limit=resolved_token_limit,
     )
 
 
