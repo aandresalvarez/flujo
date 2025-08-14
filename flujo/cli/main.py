@@ -31,8 +31,10 @@ from .helpers import (
     get_pipeline_step_names,
     validate_pipeline_file,
     parse_context_data,
+    load_pipeline_from_file,
 )
 import click.testing
+import os
 
 # Expose Flujo class for tests that monkeypatch flujo.cli.main.Flujo.run
 from flujo.application.runner import Flujo as _Flujo  # re-export for test monkeypatch compatibility
@@ -91,6 +93,25 @@ telemetry.init_telemetry()
 logfire = telemetry.logfire
 
 app.add_typer(lens_app, name="lens")
+budgets_app: typer.Typer = typer.Typer(help="Budget governance commands")
+app.add_typer(budgets_app, name="budgets")
+
+
+def _auto_import_modules_from_env() -> None:
+    mods = os.environ.get("FLUJO_REGISTER_MODULES")
+    if not mods:
+        return
+    for name in mods.split(","):
+        name = name.strip()
+        if not name:
+            continue
+        try:
+            __import__(name)
+        except Exception:
+            continue
+
+
+_auto_import_modules_from_env()
 
 
 """
@@ -489,15 +510,7 @@ def run(
 
         # If YAML blueprint provided, load via blueprint loader; else use existing Python loader.
         if pipeline_file.endswith((".yaml", ".yml")):
-            from .helpers import load_pipeline_from_yaml_file
-            # For YAML, we still require input_data as before
-            if input_data is None:
-                import sys
-                if not sys.stdin.isatty():
-                    input_data = sys.stdin.read().strip()
-                else:
-                    raise typer.Exit(1)
-            pipeline_obj = load_pipeline_from_yaml_file(pipeline_file)
+            pipeline_obj = load_pipeline_from_file(pipeline_file)
             context_model_class = None
             initial_context_data = parse_context_data(context_data, context_file)  # type: ignore[name-defined]
         else:
@@ -517,20 +530,27 @@ def run(
         from flujo.domain.pipeline_validation import ValidationReport
 
         try:
-            validation_report: ValidationReport = pipeline_obj.validate_graph()
-        except Exception as ve:  # pragma: no cover - defensive
-            typer.echo(f"[red]Validation crashed: {ve}", err=True)
-            raise typer.Exit(1)
+            # Align with FSD-015: explicitly raise on error
+            pipeline_obj.validate_graph(raise_on_error=True)
+        except Exception:
+            # Recompute full report for user-friendly printing
+            try:
+                validation_report: ValidationReport = pipeline_obj.validate_graph()
+            except Exception as ve:  # pragma: no cover - defensive
+                typer.echo(f"[red]Validation crashed: {ve}", err=True)
+                raise typer.Exit(1)
 
-        if not validation_report.is_valid:
-            typer.echo("[red]Pipeline validation failed before run:")
-            for f in validation_report.errors:
-                loc = f"{f.step_name}: " if f.step_name else ""
-                if f.suggestion:
-                    typer.echo(f"- [{f.rule_id}] {loc}{f.message} -> Suggestion: {f.suggestion}")
-                else:
-                    typer.echo(f"- [{f.rule_id}] {loc}{f.message}")
-            raise typer.Exit(1)
+            if not validation_report.is_valid:
+                typer.echo("[red]Pipeline validation failed before run:")
+                for f in validation_report.errors:
+                    loc = f"{f.step_name}: " if f.step_name else ""
+                    if f.suggestion:
+                        typer.echo(
+                            f"- [{f.rule_id}] {loc}{f.message} -> Suggestion: {f.suggestion}"
+                        )
+                    else:
+                        typer.echo(f"- [{f.rule_id}] {loc}{f.message}")
+                raise typer.Exit(1)
 
         # Create Flujo runner using helper function
         runner = create_flujo_runner(
@@ -570,6 +590,9 @@ def run(
 def compile(
     src: str = typer.Argument(..., help="Input spec: .yaml/.yml or .py"),
     out: Optional[str] = typer.Option(None, "--out", "-o", help="Output file path (.yaml)"),
+    normalize: bool = typer.Option(
+        True, "--normalize/--no-normalize", help="Normalize YAML formatting and structure"
+    ),
 ) -> None:
     """Compile a pipeline spec between YAML and DSL.
 
@@ -582,7 +605,7 @@ def compile(
             from flujo.domain.dsl import Pipeline
 
             pipe = Pipeline.from_yaml_file(src)
-            yaml_text = pipe.to_yaml()
+            yaml_text = pipe.to_yaml() if normalize else open(src, "r").read()
         else:
             pipeline_obj, _ = load_pipeline_from_file(src)  # type: ignore[name-defined]
             yaml_text = pipeline_obj.to_yaml()
@@ -594,6 +617,43 @@ def compile(
             typer.echo(yaml_text)
     except Exception as e:
         typer.echo(f"[red]Failed to compile: {e}", err=True)
+        raise typer.Exit(1)
+
+
+@budgets_app.command("show")
+def budgets_show(pipeline_name: str) -> None:
+    """Print the effective budget for a pipeline and its resolution source.
+
+    Example:
+        flujo budgets show my-pipeline
+    """
+    try:
+        from flujo.infra.config_manager import ConfigManager
+        from flujo.infra.budget_resolver import resolve_limits_for_pipeline
+
+        cfg = ConfigManager().load_config()
+        limits, src = resolve_limits_for_pipeline(getattr(cfg, "budgets", None), pipeline_name)
+
+        if limits is None:
+            typer.echo("No budget configured (unlimited). Source: none")
+            return
+
+        # Pretty print the effective budget
+        cost = (
+            f"${limits.total_cost_usd_limit:.2f}"
+            if limits.total_cost_usd_limit is not None
+            else "unlimited"
+        )
+        tokens = (
+            f"{limits.total_tokens_limit}" if limits.total_tokens_limit is not None else "unlimited"
+        )
+        origin = src.source if src.pattern is None else f"{src.source}[{src.pattern}]"
+        typer.echo(f"Effective budget for '{pipeline_name}':")
+        typer.echo(f"  - total_cost_usd_limit: {cost}")
+        typer.echo(f"  - total_tokens_limit: {tokens}")
+        typer.echo(f"Resolved from {origin} in flujo.toml")
+    except Exception as e:
+        typer.echo(f"[red]Failed to resolve budgets: {e}", err=True)
         raise typer.Exit(1)
 
 

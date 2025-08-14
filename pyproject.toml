@@ -42,6 +42,7 @@ dependencies = [
     "blake3>=0.4.0", # Faster cryptographic hashing
     "mypy>=1.17.0",
     "numpy>=1.20.0",
+    "PyYAML>=6.0",
 ]
 
 # Optional dependency groups (install with: `pip install .[dev]`, etc.)

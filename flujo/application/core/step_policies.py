@@ -478,6 +478,25 @@ async def _execute_simple_step_policy_impl(
             if limits is not None:
                 await core._usage_meter.guard(limits, result.step_history)
 
+            # FSD-017: Dynamic input templating - per-attempt resolution for simple steps
+            try:
+                templ_spec = None
+                if hasattr(step, "meta") and isinstance(step.meta, dict):
+                    templ_spec = step.meta.get("templated_input")
+                if templ_spec is not None:
+                    from flujo.utils.prompting import AdvancedPromptFormatter
+
+                    fmt_context: Dict[str, Any] = {
+                        "context": attempt_context,
+                        "previous_step": data,
+                    }
+                    if isinstance(templ_spec, str) and ("{{" in templ_spec and "}}" in templ_spec):
+                        data = AdvancedPromptFormatter(templ_spec).format(**fmt_context)
+                    else:
+                        data = templ_spec
+            except Exception:
+                pass
+
             # prompt processors
             processed_data = data
             if hasattr(step, "processors") and step.processors:
@@ -1510,6 +1529,25 @@ class DefaultAgentStepExecutor:
                 raise MockDetectionError(f"Step '{step.name}' returned a Mock object")
 
         overall_start_time = time.monotonic()
+        # FSD-017: Dynamic input templating - override data if step defines a templated input
+        try:
+            templ_spec = None
+            if hasattr(step, "meta") and isinstance(step.meta, dict):
+                templ_spec = step.meta.get("templated_input")
+            if templ_spec is not None:
+                from flujo.utils.prompting import AdvancedPromptFormatter
+
+                fmt_context: Dict[str, Any] = {
+                    "context": context,
+                    "previous_step": data,
+                }
+                if isinstance(templ_spec, str) and ("{{" in templ_spec and "}}" in templ_spec):
+                    data = AdvancedPromptFormatter(templ_spec).format(**fmt_context)
+                else:
+                    data = templ_spec
+        except Exception:
+            # Non-fatal templating failure should not abort the step
+            pass
         # --- Quota reservation (estimate + reserve) ---
         # Prefer explicitly injected estimator; then factory; then local heuristic
         try:

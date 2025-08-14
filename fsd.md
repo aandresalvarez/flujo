@@ -1,92 +1,52 @@
  
-### **Next Task: Formalize and Enforce Context Merge Strategies (FSD-012)**
 
-This task directly addresses **Gap #4** from the original review: "Context merge semantics underspecified."
+### **Next FSD: The Flujo Compiler Linter (FSD-015)**
 
-#### **Why This is the Next Logical Step:**
+This directly addresses **Gap #9 (YAML DSL safety at compile time)** by focusing on pre-run validation. It's the perfect next step because it leverages the stable core to provide immediate value and safety to developers.
 
-1.  **It's a Correctness and Safety Issue:** The current default behavior for merging contexts from parallel branches can lead to silent, non-deterministic bugs (race conditions) if two branches modify the same context field. This violates **Axiom #3 (Composability without foot-guns)**.
-2.  **It Builds on Existing Work:** Your previous refactors have cleaned up the `ParallelStep` policy and the `ContextManager`, making it much easier to implement this change now.
-3.  **It Improves the DSL:** This change will make the `ParallelStep` DSL more explicit and force users to think about how their concurrent operations interact, which is a hallmark of a well-designed framework.
-
----
-
-### **Functional Specification Document: Explicit Context Merge Strategies (FSD-012)**
+#### **Functional Specification Document: The Flujo Compiler Linter (FSD-015)**
 
 **Author:** Alvaro
 **Date:** 2023-10-27
 **Status:** Proposed
-**JIRA/Ticket:** FLUJO-127 (Example Ticket ID)
-**Depends On:** FSD-010 (Policy Registry)
+**JIRA/Ticket:** FLUJO-130
 
-#### **1. Overview**
+**1. Overview**
+This document specifies the creation of an enhanced pre-run validation system, or "linter," for Flujo pipelines. Currently, `pipeline.validate_graph()` checks for basic structural issues, but many logical errors (e.g., merge conflicts, impossible budgets) are only caught at runtime. This FSD proposes expanding the validation capabilities to catch these errors *before* a pipeline is executed, improving developer experience and preventing entire classes of runtime failures.
 
-This document specifies the design for enhancing the context merging logic within `ParallelStep` to prevent non-deterministic behavior and race conditions. Currently, when multiple parallel branches modify the same context fields, the final state of the context depends on which branch finishes last. This "last writer wins" behavior is an implicit and unsafe default.
+**2. Rationale & Goals**
+*   **Goal:** Provide developers with fast, actionable feedback on pipeline design flaws.
+*   **Goal:** Prevent logically invalid pipelines from ever starting a run.
+*   **Goal:** Improve the safety and predictability of the DSL.
+*   **Goal:** Lay the groundwork for a future YAML-to-Pipeline compilation step.
 
-This FSD proposes changing the default merge strategy to a safer option and introducing an explicit conflict-handling mechanism. The `ParallelStep` DSL will be updated to require developers to specify their intent when potential context conflicts exist, making the behavior of parallel pipelines explicit and deterministic.
+**3. Functional Requirements & Design**
 
-#### **2. Rationale & Goals**
+**Task 3.1: Enhance `ValidationReport` and `ValidationFinding`**
+*   **Location:** `flujo/domain/pipeline_validation.py`
+*   **Details:** Add a `suggestion: Optional[str]` field to `ValidationFinding` to provide users with concrete advice on how to fix a detected issue.
 
-*   **Goal:** Eliminate race conditions and non-determinism in parallel context merging.
-*   **Goal:** Force developers to be explicit about their intent when designing parallel steps that modify shared context.
-*   **Goal:** Make the `ParallelStep` construct safer and less error-prone by default.
-*   **Goal:** Provide clear, actionable error messages when a context merge conflict is detected without a resolution strategy.
+**Task 3.2: Implement Advanced Static Checks in `validate_graph`**
+*   **Location:** `flujo/domain/dsl/pipeline.py`
+*   **Details:** Add new checks to the `validate_graph` method:
+    1.  **Context Merge Conflict Detection:** For every `ParallelStep`, analyze the branches. If two or more branches update the same context field and the `merge_strategy` is the default `CONTEXT_UPDATE` without a `field_mapping` for that field, add a `ValidationFinding` error.
+        *   *Suggestion:* `"Set an explicit MergeStrategy (e.g., OVERWRITE) or provide a field_mapping for the conflicting key '...'' on ParallelStep '...'."*
+    2.  **Unbound Output Warning:** Traverse the pipeline graph. If a step produces an output but the next step does not consume it (e.g., its input type is `None` or it doesn't match), and the step does not have `updates_context=True`, add a `ValidationFinding` warning.
+        *   *Suggestion:* `"The output of step '...' is not used by the next step. Did you mean to set updates_context=True or add an adapter step?"*
+    3.  **Incompatible Fallback Signature Check:** For any step with a `fallback_step`, check that the fallback's input type is compatible with the original step's input type. If not, add a `ValidationFinding` error.
 
-#### **3. Functional Requirements & Design**
+**Task 3.3: Integrate Linter into the CLI**
+*   **Location:** `flujo/cli/main.py`
+*   **Details:**
+    1.  The `flujo validate` command will now output the richer error and warning messages, including suggestions.
+    2.  The `flujo run` command will automatically call `pipeline.validate_graph(raise_on_error=True)` after loading the pipeline. If validation fails, the run will be aborted with a clear error message before any execution begins.
 
-**Task 3.1: Enhance `MergeStrategy` Enum**
+**4. Testing Strategy**
+*   **Unit Tests (`make test-fast`):**
+    *   Create new unit tests in `tests/domain/dsl/test_pipeline.py` for each new validation rule.
+    *   For example, `test_validate_graph_detects_merge_conflict` will create a `ParallelStep` with a known conflict and assert that the correct `ValidationFinding` is produced.
+*   **E2E Tests (`make all`):**
+    *   Create CLI tests in `tests/cli/test_main.py`.
+    *   Test `flujo run` on an invalid pipeline file and assert that it exits with a non-zero status code and prints the expected validation error.
+    *   Test `flujo validate` on the same file and check for the correct output.
 
-We need to add a new, safer strategy and adjust the default.
-
-*   **Location:** `flujo/domain/dsl/step.py`
-*   **Implementation Details:**
-    1.  Add a new member to the `MergeStrategy` enum: `ERROR_ON_CONFLICT`.
-    2.  Change the default `merge_strategy` in the `ParallelStep` model from `MergeStrategy.NO_MERGE` to `MergeStrategy.CONTEXT_UPDATE`. This makes merging the default, but the next step will make it safe.
-*   **Acceptance Criteria & Testing (`make test-fast`)**:
-    *   **Unit Test:** Verify that a `ParallelStep` created without a `merge_strategy` now defaults to `CONTEXT_UPDATE`.
-
-**Task 3.2: Implement Conflict Detection in `safe_merge_context_updates`**
-
-The core merge logic must be enhanced to detect and handle conflicts according to the selected strategy.
-
-*   **Location:** `flujo/utils/context.py`
-*   **Implementation Details:**
-    1.  Modify the `safe_merge_context_updates` function to accept the `MergeStrategy` as an argument.
-    2.  When merging, the function must detect if a field in the `source_context` has a different value than the same field in the `target_context`.
-    3.  Implement the following logic based on the strategy:
-        *   **If `CONTEXT_UPDATE` (the new default):** This will now implicitly act like `ERROR_ON_CONFLICT` unless a `field_mapping` is provided for the conflicting fields in the `ParallelStep`. If a conflict occurs on an unmapped field, raise a `ConfigurationError`.
-        *   **If `OVERWRITE`:** Maintain the current "last writer wins" behavior (no change needed here, but its risk should be documented).
-        *   **If `ERROR_ON_CONFLICT`:** If a key exists in both contexts with a different value, raise a `ConfigurationError` with a clear message: `f"Merge conflict for key '{key}'. Set an explicit merge strategy or field_mapping in your ParallelStep."`
-*   **Acceptance Criteria & Testing (`make test-fast`)**:
-    *   **Unit Tests:** In `tests/utils/test_context.py`:
-        *   Test `safe_merge_context_updates` with two contexts that have a conflicting key. Assert that it raises a `ConfigurationError` when the strategy is `CONTEXT_UPDATE` or `ERROR_ON_CONFLICT`.
-        *   Test that it succeeds when the strategy is `OVERWRITE`.
-        *   Test that it succeeds if the values for the key are the same.
-
-**Task 3.3: Update `DefaultParallelStepExecutor` to Enforce the Strategy**
-
-The policy for `ParallelStep` must pass the strategy down to the merge logic and handle potential errors.
-
-*   **Location:** `flujo/application/core/step_policies.py`
-*   **Implementation Details:**
-    1.  In `DefaultParallelStepExecutor.execute`, after all branches have completed, iterate through the successful branch contexts to merge them into the main context.
-    2.  Pass the `parallel_step.merge_strategy` to the `safe_merge_context_updates` function (or the `ContextManager.merge` wrapper).
-    3.  Wrap the merge loop in a `try...except ConfigurationError as e:` block. If a conflict error is caught, the entire `ParallelStep` should fail, returning a `Failure` outcome with the clear error message from the exception.
-*   **Acceptance Criteria & Testing (`make all`)**:
-    *   **Integration Tests:** In `tests/application/core/test_step_policies.py`:
-        *   Create a `ParallelStep` where two branches modify the same context field. Run it with the default `CONTEXT_UPDATE` strategy. Assert that the step fails with a clear error about a merge conflict.
-        *   Run the same step but configure it with `MergeStrategy.OVERWRITE`. Assert that the step succeeds.
-        *   Run the same step but provide a `field_mapping` to resolve the conflict. Assert that the step succeeds and the context is merged correctly.
-
-### **4. Rollout and Regression Plan**
-
-1.  **Branching:** This work will be done on a dedicated feature branch (e.g., `feature/FSD-012-safe-merging`).
-2.  **Implementation Order:** The tasks should be completed sequentially: 3.1, 3.2, then 3.3.
-3.  **Testing Strategy:** Unit tests for the `MergeStrategy` enum and `safe_merge_context_updates` will be run with `make test-fast`. The full integration and regression suite (`make all`) is required to validate the changes in the `DefaultParallelStepExecutor`.
-4.  **Documentation:** The docstrings for `ParallelStep` and `MergeStrategy` must be updated to clearly explain the new default behavior and how to resolve conflicts using `field_mapping` or by choosing a different strategy.
-5.  **Merge:** Merge after all tests pass and documentation is updated.
-
-### **5. Risks and Mitigation**
-
-*   **Risk:** This is a **breaking change** for users who were relying on the old, unsafe default merge behavior.
-    *   **Mitigation:** This is an acceptable and necessary breaking change for framework safety. The error messages must be extremely clear, guiding the user to the exact `ParallelStep` and the conflicting key, and explicitly telling them how to fix it (by setting a `merge_strategy` or `field_mapping`). This will be documented as a breaking change in the release notes.

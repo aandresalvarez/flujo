@@ -77,6 +77,15 @@ class OpenTelemetryHook:
         self._active_spans[payload.event_name] = span
         # Canonical attributes
         span.set_attribute("flujo.input", str(payload.initial_input))
+        # Attach YAML spec hash if available
+        try:
+            import os
+
+            spec_hash = os.environ.get("FLUJO_YAML_SPEC_SHA256")
+            if spec_hash:
+                span.set_attribute("flujo.yaml.spec_sha256", spec_hash)
+        except Exception:
+            pass
         if getattr(payload, "run_id", None) is not None:
             span.set_attribute("flujo.run_id", cast(str, payload.run_id))
         if getattr(payload, "pipeline_name", None) is not None:
@@ -117,6 +126,13 @@ class OpenTelemetryHook:
         # Canonical attributes
         span.set_attribute("step_input", str(payload.step_input))
         span.set_attribute("flujo.step.type", type(payload.step).__name__)
+        # Attach YAML path if present on step meta
+        try:
+            yaml_path = getattr(payload.step, "meta", {}).get("yaml_path")  # type: ignore[assignment]
+            if yaml_path:
+                span.set_attribute("flujo.yaml.path", yaml_path)
+        except Exception:
+            pass
         step_id = getattr(payload.step, "id", None)
         if step_id is not None:
             span.set_attribute("flujo.step.id", str(step_id))

@@ -6,6 +6,98 @@ import sys
 from pathlib import Path
 
 
+class Echo:
+    async def run(self, x):
+        return x
+
+
+class DummyPlugin:
+    async def validate(self, data):  # signature compatible with ValidationPlugin
+        class _Outcome:
+            def __init__(self) -> None:
+                self.success = True
+
+        return _Outcome()
+
+
+async def dummy_validator(output_to_check, *args, **kwargs):
+    return True
+
+
+async def takes_str(x: str) -> str:  # used via import string in YAML
+    return x
+
+
+async def takes_int(x: int) -> int:  # used via import string in YAML
+    return x
+
+
+def test_cli_compile_invalid_yaml_shows_line_and_col(tmp_path: Path) -> None:
+    bad = tmp_path / "bad.yaml"
+    bad.write_text("""
+    version: "0.1"
+    steps:
+      - kind: step
+        name: s1
+        agent: "tests.cli.test_main:Echo"
+      - kind: step
+        name: s2
+        agent: "tests.cli.test_main:Echo"
+          extra_indent: oops
+    """)
+    result = subprocess.run(
+        [sys.executable, "-m", "flujo.cli.main", "compile", str(bad)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    # Either stdout or stderr should include line/column
+    out = result.stdout + result.stderr
+    assert "line" in out and "column" in out
+
+
+def test_yaml_validate_strict_exits_nonzero(tmp_path: Path) -> None:
+    yaml_text = """
+    version: "0.1"
+    steps:
+      - kind: step
+        name: a
+        agent: "tests.cli.test_main:takes_str"
+      - kind: step
+        name: b
+        agent: "tests.cli.test_main:takes_int"
+    """
+    p = tmp_path / "invalid.yaml"
+    p.write_text(yaml_text)
+    result = subprocess.run(
+        [sys.executable, "-m", "flujo.cli.main", "validate", "--strict", str(p)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+
+
+def test_yaml_run_aborts_on_invalid_pipeline(tmp_path: Path) -> None:
+    yaml_text = """
+    version: "0.1"
+    steps:
+      - kind: step
+        name: a
+        agent: "tests.cli.test_main:takes_str"
+      - kind: step
+        name: b
+        agent: "tests.cli.test_main:takes_int"
+    """
+    p = tmp_path / "invalid_run.yaml"
+    p.write_text(yaml_text)
+    result = subprocess.run(
+        [sys.executable, "-m", "flujo.cli.main", "run", str(p), "--input", "hi"],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+
+
 def _write_temp_pipeline(tmp_path: Path, content: str) -> Path:
     p = tmp_path / "pipe.py"
     p.write_text(textwrap.dedent(content))
@@ -107,6 +199,13 @@ def test_cli_compile_yaml_roundtrip(tmp_path: Path) -> None:
     steps:
       - kind: step
         name: s1
+      - kind: map
+        name: mapper
+        map:
+          iterable_input: items
+          body:
+            - kind: step
+              name: inner
       - kind: parallel
         name: p
         branches:
@@ -120,7 +219,76 @@ def test_cli_compile_yaml_roundtrip(tmp_path: Path) -> None:
     src = tmp_path / "pipe.yaml"
     src.write_text(yaml_text)
     result = subprocess.run(
-        [sys.executable, "-m", "flujo.cli.main", "compile", str(src)], capture_output=True, text=True
+        [sys.executable, "-m", "flujo.cli.main", "compile", str(src), "--no-normalize"],
+        capture_output=True,
+        text=True,
     )
     assert result.returncode == 0
     assert "version:" in result.stdout
+
+    # Round-trip structural check: from_yaml -> to_yaml -> from_yaml
+    from flujo.domain.dsl import Pipeline
+
+    p1 = Pipeline.from_yaml_file(str(src))
+    y = p1.to_yaml()
+    p2 = Pipeline.from_yaml_text(y)
+    # Compare step kinds and names as a proxy for structure
+    kinds1 = [type(s).__name__ for s in p1.steps]
+    kinds2 = [type(s).__name__ for s in p2.steps]
+    names1 = [s.name for s in p1.steps]
+    names2 = [s.name for s in p2.steps]
+    assert kinds1 == kinds2
+    assert names1 == names2
+
+
+def test_yaml_plugins_and_validators(tmp_path: Path) -> None:
+    # Define a trivial plugin/validator in this module and reference by import string
+    yaml_text = """
+    version: "0.1"
+    steps:
+      - kind: step
+        name: s1
+        plugins:
+          - path: "tests.cli.test_main:DummyPlugin"
+            priority: 1
+        validators:
+          - "tests.cli.test_main:dummy_validator"
+    """
+    src = tmp_path / "pipe.yaml"
+    src.write_text(yaml_text)
+    result = subprocess.run(
+        [sys.executable, "-m", "flujo.cli.main", "compile", str(src)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0
+
+
+def test_yaml_agent_registry_resolution(tmp_path: Path) -> None:
+    # Use skills.yaml catalog next to the YAML so the subprocess can resolve it
+    yaml_text = """
+    version: "0.1"
+    steps:
+      - kind: step
+        name: s1
+        agent:
+          id: "echo-skill"
+    """
+    src = tmp_path / "pipe.yaml"
+    src.write_text(yaml_text)
+    skills_yaml = tmp_path / "skills.yaml"
+    skills_yaml.write_text(
+        """
+echo-skill:
+  path: "tests.cli.test_main:Echo"
+  description: "echo agent"
+        """.strip()
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-m", "flujo.cli.main", "run", str(src), "--input", "hi"],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0
+    assert "Final output:" in (result.stdout + result.stderr)

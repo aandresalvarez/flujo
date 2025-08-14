@@ -22,6 +22,8 @@ from flujo.domain.agent_protocol import AsyncAgentProtocol
 from flujo.domain.dsl import Pipeline, Step
 from flujo.domain.models import Checklist, PipelineContext, Task
 from flujo.utils.serialization import safe_serialize
+from flujo.infra.skills_catalog import load_skills_catalog, load_skills_entry_points
+import hashlib
 
 
 def load_pipeline_from_file(
@@ -101,6 +103,34 @@ def load_pipeline_from_file(
             raise Exit(1)
 
     return pipeline_obj, pipeline_name
+
+
+def load_pipeline_from_yaml_file(yaml_path: str) -> Pipeline[Any, Any]:
+    """Load a pipeline from a YAML blueprint file (progressive v0).
+
+    This relies on flujo.domain.blueprint loader and returns a Pipeline.
+    """
+    from flujo.domain.blueprint import load_pipeline_blueprint_from_yaml
+
+    try:
+        # Load skills catalog from same directory (optional)
+        dirname = os.path.dirname(os.path.abspath(yaml_path))
+        load_skills_catalog(dirname)
+        # Load packaged skills via entry points
+        load_skills_entry_points()
+        with open(yaml_path, "r") as f:
+            text = f.read()
+        # Compute spec hash for telemetry usage
+        os.environ["FLUJO_YAML_SPEC_SHA256"] = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        return load_pipeline_blueprint_from_yaml(text, base_dir=dirname)
+    except Exception as e:
+        try:
+            from typer import secho
+
+            secho(f"Failed to load YAML pipeline: {e}", fg="red")
+        except Exception:
+            pass
+        raise Exit(1)
 
 
 def load_dataset_from_file(dataset_path: str) -> Any:
@@ -1010,7 +1040,19 @@ def get_pipeline_step_names(path: str) -> list[str]:
 
 def validate_pipeline_file(path: str) -> Any:
     """Return the validation report for a pipeline file."""
-    pipeline, _ = load_pipeline_from_file(path)
+    if path.endswith((".yaml", ".yml")):
+        try:
+            with open(path, "r") as f:
+                yaml_text = f.read()
+            from flujo.domain.blueprint import load_pipeline_blueprint_from_yaml
+
+            # Ensure relative imports resolve from the YAML file directory
+            base_dir = os.path.dirname(os.path.abspath(path))
+            pipeline = load_pipeline_blueprint_from_yaml(yaml_text, base_dir=base_dir)
+        except Exception:
+            raise Exit(1)
+    else:
+        pipeline, _ = load_pipeline_from_file(path)
     return pipeline.validate_graph()
 
 
