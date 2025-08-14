@@ -41,12 +41,17 @@ def _patch_create_pipeline(monkeypatch, yaml_text: str, tmp_out: Path):
 
 
 def test_create_blocks_side_effects_in_non_interactive(tmp_path: Path, monkeypatch) -> None:
-    # skills.yaml with a side-effect skill
     # Pre-register side-effect skill in registry to avoid import resolution
     reg = get_skill_registry()
     reg.register("danger-skill", object(), side_effects=True)
 
-    yaml_text = 'version: "0.1"\nsteps:\n  - kind: step\n    name: s1\n    agent:\n      id: "danger-skill"\n'
+    yaml_text = """version: "0.1"
+steps:
+  - kind: step
+    name: s1
+    agent:
+      id: "danger-skill"
+"""
     _patch_create_pipeline(monkeypatch, yaml_text, tmp_path)
 
     # Ensure architect file existence check passes
@@ -73,7 +78,13 @@ def test_create_allows_side_effects_with_flag_and_writes_file(tmp_path: Path, mo
     reg = get_skill_registry()
     reg.register("danger-skill", object(), side_effects=True)
 
-    yaml_text = 'version: "0.1"\nsteps:\n  - kind: step\n    name: s1\n    agent:\n      id: "danger-skill"\n'
+    yaml_text = """version: "0.1"
+steps:
+  - kind: step
+    name: s1
+    agent:
+      id: "danger-skill"
+"""
     _patch_create_pipeline(monkeypatch, yaml_text, tmp_path)
 
     out_file = tmp_path / "pipeline.yaml"
@@ -97,7 +108,9 @@ def test_create_allows_side_effects_with_flag_and_writes_file(tmp_path: Path, mo
 
 
 def test_create_force_overwrite(tmp_path: Path, monkeypatch) -> None:
-    yaml_text = 'version: "0.1"\nsteps: []\n'
+    yaml_text = """version: "0.1"
+steps: []
+"""
     _patch_create_pipeline(monkeypatch, yaml_text, tmp_path)
 
     out_file = tmp_path / "pipeline.yaml"

@@ -117,17 +117,17 @@ test-memory: .uv ## Run memory leak detection tests
 	@echo "📊 Monitoring memory usage patterns..."
 	CI=1 uv run pytest tests/ -m "memory" --timeout=120
 
-.PHONY: test-health
-test-health: .uv ## Run comprehensive test suite health check
-	@echo "🏥 Running comprehensive test suite health check..."
-	@echo "1. Checking test collection..."
-	@uv run pytest tests/ --collect-only -q > /dev/null 2>&1 && echo "✅ Test collection OK" || echo "❌ Test collection failed"
-	@echo ""
-	@echo "2. Running fast test subset..."
-	@CI=1 uv run pytest tests/unit/test_fallback.py::test_fallback_assignment -v
-	@echo ""
-	@echo "3. Checking resource usage..."
-	@echo "✅ Test suite health check completed"
+.PHONY: test-health-full
+test-health-full: .uv ## Run comprehensive test suite health check (full)
+    @echo "🏥 Running comprehensive test suite health check (full)..."
+    @echo "1. Checking test collection..."
+    @uv run pytest tests/ --collect-only -q > /dev/null 2>&1 && echo "✅ Test collection OK" || echo "❌ Test collection failed"
+    @echo ""
+    @echo "2. Running fast test subset..."
+    @CI=1 uv run pytest tests/unit/test_fallback.py::test_fallback_assignment -v
+    @echo ""
+    @echo "3. Checking resource usage..."
+    @echo "✅ Test suite health check (full) completed"
 
 .PHONY: test-slow
 test-slow: .uv ## Run slow tests serially

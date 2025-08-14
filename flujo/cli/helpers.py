@@ -1053,7 +1053,8 @@ def validate_pipeline_file(path: str) -> Any:
             # Ensure relative imports resolve from the YAML file directory
             base_dir = os.path.dirname(os.path.abspath(path))
             pipeline = load_pipeline_blueprint_from_yaml(yaml_text, base_dir=base_dir)
-        except Exception:
+        except Exception as e:
+            warnings.warn(f"Failed to validate YAML pipeline file: {e}", RuntimeWarning)
             raise Exit(1)
     else:
         pipeline, _ = load_pipeline_from_file(path)
@@ -1080,7 +1081,8 @@ def validate_yaml_text(yaml_text: str, base_dir: Optional[str] = None) -> Valida
 
     try:
         pipeline = load_pipeline_blueprint_from_yaml(yaml_text, base_dir=base_dir)
-    except Exception:
+    except Exception as e:
+        warnings.warn(f"Failed to load YAML blueprint for validation: {e}", RuntimeWarning)
         raise Exit(1)
     return _cast(Any, pipeline).validate_graph()
 
@@ -1100,7 +1102,8 @@ def find_side_effect_skills_in_yaml(yaml_text: str, *, base_dir: Optional[str] =
     """
     try:
         data = yaml.safe_load(yaml_text)
-    except Exception:
+    except yaml.YAMLError as e:
+        warnings.warn(f"Failed to parse YAML while scanning side effects: {e}", RuntimeWarning)
         return []
 
     if not isinstance(data, dict):
@@ -1111,9 +1114,12 @@ def find_side_effect_skills_in_yaml(yaml_text: str, *, base_dir: Optional[str] =
         directory = base_dir or os.getcwd()
         load_skills_catalog(directory)
         load_skills_entry_points()
-    except Exception:
+    except Exception as e:
         # Best-effort; absence of catalog just yields empty results
-        pass
+        warnings.warn(
+            f"Failed to load skills catalog or entry points while scanning side effects: {e}",
+            RuntimeWarning,
+        )
 
     from flujo.infra.skill_registry import get_skill_registry
 
@@ -1156,7 +1162,8 @@ def enrich_yaml_with_required_params(
     """
     try:
         data = yaml.safe_load(yaml_text)
-    except Exception:
+    except yaml.YAMLError as e:
+        warnings.warn(f"Failed to parse YAML while enriching required params: {e}", RuntimeWarning)
         return yaml_text
 
     if not isinstance(data, dict):
@@ -1167,8 +1174,11 @@ def enrich_yaml_with_required_params(
         directory = base_dir or os.getcwd()
         load_skills_catalog(directory)
         load_skills_entry_points()
-    except Exception:
-        pass
+    except Exception as e:
+        warnings.warn(
+            f"Failed to load skills catalog or entry points while enriching params: {e}",
+            RuntimeWarning,
+        )
 
     from flujo.infra.skill_registry import get_skill_registry
 

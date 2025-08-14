@@ -29,7 +29,9 @@ class SkillRegistry:
         arg_schema: Optional[dict[str, Any]] = None,
     ) -> None:
         # Prefer explicit input_schema; fall back to arg_schema for compatibility with FSD specs
-        effective_input_schema: Optional[dict[str, Any]] = input_schema or arg_schema
+        effective_input_schema: Optional[dict[str, Any]] = (
+            input_schema if input_schema is not None else arg_schema
+        )
 
         self._entries[id] = {
             "factory": factory,
