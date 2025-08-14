@@ -13,7 +13,7 @@ try:
     from pydantic import BaseModel as PydanticBaseModel
 
     HAS_PYDANTIC = True
-except Exception:
+except (ImportError, ModuleNotFoundError):
     # Define a lightweight placeholder class to satisfy isinstance checks without assigning to a type
     HAS_PYDANTIC = False
 
