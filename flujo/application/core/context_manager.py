@@ -38,11 +38,60 @@ class ContextManager:
             try:
                 # Pydantic: build a new instance with only included fields
                 if isinstance(context, BaseModel):
+                    model_cls = type(context)
                     try:
+                        # Prefer explicit field map (Pydantic v2)
+                        fields = getattr(model_cls, "model_fields", None)
+                        if isinstance(fields, dict) and fields:
+                            new_data: dict[str, Any] = {}
+                            for name, field in fields.items():
+                                if name in include_keys:
+                                    # Preserve included fields from original context
+                                    new_data[name] = getattr(context, name, None)
+                                else:
+                                    # For excluded fields, try to restore defaults; if none, keep original
+                                    if (
+                                        getattr(field, "default", inspect._empty)
+                                        is not inspect._empty
+                                    ):
+                                        new_data[name] = field.default
+                                    elif getattr(field, "default_factory", None) is not None:
+                                        try:
+                                            new_data[name] = field.default_factory()  # type: ignore[call-arg]
+                                        except Exception:
+                                            new_data[name] = getattr(context, name, None)
+                                    else:
+                                        # Required without default: use original value to avoid construction errors
+                                        new_data[name] = getattr(context, name, None)
+                            return model_cls(**new_data)
+
+                        # Fallback for Pydantic v1 (__fields__)
+                        fields_v1 = getattr(model_cls, "__fields__", None)
+                        if isinstance(fields_v1, dict) and fields_v1:
+                            new_data: dict[str, Any] = {}
+                            for name, field in fields_v1.items():  # type: ignore[attr-defined]
+                                if name in include_keys:
+                                    new_data[name] = getattr(context, name, None)
+                                else:
+                                    # v1: prefer default/default_factory; else keep original value
+                                    default = getattr(field, "default", inspect._empty)
+                                    if default is not inspect._empty:
+                                        new_data[name] = default
+                                    elif getattr(field, "default_factory", None) is not None:
+                                        try:
+                                            new_data[name] = field.default_factory()  # type: ignore[call-arg]
+                                        except Exception:
+                                            new_data[name] = getattr(context, name, None)
+                                    else:
+                                        new_data[name] = getattr(context, name, None)
+                            return model_cls(**new_data)
+
+                        # Last resort: use model_dump include, then construct
                         data = context.model_dump(include=set(include_keys))
+                        return model_cls(**data)
                     except Exception:
-                        data = {k: getattr(context, k) for k in include_keys if hasattr(context, k)}
-                    return type(context)(**data)
+                        # Fall through to generic handling below
+                        pass
             except Exception:
                 # Fallback to manual key-based copy for non-pydantic or errors
                 try:
