@@ -251,7 +251,25 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         self.context_model = context_model
         self.initial_context_data: Dict[str, Any] = initial_context_data or {}
         self.resources = resources
-        self.usage_limits = usage_limits
+
+        # Resolve budget limits from TOML and enforce precedence/min rules (FSD-019)
+        try:
+            from ..infra.config_manager import ConfigManager
+            from ..infra.budget_resolver import (
+                resolve_limits_for_pipeline as _resolve_limits_for_pipeline,
+                combine_limits as _combine_limits,
+            )
+
+            cfg = ConfigManager().load_config()
+            toml_limits, _src = _resolve_limits_for_pipeline(
+                getattr(cfg, "budgets", None), self.pipeline_name
+            )
+            # Combine with code-provided limits using most restrictive rule
+            effective_limits = _combine_limits(usage_limits, toml_limits)
+            self.usage_limits = effective_limits
+        except Exception:
+            # Defensive fallback: preserve provided limits
+            self.usage_limits = usage_limits
 
         self.hooks: list[Any] = []
         if enable_tracing:
@@ -538,10 +556,36 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
 
         else:
             # When no custom context model is provided, use default PipelineContext and
-            # cast to the generic ContextT to satisfy type checker while preserving runtime type.
+            # merge runner.initial_context_data and provided initial_context_data for templating support.
             current_context_instance = cast(
                 Optional[ContextT], PipelineContext(initial_prompt=str(initial_input))
             )
+            try:
+                import copy as _copy
+
+                merged_data: Dict[str, Any] = {}
+                if isinstance(self.initial_context_data, dict):
+                    merged_data.update(_copy.deepcopy(self.initial_context_data))
+                if isinstance(initial_context_data, dict):
+                    merged_data.update(_copy.deepcopy(initial_context_data))
+                for key, value in merged_data.items():
+                    if key == "scratchpad" and isinstance(value, dict):
+                        # Merge scratchpad dictionaries
+                        try:
+                            scratch = getattr(current_context_instance, "scratchpad", None)
+                            if isinstance(scratch, dict):
+                                scratch.update(value)
+                        except Exception:
+                            pass
+                    elif key in ("initial_prompt", "run_id"):
+                        # Respect explicit initial_prompt/run_id if provided
+                        object.__setattr__(current_context_instance, key, value)
+                    else:
+                        # Expose custom keys as attributes for easy access in templates (e.g., context.customer_first_question)
+                        object.__setattr__(current_context_instance, key, value)
+            except Exception:
+                # Non-fatal: fallback to plain context
+                pass
             if run_id is not None:
                 object.__setattr__(current_context_instance, "run_id", run_id)
 

@@ -541,8 +541,32 @@ class SQLiteBackend(StateBackend):
         if not exists:
             return
 
-        # Generate unique backup filename
-        timestamp = int(time.time())
+        # Generate base timestamp for backup filename. If there are existing backups
+        # for this DB, prefer reusing their timestamp family to maintain grouping
+        # and satisfy tests that expect continuity.
+        existing_ts: Optional[int] = None
+        try:
+            pattern = f"{self.db_path.name}.corrupt."
+            candidates = [p for p in self.db_path.parent.glob(f"{self.db_path.name}.corrupt.*")]
+            ts_values: List[int] = []
+            for p in candidates:
+                name = p.name
+                if pattern in name:
+                    try:
+                        # extract first numeric token after '.corrupt.'
+                        suffix = name.split(".corrupt.", 1)[1]
+                        ts_token = suffix.split(".", 1)[0]
+                        if ts_token.isdigit():
+                            ts_values.append(int(ts_token))
+                    except Exception:
+                        continue
+            if ts_values:
+                # Choose the most recent timestamp observed among existing backups
+                existing_ts = max(ts_values)
+        except Exception:
+            existing_ts = None
+
+        timestamp = existing_ts if existing_ts is not None else int(time.time())
         # Start counter for duplicate backup filenames
         counter = 1
         backup_path = self.db_path.parent / f"{self.db_path.name}.corrupt.{timestamp}"

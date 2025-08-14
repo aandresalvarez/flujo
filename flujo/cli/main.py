@@ -20,6 +20,7 @@ from .helpers import (
     setup_solve_command_environment,
     execute_solve_pipeline,
     setup_run_command_environment,
+    load_pipeline_from_yaml_file,
     create_flujo_runner,
     execute_pipeline_with_output_handling,
     display_pipeline_results,
@@ -30,8 +31,11 @@ from .helpers import (
     load_mermaid_code,
     get_pipeline_step_names,
     validate_pipeline_file,
+    parse_context_data,
+    load_pipeline_from_file,
 )
 import click.testing
+import os
 
 # Expose Flujo class for tests that monkeypatch flujo.cli.main.Flujo.run
 from flujo.application.runner import Flujo as _Flujo  # re-export for test monkeypatch compatibility
@@ -90,6 +94,25 @@ telemetry.init_telemetry()
 logfire = telemetry.logfire
 
 app.add_typer(lens_app, name="lens")
+budgets_app: typer.Typer = typer.Typer(help="Budget governance commands")
+app.add_typer(budgets_app, name="budgets")
+
+
+def _auto_import_modules_from_env() -> None:
+    mods = os.environ.get("FLUJO_REGISTER_MODULES")
+    if not mods:
+        return
+    for name in mods.split(","):
+        name = name.strip()
+        if not name:
+            continue
+        try:
+            __import__(name)
+        except Exception:
+            continue
+
+
+_auto_import_modules_from_env()
 
 
 """
@@ -432,7 +455,7 @@ def validate(
 @app.command()
 def run(
     pipeline_file: str = typer.Argument(
-        ..., help="Path to the Python file containing the pipeline to run"
+        ..., help="Path to the pipeline to run (.py or .yaml/.yml)"
     ),
     input_data: Optional[str] = typer.Option(
         None, "--input", "--input-data", "-i", help="Initial input data for the pipeline"
@@ -486,37 +509,61 @@ def run(
         if not json_output and any(flag in ctx.args for flag in ("--json", "--json-output")):
             json_output = True
 
-        # Set up command environment using helper function
-        pipeline_obj, pipeline_name, input_data, initial_context_data, context_model_class = (
-            setup_run_command_environment(
-                pipeline_file=pipeline_file,
-                pipeline_name=pipeline_name,
-                json_output=json_output,
-                input_data=input_data,
-                context_model=context_model,
-                context_data=context_data,
-                context_file=context_file,
+        # If YAML blueprint provided, load via blueprint loader; else use existing Python loader.
+        if pipeline_file.endswith((".yaml", ".yml")):
+            pipeline_obj = load_pipeline_from_yaml_file(pipeline_file)
+            context_model_class = None
+            initial_context_data = parse_context_data(context_data, context_file)
+            # Ensure input_data is provided or read from stdin for YAML runs
+            if input_data is None:
+                import sys as _sys
+
+                if not _sys.stdin.isatty():
+                    input_data = _sys.stdin.read().strip()
+                else:
+                    typer.echo(
+                        "[red]Error: --input is required for YAML runs when no stdin is provided.",
+                        err=True,
+                    )
+                    raise typer.Exit(1)
+        else:
+            pipeline_obj, pipeline_name, input_data, initial_context_data, context_model_class = (
+                setup_run_command_environment(
+                    pipeline_file=pipeline_file,
+                    pipeline_name=pipeline_name,
+                    json_output=json_output,
+                    input_data=input_data,
+                    context_model=context_model,
+                    context_data=context_data,
+                    context_file=context_file,
+                )
             )
-        )
 
         # Pre-run validation enforcement
         from flujo.domain.pipeline_validation import ValidationReport
 
         try:
-            validation_report: ValidationReport = pipeline_obj.validate_graph()
-        except Exception as ve:  # pragma: no cover - defensive
-            typer.echo(f"[red]Validation crashed: {ve}", err=True)
-            raise typer.Exit(1)
+            # Align with FSD-015: explicitly raise on error
+            pipeline_obj.validate_graph(raise_on_error=True)
+        except Exception:
+            # Recompute full report for user-friendly printing
+            try:
+                validation_report: ValidationReport = pipeline_obj.validate_graph()
+            except Exception as ve:  # pragma: no cover - defensive
+                typer.echo(f"[red]Validation crashed: {ve}", err=True)
+                raise typer.Exit(1)
 
-        if not validation_report.is_valid:
-            typer.echo("[red]Pipeline validation failed before run:")
-            for f in validation_report.errors:
-                loc = f"{f.step_name}: " if f.step_name else ""
-                if f.suggestion:
-                    typer.echo(f"- [{f.rule_id}] {loc}{f.message} -> Suggestion: {f.suggestion}")
-                else:
-                    typer.echo(f"- [{f.rule_id}] {loc}{f.message}")
-            raise typer.Exit(1)
+            if not validation_report.is_valid:
+                typer.echo("[red]Pipeline validation failed before run:")
+                for f in validation_report.errors:
+                    loc = f"{f.step_name}: " if f.step_name else ""
+                    if f.suggestion:
+                        typer.echo(
+                            f"- [{f.rule_id}] {loc}{f.message} -> Suggestion: {f.suggestion}"
+                        )
+                    else:
+                        typer.echo(f"- [{f.rule_id}] {loc}{f.message}")
+                raise typer.Exit(1)
 
         # Create Flujo runner using helper function
         runner = create_flujo_runner(
@@ -526,9 +573,13 @@ def run(
         )
 
         # Execute pipeline using helper function
+        # mypy: ensure input_data is a concrete string at this point
+        from typing import cast as _cast
+
+        input_data_str = _cast(str, input_data)
         result = execute_pipeline_with_output_handling(
             runner=runner,
-            input_data=input_data,
+            input_data=input_data_str,
             run_id=run_id,
             json_output=json_output,
         )
@@ -549,6 +600,77 @@ def run(
         except Exception:
             pass
         typer.echo(f"[red]Error running pipeline: {e}", err=True)
+        raise typer.Exit(1)
+
+
+@app.command()
+def compile(
+    src: str = typer.Argument(..., help="Input spec: .yaml/.yml or .py"),
+    out: Optional[str] = typer.Option(None, "--out", "-o", help="Output file path (.yaml)"),
+    normalize: bool = typer.Option(
+        True, "--normalize/--no-normalize", help="Normalize YAML formatting and structure"
+    ),
+) -> None:
+    """Compile a pipeline spec between YAML and DSL.
+
+    - If src is YAML, parses and pretty-prints validated YAML (normalized).
+    - If src is Python, imports the pipeline and dumps YAML.
+    """
+    try:
+        if src.endswith((".yaml", ".yml")):
+            # Load and re-dump normalized YAML
+            from flujo.domain.dsl import Pipeline
+
+            pipe = Pipeline.from_yaml_file(src)
+            yaml_text = pipe.to_yaml() if normalize else open(src, "r").read()
+        else:
+            pipeline_obj, _ = load_pipeline_from_file(src)
+            yaml_text = pipeline_obj.to_yaml()
+        if out:
+            with open(out, "w") as f:
+                f.write(yaml_text)
+            typer.echo(f"[green]Wrote: {out}")
+        else:
+            typer.echo(yaml_text)
+    except Exception as e:
+        typer.echo(f"[red]Failed to compile: {e}", err=True)
+        raise typer.Exit(1)
+
+
+@budgets_app.command("show")
+def budgets_show(pipeline_name: str) -> None:
+    """Print the effective budget for a pipeline and its resolution source.
+
+    Example:
+        flujo budgets show my-pipeline
+    """
+    try:
+        from flujo.infra.config_manager import ConfigManager
+        from flujo.infra.budget_resolver import resolve_limits_for_pipeline
+
+        cfg = ConfigManager().load_config()
+        limits, src = resolve_limits_for_pipeline(getattr(cfg, "budgets", None), pipeline_name)
+
+        if limits is None:
+            typer.echo("No budget configured (unlimited). Source: none")
+            return
+
+        # Pretty print the effective budget
+        cost = (
+            f"${limits.total_cost_usd_limit:.2f}"
+            if limits.total_cost_usd_limit is not None
+            else "unlimited"
+        )
+        tokens = (
+            f"{limits.total_tokens_limit}" if limits.total_tokens_limit is not None else "unlimited"
+        )
+        origin = src.source if src.pattern is None else f"{src.source}[{src.pattern}]"
+        typer.echo(f"Effective budget for '{pipeline_name}':")
+        typer.echo(f"  - total_cost_usd_limit: {cost}")
+        typer.echo(f"  - total_tokens_limit: {tokens}")
+        typer.echo(f"Resolved from {origin} in flujo.toml")
+    except Exception as e:
+        typer.echo(f"[red]Failed to resolve budgets: {e}", err=True)
         raise typer.Exit(1)
 
 

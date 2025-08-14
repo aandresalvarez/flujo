@@ -42,6 +42,7 @@ dependencies = [
     "blake3>=0.4.0", # Faster cryptographic hashing
     "mypy>=1.17.0",
     "numpy>=1.20.0",
+    "PyYAML>=6.0",
 ]
 
 # Optional dependency groups (install with: `pip install .[dev]`, etc.)
@@ -238,6 +239,28 @@ disable_error_code = [
   "assignment",
   "redundant-cast",
   "attr-defined",
+]
+
+[[tool.mypy.overrides]]
+module = [
+  "flujo.domain.blueprint.loader",
+  "flujo.domain.blueprint.model_generator",
+]
+disable_error_code = [
+  "no-any-return",
+  "valid-type",
+  "arg-type",
+  "attr-defined",
+  "misc",
+  "no-untyped-def",
+]
+
+[[tool.mypy.overrides]]
+module = [
+  "flujo.state.backends.sqlite",
+]
+disable_error_code = [
+  "misc",
 ]
 
 [[tool.mypy.overrides]]

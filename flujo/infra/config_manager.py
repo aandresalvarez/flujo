@@ -12,6 +12,7 @@ except ImportError:
     # Fallback for Python versions < 3.11
     import tomli as tomllib  # type: ignore
 from pydantic import BaseModel
+from ..domain.models import UsageLimits
 
 from ..exceptions import ConfigurationError
 
@@ -32,6 +33,12 @@ class FlujoConfig(BaseModel):
 
     # Cost tracking configuration
     cost: Optional[Dict[str, Any]] = None
+
+    # Security: allow-list for YAML blueprint imports
+    blueprint_allowed_imports: Optional[list[str]] = None
+
+    # Centralized budget governance
+    budgets: Optional["BudgetConfig"] = None
 
 
 class SolveConfig(BaseModel):
@@ -86,6 +93,23 @@ class SettingsOverrides(BaseModel):
     t_schedule: Optional[list[float]] = None
     otlp_endpoint: Optional[str] = None
     agent_timeout: Optional[int] = None
+
+
+class BudgetConfig(BaseModel):
+    """Budget governance configuration loaded from flujo.toml.
+
+    Example TOML:
+    [budgets.default]
+    total_cost_usd_limit = 10.0
+    total_tokens_limit = 100000
+
+    [budgets.pipeline]
+    "analytics" = { total_tokens_limit = 200000 }
+    "team-*"   = { total_cost_usd_limit = 5.0 }
+    """
+
+    default: Optional[UsageLimits] = None
+    pipeline: Dict[str, UsageLimits] = {}
 
 
 class ConfigManager:
@@ -178,6 +202,14 @@ class ConfigManager:
             # Cost tracking configuration
             if "cost" in data:
                 config_data["cost"] = data["cost"]
+
+            # Security allow-list (either top-level key or nested under [settings])
+            if "blueprint_allowed_imports" in data:
+                config_data["blueprint_allowed_imports"] = data["blueprint_allowed_imports"]
+
+            # Budgets governance configuration
+            if "budgets" in data:
+                config_data["budgets"] = data["budgets"]
 
             config = FlujoConfig(**config_data)
 

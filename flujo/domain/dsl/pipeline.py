@@ -10,6 +10,7 @@ from typing import (
     Sequence,
     TypeVar,
     Dict,
+    cast,
 )
 import logging
 from pydantic import ConfigDict
@@ -68,6 +69,43 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
             new_steps = list(self.steps) + list(other.steps)
             return Pipeline.model_construct(steps=new_steps)
         raise TypeError("Can only chain Pipeline with Step or Pipeline")
+
+    # ------------------------------------------------------------------
+    # YAML serialization helpers
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def from_yaml(cls, yaml_source: str, *, is_path: bool = True) -> "Pipeline[Any, Any]":
+        """Load a Pipeline from YAML. When is_path=True, yaml_source is treated as a file path."""
+        # Local import to avoid circular dependencies at import time
+        from ..blueprint import load_pipeline_blueprint_from_yaml
+
+        if is_path:
+            with open(yaml_source, "r") as f:
+                yaml_text = f.read()
+        else:
+            yaml_text = yaml_source
+        return cast("Pipeline[Any, Any]", load_pipeline_blueprint_from_yaml(yaml_text))
+
+    @classmethod
+    def from_yaml_text(cls, yaml_text: str) -> "Pipeline[Any, Any]":
+        from ..blueprint import load_pipeline_blueprint_from_yaml
+
+        return cast("Pipeline[Any, Any]", load_pipeline_blueprint_from_yaml(yaml_text))
+
+    @classmethod
+    def from_yaml_file(cls, path: str) -> "Pipeline[Any, Any]":
+        return cls.from_yaml(path, is_path=True)
+
+    def to_yaml(self) -> str:
+        from ..blueprint import dump_pipeline_blueprint_to_yaml
+
+        return dump_pipeline_blueprint_to_yaml(self)
+
+    def to_yaml_file(self, path: str) -> None:
+        text = self.to_yaml()
+        with open(path, "w") as f:
+            f.write(text)
 
     # ------------------------------------------------------------------
     # Validation helpers
