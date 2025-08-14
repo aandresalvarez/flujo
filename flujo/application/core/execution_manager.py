@@ -362,11 +362,20 @@ class ExecutionManager(Generic[ContextT]):
                         # ✅ CRITICAL FIX: Persist state AFTER successful step execution for crash recovery
                         # This ensures the current_step_index reflects the next step to be executed
                         if persist_state_after_step and step_result.success:
+                            # Serialize the step output to avoid Pydantic serialization warnings during state persistence
+                            from flujo.utils.serialization import safe_serialize
+
+                            serialized_output = (
+                                safe_serialize(step_result.output)
+                                if step_result.output is not None
+                                else None
+                            )
+
                             await self.state_manager.persist_workflow_state_optimized(
                                 run_id=run_id,
                                 context=context,
                                 current_step_index=idx + 1,  # Next step to be executed
-                                last_step_output=step_result.output,
+                                last_step_output=serialized_output,
                                 status="running",
                                 state_created_at=state_created_at,
                                 step_history=result.step_history,

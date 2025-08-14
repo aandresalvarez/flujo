@@ -90,7 +90,9 @@ def _serialize_for_cache_key(
         # Handle models with model_dump
         if hasattr(obj, "model_dump"):
             try:
-                d = obj.model_dump(mode="cache")
+                # Use default mode instead of cache mode to avoid Pydantic's strict type validation
+                # This prevents warnings about type mismatches during cache serialization
+                d = obj.model_dump(mode="default")
                 if "run_id" in d:
                     d.pop("run_id", None)
                 # Exclude volatile context fields to stabilize cache keys
@@ -145,7 +147,8 @@ def _serialize_for_cache_key(
 
                 if hasattr(v, "model_dump"):
                     try:
-                        v_dict = v.model_dump(mode="cache")
+                        # Use default mode instead of cache mode to avoid Pydantic's strict type validation
+                        v_dict = v.model_dump(mode="default")
                         if "run_id" in v_dict:
                             v_dict.pop("run_id", None)
                         for volatile in (

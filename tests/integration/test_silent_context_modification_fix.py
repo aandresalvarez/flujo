@@ -33,10 +33,11 @@ async def append_to_collected_data(data: int, *, context: _TestContext) -> dict:
     context.collected_data.append(data)
     context.iteration_count += 1
 
+    # Return data that matches the context's type expectations
+    # This follows the Single Responsibility Principle - step output should match context types
     return {
-        "appended_value": data,
-        "current_count": len(context.collected_data),
-        "iteration": context.iteration_count,
+        "collected_data": context.collected_data,  # list[int] - matches context field type
+        "iteration_count": context.iteration_count,  # int - matches context field type
     }
 
 
