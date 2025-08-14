@@ -930,13 +930,37 @@ def handle_unknown_type(obj: Any) -> str:
 def robust_serialize(obj: Any, circular_ref_placeholder: Any = "<circular-ref>") -> Any:
     """
     Robust serialization for logging/debugging only. Never use for production data.
-    Wraps safe_serialize and returns a string fallback for any error.
+
+    Rules:
+    - Preserve primitives (str, int, float, bool, None) exactly
+    - Preserve built-in containers (dict, list, tuple, set, frozenset) as structured data
+    - For other objects (custom classes), return a string representation of the serialized form
+    - On error, return a concise fallback string
     """
+    PRIMITIVES = (str, int, float, bool, type(None))
+    BUILTIN_CONTAINERS = (dict, list, tuple, set, frozenset)
     try:
-        return safe_serialize(
-            obj,
-            circular_ref_placeholder=circular_ref_placeholder,
-        )
+        # If the original object is a primitive, return as-is
+        if isinstance(obj, PRIMITIVES):
+            return obj
+
+        # Always prefer returning structured data so callers can control JSON formatting
+        serialized: Any
+        if isinstance(obj, BUILTIN_CONTAINERS):
+            serialized = safe_serialize(obj, circular_ref_placeholder=circular_ref_placeholder)
+        else:
+            # For custom/unknown objects
+            serialized = safe_serialize(
+                obj,
+                circular_ref_placeholder=circular_ref_placeholder,
+            )
+
+        # If serialization produced primitives or builtin containers, return them directly
+        if isinstance(serialized, PRIMITIVES) or isinstance(serialized, BUILTIN_CONTAINERS):
+            return serialized
+
+        # As a last resort, return a concise string representation
+        return repr(serialized)
     except Exception:
         return f"<unserializable: {type(obj).__name__}>"
 
