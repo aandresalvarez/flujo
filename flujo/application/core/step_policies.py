@@ -1,6 +1,5 @@
 from __future__ import annotations
 import asyncio
-import hashlib
 from typing import Any, Awaitable, Optional, Protocol, Callable, Dict, List, Tuple, Type
 from pydantic import BaseModel
 from flujo.domain.models import (
@@ -196,7 +195,13 @@ class DefaultPluginRedirector:
             sp_bytes = (
                 str(system_prompt_val).encode("utf-8") if system_prompt_val is not None else b""
             )
-            sp_hash = hashlib.sha256(sp_bytes).hexdigest()
+            try:
+                from hashlib import sha256  # Lazy import to avoid eager module load
+
+                sp_hash = sha256(sp_bytes).hexdigest()
+            except Exception:
+                # Defensive fallback if hashlib is unavailable (extremely rare)
+                sp_hash = f"len:{len(sp_bytes)}"
 
             return (agent.__class__, str(model_id) if model_id is not None else None, sp_hash)
         except Exception:
