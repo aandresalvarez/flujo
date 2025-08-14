@@ -120,6 +120,17 @@ class ExplicitCostReporter(Protocol):
     token_counts: int  # Optional; if missing, treated as 0
 
 
+@runtime_checkable
+class _TiktokenEncoding(Protocol):
+    def encode(self, text: str) -> list[int]: ...
+
+
+@runtime_checkable
+class _TiktokenModule(Protocol):
+    def get_encoding(self, name: str) -> _TiktokenEncoding:  # type: ignore[name-defined]
+        ...
+
+
 def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[int, int, float]:
     """
     Extract usage metrics from a pydantic-ai agent response.
@@ -165,15 +176,18 @@ def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[
     if isinstance(raw_output, str):
         # Prefer tiktoken when installed for more accurate token counting
         try:
-            import tiktoken as _tiktoken  # Optional dependency
-        except (ImportError, ModuleNotFoundError):
+            import importlib
+
+            _mod: Any = importlib.import_module("tiktoken")
+        except Exception:
             telemetry.logfire.info(
                 f"Counting string output as 1 token for step '{step_name}' (tiktoken not installed)"
             )
             return 0, 1, 0.0
 
         try:
-            encoding = _tiktoken.get_encoding("cl100k_base")
+            tmod: _TiktokenModule = _mod  # type: ignore[assignment]
+            encoding: _TiktokenEncoding = tmod.get_encoding("cl100k_base")
             token_count = len(encoding.encode(raw_output))
             telemetry.logfire.info(
                 f"Counting string output as {token_count} tokens for step '{step_name}'"
