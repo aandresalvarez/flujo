@@ -365,38 +365,36 @@ class ThreadSafeMeter:
             self.completion_tokens += completion_tokens
 
     async def guard(self, limits: UsageLimits, step_history: Optional[List[Any]] = None) -> None:
-        async with self._lock:
-            if (
-                limits.total_cost_usd_limit is not None
-                and isinstance(limits.total_cost_usd_limit, (int, float))
-                and self.total_cost_usd - limits.total_cost_usd_limit > 1e-9
-            ):
-                msg = (
-                    f"Cost limit of ${limits.total_cost_usd_limit} exceeded "
-                    f"(current: ${self.total_cost_usd})"
-                )
-                raise UsageLimitExceededError(
-                    msg,
-                    PipelineResult(
-                        step_history=step_history or [], total_cost_usd=self.total_cost_usd
-                    ),
-                )
+        # Fast path: lock-free reads to avoid event loop scheduling spikes
+        cost_usd: float = self.total_cost_usd
+        total_tokens: int = self.prompt_tokens + self.completion_tokens
 
-            total_tokens = self.prompt_tokens + self.completion_tokens
-            if (
-                limits.total_tokens_limit is not None
-                and isinstance(limits.total_tokens_limit, (int, float))
-                and total_tokens - limits.total_tokens_limit > 0
-            ):
-                msg = (
-                    f"Token limit of {limits.total_tokens_limit} exceeded (current: {total_tokens})"
-                )
-                raise UsageLimitExceededError(
-                    msg,
-                    PipelineResult(
-                        step_history=step_history or [], total_cost_usd=self.total_cost_usd
-                    ),
-                )
+        # Check cost limit quickly without constructing messages/objects
+        limit_cost = limits.total_cost_usd_limit
+        if (
+            limit_cost is not None
+            and isinstance(limit_cost, (int, float))
+            and cost_usd - limit_cost > 1e-9
+        ):
+            # Only build error payload when actually exceeding
+            msg = f"Cost limit of ${limit_cost} exceeded (current: ${cost_usd})"
+            raise UsageLimitExceededError(
+                msg,
+                PipelineResult(step_history=step_history or [], total_cost_usd=cost_usd),
+            )
+
+        # Check token limit quickly
+        limit_tokens = limits.total_tokens_limit
+        if (
+            limit_tokens is not None
+            and isinstance(limit_tokens, (int, float))
+            and total_tokens - limit_tokens > 0
+        ):
+            msg = f"Token limit of {limit_tokens} exceeded (current: {total_tokens})"
+            raise UsageLimitExceededError(
+                msg,
+                PipelineResult(step_history=step_history or [], total_cost_usd=cost_usd),
+            )
 
     async def snapshot(self) -> tuple[float, int, int]:
         async with self._lock:

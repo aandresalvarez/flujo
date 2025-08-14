@@ -645,18 +645,14 @@ def safe_serialize(
                 is_flujo_model = False
 
             if is_flujo_model:
-                # This is a flujo BaseModel - call Pydantic's real model_dump to avoid our override
+                # This is a Flujo BaseModel - build a dict manually from declared fields
+                # to avoid triggering Pydantic's strict serializer (which emits warnings
+                # for intentional runtime type widenings used by Flujo).
                 try:
+                    # Build a dict manually from declared fields to avoid Pydantic's strict validation
                     base_dict = {}
-                    try:
-                        if HAS_PYDANTIC and PydanticBaseModel is not None:
-                            base_dict = PydanticBaseModel.model_dump(obj, mode=mode)
-                        else:
-                            base_dict = {}
-                    except Exception:
-                        # Fall back to manual field extraction without giving up entirely
-                        for name in getattr(obj.__class__, "model_fields", {}):
-                            base_dict[name] = getattr(obj, name, None)
+                    for name in getattr(obj.__class__, "model_fields", {}):
+                        base_dict[name] = getattr(obj, name, None)
                     result = {}
                     for name, value in base_dict.items():
                         try:

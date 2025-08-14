@@ -107,7 +107,7 @@ async def test_invalid_field_type_fails() -> None:
 
     step_result = result.step_history[-1]
     assert step_result.success is False
-    assert "validation error" in step_result.feedback.lower()
+    assert "context validation failed" in step_result.feedback.lower()
     assert result.final_pipeline_context.counter == 0
 
 

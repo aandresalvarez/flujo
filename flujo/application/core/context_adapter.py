@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import types
 import threading
-import sys
 from typing import (
     Any,
     Optional,
@@ -437,73 +436,61 @@ def _inject_context(
     """
     original = context.model_dump()
 
-    # Use type system integration for type discovery
-    # Get the module where the context model is defined
-    module = sys.modules.get(context_model.__module__)
-    if module is None:
-        # Fallback to current module
-        module = sys.modules.get("__main__")
-
-    with _type_context.module_scope(module):
-        # Extract types from field annotations using type system
-        for field_name, field_info in context_model.model_fields.items():
-            if field_info.annotation:
-                # Use proper type analysis instead of regex
-                field_type = field_info.annotation
-                if hasattr(field_type, "__name__"):
-                    type_name = field_type.__name__
-                    # Register the type if it's a custom type
-                    if type_name not in [
-                        "str",
-                        "int",
-                        "float",
-                        "bool",
-                        "list",
-                        "dict",
-                        "tuple",
-                        "set",
-                    ]:
-                        try:
-                            if isinstance(field_type, type):
-                                register_custom_type(field_type)
-                        except Exception:
-                            pass
-
-    # Process update data
+    # Process update data with proper field mapping
     for key, value in update_data.items():
         if key in context_model.model_fields:
             field_info = context_model.model_fields[key]
-            field_type = field_info.annotation  # type: ignore[assignment]
+            field_type = field_info.annotation
 
-            # Deserialize the value using the robust deserialization logic
-            deserialized_value = _deserialize_value(value, field_type, context_model)
-            setattr(context, key, deserialized_value)
+            # TYPE VALIDATION: Ensure the value matches the declared field type
+            if field_type is not None:
+                try:
+                    # For list fields, ensure we're not trying to assign a dict to a list[int]
+                    if hasattr(field_type, "__origin__") and field_type.__origin__ is list:
+                        if not isinstance(value, list):
+                            return f"Field '{key}' expects list but got {type(value).__name__}: {value}"
+
+                    # For int fields, ensure we're not trying to assign a dict to an int
+                    elif field_type is int and not isinstance(value, int):
+                        return f"Field '{key}' expects int but got {type(value).__name__}: {value}"
+
+                    # For str fields, ensure we're not trying to assign a dict to a str
+                    elif field_type is str and not isinstance(value, str):
+                        return f"Field '{key}' expects str but got {type(value).__name__}: {value}"
+
+                    # For dict fields, allow dict values
+                    elif field_type is dict or (
+                        hasattr(field_type, "__origin__") and field_type.__origin__ is dict
+                    ):
+                        if not isinstance(value, dict):
+                            return f"Field '{key}' expects dict but got {type(value).__name__}: {value}"
+
+                    # For other types, use Pydantic's validation
+                    else:
+                        # Try to validate the value against the field type
+                        try:
+                            if hasattr(field_type, "model_validate"):
+                                field_type.model_validate(value)
+                            elif hasattr(field_type, "__call__"):
+                                field_type(value)
+                        except Exception as validation_error:
+                            return f"Field '{key}' validation failed: {validation_error}"
+
+                except Exception as type_check_error:
+                    return f"Field '{key}' type check failed: {type_check_error}"
+
+            # Apply the validated value to the specific field
+            setattr(context, key, value)
         elif not hasattr(context, key):
             # Skip fields that don't exist in the context model
-            # This allows for flexible context updates where not all fields need to be present
             continue
         else:
             # If the field exists on the context but is not in the model, set it directly
-            # This handles dynamic fields that may be added at runtime
             setattr(context, key, value)
 
-    # Final pass: re-apply deserialization to ensure consistency
-    for key in context_model.model_fields:
-        field_info = context_model.model_fields[key]
-        field_type = field_info.annotation  # type: ignore[assignment]
-        current_value = getattr(context, key, None)
-
-        if current_value is not None and field_type is not None:
-            deserialized_value = _deserialize_value(current_value, field_type, context_model)
-            if deserialized_value != current_value:
-                setattr(context, key, deserialized_value)
-
-    # CRITICAL FIX: Apply Pydantic validation results back to the context
-    # This ensures normalization, coercion, and default values are properly applied
+    # Final validation pass
     try:
-        # Validate the current context state and apply the validated results
         validated = context_model.model_validate(context.model_dump())
-        # Apply the validated results back to the context to ensure normalization
         context.__dict__.update(validated.__dict__)
     except ValidationError as e:
         # If validation fails, restore original state
@@ -511,4 +498,5 @@ def _inject_context(
             setattr(context, key, value)
         telemetry.logfire.error(f"Context update failed Pydantic validation: {e}")
         return str(e)
+
     return None
