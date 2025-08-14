@@ -380,7 +380,11 @@ class ThreadSafeMeter:
             msg = f"Cost limit of ${limit_cost} exceeded (current: ${cost_usd})"
             raise UsageLimitExceededError(
                 msg,
-                PipelineResult(step_history=step_history or [], total_cost_usd=cost_usd),
+                PipelineResult(
+                    step_history=step_history or [],
+                    total_cost_usd=cost_usd,
+                    total_tokens=total_tokens,
+                ),
             )
 
         # Check token limit quickly
@@ -393,7 +397,11 @@ class ThreadSafeMeter:
             msg = f"Token limit of {limit_tokens} exceeded (current: {total_tokens})"
             raise UsageLimitExceededError(
                 msg,
-                PipelineResult(step_history=step_history or [], total_cost_usd=cost_usd),
+                PipelineResult(
+                    step_history=step_history or [],
+                    total_cost_usd=cost_usd,
+                    total_tokens=total_tokens,
+                ),
             )
 
     async def snapshot(self) -> tuple[float, int, int]:
