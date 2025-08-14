@@ -160,6 +160,20 @@ class DefaultPluginRedirector:
         self._plugin_runner = plugin_runner
         self._agent_runner = agent_runner
 
+    def _hash_text_streaming(self, text: str, chunk_size: int = 65536) -> str:
+        """Hash large text inputs in chunks to reduce peak memory usage.
+
+        Uses SHA-256 with UTF-8 encoding in streaming updates.
+        """
+        try:
+            from hashlib import sha256  # Lazy import
+        except Exception:
+            return f"len:{len(text)}"
+        hasher = sha256()
+        for i in range(0, len(text), chunk_size):
+            hasher.update(text[i : i + chunk_size].encode("utf-8"))
+        return hasher.hexdigest()
+
     def _get_agent_signature(self, agent: Any) -> Tuple[Any, Optional[str], str]:
         """Generate a stable logical signature for an agent to detect redirect loops.
 
@@ -192,16 +206,10 @@ class DefaultPluginRedirector:
                 system_prompt_val = None
 
             # Normalize and hash system prompt to avoid large tuples and ensure stability
-            sp_bytes = (
-                str(system_prompt_val).encode("utf-8") if system_prompt_val is not None else b""
-            )
-            try:
-                from hashlib import sha256  # Lazy import to avoid eager module load
-
-                sp_hash = sha256(sp_bytes).hexdigest()
-            except Exception:
-                # Defensive fallback if hashlib is unavailable (extremely rare)
-                sp_hash = f"len:{len(sp_bytes)}"
+            if system_prompt_val is not None:
+                sp_hash = self._hash_text_streaming(str(system_prompt_val))
+            else:
+                sp_hash = ""
 
             return (agent.__class__, str(model_id) if model_id is not None else None, sp_hash)
         except Exception:
