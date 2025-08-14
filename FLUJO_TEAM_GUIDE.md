@@ -152,7 +152,7 @@ The framework standardizes on typed outcomes. When touching older code or writin
 
 Resource limits are enforced proactively via quotas passed through execution.
 
-- Estimate before execution; remakeserve conservatively from the active quota. On denial, raise a usage limit error.
+- Estimate before execution; reserve conservatively from the active quota. On denial, raise a usage limit error.
 - Execute, then reconcile: refund under-use and account for overage if budget remains.
 - Do not rely on reactive checks to stop overruns.
 
