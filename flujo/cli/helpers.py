@@ -1243,39 +1243,44 @@ def enrich_yaml_with_required_params(
         return yaml_text
 
 
-def apply_cli_defaults(
-    command: str, fallback_values: Optional[Dict[str, Any]] = None, **kwargs: Any
-) -> Dict[str, Any]:
+def apply_cli_defaults(command: str, **kwargs: Any) -> Dict[str, Any]:
     """Apply CLI defaults from configuration file to command arguments.
 
-    This function handles both None values and hardcoded defaults by checking if the current value
-    matches the fallback value, indicating it wasn't explicitly provided by the user.
+    Precedence: command-line explicit values > TOML defaults > function defaults.
+    This implementation inspects the active Click context to detect which params
+    were explicitly set by the user, ensuring we never override user-provided
+    values even if they match the function's default.
 
     Args:
-        command: The command name (e.g., "solve", "bench")
-        fallback_values: Optional dict mapping argument names to their hardcoded default values
-        **kwargs: The command arguments to apply defaults to
+        command: The command name (e.g., "solve", "bench").
+        **kwargs: The parsed command parameters.
 
     Returns:
-        Dict containing the arguments with defaults applied
+        Dict containing parameters with TOML defaults applied where appropriate.
     """
-    # Import via main so tests can monkeypatch there
     from flujo.cli.main import get_cli_defaults
+
+    try:
+        import click as _click
+    except Exception:
+        _click = None  # type: ignore[assignment]
 
     cli_defaults = get_cli_defaults(command)
     result = kwargs.copy()
 
-    for key, value in kwargs.items():
-        # Check if value is None (explicitly not provided)
-        if value is None and key in cli_defaults:
-            result[key] = cli_defaults[key]
-        # Check if value matches fallback (using hardcoded default)
-        elif (
-            fallback_values
-            and key in fallback_values
-            and value == fallback_values[key]
-            and key in cli_defaults
-        ):
+    explicitly_set: set[str] = set()
+    if _click is not None:
+        try:
+            ctx = _click.get_current_context(silent=True)
+            if ctx is not None and isinstance(getattr(ctx, "params", None), dict):
+                explicitly_set = set(ctx.params.keys())
+        except Exception:
+            explicitly_set = set()
+
+    for key in kwargs.keys():
+        if key in explicitly_set:
+            continue
+        if key in cli_defaults and result.get(key, None) is None:
             result[key] = cli_defaults[key]
 
     return result

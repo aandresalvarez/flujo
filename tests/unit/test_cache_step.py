@@ -613,7 +613,7 @@ class TestCreateStepFingerprint:
         step.processors.output_processors = [DummyAgent()]
         result = _create_step_fingerprint(step)
         assert result["name"] == "test_step"
-        assert result["agent_type"] == "DummyAgent"
+        assert result["agent"]["type"] == "DummyAgent"
         assert result["config"]["max_retries"] == 3
         assert result["config"]["timeout_s"] == 30.0
         assert result["config"]["temperature"] == 0.7
@@ -643,7 +643,7 @@ class TestCreateStepFingerprint:
         )
         result = _create_step_fingerprint(step)
         assert result["name"] == "test_step"
-        assert result["agent_type"] is None
+        assert result["agent"]["type"] is None
         assert result["config"]["max_retries"] == 1
         assert result["config"]["timeout_s"] is None
         assert result["config"]["temperature"] is None

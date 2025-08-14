@@ -36,20 +36,24 @@ try:
     from flujo.utils.serialization import safe_serialize
 
     def _fast_json_dumps(obj: Any) -> str:
-        """Use orjson for faster JSON serialization with robust serialization."""
-        # Use safe_serialize to handle Pydantic models and other complex objects
+        """Use orjson for faster JSON serialization with robust serialization.
+
+        Note: avoid key-sorting to reduce CPU overhead on hot paths.
+        """
         serialized_obj = safe_serialize(obj)
-        blob: bytes = orjson.dumps(serialized_obj, option=orjson.OPT_SORT_KEYS)
+        blob: bytes = orjson.dumps(serialized_obj)
         return blob.decode("utf-8")
 
 except ImportError:
     from flujo.utils.serialization import safe_serialize
 
     def _fast_json_dumps(obj: Any) -> str:
-        """Fallback to standard json for JSON serialization with robust serialization."""
-        # Use safe_serialize to handle Pydantic models and other complex objects
+        """Fallback to standard json for JSON serialization with robust serialization.
+
+        Note: avoid key-sorting to reduce CPU overhead on hot paths.
+        """
         serialized_obj = safe_serialize(obj)
-        s: str = json.dumps(serialized_obj, sort_keys=True, separators=(",", ":"))
+        s: str = json.dumps(serialized_obj, separators=(",", ":"))
         return s
 
 
@@ -275,6 +279,8 @@ class SQLiteBackend(StateBackend):
         self.db_path.parent.mkdir(parents=True, exist_ok=True)  # Ensure parent directories exist
         self._lock = asyncio.Lock()
         self._initialized = False
+        # Deprecated: persistent connection pool (kept for backward compatibility in tests)
+        # aiosqlite connections are created per-call; this remains None.
         self._connection_pool: Optional[aiosqlite.Connection] = None
 
         # Event-loop-local file-level lock - will be initialized lazily
@@ -786,9 +792,10 @@ class SQLiteBackend(StateBackend):
 
     async def close(self) -> None:
         """Close database connections and cleanup resources."""
-        if self._connection_pool:
+        conn = getattr(self, "_connection_pool", None)
+        if conn:
             try:
-                await self._connection_pool.close()
+                await conn.close()
             finally:
                 self._connection_pool = None
         self._initialized = False

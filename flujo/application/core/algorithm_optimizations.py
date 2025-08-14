@@ -124,7 +124,8 @@ class OptimizedHasher:
 
         # Hash cache with LRU eviction
         self._hash_cache: OrderedDict[int, str] = OrderedDict()
-        self._collision_tracker: Dict[str, List[Any]] = defaultdict(list)
+        # Use bounded weak-reference-based collision tracker to avoid memory growth
+        self._collision_tracker: Dict[str, List[weakref.ref[Any]]] = defaultdict(list)
         # Weak references for cleanup
         self._weak_refs: Set[weakref.ref[Any]] = set()
         self._last_cleanup = time.time()
@@ -322,23 +323,34 @@ class OptimizedHasher:
                 pass
 
     def _check_collision(self, hash_value: str, obj: Any) -> None:
-        """Check for hash collisions."""
+        """Check for hash collisions without retaining strong references.
+
+        Tracks up to a small bounded number of weak references per hash to avoid memory leaks.
+        """
         if not self.enable_stats:
             return
 
         with self._lock:
-            if hash_value in self._collision_tracker:
-                # Check if this is actually a collision
-                existing_objects = self._collision_tracker[hash_value]
-                for existing_obj in existing_objects:
-                    if existing_obj is not obj and existing_obj != obj:
-                        if self._stats is not None:
-                            self._stats.hash_collisions += 1
-                        break
+            lst = self._collision_tracker.get(hash_value)
+            if lst is None:
+                self._collision_tracker[hash_value] = [weakref.ref(obj)]
+                return
 
-                existing_objects.append(obj)
-            else:
-                self._collision_tracker[hash_value] = [obj]
+            # Prune dead refs
+            alive: List[weakref.ref[Any]] = [r for r in lst if r() is not None]
+            # Collision detection: compare against a few alive objects
+            for r in alive:
+                existing = r()
+                if existing is not None and existing is not obj and existing != obj:
+                    if self._stats is not None:
+                        self._stats.hash_collisions += 1
+                    break
+            # Append current as weak ref
+            alive.append(weakref.ref(obj))
+            # Bound list size to prevent unbounded growth (keep last 4)
+            if len(alive) > 4:
+                alive = alive[-4:]
+            self._collision_tracker[hash_value] = alive
 
     def _cleanup_cache(self, obj_id: int) -> None:
         """Clean up cache entry when object is garbage collected."""

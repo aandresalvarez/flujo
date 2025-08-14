@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
-import copy
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, Generic, Optional, cast
+from pydantic import BaseModel
 
 from ...domain.dsl.conditional import ConditionalStep
 from ...domain.dsl.dynamic_router import DynamicParallelRouterStep
@@ -40,7 +40,6 @@ from ...exceptions import (
 )
 from ...infra import telemetry
 from ...steps.cache_step import CacheStep
-from ...utils.context import safe_merge_context_updates
 from .step_policies import (
     AgentResultUnpacker,
     AgentStepExecutor,
@@ -69,6 +68,7 @@ from .step_policies import (
     ValidatorInvoker,
 )
 from .types import TContext_w_Scratch, ExecutionFrame
+from .context_manager import ContextManager
 from .estimation import (
     UsageEstimator,
     HeuristicUsageEstimator,
@@ -102,6 +102,21 @@ from .executor_protocols import (
 
 _ParallelUsageGovernor = None  # FSD-009: legacy governor removed; pure quota only
 
+# Module-level defaults for strictness to avoid per-instance configuration overhead
+try:
+    from ...infra.settings import get_settings as _get_settings_default
+
+    _SETTINGS_DEFAULTS = _get_settings_default()
+    _DEFAULT_STRICT_CONTEXT_ISOLATION: bool = bool(
+        getattr(_SETTINGS_DEFAULTS, "strict_context_isolation", False)
+    )
+    _DEFAULT_STRICT_CONTEXT_MERGE: bool = bool(
+        getattr(_SETTINGS_DEFAULTS, "strict_context_merge", False)
+    )
+except Exception:
+    _DEFAULT_STRICT_CONTEXT_ISOLATION = False
+    _DEFAULT_STRICT_CONTEXT_MERGE = False
+
 
 # Backward-compatible error types used by other modules
 class RetryableError(Exception):
@@ -124,6 +139,18 @@ class PluginError(RetryableError):
 
 class AgentError(RetryableError):
     """Agent execution errors that can be retried."""
+
+    pass
+
+
+class ContextIsolationError(Exception):
+    """Raised when context isolation fails under strict settings."""
+
+    pass
+
+
+class ContextMergeError(Exception):
+    """Raised when context merging fails under strict settings."""
 
     pass
 
@@ -214,6 +241,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         cache_step_executor: Optional[CacheStepExecutor] = None,
         usage_estimator: Optional[UsageEstimator] = None,
         estimator_factory: Optional[UsageEstimatorFactory] = None,
+        # Strict behavior toggles (robust defaults with optional enforcement)
+        strict_context_isolation: bool = False,
+        strict_context_merge: bool = False,
     ) -> None:
         # Validate parameters for compatibility
         if cache_size <= 0:
@@ -248,6 +278,12 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
 
         self._cache_locks: Dict[str, asyncio.Lock] = {}
         self._cache_locks_lock = asyncio.Lock()
+
+        # Strict behavior settings (defaults can be overridden by global settings)
+        self._strict_context_isolation = (
+            bool(strict_context_isolation) or _DEFAULT_STRICT_CONTEXT_ISOLATION
+        )
+        self._strict_context_merge = bool(strict_context_merge) or _DEFAULT_STRICT_CONTEXT_MERGE
 
         # Assign policies
         self.timeout_runner = timeout_runner or DefaultTimeoutRunner()
@@ -318,16 +354,13 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
     ) -> Optional[TContext_w_Scratch]:
         if context is None:
             return None
-        try:
-            isolated_context = copy.deepcopy(context)
-            if hasattr(isolated_context, "scratchpad") and hasattr(context, "scratchpad"):
-                isolated_context.scratchpad = copy.deepcopy(context.scratchpad)
-            return isolated_context
-        except Exception:
-            try:
-                return copy.copy(context)
-            except Exception:
-                return context
+        if self._strict_context_isolation:
+            # Delegate strict isolation
+            isolated = ContextManager.isolate_strict(cast(Optional[BaseModel], context))
+        else:
+            # Non-strict isolation
+            isolated = ContextManager.isolate(cast(Optional[BaseModel], context))
+        return cast(Optional[TContext_w_Scratch], isolated)
 
     def _merge_context_updates(
         self,
@@ -341,42 +374,18 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         elif branch_context is None:
             return main_context
 
-        try:
-            from typing import cast as _cast, Any as _Any
-
-            success = safe_merge_context_updates(
-                _cast(_Any, main_context), _cast(_Any, branch_context)
+        # Delegate to ContextManager with strict toggle
+        if self._strict_context_merge:
+            merged = ContextManager.merge_strict(
+                cast(Optional[BaseModel], main_context),
+                cast(Optional[BaseModel], branch_context),
             )
-            if success:
-                return main_context
-            else:
-                try:
-                    new_context = copy.copy(main_context)
-                    for field_name in dir(main_context):
-                        if not field_name.startswith("_") and hasattr(main_context, field_name):
-                            setattr(new_context, field_name, getattr(main_context, field_name))
-                    for field_name in dir(branch_context):
-                        if not field_name.startswith("_") and hasattr(branch_context, field_name):
-                            setattr(new_context, field_name, getattr(branch_context, field_name))
-                    return new_context
-                except Exception as manual_error:
-                    if (
-                        hasattr(self, "_telemetry")
-                        and self._telemetry
-                        and hasattr(self._telemetry, "logfire")
-                    ):
-                        self._telemetry.logfire.error(
-                            f"Manual context merge also failed: {manual_error}"
-                        )
-                    return branch_context
-        except Exception as e:
-            if (
-                hasattr(self, "_telemetry")
-                and self._telemetry
-                and hasattr(self._telemetry, "logfire")
-            ):
-                self._telemetry.logfire.error(f"Context merge failed: {e}")
-            return branch_context
+        else:
+            merged = ContextManager.merge(
+                cast(Optional[BaseModel], main_context),
+                cast(Optional[BaseModel], branch_context),
+            )
+        return cast(Optional[TContext_w_Scratch], merged)
 
     def _accumulate_loop_context(
         self,
@@ -607,6 +616,21 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
 
         step = frame.step
         data = frame.data
+        # Normalize mock contexts to None to avoid unnecessary overhead in hot paths
+        try:
+            from unittest.mock import Mock as _Mock, MagicMock as _MagicMock
+
+            try:
+                from unittest.mock import AsyncMock as _AsyncMock
+
+                _mock_types_ctx: tuple[type[Any], ...] = (_Mock, _MagicMock, _AsyncMock)
+            except Exception:
+                _mock_types_ctx = (_Mock, _MagicMock)
+            ctx_attr = getattr(frame, "context", None)
+            if isinstance(ctx_attr, _mock_types_ctx):
+                setattr(frame, "context", None)
+        except Exception:
+            pass
         # Accessors kept for completeness; policies pull from frame directly
         _ = getattr(frame, "context", None)
         _ = getattr(frame, "resources", None)

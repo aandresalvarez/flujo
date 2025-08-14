@@ -415,6 +415,14 @@ class AdaptiveResourceManager:
                 pass
             self._adaptation_task = None
 
+    # Async context manager to guarantee cleanup
+    async def __aenter__(self) -> "AdaptiveResourceManager":
+        await self.start()
+        return self
+
+    async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
+        await self.stop()
+
     async def _adaptation_loop(self) -> None:
         """Main adaptation loop."""
         while True:

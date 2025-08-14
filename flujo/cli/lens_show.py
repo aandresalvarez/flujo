@@ -39,6 +39,17 @@ def show_run(
     Console().print(f"Run {run_id} - {details['status']}")
     Console().print(table)
 
+    # If the run failed before any step executed, surface the error message for clarity
+    if details.get("status") == "failed" and (not steps or len(steps) == 0):
+        err_msg = details.get("error_message") or details.get("reason") or "Unknown error"
+        Console().print(
+            Panel(
+                f"[bold red]Failure before first step[/bold red]\n{err_msg}",
+                title="Run Error",
+                expand=False,
+            )
+        )
+
     # Determine which fields to show
     show_input = show_input or verbose
     show_output = show_output or verbose

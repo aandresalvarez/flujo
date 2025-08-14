@@ -10,12 +10,16 @@ from typing import Any, Callable, Dict, Optional, Set, Type, TypeVar
 
 # Try to import Pydantic BaseModel for proper type checking
 try:
-    from pydantic import BaseModel
+    from pydantic import BaseModel as PydanticBaseModel
 
     HAS_PYDANTIC = True
-except ImportError:
-    BaseModel = None  # type: ignore
+except (ImportError, ModuleNotFoundError):
+    # Define a lightweight placeholder class to satisfy isinstance checks without assigning to a type
     HAS_PYDANTIC = False
+
+    class PydanticBaseModel:  # type: ignore[no-redef]
+        pass
+
 
 # Global registry for custom serializers
 _custom_serializers: Dict[Type[Any], Callable[[Any], Any]] = {}
@@ -397,8 +401,15 @@ def safe_deserialize(
     if target_type is not None and hasattr(target_type, "model_validate"):
         try:
             return target_type.model_validate(serialized_data)
-        except Exception:
-            pass
+        except Exception as e:
+            try:
+                from flujo.infra import telemetry as _telemetry
+
+                _telemetry.logfire.warning(
+                    f"safe_deserialize: validation failed for {getattr(target_type, '__name__', target_type)} with error {type(e).__name__}: {e}. Data type: {type(serialized_data).__name__}"
+                )
+            except Exception:
+                pass
 
     # Handle dataclasses
     if target_type is not None and dataclasses.is_dataclass(target_type):
@@ -465,9 +476,10 @@ def safe_serialize(
     if _seen is None:
         _seen = set()
 
-    # Handle datetime objects specifically to prevent infinite recursion - don't add to _seen
+    # Handle datetime objects with mode-aware behavior
     if isinstance(obj, (datetime, date, time)):
-        return obj.isoformat()
+        # Preserve native types in "python" mode (used for model field fidelity)
+        return obj if mode == "python" else obj.isoformat()
 
     # Handle Enum objects specifically - don't add to _seen
     if isinstance(obj, Enum):
@@ -475,6 +487,23 @@ def safe_serialize(
             return obj.value
         except (AttributeError, TypeError):
             return str(obj)
+
+    # Preserve certain standard library types verbatim in python mode for type fidelity
+    try:
+        import uuid as _uuid
+
+        if isinstance(obj, _uuid.UUID):
+            return obj if mode == "python" else str(obj)
+    except Exception:
+        pass
+    # Preserve Decimal in python mode to maintain numeric fidelity; otherwise stringify for general serialization
+    try:
+        from decimal import Decimal as _Decimal
+
+        if isinstance(obj, _Decimal):
+            return obj if mode == "python" else str(obj)
+    except Exception:
+        pass
 
     # Handle circular references for non-primitive types
     if not isinstance(obj, PRIMITIVE_TYPES):
@@ -555,8 +584,17 @@ def safe_serialize(
             import base64
 
             return base64.b64encode(obj).decode("ascii")
+        # Preserve Decimal in python mode to maintain numeric fidelity
+        try:
+            from decimal import Decimal as _Decimal
+
+            if isinstance(obj, _Decimal):
+                return obj if mode == "python" else float(obj)
+        except Exception:
+            pass
         if isinstance(obj, complex):
             return {"real": obj.real, "imag": obj.imag}
+
         # Handle mock objects specifically before anything else
         # Be more specific about Mock detection to avoid false positives with test classes
         if hasattr(obj, "__class__") and (
@@ -597,7 +635,7 @@ def safe_serialize(
                 for k, v in dataclasses.asdict(obj).items()
             }
         # Handle Pydantic models with enhanced Flujo BaseModel support
-        if hasattr(obj, "model_dump"):
+        if hasattr(obj, "model_dump") or (HAS_PYDANTIC and isinstance(obj, PydanticBaseModel)):
             # Check if this is a subclass of our custom BaseModel (from flujo.domain.base_model)
             try:
                 from flujo.domain.base_model import BaseModel as FlujoBaseModel
@@ -607,41 +645,61 @@ def safe_serialize(
                 is_flujo_model = False
 
             if is_flujo_model:
-                # This is a flujo BaseModel - manually serialize fields to handle circular refs with mode
+                # This is a flujo BaseModel - call Pydantic's real model_dump to avoid our override
                 try:
+                    base_dict = {}
+                    try:
+                        if HAS_PYDANTIC and PydanticBaseModel is not None:
+                            base_dict = PydanticBaseModel.model_dump(obj, mode=mode)
+                        else:
+                            base_dict = {}
+                    except Exception:
+                        # Fall back to manual field extraction without giving up entirely
+                        for name in getattr(obj.__class__, "model_fields", {}):
+                            base_dict[name] = getattr(obj, name, None)
                     result = {}
-                    for name in getattr(obj.__class__, "model_fields", {}):
-                        value = getattr(obj, name, None)
-                        result[name] = safe_serialize(
-                            value,
-                            default_serializer,
-                            _seen,
-                            _recursion_depth + 1,
-                            circular_ref_placeholder,
-                            mode,
-                        )
+                    for name, value in base_dict.items():
+                        try:
+                            result[name] = safe_serialize(
+                                value,
+                                default_serializer,
+                                _seen,
+                                _recursion_depth + 1,
+                                circular_ref_placeholder,
+                                mode,
+                            )
+                        except TypeError as e:
+                            if "not serializable" in str(e):
+                                result[name] = f"<unserializable: {type(value).__name__}>"
+                            else:
+                                raise
+                        except Exception:
+                            result[name] = f"<unserializable: {type(value).__name__}>"
                     return result
                 except Exception:
                     return str(obj)
             else:
-                # For other Pydantic models, use their model_dump and process carefully
+                # For other Pydantic models, use their native model_dump and process carefully
                 try:
-                    model_dict = obj.model_dump()
-                    # For each value in the model dict, check if it's a known serializable type
+                    # Prefer python-mode dump to preserve Python types (datetime, UUID, Decimal)
+                    if hasattr(obj, "model_dump"):
+                        try:
+                            model_dict = obj.model_dump(mode="python")
+                        except TypeError:
+                            # Older signatures without mode parameter
+                            model_dict = obj.model_dump()
+                    else:
+                        if hasattr(obj, "dict"):
+                            model_dict = obj.dict()
+                        else:
+                            model_dict = {}
+                    # For each value in the model dict, serialize recursively with per-field fallback
                     result = {}
                     for k, v in model_dict.items():
                         if v is None or isinstance(v, (str, int, float, bool, list, dict)):
                             # Basic types - keep as-is
                             result[k] = v
-                        elif hasattr(type(v), "__module__") and type(v).__module__ in [
-                            "uuid",
-                            "datetime",
-                            "decimal",
-                        ]:
-                            # Known custom types that should be preserved - keep as-is
-                            result[k] = v
                         else:
-                            # Unknown types - try to serialize them
                             try:
                                 result[k] = safe_serialize(
                                     v,
@@ -649,23 +707,18 @@ def safe_serialize(
                                     _seen,
                                     _recursion_depth + 1,
                                     circular_ref_placeholder,
-                                    mode,
+                                    "python",
                                 )
                             except TypeError as e:
                                 if "not serializable" in str(e):
                                     result[k] = f"<unserializable: {type(v).__name__}>"
                                 else:
                                     raise
+                            except Exception:
+                                result[k] = f"<unserializable: {type(v).__name__}>"
                     return result
                 except Exception:
                     return str(obj)
-        if HAS_PYDANTIC and isinstance(obj, BaseModel):
-            # For Pydantic models, directly convert to dict without recursive serialization
-            # to avoid circular references
-            try:
-                return obj.model_dump()
-            except Exception:
-                return str(obj)
         # Handle AgentResponse objects with proper field extraction
         if hasattr(obj, "output") and hasattr(obj, "usage"):
             # This looks like an AgentResponse object
@@ -735,8 +788,10 @@ def safe_serialize(
             if lookup_custom_serializer(obj) is not None:
                 # Let the custom serializer handle it - should have been processed above
                 pass
-            elif hasattr(obj, "model_dump") or (HAS_PYDANTIC and isinstance(obj, BaseModel)):
-                # Let Pydantic models be handled by their specific logic
+            elif hasattr(obj, "model_dump") or (
+                HAS_PYDANTIC and isinstance(obj, PydanticBaseModel)
+            ):
+                # Let Pydantic models be handled by the model_dump path above
                 pass
             else:
                 # For other objects with __dict__, raise TypeError to enforce explicit serialization

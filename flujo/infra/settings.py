@@ -66,6 +66,11 @@ class Settings(BaseSettings):
     telemetry_export_enabled: bool = False
     otlp_export_enabled: bool = False
 
+    # --- Core strictness toggles ---
+    # Enforce strict context isolation and merging (CI-friendly). Can be overridden per-executor.
+    strict_context_isolation: bool = False
+    strict_context_merge: bool = False
+
     # --- Default models for each agent ---
     default_solution_model: str = "openai:gpt-4o"
     default_review_model: str = "openai:gpt-4o"

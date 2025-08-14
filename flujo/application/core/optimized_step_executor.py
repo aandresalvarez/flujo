@@ -559,6 +559,14 @@ class OptimizedStepExecutor:
                 try:
                     weak_ref = weakref.ref(step, lambda ref: self._cleanup_analysis_cache(step_id))
                     self._weak_refs.add(weak_ref)
+                    # Opportunistically prune dead refs to avoid leak of the set itself
+                    if len(self._weak_refs) % 128 == 0:
+                        try:
+                            for r in list(self._weak_refs):
+                                if r() is None:
+                                    self._weak_refs.discard(r)
+                        except Exception:
+                            pass
                 except TypeError:
                     # Some objects can't be weakly referenced
                     pass

@@ -1058,26 +1058,51 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                         ctx.command_log.append(log_entry)
                     except Exception:
                         pass
-        # Only append a synthetic success for HumanInTheLoopStep; for other steps we
-        # should re-run the paused step with the provided human_input as its data.
+        # Resume semantics:
+        # - If the paused step is an explicit HumanInTheLoopStep, mark it successful and continue to next.
+        # - Otherwise (e.g., loop or generic agent step that paused internally), re-run the same step
+        #   with the human_input as data so the step can consume it appropriately.
         from ..domain.dsl.step import HumanInTheLoopStep as _HITL
 
+        try:
+            if self._trace_manager is not None:
+                summary = str(human_input)
+                if isinstance(summary, str) and len(summary) > 500:
+                    summary = summary[:500] + "..."
+                self._trace_manager.add_event("flujo.resumed", {"human_input": summary})
+        except Exception:
+            pass
+
         if isinstance(paused_step, _HITL):
-            # Emit a resumed event in the active trace for auditability (FSD-013)
-            try:
-                if self._trace_manager is not None:
-                    # Only store a stringified/summary to avoid sensitive leakage
-                    summary = str(human_input)
-                    if isinstance(summary, str) and len(summary) > 500:
-                        summary = summary[:500] + "..."
-                    self._trace_manager.add_event("flujo.resumed", {"human_input": summary})
-            except Exception:
-                pass
             paused_result.step_history.append(paused_step_result)
+            # If the paused step updates context, merge the human_input output into context before next step
+            try:
+                if getattr(paused_step, "updates_context", False) and isinstance(
+                    ctx, PipelineContext
+                ):
+                    from .core.context_adapter import _build_context_update, _inject_context
+
+                    update_data = _build_context_update(human_input)
+                    if update_data:
+                        validation_error = _inject_context(ctx, update_data, type(ctx))
+                        if validation_error:
+                            raise OrchestratorError(
+                                f"Failed to merge human input into context: {validation_error}"
+                            )
+            except Exception as _merge_err:
+                # Defensive: log but continue; downstream may still succeed without context merge
+                try:
+                    from ..infra import telemetry as _telemetry
+
+                    _telemetry.logfire.warning(
+                        f"Resume context merge warning for step '{paused_step.name}': {_merge_err}"
+                    )
+                except Exception:
+                    pass
             data = human_input
             resume_start_idx = start_idx + 1
         else:
-            # Re-execute the paused step with the human input as data
+            # Do not append synthetic success for non-HITL steps; allow the step to handle input
             data = human_input
             resume_start_idx = start_idx
 
@@ -1369,6 +1394,23 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 return result
             except PipelineContextInitializationError as e:
                 cause = getattr(e, "__cause__", None)
+                # Provide clearer diagnostics on type mismatches as well as missing fields
+                if isinstance(cause, ValidationError):
+                    try:
+                        type_errors = [
+                            err for err in cause.errors() if err.get("type") == "type_error"
+                        ]
+                        if type_errors:
+                            field = type_errors[0].get("loc", ("unknown",))[0]
+                            expected = type_errors[0].get("ctx", {}).get("expected_type", "unknown")
+                            from ..exceptions import ConfigurationError as _CfgErr
+
+                            raise _CfgErr(
+                                f"Context inheritance failed: type mismatch for field '{field}'. "
+                                f"Expected a type compatible with '{expected}'."
+                            ) from e
+                    except Exception:
+                        pass
                 missing_fields = _extract_missing_fields(cause)
                 context_inheritance_error = ContextInheritanceError(
                     missing_fields=missing_fields,
