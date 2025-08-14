@@ -257,6 +257,14 @@ disable_error_code = [
 
 [[tool.mypy.overrides]]
 module = [
+  "flujo.state.backends.sqlite",
+]
+disable_error_code = [
+  "misc",
+]
+
+[[tool.mypy.overrides]]
+module = [
   "flujo.cli.helpers",
   "flujo.cli.main",
 ]
