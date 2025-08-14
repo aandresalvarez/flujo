@@ -92,6 +92,26 @@ class PolicyRegistry:
         return None
 
 
+# Shared message normalizer for consistent feedback formatting across policies
+def _normalize_plugin_feedback(msg: str) -> str:
+    try:
+        prefixes = (
+            "Plugin execution failed after max retries: ",
+            "Plugin validation failed: ",
+            "Agent execution failed: ",
+        )
+        changed = True
+        while changed:
+            changed = False
+            for p in prefixes:
+                if msg.startswith(p):
+                    msg = msg[len(p) :]
+                    changed = True
+        return msg.strip()
+    except Exception:
+        return msg
+
+
 # FSD-009: Legacy Usage Governor removed; pure quota-only mode
 
 
@@ -365,9 +385,12 @@ async def _execute_simple_step_policy_impl(
         )
     fallback_chain = core._fallback_chain.get([])
     if _fallback_depth > 0:
-        if step in fallback_chain:
+        # Compare by logical identity (name) rather than object identity
+        existing_names = [getattr(s, "name", "<unnamed>") for s in fallback_chain]
+        current_name = getattr(step, "name", "<unnamed>")
+        if current_name in existing_names:
             raise InfiniteFallbackError(
-                f"Fallback loop detected: step '{step.name}' already in fallback chain"
+                f"Fallback loop detected: step '{current_name}' already in fallback chain"
             )
         core._fallback_chain.set(fallback_chain + [step])
 
@@ -442,9 +465,16 @@ async def _execute_simple_step_policy_impl(
     # Capture pristine context snapshot before any retry attempts
     pre_attempt_context = None
     if context is not None and total_attempts > 1:
-        from flujo.application.core.context_manager import ContextManager
+        # Only isolate if context is a Pydantic BaseModel; skip for mocks/plain objects
+        try:
+            from pydantic import BaseModel as _BM
 
-        pre_attempt_context = ContextManager.isolate(context)
+            if isinstance(context, _BM):
+                from flujo.application.core.context_manager import ContextManager
+
+                pre_attempt_context = ContextManager.isolate(context)
+        except Exception:
+            pre_attempt_context = None
 
     for attempt in range(1, total_attempts + 1):
         result.attempts = attempt
@@ -452,23 +482,13 @@ async def _execute_simple_step_policy_impl(
         # FSD-003: Per-attempt context isolation
         # Each attempt (including the first) operates on a pristine copy when retries are possible
         if total_attempts > 1 and pre_attempt_context is not None:
-            telemetry.logfire.info(
+            telemetry.logfire.debug(
                 f"[SimpleStep] Creating isolated context for simple step attempt {attempt} (total_attempts={total_attempts})"
             )
             attempt_context = ContextManager.isolate(pre_attempt_context)
-            telemetry.logfire.info(
+            telemetry.logfire.debug(
                 f"[SimpleStep] Isolated context for simple step attempt {attempt}, original context preserved"
             )
-            # Debug: Check if isolation worked
-            if (
-                attempt_context is not None
-                and pre_attempt_context is not None
-                and hasattr(attempt_context, "branch_count")
-                and hasattr(pre_attempt_context, "branch_count")
-            ):
-                telemetry.logfire.info(
-                    f"[SimpleStep] Attempt {attempt}: attempt_context.branch_count={getattr(attempt_context, 'branch_count', 'N/A')}, pre_attempt_context.branch_count={getattr(pre_attempt_context, 'branch_count', 'N/A')}"
-                )
         else:
             attempt_context = context
 
@@ -1130,9 +1150,12 @@ async def _execute_simple_step_policy_impl(
                             )
 
                     telemetry.logfire.info(f"Step '{step.name}' failed, attempting fallback")
-                    if step.fallback_step in fallback_chain:
+                    # Check by name to detect logical loops even with new instances
+                    if getattr(step.fallback_step, "name", "<unnamed>") in [
+                        getattr(s, "name", "<unnamed>") for s in fallback_chain
+                    ]:
                         raise InfiniteFallbackError(
-                            f"Fallback loop detected: step '{step.fallback_step.name}' already in fallback chain"
+                            f"Fallback loop detected: step '{getattr(step.fallback_step, 'name', '<unnamed>')}' already in fallback chain"
                         )
                     try:
                         fallback_result = await core.execute(
@@ -1230,7 +1253,9 @@ async def _execute_simple_step_policy_impl(
             )
             if hasattr(step, "fallback_step") and step.fallback_step is not None:
                 telemetry.logfire.info(f"Step '{step.name}' failed, attempting fallback")
-                if step.fallback_step in fallback_chain:
+                if getattr(step.fallback_step, "name", None) in [
+                    getattr(s, "name", None) for s in fallback_chain
+                ]:
                     raise InfiniteFallbackError(
                         f"Fallback loop detected: step '{step.fallback_step.name}' already in fallback chain"
                     )
@@ -1670,18 +1695,19 @@ class DefaultAgentStepExecutor:
         # Attempt loop
         for attempt in range(1, total_attempts + 1):
             result.attempts = attempt
-            telemetry.logfire.info(
+            # Reduce logging overhead in hot path (perf benchmarks)
+            telemetry.logfire.debug(
                 f"DefaultAgentStepExecutor attempt {attempt}/{total_attempts} for step '{step.name}'"
             )
 
             # FSD-003: Per-attempt context isolation
             # Each attempt (including the first) operates on a pristine copy when retries are possible
             if total_attempts > 1 and pre_attempt_context is not None:
-                telemetry.logfire.info(
+                telemetry.logfire.debug(
                     f"[AgentStep] Creating isolated context for attempt {attempt} (total_attempts={total_attempts})"
                 )
                 attempt_context = ContextManager.isolate(pre_attempt_context)
-                telemetry.logfire.info(
+                telemetry.logfire.debug(
                     f"[AgentStep] Isolated context for attempt {attempt}, original context preserved"
                 )
                 # Debug: Check if isolation worked
@@ -1691,7 +1717,7 @@ class DefaultAgentStepExecutor:
                     and hasattr(attempt_context, "branch_count")
                     and hasattr(pre_attempt_context, "branch_count")
                 ):
-                    telemetry.logfire.info(
+                    telemetry.logfire.debug(
                         f"[AgentStep] Attempt {attempt}: attempt_context.branch_count={getattr(attempt_context, 'branch_count', 'N/A')}, pre_attempt_context.branch_count={getattr(pre_attempt_context, 'branch_count', 'N/A')}"
                     )
             else:
@@ -2158,16 +2184,49 @@ class DefaultAgentStepExecutor:
                             return to_outcome(fb_res)
                         else:
                             result.success = False
+                            # Normalize verbose plugin prefixes for cleaner feedback
+                            try:
+                                norm_primary = _normalize_plugin_feedback(primary_fb or "")
+                            except Exception:
+                                norm_primary = primary_fb
+                            try:
+                                norm_fb = _normalize_plugin_feedback(fb_res.feedback or "")
+                            except Exception:
+                                norm_fb = fb_res.feedback
                             result.feedback = (
-                                f"Original error: {primary_fb}; Fallback error: {fb_res.feedback}"
+                                f"Original error: {norm_primary}; Fallback error: {norm_fb}"
                             )
                             result.output = None
                             result.latency_s = time.monotonic() - overall_start_time
                             return to_outcome(result)
                     except Exception as fb_e:
+                        # Aggregate any available usage from a UsageLimitExceededError result
+                        try:
+                            from flujo.exceptions import UsageLimitExceededError as _ULE
+
+                            if isinstance(fb_e, _ULE) and getattr(fb_e, "result", None) is not None:
+                                res = fb_e.result
+                                try:
+                                    result.cost_usd = (result.cost_usd or 0.0) + float(
+                                        getattr(res, "total_cost_usd", 0.0)
+                                    )
+                                except Exception:
+                                    pass
+                                try:
+                                    result.token_counts = (result.token_counts or 0) + int(
+                                        getattr(res, "total_tokens", 0)
+                                    )
+                                except Exception:
+                                    pass
+                        except Exception:
+                            pass
                         result.success = False
+                        try:
+                            norm_primary = _normalize_plugin_feedback(primary_fb or "")
+                        except Exception:
+                            norm_primary = primary_fb
                         result.feedback = (
-                            f"Original error: {primary_fb}; Fallback execution failed: {fb_e}"
+                            f"Original error: {norm_primary}; Fallback execution failed: {fb_e}"
                         )
                         result.output = None
                         result.latency_s = time.monotonic() - overall_start_time
@@ -2755,9 +2814,15 @@ class DefaultLoopStepExecutor:
                         # Only allow condition-based success after a failure if the loop
                         # has completed at least one successful iteration already. This
                         # preserves robustness when the very first iteration fails.
-                        if (len(iteration_results) > 0 or last_ok is not None) and cond(
-                            data_for_cond, current_context
-                        ):
+                        should_exit = False
+                        if len(iteration_results) > 0 or last_ok is not None:
+                            try:
+                                # Legacy style: cond(last_output, context)
+                                should_exit = bool(cond(data_for_cond, current_context))
+                            except TypeError:
+                                # Compatibility: allow cond(pipeline_result, context)
+                                should_exit = bool(cond(pipeline_result, current_context))
+                        if should_exit:
                             telemetry.logfire.info(
                                 f"LoopStep '{loop_step.name}' exit condition met after failure at iteration {iteration_count}."
                             )
@@ -2873,7 +2938,14 @@ class DefaultLoopStepExecutor:
             )
             if cond:
                 try:
-                    if cond(current_data, current_context):
+                    should_exit = False
+                    try:
+                        # Legacy style: cond(last_output, context)
+                        should_exit = bool(cond(current_data, current_context))
+                    except TypeError:
+                        # Compatibility: allow cond(pipeline_result, context)
+                        should_exit = bool(cond(pipeline_result, current_context))
+                    if should_exit:
                         telemetry.logfire.info(
                             f"LoopStep '{loop_step.name}' exit condition met at iteration {iteration_count}."
                         )
@@ -3387,13 +3459,18 @@ class DefaultParallelStepExecutor:
             for d in done:
                 try:
                     res = d.result()
-                except Exception as e:
-                    # Propagate known control-flow exceptions immediately
-                    if isinstance(e, UsageLimitExceededError):
-                        # Cancel remaining tasks
-                        for p in pending:
-                            p.cancel()
-                        raise
+                except Exception:
+                    # On ANY exception from a branch, cancel all remaining branches immediately
+                    # to prevent resource leaks and unintended side effects.
+                    for p in pending:
+                        p.cancel()
+                    try:
+                        # Drain cancellations to avoid 'Task exception was never retrieved'
+                        if pending:
+                            await asyncio.gather(*pending, return_exceptions=True)
+                    except Exception:
+                        pass
+                    # Propagate the original exception (control-flow, usage limits, or others)
                     raise
                 await _handle_branch_result(res, completed_count)
                 completed_count += 1
@@ -3483,11 +3560,19 @@ class DefaultParallelStepExecutor:
             try:
                 # Merge context updates from all branches (successful and failed)
                 # This preserves context updates made before a step failed
-                branch_ctxs = {
-                    n: br.branch_context
-                    for n, br in branch_results.items()
-                    if br.branch_context is not None
-                }
+                # Only consider branch contexts from successful branches when ignoring failures
+                if parallel_step.on_branch_failure == BranchFailureStrategy.IGNORE:
+                    branch_ctxs = {
+                        n: br.branch_context
+                        for n, br in branch_results.items()
+                        if br.success and br.branch_context is not None
+                    }
+                else:
+                    branch_ctxs = {
+                        n: br.branch_context
+                        for n, br in branch_results.items()
+                        if br.branch_context is not None
+                    }
 
                 if parallel_step.merge_strategy == MergeStrategy.CONTEXT_UPDATE:
                     # Helper: detect conflicts in simple fields between two contexts

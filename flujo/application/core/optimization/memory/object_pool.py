@@ -9,7 +9,7 @@ allocations and garbage collection pressure by reusing frequently allocated obje
 import asyncio
 import time
 import weakref
-from collections import deque, defaultdict
+from collections import deque
 from dataclasses import dataclass, field
 from typing import Any, Dict, Type, TypeVar, Generic, Optional, Set, Callable
 from threading import RLock
@@ -64,11 +64,9 @@ class OptimizedObjectPool:
     stats_enabled: bool = True
 
     # Internal state
-    _pools: Dict[Type[Any], deque[Any]] = field(
-        default_factory=lambda: defaultdict(lambda: deque(maxlen=1000))
-    )
-    _locks: Dict[Type[Any], asyncio.Lock] = field(default_factory=lambda: defaultdict(asyncio.Lock))
-    _stats: Dict[Type[Any], PoolStats] = field(default_factory=lambda: defaultdict(PoolStats))
+    _pools: Dict[Type[Any], deque[Any]] = field(default_factory=dict)
+    _locks: Dict[Type[Any], asyncio.Lock] = field(default_factory=dict)
+    _stats: Dict[Type[Any], PoolStats] = field(default_factory=dict)
     # Weak references for cleanup
     _weak_refs: Set[weakref.ref[Any]] = field(default_factory=set, init=False)
     _last_cleanup: float = field(default_factory=time.time, init=False)

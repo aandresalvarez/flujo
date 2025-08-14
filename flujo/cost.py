@@ -38,6 +38,66 @@ def resolve_callable(value: T | Callable[[], T]) -> T:
     return value() if callable(value) else value
 
 
+def _is_mock_object(value: Any) -> bool:
+    """Best-effort check to determine whether ``value`` is a unittest.mock object.
+
+    Avoids tight coupling by importing lazily and falling back to duck-typing
+    checks present on Mock/MagicMock/AsyncMock instances.
+    """
+    try:
+        # Import lazily to avoid overhead at module import time
+        from unittest.mock import Mock, MagicMock
+
+        # Build tuple of types in a mypy-friendly way
+        mock_types: tuple[type[Any], ...] = (Mock, MagicMock)
+        try:
+            from unittest.mock import AsyncMock as _AsyncMock  # py>=3.8
+
+            mock_types = (*mock_types, _AsyncMock)
+        except Exception:  # pragma: no cover - AsyncMock may not exist
+            pass
+        if isinstance(value, mock_types):
+            return True
+    except Exception:
+        # If unittest.mock is unavailable (unlikely), fallback to duck-typing
+        pass
+
+    # Common attributes on mock objects
+    if hasattr(value, "assert_called") or getattr(value, "_is_mock", False):
+        return True
+
+    return False
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    """Safely cast to float, returning ``default`` for mocks or invalid values."""
+    if _is_mock_object(value):
+        return default
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        return float(value)
+    except Exception:
+        return default
+
+
+def _safe_int(value: Any, default: int = 0) -> int:
+    """Safely cast to int, returning ``default`` for mocks or invalid values."""
+    if _is_mock_object(value):
+        return default
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        try:
+            return int(value)
+        except Exception:
+            return default
+    try:
+        return int(value)
+    except Exception:
+        return default
+
+
 def clear_cost_cache() -> None:
     """Clear the cost calculation cache. Useful for testing to ensure isolation."""
     global _model_cache
@@ -89,16 +149,10 @@ def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[
     # 1. HIGHEST PRIORITY: Check if the output object reports its own cost.
     # We check for the protocol attributes manually since token_counts is optional
     if hasattr(raw_output, "cost_usd"):
-        cost_usd = getattr(raw_output, "cost_usd", 0.0) or 0.0
-        # For explicit costs, we don't try to split tokens.
+        # For explicit costs, we trust object's own reporting but guard against mocks
+        cost_usd = _safe_float(getattr(raw_output, "cost_usd", 0.0), default=0.0)
         # We take the total token count if provided, otherwise it's 0.
-        total_tokens = getattr(raw_output, "token_counts", 0) or 0
-
-        # Handle Mock objects in cost extraction
-        if hasattr(cost_usd, "_mock_name"):
-            cost_usd = 0.0
-        if hasattr(total_tokens, "_mock_name"):
-            total_tokens = 0
+        total_tokens = _safe_int(getattr(raw_output, "token_counts", 0), default=0)
 
         telemetry.logfire.info(
             f"Using explicit cost from '{type(raw_output).__name__}' for step '{step_name}': cost=${cost_usd}, tokens={total_tokens}"
@@ -107,24 +161,36 @@ def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[
         # Return prompt_tokens as 0 since it cannot be determined reliably here.
         return 0, total_tokens, cost_usd
 
-    # 2. Handle string outputs as 1 token (matches original fallback logic behavior)
+    # 2. Handle string outputs: prefer tokenizer estimate; fallback to 1 token
     if isinstance(raw_output, str):
-        telemetry.logfire.info(
-            f"Counting string output as 1 token for step '{step_name}': '{raw_output[:50]}{'...' if len(raw_output) > 50 else ''}'"
-        )
-        return 0, 1, 0.0
+        try:
+            # Use tiktoken when available for more accurate token counting
+            import tiktoken as _tiktoken  # type: ignore[import-not-found]
+
+            encoding = _tiktoken.get_encoding("cl100k_base")
+            token_count = len(encoding.encode(raw_output))
+            telemetry.logfire.info(
+                f"Counting string output as {token_count} tokens for step '{step_name}'"
+            )
+            return 0, int(token_count), 0.0
+        except Exception:
+            telemetry.logfire.info(
+                f"Counting string output as 1 token for step '{step_name}' (tiktoken unavailable)"
+            )
+            return 0, 1, 0.0
 
     # 3. If explicit metrics are not fully present, proceed with usage() extraction
     if hasattr(raw_output, "usage"):
         try:
             usage_info = raw_output.usage()
-            prompt_tokens = getattr(usage_info, "request_tokens", 0) or 0
-            completion_tokens = getattr(usage_info, "response_tokens", 0) or 0
+            # Guard against mocks and invalid values
+            prompt_tokens = _safe_int(getattr(usage_info, "request_tokens", 0), default=0)
+            completion_tokens = _safe_int(getattr(usage_info, "response_tokens", 0), default=0)
 
             # Check if cost was set by a post-processor (e.g., image cost post-processor)
             usage_cost = getattr(usage_info, "cost_usd", None)
             if usage_cost is not None:
-                cost_usd = usage_cost
+                cost_usd = _safe_float(usage_cost, default=0.0)
                 telemetry.logfire.info(
                     f"Using cost from usage object for step '{step_name}': cost=${cost_usd}"
                 )

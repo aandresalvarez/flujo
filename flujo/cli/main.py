@@ -260,7 +260,7 @@ def bench(
     """
     try:
         # Apply CLI defaults from configuration file
-        cli_args = apply_cli_defaults("bench", {"rounds": 10}, rounds=rounds)
+        cli_args = apply_cli_defaults("bench", rounds=rounds)
         rounds = cast(int, cli_args["rounds"])
 
         # Run benchmark using helper function
@@ -630,7 +630,6 @@ def run(
         # Apply CLI defaults from configuration file
         cli_args = apply_cli_defaults(
             "run",
-            {"pipeline_name": "pipeline", "json_output": False},
             pipeline_name=pipeline_name,
             json_output=json_output,
         )

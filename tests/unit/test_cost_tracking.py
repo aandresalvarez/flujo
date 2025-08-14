@@ -189,6 +189,62 @@ class TestExtractUsageMetrics:
         assert prompt_tokens == 0  # Cannot be determined reliably
         assert completion_tokens == 150  # Preserved total for usage limits
 
+    def test_extract_usage_metrics_with_mock_explicit_metrics(self):
+        """Explicit metrics provided as mocks should be treated as zeroes safely."""
+
+        from unittest.mock import Mock
+
+        class MockResponse:
+            def __init__(self):
+                self.output = "irrelevant"
+                # cost_usd and token_counts as mocks
+                self.cost_usd = Mock()
+                self.token_counts = Mock()
+
+        class MockAgent:
+            def __init__(self):
+                self.model_id = "openai:gpt-4o"
+
+        raw_output = MockResponse()
+        agent = MockAgent()
+
+        prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
+            raw_output, agent, "test_step"
+        )
+
+        assert cost_usd == 0.0
+        assert prompt_tokens == 0
+        assert completion_tokens == 0
+
+    def test_extract_usage_metrics_with_usage_mock_counts(self):
+        """Usage object fields as mocks should yield zero tokens and zero cost."""
+
+        from unittest.mock import Mock
+
+        class MockResponse:
+            def usage(self):
+                class MockUsage:
+                    def __init__(self):
+                        self.request_tokens = Mock()
+                        self.response_tokens = Mock()
+
+                return MockUsage()
+
+        class MockAgent:
+            def __init__(self):
+                self.model_id = "openai:gpt-4o"
+
+        raw_output = MockResponse()
+        agent = MockAgent()
+
+        prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
+            raw_output, agent, "test_step"
+        )
+
+        assert prompt_tokens == 0
+        assert completion_tokens == 0
+        assert cost_usd == 0.0
+
     def test_extract_usage_metrics_with_model_id_parsing(self):
         """Test extraction with different model_id formats."""
 

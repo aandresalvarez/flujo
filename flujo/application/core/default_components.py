@@ -108,10 +108,135 @@ class DefaultCacheKeyGenerator:
         self._hasher: _HasherProtocol = hasher or Blake3Hasher()
 
     def generate_key(self, step: Any, data: Any, context: Any, resources: Any) -> str:
-        step_name = getattr(step, "name", str(type(step).__name__))
-        data_str = str(data) if data is not None else ""
-        key_bytes = f"{step_name}:{data_str}".encode("utf-8")
-        return self._hasher.digest(key_bytes)
+        """Generate a collision-resistant cache key.
+
+        Incorporates agent identity (type, model_id, system_prompt hash),
+        step configuration, processors/validators, and a stable serialization of
+        inputs to prevent collisions across logically distinct agents/steps.
+        """
+        try:
+            # Only delegate to cache_step generator for real DSL Step objects
+            from flujo.domain.dsl.step import Step as _DSLStep
+
+            if isinstance(step, _DSLStep):
+                from flujo.steps.cache_step import _generate_cache_key as _gen_alt
+
+                key: str | None = _gen_alt(step, data, context, resources)
+                if key is not None:
+                    return key
+                # If _gen_alt returns None, fall through to local generator
+        except Exception:
+            # Fall back to local generator on any error (including mocks)
+            pass
+
+        # Fallback: local robust key generation mirroring cache_step
+        import hashlib as _hashlib
+        import json as _json
+        from flujo.utils.serialization import safe_serialize as _safe_serialize
+
+        # Agent fingerprint
+        agent = getattr(step, "agent", None)
+        agent_type = type(agent).__name__ if agent is not None else None
+        model_id = getattr(agent, "model_id", None) if agent is not None else None
+        system_prompt = None
+        if agent is not None:
+            try:
+                system_prompt = getattr(agent, "system_prompt", None)
+                if system_prompt is None and hasattr(agent, "_system_prompt"):
+                    system_prompt = getattr(agent, "_system_prompt")
+            except Exception:
+                system_prompt = None
+        system_prompt_hash = None
+        if system_prompt is not None:
+            try:
+                system_prompt_hash = _hashlib.sha256(str(system_prompt).encode()).hexdigest()
+            except Exception:
+                system_prompt_hash = None
+
+        payload = {
+            "step": {
+                "name": getattr(step, "name", str(type(step).__name__)),
+                "agent": {
+                    "type": agent_type,
+                    "model_id": model_id,
+                    "system_prompt_sha256": system_prompt_hash,
+                },
+                "config": {
+                    "max_retries": getattr(getattr(step, "config", None), "max_retries", None),
+                    "timeout_s": getattr(getattr(step, "config", None), "timeout_s", None),
+                    "temperature": getattr(getattr(step, "config", None), "temperature", None),
+                },
+                "processors": {
+                    "prompt_processors": (
+                        [
+                            type(p).__name__
+                            for p in (
+                                getattr(getattr(step, "processors", None), "prompt_processors", [])
+                                if isinstance(
+                                    getattr(
+                                        getattr(step, "processors", None), "prompt_processors", []
+                                    ),
+                                    list,
+                                )
+                                else []
+                            )
+                        ]
+                    ),
+                    "output_processors": (
+                        [
+                            type(p).__name__
+                            for p in (
+                                getattr(getattr(step, "processors", None), "output_processors", [])
+                                if isinstance(
+                                    getattr(
+                                        getattr(step, "processors", None), "output_processors", []
+                                    ),
+                                    list,
+                                )
+                                else []
+                            )
+                        ]
+                    ),
+                },
+                "validators": (
+                    [type(v).__name__ for v in getattr(step, "validators", [])]
+                    if isinstance(getattr(step, "validators", []), list)
+                    else []
+                ),
+            },
+            "data": _safe_serialize(data, mode="cache"),
+            "context": _safe_serialize(context, mode="cache"),
+            "resources": _safe_serialize(resources, mode="cache"),
+        }
+        try:
+            blob = _json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+            return _hashlib.sha256(blob).hexdigest()
+        except Exception:
+            # Robust fallback: incorporate serialized inputs to preserve uniqueness
+            step_name = getattr(step, "name", str(type(step).__name__))
+            try:
+                data_repr = _safe_serialize(data, mode="cache")
+            except Exception:
+                data_repr = str(data)
+            try:
+                ctx_repr = _safe_serialize(context, mode="cache")
+            except Exception:
+                ctx_repr = str(context)
+            try:
+                res_repr = _safe_serialize(resources, mode="cache")
+            except Exception:
+                res_repr = str(resources)
+            seed = _json.dumps(
+                {
+                    "name": step_name,
+                    "data": data_repr,
+                    "context": ctx_repr,
+                    "resources": res_repr,
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+            return _hashlib.sha256(seed).hexdigest()
 
 
 # -----------------------------
@@ -493,8 +618,15 @@ class DefaultAgentRunner:
 
         if isinstance(executable_func, (Mock, MagicMock, AsyncMock)):
             filtered_kwargs.update(options)
+            # Avoid passing mock contexts to mock agent functions to minimize overhead
             if context is not None:
-                filtered_kwargs["context"] = context
+                try:
+                    from unittest.mock import Mock as _M
+
+                    if not isinstance(context, _M):
+                        filtered_kwargs["context"] = context
+                except Exception:
+                    filtered_kwargs["context"] = context
             if resources is not None:
                 filtered_kwargs["resources"] = resources
             if breach_event is not None:

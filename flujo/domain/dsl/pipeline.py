@@ -224,7 +224,7 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                 if (
                     (not prev_updates_context)
                     and (not _is_none_or_object(prev_produces_output))
-                    and _is_none_or_object(curr_accepts_input)
+                    and (_is_none_or_object(curr_accepts_input) or curr_accepts_input is Any)
                 ):
                     report.warnings.append(
                         ValidationFinding(

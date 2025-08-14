@@ -93,6 +93,16 @@ def _serialize_for_cache_key(
                 d = obj.model_dump(mode="cache")
                 if "run_id" in d:
                     d.pop("run_id", None)
+                # Exclude volatile context fields to stabilize cache keys
+                for volatile in (
+                    "processing_history",
+                    "cache_timestamps",
+                    "cache_keys",
+                    "current_operation",
+                    "operation_count",
+                ):
+                    if volatile in d:
+                        d.pop(volatile, None)
 
                 # Special-case for Step agent field
                 if isinstance(obj, Step) and "agent" in d:
@@ -138,6 +148,15 @@ def _serialize_for_cache_key(
                         v_dict = v.model_dump(mode="cache")
                         if "run_id" in v_dict:
                             v_dict.pop("run_id", None)
+                        for volatile in (
+                            "processing_history",
+                            "cache_timestamps",
+                            "cache_keys",
+                            "current_operation",
+                            "operation_count",
+                        ):
+                            if volatile in v_dict:
+                                v_dict.pop(volatile, None)
                         result[k] = {
                             kk: _serialize_for_cache_key(v_dict[kk], visited, _is_root=False)
                             for kk in sorted(v_dict.keys(), key=str)
@@ -350,24 +369,73 @@ def _create_step_fingerprint(step: Step[Any, Any]) -> dict[str, Any]:
     that should affect cache key generation, avoiding object identity and
     internal state that may change between runs.
     """
+    # Build robust agent fingerprint to prevent cache collisions across logically different agents
+    agent_type: str | None = type(step.agent).__name__ if step.agent is not None else None
+    model_id: str | None = None
+    system_prompt_hash: str | None = None
+    if getattr(step, "agent", None) is not None:
+        try:
+            # Preferred explicit attribute
+            model_id = getattr(step.agent, "model_id", None)
+        except Exception:
+            model_id = None
+        # Attempt to derive system prompt from common locations
+        try:
+            # pydantic_ai Agent stores it as attribute in most configs
+            system_prompt_val = getattr(step.agent, "system_prompt", None)
+            if system_prompt_val is None and hasattr(step.agent, "_system_prompt"):
+                system_prompt_val = getattr(step.agent, "_system_prompt", None)
+            if system_prompt_val is not None:
+                try:
+                    import hashlib as _hashlib
+
+                    system_prompt_hash = _hashlib.sha256(
+                        str(system_prompt_val).encode()
+                    ).hexdigest()
+                except Exception:
+                    system_prompt_hash = None
+        except Exception:
+            system_prompt_hash = None
+
+    # Defend against test doubles / mocks in processors, plugins, validators
+    def _safe_list_names(items: Any) -> list[str]:
+        try:
+            if isinstance(items, list):
+                return [type(x).__name__ for x in items]
+        except Exception:
+            pass
+        return []
+
     fingerprint = {
         "name": step.name,
-        "agent_type": type(step.agent).__name__ if step.agent is not None else None,
+        "agent": {
+            "type": agent_type,
+            "model_id": model_id,
+            "system_prompt_sha256": system_prompt_hash,
+        },
         "config": {
             "max_retries": step.config.max_retries,
             "timeout_s": step.config.timeout_s,
             "temperature": step.config.temperature,
         },
-        "plugins": [(type(plugin).__name__, priority) for plugin, priority in step.plugins],
-        "validators": [type(validator).__name__ for validator in step.validators],
         "processors": {
-            "prompt_processors": [
-                type(proc).__name__ for proc in step.processors.prompt_processors
-            ],
-            "output_processors": [
-                type(proc).__name__ for proc in step.processors.output_processors
-            ],
+            "prompt_processors": _safe_list_names(
+                getattr(step.processors, "prompt_processors", [])
+            ),
+            "output_processors": _safe_list_names(
+                getattr(step.processors, "output_processors", [])
+            ),
         },
+        "plugins": (
+            [(type(plugin).__name__, priority) for plugin, priority in getattr(step, "plugins", [])]
+            if isinstance(getattr(step, "plugins", []), list)
+            else []
+        ),
+        "validators": (
+            [type(validator).__name__ for validator in getattr(step, "validators", [])]
+            if isinstance(getattr(step, "validators", []), list)
+            else []
+        ),
         "updates_context": step.updates_context,
         "persist_feedback_to_context": step.persist_feedback_to_context,
         "persist_validation_results_to": step.persist_validation_results_to,

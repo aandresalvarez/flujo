@@ -196,20 +196,13 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                         # This is a clean abstraction that maintains the contract expected by cost tracking
                         # while allowing output processors to work on the actual content
                         class ProcessedOutputWithUsage:
-                            """
-                            Wrapper that preserves both processed output and usage information.
-
-                            This ensures that cost tracking can extract usage metrics even after
-                            output processors have modified the content. The wrapper maintains
-                            the same interface as the original AgentRunResult for usage extraction.
-                            """
+                            """Wrapper that preserves processed output and usage information."""
 
                             def __init__(self, output: Any, usage_info: Any) -> None:
                                 self.output = output
                                 self._usage_info = usage_info
 
                             def usage(self) -> Any:
-                                """Return the original usage information from the agent response."""
                                 return self._usage_info
 
                         return ProcessedOutputWithUsage(unpacked_output, agent_usage_info)

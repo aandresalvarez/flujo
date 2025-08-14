@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from urllib.parse import urlparse
 import logging
 
@@ -32,23 +32,34 @@ def _normalize_sqlite_path(uri: str, cwd: Path) -> Path:
             f"Non-standard SQLite URI: '{uri}'. Use 'sqlite:///foo.db' or 'sqlite:////abs/path.db' for portability."
         )
         path_str = parsed.netloc
+        # Handle Windows drive letter like C:/path or C:\path
+        try:
+            if ":" in path_str or path_str.startswith("\\"):
+                win = PureWindowsPath(path_str)
+                if win.is_absolute():
+                    return Path(str(win))
+        except Exception:
+            pass
         if path_str.startswith("/"):
-            resolved = Path(path_str).resolve()
-            return resolved
-        else:
-            resolved = (cwd / path_str).resolve()
-            return resolved
+            return Path(path_str).resolve()
+        return (cwd / path_str).resolve()
     # Case 2: Standard sqlite:///foo.db (netloc empty, path present)
     elif not parsed.netloc and parsed.path:
         path_str = parsed.path
         # If path_str starts with '//', treat as absolute (sqlite:////abs/path.db)
         if path_str.startswith("//"):
-            resolved = Path(path_str[1:]).resolve()  # Remove one slash to get /abs/path.db
-            return resolved
-        # For all other cases, always treat as relative (even if starts with '/')
+            return Path(path_str[1:]).resolve()  # Remove one slash to get /abs/path.db
+        # Windows absolute path like /C:/path or C:/path
+        try:
+            normalized = path_str[1:] if path_str.startswith("/") else path_str
+            win = PureWindowsPath(normalized)
+            if win.is_absolute():
+                return Path(str(win))
+        except Exception:
+            pass
+        # Otherwise treat as relative to cwd
         rel_path = path_str[1:] if path_str.startswith("/") else path_str
-        resolved = (cwd / rel_path).resolve()
-        return resolved
+        return (cwd / rel_path).resolve()
     # Case 3: netloc and path both present (rare, but possible)
     elif parsed.netloc:
         path_str = (
@@ -58,15 +69,25 @@ def _normalize_sqlite_path(uri: str, cwd: Path) -> Path:
         )
         # If path_str starts with '//', treat as absolute
         if path_str.startswith("//"):
-            resolved = Path(path_str[1:]).resolve()
-            return resolved
+            return Path(path_str[1:]).resolve()
+        # Windows absolute path
+        try:
+            normalized = path_str[1:] if path_str.startswith("/") else path_str
+            win = PureWindowsPath(normalized)
+            if win.is_absolute():
+                return Path(str(win))
+        except Exception:
+            pass
         # Otherwise, treat as relative
         rel_path = path_str[1:] if path_str.startswith("/") else path_str
-        resolved = (cwd / rel_path).resolve()
-        return resolved
+        return (cwd / rel_path).resolve()
     else:
-        # Fallback: treat as relative
+        # Fallback: treat as relative, but guard against empty path (e.g., sqlite://)
         path_str = parsed.path
+        if not parsed.netloc and (path_str is None or path_str.strip() == ""):
+            raise ValueError(
+                "Malformed SQLite URI: empty path. Use 'sqlite:///file.db' or 'sqlite:////abs/path.db'."
+            )
         rel_path = path_str[1:] if path_str.startswith("/") else path_str
         resolved = (cwd / rel_path).resolve()
         return resolved
@@ -108,21 +129,22 @@ def load_backend_from_config() -> StateBackend:
             raise typer.Exit(1)
         # Ensure the database file exists with secure permissions (read/write for owner only)
         # This avoids issues with default umask or inherited permissions from 'open' in append mode.
-        if not db_path.exists():
+        try:
+            # Atomically create the DB file with secure permissions when absent, or open if present
+            flags = os.O_CREAT | os.O_WRONLY
+            fd = os.open(db_path, flags, 0o600)
             try:
-                # Use O_CREAT | O_EXCL | O_WRONLY to avoid truncating existing files
-                fd = os.open(db_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+                # Ensure permissions are set to 0600 even if file pre-existed with looser perms
+                os.fchmod(fd, 0o600)
+            finally:
                 os.close(fd)
-            except FileExistsError:
-                # File was created between the exists() check and os.open; continue
-                pass
-            except Exception as e:
-                typer.echo(
-                    f"[red]Error: Cannot create database file '{db_path}' with secure permissions due to {type(e).__name__}: {e}[/red]",
-                    err=True,
-                )
-                raise typer.Exit(1)
-        elif not os.access(db_path, os.W_OK):
+        except Exception as e:
+            typer.echo(
+                f"[red]Error: Cannot create/open database file '{db_path}' with secure permissions due to {type(e).__name__}: {e}[/red]",
+                err=True,
+            )
+            raise typer.Exit(1)
+        if not os.access(db_path, os.W_OK):
             typer.echo(f"[red]Error: Database file '{db_path}' is not writable[/red]", err=True)
             raise typer.Exit(1)
         # Try to open the file for writing (touch)

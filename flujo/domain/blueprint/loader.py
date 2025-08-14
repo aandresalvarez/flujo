@@ -684,13 +684,24 @@ def _resolve_validators(specs: List[str]) -> List[Any]:
 def _import_object(path: str) -> Any:
     """Import an object from 'module:attr' or 'module.attr' path with allow-list enforcement.
 
-    Security: Only modules explicitly allowed in configuration may be imported from YAML.
+    Security hardening:
+    - Reject path traversal and illegal characters (.., /, \\ or leading '.')
+    - Enforce allow-list from configuration
     """
     import importlib
+    import re
     from ...infra.config_manager import get_config_manager
 
     module_name: str
     attr_name: Optional[str] = None
+    # Basic sanitization: disallow path traversal or filesystem-style separators
+    if ".." in path or "/" in path or "\\" in path or path.strip().startswith("."):
+        raise BlueprintError("Invalid import path: traversal or illegal characters are not allowed")
+
+    # Only allow Python identifier characters and dots/colon separator
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_\.]*(:[A-Za-z_][A-Za-z0-9_]*)?", path):
+        raise BlueprintError("Invalid import path format")
+
     if ":" in path:
         module_name, attr_name = path.split(":", 1)
     else:
