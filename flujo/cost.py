@@ -127,8 +127,7 @@ class _TiktokenEncoding(Protocol):
 
 @runtime_checkable
 class _TiktokenModule(Protocol):
-    def get_encoding(self, name: str) -> _TiktokenEncoding:  # type: ignore[name-defined]
-        ...
+    def get_encoding(self, name: str) -> _TiktokenEncoding: ...
 
 
 def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[int, int, float]:
@@ -186,7 +185,7 @@ def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[
             return 0, 1, 0.0
 
         try:
-            tmod: _TiktokenModule = _mod  # type: ignore[assignment]
+            tmod: _TiktokenModule = _mod
             encoding: _TiktokenEncoding = tmod.get_encoding("cl100k_base")
             token_count = len(encoding.encode(raw_output))
             telemetry.logfire.info(
