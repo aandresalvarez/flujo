@@ -72,6 +72,13 @@ def load_skills_catalog(directory: str) -> None:
                 description=entry.get("description"),
                 input_schema=entry.get("input_schema"),
                 output_schema=entry.get("output_schema"),
+                capabilities=entry.get("capabilities"),
+                safety_level=entry.get("safety_level"),
+                auth_required=entry.get("auth_required"),
+                auth_scope=entry.get("auth_scope"),
+                side_effects=entry.get("side_effects"),
+                # Accept FSD-020 alias
+                arg_schema=entry.get("arg_schema"),
             )
         except Exception:
             continue
