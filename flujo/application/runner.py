@@ -571,7 +571,12 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 for key, value in merged_data.items():
                     if key == "scratchpad" and isinstance(value, dict):
                         # Merge scratchpad dictionaries
-                        current_context_instance.scratchpad.update(value)  # type: ignore[attr-defined]
+                        try:
+                            scratch = getattr(current_context_instance, "scratchpad", None)
+                            if isinstance(scratch, dict):
+                                scratch.update(value)
+                        except Exception:
+                            pass
                     elif key in ("initial_prompt", "run_id"):
                         # Respect explicit initial_prompt/run_id if provided
                         object.__setattr__(current_context_instance, key, value)

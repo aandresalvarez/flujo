@@ -5,14 +5,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator, model_v
 import re
 import yaml
 
-from ..dsl import (
-    Pipeline,
-    Step,
-    StepConfig,
-    ParallelStep,
-    MergeStrategy,
-    BranchFailureStrategy,
-)
+from ..dsl import Pipeline, Step, StepConfig, ParallelStep
 from ...exceptions import ConfigurationError
 from ...infra.skill_registry import get_skill_registry
 from ..models import UsageLimits
@@ -138,20 +131,25 @@ class BlueprintPipelineModel(BaseModel):
         return self
 
 
-def _normalize_merge_strategy(value: Optional[str]) -> MergeStrategy:
+def _normalize_merge_strategy(value: Optional[str]) -> Any:
+    # Access enum members at runtime to avoid mypy import/type alias issues
+    from ..dsl.step import MergeStrategy as _MS
+
     if value is None:
-        return MergeStrategy.CONTEXT_UPDATE
+        return _MS.CONTEXT_UPDATE
     try:
-        return MergeStrategy[value.upper()]
+        return _MS[value.upper()]
     except Exception as e:
         raise BlueprintError(f"Invalid merge_strategy: {value}") from e
 
 
-def _normalize_branch_failure(value: Optional[str]) -> BranchFailureStrategy:
+def _normalize_branch_failure(value: Optional[str]) -> Any:
+    from ..dsl.step import BranchFailureStrategy as _BFS
+
     if value is None:
-        return BranchFailureStrategy.PROPAGATE
+        return _BFS.PROPAGATE
     try:
-        return BranchFailureStrategy[value.upper()]
+        return _BFS[value.upper()]
     except Exception as e:
         raise BlueprintError(f"Invalid on_branch_failure: {value}") from e
 
@@ -164,7 +162,7 @@ def _finalize_step_types(step_obj: Step[Any, Any]) -> None:
     - Else, try to analyze the agent object itself.
     """
     try:
-        from flujo.signature_tools import analyze_signature as _analyze  # type: ignore
+        from flujo.signature_tools import analyze_signature as _analyze
         import inspect as _inspect
 
         def _is_default_type(t: Any) -> bool:
@@ -175,7 +173,7 @@ def _finalize_step_types(step_obj: Step[Any, Any]) -> None:
         # Unwrap bound method to original function if needed
         if hasattr(fn, "__func__"):
             try:
-                fn = getattr(fn, "__func__")  # type: ignore[assignment]
+                fn = getattr(fn, "__func__")
             except Exception:
                 pass
         if fn is None:
@@ -208,7 +206,7 @@ def _make_step_from_blueprint(
     *,
     yaml_path: Optional[str] = None,
     compiled_agents: Optional[Dict[str, Any]] = None,
-    compiled_imports: Optional[Dict[str, "Pipeline[Any, Any]"]] = None,
+    compiled_imports: Optional[Dict[str, Any]] = None,
 ) -> Step[Any, Any]:
     # For v0: agent may be None; if provided, we resolve later via import string in a follow-up.
     step_config = StepConfig(**model.config) if model.config else StepConfig()
@@ -216,16 +214,16 @@ def _make_step_from_blueprint(
         if not model.branches:
             raise BlueprintError("parallel step requires branches")
         # Branch values are nested steps or pipelines in YAML; support list-of-steps or single step.
-        branches: Dict[str, Pipeline[Any, Any]] = {}
+        branches_map: Dict[str, Pipeline[Any, Any]] = {}
         for branch_name, branch_spec in model.branches.items():
-            branches[branch_name] = _build_pipeline_from_branch(
+            branches_map[branch_name] = _build_pipeline_from_branch(
                 branch_spec,
                 base_path=f"{yaml_path}.branches.{branch_name}" if yaml_path else None,
                 compiled_agents=compiled_agents,
             )
         return ParallelStep(
             name=model.name,
-            branches=branches,
+            branches=branches_map,
             context_include_keys=model.context_include_keys,
             merge_strategy=_normalize_merge_strategy(model.merge_strategy),
             on_branch_failure=_normalize_branch_failure(model.on_branch_failure),
@@ -240,20 +238,19 @@ def _make_step_from_blueprint(
 
         if not model.branches:
             raise BlueprintError("conditional step requires branches")
-        branches: Dict[Any, Pipeline[Any, Any]] = {}
+        branches_map2: Dict[Any, Pipeline[Any, Any]] = {}
         for key, branch_spec in model.branches.items():
-            branches[key] = _build_pipeline_from_branch(
+            branches_map2[key] = _build_pipeline_from_branch(
                 branch_spec, compiled_agents=compiled_agents
             )
-        # v0: use a simple callable that returns the provided key if input matches string
-        if model.condition:
-            cond_obj = _import_object(model.condition)
-            _cond_callable = cond_obj  # type: ignore[assignment]
+            # v0: use a simple callable that returns the provided key if input matches string
+            if model.condition:
+                _cond_callable = _import_object(model.condition)
         else:
 
             def _cond_callable(output: Any, _ctx: Optional[Any]) -> Any:
                 # trivial placeholder: pass through output as branch key if present, else use first key
-                return output if output in branches else next(iter(branches))
+                return output if output in branches_map2 else next(iter(branches_map2))
 
         default_branch = (
             _build_pipeline_from_branch(
@@ -267,7 +264,7 @@ def _make_step_from_blueprint(
         return ConditionalStep(
             name=model.name,
             condition_callable=_cond_callable,
-            branches=branches,
+            branches=branches_map2,
             default_branch_pipeline=default_branch,
             config=step_config,
         )
@@ -284,10 +281,12 @@ def _make_step_from_blueprint(
         max_loops = model.loop.get("max_loops")
         # Optional callable overrides
         if model.loop.get("exit_condition"):
-            _exit_condition = _import_object(model.loop["exit_condition"])  # type: ignore[assignment]
+            _exit_condition = _import_object(model.loop["exit_condition"])  # runtime import
         else:
 
-            def _exit_condition(_output: Any, _ctx: Optional[Any], *, _state={"count": 0}) -> bool:  # type: ignore[misc]
+            def _exit_condition(
+                _output: Any, _ctx: Optional[Any], *, _state: Dict[str, int] = {"count": 0}
+            ) -> bool:
                 _state["count"] += 1
                 if isinstance(max_loops, int) and max_loops > 0:
                     return _state["count"] >= max_loops
@@ -296,7 +295,7 @@ def _make_step_from_blueprint(
         return LoopStep(
             name=model.name,
             loop_body_pipeline=body,
-            exit_condition_callable=_exit_condition,  # type: ignore[arg-type]
+            exit_condition_callable=_exit_condition,
             max_retries=max(1, int(max_loops)) if isinstance(max_loops, int) else 1,
             config=step_config,
         )
@@ -319,10 +318,10 @@ def _make_step_from_blueprint(
 
         if not model.router or "router_agent" not in model.router or "branches" not in model.router:
             raise BlueprintError("dynamic_router requires router.router_agent and router.branches")
-        router_agent = _resolve_agent_entry(model.router.get("router_agent"))
-        branches: Dict[str, Pipeline[Any, Any]] = {}
+        router_agent = _resolve_agent_entry(model.router.get("router_agent") or "")
+        branches_router: Dict[str, Pipeline[Any, Any]] = {}
         for bname, bspec in model.router.get("branches", {}).items():
-            branches[bname] = _build_pipeline_from_branch(
+            branches_router[bname] = _build_pipeline_from_branch(
                 bspec,
                 base_path=f"{yaml_path}.router.branches.{bname}" if yaml_path else None,
                 compiled_agents=compiled_agents,
@@ -330,7 +329,7 @@ def _make_step_from_blueprint(
         return DynamicParallelRouterStep(
             name=model.name,
             router_agent=router_agent,
-            branches=branches,
+            branches=branches_router,
             config=step_config,
         )
     else:
@@ -350,7 +349,7 @@ def _make_step_from_blueprint(
                     raise BlueprintError(f"Unknown declarative agent referenced: {uses_spec}")
                 agent_obj = compiled_agents[key]
                 if _is_async_callable(agent_obj):
-                    st = Step.from_callable(  # type: ignore[arg-type]
+                    st = Step.from_callable(
                         agent_obj,
                         name=model.name,
                         updates_context=model.updates_context,
@@ -376,7 +375,7 @@ def _make_step_from_blueprint(
                     _imported = _import_object(uses_spec)
                     agent_obj = _imported
                     if _is_async_callable(agent_obj):
-                        st = Step.from_callable(  # type: ignore[arg-type]
+                        st = Step.from_callable(
                             agent_obj,
                             name=model.name,
                             updates_context=model.updates_context,
@@ -396,7 +395,7 @@ def _make_step_from_blueprint(
                 if isinstance(model.agent, str):
                     _fn = _import_object(model.agent)
                     if _inspect.isfunction(_fn) or _is_async_callable(_fn):
-                        st = Step.from_callable(  # type: ignore[arg-type]
+                        st = Step.from_callable(
                             _fn,
                             name=model.name,
                             updates_context=model.updates_context,
@@ -412,7 +411,7 @@ def _make_step_from_blueprint(
             if st is None:
                 agent_obj = _resolve_agent_entry(model.agent)
                 if _is_async_callable(agent_obj):
-                    st = Step.from_callable(  # type: ignore[arg-type]
+                    st = Step.from_callable(
                         agent_obj,
                         name=model.name,
                         updates_context=model.updates_context,
@@ -477,7 +476,7 @@ def _build_pipeline_from_branch(
     *,
     base_path: Optional[str] = None,
     compiled_agents: Optional[Dict[str, Any]] = None,
-    compiled_imports: Optional[Dict[str, "Pipeline[Any, Any]"]] = None,
+    compiled_imports: Optional[Dict[str, Any]] = None,
 ) -> Pipeline[Any, Any]:
     # Accept either a list[BlueprintStepModel-like dicts] or a single dict
     if isinstance(branch_spec, list):
@@ -492,7 +491,7 @@ def _build_pipeline_from_branch(
                     compiled_imports=compiled_imports,
                 )
             )
-        return Pipeline(steps=steps)  # type: ignore[arg-type]
+        return Pipeline(steps=steps)
     elif isinstance(branch_spec, dict):
         m = BlueprintStepModel.model_validate(branch_spec)
         return Pipeline.from_step(
@@ -510,7 +509,7 @@ def _build_pipeline_from_branch(
 def build_pipeline_from_blueprint(
     model: BlueprintPipelineModel,
     compiled_agents: Optional[Dict[str, Any]] = None,
-    compiled_imports: Optional[Dict[str, "Pipeline[Any, Any]"]] = None,
+    compiled_imports: Optional[Dict[str, Any]] = None,
 ) -> Pipeline[Any, Any]:
     steps: List[Step[Any, Any]] = []
     for idx, s in enumerate(model.steps):
@@ -522,7 +521,7 @@ def build_pipeline_from_blueprint(
                 compiled_imports=compiled_imports,
             )
         )
-    p = Pipeline(steps=steps)  # type: ignore[arg-type]
+    p = Pipeline(steps=steps)
     # Best-effort finalize types after Pipeline construction
     try:
         for st in p.steps:
@@ -641,7 +640,7 @@ def load_pipeline_blueprint_from_yaml(
         # Surface line/column details when available
         mark = getattr(ye, "problem_mark", None)
         if mark is not None:
-            msg = f"Invalid YAML at line {getattr(mark, 'line', -1)+1}, column {getattr(mark, 'column', -1)+1}: {getattr(ye, 'problem', ye)}"
+            msg = f"Invalid YAML at line {getattr(mark, 'line', -1) + 1}, column {getattr(mark, 'column', -1) + 1}: {getattr(ye, 'problem', ye)}"
         else:
             msg = f"Invalid YAML: {ye}"
         raise BlueprintError(msg) from ye
@@ -706,10 +705,10 @@ def _import_object(path: str) -> Any:
         allowed: Optional[list[str]] = None
         if cfg and getattr(cfg, "settings", None) and isinstance(cfg.settings, object):
             # Accept both nested settings entry or top-level key 'blueprint_allowed_imports' in TOML
-            allowed = getattr(cfg.settings, "blueprint_allowed_imports", None)  # type: ignore[attr-defined]
+            allowed = getattr(cfg.settings, "blueprint_allowed_imports", None)
         if allowed is None:
             # Fallback: look for top-level attribute if provided
-            allowed = getattr(cfg, "blueprint_allowed_imports", None)  # type: ignore[attr-defined]
+            allowed = getattr(cfg, "blueprint_allowed_imports", None)
         # Normalize to list of strings
         if allowed is not None and not isinstance(allowed, list):
             allowed = None

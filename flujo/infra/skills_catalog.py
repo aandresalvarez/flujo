@@ -5,7 +5,7 @@ import os
 import json
 
 try:
-    import yaml  # type: ignore
+    import yaml
 except Exception:  # pragma: no cover
     yaml = None
 
@@ -53,7 +53,12 @@ def load_skills_catalog(directory: str) -> None:
                 raw = json.load(f)
         if not isinstance(raw, dict):
             return
-        data = raw  # type: ignore[assignment]
+        # Raw must be a mapping of skill_id -> attributes; enforce type at runtime
+        tmp: Dict[str, Dict[str, Any]] = {}
+        for k, v in raw.items():
+            if isinstance(v, dict):
+                tmp[str(k)] = dict(v)
+        data = tmp
     except Exception:
         return
 
@@ -78,16 +83,20 @@ def load_skills_entry_points(group: str = "flujo.skills") -> None:
     Entry point value should be an import string (e.g., package.module:Factory).
     """
     try:
-        eps = importlib_metadata.entry_points().select(group=group)  # type: ignore[attr-defined]
+        # Modern API (Py>=3.10): returns EntryPoints with .select
+        eps_iter = importlib_metadata.entry_points().select(group=group)
+        eps_list = list(eps_iter)
     except Exception:
         try:
-            # Fallback for older Python/importlib_metadata API
-            eps = importlib_metadata.entry_points().get(group, [])  # type: ignore[assignment]
+            # Legacy API: mapping access (dict-like)
+            ep_map = importlib_metadata.entry_points()
+            eps_list = list(ep_map.get(group, [])) if isinstance(ep_map, dict) else []
         except Exception:
-            eps = []  # type: ignore[assignment]
+            # Final fallback
+            eps_list = []
 
     reg = get_skill_registry()
-    for ep in eps:
+    for ep in eps_list:
         try:
             obj = _import_object(ep.value)
             reg.register(ep.name, obj, description=f"entry_point:{group}")

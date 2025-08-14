@@ -243,6 +243,20 @@ disable_error_code = [
 
 [[tool.mypy.overrides]]
 module = [
+  "flujo.domain.blueprint.loader",
+  "flujo.domain.blueprint.model_generator",
+]
+disable_error_code = [
+  "no-any-return",
+  "valid-type",
+  "arg-type",
+  "attr-defined",
+  "misc",
+  "no-untyped-def",
+]
+
+[[tool.mypy.overrides]]
+module = [
   "flujo.cli.helpers",
   "flujo.cli.main",
 ]

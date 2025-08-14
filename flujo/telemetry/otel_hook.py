@@ -128,7 +128,8 @@ class OpenTelemetryHook:
         span.set_attribute("flujo.step.type", type(payload.step).__name__)
         # Attach YAML path if present on step meta
         try:
-            yaml_path = getattr(payload.step, "meta", {}).get("yaml_path")  # type: ignore[assignment]
+            meta = getattr(payload.step, "meta", None)
+            yaml_path = meta.get("yaml_path") if isinstance(meta, dict) else None
             if yaml_path:
                 span.set_attribute("flujo.yaml.path", yaml_path)
         except Exception:

@@ -1053,7 +1053,9 @@ def validate_pipeline_file(path: str) -> Any:
             raise Exit(1)
     else:
         pipeline, _ = load_pipeline_from_file(path)
-    return pipeline.validate_graph()
+    from typing import cast as _cast
+
+    return _cast(Any, pipeline).validate_graph()
 
 
 def apply_cli_defaults(

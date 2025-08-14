@@ -10,6 +10,7 @@ from typing import (
     Sequence,
     TypeVar,
     Dict,
+    cast,
 )
 import logging
 from pydantic import ConfigDict
@@ -80,17 +81,17 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
         from ..blueprint import load_pipeline_blueprint_from_yaml
 
         if is_path:
-            with open(yaml_source, "r") as f:  # type: ignore[arg-type]
+            with open(yaml_source, "r") as f:
                 yaml_text = f.read()
         else:
             yaml_text = yaml_source
-        return load_pipeline_blueprint_from_yaml(yaml_text)
+        return cast("Pipeline[Any, Any]", load_pipeline_blueprint_from_yaml(yaml_text))
 
     @classmethod
     def from_yaml_text(cls, yaml_text: str) -> "Pipeline[Any, Any]":
         from ..blueprint import load_pipeline_blueprint_from_yaml
 
-        return load_pipeline_blueprint_from_yaml(yaml_text)
+        return cast("Pipeline[Any, Any]", load_pipeline_blueprint_from_yaml(yaml_text))
 
     @classmethod
     def from_yaml_file(cls, path: str) -> "Pipeline[Any, Any]":

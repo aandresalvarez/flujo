@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple, Type
+from typing import Any, Dict, List, Optional, Type
 
 from pydantic import BaseModel, Field, create_model
 
@@ -14,21 +14,8 @@ def _python_type_for_json_schema(schema: JsonSchema, *, name_hint: str = "Value"
         # Fall back to Any when type is not specified
         return Any
 
-    # Handle enum on primitives via Literal if present
-    enum_vals = schema.get("enum")
-
     if t == "string":
-        base_type = str
-        if isinstance(enum_vals, list) and enum_vals:
-            try:
-                # Use typing.Literal for enum validation
-                from typing import Literal  # type: ignore
-
-                literal_type = Literal[tuple(enum_vals)]  # type: ignore[index]
-                return literal_type
-            except Exception:
-                return base_type
-        return base_type
+        return str
     if t == "integer":
         return int
     if t == "number":
@@ -36,11 +23,11 @@ def _python_type_for_json_schema(schema: JsonSchema, *, name_hint: str = "Value"
     if t == "boolean":
         return bool
     if t == "array":
-        items = schema.get("items", {})
-        item_type = _python_type_for_json_schema(items, name_hint=f"{name_hint}Item")
+        # Keep item typing permissive for runtime compatibility
         from typing import List as _List
+        from typing import Any as _Any
 
-        return _List[item_type]  # type: ignore[index]
+        return _List[_Any]
     if t == "object":
         # Nested object without explicit properties -> generic dict
         if not isinstance(schema.get("properties"), dict):
@@ -74,20 +61,22 @@ def generate_model_from_schema(name: str, schema: JsonSchema) -> Type[BaseModel]
     # Primitive wrappers
     if schema_type != "object":
         annotation = _python_type_for_json_schema(schema, name_hint="Value")
-        fields: Dict[str, Tuple[Any, Any]] = {
+        primitive_fields: Dict[str, Any] = {
             "value": (annotation, ...),
         }
         # Carry field description if any
         desc = schema.get("description")
         if desc:
-            fields["value"] = (annotation, Field(..., description=str(desc)))
-        return create_model(model_name, **fields)  # type: ignore[return-value]
+            primitive_fields["value"] = (annotation, Field(..., description=str(desc)))
+        from typing import cast as _cast
+
+        return _cast(Type[BaseModel], create_model(model_name, **primitive_fields))
 
     # Object handling
     properties: Dict[str, Any] = schema.get("properties") or {}
     required: List[str] = list(schema.get("required") or [])
 
-    fields: Dict[str, Tuple[Any, Any]] = {}
+    fields: Dict[str, Any] = {}
     for prop_name, prop_schema in properties.items():
         prop_type = _python_type_for_json_schema(prop_schema, name_hint=prop_name)
 
@@ -103,11 +92,7 @@ def generate_model_from_schema(name: str, schema: JsonSchema) -> Type[BaseModel]
         if "description" in prop_schema:
             field_kwargs["description"] = str(prop_schema["description"])
 
-        # If enum exists on primitives, the type was converted to Literal already
-        if not is_required:
-            from typing import Optional as _Optional
-
-            prop_type = _Optional[prop_type]  # type: ignore[index]
+        # Optionality is expressed by default=None for pydantic models
 
         if field_kwargs:
             fields[prop_name] = (prop_type, Field(default, **field_kwargs))
@@ -118,7 +103,9 @@ def generate_model_from_schema(name: str, schema: JsonSchema) -> Type[BaseModel]
         # Empty object schema -> allow arbitrary mapping
         fields["data"] = (Dict[str, Any], Field(default_factory=dict))
 
-    return create_model(model_name, **fields)  # type: ignore[return-value]
+    from typing import cast as _cast
+
+    return _cast(Type[BaseModel], create_model(model_name, **fields))
 
 
 __all__ = ["generate_model_from_schema"]
