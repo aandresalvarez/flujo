@@ -386,6 +386,114 @@ def _should_pass_context(spec: Any, context: Optional[Any], func: Callable[..., 
 
 def _types_compatible(a: Any, b: Any) -> bool:
     """Return ``True`` if type ``a`` is compatible with type ``b``."""
+
+    # --- Helper utilities to keep the core logic readable ---
+    def _is_union_type(tp: Any) -> bool:
+        try:
+            origin = get_origin(tp)
+            if origin is Union:
+                return True
+            # Python 3.10+ syntax: int | None
+            return hasattr(types, "UnionType") and isinstance(tp, types.UnionType)
+        except Exception:
+            return False
+
+    def _iter_union_args(tp: Any) -> list[Any]:
+        try:
+            origin = get_origin(tp)
+            if origin is Union:
+                return list(get_args(tp))
+            if hasattr(types, "UnionType") and isinstance(tp, types.UnionType):
+                return list(tp.__args__)
+        except Exception:
+            pass
+        return []
+
+    def _issubclass_safe(sub: Any, sup: Any) -> bool:
+        try:
+            return isinstance(sub, type) and isinstance(sup, type) and issubclass(sub, sup)
+        except Exception:
+            return False
+
+    def _compare_tuple(a_args: tuple[Any, ...], b_args: tuple[Any, ...]) -> bool:
+        # Tuple[T, ...] variadic form
+        if len(b_args) == 2 and b_args[1] is Ellipsis:
+            elem_b = b_args[0]
+            if a_args:
+                return all(_types_compatible(arg_a, elem_b) for arg_a in a_args)
+            return True
+        # Fixed-length tuples
+        if a_args and len(a_args) == len(b_args):
+            return all(_types_compatible(ta, tb) for ta, tb in zip(a_args, b_args))
+        # Be permissive if actual lacks args
+        return True
+
+    def _compare_dict(a_args: tuple[Any, ...], b_args: tuple[Any, ...]) -> bool:
+        if not b_args:
+            return bool(a_args) or True if not a_args else True
+        if a_args and len(a_args) == 2 and len(b_args) == 2:
+            return _types_compatible(a_args[0], b_args[0]) and _types_compatible(
+                a_args[1], b_args[1]
+            )
+        return True
+
+    def _compare_single_param_container(
+        ob: Any, a_args: tuple[Any, ...], b_args: tuple[Any, ...]
+    ) -> bool:
+        if not b_args:
+            return bool(a_args) or _issubclass_safe(a, ob)
+        if a_args and len(a_args) == 1 and len(b_args) == 1:
+            return _types_compatible(a_args[0], b_args[0])
+        return True
+
+    def _compare_generic_aliases(a: Any, b: Any, origin_a: Any, origin_b: Any) -> bool:
+        # Normalize bare classes to their origin where possible
+        oa = origin_a if origin_a is not None else (a if isinstance(a, type) else None)
+        ob = origin_b if origin_b is not None else (b if isinstance(b, type) else None)
+
+        # If one side lacks origin, compare present origin against bare type
+        if oa is None or ob is None:
+            try:
+                if oa is not None and ob is None and isinstance(oa, type) and isinstance(b, type):
+                    return issubclass(oa, b)
+                if ob is not None and oa is None and isinstance(a, type) and isinstance(ob, type):
+                    return issubclass(a, ob)
+                ta = a if isinstance(a, type) else type(a)
+                tb = b if isinstance(b, type) else type(b)
+                return issubclass(ta, tb)
+            except Exception:
+                return False
+
+        # If origins differ, allow subclassing relationship (e.g., MyList vs list)
+        if oa is not ob:
+            if not _issubclass_safe(oa, ob):
+                return False
+
+        # Compare type arguments when available
+        args_a, args_b = get_args(a), get_args(b)
+
+        # Tuple
+        if ob is tuple:
+            if not args_b:
+                return bool(args_a) or _issubclass_safe(a, tuple)
+            return _compare_tuple(args_a, args_b)
+
+        # Dict
+        if ob is dict:
+            return _compare_dict(args_a, args_b)
+
+        # Common single-parameter containers
+        single_param_containers = (list, set, frozenset)
+        if isinstance(ob, type) and ob in single_param_containers:
+            return _compare_single_param_container(ob, args_a, args_b)
+
+        # Generic but not special-cased: compare arg lists if both present and same length
+        if args_a and args_b and len(args_a) == len(args_b):
+            return all(_types_compatible(ta, tb) for ta, tb in zip(args_a, args_b))
+
+        # If one side lacks args, consider it compatible (e.g., List[str] vs list)
+        return True
+
     # Explicit handling for None/type(None) to avoid issubclass errors and crashy validation
     if a is None or a is type(None):  # noqa: E721 - intentional NoneType check
         # Any always compatible
@@ -417,102 +525,15 @@ def _types_compatible(a: Any, b: Any) -> bool:
 
     origin_a, origin_b = get_origin(a), get_origin(b)
 
-    # Handle typing.Union and types.UnionType (Python 3.10+)
-    if origin_b is Union:
-        return any(_types_compatible(a, arg) for arg in get_args(b))
-    if hasattr(types, "UnionType") and isinstance(b, types.UnionType):
-        return any(_types_compatible(a, arg) for arg in b.__args__)
-    if origin_a is Union:
-        return all(_types_compatible(arg, b) for arg in get_args(a))
-    if hasattr(types, "UnionType") and isinstance(a, types.UnionType):
-        return all(_types_compatible(arg, b) for arg in a.__args__)
+    # Handle unions
+    if _is_union_type(b):
+        return any(_types_compatible(a, arg) for arg in _iter_union_args(b))
+    if _is_union_type(a):
+        return all(_types_compatible(arg, b) for arg in _iter_union_args(a))
 
-    # If both are generic aliases, compare origins and then recurse into args
+    # Generic alias handling
     if origin_a is not None or origin_b is not None:
-        # Normalize bare classes to their origin where possible
-        oa = origin_a if origin_a is not None else (a if isinstance(a, type) else None)
-        ob = origin_b if origin_b is not None else (b if isinstance(b, type) else None)
-
-        # If either origin is missing and the other exists, compare the present origin
-        # against the bare type on the other side. This treats List[str] vs list as compatible.
-        if oa is None or ob is None:
-            try:
-                if oa is not None and ob is None and isinstance(oa, type) and isinstance(b, type):
-                    return issubclass(oa, b)
-                if ob is not None and oa is None and isinstance(a, type) and isinstance(ob, type):
-                    return issubclass(a, ob)
-                # Fallback: simple subclass check on resolved raw types
-                ta = a if isinstance(a, type) else type(a)
-                tb = b if isinstance(b, type) else type(b)
-                return issubclass(ta, tb)
-            except Exception:
-                return False
-
-        # If origins differ, allow subclass relationship (e.g., MyList vs list)
-        if oa is not ob:
-            try:
-                if not (isinstance(oa, type) and isinstance(ob, type) and issubclass(oa, ob)):
-                    return False
-            except TypeError:
-                return False
-
-        # Origins are compatible; compare type arguments when both provide them
-        args_a, args_b = get_args(a), get_args(b)
-
-        # Special-case tuple variadics: Tuple[T, ...]
-        if ob is tuple:
-            if not args_b:
-                # Plain tuple expected; if actual provides args, consider compatible
-                if args_a:
-                    return True
-                # Otherwise require subclass relationship on raw types
-                return (
-                    isinstance(a, type) and issubclass(a, tuple) if isinstance(a, type) else False
-                )
-            # args_b could be (T, Ellipsis) or fixed-length
-            if len(args_b) == 2 and args_b[1] is Ellipsis:
-                elem_type_b = args_b[0]
-                # If actual provides args, ensure all elems are compatible; otherwise, accept tuple subclass
-                if args_a:
-                    return all(_types_compatible(arg_a, elem_type_b) for arg_a in args_a)
-                return True
-            # Fixed-length tuple – require same length and pairwise compatibility
-            if args_a and len(args_a) == len(args_b):
-                return all(_types_compatible(ta, tb) for ta, tb in zip(args_a, args_b))
-            # If actual lacks args, be permissive for now
-            return True
-
-        # For mappings like Dict[K, V]
-        if ob is dict:
-            if not args_b:
-                # Parametric actual vs raw expected considered compatible
-                if args_a:
-                    return True
-                return isinstance(a, type) and issubclass(a, dict) if isinstance(a, type) else False
-            if args_a and len(args_a) == 2 and len(args_b) == 2:
-                return _types_compatible(args_a[0], args_b[0]) and _types_compatible(
-                    args_a[1], args_b[1]
-                )
-            return True
-
-        # For common containers with single parameter (list, set, frozenset)
-        single_param_containers = (list, set, frozenset)
-        if isinstance(ob, type) and ob in single_param_containers:
-            if not args_b:
-                # Parametric actual vs raw expected considered compatible
-                if args_a:
-                    return True
-                return isinstance(a, type) and issubclass(a, ob) if isinstance(a, type) else False
-            if args_a and len(args_a) == 1 and len(args_b) == 1:
-                return _types_compatible(args_a[0], args_b[0])
-            return True
-
-        # Generic but not a special-cased container: compare arg lists if both present and same length
-        if args_a and args_b and len(args_a) == len(args_b):
-            return all(_types_compatible(ta, tb) for ta, tb in zip(args_a, args_b))
-
-        # If one side lacks args, consider it compatible (e.g., List[str] vs list)
-        return True
+        return _compare_generic_aliases(a, b, origin_a, origin_b)
 
     # Fallback for non-generic classes
     if not isinstance(a, type) or not isinstance(b, type):
