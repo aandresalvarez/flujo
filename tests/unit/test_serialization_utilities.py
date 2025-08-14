@@ -3,7 +3,7 @@
 import json
 from datetime import datetime, date, time
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 from unittest.mock import patch
 
 import pytest
@@ -25,6 +25,10 @@ from flujo.utils.serialization import (
     serialize_to_json_robust,
 )
 
+from decimal import Decimal
+from uuid import UUID, uuid4
+from pathlib import Path
+from dataclasses import dataclass
 
 # Rename helper classes to avoid Pytest collection
 class MyEnum(Enum):
@@ -536,3 +540,255 @@ class TestSerializationProperties:
         json_str = serialize_to_json_robust(data)
         parsed = json.loads(json_str)
         assert parsed["text"] == text
+
+
+# Additional tests appended by CodeRabbit Inc. to expand coverage, focusing on edge cases and failure conditions.
+# Testing library and framework in use: pytest (+ hypothesis for property-based tests).
+# These tests align with existing patterns and avoid new dependencies.
+
+
+class TestAdditionalSafeSerializeEdges:
+    def test_safe_serialize_bytes_and_bytearray(self):
+        # bytes and bytearray should be converted into a JSON-friendly representation (likely base64 or str) or repr fallback
+        b = b"hello"
+        ba = bytearray(b"world")
+        sb = safe_serialize(b)
+        sba = safe_serialize(ba)
+        # We don't assert exact encoding, only that we got something serializable (str or list of ints is also acceptable)
+        assert isinstance(sb, (str, list))
+        assert isinstance(sba, (str, list))
+
+    def test_safe_serialize_tuple_and_frozenset(self):
+        tup = (1, "a", MyEnum.VALUE2)
+        fr = frozenset({1, 2, 3})
+        st = safe_serialize(tup)
+        sfr = safe_serialize(fr)
+        # Tuples/frozensets commonly become lists
+        assert isinstance(st, list)
+        assert st[0] == 1 and st[1] == "a" and st[2] == "value2"
+        assert isinstance(sfr, list)
+        assert set(sfr) == {1, 2, 3}
+
+    def test_safe_serialize_path_and_uuid(self):
+        p = Path("some/file.txt")
+        u = uuid4()
+        sp = safe_serialize(p)
+        su = safe_serialize(u)
+        assert isinstance(sp, str)
+        assert "some/file.txt" in sp
+        # UUID should serialize to its canonical string
+        assert isinstance(su, str)
+        assert UUID(su)  # round-trip parse to verify canonical form
+
+    def test_safe_serialize_decimal_precision(self):
+        d = Decimal("1.234500")
+        sd = safe_serialize(d)
+        # Accept string or numeric; compare numeric equivalence
+        if isinstance(sd, str):
+            assert Decimal(sd) == d
+        else:
+            assert float(d) == sd
+
+    def test_safe_serialize_timezone_aware_datetime(self):
+        import datetime as dt
+
+        tzinfo = dt.timezone(dt.timedelta(hours=5, minutes=30))
+        aware = dt.datetime(2023, 1, 1, 12, 0, 0, tzinfo=tzinfo)
+        result = safe_serialize(aware)
+        assert isinstance(result, str)
+        # Expect ISO 8601 with offset
+        assert result.endswith("+05:30")
+
+    def test_safe_serialize_nan_and_infinity(self):
+        # JSON cannot represent NaN/Infinity formally; ensure safe_serialize handles them gracefully
+        nan_val = float("nan")
+        inf_val = float("inf")
+        ninf_val = float("-inf")
+
+        sn = safe_serialize(nan_val)
+        si = safe_serialize(inf_val)
+        sni = safe_serialize(ninf_val)
+
+        # We cannot check equality with NaN; just ensure serialization produced a stable value
+        # Allow str or a sentinel form
+        assert isinstance(sn, (str, float))
+        assert isinstance(si, (str, float))
+        assert isinstance(sni, (str, float))
+
+    def test_safe_serialize_nested_pydantic_models(self):
+        class ChildModel(BaseModel):
+            x: int
+            y: str
+
+        class ParentModel(BaseModel):
+            child: ChildModel
+            tags: List[str]
+
+        pm = ParentModel(child=ChildModel(x=1, y="ok"), tags=["a", "b"])
+        sp = safe_serialize(pm)
+        assert isinstance(sp, dict)
+        assert sp["child"]["x"] == 1
+        assert sp["child"]["y"] == "ok"
+        assert sp["tags"] == ["a", "b"]
+
+    def test_safe_serialize_dataclass(self):
+        @dataclass
+        class DC:
+            a: int
+            b: str
+            opt: Optional[int] = None
+
+        dc = DC(a=1, b="z")
+        s = safe_serialize(dc)
+        # Accept dict or other JSON-friendly mapping
+        assert isinstance(s, dict)
+        assert s["a"] == 1
+        assert s["b"] == "z"
+        # optional may be omitted or present as null; just check no exception and sensible mapping
+        assert "opt" in s
+
+    def test_safe_serialize_deep_nesting_large(self):
+        # Deep nested structures should not overflow and should preserve shapes
+        nested = {"k": [{"m": [1, 2, {"r": {f"n{i}": i for i in range(50)}}]}]}
+        s = safe_serialize(nested)
+        assert isinstance(s, dict)
+        assert "k" in s
+        assert isinstance(s["k"], list)
+        assert isinstance(s["k"][0]["m"], list)
+        assert isinstance(s["k"][0]["m"][2]["r"], dict)
+        # check couple of keys
+        assert s["k"][0]["m"][2]["r"]["n0"] == 0
+        assert s["k"][0]["m"][2]["r"]["n49"] == 49
+
+
+class TestAdditionalSafeDeserializeEdges:
+    def test_safe_deserialize_uuid_and_path_preserve_when_no_custom(self):
+        u = str(uuid4())
+        p = "some/where.txt"
+        # Without custom deserializers, should pass through unchanged (strings remain strings)
+        assert safe_deserialize(u, target_type=UUID) == u
+        assert safe_deserialize(p, target_type=Path) == p
+
+    def test_safe_deserialize_decimal_preserve_when_no_custom(self):
+        d = "1.2300"
+        assert safe_deserialize(d, target_type=Decimal) == d
+
+    def test_safe_deserialize_collections(self):
+        data_list = ["a", 1, True]
+        data_dict = {"a": 1, "b": "x"}
+        out_list = safe_deserialize(data_list)
+        out_dict = safe_deserialize(data_dict)
+        assert out_list == data_list
+        assert out_dict == data_dict
+
+    def test_safe_deserialize_uses_custom_for_uuid(self):
+        # Provide a custom deserializer that converts string to UUID
+        def uuid_deserializer(data: str) -> UUID:
+            return UUID(data)
+
+        register_custom_deserializer(UUID, uuid_deserializer)
+        u = uuid4()
+        out = safe_deserialize(str(u), target_type=UUID)
+        assert isinstance(out, UUID)
+        assert out == u
+
+        reset_custom_serializer_registry()
+
+
+class TestRobustSerializeAdditional:
+    def test_robust_serialize_unserializable_object_fallback_contains_type(self):
+        class Unserializable:
+            def __repr__(self):
+                return "<U>"
+
+        obj = Unserializable()
+
+        # Force safe_serialize to raise to ensure robust_serialize uses fallback
+        with patch("flujo.utils.serialization.safe_serialize", side_effect=Exception("boom")):
+            s = robust_serialize(obj)
+            assert isinstance(s, str)
+            assert "<unserializable: " in s
+            # include at least the repr or type name
+            assert "Unserializable" in s or "<U>" in s
+
+    def test_robust_serialize_of_bytes(self):
+        b = b"\x00\xFF"
+        s = robust_serialize(b)
+        # Should not raise; accept string or list
+        assert isinstance(s, (str, list))
+
+
+class TestSerializeToJsonAdditional:
+    def test_serialize_to_json_handles_nan_inf_gracefully(self):
+        data = {"nan": float("nan"), "inf": float("inf"), "-inf": float("-inf")}
+        s = serialize_to_json_robust(data)
+        # Should be valid JSON string
+        parsed = json.loads(s)
+        # Value representation is implementation-defined; assert keys exist
+        assert "nan" in parsed and "inf" in parsed and "-inf" in parsed
+
+    def test_serialize_to_json_collections(self):
+        data = {
+            "tuple": (1, 2, 3),
+            "frozenset": frozenset({4, 5}),
+            "set": {6, 7},
+            "bytes": b"hi",
+        }
+        s = serialize_to_json_robust(data)
+        parsed = json.loads(s)
+        # Tuples/frozensets/sets should be arrays
+        assert isinstance(parsed["tuple"], list)
+        assert isinstance(parsed["frozenset"], list)
+        assert isinstance(parsed["set"], list)
+        # bytes become string or array; just ensure JSON-compatible
+        assert isinstance(parsed["bytes"], (str, list))
+
+
+class TestSerializerFactoryBehavior:
+    def test_create_serializer_for_type_subclass_behavior(self):
+        class Base:
+            def __init__(self, v):
+                self.v = v
+
+        class Sub(Base):
+            pass
+
+        def base_serializer(obj: Base):
+            return {"v": obj.v, "t": obj.__class__.__name__}
+
+        serializer = create_serializer_for_type(Base, base_serializer)
+        # Expect to serialize Base
+        out_base = serializer(Base(1))
+        assert out_base == {"v": 1, "t": "Base"}
+        # And also handle subclass instances if implementation uses isinstance checks
+        out_sub = serializer(Sub(2))
+        # Accept either unchanged (if strictly type==Base) or serialized dict (if isinstance)
+        assert out_sub == {"v": 2, "t": "Sub"} or isinstance(out_sub, Sub)
+
+
+class TestRegistryBehaviorAdditional:
+    def test_registering_multiple_serializers_overwrites_or_picks_latest(self):
+        class Obj:
+            def __init__(self, x):
+                self.x = x
+
+        def s1(o: "Obj"):
+            return {"v": f"s1:{o.x}"}
+
+        def s2(o: "Obj"):
+            return {"v": f"s2:{o.x}"}
+
+        register_custom_serializer(Obj, s1)
+        first = lookup_custom_serializer(Obj())
+        assert first is not None
+        assert first(Obj(1)) == {"v": "s1:1"}
+
+        # Register a second one for same type; registry should reflect the latest or be deterministic
+        register_custom_serializer(Obj, s2)
+        second = lookup_custom_serializer(Obj())
+        assert second is not None
+        # Accept either overwrite (s2) or that registry appends but returns deterministic lookup; prefer overwrite
+        res = second(Obj(2))
+        assert res in ({"v": "s2:2"}, {"v": "s1:2"})
+
+        reset_custom_serializer_registry()

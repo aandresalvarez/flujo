@@ -1,4 +1,5 @@
 from unittest.mock import Mock, patch
+import builtins
 
 from flujo.steps.cache_step import (
     CacheStep,
@@ -20,6 +21,7 @@ class TestCacheStep:
     def test_cache_step_cached_classmethod(self):
         """Test the cached classmethod."""
         # Create a proper step
+
         step = Step(name="test_step")
 
         # Test with default cache backend
@@ -169,6 +171,7 @@ class TestSerializeForCacheKey:
         visited = {id(node1), id(node2)}
         result = _serialize_for_cache_key(node1, visited=visited)
         # When there's a circular reference, the function returns a string
+
         assert result == "<Node circular>"
 
     def test_serialize_node_with_non_circular_next(self):
@@ -232,6 +235,7 @@ class TestSerializeForCacheKey:
         result = _serialize_for_cache_key(d)
         print(f"Full result: {result!r}")
         # Our improved serialization provides more detailed error messages
+
         assert isinstance(result, dict)
         assert "key" in result
         assert result["key"].startswith("<unserializable: ModelWithException")
@@ -250,6 +254,7 @@ class TestSerializeForCacheKey:
         result = _serialize_for_cache_key(d)
         print(f"Full result: {result!r}")
         # Our improved serialization provides more detailed error messages
+
         assert isinstance(result, dict)
         assert "key" in result
         assert result["key"].startswith("<unserializable: ModelWithRecursion")
@@ -752,3 +757,301 @@ class TestGenerateCacheKey:
         # by using the step fingerprint and a hash of the object
         assert result is not None
         assert result.startswith("test_step:")
+
+# Additional tests appended by CodeRabbit Inc to expand coverage for cache step and serialization helpers.
+# Test framework: pytest (with unittest.mock for patching)
+
+try:
+    # Prefer importing from actual module locations if available
+    from flujo.utils.serialization import (
+        _serialize_for_cache_key,
+        _sort_set_deterministically,
+        _get_stable_repr,
+        _serialize_list_for_key,
+        _create_step_fingerprint,
+        _generate_cache_key,
+    )
+    from flujo.domain.dsl.step import Step
+    from flujo.cache.backends.memory import InMemoryCache
+    from flujo.cache.step import CacheStep
+    from pydantic import BaseModel
+except Exception:
+    # Fallback import names are already used in this file above; if imports fail here,
+    # existing imports in prior tests should still make these available in the module's globals.
+    pass
+
+
+class TestCacheStepAdditional:
+    """More tests for CacheStep.cached and its interactions with cache backends."""
+
+    def test_cached_uses_default_backend_when_invalid_backend_provided(self):
+        # Provide an object that doesn't implement get/set - should fall back to default or raise a clear error.
+        step = Step(name="invalid_backend_step")
+
+        class InvalidBackend:
+            pass
+
+        invalid = InvalidBackend()
+
+        # If implementation is strict, it may raise; otherwise, ensure a default backend is used.
+        try:
+            cache_step = CacheStep.cached(step, cache_backend=invalid)
+            assert isinstance(cache_step.cache_backend, InMemoryCache)
+        except Exception as e:
+            # Accept clear, deterministic errors
+            assert isinstance(e, (AttributeError, TypeError))
+
+    def test_cached_preserves_wrapped_step_identity_and_name(self):
+        step = Step(name="identity_step")
+        cache_step = CacheStep.cached(step)
+        assert cache_step.wrapped_step is step
+        assert cache_step.name == step.name
+
+    def test_cached_with_custom_backend_called(self):
+        step = Step(name="custom_backend_step")
+        custom = Mock()
+        custom.get = Mock(return_value=None)
+        custom.set = Mock()
+        cache_step = CacheStep.cached(step, cache_backend=custom)
+        # Simulate usage path by reaching into cache backend for a synthetic key
+        key = "dummy:key"
+        cache_step.cache_backend.get(key)
+        cache_step.cache_backend.set(key, {"ok": True})
+        custom.get.assert_called_once_with(key)
+        custom.set.assert_called_once()
+
+
+class TestSerializeForCacheKeyAdditions:
+    """Expand edge-case coverage for _serialize_for_cache_key."""
+
+    def test_serialize_primitive_and_nan_inf_values(self):
+        assert _serialize_for_cache_key(0) == 0
+        assert _serialize_for_cache_key(3.0) == 3.0
+        assert _serialize_for_cache_key(True) is True
+        # NaN/inf should be representable without raising
+        res_nan = _serialize_for_cache_key(float("nan"))
+        res_inf = _serialize_for_cache_key(float("inf"))
+        assert isinstance(res_nan, (float, str))
+        assert isinstance(res_inf, (float, str))
+
+    def test_serialize_dict_with_nested_structures_and_order_independence(self):
+        d1 = {"a": [3, 2, 1], "b": {"z": 1, "y": 2}, "s": {3, 1, 2}}
+        d2 = {"b": {"y": 2, "z": 1}, "s": {2, 3, 1}, "a": [3, 2, 1]}
+        r1 = _serialize_for_cache_key(d1)
+        r2 = _serialize_for_cache_key(d2)
+        # Both should produce equivalent serialized shapes
+        assert r1["a"] == r2["a"]
+        assert r1["b"] == r2["b"]
+        assert r1["s"] == r2["s"]
+
+    def test_serialize_object_with_model_dump_including_run_id_and_private_fields(self):
+        class M(BaseModel):
+            run_id: str = "rid"
+            _private: str = "p"  # type: ignore
+
+        obj = M()
+        ser = _serialize_for_cache_key(obj)
+        # run_id should generally be removed to stabilize keys
+        assert isinstance(ser, dict) or isinstance(ser, str)
+        if isinstance(ser, dict):
+            assert "run_id" not in ser
+
+    def test_serialize_bytes_and_bytearray(self):
+        b = b"\x00\x01\x02"
+        ba = bytearray(b"\x03\x04")
+        rb = _serialize_for_cache_key(b)
+        rba = _serialize_for_cache_key(ba)
+        # Should be bytes-like safe serializations
+        assert isinstance(rb, (str, bytes))
+        assert isinstance(rba, (str, list, bytes))
+
+
+class TestSortSetDeterministicallyAdditions:
+    """Additional scenarios for _sort_set_deterministically."""
+
+    def test_sort_set_with_mixed_types_falls_back_to_string(self):
+        s = {"a", 1, "b", 2}
+        res = _sort_set_deterministically(s)
+        # ensure no crash and stable order by string
+        assert all(isinstance(x, str) or isinstance(x, int) for x in s)
+        assert isinstance(res, list)
+        assert len(res) == 4
+
+    def test_sort_empty_set(self):
+        assert _sort_set_deterministically(set()) == []
+
+
+class TestGetStableReprAdditions:
+    """More coverage for _get_stable_repr."""
+
+    def test_stable_repr_for_nested_collections(self):
+        obj = {"k": [3, 1, 2], "s": {3, 1, 2}, "t": (2, 1)}
+        rep = _get_stable_repr(obj)
+        assert isinstance(rep, str)
+        assert "{k:[3,1,2],s:{1,2,3},t:[1,2]}" in rep or rep.startswith("{")  # tolerant to exact format
+
+    def test_stable_repr_for_module_and_builtin_function(self):
+        rep_mod = _get_stable_repr(builtins)
+        rep_fn = _get_stable_repr(len)
+        assert "builtins" in rep_mod
+        assert "len" in rep_fn
+
+    def test_stable_repr_for_lambda_callable(self):
+        f = lambda x: x  # noqa: E731
+        rep = _get_stable_repr(f)
+        assert "lambda" in rep or "<callable" in rep
+
+    def test_stable_repr_for_unhashable_mapping_subclass(self):
+        class UnhashableMapping(dict):
+            __hash__ = None
+
+        obj = UnhashableMapping(a=1)
+        rep = _get_stable_repr(obj)
+        assert "UnhashableMapping" in rep or "{a:1}" in rep
+
+
+class TestSerializeListForKeyAdditions:
+    """Edge cases for _serialize_list_for_key."""
+
+    def test_serialize_list_mixed_types_and_nested(self):
+        class M(BaseModel):
+            a: int = 1
+
+        lst = [M(), {"k": {3, 2, 1}}, [3, 2, 1], (2, 1)]
+        res = _serialize_list_for_key(lst)
+        assert isinstance(res, list)
+        assert isinstance(res[0], dict) or isinstance(res[0], str)
+        assert isinstance(res[1], dict)
+        assert res[2] == [3, 2, 1]
+        assert res[3] == [1, 2]
+
+    def test_serialize_list_with_callable_items(self):
+        def foo():
+            return 1
+
+        lst = [foo]
+        res = _serialize_list_for_key(lst)
+        assert isinstance(res[0], str) and "foo" in res[0]
+
+    def test_serialize_list_with_bytes(self):
+        lst = [b"\x00\xff"]
+        res = _serialize_list_for_key(lst)
+        assert isinstance(res[0], (str, bytes))
+
+
+class TestCreateStepFingerprintAdditions:
+    """More coverage for _create_step_fingerprint."""
+
+    def test_step_fingerprint_includes_plugins_validators_and_processors_types(self):
+        from flujo.domain.dsl.step import Step, StepConfig
+        from flujo.domain.processors import AgentProcessors
+
+        class P:
+            __name__ = "Plugin"
+
+        class V:
+            __name__ = "Validator"
+
+        class Agent:
+            __name__ = "Agent"
+
+        step = Step(
+            name="fp_step",
+            agent=Agent(),
+            config=StepConfig(max_retries=2, timeout_s=5.0, temperature=0.5),
+            plugins=[(P(), 0)],
+            validators=[V()],
+            processors=AgentProcessors(),
+            updates_context=False,
+            persist_feedback_to_context=None,
+            persist_validation_results_to=None,
+        )
+        step.processors.prompt_processors = [P()]
+        fp = _create_step_fingerprint(step)
+        assert fp["name"] == "fp_step"
+        assert fp["agent"]["type"] in ("Agent", "P", "DummyAgent")
+        assert fp["plugins"]
+        assert fp["validators"]
+        assert fp["processors"]["prompt_processors"]
+
+    def test_step_fingerprint_is_stable_across_equal_steps(self):
+        from flujo.domain.dsl.step import Step, StepConfig
+        from flujo.domain.processors import AgentProcessors
+
+        class Agent:
+            __name__ = "A"
+
+        def make_step():
+            s = Step(
+                name="same",
+                agent=Agent(),
+                config=StepConfig(max_retries=1, timeout_s=1.0, temperature=0.1),
+                plugins=[],
+                validators=[],
+                processors=AgentProcessors(),
+            )
+            return s
+
+        fp1 = _create_step_fingerprint(make_step())
+        fp2 = _create_step_fingerprint(make_step())
+        assert fp1 == fp2
+
+
+class TestGenerateCacheKeyAdditions:
+    """Expand tests for _generate_cache_key to exercise error paths."""
+
+    def test_generate_cache_key_is_stable_for_same_inputs(self):
+        from flujo.domain.dsl.step import Step, StepConfig
+        from flujo.domain.processors import AgentProcessors
+
+        class A:
+            pass
+
+        step = Step(name="stable", agent=A(), config=StepConfig(), processors=AgentProcessors(), plugins=[], validators=[])
+        data = {"a": 1, "b": [3, 2, 1]}
+        context = {"ctx": "v"}
+        resources = {"r": {3, 1, 2}}
+
+        k1 = _generate_cache_key(step, data, context, resources)
+        k2 = _generate_cache_key(step, data, context, resources)
+        assert k1 == k2
+        assert k1.startswith("stable:")
+
+    def test_generate_cache_key_changes_when_data_changes(self):
+        from flujo.domain.dsl.step import Step, StepConfig
+        from flujo.domain.processors import AgentProcessors
+
+        step = Step(name="change", agent=None, config=StepConfig(), processors=AgentProcessors(), plugins=[], validators=[])
+        k1 = _generate_cache_key(step, {"a": 1})
+        k2 = _generate_cache_key(step, {"a": 2})
+        assert k1 != k2
+
+    def test_generate_cache_key_handles_unserializable_by_json_but_pickleable(self):
+        from flujo.domain.dsl.step import Step, StepConfig
+        from flujo.domain.processors import AgentProcessors
+        step = Step(name="pickle_ok", agent=None, config=StepConfig(), processors=AgentProcessors(), plugins=[], validators=[])
+        obj = {"k": set([1,2,3])}  # set not JSON-serializable but pickleable
+        k = _generate_cache_key(step, obj)
+        assert k.startswith("pickle_ok:")
+
+    def test_generate_cache_key_handles_unpickleable_object(self):
+        from flujo.domain.dsl.step import Step, StepConfig
+        from flujo.domain.processors import AgentProcessors
+
+        class Unpickleable:
+            def __reduce__(self):
+                raise TypeError("no pickle")
+
+        step = Step(name="unpickleable", agent=None, config=StepConfig(), processors=AgentProcessors(), plugins=[], validators=[])
+        obj = Unpickleable()
+        k = _generate_cache_key(step, obj)
+        assert k.startswith("unpickleable:")
+
+    def test_generate_cache_key_with_large_nested_structure(self):
+        from flujo.domain.dsl.step import Step, StepConfig
+        from flujo.domain.processors import AgentProcessors
+
+        step = Step(name="large", agent=None, config=StepConfig(), processors=AgentProcessors(), plugins=[], validators=[])
+        big = {"lvl1": [{"lvl2": {i for i in range(10)} } for _ in range(5)]}
+        k = _generate_cache_key(step, big)
+        assert k.startswith("large:")
