@@ -25,6 +25,16 @@ def _min_or_none(a: Optional[float], b: Optional[float]) -> Optional[float]:
     return min(a, b)
 
 
+def _min_int_or_none(a: Optional[int], b: Optional[int]) -> Optional[int]:
+    if a is None and b is None:
+        return None
+    if a is None:
+        return b
+    if b is None:
+        return a
+    return a if a <= b else b
+
+
 def combine_limits(
     code_limits: Optional[UsageLimits], toml_limits: Optional[UsageLimits]
 ) -> Optional[UsageLimits]:
@@ -42,20 +52,10 @@ def combine_limits(
     if toml_limits is None:
         return code_limits
 
-    # Compute token limit minimum with explicit optional handling to satisfy type checker
-    min_token_limit: Optional[float] = _min_or_none(
-        float(code_limits.total_tokens_limit)
-        if code_limits.total_tokens_limit is not None
-        else None,
-        float(toml_limits.total_tokens_limit)
-        if toml_limits.total_tokens_limit is not None
-        else None,
+    # Compute token limit minimum using integer-aware helper
+    resolved_token_limit: Optional[int] = _min_int_or_none(
+        code_limits.total_tokens_limit, toml_limits.total_tokens_limit
     )
-    resolved_token_limit: Optional[int]
-    if min_token_limit is None:
-        resolved_token_limit = None
-    else:
-        resolved_token_limit = int(min_token_limit)
 
     return UsageLimits(
         total_cost_usd_limit=_min_or_none(

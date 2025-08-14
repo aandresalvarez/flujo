@@ -521,6 +521,10 @@ def run(
                 if not _sys.stdin.isatty():
                     input_data = _sys.stdin.read().strip()
                 else:
+                    typer.echo(
+                        "[red]Error: --input is required for YAML runs when no stdin is provided.",
+                        err=True,
+                    )
                     raise typer.Exit(1)
         else:
             pipeline_obj, pipeline_name, input_data, initial_context_data, context_model_class = (

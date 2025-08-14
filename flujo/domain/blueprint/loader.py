@@ -243,9 +243,9 @@ def _make_step_from_blueprint(
             branches_map2[key] = _build_pipeline_from_branch(
                 branch_spec, compiled_agents=compiled_agents
             )
-            # v0: use a simple callable that returns the provided key if input matches string
-            if model.condition:
-                _cond_callable = _import_object(model.condition)
+        # Resolve condition callable explicitly to avoid scope issues
+        if model.condition:
+            _cond_callable = _import_object(model.condition)
         else:
 
             def _cond_callable(output: Any, _ctx: Optional[Any]) -> Any:
@@ -285,8 +285,10 @@ def _make_step_from_blueprint(
         else:
 
             def _exit_condition(
-                _output: Any, _ctx: Optional[Any], *, _state: Dict[str, int] = {"count": 0}
+                _output: Any, _ctx: Optional[Any], *, _state: Optional[Dict[str, int]] = None
             ) -> bool:
+                if _state is None:
+                    _state = {"count": 0}
                 _state["count"] += 1
                 if isinstance(max_loops, int) and max_loops > 0:
                     return _state["count"] >= max_loops
@@ -721,7 +723,7 @@ def _import_object(path: str) -> Any:
                 raise BlueprintError(
                     f"Import of module '{module_name}' is not allowed. Configure 'blueprint_allowed_imports' in flujo.toml."
                 )
-    except Exception as _e:
+    except Exception:
         # On configuration access failure, default to deny-by-default for safety
         raise BlueprintError(
             "Failed to verify allowed imports from configuration; refusing to import modules from YAML."
