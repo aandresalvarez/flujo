@@ -264,12 +264,12 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
     # Execution helpers
     # ------------------------------------------------------------------
 
-    async def arun(self, data: StepInT, **kwargs: Any) -> StepOutT:
-        """Run this step's agent directly for testing purposes."""
+    def arun(self, data: StepInT, **kwargs: Any) -> Coroutine[Any, Any, StepOutT]:
+        """Return the agent coroutine to run this step directly in tests."""
         if self.agent is None:
             raise ValueError(f"Step '{self.name}' has no agent to run.")
 
-        return cast(StepOutT, await self.agent.run(data, **kwargs))
+        return cast(Coroutine[Any, Any, StepOutT], self.agent.run(data, **kwargs))
 
     def fallback(self, fallback_step: "Step[Any, Any]") -> "Step[StepInT, StepOutT]":
         """Set a fallback step to execute if this step fails.
@@ -311,8 +311,11 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         persist_validation_results_to: Optional[str] = None,
         **config: Any,
     ) -> "Step[Any, Any]":
-        """Construct a review step using the provided agent."""
-        return cast(
+        """Construct a review step using the provided agent.
+
+        Also infers input/output types from the agent's signature for pipeline validation.
+        """
+        step_instance = cast(
             "Step[Any, Any]",
             cls.model_validate(
                 {
@@ -328,6 +331,25 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             ),
         )
 
+        # Infer types from agent.run or the agent itself if callable
+        try:
+            from flujo.signature_tools import analyze_signature
+
+            executable = (
+                agent.run
+                if hasattr(agent, "run") and callable(getattr(agent, "run"))
+                else (agent if callable(agent) else None)
+            )
+            if executable is not None:
+                sig_info = analyze_signature(executable)
+                step_instance.__step_input_type__ = getattr(sig_info, "input_type", Any)
+                step_instance.__step_output_type__ = getattr(sig_info, "output_type", Any)
+        except Exception:
+            step_instance.__step_input_type__ = Any
+            step_instance.__step_output_type__ = Any
+
+        return step_instance
+
     @classmethod
     def solution(
         cls,
@@ -340,8 +362,11 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         persist_validation_results_to: Optional[str] = None,
         **config: Any,
     ) -> "Step[Any, Any]":
-        """Construct a solution step using the provided agent."""
-        return cast(
+        """Construct a solution step using the provided agent.
+
+        Also infers input/output types from the agent's signature for pipeline validation.
+        """
+        step_instance = cast(
             "Step[Any, Any]",
             cls.model_validate(
                 {
@@ -357,6 +382,25 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             ),
         )
 
+        # Infer types from agent.run or the agent itself if callable
+        try:
+            from flujo.signature_tools import analyze_signature
+
+            executable = (
+                agent.run
+                if hasattr(agent, "run") and callable(getattr(agent, "run"))
+                else (agent if callable(agent) else None)
+            )
+            if executable is not None:
+                sig_info = analyze_signature(executable)
+                step_instance.__step_input_type__ = getattr(sig_info, "input_type", Any)
+                step_instance.__step_output_type__ = getattr(sig_info, "output_type", Any)
+        except Exception:
+            step_instance.__step_input_type__ = Any
+            step_instance.__step_output_type__ = Any
+
+        return step_instance
+
     @classmethod
     def validate_step(
         cls,
@@ -370,8 +414,11 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         strict: bool = True,
         **config: Any,
     ) -> "Step[Any, Any]":
-        """Construct a validation step using the provided agent."""
-        return cast(
+        """Construct a validation step using the provided agent.
+
+        Also infers input/output types from the agent's signature for pipeline validation.
+        """
+        step_instance = cast(
             "Step[Any, Any]",
             cls.model_validate(
                 {
@@ -390,6 +437,25 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                 }
             ),
         )
+
+        # Infer types from agent.run or the agent itself if callable
+        try:
+            from flujo.signature_tools import analyze_signature
+
+            executable = (
+                agent.run
+                if hasattr(agent, "run") and callable(getattr(agent, "run"))
+                else (agent if callable(agent) else None)
+            )
+            if executable is not None:
+                sig_info = analyze_signature(executable)
+                step_instance.__step_input_type__ = getattr(sig_info, "input_type", Any)
+                step_instance.__step_output_type__ = getattr(sig_info, "output_type", Any)
+        except Exception:
+            step_instance.__step_input_type__ = Any
+            step_instance.__step_output_type__ = Any
+
+        return step_instance
 
     # ------------------------------------------------------------------
     # Pipeline construction helpers (from_callable, human_in_the_loop, etc.)

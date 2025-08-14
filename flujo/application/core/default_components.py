@@ -107,6 +107,106 @@ class DefaultCacheKeyGenerator:
         # Ensure the hasher provides a digest(bytes) -> str
         self._hasher: _HasherProtocol = hasher or Blake3Hasher()
 
+    # -----------------------------
+    # Helper methods (readability & testability)
+    # -----------------------------
+    def _get_agent(self, step: Any) -> Any:
+        return getattr(step, "agent", None)
+
+    def _get_agent_type(self, agent: Any) -> Optional[str]:
+        if agent is None:
+            return None
+        try:
+            return type(agent).__name__
+        except Exception:
+            return None
+
+    def _get_agent_model_id(self, agent: Any) -> Optional[str]:
+        if agent is None:
+            return None
+        try:
+            return getattr(agent, "model_id", None)
+        except Exception:
+            return None
+
+    def _get_agent_system_prompt(self, agent: Any) -> Optional[Any]:
+        if agent is None:
+            return None
+        try:
+            system_prompt = getattr(agent, "system_prompt", None)
+            if system_prompt is None and hasattr(agent, "_system_prompt"):
+                system_prompt = getattr(agent, "_system_prompt")
+            return system_prompt
+        except Exception:
+            return None
+
+    def _hash_text_sha256(self, text: Any) -> Optional[str]:
+        try:
+            import hashlib as _hashlib
+
+            if text is None:
+                return None
+            return _hashlib.sha256(str(text).encode()).hexdigest()
+        except Exception:
+            return None
+
+    def _get_processor_names(self, step: Any, attribute_name: str) -> List[str]:
+        try:
+            processors_obj = getattr(step, "processors", None)
+            if processors_obj is None:
+                return []
+            candidate_list = getattr(processors_obj, attribute_name, [])
+            if not isinstance(candidate_list, list):
+                return []
+            return [type(p).__name__ for p in candidate_list]
+        except Exception:
+            return []
+
+    def _get_validator_names(self, step: Any) -> List[str]:
+        try:
+            validators = getattr(step, "validators", [])
+            if not isinstance(validators, list):
+                return []
+            return [type(v).__name__ for v in validators]
+        except Exception:
+            return []
+
+    def _build_step_section(self, step: Any) -> Dict[str, Any]:
+        agent = self._get_agent(step)
+        agent_type = self._get_agent_type(agent)
+        model_id = self._get_agent_model_id(agent)
+        system_prompt = self._get_agent_system_prompt(agent)
+        system_prompt_hash = self._hash_text_sha256(system_prompt)
+
+        return {
+            "name": getattr(step, "name", str(type(step).__name__)),
+            "agent": {
+                "type": agent_type,
+                "model_id": model_id,
+                "system_prompt_sha256": system_prompt_hash,
+            },
+            "config": {
+                "max_retries": getattr(getattr(step, "config", None), "max_retries", None),
+                "timeout_s": getattr(getattr(step, "config", None), "timeout_s", None),
+                "temperature": getattr(getattr(step, "config", None), "temperature", None),
+            },
+            "processors": {
+                "prompt_processors": self._get_processor_names(step, "prompt_processors"),
+                "output_processors": self._get_processor_names(step, "output_processors"),
+            },
+            "validators": self._get_validator_names(step),
+        }
+
+    def _build_payload(self, step: Any, data: Any, context: Any, resources: Any) -> Dict[str, Any]:
+        from flujo.utils.serialization import safe_serialize as _safe_serialize
+
+        return {
+            "step": self._build_step_section(step),
+            "data": _safe_serialize(data, mode="cache"),
+            "context": _safe_serialize(context, mode="cache"),
+            "resources": _safe_serialize(resources, mode="cache"),
+        }
+
     def generate_key(self, step: Any, data: Any, context: Any, resources: Any) -> str:
         """Generate a collision-resistant cache key.
 
@@ -132,82 +232,8 @@ class DefaultCacheKeyGenerator:
         # Fallback: local robust key generation mirroring cache_step
         import hashlib as _hashlib
         import json as _json
-        from flujo.utils.serialization import safe_serialize as _safe_serialize
 
-        # Agent fingerprint
-        agent = getattr(step, "agent", None)
-        agent_type = type(agent).__name__ if agent is not None else None
-        model_id = getattr(agent, "model_id", None) if agent is not None else None
-        system_prompt = None
-        if agent is not None:
-            try:
-                system_prompt = getattr(agent, "system_prompt", None)
-                if system_prompt is None and hasattr(agent, "_system_prompt"):
-                    system_prompt = getattr(agent, "_system_prompt")
-            except Exception:
-                system_prompt = None
-        system_prompt_hash = None
-        if system_prompt is not None:
-            try:
-                system_prompt_hash = _hashlib.sha256(str(system_prompt).encode()).hexdigest()
-            except Exception:
-                system_prompt_hash = None
-
-        payload = {
-            "step": {
-                "name": getattr(step, "name", str(type(step).__name__)),
-                "agent": {
-                    "type": agent_type,
-                    "model_id": model_id,
-                    "system_prompt_sha256": system_prompt_hash,
-                },
-                "config": {
-                    "max_retries": getattr(getattr(step, "config", None), "max_retries", None),
-                    "timeout_s": getattr(getattr(step, "config", None), "timeout_s", None),
-                    "temperature": getattr(getattr(step, "config", None), "temperature", None),
-                },
-                "processors": {
-                    "prompt_processors": (
-                        [
-                            type(p).__name__
-                            for p in (
-                                getattr(getattr(step, "processors", None), "prompt_processors", [])
-                                if isinstance(
-                                    getattr(
-                                        getattr(step, "processors", None), "prompt_processors", []
-                                    ),
-                                    list,
-                                )
-                                else []
-                            )
-                        ]
-                    ),
-                    "output_processors": (
-                        [
-                            type(p).__name__
-                            for p in (
-                                getattr(getattr(step, "processors", None), "output_processors", [])
-                                if isinstance(
-                                    getattr(
-                                        getattr(step, "processors", None), "output_processors", []
-                                    ),
-                                    list,
-                                )
-                                else []
-                            )
-                        ]
-                    ),
-                },
-                "validators": (
-                    [type(v).__name__ for v in getattr(step, "validators", [])]
-                    if isinstance(getattr(step, "validators", []), list)
-                    else []
-                ),
-            },
-            "data": _safe_serialize(data, mode="cache"),
-            "context": _safe_serialize(context, mode="cache"),
-            "resources": _safe_serialize(resources, mode="cache"),
-        }
+        payload = self._build_payload(step, data, context, resources)
         try:
             blob = _json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
             return _hashlib.sha256(blob).hexdigest()
@@ -215,14 +241,20 @@ class DefaultCacheKeyGenerator:
             # Robust fallback: incorporate serialized inputs to preserve uniqueness
             step_name = getattr(step, "name", str(type(step).__name__))
             try:
+                from flujo.utils.serialization import safe_serialize as _safe_serialize
+
                 data_repr = _safe_serialize(data, mode="cache")
             except Exception:
                 data_repr = str(data)
             try:
+                from flujo.utils.serialization import safe_serialize as _safe_serialize
+
                 ctx_repr = _safe_serialize(context, mode="cache")
             except Exception:
                 ctx_repr = str(context)
             try:
+                from flujo.utils.serialization import safe_serialize as _safe_serialize
+
                 res_repr = _safe_serialize(resources, mode="cache")
             except Exception:
                 res_repr = str(resources)

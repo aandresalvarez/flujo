@@ -1,5 +1,6 @@
 from __future__ import annotations
 import asyncio
+import hashlib
 from typing import Any, Awaitable, Optional, Protocol, Callable, Dict, List, Tuple, Type
 from pydantic import BaseModel
 from flujo.domain.models import (
@@ -160,6 +161,48 @@ class DefaultPluginRedirector:
         self._plugin_runner = plugin_runner
         self._agent_runner = agent_runner
 
+    def _get_agent_signature(self, agent: Any) -> Tuple[Any, Optional[str], str]:
+        """Generate a stable logical signature for an agent to detect redirect loops.
+
+        The signature combines:
+          - The agent's concrete type (class)
+          - A model identifier when available (e.g., provider:model)
+          - A SHA-256 hash of the system prompt (stringified), if present
+        """
+        if agent is None:
+            return (None, None, "")
+
+        try:
+            # Prefer explicit public attribute, then common fallbacks
+            model_id: Optional[str] = None
+            try:
+                model_id = getattr(agent, "model_id", None)
+                if model_id is None:
+                    model_id = getattr(agent, "_model_name", None)
+                if model_id is None:
+                    model_id = getattr(agent, "model", None)
+            except Exception:
+                model_id = None
+
+            # System prompt may be stored in different attributes
+            try:
+                system_prompt_val = getattr(agent, "system_prompt", None)
+                if system_prompt_val is None and hasattr(agent, "_system_prompt"):
+                    system_prompt_val = getattr(agent, "_system_prompt", None)
+            except Exception:
+                system_prompt_val = None
+
+            # Normalize and hash system prompt to avoid large tuples and ensure stability
+            sp_bytes = (
+                str(system_prompt_val).encode("utf-8") if system_prompt_val is not None else b""
+            )
+            sp_hash = hashlib.sha256(sp_bytes).hexdigest()
+
+            return (agent.__class__, str(model_id) if model_id is not None else None, sp_hash)
+        except Exception:
+            # Defensive fallback: use class only; avoids crashing loop detection
+            return (agent.__class__, None, "")
+
     async def run(
         self,
         initial: Any,
@@ -171,7 +214,7 @@ class DefaultPluginRedirector:
     ) -> Any:
         telemetry.logfire.info("[Redirector] Start plugin redirect loop")
         redirect_chain: list[Any] = []
-        original_agent = getattr(step, "agent", None)
+        redirect_chain_signatures: list[Tuple[Any, Optional[str], str]] = []
         processed = initial
         unpacker = DefaultAgentResultUnpacker()
         while True:
@@ -200,22 +243,21 @@ class DefaultPluginRedirector:
                 pass
             # Handle redirect_to
             if hasattr(outcome, "redirect_to") and outcome.redirect_to is not None:
-                # Early detection: redirecting back to original agent indicates a loop
-                if original_agent is not None and outcome.redirect_to is original_agent:
+                # Compute logical identity-based signature for loop detection
+                redirect_agent = outcome.redirect_to
+                agent_sig = self._get_agent_signature(redirect_agent)
+
+                # Check against previously seen agent signatures in this redirect chain
+                if agent_sig in redirect_chain_signatures:
                     telemetry.logfire.warning(
-                        "[Redirector] Loop detected: redirecting back to original agent"
+                        f"[Redirector] Loop detected for agent signature {agent_sig}"
                     )
                     raise InfiniteRedirectError(
-                        f"Redirect loop detected at agent {outcome.redirect_to}"
+                        f"Redirect loop detected for agent signature {agent_sig}"
                     )
-                if outcome.redirect_to in redirect_chain:
-                    telemetry.logfire.warning(
-                        f"[Redirector] Loop detected for agent {getattr(outcome.redirect_to, 'name', str(outcome.redirect_to))}"
-                    )
-                    raise InfiniteRedirectError(
-                        f"Redirect loop detected at agent {outcome.redirect_to}"
-                    )
-                redirect_chain.append(outcome.redirect_to)
+
+                redirect_chain.append(redirect_agent)
+                redirect_chain_signatures.append(agent_sig)
                 telemetry.logfire.info(f"[Redirector] Redirecting to agent {outcome.redirect_to}")
                 raw = await asyncio.wait_for(
                     self._agent_runner.run(
@@ -4281,7 +4323,7 @@ class DefaultCacheStepExecutor:
         breach_event: Optional[Any],
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
         step_executor: Optional[Callable[..., Awaitable[StepResult]]] = None,
-        # Backward-compat: expose 'step' in signature for legacy inspection
+        # Backward-compat: retain 'step' parameter for legacy inspection tooling
         step: Optional[Any] = None,
     ) -> StepOutcome[StepResult]:
         """Handle CacheStep execution with concurrency control and resilience."""
