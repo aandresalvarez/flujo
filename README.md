@@ -1,161 +1,133 @@
- 
 <div align="center">
-  <img src="assets/flujo.png" alt="Flujo logo" width="180"/>
-  <h1>Flujo — The Application Server for AI Workflows</h1>
-  <p>
-    <b>From brittle prototypes to governed, reliable, and observable production systems.</b>
-  </p>
+  <a href="https://github.com/flujo-ai/flujo">
+    <img src="https://raw.githubusercontent.com/aandresalvarez/flujo/main/assets/flujo.png" alt="Flujo logo" width="180"/>
+  </a>
+  
+  <h1>Flujo — Your Conversational AI Workflow Server</h1>
   
   <p>
-    <a href="https://github.com/flujo-ai/flujo/actions/workflows/ci.yml">
-      <img src="https://github.com/flujo-ai/flujo/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status (main)"/>
-    </a>
-    <a href="https://pypi.org/project/flujo/"><img src="https://img.shields.io/pypi/v/flujo.svg" alt="PyPI version"></a>
-    <a href="https://github.com/flujo-ai/flujo/blob/main/LICENSE"><img src="https://img.shields.io/pypi/l/flujo.svg" alt="License"></a>
+    <b>Go from a simple idea to a production-grade, auditable AI pipeline in a single conversation.</b>
   </p>
+
+| CI/CD | PyPI | Docs | License |
+| :---: | :---: | :---: | :---: |
+| [![CI status](https://github.com/flujo-ai/flujo/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/flujo-ai/flujo/actions/workflows/ci.yml) | [![PyPI version](https://img.shields.io/pypi/v/flujo.svg)](https://pypi.org/project/flujo/) | [![Documentation Status](https://readthedocs.org/projects/flujo/badge/?version=latest)](https://flujo.readthedocs.io/en/latest/?badge=latest) | [![License](https://img.shields.io/pypi/l/flujo.svg)](https://github.com/flujo-ai/flujo/blob/main/LICENSE) |
+
 </div>
-
 ---
 
-## Why Flujo?
+## The Flujo Experience: Idea to Production in 3 Commands
 
-Building production-grade AI is more than just calling an API.  
-Teams moving from a demo to a deployed service face **three major challenges**:
+Imagine you need to automate a task: "Summarize a web article, translate it to Spanish, and post it to our company's Slack." With traditional tools, this is hours of coding, testing, and deploying.
 
-1. **Runaway Costs** — Without governance, usage spikes can break budgets.  
-2. **Operational Brittleness** — Ad-hoc scripts and loose prompt chains are fragile.  
-3. **Governance & Compliance Risk** — Lack of structured logging, auditing, and oversight slows adoption.
+**With Flujo, it's a conversation.**
 
-Flujo solves these problems with:
+#### **Step 1: Tell Flujo Your Goal**
 
-- **Real-time Cost Attribution & Guardrails** — Track spend per step, enforce usage limits, prevent runaway costs.  
-- **Structured, Type-Safe Workflows** — Built on Pydantic to ensure every output is validated and consistent.  
-- **Full Observability & Auditability** — Durable run history, traces, and integration with OpenTelemetry for production visibility.
-
----
-
-## Platform Capabilities
-
-**Build**  
-- Python-native DSL for declarative pipelines.  
-- Parallelism, conditional logic, and loops made first-class.  
-- Type-safe agents with automatic validation and repair.
-
-**Govern**  
-- Cost caps and usage quotas built into the runtime.  
-- Pricing configuration per model (`flujo.toml`).  
-- Policy-driven execution with safe sandboxes.
-
-**Operate**  
-- Real-time tracing and inspection via CLI (`flujo lens`).  
-- Human-in-the-Loop (HITL) pauses and resumptions.  
-- State persistence (SQLite, file, or in-memory backends).
-
----
-
-## Self-Improving Flywheel
-
-Flujo isn’t just static orchestration — it learns.  
-Pipelines can run automated evaluations, detect weak points, and produce an **Improvement Report** with actionable changes to prompts, agents, and settings.
-
----
-
-## Core Features
-
-* **🧱 Declarative & Composable Workflows** — Define logic as `Step` objects and compose with the `>>` operator.  
-* **🛡️ Structured Outputs** — Auto-validation via Pydantic models.  
-* **🔧 Automatic Error Recovery** — Built-in repair agents, retries, timeouts, and fallbacks.  
-* **💰 Built-in Cost Governance** — Hard usage limits, per-step cost tracking.  
-* **🔭 Production-Grade Observability** — Tracing, OpenTelemetry integration, CLI inspection.  
-* **🔄 Resumable Pipelines** — HITL-ready with persistent state backends.
-
----
-
-## Quick Start
+Start a conversation with the Flujo Architect, your AI pipeline designer.
 
 ```bash
-pip install flujo openai pydantic
-export OPENAI_API_KEY="sk-..."
-````
+flujo create --goal "Summarize a web article, translate it to Spanish, and post to Slack."
+```
+> **Flujo Architect:** `Understood. To post to Slack, I have a 'post_to_slack' tool. Which channel should I use?`
 
-**Example: A simple translation pipeline**
+#### **Step 2: Clarify and Confirm**
 
+Provide the missing details. The Architect confirms the plan.
+
+```bash
+> #daily_news_es
+```
+> **Flujo Architect:** `Great. I've designed a 3-step pipeline: FetchArticle → SummarizeAndTranslate → PostToSlack. I've generated pipeline.yaml for you. It is ready to run.`
+
+In seconds, Flujo has generated a complete, secure, and production-ready YAML blueprint. No code written. No complex configuration.
+
+#### **Step 3: Run and Inspect**
+
+Execute your new pipeline. Flujo handles the orchestration, cost tracking, and logging automatically.
+
+```bash
+flujo run pipeline.yaml --input "https://flujo-ai.dev/blog/some-article"
+```
+Every run is saved. If something goes wrong, you have a complete, replayable trace.
+```bash
+# Get a visual trace of the last run to see exactly what happened
+flujo lens trace <run_id>
+
+# Replay a failed production run locally for perfect debugging
+flujo lens replay <run_id> --file pipeline.yaml
+```
+
+**This is the core of Flujo:** a framework that uses AI to build AI, guided by you, and governed by production-ready safety rails.
+
+---
+
+## What Makes This Possible?
+
+Flujo is not just a scripting library; it's a complete application server for AI workflows, built on a few core principles:
+
+| Principle | How Flujo Delivers |
+| :--- | :--- |
+| **Declarative Blueprints** | Your entire workflow—agents, prompts, tools, and logic (`parallel`, `loops`)—is defined in a single, human-readable **YAML file**. This is the source of truth that the Architect Agent generates and the Runner executes. |
+| **Safety by Design** | The framework is built around **proactive Quotas** and **centralized Budgets**. A pipeline cannot start if it might exceed its budget, and parallel steps can't create race conditions that lead to overspending. |
+| **Auditability as a Contract** | Every execution produces a **formal, structured trace**. This isn't just logging; it's a deterministic ledger that enables 100% faithful replay, making bugs transparent and easy to fix. |
+| **Extensibility via Skills** | Add new capabilities (Python functions, API clients) to a central **Skill Registry**. The Architect Agent can discover and intelligently wire these skills into the pipelines it generates, allowing you to safely grant AI new powers. |
+
+---
+
+## For Developers: The Power Under the Hood
+
+While the CLI provides a no-code experience, Flujo offers a powerful, type-safe Python DSL for developers who need full control.
+
+**Example: A Simple Translation Agent & Pipeline**
 ```python
-import asyncio
+# translate_pipeline.py
 from pydantic import BaseModel
-from flujo import Step, make_agent_async
+from flujo import Step, Pipeline, make_agent_async
 
 class Translation(BaseModel):
     original_text: str
     translated_text: str
     language: str
 
+# 1. Define an agent with a structured, Pydantic-validated output
 translator_agent = make_agent_async(
     model="openai:gpt-4o",
-    system_prompt="You are an expert translator. Translate the user's text into French.",
+    system_prompt="Translate the user's text into French.",
     output_type=Translation,
 )
 
-translation_pipeline = Step.solution(
-    name="TranslateToFrench",
-    agent=translator_agent
-)
-
-async def main():
-    result = await translation_pipeline.run("Hello, world!")
-    if result.success:
-        translation = result.output
-        print(f"Original: {translation.original_text}")
-        print(f"Language: {translation.language}")
-        print(f"Translated: {translation.translated_text}")
-        print(f"Cost: ${result.cost_usd:.6f}")
-
-if __name__ == "__main__":
-    asyncio.run(main())
+# 2. Compose your pipeline with the `>>` operator
+pipeline = Step(name="TranslateToFrench", agent=translator_agent)
 ```
-
-Run it:
-
-```bash
-python main.py
-```
+Your Python-defined pipelines get all the same benefits: automatic CLI generation, budget enforcement, and full traceability.
 
 ---
 
-## CLI Examples
+## Installation & Getting Started
 
-```bash
-# Run a pipeline
-flujo run my_pipeline.py --input "Initial data"
-
-# List runs
-flujo lens list
-
-# Inspect a specific run trace
-flujo lens trace <run_id>
-
-# Validate pipeline
-flujo validate my_pipeline.py
-```
-
----
-
-## Installation
-
+**Install Flujo:**
 ```bash
 pip install flujo
 ```
 
-For extras:
-
+**Install with Extras (e.g., for specific LLM providers):**
 ```bash
 pip install flujo[openai,anthropic,prometheus]
 ```
+
+**Configure your API Keys:**
+```bash
+export OPENAI_API_KEY="sk-..."
+```
+
+For full guides, tutorials, and API references, please see our **[Official Documentation](https://flujo.readthedocs.io/)**.
 
 ---
 
 ## License
 
-Flexible **AGPL-3.0 / Commercial**. See the [`LICENSE`](LICENSE) file for details.
+Flujo is available under a dual-license model:
 
- 
+*   **AGPL-3.0:** For open-source projects and non-commercial use, Flujo is licensed under the AGPL-3.0. See the [`LICENSE`](LICENSE) file for details.
+*   **Commercial License:** For commercial use in proprietary applications, a separate commercial license is required. Please contact [Your Contact Email/Website] for more information.
