@@ -1,0 +1,96 @@
+version: "0.1"
+
+agents:
+  decomposer:
+    model: "openai:gpt-4o-mini"
+    system_prompt: |
+      Decompose a natural-language goal into ordered steps {step_name, purpose, input_type, output_type}.
+    output_schema:
+      type: object
+      properties:
+        steps:
+          type: array
+          items:
+            type: object
+            properties:
+              step_name: { type: string }
+              purpose: { type: string }
+              input_type: { type: string }
+              output_type: { type: string }
+            required: [step_name, purpose, input_type, output_type]
+      required: [steps]
+
+  tool_matcher:
+    model: "openai:gpt-4o-mini"
+    system_prompt: |
+      Given a step and available skills (id, description, input_schema), choose a tool or 'llm_agent'.
+    output_schema:
+      type: object
+      properties:
+        step_name: { type: string }
+        implementation: { type: string, enum: ["tool", "llm_agent"] }
+        tool_name: { type: string }
+      required: [step_name, implementation]
+
+  yaml_writer:
+    model: "openai:gpt-4o-mini"
+    system_prompt: |
+      Emit a valid Flujo YAML blueprint (v0). Use top-level 'version', optional 'agents', and 'steps' with 'kind'.
+      Steps must use 'uses: agents.<name>' or 'agent: <import path>'. No unsupported keys.
+    output_schema:
+      type: object
+      properties:
+        yaml_text: { type: string }
+      required: [yaml_text]
+
+steps:
+  - kind: step
+    name: DecomposeGoal
+    uses: agents.decomposer
+    updates_context: true
+
+  - kind: step
+    name: DiscoverSkills
+    agent:
+      id: "flujo.infra.skills_catalog:load_skills_catalog"
+      params: { directory: "." }
+    updates_context: true
+
+  - kind: map
+    name: MapStepsToTools
+    map:
+      iterable_input: "decomposition.steps"
+      body:
+        - kind: step
+          name: MatchTool
+          uses: agents.tool_matcher
+    updates_context: true
+
+  - kind: step
+    name: GenerateBlueprint
+    uses: agents.yaml_writer
+    updates_context: true
+
+  - kind: loop
+    name: ValidateAndRepair
+    loop:
+      max_loops: 5
+      body:
+        - kind: step
+          name: ValidateGeneratedYAML
+          agent: "flujo.cli.helpers:validate_yaml_text"
+        - kind: step
+          name: ComputeValidationReport
+          agent: "flujo.cli.helpers:validate_yaml_text"
+        - kind: conditional
+          name: ValidityBranch
+          condition: "flujo.utils.context:predicate_is_valid_report"
+          branches:
+            valid:
+              - kind: step
+                name: Done
+            invalid:
+              - kind: step
+                name: RepairBlueprint
+                uses: agents.yaml_writer
+

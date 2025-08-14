@@ -31,6 +31,7 @@ from .helpers import (
     load_mermaid_code,
     get_pipeline_step_names,
     validate_pipeline_file,
+    validate_yaml_text,
     parse_context_data,
     load_pipeline_from_file,
 )
@@ -449,6 +450,138 @@ def validate(
             raise typer.Exit(1)
     except Exception as e:
         typer.echo(f"[red]Failed to load pipeline file: {e}", err=True)
+        raise typer.Exit(1)
+
+
+@app.command()
+def create(
+    goal: Annotated[str, typer.Option("--goal", help="Natural-language goal for the architect")],
+    output_dir: Annotated[
+        Optional[str],
+        typer.Option("--output-dir", help="Directory to write generated files"),
+    ] = None,
+    context_file: Annotated[
+        Optional[str],
+        typer.Option("--context-file", "-f", help="Path to JSON/YAML file with extra context data"),
+    ] = None,
+    non_interactive: Annotated[
+        bool, typer.Option("--non-interactive", help="Disable interactive prompts")
+    ] = False,
+    allow_side_effects: Annotated[
+        bool,
+        typer.Option(
+            "--allow-side-effects",
+            help="Allow running or generating pipelines that reference side-effect skills",
+        ),
+    ] = False,
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="Overwrite existing output files if present"),
+    ] = False,
+    strict: Annotated[
+        bool, typer.Option("--strict", help="Exit non-zero if final blueprint is invalid")
+    ] = False,
+) -> None:
+    """Conversational pipeline generation via the Architect pipeline.
+
+    Loads the bundled architect YAML, runs it with the provided goal, and writes outputs.
+    """
+    try:
+        # Locate bundled architect YAML (fallback to examples)
+        base = os.path.dirname(os.path.abspath(__file__))
+        repo_root = os.path.abspath(os.path.join(base, os.pardir, os.pardir))
+        architect_yaml = os.path.join(repo_root, "examples", "architect_pipeline.yaml")
+        if not os.path.isfile(architect_yaml):
+            typer.echo("[red]Architect pipeline not found.")
+            raise typer.Exit(1)
+
+        # Load architect pipeline
+        pipeline_obj = load_pipeline_from_yaml_file(architect_yaml)
+
+        # Prepare initial context data
+        from .helpers import parse_context_data
+
+        initial_context_data = {"user_goal": goal}
+        extra_ctx = parse_context_data(None, context_file)
+        if isinstance(extra_ctx, dict):
+            initial_context_data.update(extra_ctx)
+
+        # Create runner and execute
+        runner = create_flujo_runner(
+            pipeline=pipeline_obj,
+            context_model_class=None,
+            initial_context_data=initial_context_data,
+        )
+
+        # For now, require goal as input too (can be refined by architect design)
+        result = execute_pipeline_with_output_handling(
+            runner=runner, input_data=goal, run_id=None, json_output=False
+        )
+
+        # Extract YAML text from final context if present
+        yaml_text: Optional[str] = None
+        try:
+            ctx = getattr(result, "final_pipeline_context", None)
+            if ctx is not None and hasattr(ctx, "generated_yaml"):
+                yaml_text = getattr(ctx, "generated_yaml")
+        except Exception:
+            pass
+
+        if yaml_text is None:
+            typer.echo("[red]Architect did not produce YAML (context.generated_yaml missing)")
+            raise typer.Exit(1)
+
+        # Security gating: detect side-effect tools and require confirmation unless explicitly allowed
+        from .helpers import find_side_effect_skills_in_yaml, enrich_yaml_with_required_params
+
+        side_effect_skills = find_side_effect_skills_in_yaml(
+            yaml_text, base_dir=output_dir or os.getcwd()
+        )
+        if side_effect_skills and not allow_side_effects:
+            typer.echo(
+                "[red]This blueprint references side-effect skills that may perform external actions:"
+            )
+            for sid in side_effect_skills:
+                typer.echo(f"  - {sid}")
+            if non_interactive:
+                typer.echo(
+                    "[red]Non-interactive mode: re-run with --allow-side-effects to proceed."
+                )
+                raise typer.Exit(1)
+            confirm = typer.confirm(
+                "Proceed anyway? This may perform external actions (e.g., Slack posts).",
+                default=False,
+            )
+            if not confirm:
+                raise typer.Exit(1)
+
+        # Optionally enrich YAML with required params if interactive and missing
+        yaml_text = enrich_yaml_with_required_params(
+            yaml_text,
+            non_interactive=non_interactive,
+            base_dir=output_dir or os.getcwd(),
+        )
+
+        # Validate in-memory before writing
+        report = validate_yaml_text(yaml_text, base_dir=output_dir or os.getcwd())
+        if not report.is_valid and strict:
+            typer.echo("[red]Generated YAML is invalid under --strict")
+            raise typer.Exit(1)
+
+        # Write outputs
+        out_dir = output_dir or os.getcwd()
+        os.makedirs(out_dir, exist_ok=True)
+        out_yaml = os.path.join(out_dir, "pipeline.yaml")
+        if os.path.exists(out_yaml) and not force:
+            typer.echo(
+                f"[red]Refusing to overwrite existing file: {out_yaml}. Use --force to overwrite."
+            )
+            raise typer.Exit(1)
+        with open(out_yaml, "w") as f:
+            f.write(yaml_text)
+        typer.echo(f"[green]Wrote: {out_yaml}")
+    except Exception as e:
+        typer.echo(f"[red]Failed to create pipeline: {e}", err=True)
         raise typer.Exit(1)
 
 

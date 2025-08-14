@@ -40,7 +40,6 @@ dependencies = [
     "uvloop>=0.19.0; sys_platform != 'win32'", # Performance optimization for Unix systems
     "orjson>=3.9.0", # Faster JSON serialization
     "blake3>=0.4.0", # Faster cryptographic hashing
-    "mypy>=1.17.0",
     "numpy>=1.20.0",
     "PyYAML>=6.0",
 ]

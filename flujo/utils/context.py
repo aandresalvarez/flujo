@@ -554,3 +554,18 @@ def has_context_field(context: Any, field_name: str) -> bool:
         return hasattr(context, field_name)
     except (AttributeError, TypeError):
         return False
+
+
+def predicate_is_valid_report(report: Any) -> str:
+    """Return branch key for conditional steps based on ValidationReport.
+
+    Args:
+        report: ValidationReport-like object with boolean attribute `is_valid`.
+
+    Returns:
+        "valid" when report.is_valid is truthy, otherwise "invalid".
+    """
+    try:
+        return "valid" if bool(getattr(report, "is_valid", False)) else "invalid"
+    except Exception:
+        return "invalid"

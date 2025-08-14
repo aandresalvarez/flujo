@@ -24,6 +24,8 @@ from flujo.domain.models import Checklist, PipelineContext, Task
 from flujo.utils.serialization import safe_serialize
 from flujo.infra.skills_catalog import load_skills_catalog, load_skills_entry_points
 import hashlib
+from flujo.domain.pipeline_validation import ValidationReport
+from flujo.infra import telemetry as _telemetry
 
 
 def load_pipeline_from_file(
@@ -832,29 +834,31 @@ def execute_pipeline_with_output_handling(
     import sys
     import io
 
-    if json_output:
-        # Capture stdout and output JSON
-        buf = io.StringIO()
-        old_stdout = sys.stdout
-        sys.stdout = buf
-        try:
+    # Add a high-level span for architect or generic pipeline execution
+    with _telemetry.logfire.span("pipeline_run"):
+        if json_output:
+            # Capture stdout and output JSON
+            buf = io.StringIO()
+            old_stdout = sys.stdout
+            sys.stdout = buf
+            try:
+                if run_id is not None:
+                    result = runner.run(input_data, run_id=run_id)
+                else:
+                    result = runner.run(input_data)
+            finally:
+                sys.stdout = old_stdout
+
+            from flujo.utils.serialization import serialize_to_json_robust
+
+            return serialize_to_json_robust(result, indent=2)
+        else:
+            # Normal execution
             if run_id is not None:
                 result = runner.run(input_data, run_id=run_id)
             else:
                 result = runner.run(input_data)
-        finally:
-            sys.stdout = old_stdout
-
-        from flujo.utils.serialization import serialize_to_json_robust
-
-        return serialize_to_json_robust(result, indent=2)
-    else:
-        # Normal execution
-        if run_id is not None:
-            result = runner.run(input_data, run_id=run_id)
-        else:
-            result = runner.run(input_data)
-        return result
+            return result
 
 
 def display_pipeline_results(
@@ -1049,13 +1053,194 @@ def validate_pipeline_file(path: str) -> Any:
             # Ensure relative imports resolve from the YAML file directory
             base_dir = os.path.dirname(os.path.abspath(path))
             pipeline = load_pipeline_blueprint_from_yaml(yaml_text, base_dir=base_dir)
-        except Exception:
+        except Exception as e:
+            warnings.warn(f"Failed to validate YAML pipeline file: {e}", RuntimeWarning)
             raise Exit(1)
     else:
         pipeline, _ = load_pipeline_from_file(path)
     from typing import cast as _cast
 
     return _cast(Any, pipeline).validate_graph()
+
+
+def validate_yaml_text(yaml_text: str, base_dir: Optional[str] = None) -> ValidationReport:
+    """Validate a YAML blueprint string and return its ValidationReport.
+
+    Args:
+        yaml_text: The YAML blueprint content.
+        base_dir: Optional base directory to resolve relative imports within YAML.
+
+    Returns:
+        ValidationReport: The validation report from pipeline.validate_graph().
+
+    Raises:
+        Exit: If loading the YAML fails.
+    """
+    from flujo.domain.blueprint import load_pipeline_blueprint_from_yaml
+    from typing import cast as _cast
+
+    try:
+        pipeline = load_pipeline_blueprint_from_yaml(yaml_text, base_dir=base_dir)
+    except Exception as e:
+        warnings.warn(f"Failed to load YAML blueprint for validation: {e}", RuntimeWarning)
+        raise Exit(1)
+    return _cast(Any, pipeline).validate_graph()
+
+
+def find_side_effect_skills_in_yaml(yaml_text: str, *, base_dir: Optional[str] = None) -> list[str]:
+    """Return a list of skill IDs in YAML that are marked side_effects=True in registry.
+
+    This scans steps recursively for entries of the form:
+      - agent: { id: "skill_id", params: {...} }
+
+    Args:
+        yaml_text: The YAML blueprint content.
+        base_dir: Directory to resolve and load skills catalog from.
+
+    Returns:
+        List of skill IDs that require side-effect confirmation.
+    """
+    try:
+        data = yaml.safe_load(yaml_text)
+    except yaml.YAMLError as e:
+        warnings.warn(f"Failed to parse YAML while scanning side effects: {e}", RuntimeWarning)
+        return []
+
+    if not isinstance(data, dict):
+        return []
+
+    # Ensure registry is populated from catalog in base_dir and packaged entry points
+    try:
+        directory = base_dir or os.getcwd()
+        load_skills_catalog(directory)
+        load_skills_entry_points()
+    except Exception as e:
+        # Best-effort; absence of catalog just yields empty results
+        warnings.warn(
+            f"Failed to load skills catalog or entry points while scanning side effects: {e}",
+            RuntimeWarning,
+        )
+
+    from flujo.infra.skill_registry import get_skill_registry
+
+    reg = get_skill_registry()
+    found: set[str] = set()
+
+    def _scan(node: Any) -> None:
+        if isinstance(node, dict):
+            # Detect agent dicts
+            if "agent" in node and isinstance(node["agent"], dict):
+                agent_spec = node["agent"]
+                skill_id = agent_spec.get("id") if isinstance(agent_spec, dict) else None
+                if isinstance(skill_id, str):
+                    entry = reg.get(skill_id)
+                    if entry and bool(entry.get("side_effects", False)):
+                        found.add(skill_id)
+            # Recurse into dict values
+            for v in node.values():
+                _scan(v)
+        elif isinstance(node, list):
+            for item in node:
+                _scan(item)
+
+    _scan(data)
+    return sorted(found)
+
+
+def enrich_yaml_with_required_params(
+    yaml_text: str,
+    *,
+    non_interactive: bool,
+    base_dir: Optional[str] = None,
+) -> str:
+    """Fill missing required params for registry-backed skills by prompting the user.
+
+    - Scans steps for `agent: { id: <skill_id>, params: {...} }`
+    - Uses registry `input_schema`/`arg_schema` to determine required properties
+    - Prompts the user for missing required keys if not in non-interactive mode
+    - Returns updated YAML text (or original if no changes / non-interactive)
+    """
+    try:
+        data = yaml.safe_load(yaml_text)
+    except yaml.YAMLError as e:
+        warnings.warn(f"Failed to parse YAML while enriching required params: {e}", RuntimeWarning)
+        return yaml_text
+
+    if not isinstance(data, dict):
+        return yaml_text
+
+    # Populate registry
+    try:
+        directory = base_dir or os.getcwd()
+        load_skills_catalog(directory)
+        load_skills_entry_points()
+    except Exception as e:
+        warnings.warn(
+            f"Failed to load skills catalog or entry points while enriching params: {e}",
+            RuntimeWarning,
+        )
+
+    from flujo.infra.skill_registry import get_skill_registry
+
+    registry = get_skill_registry()
+    changed = False
+
+    def _collect_required(entry: dict[str, Any]) -> list[str]:
+        schema = entry.get("input_schema") or entry.get("arg_schema") or {}
+        req = schema.get("required")
+        return list(req) if isinstance(req, list) else []
+
+    def _ensure_params(node: dict[str, Any]) -> None:
+        nonlocal changed
+        agent_spec = node.get("agent")
+        if not isinstance(agent_spec, dict):
+            return
+        skill_id = agent_spec.get("id")
+        if not isinstance(skill_id, str):
+            return
+        entry = registry.get(skill_id) or {}
+        required_keys = _collect_required(entry)
+        if not required_keys:
+            return
+        params = agent_spec.get("params")
+        if not isinstance(params, dict):
+            params = {}
+            agent_spec["params"] = params
+        missing = [k for k in required_keys if k not in params]
+        if not missing:
+            return
+        if non_interactive:
+            return
+        # Prompt for each missing key
+        try:
+            import typer as _typer
+        except Exception:
+            return
+        for key in missing:
+            val = _typer.prompt(
+                f"Enter value for required parameter '{key}' of skill '{skill_id}':"
+            )
+            params[key] = val
+            changed = True
+
+    def _walk(node: Any) -> None:
+        if isinstance(node, dict):
+            if "agent" in node:
+                _ensure_params(node)
+            for v in node.values():
+                _walk(v)
+        elif isinstance(node, list):
+            for item in node:
+                _walk(item)
+
+    _walk(data)
+
+    if not changed:
+        return yaml_text
+    try:
+        return yaml.safe_dump(data, sort_keys=False)
+    except Exception:
+        return yaml_text
 
 
 def apply_cli_defaults(

@@ -19,6 +19,7 @@ Go beyond static prompts. Flujo provides the structure, state, and observability
 - [Usage Guide](../user_guide/usage.md) - Learn how to use the library
 - [Agent Infrastructure](../advanced/agent_infrastructure.md) - Understand the agent system
 - [Concepts](../user_guide/concepts.md) - Core concepts and architecture
+- [Architect (Generate Blueprints)](../user_guide/architect.md) - Create YAML blueprints from natural language goals
 
 ## Advanced Features
 
