@@ -163,10 +163,16 @@ def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[
 
     # 2. Handle string outputs: prefer tokenizer estimate; fallback to 1 token
     if isinstance(raw_output, str):
+        # Prefer tiktoken when installed for more accurate token counting
         try:
-            # Use tiktoken when available for more accurate token counting
-            import tiktoken as _tiktoken  # type: ignore[import-not-found]
+            import tiktoken as _tiktoken  # Optional dependency
+        except (ImportError, ModuleNotFoundError):
+            telemetry.logfire.info(
+                f"Counting string output as 1 token for step '{step_name}' (tiktoken not installed)"
+            )
+            return 0, 1, 0.0
 
+        try:
             encoding = _tiktoken.get_encoding("cl100k_base")
             token_count = len(encoding.encode(raw_output))
             telemetry.logfire.info(
@@ -175,7 +181,7 @@ def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[
             return 0, int(token_count), 0.0
         except Exception:
             telemetry.logfire.info(
-                f"Counting string output as 1 token for step '{step_name}' (tiktoken unavailable)"
+                f"Counting string output as 1 token for step '{step_name}' (tiktoken error)"
             )
             return 0, 1, 0.0
 
