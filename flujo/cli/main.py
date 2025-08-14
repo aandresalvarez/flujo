@@ -20,6 +20,7 @@ from .helpers import (
     setup_solve_command_environment,
     execute_solve_pipeline,
     setup_run_command_environment,
+    load_pipeline_from_yaml_file,
     create_flujo_runner,
     execute_pipeline_with_output_handling,
     display_pipeline_results,
@@ -510,7 +511,7 @@ def run(
 
         # If YAML blueprint provided, load via blueprint loader; else use existing Python loader.
         if pipeline_file.endswith((".yaml", ".yml")):
-            pipeline_obj = load_pipeline_from_file(pipeline_file)
+            pipeline_obj = load_pipeline_from_yaml_file(pipeline_file)
             context_model_class = None
             initial_context_data = parse_context_data(context_data, context_file)  # type: ignore[name-defined]
         else:
