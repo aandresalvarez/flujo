@@ -46,7 +46,14 @@ def test_cli_compile_invalid_yaml_shows_line_and_col(tmp_path: Path) -> None:
           extra_indent: oops
     """)
     result = subprocess.run(
-        [sys.executable, "-m", "flujo.cli.main", "compile", str(bad)],
+        [
+            sys.executable,
+            "-m",
+            "flujo.cli.main",
+            "dev",
+            "compile-yaml",
+            str(bad),
+        ],
         capture_output=True,
         text=True,
     )
@@ -70,7 +77,15 @@ def test_yaml_validate_strict_exits_nonzero(tmp_path: Path) -> None:
     p = tmp_path / "invalid.yaml"
     p.write_text(yaml_text)
     result = subprocess.run(
-        [sys.executable, "-m", "flujo.cli.main", "validate", "--strict", str(p)],
+        [
+            sys.executable,
+            "-m",
+            "flujo.cli.main",
+            "dev",
+            "validate",
+            "--strict",
+            str(p),
+        ],
         capture_output=True,
         text=True,
     )
@@ -117,9 +132,16 @@ def test_cli_validate_reports_suggestions(tmp_path: Path) -> None:
         pipeline = Pipeline.from_step(s1) >> s2
         """,
     )
-    # run flujo validate
+    # run flujo dev validate
     result = subprocess.run(
-        [sys.executable, "-m", "flujo.cli.main", "validate", str(file)],
+        [
+            sys.executable,
+            "-m",
+            "flujo.cli.main",
+            "dev",
+            "validate",
+            str(file),
+        ],
         capture_output=True,
         text=True,
     )
@@ -164,7 +186,15 @@ def test_cli_validate_strict_exits_nonzero(tmp_path: Path) -> None:
         """,
     )
     result = subprocess.run(
-        [sys.executable, "-m", "flujo.cli.main", "validate", "--strict", str(file)],
+        [
+            sys.executable,
+            "-m",
+            "flujo.cli.main",
+            "dev",
+            "validate",
+            "--strict",
+            str(file),
+        ],
         capture_output=True,
         text=True,
     )
@@ -219,7 +249,15 @@ def test_cli_compile_yaml_roundtrip(tmp_path: Path) -> None:
     src = tmp_path / "pipe.yaml"
     src.write_text(yaml_text)
     result = subprocess.run(
-        [sys.executable, "-m", "flujo.cli.main", "compile", str(src), "--no-normalize"],
+        [
+            sys.executable,
+            "-m",
+            "flujo.cli.main",
+            "dev",
+            "compile-yaml",
+            str(src),
+            "--no-normalize",
+        ],
         capture_output=True,
         text=True,
     )
@@ -257,7 +295,14 @@ def test_yaml_plugins_and_validators(tmp_path: Path) -> None:
     src = tmp_path / "pipe.yaml"
     src.write_text(yaml_text)
     result = subprocess.run(
-        [sys.executable, "-m", "flujo.cli.main", "compile", str(src)],
+        [
+            sys.executable,
+            "-m",
+            "flujo.cli.main",
+            "dev",
+            "compile-yaml",
+            str(src),
+        ],
         capture_output=True,
         text=True,
     )

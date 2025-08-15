@@ -31,7 +31,7 @@ def test_project_aware_validate_and_run(tmp_path: Path) -> None:
         assert runner.invoke(app, ["init"]).exit_code == 0
 
         # Validate should pick up pipeline.yaml implicitly
-        v = runner.invoke(app, ["validate"])  # no args
+        v = runner.invoke(app, ["dev", "validate"])  # no args
         assert v.exit_code == 0
 
         # Run should also infer pipeline.yaml and succeed with passthrough

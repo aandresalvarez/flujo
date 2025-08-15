@@ -92,15 +92,30 @@ ScorerType = (
 )
 
 
-app: typer.Typer = typer.Typer(rich_markup_mode="markdown")
+app: typer.Typer = typer.Typer(
+    rich_markup_mode="markdown",
+    help=("A project-based server for building, running, and managing AI workflows."),
+)
 
 # Initialize telemetry at the start of CLI execution
 telemetry.init_telemetry()
 logfire = telemetry.logfire
 
+"""Top-level sub-apps and groups."""
+# Top-level: lens remains as its own sub-app
 app.add_typer(lens_app, name="lens")
+
+# New developer sub-app and nested experimental group
+dev_app: typer.Typer = typer.Typer(help="🛠️  Access advanced developer and diagnostic tools.")
+experimental_app: typer.Typer = typer.Typer(help="(Advanced) Experimental and diagnostic commands.")
+dev_app.add_typer(experimental_app, name="experimental")
+
+# Budgets live under the dev group
 budgets_app: typer.Typer = typer.Typer(help="Budget governance commands")
-app.add_typer(budgets_app, name="budgets")
+dev_app.add_typer(budgets_app, name="budgets")
+
+# Register developer app at top level
+app.add_typer(dev_app, name="dev")
 
 
 def _auto_import_modules_from_env() -> None:
@@ -126,7 +141,7 @@ Keep this module focused on argument parsing and command wiring.
 """
 
 
-@app.command()
+@app.command(help="✨ Initialize a new Flujo workflow project in this directory.")
 def init() -> None:
     """Initialize a new Flujo project in the current directory."""
     try:
@@ -138,7 +153,7 @@ def init() -> None:
         raise typer.Exit(1)
 
 
-@app.command()
+@experimental_app.command(name="solve")
 def solve(
     prompt: str,
     max_iters: Annotated[
@@ -233,7 +248,7 @@ def solve(
         raise typer.Exit(2)
 
 
-@app.command(name="version-cmd")
+@dev_app.command(name="version")
 def version_cmd() -> None:
     """
     Print the package version.
@@ -245,7 +260,7 @@ def version_cmd() -> None:
     typer.echo(f"flujo version: {version}")
 
 
-@app.command(name="show-config")
+@dev_app.command(name="show-config")
 def show_config_cmd() -> None:
     """
     Print effective Settings with secrets masked.
@@ -256,7 +271,7 @@ def show_config_cmd() -> None:
     typer.echo(get_masked_settings_dict())
 
 
-@app.command()
+@experimental_app.command(name="bench")
 def bench(
     prompt: str,
     rounds: Annotated[int, typer.Option(help="Number of benchmark rounds to run")] = 10,
@@ -291,7 +306,7 @@ def bench(
         raise typer.Exit(130)
 
 
-@app.command(name="add-eval-case")
+@experimental_app.command(name="add-case")
 def add_eval_case_cmd(
     dataset_path: Path = typer.Option(
         ...,
@@ -359,7 +374,7 @@ def add_eval_case_cmd(
         raise typer.Exit(1)
 
 
-@app.command()
+@experimental_app.command(name="improve")
 def improve(
     pipeline_path: str,
     dataset_path: str,
@@ -402,7 +417,7 @@ def improve(
         raise typer.Exit(1)
 
 
-@app.command()
+@dev_app.command(name="show-steps")
 def explain(path: str) -> None:
     """
     Print a summary of a pipeline defined in a file.
@@ -424,7 +439,7 @@ def explain(path: str) -> None:
         raise typer.Exit(1)
 
 
-@app.command()
+@dev_app.command(name="validate")
 def validate(
     path: Optional[str] = typer.Argument(
         None,
@@ -475,7 +490,7 @@ def validate(
         raise typer.Exit(1)
 
 
-@app.command()
+@app.command(help=("🤖 Start a conversation with the AI Architect to build your workflow."))
 def create(
     goal: Annotated[
         Optional[str], typer.Option("--goal", help="Natural-language goal for the architect")
@@ -734,7 +749,7 @@ def create(
         raise typer.Exit(1)
 
 
-@app.command()
+@app.command(help="🚀 Run the workflow in the current project.")
 def run(
     pipeline_file: Optional[str] = typer.Argument(
         None,
@@ -890,7 +905,7 @@ def run(
         raise typer.Exit(1)
 
 
-@app.command()
+@dev_app.command(name="compile-yaml")
 def compile(
     src: str = typer.Argument(..., help="Input spec: .yaml/.yml or .py"),
     out: Optional[str] = typer.Option(None, "--out", "-o", help="Output file path (.yaml)"),
@@ -961,7 +976,7 @@ def budgets_show(pipeline_name: str) -> None:
         raise typer.Exit(1)
 
 
-@app.command("pipeline-mermaid")
+@dev_app.command(name="visualize")
 def pipeline_mermaid_cmd(
     file: str = typer.Option(
         ...,

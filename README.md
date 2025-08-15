@@ -134,6 +134,18 @@ For full guides, tutorials, and API references, please see our **[Official Docum
 
 ---
 
+## CLI Overview
+
+- `init`: ✨ Initialize a new Flujo workflow project in this directory.
+- `create`: 🤖 Start a conversation with the AI Architect to build your workflow.
+- `run`: 🚀 Run the workflow in the current project.
+- `lens`: 🔍 Inspect, debug, and trace past workflow runs.
+- `dev`: 🛠️ Access advanced developer and diagnostic tools.
+  - `validate`, `show-steps`, `visualize`, `compile-yaml`, `show-config`, `version`
+  - `experimental`: advanced tools like `solve`, `bench`, `add-case`, `improve`
+
+---
+
 ## License
 
 Flujo is available under a dual-license model:

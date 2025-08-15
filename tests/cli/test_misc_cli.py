@@ -21,7 +21,7 @@ def test_budgets_show_with_pipeline_entry(tmp_path: Path) -> None:
             ).strip()
         )
 
-        result = runner.invoke(app, ["budgets", "show", "my-pipe"])
+        result = runner.invoke(app, ["dev", "budgets", "show", "my-pipe"])
         assert result.exit_code == 0
         out = result.stdout
         assert "Effective budget for 'my-pipe':" in out
@@ -33,7 +33,7 @@ def test_budgets_show_with_pipeline_entry(tmp_path: Path) -> None:
 def test_budgets_show_without_config(tmp_path: Path) -> None:
     runner = CliRunner()
     with runner.isolated_filesystem(temp_dir=tmp_path):
-        result = runner.invoke(app, ["budgets", "show", "any-pipe"])
+        result = runner.invoke(app, ["dev", "budgets", "show", "any-pipe"])
         assert result.exit_code == 0
         assert "No budget configured (unlimited). Source: none" in result.stdout
 
@@ -60,7 +60,8 @@ def test_pipeline_mermaid_outputs_code_fence(tmp_path: Path) -> None:
         result = runner.invoke(
             app,
             [
-                "pipeline-mermaid",
+                "dev",
+                "visualize",
                 "--file",
                 str(pipe),
                 "--object",
@@ -76,11 +77,11 @@ def test_pipeline_mermaid_outputs_code_fence(tmp_path: Path) -> None:
 def test_version_and_show_config(tmp_path: Path) -> None:
     runner = CliRunner()
     with runner.isolated_filesystem(temp_dir=tmp_path):
-        res_v = runner.invoke(app, ["version-cmd"])
+        res_v = runner.invoke(app, ["dev", "version"])
         assert res_v.exit_code == 0
         assert "flujo version:" in res_v.stdout
 
-        res_cfg = runner.invoke(app, ["show-config"])
+        res_cfg = runner.invoke(app, ["dev", "show-config"])
         assert res_cfg.exit_code == 0
         # Should print a dict-like structure without secrets
         assert "{" in res_cfg.stdout and "}" in res_cfg.stdout

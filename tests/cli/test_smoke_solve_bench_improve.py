@@ -29,7 +29,7 @@ def test_solve_smoke_outputs_json(monkeypatch) -> None:
     monkeypatch.setattr("flujo.cli.main.execute_solve_pipeline", _exec)
 
     runner = CliRunner()
-    res = runner.invoke(app, ["solve", "hello world"])
+    res = runner.invoke(app, ["dev", "experimental", "solve", "hello world"])
     assert res.exit_code == 0
     data = _json.loads(res.stdout)
     assert data.get("score") == 0.99
@@ -57,7 +57,7 @@ def test_bench_smoke_prints_table(monkeypatch) -> None:
     monkeypatch.setattr("flujo.cli.main.create_benchmark_table", lambda *a, **k: _Table())
 
     runner = CliRunner()
-    res = runner.invoke(app, ["bench", "prompt", "--rounds", "2"])
+    res = runner.invoke(app, ["dev", "experimental", "bench", "prompt", "--rounds", "2"])
     assert res.exit_code == 0
     assert "Benchmark Results" in res.stdout
 
@@ -75,6 +75,8 @@ def test_improve_smoke_json_output(monkeypatch, tmp_path: Path) -> None:
     res = runner.invoke(
         app,
         [
+            "dev",
+            "experimental",
             "improve",
             str(tmp_path / "p.py"),
             str(tmp_path / "d.py"),

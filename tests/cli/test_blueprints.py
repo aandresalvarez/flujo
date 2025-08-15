@@ -23,7 +23,15 @@ def test_cli_budgets_show_works(tmp_path: Path) -> None:
 
     # Run CLI in that directory so config is discovered
     result = subprocess.run(
-        [sys.executable, "-m", "flujo.cli.main", "budgets", "show", "team-alpha"],
+        [
+            sys.executable,
+            "-m",
+            "flujo.cli.main",
+            "dev",
+            "budgets",
+            "show",
+            "team-alpha",
+        ],
         cwd=str(tmp_path),
         capture_output=True,
         text=True,
