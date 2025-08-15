@@ -693,16 +693,35 @@ def has_context_field(context: Any, field_name: str) -> bool:
         return False
 
 
-def predicate_is_valid_report(report: Any) -> str:
+def predicate_is_valid_report(report: Any, context: Any) -> str:
     """Return branch key for conditional steps based on ValidationReport.
+
+    Accepts (report, context) to match ConditionalStep signature; context is ignored.
 
     Args:
         report: ValidationReport-like object with boolean attribute `is_valid`.
+        context: Pipeline context (unused).
 
     Returns:
         "valid" when report.is_valid is truthy, otherwise "invalid".
     """
     try:
-        return "valid" if bool(getattr(report, "is_valid", False)) else "invalid"
+        v = False
+        # Primary: report objects
+        try:
+            v = bool(getattr(report, "is_valid", False))
+        except Exception:
+            v = False
+        # Fallback: mapping forms
+        if not v and isinstance(report, dict):
+            v = bool(report.get("is_valid", False) or report.get("yaml_is_valid", False))
+        # As a last resort, consult context flag
+        if not v and context is not None:
+            try:
+                v = bool(getattr(context, "yaml_is_valid", False))
+            except Exception:
+                if isinstance(context, dict):
+                    v = bool(context.get("yaml_is_valid", False))
+        return "valid" if v else "invalid"
     except Exception:
         return "invalid"

@@ -618,15 +618,17 @@ def load_pipeline_blueprint_from_yaml(
             raise BlueprintError("YAML blueprint must be a mapping with a 'steps' key")
         bp = BlueprintPipelineModel.model_validate(data)
         # If declarative agents or imports are present, compile them first
-        try:
-            from .compiler import DeclarativeBlueprintCompiler  # lazy import
+        from .compiler import DeclarativeBlueprintCompiler  # lazy import
 
-            if bp.agents or getattr(bp, "imports", None):
+        if bp.agents or getattr(bp, "imports", None):
+            try:
                 compiler = DeclarativeBlueprintCompiler(bp, base_dir=base_dir)
                 return compiler.compile_to_pipeline()
-        except Exception:
-            # Fallback to plain builder on any compiler issue
-            pass
+            except Exception as e:
+                # Surface a clear error instead of silently falling back and failing later
+                raise BlueprintError(
+                    f"Failed to compile declarative blueprint (agents/imports): {e}"
+                ) from e
         return build_pipeline_from_blueprint(bp)
     except ValidationError as ve:
         # Construct readable error with locations

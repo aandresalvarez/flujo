@@ -35,8 +35,10 @@ agents:
   yaml_writer:
     model: "openai:gpt-4o-mini"
     system_prompt: |
-      Emit a valid Flujo YAML blueprint (v0). Use top-level 'version', optional 'agents', and 'steps' with 'kind'.
-      Steps must use 'uses: agents.<name>' or 'agent: <import path>'. No unsupported keys.
+      You are a Flujo YAML expert. Your SOLE job is to convert the provided JSON plan into a valid Flujo YAML file.
+      You MUST use the step names, tools, and agent descriptions from the `step_plans` provided in the input.
+      Do NOT invent new steps or agents.
+      The final output MUST be a single string containing only the YAML text.
     output_schema:
       type: object
       properties:
@@ -49,39 +51,69 @@ steps:
     uses: agents.decomposer
     updates_context: true
 
+  # Adapter to normalize decomposer output into a simple list for mapping
+  - kind: step
+    name: PrepareStepsForMapping
+    agent:
+      id: "flujo.builtins.extract_decomposed_steps"
+    updates_context: true
+
   - kind: step
     name: DiscoverSkills
     agent:
-      id: "flujo.infra.skills_catalog:load_skills_catalog"
+      id: "flujo.builtins.discover_skills"
       params: { directory: "." }
     updates_context: true
 
   - kind: map
     name: MapStepsToTools
     map:
-      iterable_input: "decomposition.steps"
+      iterable_input: "prepared_steps_for_mapping"
       body:
         - kind: step
           name: MatchTool
           uses: agents.tool_matcher
-    updates_context: true
+    # MapStep returns a list which is passed to the next step
+    updates_context: false
+
+  # Aggregate mapped tool decisions into a single plan for YAML writer
+  - kind: step
+    name: AggregatePlan
+    agent:
+      id: "flujo.builtins.aggregate_plan"
+    updates_context: false
 
   - kind: step
     name: GenerateBlueprint
     uses: agents.yaml_writer
     updates_context: true
 
+  # Adapter: convert writer output object into plain YAML string
+  - kind: step
+    name: ExtractYamlText
+    agent:
+      id: "flujo.builtins.extract_yaml_text"
+    updates_context: false
+
   - kind: loop
     name: ValidateAndRepair
     loop:
-      max_loops: 5
+      max_loops: 3
+      exit_condition: "flujo.builtins:exit_when_yaml_valid"
       body:
+        # Always validate the latest YAML string (extract whenever needed)
+        - kind: step
+          name: ExtractYamlTextForValidation
+          agent:
+            id: "flujo.builtins.extract_yaml_text"
         - kind: step
           name: ValidateGeneratedYAML
           agent: "flujo.cli.helpers:validate_yaml_text"
         - kind: step
-          name: ComputeValidationReport
-          agent: "flujo.cli.helpers:validate_yaml_text"
+          name: SetValidationFlag
+          agent:
+            id: "flujo.builtins.validation_report_to_flag"
+          updates_context: true
         - kind: conditional
           name: ValidityBranch
           condition: "flujo.utils.context:predicate_is_valid_report"
@@ -93,4 +125,3 @@ steps:
               - kind: step
                 name: RepairBlueprint
                 uses: agents.yaml_writer
-

@@ -10,6 +10,7 @@ from pathlib import Path
 from flujo.infra.config_manager import get_cli_defaults as _get_cli_defaults
 from flujo.exceptions import ConfigurationError, SettingsError
 from flujo.infra import telemetry
+import flujo.builtins as _flujo_builtins  # noqa: F401  # Register builtin skills on CLI import
 from typing_extensions import Annotated
 from rich.console import Console
 from ..utils.serialization import safe_serialize, safe_deserialize as _safe_deserialize
@@ -514,149 +515,220 @@ def create(
     strict: Annotated[
         bool, typer.Option("--strict", help="Exit non-zero if final blueprint is invalid")
     ] = False,
+    debug: bool = typer.Option(
+        False,
+        "--debug",
+        help="Enable verbose logging to debug the Architect Agent's execution.",
+        hidden=True,
+    ),
 ) -> None:
     """Conversational pipeline generation via the Architect pipeline.
 
     Loads the bundled architect YAML, runs it with the provided goal, and writes outputs.
     """
     try:
-        # Prompt for goal if not provided and interactive
-        if goal is None and not non_interactive:
-            goal = typer.prompt("What is your goal for this pipeline?")
-        if goal is None:
-            typer.echo("[red]--goal is required in --non-interactive mode[/red]")
-            raise typer.Exit(2)
-        # Locate bundled architect YAML (fallback to examples)
-        base = os.path.dirname(os.path.abspath(__file__))
-        repo_root = os.path.abspath(os.path.join(base, os.pardir, os.pardir))
-        architect_yaml = os.path.join(repo_root, "examples", "architect_pipeline.yaml")
-        if not os.path.isfile(architect_yaml):
-            typer.echo("[red]Architect pipeline not found.")
-            raise typer.Exit(1)
+        # Conditional logging: silence internal logs for end users unless --debug
+        import logging as _logging
+        import warnings as _warnings
 
-        # Load architect pipeline
-        pipeline_obj = load_pipeline_from_yaml_file(architect_yaml)
+        _flujo_logger = _logging.getLogger("flujo")
+        _httpx_logger = _logging.getLogger("httpx")
+        _orig_flujo_level = _flujo_logger.getEffectiveLevel()
+        _orig_httpx_level = _httpx_logger.getEffectiveLevel()
+        # We will temporarily add filters and later reset to defaults
 
-        # Prepare initial context data
-        from .helpers import parse_context_data
+        if not debug:
+            _flujo_logger.setLevel(_logging.CRITICAL)
+            _httpx_logger.setLevel(_logging.WARNING)
+            # Suppress specific runner warnings for a clean UX
+            try:
+                _warnings.filterwarnings("ignore", message="pipeline_name was not provided.*")
+                _warnings.filterwarnings("ignore", message="pipeline_id was not provided.*")
+            except Exception:
+                pass
 
-        initial_context_data = {"user_goal": goal}
-        extra_ctx = parse_context_data(None, context_file)
-        if isinstance(extra_ctx, dict):
-            initial_context_data.update(extra_ctx)
-
-        # Create runner and execute
-        runner = create_flujo_runner(
-            pipeline=pipeline_obj,
-            context_model_class=None,
-            initial_context_data=initial_context_data,
-        )
-
-        # For now, require goal as input too (can be refined by architect design)
-        result = execute_pipeline_with_output_handling(
-            runner=runner, input_data=goal, run_id=None, json_output=False
-        )
-
-        # Extract YAML text from final context if present
-        yaml_text: Optional[str] = None
         try:
-            ctx = getattr(result, "final_pipeline_context", None)
-            if ctx is not None and hasattr(ctx, "generated_yaml"):
-                yaml_text = getattr(ctx, "generated_yaml")
-        except Exception:
-            pass
+            # Prompt for goal if not provided and interactive
+            if goal is None and not non_interactive:
+                goal = typer.prompt("What is your goal for this pipeline?")
+            if goal is None:
+                typer.echo("[red]--goal is required in --non-interactive mode[/red]")
+                raise typer.Exit(2)
+            # Locate bundled architect YAML (fallback to examples)
+            base = os.path.dirname(os.path.abspath(__file__))
+            repo_root = os.path.abspath(os.path.join(base, os.pardir, os.pardir))
+            architect_yaml = os.path.join(repo_root, "examples", "architect_pipeline.yaml")
+            if not os.path.isfile(architect_yaml):
+                typer.echo("[red]Architect pipeline not found.")
+                raise typer.Exit(1)
 
-        if yaml_text is None:
-            typer.echo("[red]Architect did not produce YAML (context.generated_yaml missing)")
-            raise typer.Exit(1)
+            # Load architect pipeline
+            pipeline_obj = load_pipeline_from_yaml_file(architect_yaml)
 
-        # Security gating: detect side-effect tools and require confirmation unless explicitly allowed
-        from .helpers import find_side_effect_skills_in_yaml, enrich_yaml_with_required_params
+            # Prepare initial context data
+            from .helpers import parse_context_data
 
-        side_effect_skills = find_side_effect_skills_in_yaml(
-            yaml_text, base_dir=output_dir or os.getcwd()
-        )
-        if side_effect_skills and not allow_side_effects:
-            typer.echo(
-                "[red]This blueprint references side-effect skills that may perform external actions:"
+            initial_context_data = {"user_goal": goal}
+            extra_ctx = parse_context_data(None, context_file)
+            if isinstance(extra_ctx, dict):
+                initial_context_data.update(extra_ctx)
+            # Ensure required field for custom context model
+            if "initial_prompt" not in initial_context_data:
+                initial_context_data["initial_prompt"] = goal
+
+            # Create runner and execute
+            # Use a minimal context model for the Architect to allow prepared list
+            from pydantic import Field as _Field
+            from flujo.domain.models import PipelineContext as _PipelineContext
+
+            class _ArchitectContext(_PipelineContext):
+                prepared_steps_for_mapping: list[dict[str, Any]] = _Field(default_factory=list)
+                generated_yaml: Optional[str] = None
+                available_skills: list[dict[str, Any]] = _Field(default_factory=list)
+
+            runner = create_flujo_runner(
+                pipeline=pipeline_obj,
+                context_model_class=_ArchitectContext,
+                initial_context_data=initial_context_data,
             )
-            for sid in side_effect_skills:
-                typer.echo(f"  - {sid}")
-            if non_interactive:
+
+            # For now, require goal as input too (can be refined by architect design)
+            result = execute_pipeline_with_output_handling(
+                runner=runner, input_data=goal, run_id=None, json_output=False
+            )
+
+            # Extract YAML text from final context if present, with fallbacks
+            yaml_text: Optional[str] = None
+            try:
+                ctx = getattr(result, "final_pipeline_context", None)
+                if ctx is not None:
+                    # Preferred key
+                    if hasattr(ctx, "generated_yaml") and getattr(ctx, "generated_yaml"):
+                        yaml_text = getattr(ctx, "generated_yaml")
+                    # Fallback key used by some agents
+                    elif hasattr(ctx, "yaml_text") and getattr(ctx, "yaml_text"):
+                        yaml_text = getattr(ctx, "yaml_text")
+                # Final fallback: inspect step history outputs
+                if yaml_text is None:
+                    for sr in getattr(result, "step_history", [])[::-1]:
+                        out = getattr(sr, "output", None)
+                        try:
+                            if isinstance(out, dict):
+                                if out.get("generated_yaml"):
+                                    yaml_text = str(out.get("generated_yaml"))
+                                    break
+                                if out.get("yaml_text"):
+                                    yaml_text = str(out.get("yaml_text"))
+                                    break
+                        except Exception:
+                            continue
+            except Exception:
+                pass
+
+            if yaml_text is None:
+                typer.echo("[red]Architect did not produce YAML (context.generated_yaml missing)")
+                raise typer.Exit(1)
+
+            # Security gating: detect side-effect tools and require confirmation unless explicitly allowed
+            from .helpers import find_side_effect_skills_in_yaml, enrich_yaml_with_required_params
+
+            side_effect_skills = find_side_effect_skills_in_yaml(
+                yaml_text, base_dir=output_dir or os.getcwd()
+            )
+            if side_effect_skills and not allow_side_effects:
                 typer.echo(
-                    "[red]Non-interactive mode: re-run with --allow-side-effects to proceed."
+                    "[red]This blueprint references side-effect skills that may perform external actions:"
+                )
+                for sid in side_effect_skills:
+                    typer.echo(f"  - {sid}")
+                if non_interactive:
+                    typer.echo(
+                        "[red]Non-interactive mode: re-run with --allow-side-effects to proceed."
+                    )
+                    raise typer.Exit(1)
+                confirm = typer.confirm(
+                    "Proceed anyway? This may perform external actions (e.g., Slack posts).",
+                    default=False,
+                )
+                if not confirm:
+                    raise typer.Exit(1)
+
+            # Optionally enrich YAML with required params if interactive and missing
+            yaml_text = enrich_yaml_with_required_params(
+                yaml_text,
+                non_interactive=non_interactive,
+                base_dir=output_dir or os.getcwd(),
+            )
+
+            # Validate in-memory before writing
+            report = validate_yaml_text(yaml_text, base_dir=output_dir or os.getcwd())
+            if not report.is_valid and strict:
+                typer.echo("[red]Generated YAML is invalid under --strict")
+                raise typer.Exit(1)
+
+            # Write outputs
+            # Determine output location (project-aware by default)
+            project_root = str(find_project_root())
+            out_dir = output_dir or project_root
+            os.makedirs(out_dir, exist_ok=True)
+            out_yaml = os.path.join(out_dir, "pipeline.yaml")
+            # In project-aware default path, allow overwriting pipeline.yaml without --force
+            allow_overwrite = (output_dir is None) or (
+                os.path.abspath(out_dir) == os.path.abspath(project_root)
+            )
+            if os.path.exists(out_yaml) and not (force or allow_overwrite):
+                typer.echo(
+                    f"[red]Refusing to overwrite existing file: {out_yaml}. Use --force to overwrite."
                 )
                 raise typer.Exit(1)
-            confirm = typer.confirm(
-                "Proceed anyway? This may perform external actions (e.g., Slack posts).",
-                default=False,
-            )
-            if not confirm:
-                raise typer.Exit(1)
+            # Prompt for name if interactive and not provided
+            if not name and not non_interactive:
+                detected = _extract_pipeline_name_from_yaml(yaml_text)
+                name = typer.prompt(
+                    "What should we name this pipeline?", default=detected or "pipeline"
+                )
+            # Optionally inject top-level name into YAML if absent
+            if name and (_extract_pipeline_name_from_yaml(yaml_text) is None):
+                yaml_text = f'name: "{name}"\n' + yaml_text
+            with open(out_yaml, "w") as f:
+                f.write(yaml_text)
+            typer.echo(f"[green]Wrote: {out_yaml}")
 
-        # Optionally enrich YAML with required params if interactive and missing
-        yaml_text = enrich_yaml_with_required_params(
-            yaml_text,
-            non_interactive=non_interactive,
-            base_dir=output_dir or os.getcwd(),
-        )
-
-        # Validate in-memory before writing
-        report = validate_yaml_text(yaml_text, base_dir=output_dir or os.getcwd())
-        if not report.is_valid and strict:
-            typer.echo("[red]Generated YAML is invalid under --strict")
-            raise typer.Exit(1)
-
-        # Write outputs
-        # Determine output location (project-aware by default)
-        project_root = str(find_project_root())
-        out_dir = output_dir or project_root
-        os.makedirs(out_dir, exist_ok=True)
-        out_yaml = os.path.join(out_dir, "pipeline.yaml")
-        # In project-aware default path, allow overwriting pipeline.yaml without --force
-        allow_overwrite = (output_dir is None) or (
-            os.path.abspath(out_dir) == os.path.abspath(project_root)
-        )
-        if os.path.exists(out_yaml) and not (force or allow_overwrite):
-            typer.echo(
-                f"[red]Refusing to overwrite existing file: {out_yaml}. Use --force to overwrite."
-            )
-            raise typer.Exit(1)
-        # Prompt for name if interactive and not provided
-        if not name and not non_interactive:
-            detected = _extract_pipeline_name_from_yaml(yaml_text)
-            name = typer.prompt(
-                "What should we name this pipeline?", default=detected or "pipeline"
-            )
-        # Optionally inject top-level name into YAML if absent
-        if name and (_extract_pipeline_name_from_yaml(yaml_text) is None):
-            yaml_text = f'name: "{name}"\n' + yaml_text
-        with open(out_yaml, "w") as f:
-            f.write(yaml_text)
-        typer.echo(f"[green]Wrote: {out_yaml}")
-
-        # Optionally update flujo.toml budget
-        try:
-            if budget is not None or (not non_interactive):
-                budget_val: float
-                if budget is None and not non_interactive:
-                    # typer.prompt returns a string; cast to float explicitly
-                    _resp = typer.prompt("What is a safe cost limit per run (USD)?", default="2.50")
-                    budget_val = float(_resp)
-                else:
-                    # At this point budget is not None by guard
-                    budget_val = float(budget)  # type: ignore[arg-type]
-                # Determine pipeline name to write budget under
-                pipeline_name = name or _extract_pipeline_name_from_yaml(yaml_text) or "pipeline"
-                flujo_toml_path = Path(out_dir) / "flujo.toml"
-                if flujo_toml_path.exists():
-                    update_project_budget(flujo_toml_path, pipeline_name, budget_val)
-                    typer.echo(
-                        f"[green]Updated budget for pipeline '{pipeline_name}' in flujo.toml"
+            # Optionally update flujo.toml budget
+            try:
+                if budget is not None or (not non_interactive):
+                    budget_val: float
+                    if budget is None and not non_interactive:
+                        # typer.prompt returns a string; cast to float explicitly
+                        _resp = typer.prompt(
+                            "What is a safe cost limit per run (USD)?", default="2.50"
+                        )
+                        budget_val = float(_resp)
+                    else:
+                        # At this point budget is not None by guard
+                        budget_val = float(budget)  # type: ignore[arg-type]
+                    # Determine pipeline name to write budget under
+                    pipeline_name = (
+                        name or _extract_pipeline_name_from_yaml(yaml_text) or "pipeline"
                     )
-        except Exception:
-            # Do not fail create on budget write issues
-            pass
+                    flujo_toml_path = Path(out_dir) / "flujo.toml"
+                    if flujo_toml_path.exists():
+                        update_project_budget(flujo_toml_path, pipeline_name, budget_val)
+                        typer.echo(
+                            f"[green]Updated budget for pipeline '{pipeline_name}' in flujo.toml"
+                        )
+            except Exception:
+                # Do not fail create on budget write issues
+                pass
+        finally:
+            # Always restore original logging levels
+            try:
+                _flujo_logger.setLevel(_orig_flujo_level)
+                _httpx_logger.setLevel(_orig_httpx_level)
+                # Reset to default warning filters (sufficient for CLI lifecycle)
+                _warnings.resetwarnings()
+            except Exception:
+                pass
     except Exception as e:
         typer.echo(f"[red]Failed to create pipeline: {e}", err=True)
         raise typer.Exit(1)

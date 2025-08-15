@@ -1,0 +1,8 @@
+version: "0.1"
+name: "example"
+# Minimal valid pipeline using a passthrough step.
+# You can replace this by running `flujo create` for a conversational wizard.
+steps:
+  - kind: step
+    name: passthrough
+
