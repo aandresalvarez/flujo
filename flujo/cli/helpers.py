@@ -26,6 +26,8 @@ from flujo.infra.skills_catalog import load_skills_catalog, load_skills_entry_po
 import hashlib
 from flujo.domain.pipeline_validation import ValidationReport
 from flujo.infra import telemetry as _telemetry
+from pathlib import Path
+import re
 
 
 def load_pipeline_from_file(
@@ -1284,3 +1286,165 @@ def apply_cli_defaults(command: str, **kwargs: Any) -> Dict[str, Any]:
             result[key] = cli_defaults[key]
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# Project-aware helpers
+# ---------------------------------------------------------------------------
+
+
+def find_project_root(start: Optional[Path] = None) -> Path:
+    """Find the Flujo project root by locating a flujo.toml in cwd or parents.
+
+    Args:
+        start: Optional starting directory. Defaults to current working directory.
+
+    Returns:
+        Path to the project root directory (the directory containing flujo.toml).
+
+    Raises:
+        Exit: If no flujo.toml is found in the directory tree.
+    """
+    current = (start or Path.cwd()).resolve()
+    while True:
+        if (current / "flujo.toml").exists():
+            return current
+        if current.parent == current:
+            from typer import secho
+
+            secho(
+                "Error: Not a Flujo project. Please run 'flujo init' in your desired project directory first.",
+                fg="red",
+            )
+            raise Exit(1)
+        current = current.parent
+
+
+def scaffold_project(directory: Path) -> None:
+    """Create a new Flujo project scaffold in the given directory.
+
+    Creates `flujo.toml`, `pipeline.yaml`, `skills/`, `.flujo/`, and initializes
+    the SQLite state backend at `.flujo/state.db`.
+
+    Raises Exit if the directory already contains a Flujo project.
+    """
+    from typer import secho
+
+    directory = directory.resolve()
+    flujo_toml = directory / "flujo.toml"
+    hidden_dir = directory / ".flujo"
+    skills_dir = directory / "skills"
+
+    if flujo_toml.exists() or hidden_dir.exists():
+        secho("Error: This directory already looks like a Flujo project.", fg="red")
+        raise Exit(1)
+
+    # Create directories
+    skills_dir.mkdir(parents=True, exist_ok=True)
+    hidden_dir.mkdir(parents=True, exist_ok=True)
+
+    # Write template files
+    from importlib import resources as _res
+
+    try:
+        template_pkg = "flujo.templates.project"
+        with _res.files(template_pkg).joinpath("flujo.toml").open("r") as f:
+            flujo_toml.write_text(f.read())
+        with _res.files(template_pkg).joinpath("pipeline.yaml").open("r") as f:
+            (directory / "pipeline.yaml").write_text(f.read())
+        # skills/__init__.py
+        with _res.files(template_pkg).joinpath("skills__init__.py").open("r") as f:
+            (skills_dir / "__init__.py").write_text(f.read())
+        with _res.files(template_pkg).joinpath("custom_tools.py").open("r") as f:
+            (skills_dir / "custom_tools.py").write_text(f.read())
+    except Exception:
+        # Fallback: write minimal content if resources are unavailable
+        flujo_toml.write_text(
+            """
+# Flujo project configuration
+
+[Note: uses project-local state DB]
+state_uri = "sqlite:///.flujo/state.db"
+
+[settings]
+# default_solution_model = "gpt-4o-mini"
+
+# Centralized budgets (optional)
+[budgets]
+# [budgets.default]
+# total_cost_usd_limit = 5.0
+# total_tokens_limit = 100000
+            """.strip()
+            + "\n"
+        )
+        (directory / "pipeline.yaml").write_text(
+            """
+version: "0.1"
+name: "example"
+steps:
+  - kind: step
+    name: passthrough
+            """.strip()
+            + "\n"
+        )
+        (skills_dir / "__init__.py").write_text("# Custom project skills\n")
+        (skills_dir / "custom_tools.py").write_text(
+            """
+from __future__ import annotations
+
+# Example custom tool function
+async def echo_tool(x: str) -> str:
+    return x
+            """.strip()
+            + "\n"
+        )
+
+    # Initialize SQLite DB at .flujo/state.db
+    try:
+        from flujo.state.backends.sqlite import SQLiteBackend
+
+        db_path = hidden_dir / "state.db"
+        backend = SQLiteBackend(db_path)
+        # Trigger initialization via a lightweight call
+        import asyncio as _asyncio
+
+        _asyncio.run(backend.list_runs(limit=1))
+    except Exception:
+        # Best-effort init; ignore if environment lacks event loop support
+        pass
+
+    secho("✅ Your new Flujo project has been initialized in this directory!", fg="green")
+
+
+def update_project_budget(flujo_toml_path: Path, pipeline_name: str, cost_limit: float) -> None:
+    """Add or update a budget entry under [budgets.pipeline.<name>] in flujo.toml.
+
+    This function preserves existing content by performing minimal, targeted text edits
+    or appending a new section when absent.
+    """
+    text = flujo_toml_path.read_text() if flujo_toml_path.exists() else ""
+
+    section_header_quoted = f'[budgets.pipeline."{pipeline_name}"]'
+    new_section = f"\n\n{section_header_quoted}\ntotal_cost_usd_limit = {cost_limit}\n"
+
+    # If file is empty, create minimal TOML with budgets section
+    if not text.strip():
+        flujo_toml_path.write_text("[budgets]\n" + new_section.lstrip("\n"))
+        return
+
+    # Replace existing section if present (quoted or unquoted)
+    pattern = rf"^\[(budgets\.pipeline\.(?:\"?{re.escape(pipeline_name)}\"?))\][\s\S]*?(?=^\[|\Z)"
+    m = re.search(pattern, text, flags=re.MULTILINE)
+    if m:
+        start, end = m.span()
+        updated = text[:start] + new_section.strip() + "\n" + text[end:]
+        flujo_toml_path.write_text(updated)
+        return
+
+    # Ensure [budgets] top-level exists; if not, append it before pipeline entry
+    if "\n[budgets]\n" not in ("\n" + text + "\n") and not re.search(
+        r"^\[budgets\]", text, flags=re.MULTILINE
+    ):
+        text = text.rstrip() + "\n\n[budgets]\n"
+
+    flujo_toml_path.write_text(text.rstrip() + new_section)

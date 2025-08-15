@@ -17,16 +17,26 @@ This guide shows how to deterministically replay a prior pipeline run using reco
 
 ### CLI Usage
 
-Use the `lens replay` command to trigger a local replay:
+Use the `lens replay` command to trigger a local replay.
+
+- Inside a project (created via `flujo init`), it automatically uses `pipeline.yaml`:
 
 ```bash
+flujo lens replay <run_id>
+```
+
+- Or point to a specific pipeline file:
+
+```bash
+flujo lens replay <run_id> --file path/to/pipeline.yaml
+# or a Python file and object name
 flujo lens replay <run_id> --file path/to/pipeline.py --object pipeline
 ```
 
 Options:
 
-- `--file, -f`: Path to the Python file containing your pipeline definition
-- `--object, -o`: The variable name of your pipeline in that file (default: `pipeline`)
+- `--file, -f`: Path to the pipeline file (`.yaml` or Python)
+- `--object, -o`: The variable name of your pipeline in a Python file (default: `pipeline`)
 - `--json`: Print JSON-serialized results instead of a formatted summary
 
 Examples:
@@ -59,6 +69,5 @@ result = await runner.replay_from_trace("<run_id>")
 
 - If your code or policies changed, replay may diverge by design (this is useful to validate fixes). The `ReplayAgent` will raise if a recorded response is missing for a requested step.
 - For large traces, consider archiving and retention strategies; raw responses can be big.
-
 
 

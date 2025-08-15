@@ -43,7 +43,7 @@ from .recipes.factories import (
     run_default_pipeline,
 )
 
-__version__ = "0.4.36"  # Performance optimizations with uvloop, orjson, and blake3
+__version__ = "0.4.37"  # Project-based CLI journey (FSD-021)
 
 __all__ = [
     "Flujo",

@@ -337,6 +337,14 @@ Add a reflection step by composing your own pipeline with `Step` and running it 
 
 The `flujo run` command lets you execute any custom pipeline directly from the command line—no need to write a `if __name__ == "__main__":` script. This makes rapid iteration and testing of your workflows much easier.
 
+Project-aware default:
+
+- Inside a Flujo project (created via `flujo init`) you can simply run:
+  ```sh
+  flujo run --input "Hello world"
+  ```
+  This implicitly runs the project’s `pipeline.yaml`.
+
 ### Basic Usage
 
 ```sh
@@ -379,7 +387,7 @@ flujo run my_pipeline.py --input "Prompt" --context-model MyContext --json
 
 ```python
 from flujo import step, Pipeline
-from flujo.models import PipelineContext
+from flujo.domain.models import PipelineContext
 from pydantic import Field
 
 class MyContext(PipelineContext):
@@ -413,7 +421,7 @@ flujo run my_pipeline.py --input "hello" --context-model MyContext --context-fil
 - Pass context and input flexibly.
 - Integrates with the full DSL and context system.
 
-See also: [Pipeline DSL Guide](../user-guide/pipeline_dsl.md), [Typed Pipeline Context](../user-guide/pipeline_context.md)
+See also: [Pipeline DSL Guide](../user_guide/pipeline_dsl.md), [Typed Pipeline Context](../user_guide/pipeline_context.md)
 
 ### Full CLI Demo Example
 
@@ -421,7 +429,7 @@ Below is a complete example pipeline file you can run directly with the CLI:
 
 ```python
 from flujo import step, Pipeline
-from flujo.models import PipelineContext
+from flujo.domain.models import PipelineContext
 from pydantic import Field
 
 class DemoContext(PipelineContext):

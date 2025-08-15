@@ -134,13 +134,13 @@ operations, the agents used at each stage, and the integration of plugins.
 
 `Flujo` can also maintain a shared, typed context object for each run.
 Steps declare a `context` parameter to access or modify this object. See
-[Typed Pipeline Context](../user-guide/pipeline_context.md) for full documentation.
+[Typed Pipeline Context](../user_guide/pipeline_context.md) for full documentation.
 
 ## The Pipeline Context: Built-in Memory
 
 Every run automatically receives a `PipelineContext` instance. It includes a `run_id`, the initial prompt, a mutable `scratchpad` dictionary and a record of all human interactions (`hitl_history`). This allows agents to share state without additional setup.
 
-The built-in [**default pipeline factory**](#the-default-pipeline-factory-simplified) uses this DSL under the hood. When you need different logic, you can use the same tools directly through the `Flujo` engine. The DSL also supports advanced constructs like [**LoopStep**](../user-guide/pipeline_looping.md) for iteration and [**ConditionalStep**](../user-guide/pipeline_branching.md) for branching workflows.
+The built-in [**default pipeline factory**](#the-default-pipeline-factory-simplified) uses this DSL under the hood. When you need different logic, you can use the same tools directly through the `Flujo` engine. The DSL also supports advanced constructs like [**LoopStep**](../user_guide/pipeline_looping.md) for iteration and [**ConditionalStep**](../user_guide/pipeline_branching.md) for branching workflows.
 
 ```python
 from flujo import Step, Flujo

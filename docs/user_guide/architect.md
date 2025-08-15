@@ -5,18 +5,18 @@ The Architect helps you create runnable Flujo YAML blueprints from a goal.
 ## Usage
 
 ```bash
-flujo create --goal "Summarize a URL and post to Slack" \
-             --output-dir ./out \
-             [--context-file context.yaml] \
-             [--non-interactive] \
-             [--allow-side-effects] \
-             [--force] \
-             [--strict]
+# Recommended: inside a project initialized with `flujo init`
+flujo create --goal "Summarize a URL and post to Slack"
+
+# Optional flags
+flujo create [--output-dir ./out] [--context-file context.yaml] \
+             [--non-interactive] [--allow-side-effects] [--force] [--strict]
 ```
 
 - `--context-file`: JSON/YAML map with extra context injected into the Architect.
 - `--allow-side-effects`: required to proceed when the generated blueprint references skills marked with `side_effects: true`.
-- `--force`: overwrite `pipeline.yaml` if it already exists.
+- `--force`: overwrite `pipeline.yaml` if it already exists (not needed for project default).
+- When run inside a project, `create` prompts for a pipeline name (added to `pipeline.yaml`) and a budget per run (added to `flujo.toml`).
 - `--strict`: exit non-zero if the generated blueprint is invalid.
 
 ## Safety and Governance
@@ -57,5 +57,4 @@ slack.post_message:
 
 - In interactive runs, missing required `params` for registered skills are prompted.
 - In non-interactive runs, provide all required parameters up front or use `--context-file`.
-
 

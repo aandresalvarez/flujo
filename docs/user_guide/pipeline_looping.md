@@ -20,7 +20,7 @@ A single context instance is passed into every iteration. The loop body can modi
 
 ```python
 from flujo.domain import Step, Pipeline
-from flujo.models import PipelineContext
+from flujo.domain.models import PipelineContext
 
 class Ctx(PipelineContext):
     counter: int = 0

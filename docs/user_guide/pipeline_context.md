@@ -19,7 +19,7 @@ This base class provides important built-in fields managed by the engine:
 A minimal custom context looks like this:
 
 ```python
-from flujo.models import PipelineContext
+from flujo.domain.models import PipelineContext
 from pydantic import Field
 
 class MyDiscoveryContext(PipelineContext):

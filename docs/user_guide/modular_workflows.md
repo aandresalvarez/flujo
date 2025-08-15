@@ -18,7 +18,7 @@ upper_step = Step.from_mapper(to_upper)
 `Step.map_over` runs a pipeline for each item in an iterable stored in the pipeline context. The collected outputs are returned as a list.
 
 ```python
-from flujo.models import PipelineContext
+from flujo.domain.models import PipelineContext
 
 class Ctx(PipelineContext):
     nums: list[int]
@@ -50,7 +50,7 @@ print(result.step_history[-1].output)  # [0, 1, 2, 3]
 `Step.parallel` executes multiple branch pipelines concurrently and aggregates their outputs in a dictionary keyed by branch name.
 
 ```python
-from flujo.models import PipelineContext
+from flujo.domain.models import PipelineContext
 
 class Ctx(PipelineContext):
     val: int = 0

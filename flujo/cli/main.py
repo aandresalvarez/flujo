@@ -34,6 +34,9 @@ from .helpers import (
     validate_yaml_text,
     parse_context_data,
     load_pipeline_from_file,
+    find_project_root,
+    scaffold_project,
+    update_project_budget,
 )
 import click.testing
 import os
@@ -120,6 +123,18 @@ _auto_import_modules_from_env()
 Centralized CLI default handling lives in helpers/config_manager.
 Keep this module focused on argument parsing and command wiring.
 """
+
+
+@app.command()
+def init() -> None:
+    """Initialize a new Flujo project in the current directory."""
+    try:
+        from pathlib import Path as _Path
+
+        scaffold_project(_Path.cwd())
+    except Exception as e:
+        typer.secho(f"Failed to initialize project: {e}", fg=typer.colors.RED)
+        raise typer.Exit(1)
 
 
 @app.command()
@@ -410,7 +425,10 @@ def explain(path: str) -> None:
 
 @app.command()
 def validate(
-    path: str,
+    path: Optional[str] = typer.Argument(
+        None,
+        help="Path to pipeline file. If omitted, uses project pipeline.yaml",
+    ),
     strict: Annotated[
         bool,
         typer.Option(
@@ -421,6 +439,9 @@ def validate(
 ) -> None:
     """Validate a pipeline defined in a file."""
     try:
+        if path is None:
+            root = find_project_root()
+            path = str((Path(root) / "pipeline.yaml").resolve())
         report = validate_pipeline_file(path)
         if report.errors:
             typer.echo("[red]Validation errors detected:")
@@ -455,7 +476,19 @@ def validate(
 
 @app.command()
 def create(
-    goal: Annotated[str, typer.Option("--goal", help="Natural-language goal for the architect")],
+    goal: Annotated[
+        Optional[str], typer.Option("--goal", help="Natural-language goal for the architect")
+    ] = None,
+    name: Annotated[
+        Optional[str], typer.Option("--name", help="Pipeline name for pipeline.yaml")
+    ] = None,
+    budget: Annotated[
+        Optional[float],
+        typer.Option(
+            "--budget",
+            help="Safe cost limit (USD) per run to add under budgets.pipeline.",
+        ),
+    ] = None,
     output_dir: Annotated[
         Optional[str],
         typer.Option("--output-dir", help="Directory to write generated files"),
@@ -487,6 +520,12 @@ def create(
     Loads the bundled architect YAML, runs it with the provided goal, and writes outputs.
     """
     try:
+        # Prompt for goal if not provided and interactive
+        if goal is None and not non_interactive:
+            goal = typer.prompt("What is your goal for this pipeline?")
+        if goal is None:
+            typer.echo("[red]--goal is required in --non-interactive mode[/red]")
+            raise typer.Exit(2)
         # Locate bundled architect YAML (fallback to examples)
         base = os.path.dirname(os.path.abspath(__file__))
         repo_root = os.path.abspath(os.path.join(base, os.pardir, os.pardir))
@@ -569,17 +608,55 @@ def create(
             raise typer.Exit(1)
 
         # Write outputs
-        out_dir = output_dir or os.getcwd()
+        # Determine output location (project-aware by default)
+        project_root = str(find_project_root())
+        out_dir = output_dir or project_root
         os.makedirs(out_dir, exist_ok=True)
         out_yaml = os.path.join(out_dir, "pipeline.yaml")
-        if os.path.exists(out_yaml) and not force:
+        # In project-aware default path, allow overwriting pipeline.yaml without --force
+        allow_overwrite = (output_dir is None) or (
+            os.path.abspath(out_dir) == os.path.abspath(project_root)
+        )
+        if os.path.exists(out_yaml) and not (force or allow_overwrite):
             typer.echo(
                 f"[red]Refusing to overwrite existing file: {out_yaml}. Use --force to overwrite."
             )
             raise typer.Exit(1)
+        # Prompt for name if interactive and not provided
+        if not name and not non_interactive:
+            detected = _extract_pipeline_name_from_yaml(yaml_text)
+            name = typer.prompt(
+                "What should we name this pipeline?", default=detected or "pipeline"
+            )
+        # Optionally inject top-level name into YAML if absent
+        if name and (_extract_pipeline_name_from_yaml(yaml_text) is None):
+            yaml_text = f'name: "{name}"\n' + yaml_text
         with open(out_yaml, "w") as f:
             f.write(yaml_text)
         typer.echo(f"[green]Wrote: {out_yaml}")
+
+        # Optionally update flujo.toml budget
+        try:
+            if budget is not None or (not non_interactive):
+                budget_val: float
+                if budget is None and not non_interactive:
+                    # typer.prompt returns a string; cast to float explicitly
+                    _resp = typer.prompt("What is a safe cost limit per run (USD)?", default="2.50")
+                    budget_val = float(_resp)
+                else:
+                    # At this point budget is not None by guard
+                    budget_val = float(budget)  # type: ignore[arg-type]
+                # Determine pipeline name to write budget under
+                pipeline_name = name or _extract_pipeline_name_from_yaml(yaml_text) or "pipeline"
+                flujo_toml_path = Path(out_dir) / "flujo.toml"
+                if flujo_toml_path.exists():
+                    update_project_budget(flujo_toml_path, pipeline_name, budget_val)
+                    typer.echo(
+                        f"[green]Updated budget for pipeline '{pipeline_name}' in flujo.toml"
+                    )
+        except Exception:
+            # Do not fail create on budget write issues
+            pass
     except Exception as e:
         typer.echo(f"[red]Failed to create pipeline: {e}", err=True)
         raise typer.Exit(1)
@@ -587,8 +664,9 @@ def create(
 
 @app.command()
 def run(
-    pipeline_file: str = typer.Argument(
-        ..., help="Path to the pipeline to run (.py or .yaml/.yml)"
+    pipeline_file: Optional[str] = typer.Argument(
+        None,
+        help="Path to the pipeline (.py or .yaml). If omitted, uses project pipeline.yaml",
     ),
     input_data: Optional[str] = typer.Option(
         None, "--input", "--input-data", "-i", help="Initial input data for the pipeline"
@@ -640,6 +718,11 @@ def run(
         ctx = click.get_current_context()
         if not json_output and any(flag in ctx.args for flag in ("--json", "--json-output")):
             json_output = True
+
+        # Resolve default pipeline file from project if omitted
+        if pipeline_file is None:
+            root = find_project_root()
+            pipeline_file = str((Path(root) / "pipeline.yaml").resolve())
 
         # If YAML blueprint provided, load via blueprint loader; else use existing Python loader.
         if pipeline_file.endswith((".yaml", ".yml")):
@@ -965,3 +1048,17 @@ def load_settings() -> Any:
     from flujo.infra.config_manager import load_settings as _load_settings
 
     return _load_settings()
+
+
+def _extract_pipeline_name_from_yaml(text: str) -> Optional[str]:
+    try:
+        import yaml as _yaml
+
+        data = _yaml.safe_load(text)
+        if isinstance(data, dict):
+            val = data.get("name")
+            if isinstance(val, str) and val.strip():
+                return val.strip()
+    except Exception:
+        return None
+    return None

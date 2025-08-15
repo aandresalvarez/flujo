@@ -454,3 +454,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Initial project structure and core components
+## [0.4.37] - 2025-08-14
+### Added
+- Project scaffolding via `flujo init` with templates (`flujo.toml`, `pipeline.yaml`, `skills/`, `.flujo/`).
+- Conversational `flujo create` enhancements: optional goal prompt, pipeline name prompt (injected as top-level `name:`), and per-run budget prompt appended to `flujo.toml` under `[budgets.pipeline."<name>"]`.
+- Project-aware defaults: `flujo run` and `flujo validate` now infer the project’s `pipeline.yaml` when no file path is provided.
+- `lens replay` now looks for `pipeline.yaml` in the project when `--file` is omitted; still supports `--file` for `.yaml` or Python definitions.
+- Template `flujo.toml` sets `state_uri = "sqlite:///.flujo/state.db"` so lens and telemetry use project-local state by default.
+
+### Changed
+- Inside a project, `flujo create` overwrites `pipeline.yaml` by default (no `--force` needed). For non-project output directories, original `--force` behavior remains.
+- Documentation updated to reflect the new project-based journey and project-aware commands.
+
+### Migration Guidance
+- Existing flows that passed explicit file paths continue to work unchanged.
+- Recommended: initialize a project (`flujo init`), then run `flujo create` and `flujo run` from inside the project.
+- For `lens` tooling, the new template sets a project-local `state_uri`. If you used a global DB, you can keep using `FLUJO_STATE_URI` or set `state_uri` in your `flujo.toml`.

@@ -6,6 +6,7 @@ import runpy
 from rich.table import Table
 from rich.console import Console
 from .config import load_backend_from_config
+from .helpers import find_project_root, load_pipeline_from_yaml_file
 from .lens_show import show_run
 from .lens_trace import trace_command
 
@@ -76,10 +77,10 @@ def trace_command_cli(run_id: str) -> None:
 def replay_command(
     run_id: str,
     file: Optional[str] = typer.Option(
-        None, "--file", "-f", help="Path to the Python file that defines the pipeline"
+        None, "--file", "-f", help="Path to the pipeline file (.py or pipeline.yaml)"
     ),
     object_name: str = typer.Option(
-        "pipeline", "--object", "-o", help="Name of the pipeline variable in the file"
+        "pipeline", "--object", "-o", help="Name of the pipeline variable in a Python file"
     ),
     state_uri: Optional[str] = typer.Option(
         None,
@@ -110,7 +111,10 @@ def replay_command(
         # Case 1: Load explicitly from file/object
         if file:
             try:
-                pipeline_obj, _ = load_pipeline_from_file(file, object_name)
+                if file.endswith((".yaml", ".yml")):
+                    pipeline_obj = load_pipeline_from_yaml_file(file)
+                else:
+                    pipeline_obj, _ = load_pipeline_from_file(file, object_name)
             except SystemExit:
                 # Enhance error message with guidance
                 typer.echo(
@@ -125,53 +129,65 @@ def replay_command(
                 initial_context_data=None,
             )
         else:
-            # Case 2: Attempt to infer from run metadata and a local registry
-            details = asyncio.run(backend.get_run_details(run_id))
-            if not details:
-                typer.echo(
-                    f"[red]Run not found: {run_id}. Cannot infer pipeline without --file.[/red]",
-                    err=True,
-                )
-                raise typer.Exit(1)
-
-            pipeline_name = details.get("pipeline_name")
-            pipeline_version = details.get("pipeline_version") or "latest"
-            if not pipeline_name:
-                typer.echo(
-                    "[red]Pipeline name unavailable in run metadata. Provide --file to load the pipeline.[/red]",
-                    err=True,
-                )
-                raise typer.Exit(1)
-
-            # Discover a local registry in common locations (registry.py) and use it if present
-            registry = None
+            # Case 2: Attempt to infer project pipeline.yaml
             try:
-                import os as __os
-
-                if __os.path.exists("registry.py"):
-                    ns = runpy.run_path("registry.py")
-                    registry = ns.get("registry")
-            except Exception:
-                registry = None
-
-            if registry is None:
-                typer.echo(
-                    (
-                        "[red]No --file provided and no local registry found (expected 'registry.py' with a 'registry' object).\n"
-                        f"Run metadata indicates pipeline '{pipeline_name}' (version '{pipeline_version}').\n"
-                        "Please provide --file pointing to the pipeline definition or add a registry for inference.[/red]"
-                    ),
-                    err=True,
+                root = find_project_root()
+                pyaml = (root / "pipeline.yaml").resolve()
+                if not pyaml.exists():
+                    raise FileNotFoundError
+                pipeline_obj = load_pipeline_from_yaml_file(str(pyaml))
+                runner = create_flujo_runner(
+                    pipeline=pipeline_obj,
+                    context_model_class=None,
+                    initial_context_data=None,
                 )
-                raise typer.Exit(1)
+            except Exception:
+                # Fallback: infer from run metadata and optional local registry
+                details = asyncio.run(backend.get_run_details(run_id))
+                if not details:
+                    typer.echo(
+                        f"[red]Run not found: {run_id}. Cannot infer pipeline without --file.[/red]",
+                        err=True,
+                    )
+                    raise typer.Exit(1)
 
-            # Build a runner that will resolve the pipeline from the registry
-            runner = Flujo(
-                pipeline=None,
-                registry=registry,
-                pipeline_name=pipeline_name,
-                pipeline_version=pipeline_version,
-            )
+                pipeline_name = details.get("pipeline_name")
+                pipeline_version = details.get("pipeline_version") or "latest"
+                if not pipeline_name:
+                    typer.echo(
+                        "[red]Pipeline name unavailable in run metadata. Provide --file to load the pipeline.[/red]",
+                        err=True,
+                    )
+                    raise typer.Exit(1)
+
+                # Discover a local registry
+                registry = None
+                try:
+                    import os as __os
+
+                    if __os.path.exists("registry.py"):
+                        ns = runpy.run_path("registry.py")
+                        registry = ns.get("registry")
+                except Exception:
+                    registry = None
+
+                if registry is None:
+                    typer.echo(
+                        (
+                            "[red]No --file provided and no local registry found (expected 'registry.py' with a 'registry' object).\n"
+                            f"Run metadata indicates pipeline '{pipeline_name}' (version '{pipeline_version}').\n"
+                            "Please provide --file pointing to the pipeline definition or add a registry for inference.[/red]"
+                        ),
+                        err=True,
+                    )
+                    raise typer.Exit(1)
+
+                runner = Flujo(
+                    pipeline=None,
+                    registry=registry,
+                    pipeline_name=pipeline_name,
+                    pipeline_version=pipeline_version,
+                )
         # Attach operations backend so replay can load trace and steps from the configured store
         try:
             runner.state_backend = backend

@@ -98,7 +98,7 @@ When you use a custom function as a `mapper` in a `Step`, `flujo` analyzes its s
 
 ```python
 from flujo import Step, Flujo
-from flujo.models import PipelineContext
+from flujo.domain.models import PipelineContext
 from flujo.domain.resources import AppResources
 
 class MyContext(PipelineContext):
