@@ -7,6 +7,7 @@ import typer
 import click
 import json
 from pathlib import Path
+from importlib import resources as importlib_resources
 from flujo.infra.config_manager import get_cli_defaults as _get_cli_defaults
 from flujo.exceptions import ConfigurationError, SettingsError
 from flujo.infra import telemetry
@@ -605,12 +606,17 @@ def create(
             if goal is None:
                 typer.echo("[red]--goal is required in --non-interactive mode[/red]")
                 raise typer.Exit(2)
-            # Locate bundled architect YAML (fallback to examples)
-            base = os.path.dirname(os.path.abspath(__file__))
-            repo_root = os.path.abspath(os.path.join(base, os.pardir, os.pardir))
-            architect_yaml = os.path.join(repo_root, "examples", "architect_pipeline.yaml")
-            if not os.path.isfile(architect_yaml):
-                typer.echo("[red]Architect pipeline not found.")
+            # Locate bundled architect YAML from package resources
+            try:
+                with importlib_resources.as_file(
+                    importlib_resources.files("flujo.recipes").joinpath("architect_pipeline.yaml")
+                ) as p:
+                    architect_yaml = str(p)
+            except (FileNotFoundError, ModuleNotFoundError):
+                typer.echo(
+                    "[red]Architect pipeline blueprint not found within the application package.",
+                    err=True,
+                )
                 raise typer.Exit(1)
 
             # Load architect pipeline

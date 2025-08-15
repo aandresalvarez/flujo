@@ -1,6 +1,4 @@
-Of course. Here is a new iteration of the Developer Guide, incorporating the minor suggestions and refining the language to be even clearer and more directive. This version is polished and ready to be adopted as the official v2.0 guide for the core team.
-
----
+ 
 
 ### **Flujo Team Developer Guide: Architecture, Patterns & Contributions (v2.0)**
 

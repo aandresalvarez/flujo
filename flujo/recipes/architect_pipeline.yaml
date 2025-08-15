@@ -1,0 +1,169 @@
+version: "0.1"
+name: "architect"
+
+# ==============================================================================
+#  AGENTS: The specialized LLMs that power the architect's reasoning process.
+# ==============================================================================
+agents:
+  Decomposer:
+    model: "openai:gpt-5"
+    system_prompt: "You are a senior software architect. Decompose the user's goal into a sequence of high-level, logical steps for an automated pipeline. Each step should represent a distinct action. Focus on a clear, linear workflow. If multiple independent tasks can be done at once, note that they can be parallelized."
+    output_schema:
+      type: object
+      properties:
+        steps:
+          type: array
+          items:
+            type: object
+            properties:
+              task:
+                type: string
+                description: "A clear, concise description of the task for this step."
+            required: [task]
+      required: [steps]
+
+  ToolMapper:
+    model: "openai:gpt-5"
+    system_prompt: "You are a tool mapping expert. Given a task description and a list of available skills, select the best skill to accomplish the task. If no specific skill is a good fit, select a general-purpose agent. Return the skill ID and any necessary parameters."
+    output_schema:
+      type: object
+      properties:
+        skill_id:
+          type: string
+          description: "The ID of the best skill to use (e.g., 'flujo.builtins.web_search')."
+        params:
+          type: object
+          description: "A dictionary of parameters required by the skill, with values templated from the context if necessary (e.g., {'query': '{{ context.user_goal }}'})."
+      required: [skill_id]
+
+  YamlWriter:
+    model: "openai:gpt-5"
+    system_prompt: |
+      You are an expert Flujo YAML pipeline architect. Your task is to generate a complete and valid `pipeline.yaml` file based on the user's goal and a provided plan.
+
+      **FLUJO YAML GUIDE:**
+
+      1.  **Structure:** The YAML must have `version`, `name`, and `steps`.
+          ```yaml
+          version: "0.1"
+          name: "my_pipeline"
+          steps:
+            - ...
+          ```
+
+      2.  **Step Kinds:**
+          - `step`: A single action.
+          - `parallel`: Runs multiple branches concurrently.
+          - `conditional`: Chooses one branch to run based on a condition.
+          - `map`: Runs a pipeline for each item in a list from the context.
+
+      3.  **Agent/Skill Usage:**
+          - Use `agent: { id: "skill_id", params: {...} }` to call a registered skill.
+          - Use `input: "{{ context.some_field }}"` or `input: "{{ previous_step }}"` to pass data dynamically.
+          - Use `updates_context: true` if a step's output should be merged into the pipeline context.
+
+      4.  **Key Built-in Skills (The Killer Demo Pack):**
+          - `flujo.builtins.web_search`: Performs a web search.
+            - `params`: `{ "query": "your search query", "max_results": 3 }`
+          - `flujo.builtins.extract_from_text`: Extracts structured data from text using an LLM.
+            - `params`: `{ "text": "{{ previous_step }}", "schema": { ... JSON Schema ... } }`
+          - `flujo.builtins.passthrough`: A simple step that passes its input directly to its output. Useful in conditional branches.
+
+      5.  **Parallel Steps:**
+          ```yaml
+          - kind: parallel
+            name: research_in_parallel
+            merge_strategy: context_update # Merges results back into the main context
+            branches:
+              google_research:
+                - kind: step
+                  name: search_google
+                  agent: { id: "flujo.builtins.web_search", params: { query: "Google CEO" } }
+                  updates_context: true
+              apple_research:
+                - kind: step
+                  name: search_apple
+                  agent: { id: "flujo.builtins.web_search", params: { query: "Apple CEO" } }
+                  updates_context: true
+          ```
+
+      **YOUR TASK:**
+      - Synthesize the user's goal and the structured plan into a valid `pipeline.yaml`.
+      - If you are given validation errors from a previous attempt, use them to correct the YAML.
+      - **Return ONLY the raw YAML content.** Do not include explanations, apologies, or markdown fences.
+    output_schema:
+      type: object
+      properties:
+        generated_yaml:
+          type: string
+          description: "The complete, valid YAML content for the pipeline."
+      required: [generated_yaml]
+
+# ==============================================================================
+#  PIPELINE STEPS: The architect's workflow for building a new pipeline.
+# ==============================================================================
+steps:
+  - kind: step
+    name: discover_skills
+    agent:
+      id: "flujo.builtins.discover_skills"
+    updates_context: true
+
+  - kind: step
+    name: decompose_goal
+    uses: agents.Decomposer
+    input: "{{ context.user_goal }}"
+
+  - kind: step
+    name: extract_steps_for_mapping
+    agent:
+      id: "flujo.builtins.extract_decomposed_steps"
+    updates_context: true
+
+  - kind: map
+    name: map_tools_to_steps
+    map:
+      iterable_input: "prepared_steps_for_mapping"
+      body:
+        - kind: step
+          name: map_tool
+          uses: agents.ToolMapper
+          input:
+            task: "{{ context.this.task }}"
+            available_skills: "{{ context.available_skills }}"
+
+  - kind: step
+    name: aggregate_plan_for_writer
+    agent:
+      id: "flujo.builtins.aggregate_plan"
+    updates_context: true
+
+  - kind: loop
+    name: iterative_yaml_generation
+    loop:
+      max_loops: 3
+      body:
+        - kind: step
+          name: write_pipeline_yaml
+          uses: agents.YamlWriter
+          input: "{{ context }}"
+        - kind: step
+          name: extract_yaml_text
+          agent:
+            id: "flujo.builtins.extract_yaml_text"
+        - kind: step
+          name: validate_generated_yaml
+          agent:
+            id: "flujo.builtins.validate_yaml"
+        - kind: step
+          name: check_validation_status
+          agent:
+            id: "flujo.builtins.validation_report_to_flag"
+          updates_context: true
+      exit_condition: "flujo.builtins.exit_when_yaml_valid"
+
+  - kind: step
+    name: final_passthrough
+    agent:
+      id: "flujo.builtins.passthrough"
+
